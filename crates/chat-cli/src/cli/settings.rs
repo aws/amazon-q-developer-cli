@@ -15,7 +15,7 @@ use globset::Glob;
 use serde_json::json;
 
 use super::OutputFormat;
-use crate::database::settings::SettingKey;
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories;
 
@@ -90,13 +90,10 @@ impl SettingsArgs {
                     return Ok(ExitCode::SUCCESS);
                 };
 
-                let key = SettingKey::try_from(key_str.as_str())?;
+                let key = Setting::try_from(key_str.as_str())?;
                 match (&self.value, self.delete) {
                     (None, false) => {
-                        let value = match &key {
-                            SettingKey::Static(setting) => os.database.settings.get(*setting),
-                            SettingKey::ThemeColor { .. } => os.database.settings.get_by_key(&key.as_string()),
-                        };
+                        let value = os.database.settings.get(key);
                         
                         match value {
                             Some(value) => {
@@ -121,14 +118,7 @@ impl SettingsArgs {
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        match &key {
-                            SettingKey::Static(setting) => {
-                                os.database.settings.set(*setting, value).await?;
-                            },
-                            SettingKey::ThemeColor { .. } => {
-                                os.database.settings.set_by_key(&key.as_string(), value).await?;
-                            }
-                        }
+                        os.database.settings.set(key, value).await?;
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
@@ -145,27 +135,13 @@ impl SettingsArgs {
                             },
                             1 => {
                                 println!("Removing {:?}", keys_to_remove[0]);
-                                match &key {
-                                    SettingKey::Static(setting) => {
-                                        os.database.settings.remove(*setting).await?;
-                                    },
-                                    SettingKey::ThemeColor { .. } => {
-                                        os.database.settings.remove_by_key(&keys_to_remove[0]).await?;
-                                    }
-                                }
+                                os.database.settings.remove(key).await?;
                             },
                             _ => {
                                 for key_str in &keys_to_remove {
-                                    if let Ok(parsed_key) = SettingKey::try_from(key_str.as_str()) {
+                                    if let Ok(parsed_key) = Setting::try_from(key_str.as_str()) {
                                         println!("Removing `{}`", parsed_key.as_string());
-                                        match &parsed_key {
-                                            SettingKey::Static(setting) => {
-                                                os.database.settings.remove(*setting).await?;
-                                            },
-                                            SettingKey::ThemeColor { .. } => {
-                                                os.database.settings.remove_by_key(key_str).await?;
-                                            }
-                                        }
+                                        os.database.settings.remove(parsed_key).await?;
                                     }
                                 }
                             },

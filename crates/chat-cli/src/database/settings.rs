@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::fmt::Display;
 use std::io::SeekFrom;
 
@@ -16,56 +17,6 @@ use tokio::io::{
 };
 
 use super::DatabaseError;
-
-/// Setting key that can be either static (enum-based) or dynamic (namespace-based)
-#[derive(Clone, Debug)]
-pub enum SettingKey {
-    Static(Setting),
-    ThemeColor { theme: String, category: String },
-}
-
-impl SettingKey {
-    pub fn as_string(&self) -> String {
-        match self {
-            Self::Static(setting) => setting.as_ref().to_string(),
-            Self::ThemeColor { theme, category } => {
-                format!("chat.theme.{}.{}", theme, category)
-            }
-        }
-    }
-}
-
-impl TryFrom<&str> for SettingKey {
-    type Error = DatabaseError;
-    
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        // Try static settings first
-        if let Ok(setting) = Setting::try_from(value) {
-            return Ok(Self::Static(setting));
-        }
-        
-        // Check for theme color pattern: chat.theme.{theme}.{color}
-        static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-        let regex = THEME_COLOR_REGEX.get_or_init(|| {
-            Regex::new(r"^chat\.theme\.([^.]+)\.([^.]+)$").unwrap()
-        });
-        
-        if let Some(captures) = regex.captures(value) {
-            let theme = captures.get(1).unwrap().as_str().to_string();
-            let category = captures.get(2).unwrap().as_str().to_string();
-            
-            // Validate color category
-            if !["success", "error", "warning", "info", "secondary", "primary", "action", "data"]
-                .contains(&category.as_str()) {
-                return Err(DatabaseError::InvalidSetting(value.to_string()));
-            }
-            
-            return Ok(Self::ThemeColor { theme, category });
-        }
-        
-        Err(DatabaseError::InvalidSetting(value.to_string()))
-    }
-}
 
 #[derive(Clone, Copy, Debug)]
 pub enum Setting {
@@ -89,8 +40,6 @@ pub enum Setting {
     ChatDefaultAgent,
     ChatDisableAutoCompaction,
     ChatEnableHistoryHints,
-
-    // Color theme settings
     ChatTheme,
     ChatThemeSuccess,
     ChatThemeError,
@@ -100,6 +49,10 @@ pub enum Setting {
     ChatThemePrimary,
     ChatThemeAction,
     ChatThemeData,
+    Color {
+        theme: ThemeName,
+        category: ColorCategory,
+    },
 }
 
 /// Semantic color categories for consistent theming
@@ -121,6 +74,21 @@ pub enum ColorCategory {
     Action,
     /// Context files, data visualization
     Data,
+}
+
+impl ColorCategory {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Success => "success",
+            Self::Error => "error",
+            Self::Warning => "warning",
+            Self::Info => "info",
+            Self::Secondary => "secondary",
+            Self::Primary => "primary",
+            Self::Action => "action",
+            Self::Data => "data",
+        }
+    }
 }
 
 /// Predefined theme names
@@ -255,17 +223,16 @@ impl ColorTheme {
                     ThemeName::Nord => Self::nord_theme(),
                 };
                 
-                // Apply any theme-specific color overrides on top of the base theme
-                let theme_prefix = format!("chat.theme.{}", theme.as_str());
+                // Apply any theme-specific color overrides
                 return Self {
-                    success: settings.get_color_by_key(&format!("{}.success", theme_prefix)).unwrap_or(base_theme.success),
-                    error: settings.get_color_by_key(&format!("{}.error", theme_prefix)).unwrap_or(base_theme.error),
-                    warning: settings.get_color_by_key(&format!("{}.warning", theme_prefix)).unwrap_or(base_theme.warning),
-                    info: settings.get_color_by_key(&format!("{}.info", theme_prefix)).unwrap_or(base_theme.info),
-                    secondary: settings.get_color_by_key(&format!("{}.secondary", theme_prefix)).unwrap_or(base_theme.secondary),
-                    primary: settings.get_color_by_key(&format!("{}.primary", theme_prefix)).unwrap_or(base_theme.primary),
-                    action: settings.get_color_by_key(&format!("{}.action", theme_prefix)).unwrap_or(base_theme.action),
-                    data: settings.get_color_by_key(&format!("{}.data", theme_prefix)).unwrap_or(base_theme.data),
+                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success }).unwrap_or(base_theme.success),
+                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error }).unwrap_or(base_theme.error),
+                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning }).unwrap_or(base_theme.warning),
+                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info }).unwrap_or(base_theme.info),
+                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary }).unwrap_or(base_theme.secondary),
+                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary }).unwrap_or(base_theme.primary),
+                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action }).unwrap_or(base_theme.action),
+                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data }).unwrap_or(base_theme.data),
                 };
             }
         }
@@ -284,8 +251,47 @@ impl ColorTheme {
     }
 }
 
+impl Setting {
+    pub fn as_string(&self) -> Cow<'static, str> {
+        match self {
+            Self::TelemetryEnabled => "telemetry.enabled".into(),
+            Self::OldClientId => "telemetryClientId".into(),
+            Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS".into(),
+            Self::EnabledThinking => "chat.enableThinking".into(),
+            Self::EnabledKnowledge => "chat.enableKnowledge".into(),
+            Self::SkimCommandKey => "chat.skimCommandKey".into(),
+            Self::ChatGreetingEnabled => "chat.greeting.enabled".into(),
+            Self::ApiTimeout => "api.timeout".into(),
+            Self::ChatEditMode => "chat.editMode".into(),
+            Self::ChatEnableNotifications => "chat.enableNotifications".into(),
+            Self::ApiCodeWhispererService => "api.codewhisperer.service".into(),
+            Self::ApiQService => "api.q.service".into(),
+            Self::McpInitTimeout => "mcp.initTimeout".into(),
+            Self::McpNoInteractiveTimeout => "mcp.noInteractiveTimeout".into(),
+            Self::McpLoadedBefore => "mcp.loadedBefore".into(),
+            Self::ChatDefaultModel => "chat.defaultModel".into(),
+            Self::ChatDisableMarkdownRendering => "chat.disableMarkdownRendering".into(),
+            Self::ChatDefaultAgent => "chat.defaultAgent".into(),
+            Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction".into(),
+            Self::ChatEnableHistoryHints => "chat.enableHistoryHints".into(),
+            Self::ChatTheme => "chat.theme".into(),
+            Self::ChatThemeSuccess => "chat.theme.success".into(),
+            Self::ChatThemeError => "chat.theme.error".into(),
+            Self::ChatThemeWarning => "chat.theme.warning".into(),
+            Self::ChatThemeInfo => "chat.theme.info".into(),
+            Self::ChatThemeSecondary => "chat.theme.secondary".into(),
+            Self::ChatThemePrimary => "chat.theme.primary".into(),
+            Self::ChatThemeAction => "chat.theme.action".into(),
+            Self::ChatThemeData => "chat.theme.data".into(),
+            Self::Color { theme, category } => {
+                format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into()
+            }
+        }
+    }
+}
+
 impl AsRef<str> for Setting {
-    fn as_ref(&self) -> &'static str {
+    fn as_ref(&self) -> &str {
         match self {
             Self::TelemetryEnabled => "telemetry.enabled",
             Self::OldClientId => "telemetryClientId",
@@ -316,6 +322,11 @@ impl AsRef<str> for Setting {
             Self::ChatThemePrimary => "chat.theme.primary",
             Self::ChatThemeAction => "chat.theme.action",
             Self::ChatThemeData => "chat.theme.data",
+            Self::Color { .. } => {
+                // For dynamic strings, we can't return &str
+                // This is a limitation - callers should use as_string() instead
+                "chat.theme.default"
+            }
         }
     }
 }
@@ -360,7 +371,36 @@ impl TryFrom<&str> for Setting {
             "chat.theme.primary" => Ok(Self::ChatThemePrimary),
             "chat.theme.action" => Ok(Self::ChatThemeAction),
             "chat.theme.data" => Ok(Self::ChatThemeData),
-            _ => Err(DatabaseError::InvalidSetting(value.to_string())),
+            _ => {
+                // Check for theme color pattern: chat.theme.{theme}.{color}
+                static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
+                let regex = THEME_COLOR_REGEX.get_or_init(|| {
+                    Regex::new(r"^chat\.theme\.([^.]+)\.([^.]+)$").unwrap()
+                });
+                
+                if let Some(captures) = regex.captures(value) {
+                    let theme_str = captures.get(1).unwrap().as_str();
+                    let category_str = captures.get(2).unwrap().as_str();
+                    
+                    if let Some(theme) = ThemeName::from_str(theme_str) {
+                        let category = match category_str {
+                            "success" => ColorCategory::Success,
+                            "error" => ColorCategory::Error,
+                            "warning" => ColorCategory::Warning,
+                            "info" => ColorCategory::Info,
+                            "secondary" => ColorCategory::Secondary,
+                            "primary" => ColorCategory::Primary,
+                            "action" => ColorCategory::Action,
+                            "data" => ColorCategory::Data,
+                            _ => return Err(DatabaseError::InvalidSetting(value.to_string())),
+                        };
+                        
+                        return Ok(Self::Color { theme, category });
+                    }
+                }
+                
+                Err(DatabaseError::InvalidSetting(value.to_string()))
+            }
         }
     }
 }
@@ -406,20 +446,25 @@ impl Settings {
         self.0.get(key.as_ref())
     }
 
-    /// Get value by string key (for dynamic settings)
-    pub fn get_by_key(&self, key: &str) -> Option<&Value> {
-        self.0.get(key)
-    }
+
 
     pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
-        self.0.insert(key.to_string(), value.into());
+        let key_str = match &key {
+            Setting::Color { .. } => key.as_string().to_string(),
+            _ => key.to_string(),
+        };
+        self.0.insert(key_str, value.into());
         self.save_to_file().await
     }
 
     pub async fn remove(&mut self, key: Setting) -> Result<Option<Value>, DatabaseError> {
-        let key = self.0.remove(key.as_ref());
+        let key_str = match &key {
+            Setting::Color { .. } => key.as_string().to_string(),
+            _ => key.as_ref().to_string(),
+        };
+        let value = self.0.remove(&key_str);
         self.save_to_file().await?;
-        Ok(key)
+        Ok(value)
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {
@@ -436,17 +481,17 @@ impl Settings {
 
     /// Get a color setting, parsing from string representation
     pub fn get_color(&self, key: Setting) -> Option<Color> {
-        self.get_string(key).and_then(|color_str| parse_color(&color_str))
-    }
-
-    /// Get color by string key (for theme-specific settings)
-    pub fn get_color_by_key(&self, key: &str) -> Option<Color> {
-        self.get_string_by_key(key).and_then(|color_str| parse_color(&color_str))
-    }
-
-    /// Get string value by string key
-    pub fn get_string_by_key(&self, key: &str) -> Option<String> {
-        self.0.get(key).and_then(|value| value.as_str().map(|s| s.to_string()))
+        match key {
+            Setting::Color { theme, category } => {
+                let key_str = format!("chat.theme.{}.{}", theme.as_str(), category.as_str());
+                self.0.get(&key_str).and_then(|value| {
+                    value.as_str().and_then(|color_str| parse_color(color_str))
+                })
+            }
+            _ => {
+                self.get_string(key).and_then(|color_str| parse_color(&color_str))
+            }
+        }
     }
 
     /// Get the current color theme
@@ -465,18 +510,7 @@ impl Settings {
             .and_then(|s| ThemeName::from_str(&s))
     }
 
-    /// Set value by string key (for dynamic settings)
-    pub async fn set_by_key(&mut self, key: &str, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
-        self.0.insert(key.to_string(), value.into());
-        self.save_to_file().await
-    }
 
-    /// Remove value by string key (for dynamic settings)
-    pub async fn remove_by_key(&mut self, key: &str) -> Result<Option<Value>, DatabaseError> {
-        let value = self.0.remove(key);
-        self.save_to_file().await?;
-        Ok(value)
-    }
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
         if cfg!(test) {
