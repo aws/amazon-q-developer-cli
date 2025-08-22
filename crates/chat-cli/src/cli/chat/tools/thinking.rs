@@ -1,7 +1,9 @@
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::Result;
 use serde::Deserialize;
 
@@ -10,9 +12,15 @@ use super::{
     OutputKind,
 };
 use crate::cli::chat::colors::ColorManager;
-use crate::database::settings::{Setting, Settings};
-use crate::{with_info, with_color};
+use crate::database::settings::{
+    Setting,
+    Settings,
+};
 use crate::os::Os;
+use crate::{
+    with_color,
+    with_info,
+};
 
 /// The Think tool allows the model to reason through complex problems during response generation.
 /// It provides a dedicated space for the model to process information from tool call results,

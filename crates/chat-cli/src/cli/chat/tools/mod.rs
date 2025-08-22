@@ -376,7 +376,11 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
 }
 
 /// Helper function to display a purpose with custom colors
-pub fn display_purpose_with_colors(purpose: Option<&String>, updates: &mut impl Write, colors: &ColorManager) -> Result<()> {
+pub fn display_purpose_with_colors(
+    purpose: Option<&String>,
+    updates: &mut impl Write,
+    colors: &ColorManager,
+) -> Result<()> {
     if let Some(purpose) = purpose {
         queue!(
             updates,
@@ -404,7 +408,13 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
     queue_function_result_with_colors(result, updates, is_error, use_bullet, &ColorManager::default())
 }
 
-pub fn queue_function_result_with_colors(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool, colors: &ColorManager) -> Result<()> {
+pub fn queue_function_result_with_colors(
+    result: &str,
+    updates: &mut impl Write,
+    is_error: bool,
+    use_bullet: bool,
+    colors: &ColorManager,
+) -> Result<()> {
     let lines = result.lines().collect::<Vec<_>>();
 
     // Determine symbol and color

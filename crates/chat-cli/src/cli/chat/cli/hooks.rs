@@ -8,8 +8,6 @@ use std::time::{
 
 use bstr::ByteSlice;
 use clap::Args;
-
-use super::super::colors::ColorManager;
 use crossterm::style::{
     self,
     Attribute,
@@ -34,6 +32,7 @@ use spinners::{
     Spinners,
 };
 
+use super::super::colors::ColorManager;
 use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
@@ -45,9 +44,17 @@ use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 struct HookColors;
 
 impl HookColors {
-    fn error() -> Color { ColorManager::default().error() }
-    fn info() -> Color { ColorManager::default().info() }
-    fn warning() -> Color { ColorManager::default().warning() }
+    fn error() -> Color {
+        ColorManager::default().error()
+    }
+
+    fn info() -> Color {
+        ColorManager::default().info()
+    }
+
+    fn warning() -> Color {
+        ColorManager::default().warning()
+    }
 }
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
@@ -162,12 +169,14 @@ impl HookExecutor {
             // The futures set size decreases each time we process one
             if futures.is_empty() {
                 let symbol = if total == complete {
-                    format!("{}✓{}", 
+                    format!(
+                        "{}✓{}",
                         crossterm::style::SetForegroundColor(HookColors::info()),
                         crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
                     )
                 } else {
-                    format!("{}✗{}", 
+                    format!(
+                        "{}✗{}",
                         crossterm::style::SetForegroundColor(HookColors::error()),
                         crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
                     )

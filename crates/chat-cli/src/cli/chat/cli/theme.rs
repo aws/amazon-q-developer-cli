@@ -1,8 +1,16 @@
 use clap::Parser;
-use crossterm::{execute, queue, style};
+use crossterm::{
+    execute,
+    queue,
+    style,
+};
 use eyre::Result;
 
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 use crate::database::settings::ThemeName;
 use crate::os::Os;
 
@@ -15,7 +23,7 @@ pub struct ThemeArgs {
 impl ThemeArgs {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let colors = &session.colors;
-        
+
         if let Some(theme_name) = self.theme {
             let theme = match theme_name.as_str() {
                 "default" => ThemeName::Default,
@@ -30,13 +38,19 @@ impl ThemeArgs {
                         style::ResetColor,
                         style::Print("Invalid theme name. Available themes: default, light, high-contrast, nord\n")
                     )?;
-                    return Ok(ChatState::PromptUser { skip_printing_tools: true });
-                }
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
             };
-            
-            os.database.settings.set_theme(theme).await.map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+            os.database
+                .settings
+                .set_theme(theme)
+                .await
+                .map_err(|e| ChatError::Custom(e.to_string().into()))?;
             session.colors = crate::cli::chat::colors::ColorManager::from_settings(&os.database.settings);
-            
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(session.colors.success()),
@@ -49,10 +63,8 @@ impl ThemeArgs {
                 style::Print(". Colors updated immediately.\n")
             )?;
         } else {
-            let current_theme = os.database.settings.get_theme()
-                .map(|t| t.as_str())
-                .unwrap_or("default");
-            
+            let current_theme = os.database.settings.get_theme().map_or("default", |t| t.as_str());
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(colors.info()),
@@ -62,7 +74,7 @@ impl ThemeArgs {
                 style::ResetColor,
                 style::Print("\n\nColor preview:\n")
             )?;
-            
+
             let samples = [
                 ("Success", colors.success(), "✓ Operation completed"),
                 ("Error", colors.error(), "✗ Something went wrong"),
@@ -73,7 +85,7 @@ impl ThemeArgs {
                 ("Action", colors.action(), "Action required"),
                 ("Data", colors.data(), "Data output"),
             ];
-            
+
             for (name, color, sample) in samples {
                 queue!(
                     session.stderr,
@@ -88,7 +100,7 @@ impl ThemeArgs {
                     style::Print("\n")
                 )?;
             }
-            
+
             execute!(
                 session.stderr,
                 style::Print("\nAvailable themes: "),
@@ -98,7 +110,9 @@ impl ThemeArgs {
                 style::Print("\nUsage: /theme <theme_name>\n")
             )?;
         }
-        
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 }

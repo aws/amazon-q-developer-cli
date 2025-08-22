@@ -119,8 +119,8 @@ mod tests {
     use bstr::ByteSlice;
 
     use super::*;
-    use crate::cli::chat::colors::ColorManager;
     use crate::cli::chat::GREETING_BREAK_POINT;
+    use crate::cli::chat::colors::ColorManager;
 
     #[tokio::test]
     async fn test_draw_tip_box() {

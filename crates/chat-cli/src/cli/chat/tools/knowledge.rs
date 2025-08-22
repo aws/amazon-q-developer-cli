@@ -1,7 +1,9 @@
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::Result;
 use serde::Deserialize;
 use tracing::warn;
@@ -15,11 +17,19 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::cli::chat::colors::ColorManager;
-use crate::database::settings::{Setting, Settings};
+use crate::database::settings::{
+    Setting,
+    Settings,
+};
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
-use crate::{with_success, with_info, with_warning, with_color};
 use crate::util::pattern_matching::matches_any_pattern;
+use crate::{
+    with_color,
+    with_info,
+    with_success,
+    with_warning,
+};
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
@@ -200,10 +210,7 @@ impl Knowledge {
                 queue!(updates, style::Print("Updating knowledge base context"),)?;
 
                 if !update.context_id.is_empty() {
-                    queue!(
-                        updates,
-                        style::Print(" with ID: "),
-                    )?;
+                    queue!(updates, style::Print(" with ID: "),)?;
                     with_success!(updates, &color_manager, "{}", &update.context_id)?;
                 } else if !update.name.is_empty() {
                     queue!(updates, style::Print(" with name: "))?;

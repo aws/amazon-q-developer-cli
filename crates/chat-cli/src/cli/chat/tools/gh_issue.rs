@@ -5,10 +5,6 @@ use crossterm::{
     queue,
     style,
 };
-
-use crate::cli::chat::colors::ColorManager;
-use crate::database::settings::Settings;
-use crate::{with_success, with_color};
 use eyre::{
     Result,
     WrapErr,
@@ -19,8 +15,14 @@ use serde::Deserialize;
 use super::super::context::ContextManager;
 use super::super::util::issue::IssueCreator;
 use super::InvokeOutput;
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::token_counter::TokenCounter;
+use crate::database::settings::Settings;
 use crate::os::Os;
+use crate::{
+    with_color,
+    with_success,
+};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {

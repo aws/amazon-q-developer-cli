@@ -19,9 +19,10 @@ use std::path::{
     PathBuf,
 };
 
-use crate::cli::chat::colors::ColorManager;
-use crossterm::style::{Color, Stylize};
-
+use crossterm::style::{
+    Color,
+    Stylize,
+};
 use crossterm::{
     execute,
     queue,
@@ -62,6 +63,7 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::{
@@ -207,7 +209,12 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>, colors: &ColorManager) -> Result<(), AgentConfigError> {
+    fn thaw(
+        &mut self,
+        path: &Path,
+        legacy_mcp_config: Option<&McpServerConfig>,
+        colors: &ColorManager,
+    ) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
@@ -326,11 +333,11 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), &colors)?;
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), colors)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None, &colors)?;
+            agent.thaw(agent_path.as_ref(), None, colors)?;
         }
         Ok(agent)
     }
@@ -439,7 +446,7 @@ impl Agents {
         mcp_enabled: bool,
     ) -> (Self, AgentsLoadMetadata) {
         let colors = ColorManager::from_settings(&os.database.settings);
-        
+
         if !mcp_enabled {
             let _ = execute!(
                 output,

@@ -40,7 +40,8 @@ impl ClearArgs {
         )?;
 
         // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
-        let prompt = format!("{}{}{}", 
+        let prompt = format!(
+            "{}{}{}",
             crossterm::style::SetForegroundColor(session.colors.warning()),
             "> ",
             crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)

@@ -25,7 +25,6 @@ use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::database::settings::Settings;
-use crate::{with_success, with_color};
 use crate::mcp_client::{
     Client as McpClient,
     ClientConfig as McpClientConfig,
@@ -40,6 +39,10 @@ use crate::mcp_client::{
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
+use crate::{
+    with_color,
+    with_success,
+};
 
 // TODO: support http transport type
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]

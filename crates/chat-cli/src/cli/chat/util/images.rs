@@ -14,7 +14,6 @@ use serde::{
 };
 
 use super::super::colors::ColorManager;
-
 use crate::api_client::model::{
     ImageBlock,
     ImageFormat,
@@ -228,7 +227,11 @@ mod tests {
         let image_path = temp_dir.path().join("test_image.jpg");
         std::fs::write(&image_path, b"fake_image_data").unwrap();
 
-        let images = handle_images_from_paths(&mut vec![], &[image_path.to_string_lossy().to_string()], &ColorManager::default());
+        let images = handle_images_from_paths(
+            &mut vec![],
+            &[image_path.to_string_lossy().to_string()],
+            &ColorManager::default(),
+        );
 
         assert_eq!(images.len(), 1);
         assert_eq!(images[0].1.filename, "test_image.jpg");
@@ -259,7 +262,11 @@ mod tests {
         let large_image_size = MAX_IMAGE_SIZE + 1;
         std::fs::write(&large_image_path, vec![0; large_image_size]).unwrap();
         let mut output = vec![];
-        let images = handle_images_from_paths(&mut output, &[large_image_path.to_string_lossy().to_string()], &ColorManager::default());
+        let images = handle_images_from_paths(
+            &mut output,
+            &[large_image_path.to_string_lossy().to_string()],
+            &ColorManager::default(),
+        );
         let output_str = output.to_str_lossy();
         print!("{}", output_str);
         assert!(output_str.contains("The following images are dropped due to exceeding size limit (10MB):"));

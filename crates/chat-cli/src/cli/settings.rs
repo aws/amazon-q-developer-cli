@@ -94,7 +94,7 @@ impl SettingsArgs {
                 match (&self.value, self.delete) {
                     (None, false) => {
                         let value = os.database.settings.get(key);
-                        
+
                         match value {
                             Some(value) => {
                                 match self.format {

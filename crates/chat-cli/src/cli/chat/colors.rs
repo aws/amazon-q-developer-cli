@@ -1,11 +1,15 @@
 //! Centralized color management for Amazon Q CLI
-//! 
+//!
 //! This module provides a centralized way to manage colors throughout the CLI,
 //! ensuring consistent theming and accessibility support.
 
 use crossterm::style::Color;
 
-use crate::database::settings::{ColorCategory, ColorTheme, Settings};
+use crate::database::settings::{
+    ColorCategory,
+    ColorTheme,
+    Settings,
+};
 
 /// Color manager that provides semantic color access
 #[derive(Clone)]
@@ -22,7 +26,7 @@ impl ColorManager {
     }
 
     /// Create a new color manager with default theme
-    /// 
+    ///
     /// WARNING: This bypasses user theme settings. Use `from_settings()` instead
     /// when Settings are available to respect user configuration.
     pub fn default() -> Self {
@@ -171,7 +175,7 @@ mod tests {
     async fn test_color_manager_from_settings() {
         let settings = Settings::new().await.unwrap();
         let manager = ColorManager::from_settings(&settings);
-        
+
         // Should use default colors when no settings are configured
         assert_eq!(manager.success(), Color::Green);
         assert_eq!(manager.error(), Color::Red);

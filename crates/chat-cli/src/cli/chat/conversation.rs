@@ -20,10 +20,9 @@ use tracing::{
     warn,
 };
 
-use super::colors::ColorManager;
-
 use super::cli::compact::CompactStrategy;
 use super::cli::model::context_window_tokens;
+use super::colors::ColorManager;
 use super::consts::{
     DUMMY_TOOL_NAME,
     MAX_CONVERSATION_STATE_HISTORY_LEN,

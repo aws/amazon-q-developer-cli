@@ -13,8 +13,6 @@ use crossterm::{
 };
 use dialoguer::Select;
 use syntect::easy::HighlightLines;
-
-use crate::cli::chat::colors::ColorManager;
 use syntect::highlighting::{
     Style,
     ThemeSet,
@@ -30,6 +28,7 @@ use crate::cli::agent::{
     Agents,
     create_agent,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -148,8 +147,14 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent =
-                    Agent::load(os, &path_with_file_name, &mut None, session.conversation.mcp_enabled, &session.colors).await;
+                let new_agent = Agent::load(
+                    os,
+                    &path_with_file_name,
+                    &mut None,
+                    session.conversation.mcp_enabled,
+                    &session.colors,
+                )
+                .await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);
@@ -236,7 +241,10 @@ impl AgentSubcommand {
             Self::Swap { name } => {
                 if let Some(name) = name {
                     let colors = ColorManager::from_settings(&os.database.settings);
-                    session.conversation.swap_agent(os, &mut session.stderr, &name, &colors).await?;
+                    session
+                        .conversation
+                        .swap_agent(os, &mut session.stderr, &name, &colors)
+                        .await?;
                 } else {
                     let labels = session
                         .conversation
@@ -274,7 +282,10 @@ impl AgentSubcommand {
 
                     if let Some(name) = name {
                         let colors = ColorManager::from_settings(&os.database.settings);
-                        session.conversation.swap_agent(os, &mut session.stderr, &name, &colors).await?;
+                        session
+                            .conversation
+                            .swap_agent(os, &mut session.stderr, &name, &colors)
+                            .await?;
                     }
                 }
             },

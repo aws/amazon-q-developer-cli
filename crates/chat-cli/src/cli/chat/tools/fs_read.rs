@@ -2,8 +2,10 @@ use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::{
     Result,
     bail,
@@ -13,8 +15,6 @@ use serde::{
     Deserialize,
     Serialize,
 };
-
-use super::super::colors::ColorManager;
 use syntect::util::LinesWithEndings;
 use tracing::{
     debug,
@@ -22,6 +22,7 @@ use tracing::{
     warn,
 };
 
+use super::super::colors::ColorManager;
 use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,

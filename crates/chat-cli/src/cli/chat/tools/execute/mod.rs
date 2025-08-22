@@ -1,7 +1,9 @@
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::Result;
 use regex::Regex;
 use serde::Deserialize;
@@ -22,8 +24,11 @@ use crate::cli::chat::tools::{
 use crate::cli::chat::util::truncate_safe;
 use crate::database::settings::Settings;
 use crate::os::Os;
-use crate::{with_success, with_color};
 use crate::util::pattern_matching::matches_any_pattern;
+use crate::{
+    with_color,
+    with_success,
+};
 
 // Platform-specific modules
 #[cfg(windows)]

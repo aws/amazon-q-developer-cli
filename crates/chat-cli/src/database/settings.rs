@@ -48,10 +48,7 @@ pub enum Setting {
     ChatDisableAutoCompaction,
     ChatEnableHistoryHints,
     ChatTheme,
-    Color {
-        theme: ThemeName,
-        category: ColorCategory,
-    },
+    Color { theme: ThemeName, category: ColorCategory },
 }
 
 /// Semantic color categories for consistent theming
@@ -99,17 +96,21 @@ pub enum ThemeName {
     Nord,
 }
 
-impl ThemeName {
-    pub fn from_str(s: &str) -> Option<Self> {
+impl std::str::FromStr for ThemeName {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
-            "default" => Some(Self::Default),
-            "high-contrast" | "high_contrast" => Some(Self::HighContrast),
-            "light" => Some(Self::Light),
-            "nord" => Some(Self::Nord),
-            _ => None,
+            "default" => Ok(Self::Default),
+            "high-contrast" | "high_contrast" => Ok(Self::HighContrast),
+            "light" => Ok(Self::Light),
+            "nord" => Ok(Self::Nord),
+            _ => Err(()),
         }
     }
+}
 
+impl ThemeName {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Default => "default",
@@ -214,28 +215,68 @@ impl ColorTheme {
     pub fn from_settings(settings: &Settings) -> Self {
         // First check if a predefined theme is selected
         if let Some(theme_name) = settings.get_string(Setting::ChatTheme) {
-            if let Some(theme) = ThemeName::from_str(&theme_name) {
+            if let Ok(theme) = theme_name.parse() {
                 let base_theme = match theme {
                     ThemeName::Default => Self::default_theme(),
                     ThemeName::HighContrast => Self::high_contrast_theme(),
                     ThemeName::Light => Self::light_theme(),
                     ThemeName::Nord => Self::nord_theme(),
                 };
-                
+
                 // Apply any theme-specific color overrides
                 return Self {
-                    success: settings.get_color(Setting::Color { theme, category: ColorCategory::Success }).unwrap_or(base_theme.success),
-                    error: settings.get_color(Setting::Color { theme, category: ColorCategory::Error }).unwrap_or(base_theme.error),
-                    warning: settings.get_color(Setting::Color { theme, category: ColorCategory::Warning }).unwrap_or(base_theme.warning),
-                    info: settings.get_color(Setting::Color { theme, category: ColorCategory::Info }).unwrap_or(base_theme.info),
-                    secondary: settings.get_color(Setting::Color { theme, category: ColorCategory::Secondary }).unwrap_or(base_theme.secondary),
-                    primary: settings.get_color(Setting::Color { theme, category: ColorCategory::Primary }).unwrap_or(base_theme.primary),
-                    action: settings.get_color(Setting::Color { theme, category: ColorCategory::Action }).unwrap_or(base_theme.action),
-                    data: settings.get_color(Setting::Color { theme, category: ColorCategory::Data }).unwrap_or(base_theme.data),
+                    success: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Success,
+                        })
+                        .unwrap_or(base_theme.success),
+                    error: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Error,
+                        })
+                        .unwrap_or(base_theme.error),
+                    warning: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Warning,
+                        })
+                        .unwrap_or(base_theme.warning),
+                    info: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Info,
+                        })
+                        .unwrap_or(base_theme.info),
+                    secondary: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Secondary,
+                        })
+                        .unwrap_or(base_theme.secondary),
+                    primary: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Primary,
+                        })
+                        .unwrap_or(base_theme.primary),
+                    action: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Action,
+                        })
+                        .unwrap_or(base_theme.action),
+                    data: settings
+                        .get_color(Setting::Color {
+                            theme,
+                            category: ColorCategory::Data,
+                        })
+                        .unwrap_or(base_theme.data),
                 };
             }
         }
-        
+
         // No theme set, use default theme
         Self::default_theme()
     }
@@ -272,9 +313,7 @@ impl Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction".into(),
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints".into(),
             Self::ChatTheme => "chat.theme".into(),
-            Self::Color { theme, category } => {
-                format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into()
-            }
+            Self::Color { theme, category } => format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into(),
         }
     }
 }
@@ -314,7 +353,7 @@ impl AsRef<str> for Setting {
                 // For dynamic strings, we can't return &str
                 // This is a limitation - callers should use as_string() instead
                 "chat.theme.default"
-            }
+            },
         }
     }
 }
@@ -361,15 +400,13 @@ impl TryFrom<&str> for Setting {
             _ => {
                 // Check for theme color pattern: chat.theme.{theme}.{color}
                 static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
-                let regex = THEME_COLOR_REGEX.get_or_init(|| {
-                    Regex::new(r"^chat\.theme\.([^.]+)\.([^.]+)$").unwrap()
-                });
-                
+                let regex = THEME_COLOR_REGEX.get_or_init(|| Regex::new(r"^chat\.theme\.([^.]+)\.([^.]+)$").unwrap());
+
                 if let Some(captures) = regex.captures(value) {
                     let theme_str = captures.get(1).unwrap().as_str();
                     let category_str = captures.get(2).unwrap().as_str();
-                    
-                    if let Some(theme) = ThemeName::from_str(theme_str) {
+
+                    if let Ok(theme) = theme_str.parse() {
                         let category = match category_str {
                             "success" => ColorCategory::Success,
                             "error" => ColorCategory::Error,
@@ -381,13 +418,13 @@ impl TryFrom<&str> for Setting {
                             "data" => ColorCategory::Data,
                             _ => return Err(DatabaseError::InvalidSetting(value.to_string())),
                         };
-                        
+
                         return Ok(Self::Color { theme, category });
                     }
                 }
-                
+
                 Err(DatabaseError::InvalidSetting(value.to_string()))
-            }
+            },
         }
     }
 }
@@ -433,8 +470,6 @@ impl Settings {
         self.0.get(key.as_ref())
     }
 
-
-
     pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
         let key_str = match &key {
             Setting::Color { .. } => key.as_string().to_string(),
@@ -475,13 +510,11 @@ impl Settings {
         match key {
             Setting::Color { theme, category } => {
                 let key_str = format!("chat.theme.{}.{}", theme.as_str(), category.as_str());
-                self.0.get(&key_str).and_then(|value| {
-                    value.as_str().and_then(|color_str| parse_color(color_str))
-                })
-            }
-            _ => {
-                self.get_string(key).and_then(|color_str| parse_color(&color_str))
-            }
+                self.0
+                    .get(&key_str)
+                    .and_then(|value| value.as_str().and_then(parse_color))
+            },
+            _ => self.get_string(key).and_then(|color_str| parse_color(&color_str)),
         }
     }
 
@@ -497,10 +530,8 @@ impl Settings {
 
     /// Get the current theme name
     pub fn get_theme(&self) -> Option<ThemeName> {
-        self.get_string(Setting::ChatTheme)
-            .and_then(|s| ThemeName::from_str(&s))
+        self.get_string(Setting::ChatTheme).and_then(|s| s.parse().ok())
     }
-
 
     pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
         if cfg!(test) {
@@ -606,19 +637,19 @@ mod test {
 
     #[tokio::test]
     async fn test_theme_name_parsing() {
-        assert_eq!(ThemeName::from_str("default"), Some(ThemeName::Default));
-        assert_eq!(ThemeName::from_str("Default"), Some(ThemeName::Default));
-        assert_eq!(ThemeName::from_str("DEFAULT"), Some(ThemeName::Default));
-        
-        assert_eq!(ThemeName::from_str("high-contrast"), Some(ThemeName::HighContrast));
-        assert_eq!(ThemeName::from_str("high_contrast"), Some(ThemeName::HighContrast));
-        assert_eq!(ThemeName::from_str("HIGH-CONTRAST"), Some(ThemeName::HighContrast));
-        
-        assert_eq!(ThemeName::from_str("light"), Some(ThemeName::Light));
-        assert_eq!(ThemeName::from_str("Light"), Some(ThemeName::Light));
-        
-        assert_eq!(ThemeName::from_str("invalid"), None);
-        assert_eq!(ThemeName::from_str(""), None);
+        assert_eq!("default".parse(), Ok(ThemeName::Default));
+        assert_eq!("Default".parse(), Ok(ThemeName::Default));
+        assert_eq!("DEFAULT".parse(), Ok(ThemeName::Default));
+
+        assert_eq!("high-contrast".parse(), Ok(ThemeName::HighContrast));
+        assert_eq!("high_contrast".parse(), Ok(ThemeName::HighContrast));
+        assert_eq!("HIGH-CONTRAST".parse(), Ok(ThemeName::HighContrast));
+
+        assert_eq!("light".parse(), Ok(ThemeName::Light));
+        assert_eq!("Light".parse(), Ok(ThemeName::Light));
+
+        assert_eq!("invalid".parse::<ThemeName>(), Err(()));
+        assert_eq!("".parse::<ThemeName>(), Err(()));
     }
 
     #[tokio::test]
@@ -631,17 +662,17 @@ mod test {
     #[tokio::test]
     async fn test_color_theme_from_settings_with_theme_name() {
         let mut settings = Settings::new().await.unwrap();
-        
+
         // Test default theme selection
         settings.set(Setting::ChatTheme, "default").await.unwrap();
         let theme = settings.get_color_theme();
         assert_eq!(theme, ColorTheme::default_theme());
-        
+
         // Test high contrast theme selection
         settings.set(Setting::ChatTheme, "high-contrast").await.unwrap();
         let theme = settings.get_color_theme();
         assert_eq!(theme, ColorTheme::high_contrast_theme());
-        
+
         // Test light theme selection
         settings.set(Setting::ChatTheme, "light").await.unwrap();
         let theme = settings.get_color_theme();
@@ -651,20 +682,29 @@ mod test {
     #[tokio::test]
     async fn test_color_theme_from_settings_with_overrides() {
         let mut settings = Settings::new().await.unwrap();
-        
+
         // Set a base theme
         settings.set(Setting::ChatTheme, "default").await.unwrap();
-        
+
         // Override the primary color using theme-specific setting
-        settings.set(Setting::Color { theme: ThemeName::Default, category: ColorCategory::Primary }, "blue").await.unwrap();
-        
+        settings
+            .set(
+                Setting::Color {
+                    theme: ThemeName::Default,
+                    category: ColorCategory::Primary,
+                },
+                "blue",
+            )
+            .await
+            .unwrap();
+
         let theme = settings.get_color_theme();
         let default_theme = ColorTheme::default_theme();
-        
+
         // Should use the base theme for most colors
         assert_eq!(theme.success, default_theme.success);
         assert_eq!(theme.error, default_theme.error);
-        
+
         // But use the override for primary
         assert_eq!(theme.primary, Color::Blue);
     }
@@ -672,11 +712,11 @@ mod test {
     #[tokio::test]
     async fn test_color_theme_from_settings_fallback() {
         let settings = Settings::new().await.unwrap();
-        
+
         // No theme set, should use default theme
         let theme = settings.get_color_theme();
         let default_theme = ColorTheme::default_theme();
-        
+
         // Should match default theme exactly
         assert_eq!(theme, default_theme);
     }
@@ -684,16 +724,19 @@ mod test {
     #[tokio::test]
     async fn test_theme_helper_methods() {
         let mut settings = Settings::new().await.unwrap();
-        
+
         // Test setting theme by name
         settings.set_theme(ThemeName::HighContrast).await.unwrap();
         assert_eq!(settings.get_theme(), Some(ThemeName::HighContrast));
-        assert_eq!(settings.get_string(Setting::ChatTheme), Some("high-contrast".to_string()));
-        
+        assert_eq!(
+            settings.get_string(Setting::ChatTheme),
+            Some("high-contrast".to_string())
+        );
+
         // Test getting theme
         settings.set(Setting::ChatTheme, "light").await.unwrap();
         assert_eq!(settings.get_theme(), Some(ThemeName::Light));
-        
+
         // Test clearing theme
         settings.remove(Setting::ChatTheme).await.unwrap();
         assert_eq!(settings.get_theme(), None);
@@ -737,13 +780,13 @@ fn parse_color(color_str: &str) -> Option<Color> {
                 }
             } else if color_str.starts_with('#') && color_str.len() == 7 {
                 if let Ok(hex) = u32::from_str_radix(&color_str[1..], 16) {
-                    let r = ((hex >> 16) & 0xFF) as u8;
-                    let g = ((hex >> 8) & 0xFF) as u8;
-                    let b = (hex & 0xFF) as u8;
+                    let r = ((hex >> 16) & 0xff) as u8;
+                    let g = ((hex >> 8) & 0xff) as u8;
+                    let b = (hex & 0xff) as u8;
                     return Some(Color::Rgb { r, g, b });
                 }
             }
             None
-        }
+        },
     }
 }

@@ -6,8 +6,10 @@ use std::path::{
 };
 use std::sync::LazyLock;
 
-use crossterm::queue;
-use crossterm::style;
+use crossterm::{
+    queue,
+    style,
+};
 use eyre::{
     ContextCompat as _,
     Result,
@@ -29,9 +31,6 @@ use tracing::{
     warn,
 };
 
-use crate::cli::chat::colors::ColorManager;
-use crate::{with_success, with_color};
-
 use super::{
     InvokeOutput,
     format_path,
@@ -42,10 +41,15 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 use crate::util::directories;
 use crate::util::pattern_matching::matches_any_pattern;
+use crate::{
+    with_color,
+    with_success,
+};
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
@@ -119,10 +123,7 @@ impl FsWrite {
                 } else {
                     "Creating: "
                 };
-                queue!(
-                    output,
-                    style::Print(invoke_description),
-                )?;
+                queue!(output, style::Print(invoke_description),)?;
                 with_success!(output, &color_manager, "{}", format_path(cwd, &path))?;
                 queue!(output, style::Print("\n"))?;
 
@@ -251,7 +252,7 @@ impl FsWrite {
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
         let color_manager = ColorManager::from_settings(&os.database.settings);
-        
+
         self.print_relative_path(os, output)?;
         match self {
             FsWrite::Create { path, .. } => {

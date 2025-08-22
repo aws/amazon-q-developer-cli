@@ -112,10 +112,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             .interact_on_opt(&dialoguer::console::Term::stdout())
         {
             Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(colors.action())
-                );
+                let _ = crossterm::execute!(std::io::stdout(), crossterm::style::SetForegroundColor(colors.action()));
                 sel
             },
             // Ctrl‑C -> Err(Interrupted)

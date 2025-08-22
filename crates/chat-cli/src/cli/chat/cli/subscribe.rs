@@ -1,7 +1,5 @@
 use clap::Args;
-use crossterm::style::{
-    Color,
-};
+use crossterm::style::Color;
 use crossterm::{
     cursor,
     execute,

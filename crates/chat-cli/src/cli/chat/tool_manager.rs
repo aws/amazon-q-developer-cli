@@ -611,7 +611,13 @@ impl ToolManager {
     /// - Swapping the old with the new (the old would be dropped after we exit the scope of this
     ///   function)
     /// - Calling load tools
-    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent, colors: &ColorManager) -> eyre::Result<()> {
+    pub async fn swap_agent(
+        &mut self,
+        os: &mut Os,
+        output: &mut impl Write,
+        agent: &Agent,
+        colors: &ColorManager,
+    ) -> eyre::Result<()> {
         self.clients.clear();
 
         let mut agent_lock = self.agent.lock().await;
@@ -1456,11 +1462,20 @@ fn spawn_orchestrator_task(
                             let colors = ColorManager::default();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                             if let Err(e) = &process_result {
-                                let _ =
-                                    queue_warn_message(server_name.as_str(), e, time_taken.as_str(), &mut buf_writer, &colors);
+                                let _ = queue_warn_message(
+                                    server_name.as_str(),
+                                    e,
+                                    time_taken.as_str(),
+                                    &mut buf_writer,
+                                    &colors,
+                                );
                             } else {
-                                let _ =
-                                    queue_success_message(server_name.as_str(), time_taken.as_str(), &mut buf_writer, &colors);
+                                let _ = queue_success_message(
+                                    server_name.as_str(),
+                                    time_taken.as_str(),
+                                    &mut buf_writer,
+                                    &colors,
+                                );
                             }
                             let _ = buf_writer.flush();
                             drop(buf_writer);
@@ -1485,7 +1500,8 @@ fn spawn_orchestrator_task(
                             // Maintain a record of the server load:
                             let colors = ColorManager::default();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                            let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer, &colors);
+                            let _ =
+                                queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer, &colors);
                             let _ = buf_writer.flush();
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1803,7 +1819,12 @@ fn is_process_running(pid: u32) -> bool {
     }
 }
 
-fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write, colors: &ColorManager) -> eyre::Result<()> {
+fn queue_success_message(
+    name: &str,
+    time_taken: &str,
+    output: &mut impl Write,
+    colors: &ColorManager,
+) -> eyre::Result<()> {
     Ok(queue!(
         output,
         style::SetForegroundColor(colors.success()),
@@ -1895,7 +1916,13 @@ fn queue_failure_message(
     )?)
 }
 
-fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write, colors: &ColorManager) -> eyre::Result<()> {
+fn queue_warn_message(
+    name: &str,
+    msg: &eyre::Report,
+    time: &str,
+    output: &mut impl Write,
+    colors: &ColorManager,
+) -> eyre::Result<()> {
     Ok(queue!(
         output,
         style::SetForegroundColor(colors.warning()),

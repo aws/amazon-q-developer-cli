@@ -134,7 +134,6 @@ use crate::api_client::{
     self,
     ApiClientError,
 };
-use crate::cli::chat::colors::ColorManager;
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
@@ -144,6 +143,7 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -1195,7 +1195,8 @@ impl ChatSession {
                 style::SetForegroundColor(self.colors.primary()),
                 style::Print(welcome_text),
                 style::SetForegroundColor(Color::Reset),
-                style::Print("\n\n"),)?;
+                style::Print("\n\n"),
+            )?;
 
             let tip = ROTATING_TIPS[usize::try_from(rand::random::<u32>()).unwrap_or(0) % ROTATING_TIPS.len()];
             if is_small_screen {
@@ -1225,10 +1226,7 @@ impl ChatSession {
                 }),
                 style::Print("\n"),
                 style::SetForegroundColor(self.colors.secondary()),
-                style::Print(
-                    "━"
-                        .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                ),
+                style::Print("━".repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })),
                 style::SetForegroundColor(Color::Reset)
             )?;
             execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
@@ -2603,10 +2601,7 @@ impl ChatSession {
         queue!(
             self.stdout,
             style::SetForegroundColor(self.colors.action()),
-            style::Print(format!(
-                "🛠️  Using tool: {}",
-                tool_use.tool.display_name()
-            )),
+            style::Print(format!("🛠️  Using tool: {}", tool_use.tool.display_name())),
             style::SetForegroundColor(if trusted { self.colors.success() } else { Color::Reset }),
             style::Print(if trusted { " (trusted)" } else { "" }),
             style::SetForegroundColor(Color::Reset)
