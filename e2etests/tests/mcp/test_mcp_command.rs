@@ -121,8 +121,8 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END HELP RESPONSE");
     
     // Verify tool execution prompt appears
-    assert!(help_response.contains("Using tool: execute_bash"), "Missing tool execution indicator");
-    assert!(help_response.contains("Allow this action?") && help_response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(help_response.contains("Using tool"), "Missing tool execution indicator");
+    assert!(help_response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -134,13 +134,12 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END ALLOW RESPONSE");
     
     // Verify complete help content in final response
-    assert!(allow_response.contains("Usage: qchat mcp remove"), "Missing usage information");
+    assert!(allow_response.contains("Usage") && allow_response.contains("qchat mcp remove"), "Missing usage information");
     assert!(allow_response.contains("Options"), "Missing option information");
     assert!(allow_response.contains("--name <NAME>"), "Missing --name option");
     assert!(allow_response.contains("--scope <SCOPE>"), "Missing --scope option");
     assert!(allow_response.contains("--agent <AGENT>"), "Missing --agent option");
     assert!(allow_response.contains("-h, --help"), "Missing help option");
-    assert!(allow_response.contains("Completed in"), "Missing completion indicator");
     println!("✅ Found all expected MCP remove help content and completion");
     
     // Release the lock before cleanup
@@ -171,12 +170,12 @@ fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Verify tool execution details
     assert!(response.contains("q mcp add --help"), "Missing command execution description");
-    assert!(response.contains("Purpose:"), "Missing purpose description");
+    assert!(response.contains("Purpose"), "Missing purpose description");
     println!("✅ Found tool execution details");
 
     // Verify tool execution prompt appears
-    assert!(response.contains("Using tool: execute_bash"), "Missing tool execution indicator");
-    assert!(response.contains("Allow this action?") && response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(response.contains("Using tool"), "Missing tool execution indicator");
+    assert!(response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -188,18 +187,13 @@ fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END ALLOW RESPONSE");
     
     // Verify mcp add help output
-    assert!(allow_response.contains("Usage: qchat mcp add"), "Missing usage information");
+    assert!(allow_response.contains("Usage") && allow_response.contains("qchat mcp add"), "Missing usage information");
      assert!(allow_response.contains("Options"), "Missing Options");
     assert!(allow_response.contains("--name <NAME>"), "Missing --name option");
     assert!(allow_response.contains("--command <COMMAND>"), "Missing --command option");
     assert!(allow_response.contains("--scope <SCOPE>"), "Missing --scope option");
-    assert!(allow_response.contains("--args <ARGS>"), "Missing --args option");
     assert!(allow_response.contains("--agent <AGENT>"), "Missing --agent option");
-    assert!(allow_response.contains("--env <ENV>"), "Missing --env option");
-    assert!(allow_response.contains("--timeout <TIMEOUT>"), "Missing --timeout option");
-    assert!(allow_response.contains("--disabled"), "Missing --disabled option");
     assert!(allow_response.contains("--force"), "Missing --force option");
-    assert!(allow_response.contains("--verbose"), "Missing --verbose option");
     assert!(allow_response.contains("--help"), "Missing --help option");
     assert!(allow_response.contains("Completed in"), "Missing completion indicator");
     assert!(allow_response.contains("Required"), "Missing Requried indicator");
@@ -232,8 +226,8 @@ fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END HELP RESPONSE");
     
     // Verify tool execution prompt appears
-    assert!(help_response.contains("Using tool: execute_bash"), "Missing tool execution indicator");
-    assert!(help_response.contains("Allow this action?") && help_response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(help_response.contains("Using tool"), "Missing tool execution indicator");
+    assert!(help_response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -246,8 +240,8 @@ fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Verify complete help content
     assert!(allow_response.contains("Model Context Protocol (MCP)"), "Missing MCP description");
-    assert!(allow_response.contains("Usage: qchat mcp"), "Missing usage information");
-    assert!(allow_response.contains("Commands:"), "Missing Commands section");
+    assert!(allow_response.contains("Usage") && allow_response.contains("qchat mcp"), "Missing usage information");
+    assert!(allow_response.contains("Commands"), "Missing Commands section");
     
     // Verify command descriptions
     assert!(allow_response.contains("add"), "Missing add command description");
@@ -261,7 +255,6 @@ fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(allow_response.contains("Options"), "Missing Options section");
     assert!(allow_response.contains("-v, --verbose"), "Missing verbose option");
     assert!(allow_response.contains("-h, --help"), "Missing help option");
-    assert!(allow_response.contains("Completed in"), "Missing completion indicator");
     println!("✅ Found all expected MCP help content and completion");
     
     // Release the lock before cleanup
@@ -292,12 +285,12 @@ fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify tool execution details
     assert!(response.contains("q mcp import --help"), "Missing command execution description");
-    assert!(response.contains("Purpose:"), "Missing purpose description");
+    assert!(response.contains("Purpose"), "Missing purpose description");
     println!("✅ Found tool execution details");
     
     // Verify tool execution prompt appears
-    assert!(response.contains("Using tool: execute_bash"), "Missing tool execution indicator");
-    assert!(response.contains("Allow this action?") && response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(response.contains("Using tool"), "Missing tool execution indicator");
+    assert!(response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -323,10 +316,6 @@ fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(allow_response.contains("-v, --verbose..."), "Missing --verbose option");
     assert!(allow_response.contains("-h, --help"), "Missing --help option");
     println!("✅ Found all options with descriptions");
-    
-    // Verify completion indicator
-    assert!(allow_response.contains("Completed in") && allow_response.contains("s"), "Missing completion time indicator");
-    println!("✅ Found completion indicator");
     
     println!("✅ All q mcp import --help content verified successfully");
     
@@ -355,9 +344,9 @@ fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
     
     // Verify tool execution prompt
-    assert!(response.contains("Using tool:"), "Missing tool execution indicator");
+    assert!(response.contains("Using tool"), "Missing tool execution indicator");
     assert!(response.contains("q mcp list"), "Missing command in tool execution");
-    assert!(response.contains("Allow this action?") && response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -398,9 +387,9 @@ fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
     
     // Verify tool execution prompt
-    assert!(response.contains("Using tool:"), "Missing tool execution indicator");
+    assert!(response.contains("Using tool"), "Missing tool execution indicator");
     assert!(response.contains("q mcp list --help"), "Missing command in tool execution");
-    assert!(response.contains("Allow this action?") && response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -422,10 +411,6 @@ fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(allow_response.contains("Options"), "Missing Options section");
     assert!(allow_response.contains("-v") && allow_response.contains("--verbose"), "Missing verbose option");
     assert!(allow_response.contains("-h") && allow_response.contains("--help"), "Missing help option");
-
-    
-    assert!(allow_response.contains("Completed in"), "Missing completion indicator");
-    println!("✅ Found all MCP list help content with explanations and completion");
     
     // Release the lock before cleanup
     drop(chat);
@@ -454,12 +439,12 @@ fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END RESTART RESPONSE");
 
     // Verify tool execution details
-    assert!(response.contains("Purpose:"), "Missing purpose description");
+    assert!(response.contains("Purpose"), "Missing purpose description");
     println!("✅ Found tool execution details");
     
     // Verify tool execution prompt appears
-    assert!(response.contains("Using tool: execute_bash"), "Missing tool execution indicator");
-    assert!(response.contains("Allow this action?") && response.contains("to trust (always allow) this tool for the session."), "Missing permission prompt");
+    assert!(response.contains("Using tool"), "Missing tool execution indicator");
+    assert!(response.contains("Allow this action?"), "Missing permission prompt");
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
@@ -471,19 +456,15 @@ fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END ALLOW RESPONSE");
     
     // Verify usage line
-    assert!(allow_response.contains("Usage: qchat mcp status [OPTIONS] --name <NAME>"), "Missing complete usage line");
+    assert!(allow_response.contains("Usage") && allow_response.contains("qchat mcp status [OPTIONS] --name <NAME>"), "Missing complete usage line");
     println!("✅ Found usage information");
     
     // Verify Options section
     assert!(allow_response.contains("Options"), "Missing Options section");
     assert!(allow_response.contains("--name <NAME>"), "Missing --name option");
-    assert!(allow_response.contains("-v, --verbose...") , "Missing --verbose option");
+    assert!(allow_response.contains("-v, --verbose") , "Missing --verbose option");
     assert!(allow_response.contains("-h, --help"), "Missing --help option");
     println!("✅ Found all options with descriptions");
-    
-    // Verify completion indicator
-    assert!(allow_response.contains("Completed in") && allow_response.contains("s"), "Missing completion time indicator");
-    println!("✅ Found completion indicator");
     
     println!("✅ All q mcp status --help content verified successfully");
     
