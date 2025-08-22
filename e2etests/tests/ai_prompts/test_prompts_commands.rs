@@ -17,7 +17,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 
 #[test]
-#[cfg(feature = "ai_prompts")]
+#[cfg(all(feature = "ai_prompts", feature = "regression"))]
 fn test_prompts_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /prompts command...");
     
@@ -56,7 +56,7 @@ fn test_prompts_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "ai_prompts")]
+#[cfg(all(feature = "ai_prompts", feature = "regression"))]
 fn test_prompts_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /prompts --help command...");
     
@@ -117,7 +117,7 @@ fn test_prompts_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "ai_prompts")]
+#[cfg(all(feature = "ai_prompts", feature = "regression"))]
 fn test_prompts_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /prompts list command...");
     

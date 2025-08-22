@@ -15,7 +15,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "compact")]
+#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
 fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /compact command...");
     
@@ -50,7 +50,7 @@ fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "compact")]
+#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
 fn test_compact_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /compact --help command...");
     

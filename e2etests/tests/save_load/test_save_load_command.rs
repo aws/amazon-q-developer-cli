@@ -37,7 +37,7 @@ impl<'a> Drop for FileCleanup<'a> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save command...");
     
@@ -82,7 +82,7 @@ fn test_save_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_command_argument_validation() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save command...");
     
@@ -120,7 +120,7 @@ fn test_save_command_argument_validation() -> Result<(), Box<dyn std::error::Err
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save --help command...");
     
@@ -166,7 +166,7 @@ fn test_save_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save -h command...");
     
@@ -211,7 +211,7 @@ fn test_save_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save --force command...");
     
@@ -269,7 +269,7 @@ fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /save -f command...");
     
@@ -327,7 +327,7 @@ fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_load_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /load --help command...");
     
@@ -370,7 +370,7 @@ fn test_load_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_load_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /load -h command...");
     
@@ -413,7 +413,7 @@ fn test_load_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /load command...");
     
@@ -467,7 +467,7 @@ fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "save_load")]
+#[cfg(all(feature = "save_load", feature = "regression"))]
 fn test_load_command_argument_validation() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /load command...");
     

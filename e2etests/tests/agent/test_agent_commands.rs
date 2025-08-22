@@ -21,7 +21,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent command...");
     
@@ -72,7 +72,7 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent create --name <agent_name> command...");
     
@@ -139,7 +139,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent create without required arguments...");
     
@@ -188,7 +188,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent help...");
     
@@ -243,7 +243,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent invalidcommand...");
     
@@ -280,7 +280,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent list command...");
     
@@ -351,7 +351,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
 // }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent set-default with valid arguments...");
     
@@ -390,7 +390,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "agent")]
+#[cfg(all(feature = "agent", feature = "regression"))]
 fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /agent set-default without required arguments...");
     

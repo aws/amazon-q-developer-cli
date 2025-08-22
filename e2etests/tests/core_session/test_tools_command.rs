@@ -22,7 +22,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools command...");
     
@@ -77,7 +77,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools --help command...");
     
@@ -132,7 +132,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools trust-all command...");
     
@@ -214,7 +214,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools trust-all --help command...");
   
@@ -253,7 +253,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools reset --help command...");
     
@@ -292,7 +292,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools trust command...");
   
@@ -370,7 +370,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools trust --help command...");
     
@@ -413,7 +413,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools untrust --help command...");
 
@@ -456,7 +456,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "tools")]
+#[cfg(all(any(feature = "tools", feature = "core_session"), feature = "regression"))]
 fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /tools schema --help command...");
     

@@ -2,7 +2,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
-#[cfg(feature = "core_session")]
+#[cfg(all(feature = "core_session", feature = "regression"))]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /help command...");
     

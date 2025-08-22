@@ -77,7 +77,7 @@ run_category() {
     
     if [ "$QUIET_MODE" = false ]; then
         # Quiet mode - show individual test results in real-time
-        cargo test --tests --features "$category" -- --test-threads=1 2>&1 | while IFS= read -r line; do
+        cargo test --tests --features "$category" --features "regression" -- --test-threads=1 2>&1 | while IFS= read -r line; do
             if echo "$line" | grep -q "test .* \.\.\. ok$"; then
                 test_name=$(echo "$line" | sed 's/test \(.*\) \.\.\. ok/\1/')
                 echo "   ✅ $test_name"
@@ -102,7 +102,7 @@ run_category() {
         fi
     else
         # Verbose mode - show full output with real-time test results
-        cargo test --tests --features "$category" -- --nocapture --test-threads=1 2>&1 | while IFS= read -r line; do
+        cargo test --tests --features "$category" --features "regression" -- --nocapture --test-threads=1 2>&1 | while IFS= read -r line; do
             echo "$line"
             if echo "$line" | grep -q "test .* \.\.\. ok$"; then
                 test_name=$(echo "$line" | sed 's/test \(.*\) \.\.\. ok/\1/')

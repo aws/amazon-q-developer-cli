@@ -16,7 +16,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 
 #[test]
-#[cfg(feature = "subscribe")]
+#[cfg(all(any(feature = "subscribe", feature = "integration"), feature = "regression"))]
 fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe command...");
 
@@ -45,7 +45,7 @@ fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 #[test]
-#[cfg(feature = "subscribe")]
+#[cfg(all(any(feature = "subscribe", feature = "integration"), feature = "regression"))]
 fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe --help command...");
 

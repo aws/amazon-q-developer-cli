@@ -15,7 +15,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "hooks")]
+#[cfg(all(any(feature = "hooks", feature = "integration"), feature = "regression"))]
 fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /hooks command...");
     
@@ -50,7 +50,7 @@ fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "hooks")]
+#[cfg(all(any(feature = "hooks", feature = "integration"), feature = "regression"))]
 fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /hooks --help command...");
     

@@ -15,7 +15,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "usage")]
+#[cfg(all(any(feature = "usage", feature = "session_mgmt"), feature = "regression"))]
 fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /usage command...");
     
@@ -74,7 +74,7 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "usage")]
+#[cfg(all(any(feature = "usage", feature = "session_mgmt"), feature = "regression"))]
 fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /usage --help command...");
     

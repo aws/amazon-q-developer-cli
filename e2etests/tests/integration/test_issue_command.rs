@@ -16,7 +16,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(feature = "issue_reporting")]
+#[cfg(all(any(feature = "issue_reporting", feature = "integration"), feature = "regression"))]
 fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /issue command with bug report...");
     
@@ -46,7 +46,7 @@ fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "issue_reporting")]
+#[cfg(all(any(feature = "issue_reporting", feature = "integration"), feature = "regression"))]
 fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /issue --force command with critical bug...");
     
@@ -76,7 +76,7 @@ fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(feature = "issue_reporting")]
+#[cfg(all(any(feature = "issue_reporting", feature = "integration"), feature = "regression"))]
 fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /issue --help command...");
      
