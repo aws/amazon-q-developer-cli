@@ -353,6 +353,7 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_mcp_server_init(
         &self,
         database: &Database,
@@ -360,12 +361,18 @@ impl TelemetryThread {
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
             init_failure_reason,
             number_of_tools,
+            all_tool_names,
+            loaded_tool_names,
+            all_tools_count,
         });
         set_event_metadata(database, &mut telemetry_event).await;
 

@@ -416,7 +416,14 @@ impl StatusArgs {
 async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let agents = Agents::load(os, None, true, &mut stderr).await.0;
+    let mcp_enabled = match os.client.is_mcp_enabled().await {
+        Ok(enabled) => enabled,
+        Err(err) => {
+            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+            true
+        },
+    };
+    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
     let global_path = directories::chat_global_agent_path(os)?;
     for (_, agent) in agents.agents {
         let scope = if agent

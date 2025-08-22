@@ -19,21 +19,30 @@ pub enum UpdateEventMessage {
     ToolsListResult {
         server_name: String,
         result: eyre::Result<ToolsListResult>,
+        pid: Option<u32>,
     },
     PromptsListResult {
         server_name: String,
         result: eyre::Result<PromptsListResult>,
+        pid: Option<u32>,
     },
     ResourcesListResult {
         server_name: String,
         result: eyre::Result<ResourcesListResult>,
+        pid: Option<u32>,
     },
     ResourceTemplatesListResult {
         server_name: String,
         result: eyre::Result<ResourceTemplatesListResult>,
+        pid: Option<u32>,
     },
     InitStart {
         server_name: String,
+        pid: Option<u32>,
+    },
+    Deinit {
+        server_name: String,
+        pid: Option<u32>,
     },
 }
 
@@ -55,6 +64,7 @@ impl ServerMessengerBuilder {
         ServerMessenger {
             server_name,
             update_event_sender: self.update_event_sender.clone(),
+            pid: None,
         }
     }
 }
@@ -63,6 +73,7 @@ impl ServerMessengerBuilder {
 pub struct ServerMessenger {
     pub server_name: String,
     pub update_event_sender: Sender<UpdateEventMessage>,
+    pub pid: Option<u32>,
 }
 
 #[async_trait::async_trait]
@@ -73,6 +84,7 @@ impl Messenger for ServerMessenger {
             .send(UpdateEventMessage::ToolsListResult {
                 server_name: self.server_name.clone(),
                 result,
+                pid: self.pid,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
@@ -84,6 +96,7 @@ impl Messenger for ServerMessenger {
             .send(UpdateEventMessage::PromptsListResult {
                 server_name: self.server_name.clone(),
                 result,
+                pid: self.pid,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
@@ -98,6 +111,7 @@ impl Messenger for ServerMessenger {
             .send(UpdateEventMessage::ResourcesListResult {
                 server_name: self.server_name.clone(),
                 result,
+                pid: self.pid,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
@@ -112,6 +126,7 @@ impl Messenger for ServerMessenger {
             .send(UpdateEventMessage::ResourceTemplatesListResult {
                 server_name: self.server_name.clone(),
                 result,
+                pid: self.pid,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
@@ -122,9 +137,19 @@ impl Messenger for ServerMessenger {
             .update_event_sender
             .send(UpdateEventMessage::InitStart {
                 server_name: self.server_name.clone(),
+                pid: self.pid,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
+    }
+
+    fn send_deinit_msg(&self) {
+        let sender = self.update_event_sender.clone();
+        let server_name = self.server_name.clone();
+        let pid = self.pid;
+        tokio::spawn(async move {
+            let _ = sender.send(UpdateEventMessage::Deinit { server_name, pid }).await;
+        });
     }
 
     fn duplicate(&self) -> Box<dyn Messenger> {

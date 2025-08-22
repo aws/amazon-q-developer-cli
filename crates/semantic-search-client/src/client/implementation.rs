@@ -11,21 +11,18 @@ use std::sync::{
 
 use serde_json::Value;
 
-use crate::client::semantic_context::SemanticContext;
+use crate::client::context::SemanticContext;
 use crate::client::{
     embedder_factory,
     utils,
 };
 use crate::config;
-use crate::embedding::{
-    EmbeddingType,
-    TextEmbedderTrait,
-};
+use crate::embedding::TextEmbedderTrait;
 use crate::error::{
     Result,
     SemanticSearchError,
 };
-use crate::processing::process_file;
+use crate::processing::process_file_with_config;
 use crate::types::{
     ContextId,
     ContextMap,
@@ -84,39 +81,25 @@ impl SemanticSearchClient {
     ///
     /// A new SemanticSearchClient instance
     pub fn new(base_dir: impl AsRef<Path>) -> Result<Self> {
-        Self::with_embedding_type(base_dir, EmbeddingType::default())
+        let base_dir_path = base_dir.as_ref().to_path_buf();
+        let config = crate::config::SemanticSearchConfig {
+            base_dir: base_dir_path,
+            ..Default::default()
+        };
+        Self::with_config(base_dir, config)
     }
 
-    /// Create a new semantic search client with a specific embedding type
-    ///
-    /// # Arguments
-    ///
-    /// * `base_dir` - Base directory for storing persistent contexts
-    /// * `embedding_type` - Type of embedding engine to use
-    ///
-    /// # Returns
-    ///
-    /// A new SemanticSearchClient instance
-    pub fn with_embedding_type(base_dir: impl AsRef<Path>, embedding_type: EmbeddingType) -> Result<Self> {
-        Self::with_config_and_embedding_type(base_dir, crate::config::SemanticSearchConfig::default(), embedding_type)
-    }
-
-    /// Create a new semantic search client with custom configuration and embedding type
+    /// Create a new semantic search client with custom configuration
     ///
     /// # Arguments
     ///
     /// * `base_dir` - Base directory for storing persistent contexts
     /// * `config` - Configuration for the client
-    /// * `embedding_type` - Type of embedding engine to use
     ///
     /// # Returns
     ///
     /// A new SemanticSearchClient instance
-    pub fn with_config_and_embedding_type(
-        base_dir: impl AsRef<Path>,
-        config: crate::config::SemanticSearchConfig,
-        embedding_type: EmbeddingType,
-    ) -> Result<Self> {
+    pub fn with_config(base_dir: impl AsRef<Path>, config: crate::config::SemanticSearchConfig) -> Result<Self> {
         let base_dir = base_dir.as_ref().to_path_buf();
         fs::create_dir_all(&base_dir)?;
 
@@ -129,7 +112,7 @@ impl SemanticSearchClient {
             // Continue with default config if initialization fails
         }
 
-        let embedder = embedder_factory::create_embedder(embedding_type)?;
+        let embedder = embedder_factory::create_embedder(config.embedding_type)?;
 
         // Load metadata for persistent contexts
         let contexts_file = base_dir.join("contexts.json");
@@ -153,20 +136,6 @@ impl SemanticSearchClient {
         }
 
         Ok(client)
-    }
-
-    /// Create a new semantic search client with custom configuration
-    ///
-    /// # Arguments
-    ///
-    /// * `base_dir` - Base directory for storing persistent contexts
-    /// * `config` - Configuration for the client
-    ///
-    /// # Returns
-    ///
-    /// A new SemanticSearchClient instance
-    pub fn with_config(base_dir: impl AsRef<Path>, config: crate::config::SemanticSearchConfig) -> Result<Self> {
-        Self::with_config_and_embedding_type(base_dir, config, EmbeddingType::default())
     }
 
     /// Get the default base directory for memory bank
@@ -199,21 +168,6 @@ impl SemanticSearchClient {
     pub fn new_with_default_dir() -> Result<Self> {
         let base_dir = Self::get_default_base_dir();
         Self::new(base_dir)
-    }
-
-    /// Create a new semantic search client with the default base directory and specific embedding
-    /// type
-    ///
-    /// # Arguments
-    ///
-    /// * `embedding_type` - Type of embedding engine to use
-    ///
-    /// # Returns
-    ///
-    /// A new SemanticSearchClient instance
-    pub fn new_with_embedding_type(embedding_type: EmbeddingType) -> Result<Self> {
-        let base_dir = Self::get_default_base_dir();
-        Self::with_embedding_type(base_dir, embedding_type)
     }
 
     /// Get the current semantic search configuration
@@ -341,7 +295,7 @@ impl SemanticSearchClient {
         }
 
         // Process the file
-        let items = process_file(file_path)?;
+        let items = process_file_with_config(file_path, Some(self.config.chunk_size), Some(self.config.chunk_overlap))?;
 
         // Notify progress: Indexing
         if let Some(ref callback) = progress_callback {
@@ -418,7 +372,7 @@ impl SemanticSearchClient {
         }
 
         // Process files
-        let items = Self::process_directory_files(dir_path, file_count, &progress_callback)?;
+        let items = Self::process_directory_files(dir_path, file_count, &progress_callback, &self.config)?;
 
         // Create and populate semantic context
         let semantic_context = self.create_semantic_context(&context_dir, &items, &progress_callback)?;
@@ -454,6 +408,7 @@ impl SemanticSearchClient {
         dir_path: &Path,
         file_count: usize,
         progress_callback: &Option<F>,
+        config: &crate::config::SemanticSearchConfig,
     ) -> Result<Vec<Value>>
     where
         F: Fn(ProgressStatus) + Send + 'static,
@@ -485,7 +440,7 @@ impl SemanticSearchClient {
             }
 
             // Process the file
-            match process_file(path) {
+            match process_file_with_config(path, Some(config.chunk_size), Some(config.chunk_overlap)) {
                 Ok(mut file_items) => items.append(&mut file_items),
                 Err(_) => continue, // Skip files that fail to process
             }
@@ -576,7 +531,16 @@ impl SemanticSearchClient {
         }
 
         // Create the context metadata
-        let context = KnowledgeContext::new(id.to_string(), name, description, persistent, source_path, item_count);
+        let context = KnowledgeContext::new(
+            id.to_string(),
+            name,
+            description,
+            persistent,
+            source_path,
+            (vec![], vec![]),
+            item_count,
+            self.config.embedding_type,
+        );
 
         // Store the context
         if persistent {
@@ -729,7 +693,9 @@ impl SemanticSearchClient {
                     "Temporary memory context",
                     false,
                     None,
+                    (vec![], vec![]),
                     0,
+                    self.config.embedding_type, // Use client default
                 );
                 contexts.push(context);
             }
@@ -908,7 +874,9 @@ impl SemanticSearchClient {
             context_description,
             true,
             None,
+            (vec![], vec![]),
             context_guard.get_data_points().len(),
+            self.config.embedding_type, // Use client default
         );
 
         // Store the context metadata
