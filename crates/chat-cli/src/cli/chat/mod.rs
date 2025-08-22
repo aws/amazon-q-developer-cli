@@ -403,7 +403,7 @@ const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cya
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 17] = [
+const ROTATING_TIPS: [&str; 18] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -436,6 +436,7 @@ const ROTATING_TIPS: [&str; 17] = [
     color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
     color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
     color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
+    color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
