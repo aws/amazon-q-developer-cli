@@ -1,0 +1,559 @@
+#!/usr/bin/env python3
+
+import toml
+import subprocess
+import sys
+import argparse
+import json
+import time
+import platform
+from datetime import datetime
+from pathlib import Path
+
+def parse_features():
+    """Parse features from Cargo.toml, handling grouped features correctly"""
+    cargo_toml = toml.load("Cargo.toml")
+    features = cargo_toml.get("features", {})
+    
+    # Features to always exclude from individual runs
+    excluded_features = {"default", "regression", "sanity"}
+    
+    # Group features (features that contain other features)
+    grouped_features = {}
+    grouped_sub_features = set()
+    
+    # First pass: identify grouped features and their sub-features
+    for feature_name, feature_deps in features.items():
+        if feature_name in excluded_features:
+            continue
+            
+        if isinstance(feature_deps, list) and feature_deps:
+            # This is a grouped feature
+            grouped_features[feature_name] = feature_deps
+            grouped_sub_features.update(feature_deps)
+    
+    # Second pass: identify standalone features (not part of any group)
+    standalone_features = []
+    for feature_name in features.keys():
+        if (feature_name not in excluded_features and 
+            feature_name not in grouped_features and 
+            feature_name not in grouped_sub_features):
+            standalone_features.append(feature_name)
+    
+    return grouped_features, standalone_features
+
+# Default test suite - always required for cargo test
+DEFAULT_TESTSUITE = "sanity"
+
+def parse_test_results(stdout):
+    """Parse individual test results from cargo output"""
+    tests = []
+    lines = stdout.split('\n')
+    
+    for line in lines:
+        if ' ... ok' in line and line.startswith('test '):
+            test_name = line.split(' ... ok')[0].replace('test ', '').strip()
+            tests.append({"name": test_name, "status": "passed"})
+        elif ' ... FAILED' in line and line.startswith('test '):
+            test_name = line.split(' ... FAILED')[0].replace('test ', '').strip()
+            tests.append({"name": test_name, "status": "failed"})
+    
+    return tests
+
+def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
+    """Run cargo test for a single feature with test suite"""
+    feature_str = f"{feature},{test_suite}"
+    cmd = ["cargo", "test", "--tests", "--features", feature_str, "--", "--nocapture"]
+    
+    if not quiet:
+        print(f"🔄 Running: {feature} with {test_suite}")
+        print(f"Command: {' '.join(cmd)}")
+    
+    start_time = time.time()
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    end_time = time.time()
+    
+    # Parse individual test results
+    individual_tests = parse_test_results(result.stdout)
+    
+    if not quiet:
+        print(result.stdout)
+        if result.stderr:
+            print(result.stderr)
+        
+        # Show individual test results
+        print(f"\n📋 Individual Test Results for {feature}:")
+        for test in individual_tests:
+            status_icon = "✅" if test["status"] == "passed" else "❌"
+            print(f"  {status_icon} {test['name']} - {test['status']}")
+    
+    return {
+        "feature": feature,
+        "test_suite": test_suite,
+        "success": result.returncode == 0,
+        "duration": round(end_time - start_time, 2),
+        "stdout": result.stdout,
+        "stderr": result.stderr,
+        "command": " ".join(cmd),
+        "individual_tests": individual_tests
+    }
+
+def get_test_suites_from_features(features):
+    """Extract test suites (sanity/regression) from feature list"""
+    test_suites = []
+    if "sanity" in features:
+        test_suites.append("sanity")
+    if "regression" in features:
+        test_suites.append("regression")
+    
+    if not test_suites:
+        test_suites = [DEFAULT_TESTSUITE]
+    
+    return test_suites
+
+def run_tests_with_suites(features, test_suites, binary_path="q", quiet=False):
+    """Run tests for each feature with each test suite"""
+    results = []
+    
+    for test_suite in test_suites:
+        for feature in features:
+            if feature not in {"sanity", "regression"}:
+                result = run_single_cargo_test(feature, test_suite, binary_path, quiet)
+                results.append(result)
+                
+                individual_tests = result.get("individual_tests", [])
+                passed_count = sum(1 for t in individual_tests if t["status"] == "passed")
+                failed_count = sum(1 for t in individual_tests if t["status"] == "failed")
+                
+                status = "✅" if result["success"] else "❌"
+                print(f"{status} {feature} ({test_suite}) - {result['duration']}s - {passed_count} passed, {failed_count} failed")
+    
+    return results
+
+def get_system_info(binary_path="q"):
+    """Get Q binary version and system information"""
+    system_info = {
+        "os": platform.system(),
+        "os_version": platform.version(),
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+        "q_binary_path": binary_path
+    }
+    
+    # Try to get Q binary version
+    try:
+        result = subprocess.run([binary_path, "--version"], capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            system_info["q_version"] = result.stdout.strip()
+        else:
+            system_info["q_version"] = "Unable to determine version"
+    except Exception as e:
+        system_info["q_version"] = f"Error getting version: {str(e)}"
+    
+    return system_info
+
+def generate_report(results, features, test_suites, binary_path="q"):
+    """Generate JSON report and console summary"""
+    timestamp = datetime.now().isoformat()
+    system_info = get_system_info(binary_path)
+    
+    # Calculate summary stats from individual tests
+    total_individual_tests = 0
+    passed_individual_tests = 0
+    failed_individual_tests = 0
+    
+    # Group by feature with individual test details
+    feature_summary = {}
+    for result in results:
+        feature = result["feature"]
+        if feature not in feature_summary:
+            feature_summary[feature] = {
+                "passed": 0, 
+                "failed": 0, 
+                "test_suites": [],
+                "individual_tests": []
+            }
+        
+        # Count individual tests
+        individual_tests = result.get("individual_tests", [])
+        feature_passed = sum(1 for t in individual_tests if t["status"] == "passed")
+        feature_failed = sum(1 for t in individual_tests if t["status"] == "failed")
+        
+        feature_summary[feature]["passed"] += feature_passed
+        feature_summary[feature]["failed"] += feature_failed
+        feature_summary[feature]["test_suites"].append(result["test_suite"])
+        feature_summary[feature]["individual_tests"].extend(individual_tests)
+        
+        total_individual_tests += len(individual_tests)
+        passed_individual_tests += feature_passed
+        failed_individual_tests += feature_failed
+    
+    # Create JSON report
+    report = {
+        "timestamp": timestamp,
+        "system_info": system_info,
+        "summary": {
+            "total_feature_runs": len(results),
+            "total_individual_tests": total_individual_tests,
+            "passed": passed_individual_tests,
+            "failed": failed_individual_tests,
+            "success_rate": round((passed_individual_tests / total_individual_tests * 100) if total_individual_tests > 0 else 0, 2)
+        },
+        "features": feature_summary,
+        "detailed_results": results
+    }
+    
+    # Generate filename with features and test suites
+    features_str = "-".join(features[:3]) + ("_more" if len(features) > 3 else "")
+    suites_str = "-".join(test_suites)
+    datetime_str = datetime.now().strftime("%m%d%y%H%M%S")
+    filename = f"qcli_test_summary_{features_str}_{suites_str}_{datetime_str}.json"
+    
+    # Save JSON report
+    with open(filename, "w") as f:
+        json.dump(report, f, indent=2)
+    
+    report["filename"] = filename
+    return report
+
+def generate_html_report(json_filename):
+    """Generate HTML report from JSON file"""
+    with open(json_filename, 'r') as f:
+        report = json.load(f)
+    
+    # Generate HTML filename
+    html_filename = json_filename.replace('.json', '.html')
+    
+    # Calculate stats
+    total_features = len(report["features"])
+    features_100_pass = sum(1 for stats in report["features"].values() if stats["failed"] == 0)
+    features_failed = total_features - features_100_pass
+    
+    # Get test suites from detailed results
+    test_suites = list(set(result["test_suite"] for result in report["detailed_results"]))
+    
+    html_content = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q CLI Test Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .summary-card {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }}
+        .stat-item {{ background: white; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
+        .stat-item.success {{ border-left-color: #28a745; }}
+        .stat-item.failure {{ border-left-color: #dc3545; }}
+        .collapsible {{ background-color: #007bff; color: white; cursor: pointer; padding: 15px; border: none; text-align: left; outline: none; font-size: 16px; border-radius: 5px; margin: 5px 0; width: 100%; }}
+        .collapsible:hover {{ background-color: #0056b3; }}
+        .collapsible.active {{ background-color: #0056b3; }}
+        .content {{ padding: 0 18px; display: none; overflow: hidden; background-color: #f1f1f1; border-radius: 0 0 5px 5px; }}
+        .test-item {{ margin: 10px 0; padding: 10px; background: white; border-radius: 5px; }}
+        .test-passed {{ border-left: 4px solid #28a745; }}
+        .test-failed {{ border-left: 4px solid #dc3545; }}
+        .stdout {{ background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }}
+        .timestamp {{ color: #666; font-size: 14px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 Q CLI E2E Test Report</h1>
+            <p class="timestamp">Generated: {report['timestamp']}</p>
+            <div class="system-info" style="background: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left;">
+                <h3>💻 System Information</h3>
+                <p><strong>Platform:</strong> {report['system_info']['platform']}</p>
+                <p><strong>OS:</strong> {report['system_info']['os']} {report['system_info']['os_version']}</p>
+                <p><strong>Q Binary:</strong> {report['system_info']['q_binary_path']}</p>
+                <p><strong>Q Version:</strong> {report['system_info']['q_version']}</p>
+            </div>
+        </div>
+        
+        <div class="summary-card">
+            <h2>📊 Overall Summary</h2>
+            <div class="stats">
+                <div class="stat-item success">
+                    <h3>{report['summary']['success_rate']}%</h3>
+                    <p>Success Rate</p>
+                </div>
+                <div class="stat-item">
+                    <h3>{total_features}</h3>
+                    <p>Features Tested</p>
+                </div>
+                <div class="stat-item success">
+                    <h3>{features_100_pass}</h3>
+                    <p>Features 100% Pass</p>
+                </div>
+                <div class="stat-item failure">
+                    <h3>{features_failed}</h3>
+                    <p>Features with Failures</p>
+                </div>
+                <div class="stat-item success">
+                    <h3>{report['summary']['passed']}</h3>
+                    <p>Tests Passed</p>
+                </div>
+                <div class="stat-item failure">
+                    <h3>{report['summary']['failed']}</h3>
+                    <p>Tests Failed</p>
+                </div>
+            </div>
+        </div>
+"""
+    
+    # Add test suite sections
+    for suite in test_suites:
+        suite_features = {}
+        for result in report["detailed_results"]:
+            if result["test_suite"] == suite:
+                feature = result["feature"]
+                if feature not in suite_features:
+                    suite_features[feature] = report["features"][feature]
+        
+        suite_passed = sum(stats["passed"] for stats in suite_features.values())
+        suite_failed = sum(stats["failed"] for stats in suite_features.values())
+        suite_rate = round((suite_passed / (suite_passed + suite_failed) * 100) if (suite_passed + suite_failed) > 0 else 0, 2)
+        
+        html_content += f"""
+        <button class="collapsible">🧪 {suite.upper()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button>
+        <div class="content">
+"""
+        
+        # Add features for this suite
+        for feature_name, feature_stats in suite_features.items():
+            feature_rate = round((feature_stats["passed"] / (feature_stats["passed"] + feature_stats["failed"]) * 100) if (feature_stats["passed"] + feature_stats["failed"]) > 0 else 0, 2)
+            
+            html_content += f"""
+            <button class="collapsible">📦 {feature_name} - {feature_rate}% ({feature_stats["passed"]} passed, {feature_stats["failed"]} failed)</button>
+            <div class="content">
+"""
+            
+            # Add individual tests
+            for test in feature_stats["individual_tests"]:
+                test_class = "test-passed" if test["status"] == "passed" else "test-failed"
+                status_icon = "✅" if test["status"] == "passed" else "❌"
+                
+                html_content += f"""
+                <div class="test-item {test_class}">
+                    <h4>{status_icon} {test['name']}</h4>
+                    <p><strong>Status:</strong> {test['status'].upper()}</p>
+                </div>
+"""
+            
+            # Add stdout/stderr for this feature
+            for result in report["detailed_results"]:
+                if result["feature"] == feature_name and result["test_suite"] == suite:
+                    html_content += f"""
+                    <button class="collapsible">📄 View Command Output</button>
+                    <div class="content">
+                        <p><strong>Command:</strong> {result['command']}</p>
+                        <p><strong>Duration:</strong> {result['duration']}s</p>
+                        <div class="stdout">{result['stdout']}</div>
+                        {f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{result["stderr"]}</div>' if result['stderr'] else ''}
+                    </div>
+"""
+            
+            html_content += "</div>"  # Close feature content
+        
+        html_content += "</div>"  # Close suite content
+    
+    html_content += """
+    </div>
+    
+    <script>
+        var coll = document.getElementsByClassName("collapsible");
+        for (var i = 0; i < coll.length; i++) {
+            coll[i].addEventListener("click", function() {
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {
+                    content.style.display = "none";
+                } else {
+                    content.style.display = "block";
+                }
+            });
+        }
+    </script>
+</body>
+</html>
+"""
+    
+    with open(html_filename, 'w') as f:
+        f.write(html_content)
+    
+    return html_filename
+
+def print_summary(report):
+    """Print beautified console summary"""
+    # Print system info
+    print("\n💻 System Information:")
+    print(f"  Platform: {report['system_info']['platform']}")
+    print(f"  OS: {report['system_info']['os']} {report['system_info']['os_version']}")
+    print(f"  Q Binary: {report['system_info']['q_binary_path']}")
+    print(f"  Q Version: {report['system_info']['q_version']}")
+    
+    print("\n📋 Feature Summary:")
+    for feature, stats in report["features"].items():
+        status = "✅" if stats["failed"] == 0 else "❌"
+        suites = ",".join(set(stats["test_suites"]))
+        print(f"  {status} {feature} ({suites}): {stats['passed']} passed, {stats['failed']} failed")
+        
+        # Show individual test details
+        for test in stats["individual_tests"]:
+            test_status = "✅" if test["status"] == "passed" else "❌"
+            print(f"    {test_status} {test['name']}")
+    
+    # Calculate feature-level stats
+    total_features = len(report["features"])
+    features_100_pass = sum(1 for stats in report["features"].values() if stats["failed"] == 0)
+    features_failed = total_features - features_100_pass
+    
+    print("\n🎯 FINAL SUMMARY")
+    print("=" * 32)
+    print(f"🏷️  Features Tested: {total_features}")
+    # print(f"🔄 Feature Runs: {report['summary']['total_feature_runs']}")
+    print(f"✅ Features 100% Pass: {features_100_pass}")
+    print(f"❌ Features with Failures: {features_failed}")
+    print(f"✅ Individual Tests Passed: {report['summary']['passed']}")
+    print(f"❌ Individual Tests Failed: {report['summary']['failed']}")
+    print(f"📊 Total Individual Tests: {report['summary']['total_individual_tests']}")
+    print(f"📈 Success Rate: {report['summary']['success_rate']}%")
+  
+    
+    if report["summary"]["failed"] == 0:
+        print("\n🎉 All tests passed!")
+    else:
+        print("\n💥 Some tests failed!")
+    
+    print(f"\n📄 Detailed report saved to: {report['filename']}")
+    
+    # Generate HTML report
+    html_filename = generate_html_report(report['filename'])
+    print(f"🌐 HTML report saved to: {html_filename}")
+
+def dev_debug():
+    """Debug function to show parsed features"""
+    print("🔧 Developer Debug Mode")
+    print("=" * 30)
+    
+    grouped_features, standalone_features = parse_features()
+    
+    print("\n📦 Grouped Features:")
+    for group, deps in grouped_features.items():
+        print(f"  {group} = {deps}")
+    
+    print("\n🔹 Standalone Features:")
+    for feature in standalone_features:
+        print(f"  {feature}")
+    
+    print(f"\n📊 Summary:")
+    print(f"  Grouped: {len(grouped_features)}")
+    print(f"  Standalone: {len(standalone_features)}")
+    print(f"  Total: {len(grouped_features) + len(standalone_features)}")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description="Run Q CLI E2E tests",
+        epilog="""Examples:
+  # Basic usage
+  %(prog)s                                     # Run all tests with sanity suite
+  %(prog)s --features usage                    # Run usage tests with sanity suite
+  %(prog)s --features "usage,agent"            # Run usage+agent tests with sanity suite
+  
+  # Test suites
+  %(prog)s --features sanity                   # Run all tests with sanity suite
+  %(prog)s --features regression               # Run all tests with regression suite
+  %(prog)s --features "usage,regression"       # Run usage tests with regression suite
+  %(prog)s --features "sanity,regression"      # Run all tests with both suites
+  
+  # Multiple features (different ways)
+  %(prog)s --features "usage,agent,context"    # Comma-separated features
+  %(prog)s --features usage --features agent   # Multiple --features flags
+  %(prog)s --features core_session             # Run grouped feature (includes help,tools,quit,clear)
+  
+  # Binary and output options
+  %(prog)s --binary /path/to/q --features usage
+  %(prog)s --quiet --features sanity
+  
+  # Developer tools
+  %(prog)s dev                                 # Debug feature parsing
+  %(prog)s html report.json                   # Generate HTML from JSON report
+  
+  # Advanced examples
+  %(prog)s --features "core_session,regression" --binary ./target/release/q
+  %(prog)s --features "agent,mcp,sanity" --quiet""",
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+    
+    # Dev subcommand
+    dev_parser = subparsers.add_parser("dev", help="Developer debug tools")
+    
+    # HTML subcommand
+    html_parser = subparsers.add_parser("html", help="Generate HTML report from JSON")
+    html_parser.add_argument("json_file", help="JSON report file to convert")
+    
+    # Test subcommand (default behavior)
+    test_parser = subparsers.add_parser("test", help="Run tests (default)")
+    test_parser.add_argument("--features", help="Comma-separated list of features")
+    test_parser.add_argument("--binary", default="q", help="Path to Q CLI binary")
+    test_parser.add_argument("--quiet", action="store_true", help="Quiet mode")
+    
+    # For backward compatibility
+    parser.add_argument("--features", help="Comma-separated list of features")
+    parser.add_argument("--binary", default="q", help="Path to Q CLI binary")
+    parser.add_argument("--quiet", action="store_true", help="Quiet mode")
+    
+    args = parser.parse_args()
+    
+    if args.command == "dev":
+        dev_debug()
+        return
+    
+    if args.command == "html":
+        html_filename = generate_html_report(args.json_file)
+        print(f"🌐 HTML report generated: {html_filename}")
+        return
+    
+    if not args.features:
+        # Run all features with default test suite
+        grouped_features, standalone_features = parse_features()
+        all_features = list(grouped_features.keys()) + standalone_features
+        test_suites = [DEFAULT_TESTSUITE]
+    else:
+        # Parse requested features
+        requested_features = [f.strip() for f in args.features.split(",")]
+        test_suites = get_test_suites_from_features(requested_features)
+        
+        # Remove test suites from feature list
+        features_only = [f for f in requested_features if f not in {"sanity", "regression"}]
+        
+        if not features_only:
+            # Only sanity/regression specified - run all features
+            grouped_features, standalone_features = parse_features()
+            all_features = list(grouped_features.keys()) + standalone_features
+        else:
+            all_features = features_only
+    
+    if not args.quiet:
+        print("🧪 Running Q CLI E2E Tests")
+        print("=" * 40)
+        print(f"Features: {', '.join(all_features)}")
+        print(f"Test Suites: {', '.join(test_suites)}")
+        print()
+    
+    # Run tests
+    results = run_tests_with_suites(all_features, test_suites, args.binary, args.quiet)
+    
+    # Generate and display report
+    report = generate_report(results, all_features, test_suites, args.binary)
+    print_summary(report)
+    
+    # Exit with appropriate code
+    sys.exit(0 if report["summary"]["failed"] == 0 else 1)
+
+if __name__ == "__main__":
+    main()

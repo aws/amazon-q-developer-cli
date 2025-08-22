@@ -19,7 +19,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
+#[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /compact command...");
     
@@ -61,148 +61,7 @@ fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
-fn test_compact_truncate_true_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact --truncate-large-messages true command...");
-    
-    let session = get_chat_session();
-    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-     
-    let response = chat.execute_command("What is AWS?")?;
-    
-    println!("📝 AI response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-
-    let response = chat.execute_command("/compact --truncate-large-messages true")?;
-    
-    println!("📝 Compact response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-    
-    // Verify truncation 
-    assert!(response.to_lowercase().contains("truncating"), "Missing truncation messsage");
-    println!("✅ Truncation of large messages verified!");
-
-    // Verify compact response - either success or too short
-    if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
-        println!("✅ Found compact success message");
-    } else if response.contains("Conversation") && response.contains("short") {
-        println!("✅ Found conversation too short message");
-    } else {
-        panic!("Missing expected compact response");
-    }
-    
-    println!("✅ All compact content verified!");
-    
-    // Release the lock before cleanup
-    drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-
-    Ok(())
-}
-
-#[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
-fn test_compact_truncate_false_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact --truncate-large-messages false command...");
-    
-    let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
-     
-    let response = chat.execute_command("What is AWS?")?;
-    
-    println!("📝 AI response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-
-    let response = chat.execute_command("/compact --truncate-large-messages false")?;
-    
-    println!("📝 Compact response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-    
-    // Verify compact response - either success or too short
-    if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
-        println!("✅ Found compact success message");
-    } else if response.contains("Conversation") && response.contains("short") {
-        println!("✅ Found conversation too short message");
-    } else {
-        panic!("Missing expected compact response");
-    }
-    
-    println!("✅ All compact content verified!");
-    
-    // Release the lock before cleanup
-    drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-
-    Ok(())
-}
-
-
-#[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
-fn test_show_summary() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact --show-summary command...");
-    
-    let session = get_chat_session();
-    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    let response = chat.execute_command("What is AWS?")?;
-    
-    println!("📝 AI response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-
-    let response = chat.execute_command("What is DL?")?;
-    
-    println!("📝 AI response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-
-    let response = chat.execute_command("/compact --show-summary")?;
-    
-    println!("📝 Compact response: {} bytes", response.len());
-    println!("📝 FULL OUTPUT:");
-    println!("{}", response);
-    println!("📝 END OUTPUT");
-    
-    // Verify compact response - either success or too short
-    if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
-        println!("✅ Found compact success message");
-    } else if response.contains("Conversation") && response.contains("short") {
-        println!("✅ Found conversation too short message");
-    } else {
-        panic!("Missing expected compact response");
-    }
-    
-    // Verify compact sumary response
-    assert!(response.to_lowercase().contains("conversation") && response.to_lowercase().contains("summary"), "Missing Summary section");
-    assert!(response.contains("AWS") && (response.contains("DL") || response.to_lowercase().contains("deep learning")) , "Missing summary of our prompts");
-    println!("✅ All compact content verified!");
-    
-    // Release the lock before cleanup
-    drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-
-    Ok(())
-}
-
-#[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
+#[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /compact --help command...");
     

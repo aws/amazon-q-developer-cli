@@ -16,7 +16,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(all(feature = "model", feature = "regression"))]
+#[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /model command with dynamic selection...");
     
@@ -135,7 +135,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "model", feature = "regression"))]
+#[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /model --help command...");
     

@@ -22,7 +22,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /mcp --help command...");
     
@@ -65,7 +65,7 @@ fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_loading_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing MCP loading...");
     
@@ -105,7 +105,7 @@ fn test_mcp_loading_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp remove --help command...");
     
@@ -152,7 +152,7 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp add --help command...");
     
@@ -210,7 +210,7 @@ fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp --help command...");
     
@@ -267,7 +267,7 @@ fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp import --help command...");
     
@@ -329,7 +329,7 @@ fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp list command...");
     
@@ -372,7 +372,7 @@ fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp list --help command...");
     
@@ -422,7 +422,7 @@ fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "mcp", feature = "regression"))]
+#[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing q mcp status --help command...");
     

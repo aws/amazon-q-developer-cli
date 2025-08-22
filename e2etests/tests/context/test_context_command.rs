@@ -23,7 +23,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context show command...");
 
@@ -57,7 +57,7 @@ fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context help command...");
 
@@ -99,7 +99,7 @@ fn test_context_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context without sub command...");
 
@@ -137,7 +137,7 @@ fn test_context_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context invalid command...");
 
@@ -167,7 +167,7 @@ fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_non_existing_file_context() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context add non-existing file command...");
 
@@ -198,7 +198,7 @@ fn test_add_non_existing_file_context() -> Result<(), Box<dyn std::error::Error>
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context remove non existing file command...");
 
@@ -226,7 +226,7 @@ fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std:
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context add <filename> command and /context remove <filename> command...");
 
@@ -300,7 +300,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context add *.py glob pattern command...");
 
@@ -382,7 +382,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context add <filename1> <filename2> <filename3> command and /context remove <filename1> <filename2> <filename3>...");
     

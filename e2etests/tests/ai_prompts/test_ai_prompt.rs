@@ -2,7 +2,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
-#[cfg(all(feature = "ai_prompts", feature = "regression"))]
+#[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 [AI PROMPTS] Testing 'What is AWS?' AI prompt...");
     
@@ -55,7 +55,7 @@ fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "ai_prompts", feature = "regression"))]
+#[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_simple_greeting() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing simple 'Hello' prompt...");
     

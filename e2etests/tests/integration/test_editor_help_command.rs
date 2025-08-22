@@ -16,7 +16,7 @@ const TEST_NAMES: &[&str] = &[
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
-#[cfg(all(any(feature = "editor", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /editor --help command...");
     
@@ -59,7 +59,7 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "editor", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /help editor command...");
     

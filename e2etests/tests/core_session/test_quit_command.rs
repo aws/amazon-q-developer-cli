@@ -2,7 +2,7 @@
 use q_cli_e2e_tests::q_chat_helper::QChatSession;
 
 #[test]
-#[cfg(all(feature = "core_session", feature = "regression"))]
+#[cfg(all(feature = "quit", feature = "sanity"))]
 fn test_quit_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /quit command...");
     

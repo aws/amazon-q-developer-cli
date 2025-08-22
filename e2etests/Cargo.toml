@@ -9,21 +9,29 @@ edition = "2021"
 expectrl = "0.7"
 
 [features]
-default = []
-core_session = []
-agent = []
-context = []
-save_load = []
-model = []
-session_mgmt = []
-integration = []
-mcp = []
-ai_prompts = []
-issue_reporting = []
-tools=[]
-compact=[]
-hooks=[]
-usage=[]
-editor=[]
-subscribe=[]
-regression = []
+core_session = ["help", "tools", "quit", "clear"] # Core Session Commands (/help, /tools, /quit, /clear)
+help = [] # Help Command (/help)
+tools = [] # Tools Command (/tools)
+quit = [] # Quit Command (/quit)
+clear = [] # Clear Command (/clear)
+
+agent = [] # Agent Commands (/agent list, /agent create, etc.)
+context = [] # Context Commands (/context show, /context add, etc.)
+save_load = [] # Save/Load Commands (/save, /load, help)
+model = [] # Model Commands (/model, /model --help)
+
+session_mgmt = ["compact", "usage"] # Session Management Commands (/compact, /usage, help)
+compact = [] # Compact Commands
+usage = [] # Usage Commands
+
+integration = ["subscribe", "hooks", "editor"] # Integration Commands (/subscribe, /hooks, /editor help)
+subscribe = [] # Subscribe Commands
+hooks = [] # Hooks Commands
+editor = [] # Editor Commands
+
+mcp = [] # MCP Commands (/mcp, /mcp --help)
+ai_prompts = [] # AI Prompts ("What is AWS?", "Hello")
+issue_reporting = [] # Issue Reporting Commands
+
+regression = [] # Regression Tests
+sanity = [] # Sanity Tests - Quick smoke tests for basic functionality
