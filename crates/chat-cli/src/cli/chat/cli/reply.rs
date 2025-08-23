@@ -48,7 +48,7 @@ impl ReplyArgs {
             }
         };
 
-        let content = match open_editor(Some(initial_text)) {
+        let content = match open_editor(Some(initial_text.clone())) {
             Ok(content) => content,
             Err(err) => {
                 execute!(
@@ -64,12 +64,12 @@ impl ReplyArgs {
             },
         };
 
-        Ok(match content.trim().is_empty() {
+        Ok(match content.trim().is_empty() || content.trim() == initial_text.trim() {
             true => {
                 execute!(
                     session.stderr,
                     style::SetForegroundColor(Color::Yellow),
-                    style::Print("\nEmpty content from editor, not submitting.\n\n"),
+                    style::Print("\nNo changes made in editor, not submitting.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
 
