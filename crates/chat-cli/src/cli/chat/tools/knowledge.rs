@@ -312,9 +312,13 @@ impl Knowledge {
         Ok(())
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
-        // Get the async knowledge store singleton with OS-aware directory
-        let async_knowledge_store = KnowledgeStore::get_async_instance_with_os(os)
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        _updates: &mut impl Write,
+        agent: Option<&crate::cli::Agent>,
+    ) -> Result<InvokeOutput> {
+        let async_knowledge_store = KnowledgeStore::get_async_instance(os, agent)
             .await
             .map_err(|e| eyre::eyre!("Failed to access knowledge base: {}", e))?;
         let mut store = async_knowledge_store.lock().await;

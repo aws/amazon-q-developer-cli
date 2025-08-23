@@ -120,6 +120,7 @@ impl Tool {
         os: &Os,
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
+        agent: Option<&crate::cli::agent::Agent>,
     ) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
@@ -128,7 +129,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
-            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
+            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, agent).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
         }
     }
