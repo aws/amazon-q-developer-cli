@@ -107,6 +107,7 @@ impl std::error::Error for KnowledgeError {}
 /// Async knowledge store - manages agent specific knowledge bases
 pub struct KnowledgeStore {
     agent_client: AsyncSemanticSearchClient,
+    agent_dir: PathBuf,
 }
 
 impl KnowledgeStore {
@@ -115,8 +116,8 @@ impl KnowledgeStore {
         os: &Os,
         agent: Option<&crate::cli::Agent>,
     ) -> Result<Arc<Mutex<Self>>, directories::DirectoryError> {
-        static ASYNC_INSTANCE: Lazy<tokio::sync::OnceCell<Arc<Mutex<KnowledgeStore>>>> =
-            Lazy::new(tokio::sync::OnceCell::new);
+        static ASYNC_INSTANCE: Lazy<tokio::sync::Mutex<Option<Arc<Mutex<KnowledgeStore>>>>> =
+            Lazy::new(|| tokio::sync::Mutex::new(None));
 
         if cfg!(test) {
             // For tests, create a new instance each time
@@ -125,21 +126,29 @@ impl KnowledgeStore {
                 .map_err(|_e| directories::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
             Ok(Arc::new(Mutex::new(store)))
         } else {
-            Ok(ASYNC_INSTANCE
-                .get_or_init(|| async {
-                    // Check for migration before initializing the client
-                    let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)
-                        .expect("Failed to get agent directory");
+            let current_agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)?;
 
-                    Self::migrate_legacy_knowledge_base(&agent_dir).await;
+            let mut instance_guard = ASYNC_INSTANCE.lock().await;
 
-                    let store = Self::new_with_os_settings(os, agent)
-                        .await
-                        .expect("Failed to create knowledge store");
-                    Arc::new(Mutex::new(store))
-                })
-                .await
-                .clone())
+            let needs_reinit = match instance_guard.as_ref() {
+                None => true,
+                Some(store) => {
+                    let store_guard = store.lock().await;
+                    store_guard.agent_dir != current_agent_dir
+                },
+            };
+
+            if needs_reinit {
+                // Check for migration before initializing the client
+                Self::migrate_legacy_knowledge_base(&current_agent_dir).await;
+
+                let store = Self::new_with_os_settings(os, agent)
+                    .await
+                    .map_err(|_e| directories::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
+                *instance_guard = Some(Arc::new(Mutex::new(store)));
+            }
+
+            Ok(instance_guard.as_ref().unwrap().clone())
         }
     }
 
@@ -254,7 +263,10 @@ impl KnowledgeStore {
             .await
             .map_err(|e| eyre::eyre!("Failed to create agent client at {}: {}", agent_dir.display(), e))?;
 
-        let store = Self { agent_client };
+        let store = Self {
+            agent_client,
+            agent_dir,
+        };
         Ok(store)
     }
 
