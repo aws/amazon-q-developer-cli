@@ -83,7 +83,7 @@ impl EditorArgs {
 }
 
 /// Opens the user's preferred editor to compose a prompt
-fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
+pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
     // Create a temporary file with a unique name
     let temp_dir = std::env::temp_dir();
     let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
