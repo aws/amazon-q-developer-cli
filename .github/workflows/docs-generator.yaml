@@ -3,22 +3,37 @@ name: docs-generator
 on:
   workflow_dispatch:
     inputs:
-      qcli_version:
-        description: 'PR number to document'
+      pr_number:
+        description: 'Number of PR to document'
         required: true
         type: string
 
 jobs:
   generate_docs:
     runs-on: ubuntu-latest
+    env:
+      PR_FILE: "pr-contents.txt"
     steps:
     - uses: actions/checkout@v4
     - name: Install Rust
       run: |
         curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
         source ~/.cargo/env
-    - name: Build and run from source (for testing purposes only)
-      run: cargo run --bin chat_cli
+
+    - name: Generate PR contents file
+      run: ./docs-generation/read-pr.sh ${{ inputs.pr_number }}
+
+    # For testing purposes, we're building from source
+    - name: Update docs
+      run: ./docs-generation/update-docs.sh
+
+    - name: Create PR
+      if: success()
+      run: ./docs-generation/create-docs-pr.sh ${{ inputs.pr_number }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    
     
 
 
