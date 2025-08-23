@@ -54,6 +54,7 @@ pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
+    "/reply",
     "/issue",
     "/quit",
     "/tools",
