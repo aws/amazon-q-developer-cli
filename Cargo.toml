@@ -129,6 +129,7 @@ winnow = "=0.6.2"
 winreg = "0.55.0"
 schemars = "1.0.4"
 jsonschema = "0.30.0"
+zip = "2.2.0"
 
 [workspace.lints.rust]
 future_incompatible = "warn"
