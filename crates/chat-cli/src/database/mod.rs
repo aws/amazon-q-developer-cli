@@ -62,6 +62,10 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 
+// Chat history limits
+const CHAT_HISTORY_MAX_PER_DIRECTORY: i32 = 100;
+const CHAT_HISTORY_MAX_TOTAL: i32 = 1000;
+
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
     "001_history_table",
@@ -463,6 +467,71 @@ impl Database {
 
         Ok(map)
     }
+
+    /// Ensure chat history table exists with index
+    fn ensure_chat_history_table(&self) -> Result<(), DatabaseError> {
+        let conn = self.pool.get()?;
+        conn.execute("CREATE TABLE IF NOT EXISTS chat_history (input TEXT NOT NULL, cwd TEXT NOT NULL)", [])?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chat_history_cwd ON chat_history(cwd)", [])?;
+        Ok(())
+    }
+
+    /// Add a chat input to the persistent history
+    pub fn add_chat_history_entry(&self, input: &str, os: &crate::os::Os) -> Result<(), DatabaseError> {
+        // Skip empty or whitespace-only inputs
+        if input.trim().is_empty() {
+            return Ok(());
+        }
+
+        self.ensure_chat_history_table()?;
+        let conn = self.pool.get()?;
+        let cwd = os.env.current_dir().unwrap_or_default().to_string_lossy().to_string();
+
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("INSERT INTO chat_history (input, cwd) VALUES (?1, ?2)", params![input, cwd])?;
+
+        // Keep only last entries per directory
+        tx.execute(
+            "DELETE FROM chat_history WHERE cwd = ?1 AND rowid < (
+                SELECT MIN(rowid) 
+                FROM (
+                    SELECT rowid 
+                    FROM chat_history 
+                    WHERE cwd = ?1 
+                    ORDER BY rowid DESC 
+                    LIMIT ?2
+                )
+            )",
+            params![cwd, CHAT_HISTORY_MAX_PER_DIRECTORY],
+        )?;
+        
+        // Keep only last entries total
+        tx.execute(
+            "DELETE FROM chat_history WHERE rowid < (
+                SELECT MIN(rowid) 
+                FROM (
+                    SELECT rowid 
+                    FROM chat_history 
+                    ORDER BY rowid DESC 
+                    LIMIT ?1
+                )
+            )",
+            params![CHAT_HISTORY_MAX_TOTAL],
+        )?;
+        tx.commit()?;
+
+        Ok(())
+    }
+
+    /// Get all chat history entries for current working directory
+    pub fn get_chat_history(&self, os: &crate::os::Os) -> Result<Vec<String>, DatabaseError> {
+        self.ensure_chat_history_table()?;
+        let conn = self.pool.get()?;
+        let cwd = os.env.current_dir().unwrap_or_default().to_string_lossy().to_string();
+        let mut stmt = conn.prepare("SELECT input FROM chat_history WHERE cwd = ?1")?;
+        let rows = stmt.query_map([cwd], |row| Ok(row.get(0)?))?;
+        rows.collect::<Result<Vec<String>, _>>().map_err(Into::into)
+    }
 }
 
 fn max_migration_version<C: Deref<Target = Connection>>(conn: &C) -> Option<i64> {
@@ -624,5 +693,51 @@ mod tests {
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
         store.delete_secret(key).await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn chat_history_basic_operations() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Add entries
+        db.add_chat_history_entry("test command 1", &os).unwrap();
+        db.add_chat_history_entry("test command 2", &os).unwrap();
+
+        // Retrieve entries
+        let history = db.get_chat_history(&os).unwrap();
+        assert_eq!(history.len(), 2);
+        assert!(history.contains(&"test command 1".to_string()));
+        assert!(history.contains(&"test command 2".to_string()));
+    }
+
+    #[tokio::test]
+    async fn chat_history_empty_input_filtering() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Empty and whitespace inputs should be filtered
+        db.add_chat_history_entry("", &os).unwrap();
+        db.add_chat_history_entry("   ", &os).unwrap();
+        db.add_chat_history_entry("\t\n", &os).unwrap();
+        db.add_chat_history_entry("valid command", &os).unwrap();
+
+        let history = db.get_chat_history(&os).unwrap();
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0], "valid command");
+    }
+
+    #[tokio::test]
+    async fn chat_history_directory_cleanup() {
+        let db = Database::new().await.unwrap();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Add more than max entries per directory to test cleanup
+        for i in 0..(CHAT_HISTORY_MAX_PER_DIRECTORY + 5) {
+            db.add_chat_history_entry(&format!("command {}", i), &os).unwrap();
+        }
+
+        let history = db.get_chat_history(&os).unwrap();
+        assert!(history.len() == CHAT_HISTORY_MAX_PER_DIRECTORY as usize, "Should cleanup to max entries per directory");
     }
 }
