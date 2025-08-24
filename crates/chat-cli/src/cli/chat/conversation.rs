@@ -6,6 +6,7 @@ use std::collections::{
 use std::io::Write;
 use std::sync::atomic::Ordering;
 
+use chrono::Utc;
 use crossterm::style::Color;
 use crossterm::{
     execute,
@@ -65,6 +66,10 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::cli::model::{
+    ModelInfo,
+    get_model_info,
+};
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
@@ -107,14 +112,33 @@ pub struct ConversationState {
     latest_summary: Option<(String, RequestMetadata)>,
     #[serde(skip)]
     pub agents: Agents,
+    /// Unused, kept only to maintain deserialization backwards compatibility with <=v1.13.3
     /// Model explicitly selected by the user in this conversation state via `/model`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// Model explicitly selected by the user in this conversation state via `/model`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_info: Option<ModelInfo>,
     /// Used to track agent vs user updates to file modifications.
     ///
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
+    /// Tangent mode checkpoint - stores main conversation when in tangent mode
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tangent_state: Option<ConversationCheckpoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ConversationCheckpoint {
+    /// Main conversation history stored while in tangent mode
+    main_history: VecDeque<HistoryEntry>,
+    /// Main conversation next message
+    main_next_message: Option<UserMessage>,
+    /// Main conversation transcript
+    main_transcript: VecDeque<String>,
 }
 
 impl ConversationState {
@@ -124,9 +148,23 @@ impl ConversationState {
         tool_config: HashMap<String, ToolSpec>,
         tool_manager: ToolManager,
         current_model_id: Option<String>,
+        os: &Os,
+        mcp_enabled: bool,
     ) -> Self {
+        let model = if let Some(model_id) = current_model_id {
+            match get_model_info(&model_id, os).await {
+                Ok(info) => Some(info),
+                Err(e) => {
+                    tracing::warn!("Failed to get model info for {}: {}, using default", model_id, e);
+                    Some(ModelInfo::from_id(model_id))
+                },
+            }
+        } else {
+            None
+        };
+
         let context_manager = if let Some(agent) = agents.get_active() {
-            ContextManager::from_agent(agent, calc_max_context_files_size(current_model_id.as_deref())).ok()
+            ContextManager::from_agent(agent, calc_max_context_files_size(model.as_ref())).ok()
         } else {
             None
         };
@@ -155,8 +193,11 @@ impl ConversationState {
             context_message_length: None,
             latest_summary: None,
             agents,
-            model: current_model_id,
+            model: None,
+            model_info: model,
             file_line_tracker: HashMap::new(),
+            mcp_enabled,
+            tangent_state: None,
         }
     }
 
@@ -177,6 +218,42 @@ impl ConversationState {
         }
     }
 
+    /// Check if currently in tangent mode
+    pub fn is_in_tangent_mode(&self) -> bool {
+        self.tangent_state.is_some()
+    }
+
+    /// Create a checkpoint of current conversation state
+    fn create_checkpoint(&self) -> ConversationCheckpoint {
+        ConversationCheckpoint {
+            main_history: self.history.clone(),
+            main_next_message: self.next_message.clone(),
+            main_transcript: self.transcript.clone(),
+        }
+    }
+
+    /// Restore conversation state from checkpoint
+    fn restore_from_checkpoint(&mut self, checkpoint: ConversationCheckpoint) {
+        self.history = checkpoint.main_history;
+        self.next_message = checkpoint.main_next_message;
+        self.transcript = checkpoint.main_transcript;
+        self.valid_history_range = (0, self.history.len());
+    }
+
+    /// Enter tangent mode - creates checkpoint of current state
+    pub fn enter_tangent_mode(&mut self) {
+        if self.tangent_state.is_none() {
+            self.tangent_state = Some(self.create_checkpoint());
+        }
+    }
+
+    /// Exit tangent mode - restore from checkpoint
+    pub fn exit_tangent_mode(&mut self) {
+        if let Some(checkpoint) = self.tangent_state.take() {
+            self.restore_from_checkpoint(checkpoint);
+        }
+    }
+
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
     pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) -> Option<String> {
@@ -188,7 +265,7 @@ impl ConversationState {
             let Prompt { role, content } = prompt;
             match role {
                 crate::mcp_client::Role::User => {
-                    let user_msg = UserMessage::new_prompt(content.to_string());
+                    let user_msg = UserMessage::new_prompt(content.to_string(), None);
                     candidate_user.replace(user_msg);
                 },
                 crate::mcp_client::Role::Assistant => {
@@ -231,7 +308,7 @@ impl ConversationState {
             input
         };
 
-        let msg = UserMessage::new_prompt(input);
+        let msg = UserMessage::new_prompt(input, Some(Utc::now()));
         self.next_message = Some(msg);
     }
 
@@ -320,7 +397,11 @@ impl ConversationState {
 
     pub fn add_tool_results_with_images(&mut self, tool_results: Vec<ToolUseResult>, images: Vec<ImageBlock>) {
         debug_assert!(self.next_message.is_none());
-        self.next_message = Some(UserMessage::new_tool_use_results_with_images(tool_results, images));
+        self.next_message = Some(UserMessage::new_tool_use_results_with_images(
+            tool_results,
+            images,
+            Some(Utc::now()),
+        ));
     }
 
     /// Sets the next user message with "cancelled" tool results.
@@ -328,6 +409,7 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_cancelled_tool_uses(
             Some(deny_input),
             tools_to_be_abandoned.iter().map(|t| t.id.as_str()),
+            Some(Utc::now()),
         ));
     }
 
@@ -434,7 +516,7 @@ impl ConversationState {
             context_messages,
             dropped_context_files,
             tools: &self.tools,
-            model_id: self.model.as_deref(),
+            model_id: self.model_info.as_ref().map(|m| m.model_id.as_str()),
         })
     }
 
@@ -502,7 +584,7 @@ impl ConversationState {
         }
 
         let conv_state = self.backend_conversation_state(os, false, &mut vec![]).await?;
-        let mut summary_message = Some(UserMessage::new_prompt(summary_content.clone()));
+        let mut summary_message = Some(UserMessage::new_prompt(summary_content.clone(), None));
 
         // Create the history according to the passed compact strategy.
         let mut history = conv_state.history.cloned().collect::<VecDeque<_>>();
@@ -531,8 +613,8 @@ impl ConversationState {
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: summary_message
-                .unwrap_or(UserMessage::new_prompt(summary_content)) // should not happen
-                .into_user_input_message(self.model.clone(), &tools),
+                .unwrap_or(UserMessage::new_prompt(summary_content, None)) // should not happen
+                .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
             history: Some(flatten_history(history.iter())),
         })
     }
@@ -614,7 +696,7 @@ impl ConversationState {
 
         if !context_content.is_empty() {
             self.context_message_length = Some(context_content.len());
-            let user = UserMessage::new_prompt(context_content);
+            let user = UserMessage::new_prompt(context_content, None);
             let assistant = AssistantMessage::new_response(None, "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".into());
             (
                 Some(vec![HistoryEntry {
@@ -645,7 +727,7 @@ impl ConversationState {
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
         let total_chars = self.calculate_char_count(os).await?;
-        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model.as_deref()));
+        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model_info.as_ref()));
 
         Ok(if *total_chars >= max_chars {
             TokenWarningLevel::Critical
@@ -670,6 +752,31 @@ impl ConversationState {
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
+    }
+
+    /// Swapping agent involves the following:
+    /// - Reinstantiate the context manager
+    /// - Swap agent on tool manager
+    pub async fn swap_agent(
+        &mut self,
+        os: &mut Os,
+        output: &mut impl Write,
+        agent_name: &str,
+    ) -> Result<(), ChatError> {
+        let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
+        self.context_manager.replace({
+            ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
+                .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
+        });
+
+        self.tool_manager
+            .swap_agent(os, output, agent)
+            .await
+            .map_err(ChatError::AgentSwapError)?;
+
+        self.update_state(true).await;
+
+        Ok(())
     }
 }
 
@@ -840,6 +947,7 @@ fn enforce_conversation_invariants(
                     debug!("abandoning tool results");
                     *next_message = Some(UserMessage::new_prompt(
                         "The conversation history has overflowed, clearing state".to_string(),
+                        None,
                     ));
                 }
             },
@@ -893,6 +1001,7 @@ fn enforce_conversation_invariants(
             *user_msg = UserMessage::new_cancelled_tool_uses(
                 user_msg.prompt().map(|p| p.to_string()),
                 tool_uses.iter().map(|t| t.id.as_str()),
+                None,
             );
         }
     }
@@ -951,6 +1060,9 @@ fn enforce_tool_use_history_invariants(history: &mut VecDeque<HistoryEntry>, too
     }
 }
 
+fn default_true() -> bool {
+    true
+}
 #[cfg(test)]
 mod tests {
     use super::super::message::AssistantToolUse;
@@ -1068,6 +1180,8 @@ mod tests {
             tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
             tool_manager,
             None,
+            &os,
+            false,
         )
         .await;
 
@@ -1099,6 +1213,8 @@ mod tests {
             tool_config.clone(),
             tool_manager.clone(),
             None,
+            &os,
+            false,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1127,8 +1243,16 @@ mod tests {
         }
 
         // Build a long conversation history of user messages mixed in with tool results.
-        let mut conversation =
-            ConversationState::new("fake_conv_id", agents, tool_config.clone(), tool_manager.clone(), None).await;
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_config.clone(),
+            tool_manager.clone(),
+            None,
+            &os,
+            false,
+        )
+        .await;
         conversation.set_next_user_message("start".to_string()).await;
         for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
             let s = conversation
@@ -1180,6 +1304,8 @@ mod tests {
             tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
             tool_manager,
             None,
+            &os,
+            false,
         )
         .await;
 
@@ -1212,5 +1338,78 @@ mod tests {
             conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
             conversation.set_next_user_message(i.to_string()).await;
         }
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false, // mcp_enabled
+        )
+        .await;
+
+        // Initially not in tangent mode
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Add some main conversation history
+        conversation
+            .set_next_user_message("main conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+        conversation.transcript.push_back("main transcript".to_string());
+
+        let main_history_len = conversation.history.len();
+        let main_transcript_len = conversation.transcript.len();
+
+        // Enter tangent mode (toggle from normal to tangent)
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // History should be preserved for tangent (not cleared)
+        assert_eq!(conversation.history.len(), main_history_len);
+        assert_eq!(conversation.transcript.len(), main_transcript_len);
+        assert!(conversation.next_message.is_none());
+
+        // Add tangent conversation
+        conversation
+            .set_next_user_message("tangent conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "tangent response".to_string()),
+            None,
+        );
+
+        // During tangent mode, history should have grown
+        assert_eq!(conversation.history.len(), main_history_len + 1);
+        assert_eq!(conversation.transcript.len(), main_transcript_len + 1);
+
+        // Exit tangent mode (toggle from tangent to normal)
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Main conversation should be restored (tangent additions discarded)
+        assert_eq!(conversation.history.len(), main_history_len); // Back to original length
+        assert_eq!(conversation.transcript.len(), main_transcript_len); // Back to original length
+        assert!(conversation.transcript.contains(&"main transcript".to_string()));
+        assert!(!conversation.transcript.iter().any(|t| t.contains("tangent")));
+
+        // Test multiple toggles
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
     }
 }

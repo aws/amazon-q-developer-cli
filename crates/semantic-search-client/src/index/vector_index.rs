@@ -1,3 +1,5 @@
+use std::sync::RwLock;
+
 use hnsw_rs::hnsw::Hnsw;
 use hnsw_rs::prelude::DistCosine;
 use tracing::{
@@ -7,8 +9,8 @@ use tracing::{
 
 /// Vector index for fast approximate nearest neighbor search
 pub struct VectorIndex {
-    /// The HNSW index
-    index: Hnsw<'static, f32, DistCosine>,
+    /// The HNSW index protected by RwLock for thread safety
+    index: RwLock<Hnsw<'static, f32, DistCosine>>,
     /// Counter to track the number of elements
     count: std::sync::atomic::AtomicUsize,
 }
@@ -36,7 +38,7 @@ impl VectorIndex {
 
         debug!("Vector index created successfully");
         Self {
-            index,
+            index: RwLock::new(index),
             count: std::sync::atomic::AtomicUsize::new(0),
         }
     }
@@ -48,7 +50,8 @@ impl VectorIndex {
     /// * `vector` - The vector to insert
     /// * `id` - The ID associated with the vector
     pub fn insert(&self, vector: &[f32], id: usize) {
-        self.index.insert((vector, id));
+        let index = self.index.read().unwrap();
+        index.insert((vector, id));
         self.count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
@@ -64,7 +67,8 @@ impl VectorIndex {
     ///
     /// A vector of (id, distance) pairs
     pub fn search(&self, query: &[f32], limit: usize, ef_search: usize) -> Vec<(usize, f32)> {
-        let results = self.index.search(query, limit, ef_search);
+        let index = self.index.read().unwrap();
+        let results = index.search(query, limit, ef_search);
 
         results
             .into_iter()

@@ -11,6 +11,7 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod subscribe;
+pub mod tangent;
 pub mod tools;
 pub mod usage;
 
@@ -27,6 +28,7 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use tangent::TangentArgs;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
@@ -85,6 +87,8 @@ pub enum SlashCommand {
     Subscribe(SubscribeArgs),
     /// Create a zip file with logs for support investigation
     Logdump(LogdumpArgs),
+    /// Toggle tangent mode for isolated conversations
+    Tangent(TangentArgs),
     /// Make conversations persistent
     #[command(flatten)]
     Persist(PersistSubcommand),
@@ -142,6 +146,7 @@ impl SlashCommand {
             Self::Model(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Logdump(args) => args.execute(session).await,
+            Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
             //     if let Err(err) = subcommand.execute(os, database, telemetry).await {
@@ -174,6 +179,7 @@ impl SlashCommand {
             Self::Model(_) => "model",
             Self::Subscribe(_) => "subscribe",
             Self::Logdump(_) => "logdump",
+            Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",

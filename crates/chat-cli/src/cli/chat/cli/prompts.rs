@@ -38,12 +38,14 @@ pub enum GetPromptError {
     MissingClient,
     #[error("Missing prompt name")]
     MissingPromptName,
-    #[error("Synchronization error: {0}")]
-    Synchronization(String),
     #[error("Missing prompt bundle")]
     MissingPromptInfo,
     #[error(transparent)]
     General(#[from] eyre::Report),
+    #[error("Incorrect response type received")]
+    IncorrectResponseType,
+    #[error("Missing channel")]
+    MissingChannel,
 }
 
 #[deny(missing_docs)]
@@ -76,10 +78,7 @@ impl PromptsArgs {
         }
 
         let terminal_width = session.terminal_width();
-        let mut prompts_wl = session.conversation.tool_manager.prompts.write().map_err(|e| {
-            ChatError::Custom(format!("Poison error encountered while retrieving prompts: {}", e).into())
-        })?;
-        session.conversation.tool_manager.refresh_prompts(&mut prompts_wl)?;
+        let prompts = session.conversation.tool_manager.list_prompts().await?;
         let mut longest_name = "";
         let arg_pos = {
             let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
@@ -121,7 +120,7 @@ impl PromptsArgs {
             style::Print("\n"),
             style::Print(format!("{}\n", "▔".repeat(terminal_width))),
         )?;
-        let mut prompts_by_server: Vec<_> = prompts_wl
+        let mut prompts_by_server: Vec<_> = prompts
             .iter()
             .fold(
                 HashMap::<&String, Vec<&PromptBundle>>::new(),
