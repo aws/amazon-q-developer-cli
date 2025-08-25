@@ -34,7 +34,7 @@ If no agent is specified or found, Q CLI uses a built-in default agent with the 
   "name": "default",
   "description": "Default agent",
   "tools": ["*"],
-  "allowedTools": ["fs_read"],
+  "allowedTools": ["fs_read", "todo_list"],
   "resources": [
     "file://AmazonQ.md",
     "file://README.md", 
@@ -52,7 +52,7 @@ The built-in default agent provides:
 - **All tools**: Uses `"*"` wildcard to include all built-in tools and MCP server tools
 
 ### Trusted Tools
-- **fs_read only**: Only the `fs_read` tool is pre-approved and won't prompt for permission
+- **fs_read and todo_list**: Only the `fs_read` and `todo_list` tools are pre-approved and won't prompt for permission
 - All other tools will require user confirmation before execution
 
 ### Default Resources
