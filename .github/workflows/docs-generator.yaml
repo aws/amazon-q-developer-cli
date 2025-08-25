@@ -12,26 +12,42 @@ jobs:
   generate_docs:
     runs-on: ubuntu-latest
     env:
+      AMAZON_Q_SIGV4: 1
+      CHAT_DOWNLOAD_ROLE_ARN: ${{ secrets.CHAT_DOWNLOAD_ROLE_ARN }}
+      CHAT_BUILD_BUCKET_NAME: ${{ secrets.CHAT_BUILD_BUCKET_NAME }}
       PR_FILE: "pr-contents.txt"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install Rust
-      run: |
-        curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-        source ~/.cargo/env
+      GIT_HASH: "latest"
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
 
+    steps:
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_TB_ROLE }}
+        aws-region: us-east-1
+
+    - name: Run setup_amazon_q.sh from terminal-bench
+      run: |
+        cd terminal-bench-testing
+        chmod +x setup_amazon_q.sh
+        bash setup_amazon_q.sh
+        
     - name: Make scripts executable
       run: |
         chmod +x docs-generation/create-docs-pr.sh
         chmod +x docs-generation/read-pr.sh
         chmod +x docs-generation/update-docs.sh
 
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Generate PR contents file
       run: bash docs-generation/read-pr.sh ${{ inputs.pr_number }}
 
-    # For testing purposes, we're building from source
     - name: Update docs
       run: bash docs-generation/update-docs.sh
 
