@@ -7,7 +7,6 @@ on:
         description: 'Number of PR to document'
         required: true
         type: string
-  push:
 
 jobs:
   generate_docs:
