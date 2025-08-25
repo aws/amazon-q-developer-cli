@@ -1,13 +1,12 @@
 name: docs-generator
 
 on:
-  # workflow_dispatch:
-  #   inputs:
-  #     pr_number:
-  #       description: 'Number of PR to document'
-  #       required: true
-  #       type: string
-  push:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Number of PR to document'
+        required: true
+        type: string
 
 jobs:
   generate_docs:
@@ -19,8 +18,8 @@ jobs:
       PR_FILE: "pr-contents.txt"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GIT_HASH: "latest"
-      PR_NUMBER: 2533
-      BRANCH_NAME: "docs-update-for-pr-2533"
+      PR_NUMBER: ${{ inputs.pr_number }}
+      BRANCH_NAME: "docs-update-for-pr-${{ inputs.pr_number }}"
     permissions:
       id-token: write
       contents: write
