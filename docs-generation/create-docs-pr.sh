@@ -13,11 +13,7 @@ fi
 git config user.name "docs-generator[bot]"
 git config user.email "docs-generator[bot]@amazon.com"
 
-# Create branch, pull if needed (for updating existing docs PRs), and push
-git checkout -B "$BRANCH_NAME"
-if git ls-remote --exit-code --heads origin $BRANCH_NAME; then
-    git pull origin $BRANCH_NAME
-fi
+# Push (branch should have already been created in update-docs.sh)
 git add docs
 git commit -m "Update docs based on PR #$PR_NUMBER
 
