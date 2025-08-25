@@ -11,6 +11,7 @@ mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
+use prompt_parser::generate_prompt_with_leader;
 mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
@@ -587,6 +588,8 @@ pub struct ChatSession {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<Prompt>,
+    /// Track if last input started with !
+    last_input_was_exclamation: bool,
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
@@ -697,6 +700,7 @@ impl ChatSession {
             tool_use_status: ToolUseStatus::Idle,
             failed_request_ids: Vec::new(),
             pending_prompts: VecDeque::new(),
+            last_input_was_exclamation: false,
             interactive,
             inner: Some(ChatState::default()),
             ctrlc_rx,
@@ -1582,8 +1586,6 @@ impl ChatSession {
         // q session unless we do this in prompt_user... unless you can find a better way)
         #[cfg(unix)]
         if let Some(ref context_manager) = self.conversation.context_manager {
-            use std::sync::Arc;
-
             use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 
             let tool_names = self
@@ -1595,7 +1597,7 @@ impl ChatSession {
                 .cloned()
                 .collect::<Vec<_>>();
             self.input_source
-                .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
+                .bind_skim_command_selector(os, context_manager.clone(), tool_names);
         }
 
         execute!(
@@ -1747,7 +1749,7 @@ impl ChatSession {
                         queue!(
                             self.stderr,
                             style::SetForegroundColor(Color::Yellow),
-                            style::Print(format!("Self exited with status: {}\n", status)),
+                            style::Print(format!("Command exited with status: {}\n", status)),
                             style::SetForegroundColor(Color::Reset)
                         )?;
                     }
@@ -1761,6 +1763,10 @@ impl ChatSession {
                     )?;
                 },
             }
+
+            // Reset prompt state after shell command execution
+            self.last_input_was_exclamation = false;
+            self.input_source.reset_prompt_state();
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -2610,14 +2616,34 @@ impl ChatSession {
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+        let profile = self.conversation.current_profile();
+        let all_trusted = self.all_tools_trusted();
+        let tangent_mode = self.conversation.is_in_tangent_mode();
+        
         let mut ctrl_c = false;
         loop {
-            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
+            match (
+                self.input_source.read_line_with_dynamic_prompt(
+                    prompt,
+                    profile,
+                    !all_trusted,
+                    tangent_mode,
+                ),
+                ctrl_c
+            ) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty
                     }
-                    return Some(line);
+                    
+                    // Track if this input starts with ! for next prompt
+                    if line.starts_with('!') {
+                        self.last_input_was_exclamation = true;
+                    } else {
+                        self.last_input_was_exclamation = false;
+                    }
+                    
+                    return Some(line); // Return the full line, don't strip anything
                 },
                 (Ok(None), false) => {
                     if exit_on_single_ctrl_c {
@@ -2644,7 +2670,12 @@ impl ChatSession {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
+        
+        if self.last_input_was_exclamation {
+            generate_prompt_with_leader(profile.as_deref(), !all_trusted, tangent_mode, "$")
+        } else {
+            prompt::generate_prompt(profile.as_deref(), !all_trusted, tangent_mode)
+        }
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -3406,5 +3437,99 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
+    }
+
+    #[tokio::test]
+    async fn test_empty_input_handling() {
+        let mut os = Os::new().await.unwrap();
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        let mut chat_session = ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![
+                "".to_string(),      // Empty input
+                "".to_string(),      // Another empty input
+                "hello".to_string(), // Non-empty input
+                "/quit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Test that empty inputs are handled correctly
+        let prompt1 = chat_session.generate_tool_trust_prompt();
+        
+        // First empty input should continue looping
+        let input1 = chat_session.read_user_input(&prompt1, false);
+        assert_eq!(input1, Some("hello".to_string())); // Should skip empty inputs and get "hello"
+    }
+
+    #[tokio::test]
+    async fn test_exclamation_point_prompt_switching() {
+        let mut os = Os::new().await.unwrap();
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        let mut chat_session = ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "fake_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![
+                "!echo hello".to_string(),
+                "normal command".to_string(),
+                "/quit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+        )
+        .await
+        .unwrap();
+
+        // Initially should use > prompt
+        let prompt1 = chat_session.generate_tool_trust_prompt();
+        assert!(prompt1.contains(">"));
+        assert!(!prompt1.contains("$"));
+
+        // After exclamation input, should return full line and set state
+        let input1 = chat_session.read_user_input(&prompt1, false);
+        assert_eq!(input1, Some("!echo hello".to_string())); // Full line including !
+
+        // Next prompt should use $
+        let prompt2 = chat_session.generate_tool_trust_prompt();
+        assert!(prompt2.contains("$"));
+        assert!(!prompt2.contains(">"));
+
+        // Simulate shell command execution (this resets the state)
+        let _result = chat_session.handle_input(&mut os, "!echo hello".to_string()).await;
+
+        // After shell command execution, prompt should reset to >
+        let prompt3 = chat_session.generate_tool_trust_prompt();
+        assert!(prompt3.contains(">"));
+        assert!(!prompt3.contains("$"));
     }
 }
