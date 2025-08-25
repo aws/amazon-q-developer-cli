@@ -13,4 +13,5 @@ with new documentation reflecting the proposed changes in the PR. Make new files
 
 cat pr-contents.txt
 
-echo -e $PROMPT | qchat chat --non-interactive
+echo -e $PROMPT | qchat chat --non-interactive --trust-all-tools
+exit $?
