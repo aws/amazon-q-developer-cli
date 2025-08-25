@@ -33,18 +33,16 @@ jobs:
       with:
         role-to-assume: ${{ secrets.AWS_TB_ROLE }}
         aws-region: us-east-1
-
-    - name: Run setup_amazon_q.sh from terminal-bench
-      run: |
-        cd terminal-bench-test
-        chmod +x setup_amazon_q.sh
-        sudo bash setup_amazon_q.sh
         
     - name: Make scripts executable
       run: |
+        chmod +x dogs-generation/setup_amazon_q.sh
         chmod +x docs-generation/create-docs-pr.sh
         chmod +x docs-generation/read-pr.sh
         chmod +x docs-generation/update-docs.sh
+
+    - name: Run setup script
+      run: bash docs-generation/setup_amazon_q.sh
 
     - name: Generate PR contents file
       run: bash docs-generation/read-pr.sh ${{ inputs.pr_number }}
