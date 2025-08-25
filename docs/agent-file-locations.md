@@ -108,3 +108,23 @@ EOF
 ## Directory Creation
 
 Q CLI will automatically create the global agents directory (`~/.aws/amazonq/cli-agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.amazonq/cli-agents/`) in your workspace if you want to use local agents.
+
+## Related Local Storage
+
+In addition to agent configurations, Q CLI stores other workspace-specific data in the `.amazonq/` directory:
+
+### To-Do Lists
+To-do lists created by the `todo_list` tool are stored in:
+```
+.amazonq/cli-todo-lists/
+```
+
+These files persist across chat sessions and allow you to resume work on incomplete tasks using the `/todos` slash commands.
+
+### Legacy Configuration
+Legacy MCP server configurations may be stored in:
+```
+.amazonq/mcp.json
+```
+
+This file is used when agents have `useLegacyMcpJson` set to `true`.

@@ -8,6 +8,7 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
+- [`todo_list`](#todo_list-tool) — Create and manage to-do lists for multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
@@ -101,6 +102,71 @@ This tool has no configuration options.
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
 
 This tool has no configuration options.
+
+## Todo_list Tool
+
+Create and manage to-do lists for multi-step tasks. This tool helps track progress on complex tasks by breaking them down into manageable steps and marking completion as work progresses.
+
+The tool automatically creates to-do lists when you give Amazon Q multi-step tasks and tracks completion status. To-do lists are stored locally in the `.amazonq/cli-todo-lists/` directory and persist across chat sessions.
+
+### Commands
+
+#### `create`
+Creates a new to-do list with specified tasks and description.
+
+**Required parameters:**
+- `tasks`: Array of distinct task descriptions
+- `todo_list_description`: Brief summary of the to-do list
+
+#### `complete`
+Marks specified tasks as completed and updates context.
+
+**Required parameters:**
+- `completed_indices`: Array of 0-indexed task numbers to mark complete
+- `context_update`: Important information about completed tasks
+- `current_id`: ID of the currently loaded to-do list
+
+**Optional parameters:**
+- `modified_files`: Array of file paths that were modified during the task
+
+#### `load`
+Loads an existing to-do list by ID.
+
+**Required parameters:**
+- `load_id`: ID of the to-do list to load
+
+#### `add`
+Adds new tasks to the current to-do list.
+
+**Required parameters:**
+- `new_tasks`: Array of new task descriptions
+- `insert_indices`: Array of 0-indexed positions where tasks should be inserted
+- `current_id`: ID of the currently loaded to-do list
+
+**Optional parameters:**
+- `new_description`: Updated description if tasks significantly change the goal
+
+#### `remove`
+Removes tasks from the current to-do list.
+
+**Required parameters:**
+- `remove_indices`: Array of 0-indexed positions of tasks to remove
+- `current_id`: ID of the currently loaded to-do list
+
+**Optional parameters:**
+- `new_description`: Updated description if removal significantly changes the goal
+
+### Configuration
+
+This tool has no configuration options and is trusted by default.
+
+### Usage Notes
+
+- To-do lists are automatically created when you give Amazon Q complex, multi-step tasks
+- Tasks should be marked as completed immediately after finishing each step
+- The tool tracks file modifications and important context for each completed task
+- To-do lists persist across chat sessions and can be resumed later
+- Use the `/todos` slash command to view, manage, and resume existing to-do lists
 
 ## Use_aws Tool
 

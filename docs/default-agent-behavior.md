@@ -49,10 +49,11 @@ If no agent is specified or found, Q CLI uses a built-in default agent with the 
 The built-in default agent provides:
 
 ### Available Tools
-- **All tools**: Uses `"*"` wildcard to include all built-in tools and MCP server tools
+- **All tools**: Uses `"*"` wildcard to include all built-in tools (including `todo_list`) and MCP server tools
 
 ### Trusted Tools
 - **fs_read only**: Only the `fs_read` tool is pre-approved and won't prompt for permission
+- **todo_list**: The `todo_list` tool is also trusted by default for task management
 - All other tools will require user confirmation before execution
 
 ### Default Resources
