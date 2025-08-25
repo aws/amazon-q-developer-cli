@@ -29,6 +29,9 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Fetch main branch
+      run: git fetch origin main:main
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
