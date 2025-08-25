@@ -7,6 +7,7 @@ on:
         description: 'Number of PR to document'
         required: true
         type: string
+  push:
 
 jobs:
   generate_docs:
@@ -35,7 +36,7 @@ jobs:
 
     - name: Run setup_amazon_q.sh from terminal-bench
       run: |
-        cd terminal-bench-testing
+        cd terminal-bench-test
         chmod +x setup_amazon_q.sh
         bash setup_amazon_q.sh
         
