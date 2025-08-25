@@ -1,6 +1,6 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::Arc;
 
 use crossterm::{
     queue,
@@ -8,6 +8,11 @@ use crossterm::{
 };
 use eyre::Result;
 use regex::Regex;
+use rmcp::RoleClient;
+use rmcp::model::{
+    CallToolRequestParam,
+    RawContent,
+};
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -28,11 +33,9 @@ use crate::mcp_client::{
     ClientConfig as McpClientConfig,
     JsonRpcResponse,
     JsonRpcStdioTransport,
-    MessageContent,
     Messenger,
     ServerCapabilities,
     StdioTransport,
-    ToolCallResult,
 };
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
@@ -192,47 +195,44 @@ pub struct CustomTool {
     /// Actual tool name as recognized by its MCP server. This differs from the tool names as they
     /// are seen by the model since they are not prefixed by its MCP server name.
     pub name: String,
+    /// The name of the MCP (Model Context Protocol) server that hosts this tool.
+    /// This is used to identify which server instance the tool belongs to and is
+    /// prefixed to the tool name when presented to the model for disambiguation.
+    pub server_name: String,
     /// Reference to the client that manages communication with the tool's server process.
-    pub client: Arc<CustomToolClient>,
-    /// The method name to call on the tool's server, following the JSON-RPC convention.
-    /// This corresponds to a specific functionality provided by the tool.
-    pub method: String,
+    pub client: rmcp::Peer<RoleClient>,
     /// Optional parameters to pass to the tool when invoking the method.
     /// Structured as a JSON value to accommodate various parameter types and structures.
-    pub params: Option<serde_json::Value>,
+    pub params: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl CustomTool {
     pub async fn invoke(&self, _os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
-        // Assuming a response shape as per https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#calling-tools
-        let resp = self.client.request(self.method.as_str(), self.params.clone()).await?;
-        let result = match resp.result {
-            Some(result) => result,
-            None => {
-                let failure = resp.error.map_or("Unknown error encountered".to_string(), |err| {
-                    serde_json::to_string(&err).unwrap_or_default()
-                });
-                return Err(eyre::eyre!(failure));
-            },
+        let params = CallToolRequestParam {
+            name: Cow::from(self.name.clone()),
+            arguments: self.params.clone(),
         };
+        tracing::error!("## mcp: tool call with params: {:?}", params);
+        let mut resp = self.client.call_tool(params).await?;
 
-        match serde_json::from_value::<ToolCallResult>(result.clone()) {
-            Ok(mut de_result) => {
-                for content in &mut de_result.content {
-                    if let MessageContent::Image { data, .. } = content {
-                        *data = format!("Redacted base64 encoded string of an image of size {}", data.len());
-                    }
+        tracing::error!("## mcp: {:?}", resp.content);
+        if resp.is_error.is_none_or(|v| !v) {
+            for content in &mut resp.content {
+                if let RawContent::Image(content) = &mut content.raw {
+                    content.data = format!(
+                        "Redacted base64 encoded string of an image of size {}",
+                        content.data.len()
+                    );
                 }
-                Ok(InvokeOutput {
-                    output: super::OutputKind::Json(serde_json::json!(de_result)),
-                })
-            },
-            Err(e) => {
-                warn!("Tool call result deserialization failed: {:?}", e);
-                Ok(InvokeOutput {
-                    output: super::OutputKind::Json(result.clone()),
-                })
-            },
+            }
+            Ok(InvokeOutput {
+                output: super::OutputKind::Json(serde_json::json!(resp)),
+            })
+        } else {
+            warn!("Tool call for {} failed", self.name);
+            Ok(InvokeOutput {
+                output: super::OutputKind::Json(serde_json::json!(resp)),
+            })
         }
     }
 
@@ -271,17 +271,14 @@ impl CustomTool {
     }
 
     pub fn get_input_token_size(&self) -> usize {
-        TokenCounter::count_tokens(self.method.as_str())
-            + TokenCounter::count_tokens(self.params.as_ref().map_or("", |p| p.as_str().unwrap_or_default()))
+        TokenCounter::count_tokens(
+            &serde_json::to_string(self.params.as_ref().unwrap_or(&serde_json::Map::new())).unwrap_or_default(),
+        )
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        let Self {
-            name: tool_name,
-            client,
-            ..
-        } = self;
-        let server_name = client.get_server_name();
+        let Self { name: tool_name, .. } = self;
+        let server_name = &self.server_name;
 
         let server_pattern = format!("@{server_name}");
         if agent.allowed_tools.contains(&server_pattern) {

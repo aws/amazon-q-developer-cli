@@ -31,6 +31,12 @@ How it works
 Compaction will be automatically performed whenever the context window overflows.
 To disable this behavior, run: `q settings chat.disableAutoCompaction true`"
 )]
+/// Arguments for the `/compact` command that summarizes conversation history to free up context
+/// space.
+///
+/// This command creates an AI-generated summary of the conversation while preserving essential
+/// information, code, and tool executions. It's useful for long-running conversations that
+/// may reach memory constraints.
 pub struct CompactArgs {
     /// The prompt to use when generating the summary
     prompt: Vec<String>,

@@ -32,12 +32,14 @@ use crossterm::{
     terminal,
 };
 use eyre::Report;
-use futures::{
-    StreamExt,
-    future,
-    stream,
-};
+use futures::future;
 use regex::Regex;
+use rmcp::ServiceError;
+use rmcp::model::{
+    GetPromptRequestParam,
+    GetPromptResult,
+    Prompt,
+};
 use tokio::signal::ctrl_c;
 use tokio::sync::{
     Mutex,
@@ -64,14 +66,12 @@ use crate::cli::agent::{
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
-use crate::cli::chat::server_messenger::{
+use crate::cli::chat::new_server_messenger::{
+    ServerMessenger,
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
-use crate::cli::chat::tools::custom_tool::{
-    CustomTool,
-    CustomToolClient,
-};
+use crate::cli::chat::tools::custom_tool::CustomTool;
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -86,10 +86,10 @@ use crate::cli::chat::tools::{
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
+use crate::mcp_client::new_messenger::Messenger;
 use crate::mcp_client::{
-    JsonRpcResponse,
-    Messenger,
-    PromptGet,
+    McpClient,
+    RunningClient,
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
@@ -268,9 +268,19 @@ impl ToolManagerBuilder {
             .map(|(server_name, _)| server_name.clone())
             .collect();
 
+        let mut clients = HashMap::<String, RunningClient<ServerMessenger>>::new();
+        let new_tool_specs = self.new_tool_specs;
+        let has_new_stuff = self.has_new_stuff;
+        let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
+        let notify = Arc::new(Notify::new());
+        let load_record = self.mcp_load_record;
+        let agent = self.agent.unwrap_or_default();
+        let database = os.database.clone();
+        let mut messenger_builder = self.messenger_builder.take();
+
         let pre_initialized = enabled_servers
-            .into_iter()
-            .filter_map(|(server_name, server_config)| {
+            .iter()
+            .filter(|(server_name, _)| {
                 if server_name == "builtin" {
                     let _ = queue!(
                         output,
@@ -285,13 +295,12 @@ impl ToolManagerBuilder {
                         style::ResetColor,
                         style::Print(" (it is used to denote native tools)\n")
                     );
-                    None
+                    false
                 } else {
-                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config, os);
-                    Some((server_name, custom_tool_client))
+                    true
                 }
             })
-            .collect::<Vec<(String, _)>>();
+            .collect::<Vec<_>>();
 
         let mut loading_servers = HashMap::<String, Instant>::new();
         for (server_name, _) in &pre_initialized {
@@ -305,16 +314,6 @@ impl ToolManagerBuilder {
         // Otherwise we do not need to be spawning this.
         let (loading_display_task, loading_status_sender) =
             spawn_display_task(interactive, total, disabled_servers, output);
-
-        let mut clients = HashMap::<String, Arc<CustomToolClient>>::new();
-        let new_tool_specs = self.new_tool_specs;
-        let has_new_stuff = self.has_new_stuff;
-        let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
-        let notify = Arc::new(Notify::new());
-        let load_record = self.mcp_load_record;
-        let agent = self.agent.unwrap_or_default();
-        let database = os.database.clone();
-        let mut messenger_builder = self.messenger_builder.take();
 
         // This is the orchestrator task that serves as a bridge between tool manager and mcp
         // clients for server initiated async events
@@ -356,19 +355,29 @@ impl ToolManagerBuilder {
 
         debug_assert!(messenger_builder.is_some());
         let messenger_builder = messenger_builder.unwrap();
-        for (mut name, init_res) in pre_initialized {
-            let mut messenger = messenger_builder.build_with_name(name.clone());
+        let pre_initialized = enabled_servers
+            .into_iter()
+            .map(|(server_name, server_config)| {
+                (
+                    server_name.clone(),
+                    McpClient::new(
+                        server_name.clone(),
+                        server_config,
+                        messenger_builder.build_with_name(server_name),
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        for (mut name, mcp_client) in pre_initialized {
+            let init_res = mcp_client.init().await;
             match init_res {
-                Ok(mut client) => {
-                    let pid = client.get_pid();
-                    messenger.pid = pid;
-                    client.assign_messenger(Box::new(messenger));
-                    let mut client = Arc::new(client);
-                    while let Some(collided_client) = clients.insert(name.clone(), client) {
+                Ok(mut running_service) => {
+                    while let Some(collided_service) = clients.insert(name.clone(), running_service) {
                         // to avoid server name collision we are going to circumvent this by
                         // appending the name with 1
                         name.push('1');
-                        client = collided_client;
+                        running_service = collided_service;
                     }
                 },
                 Err(e) => {
@@ -377,7 +386,7 @@ impl ToolManagerBuilder {
                         .send_mcp_server_init(
                             &os.database,
                             conversation_id.clone(),
-                            name,
+                            name.clone(),
                             Some(e.to_string()),
                             0,
                             Some("".to_string()),
@@ -386,7 +395,11 @@ impl ToolManagerBuilder {
                         )
                         .await
                         .ok();
-                    let _ = messenger.send_tools_list_result(Err(e)).await;
+
+                    let temp_messenger = messenger_builder.build_with_name(name);
+                    let _ = temp_messenger
+                        .send_tools_list_result(Err(ServiceError::UnexpectedResponse))
+                        .await;
                 },
             }
         }
@@ -426,7 +439,7 @@ pub struct PromptBundle {
     /// The server name from which the prompt is offered / exposed
     pub server_name: String,
     /// The prompt get (info with which a prompt is retrieved) cached
-    pub prompt_get: PromptGet,
+    pub prompt_get: Prompt,
 }
 
 #[derive(Clone, Debug)]
@@ -507,7 +520,7 @@ pub struct ToolManager {
 
     /// Map of server names to their corresponding client instances.
     /// These clients are used to communicate with MCP servers.
-    pub clients: HashMap<String, Arc<CustomToolClient>>,
+    pub clients: HashMap<String, RunningClient<ServerMessenger>>,
 
     /// A list of client names that are still in the process of being initialized
     pub pending_clients: Arc<RwLock<HashSet<String>>>,
@@ -577,7 +590,6 @@ impl Clone for ToolManager {
     fn clone(&self) -> Self {
         Self {
             conversation_id: self.conversation_id.clone(),
-            clients: self.clients.clone(),
             has_new_stuff: self.has_new_stuff.clone(),
             new_tool_specs: self.new_tool_specs.clone(),
             tn_map: self.tn_map.clone(),
@@ -679,20 +691,7 @@ impl ToolManager {
 
             tool_specs
         };
-        let load_tools = self
-            .clients
-            .values()
-            .map(|c| {
-                let clone = Arc::clone(c);
-                async move { clone.init().await }
-            })
-            .collect::<Vec<_>>();
-        let initial_poll = stream::iter(load_tools)
-            .map(|async_closure| tokio::spawn(async_closure))
-            .buffer_unordered(20);
-        tokio::spawn(async move {
-            initial_poll.collect::<Vec<_>>().await;
-        });
+
         // We need to cast it to erase the type otherwise the compiler will default to static
         // dispatch, which would result in an error of inconsistent match arm return type.
         let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() || !self.is_first_launch {
@@ -833,20 +832,12 @@ impl ToolManager {
                         status: ToolResultStatus::Error,
                     });
                 };
-                // The tool input schema has the shape of { type, properties }.
-                // The field "params" expected by MCP is { name, arguments }, where name is the
-                // name of the tool being invoked,
-                // https://spec.modelcontextprotocol.io/specification/2024-11-05/server/tools/#calling-tools.
-                // The field "arguments" is where ToolUse::args belong.
-                let mut params = serde_json::Map::<String, serde_json::Value>::new();
-                params.insert("name".to_owned(), serde_json::Value::String(tool_name.to_owned()));
-                params.insert("arguments".to_owned(), value.args);
-                let params = serde_json::Value::Object(params);
+
                 let custom_tool = CustomTool {
                     name: tool_name.to_owned(),
-                    client: client.clone(),
-                    method: "tools/call".to_owned(),
-                    params: Some(params),
+                    server_name: server_name.clone(),
+                    client: (*client).clone(),
+                    params: value.args.as_object().cloned(),
                 };
                 Tool::Custom(custom_tool)
             },
@@ -947,7 +938,7 @@ impl ToolManager {
         &self,
         name: String,
         arguments: Option<Vec<String>>,
-    ) -> Result<JsonRpcResponse, GetPromptError> {
+    ) -> Result<GetPromptResult, GetPromptError> {
         let (server_name, prompt_name) = match name.split_once('/') {
             None => (None::<String>, Some(name.clone())),
             Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
@@ -1008,7 +999,7 @@ impl ToolManager {
                     let server_name = &bundle.server_name;
                     let client = self.clients.get(server_name).ok_or(GetPromptError::MissingClient)?;
                     let PromptBundle { prompt_get, .. } = bundle;
-                    let args = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
+                    let arguments = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
                         let params = schema.iter().zip(value.iter()).fold(
                             HashMap::<String, String>::new(),
                             |mut acc, (prompt_get_arg, value)| {
@@ -1016,19 +1007,17 @@ impl ToolManager {
                                 acc
                             },
                         );
-                        Some(serde_json::json!(params))
+                        Some(
+                            params
+                                .into_iter()
+                                .map(|(k, v)| (k, serde_json::Value::String(v)))
+                                .collect(),
+                        )
                     } else {
                         None
                     };
-                    let params = {
-                        let mut params = serde_json::Map::new();
-                        params.insert("name".to_string(), serde_json::Value::String(prompt_name));
-                        if let Some(args) = args {
-                            params.insert("arguments".to_string(), args);
-                        }
-                        Some(serde_json::Value::Object(params))
-                    };
-                    let resp = client.request("prompts/get", params).await?;
+                    let params = GetPromptRequestParam { name, arguments };
+                    let resp = client.get_prompt(params).await?;
                     Ok(resp)
                 },
                 (None, _) => Err(GetPromptError::PromptNotFound(prompt_name)),
@@ -1289,11 +1278,7 @@ fn spawn_orchestrator_task(
             // request method on the mcp client no longer buffers all the pages from
             // list calls.
             match msg {
-                UpdateEventMessage::ToolsListResult {
-                    server_name,
-                    result,
-                    pid,
-                } => {
+                UpdateEventMessage::ListToolsResult { server_name, result } => {
                     let time_taken = loading_servers
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
@@ -1304,11 +1289,8 @@ fn spawn_orchestrator_task(
 
                     let result_tools = match &result {
                         Ok(tools_result) => {
-                            let names: Vec<String> = tools_result
-                                .tools
-                                .iter()
-                                .filter_map(|tool| tool.get("name")?.as_str().map(String::from))
-                                .collect();
+                            let names: Vec<String> =
+                                tools_result.tools.iter().map(|tool| tool.name.to_string()).collect();
                             names
                         },
                         Err(_) => vec![],
@@ -1362,40 +1344,15 @@ fn spawn_orchestrator_task(
 
                     match result {
                         Ok(result) => {
-                            if pid.is_none_or(|pid| !is_process_running(pid)) {
-                                let pid = pid.map_or("unknown".to_string(), |pid| pid.to_string());
-                                info!(
-                                    "Received tool list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
-                                );
-
-                                let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                                let _ = queue_failure_message(
-                                    &server_name,
-                                    &eyre::eyre!("Process associated is no longer running"),
-                                    &time_taken,
-                                    &mut buf_writer,
-                                );
-                                let _ = buf_writer.flush();
-                                drop(buf_writer);
-                                let record_content = String::from_utf8_lossy(record_temp_buf).to_string();
-                                let record = LoadingRecord::Err(record_content);
-
-                                load_record
-                                    .lock()
-                                    .await
-                                    .entry(server_name.clone())
-                                    .and_modify(|load_record| {
-                                        load_record.push(record.clone());
-                                    })
-                                    .or_insert(vec![record]);
-
-                                return;
-                            }
-
                             let mut specs = result
                                 .tools
                                 .into_iter()
-                                .filter_map(|v| serde_json::from_value::<ToolSpec>(v).ok())
+                                .map(|v| ToolSpec {
+                                    name: v.name.to_string(),
+                                    description: v.description.as_ref().map(|d| d.to_string()).unwrap_or_default(),
+                                    input_schema: crate::cli::chat::tools::InputSchema(v.schema_as_json_value()),
+                                    tool_origin: ToolOrigin::Native,
+                                })
                                 .filter(|spec| tool_filter.should_include(&spec.name))
                                 .collect::<Vec<_>>();
                             let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
@@ -1469,7 +1426,13 @@ fn spawn_orchestrator_task(
                             error!("Error loading server {server_name}: {:?}", e);
                             // Maintain a record of the server load:
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                            let _ = queue_failure_message(server_name.as_str(), &e, &time_taken, &mut buf_writer);
+                            let fail_load_msg = eyre::eyre!("{}", e);
+                            let _ = queue_failure_message(
+                                server_name.as_str(),
+                                &fail_load_msg,
+                                &time_taken,
+                                &mut buf_writer,
+                            );
                             let _ = buf_writer.flush();
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1487,7 +1450,7 @@ fn spawn_orchestrator_task(
                             if let Some(sender) = &loading_status_sender {
                                 let msg = LoadingMsg::Error {
                                     name: server_name.clone(),
-                                    msg: e,
+                                    msg: eyre::eyre!("{}", e.to_string()),
                                     time: time_taken,
                                 };
                                 if let Err(e) = sender.send(msg).await {
@@ -1507,7 +1470,7 @@ fn spawn_orchestrator_task(
                         }
                     }
                 },
-                UpdateEventMessage::PromptsListResult {
+                UpdateEventMessage::ListPromptsResult {
                     server_name,
                     result,
                     pid,
@@ -1528,23 +1491,19 @@ fn spawn_orchestrator_task(
                             .for_each(|bundles| bundles.retain(|bundle| bundle.server_name != server_name));
 
                         // And then we update them with the new comers
-                        for result in prompt_list_result.prompts {
-                            let Ok(prompt_get) = serde_json::from_value::<PromptGet>(result) else {
-                                error!("Failed to deserialize prompt get from server {server_name}");
-                                continue;
-                            };
+                        for prompt in prompt_list_result.prompts {
                             prompts
-                                .entry(prompt_get.name.clone())
+                                .entry(prompt.name.clone())
                                 .and_modify(|bundles| {
                                     bundles.push(PromptBundle {
                                         server_name: server_name.clone(),
-                                        prompt_get: prompt_get.clone(),
+                                        prompt_get: prompt.clone(),
                                     });
                                 })
                                 .or_insert_with(|| {
                                     vec![PromptBundle {
                                         server_name: server_name.clone(),
-                                        prompt_get,
+                                        prompt_get: prompt,
                                     }]
                                 });
                         }
@@ -1555,7 +1514,8 @@ fn spawn_orchestrator_task(
                     Err(e) => {
                         error!("Error fetching prompts from server {server_name}: {:?}", e);
                         let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
-                        let _ = queue_prompts_load_error_message(&server_name, &e, &mut buf_writer);
+                        let msg = eyre::eyre!("{}", e);
+                        let _ = queue_prompts_load_error_message(&server_name, &msg, &mut buf_writer);
                         let _ = buf_writer.flush();
                         drop(buf_writer);
                         let record = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1570,7 +1530,7 @@ fn spawn_orchestrator_task(
                             .or_insert(vec![record]);
                     },
                 },
-                UpdateEventMessage::ResourcesListResult {
+                UpdateEventMessage::ListResourcesResult {
                     server_name: _,
                     result: _,
                     pid: _,
@@ -1768,22 +1728,6 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
             hasher.write(orig.as_bytes());
             format!("a{}", hasher.finish())
         },
-    }
-}
-
-// Add this function to check if a process is still running
-fn is_process_running(pid: u32) -> bool {
-    #[cfg(unix)]
-    {
-        let system = sysinfo::System::new_all();
-        system.process(sysinfo::Pid::from(pid as usize)).is_some()
-    }
-    #[cfg(windows)]
-    {
-        // TODO: fill in the process health check for windows when when we officially support
-        // windows
-        _ = pid;
-        true
     }
 }
 

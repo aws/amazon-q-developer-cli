@@ -8,6 +8,7 @@ mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 mod line_tracker;
+mod new_server_messenger;
 mod parser;
 mod prompt;
 mod prompt_parser;
@@ -83,6 +84,7 @@ use parser::{
     SendMessageStream,
 };
 use regex::Regex;
+use rmcp::model::PromptMessage;
 use spinners::{
     Spinner,
     Spinners,
@@ -145,7 +147,6 @@ use crate::cli::chat::cli::prompts::{
 };
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
-use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
     AgentConfigInitArgs,
@@ -586,7 +587,7 @@ pub struct ChatSession {
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
-    pending_prompts: VecDeque<Prompt>,
+    pending_prompts: VecDeque<PromptMessage>,
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
@@ -2586,7 +2587,7 @@ impl ChatSession {
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" from mcp server "),
                 style::SetForegroundColor(Color::Magenta),
-                style::Print(tool.client.get_server_name()),
+                style::Print(&tool.server_name),
                 style::SetForegroundColor(Color::Reset),
             )?;
         }

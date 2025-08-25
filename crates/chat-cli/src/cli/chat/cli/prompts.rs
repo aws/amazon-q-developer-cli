@@ -19,14 +19,12 @@ use crossterm::{
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
-use crate::cli::chat::error_formatter::format_mcp_error;
 use crate::cli::chat::tool_manager::PromptBundle;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
-use crate::mcp_client::PromptGetResult;
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
@@ -46,8 +44,11 @@ pub enum GetPromptError {
     IncorrectResponseType,
     #[error("Missing channel")]
     MissingChannel,
+    #[error(transparent)]
+    ServiceError(#[from] rmcp::ServiceError),
 }
 
+/// Command-line arguments for prompt operations
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 #[command(color = clap::ColorChoice::Always,
@@ -205,15 +206,23 @@ impl PromptsArgs {
     }
 }
 
+/// Subcommands for prompt operations
 #[deny(missing_docs)]
 #[derive(Clone, Debug, PartialEq, Subcommand)]
 pub enum PromptsSubcommand {
     /// List available prompts from a tool or show all available prompt
-    List { search_word: Option<String> },
+    List {
+        /// Optional search word to filter prompts
+        search_word: Option<String>,
+    },
+    /// Get a specific prompt by name
     Get {
         #[arg(long, hide = true)]
+        /// Original input string (hidden)
         orig_input: Option<String>,
+        /// Name of the prompt to retrieve
         name: String,
+        /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
 }
@@ -221,7 +230,7 @@ pub enum PromptsSubcommand {
 impl PromptsSubcommand {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let PromptsSubcommand::Get {
-            orig_input,
+            orig_input: _,
             name,
             arguments,
         } = self
@@ -273,34 +282,9 @@ impl PromptsSubcommand {
                 });
             },
         };
-        if let Some(err) = prompts.error {
-            // If we are running into error we should just display the error
-            // and abort.
-            let to_display = serde_json::json!(err);
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetAttribute(Attribute::Bold),
-                style::Print("Error encountered while retrieving prompt:"),
-                style::SetAttribute(Attribute::Reset),
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Red),
-                style::Print(format_mcp_error(&to_display)),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("\n"),
-            )?;
-        } else {
-            let prompts = prompts
-                .result
-                .ok_or(ChatError::Custom("Result field missing from prompt/get request".into()))?;
-            let prompts = serde_json::from_value::<PromptGetResult>(prompts)
-                .map_err(|e| ChatError::Custom(format!("Failed to deserialize prompt/get result: {:?}", e).into()))?;
-            session.pending_prompts.clear();
-            session.pending_prompts.append(&mut VecDeque::from(prompts.messages));
-            return Ok(ChatState::HandleInput {
-                input: orig_input.unwrap_or_default(),
-            });
-        }
+
+        session.pending_prompts.clear();
+        session.pending_prompts.append(&mut VecDeque::from(prompts.messages));
 
         execute!(session.stderr, style::Print("\n"))?;
 
