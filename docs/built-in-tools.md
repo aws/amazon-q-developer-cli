@@ -8,6 +8,7 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
+- [`todo_list`](#todo_list-tool) — Create and manage to-do lists for multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
@@ -101,6 +102,29 @@ This tool has no configuration options.
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
 
 This tool has no configuration options.
+
+## Todo_list Tool
+
+A tool for creating and managing to-do lists for multi-step tasks. This tool is automatically used by Q when handling complex requests that require multiple steps.
+
+### Key Features
+- **Automatic creation**: Q creates to-do lists for multi-step tasks before beginning work
+- **Progress tracking**: Tasks are marked as completed as Q works through them
+- **Context preservation**: Important information and modified files are tracked
+- **Persistence**: To-do lists are saved locally and can be resumed across sessions
+
+### Commands
+The tool supports five main commands:
+- `create` - Create a new to-do list with tasks and description
+- `complete` - Mark tasks as completed and update context
+- `load` - Load an existing to-do list by ID
+- `add` - Add new tasks to an existing to-do list
+- `remove` - Remove tasks from an existing to-do list
+
+### Storage
+To-do lists are stored locally in `.amazonq/cli-todo-lists/` within the current working directory.
+
+This tool has no configuration options and is trusted by default.
 
 ## Use_aws Tool
 
