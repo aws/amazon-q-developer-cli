@@ -7,9 +7,10 @@ if [ ! -f "$PR_FILE" ]; then
 fi
 
 # Create branch before making any changes
+git fetch origin
 git checkout -B "$BRANCH_NAME"
-if git ls-remote --exit-code --heads origin $BRANCH_NAME; then
-    git reset --hard origin/$BRANCH_NAME
+if git ls-remote --exit-code --heads origin "$BRANCH_NAME" >/dev/null 2>&1; then
+    git reset --hard "origin/$BRANCH_NAME"
 fi
 
 PROMPT="Before making any changes, read the 'docs' directory for the project's current
