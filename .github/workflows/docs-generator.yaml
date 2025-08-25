@@ -36,7 +36,7 @@ jobs:
         
     - name: Make scripts executable
       run: |
-        chmod +x dogs-generation/setup_amazon_q.sh
+        chmod +x docs-generation/setup_amazon_q.sh
         chmod +x docs-generation/create-docs-pr.sh
         chmod +x docs-generation/read-pr.sh
         chmod +x docs-generation/update-docs.sh
