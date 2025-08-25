@@ -59,7 +59,7 @@ use crate::api_client::model::{
     ToolSpecification,
     UserInputMessage,
 };
-use crate::cli::agent::Agents;
+use crate::cli::agent::{Agents};
 use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
@@ -67,6 +67,10 @@ use crate::cli::agent::hook::{
 use crate::cli::chat::ChatError;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
+use eyre::Result;
+use crate::cli::agent::{McpServerConfig};
+use crate::cli::chat::tools::custom_tool::CustomToolConfig;
+use crate::util::directories;
 
 const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -77,6 +81,20 @@ pub struct HistoryEntry {
     assistant: AssistantMessage,
     #[serde(default)]
     request_metadata: Option<RequestMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub config: CustomToolConfig,
+    pub source: McpServerSource,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum McpServerSource {
+    Agent(String),           // Agent name
+    GlobalLegacy,
+    WorkspaceLegacy,
 }
 
 /// Tracks state related to an ongoing conversation.
@@ -159,6 +177,76 @@ impl ConversationState {
             file_line_tracker: HashMap::new(),
         }
     }
+
+    /// Searches all configuration sources for MCP servers and returns a deduplicated list.
+    /// Priority order: Agent configs > Workspace legacy > Global legacy
+    pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
+        let mut servers = HashMap::<String, McpServerInfo>::new();
+        let mut seen_names = HashSet::<String>::new();
+
+        // 1. Load from agent configurations (highest priority)
+        let mut stderr = std::io::stderr();
+        let (agents, _) = Agents::load(os, None, true, &mut stderr).await;
+        print!("Loaded {} agents from agent configurations", agents.agents.len());
+        
+        for (_, agent) in agents.agents {
+            for (server_name, server_config) in agent.mcp_servers.mcp_servers {
+                if !seen_names.contains(&server_name) {
+                    servers.insert(server_name.clone(), McpServerInfo {
+                        name: server_name.clone(),
+                        config: server_config,
+                        source: McpServerSource::Agent(agent.name.clone()),
+                    });
+                    seen_names.insert(server_name);
+                }
+            }
+        }
+
+        // 2. Load from workspace legacy config (medium priority)
+        if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
+            if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
+                for (server_name, server_config) in workspace_config.mcp_servers {
+                    if !seen_names.contains(&server_name) {
+                        servers.insert(server_name.clone(), McpServerInfo {
+                            name: server_name.clone(),
+                            config: server_config,
+                            source: McpServerSource::WorkspaceLegacy,
+                        });
+                        seen_names.insert(server_name);
+                    }
+                }
+            }
+        }
+
+        // 3. Load from global legacy config (lowest priority)
+        if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
+            if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
+                for (server_name, server_config) in global_config.mcp_servers {
+                    if !seen_names.contains(&server_name) {
+                        servers.insert(server_name.clone(), McpServerInfo {
+                            name: server_name.clone(),
+                            config: server_config,
+                            source: McpServerSource::GlobalLegacy,
+                        });
+                        seen_names.insert(server_name);
+                    }
+                }
+            }
+        }
+
+        // Convert to sorted vector
+        let mut result: Vec<McpServerInfo> = servers.into_values().collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        
+        Ok(result)
+    }
+
+    /// Get only enabled MCP servers (excludes disabled ones)
+    pub async fn get_enabled_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
+        let all_servers = Self::get_all_available_mcp_servers(os).await?;
+        Ok(all_servers.into_iter().filter(|server| !server.config.disabled).collect())
+    }
+
 
     pub fn latest_summary(&self) -> Option<&str> {
         self.latest_summary.as_ref().map(|(s, _)| s.as_str())
@@ -549,6 +637,53 @@ impl ConversationState {
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
         self.latest_summary = Some((summary, request_metadata));
     }
+
+    pub async fn create_agent_generation_request(
+        &mut self,
+        agent_name: &str,
+        agent_description: &str,
+        selected_servers: &Vec<&McpServerInfo>,
+        schema: &str
+    ) -> Result<FigConversationState, ChatError> {
+        let generation_content = format!(
+            "[SYSTEM NOTE: This is an automated agent generation request, not from the user]\n\n\
+FORMAT REQUIREMENTS: Generate a JSON configuration for a custom coding agent. \
+IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO ```json tags, NO conversational text.\n\n\
+Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\nThe configuration must conform to this JSON schema:\n{}\n\nReturn only the JSON configuration, no additional text.
+Focus on creating practical tools that align with the agent's described purpose. \
+The system prompt should be detailed and establish clear behavioral guidelines. \
+DO NOT wrap your response in code blocks. DO NOT include markdown formatting. \
+Return ONLY the raw JSON with no other text.",
+            agent_name, agent_description, schema
+        );
+
+        let generation_message = Some(UserMessage::new_prompt(generation_content.clone()));
+
+        // Use empty history since this is a standalone generation request
+        let history = VecDeque::new();
+
+        // Only send the dummy tool spec to prevent the model from attempting tool use during generation
+        let mut tools = self.tools.clone();
+        tools.retain(|k, v| match k {
+            ToolOrigin::Native => {
+                v.retain(|tool| match tool {
+                    Tool::ToolSpecification(tool_spec) => tool_spec.name == DUMMY_TOOL_NAME,
+                });
+                true
+            },
+            ToolOrigin::McpServer(_) => false,
+        });
+
+        Ok(FigConversationState {
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message: generation_message
+                .unwrap_or(UserMessage::new_prompt(generation_content)) // should not happen
+                .into_user_input_message(self.model.clone(), &tools),
+            history: Some(flatten_history(history.iter())),
+        })
+    }
+
+
 
     pub fn current_profile(&self) -> Option<&str> {
         if let Some(cm) = self.context_manager.as_ref() {

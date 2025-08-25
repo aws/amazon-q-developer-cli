@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::io::Write;
 
 use clap::Subcommand;
+use dialoguer::MultiSelect;
 use crossterm::style::{
     self,
     Attribute,
@@ -35,6 +36,8 @@ use crate::cli::chat::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_global_agent_path;
+use crate::cli::chat::conversation::McpServerInfo;
+use crate::cli::chat::conversation::ConversationState;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -64,6 +67,13 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         from: Option<String>,
     },
+    /// Generate an agent configuration using AI
+    Generate {
+        /// Name of the agent to generate
+        name: Option<String>,
+        /// Description of what the agent should do
+        description: Vec<String>,
+    },
     /// Delete the specified agent
     #[command(hide = true)]
     Delete { name: String },
@@ -77,6 +87,23 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         name: String,
     },
+}
+
+fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> Result<Vec<&McpServerInfo>, Box<dyn std::error::Error>> {
+    let items: Vec<String> = servers.iter()
+        .map(|server| format!("{} ({})", server.name, server.config.command))
+        .collect();
+    
+    let selections = MultiSelect::new()
+        .with_prompt("Select MCP servers (use Space to toggle, Enter to confirm)")
+        .items(&items)
+        .interact()?;
+    
+    let selected_servers: Vec<&McpServerInfo> = selections.iter()
+        .filter_map(|&i| servers.get(i))
+        .collect();
+    
+    Ok(selected_servers)
 }
 
 impl AgentSubcommand {
@@ -177,6 +204,47 @@ impl AgentSubcommand {
                     style::SetForegroundColor(Color::Reset)
                 )?;
             },
+
+            Self::Generate { name, description } => {
+                use std::io::{self, Write};
+
+                let agent_name = match name {
+                    Some(n) => n,
+                    None => {
+                        print!("Enter agent name: ");
+                        io::stdout().flush()?;
+                        let mut input = String::new();
+                        io::stdin().read_line(&mut input)?;
+                        input.trim().to_string()
+                    }
+                };
+
+                let agent_description = if description.is_empty() {
+                    print!("Enter agent description: ");
+                    io::stdout().flush()?;
+                    let mut input = String::new();
+                    io::stdin().read_line(&mut input)?;
+                    input.trim().to_string()
+                } else {
+                    description.join(" ")
+                };
+
+                let mcp_servers = ConversationState::get_enabled_mcp_servers(os).await.map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+                let selected_servers = if !mcp_servers.is_empty() {
+                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
+                } else {
+                    Vec::new()
+                };
+
+                println!("Selected servers: {:?}", selected_servers);
+
+                print!("mcp servers are {:?}", mcp_servers);
+                use schemars::schema_for;
+                let schema = schema_for!(Agent);
+                let schema_string = serde_json::to_string_pretty(&schema).map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
+                return session.generate_agent_config(os, &agent_name, &agent_description, &selected_servers, &schema_string).await;
+            },
             Self::Set { .. } | Self::Delete { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
                 // switch / create profile after a session has started.
@@ -235,6 +303,7 @@ impl AgentSubcommand {
         match self {
             Self::List => "list",
             Self::Create { .. } => "create",
+            Self::Generate { .. } => "generate",
             Self::Delete { .. } => "delete",
             Self::Set { .. } => "set",
             Self::Schema => "schema",

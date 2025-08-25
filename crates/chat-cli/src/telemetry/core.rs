@@ -496,6 +496,7 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 pub enum MessageMetaTag {
     /// A /compact request
     Compact,
+    GenerateAgent,
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
