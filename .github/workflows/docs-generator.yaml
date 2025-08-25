@@ -38,7 +38,7 @@ jobs:
       run: |
         cd terminal-bench-test
         chmod +x setup_amazon_q.sh
-        bash setup_amazon_q.sh
+        sudo bash setup_amazon_q.sh
         
     - name: Make scripts executable
       run: |
