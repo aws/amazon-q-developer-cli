@@ -24,6 +24,9 @@ jobs:
       pull-requests: write
 
     steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
     - name: Configure AWS credentials
       uses: aws-actions/configure-aws-credentials@v4
       with:
@@ -41,9 +44,6 @@ jobs:
         chmod +x docs-generation/create-docs-pr.sh
         chmod +x docs-generation/read-pr.sh
         chmod +x docs-generation/update-docs.sh
-
-    - name: Checkout repository
-      uses: actions/checkout@v4
 
     - name: Generate PR contents file
       run: bash docs-generation/read-pr.sh ${{ inputs.pr_number }}
