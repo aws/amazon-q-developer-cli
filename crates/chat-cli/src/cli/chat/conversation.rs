@@ -227,7 +227,7 @@ impl ConversationState {
 
         // 1. Load from agent configurations (highest priority)
         let mut stderr = std::io::stderr();
-        let (agents, _) = Agents::load(os, None, true, &mut stderr).await;
+        let (agents, _) = Agents::load(os, None, true, &mut stderr, true).await;
         print!("Loaded {} agents from agent configurations", agents.agents.len());
         
         for (_, agent) in agents.agents {
@@ -739,7 +739,7 @@ Return ONLY the raw JSON with no other text.",
             agent_name, agent_description, schema
         );
 
-        let generation_message = Some(UserMessage::new_prompt(generation_content.clone()));
+        let generation_message = Some(UserMessage::new_prompt(generation_content.clone(), None));
 
         // Use empty history since this is a standalone generation request
         let history = VecDeque::new();
@@ -759,7 +759,7 @@ Return ONLY the raw JSON with no other text.",
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: generation_message
-                .unwrap_or(UserMessage::new_prompt(generation_content)) // should not happen
+                .unwrap_or(UserMessage::new_prompt(generation_content, None)) // should not happen
                 .into_user_input_message(self.model.clone(), &tools),
             history: Some(flatten_history(history.iter())),
         })
