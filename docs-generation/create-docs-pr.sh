@@ -2,7 +2,7 @@
 set -e
 
 # Ensure we have changes to merge
-if [ -z "$(git status --porcelain)" ]; then
+if [ -z "$(git status --porcelain -- . ':!pr-contents.txt')" ]; then
     echo "No changes to commit"
     exit 0
 fi
