@@ -2,7 +2,7 @@
 set -e
 
 PR_NUMBER=$1
-BRANCH_NAME="docs-update-pr-$PR_NUMBER"
+BRANCH_NAME="docs-update-for-pr-$PR_NUMBER"
 
 # Ensure we have changes to merge
 if [ -z "$(git status --porcelain)" ]; then

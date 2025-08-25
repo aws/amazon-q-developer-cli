@@ -10,6 +10,11 @@ gh pr view $PR_NUMBER --json title,body --jq '"Title: " + .title + "\nDescriptio
 # Include updated files
 echo -e "\n====== Updated files ======\n" >> $PR_FILE
 gh pr view $PR_NUMBER --json files --jq ".files[].path" | while read file; do
+    case "$file" in
+        *.lock|*-lock.*|*.min.*|dist/*|build/*|target/*)
+            continue
+                ;;
+    esac
     if [ -f "$file" ]; then
         echo "---- $file ----" >> $PR_FILE
         cat "$file" >> $PR_FILE
