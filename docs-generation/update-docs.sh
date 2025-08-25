@@ -13,5 +13,5 @@ with new documentation reflecting the proposed changes in the PR. Make new files
 
 cat pr-contents.txt
 echo "Would prompt q chat here"
-# timeout 10m echo -e $PROMPT | qchat chat --non-interactive --trust-all-tools
+timeout 10m echo -e $PROMPT | qchat chat --non-interactive --trust-all-tools
 exit $?

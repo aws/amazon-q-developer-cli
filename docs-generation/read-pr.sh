@@ -17,7 +17,7 @@ gh pr view $PR_NUMBER --json files --jq ".files[].path" | while read file; do
     esac
     if [ -f "$file" ]; then
         echo "---- $file ----" >> $PR_FILE
-        cat "$file" >> $PR_FILE
+        git diff main -- "$file" >> $PR_FILE
         echo -e "\n" >> $PR_FILE
     fi
 done
