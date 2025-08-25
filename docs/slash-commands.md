@@ -99,6 +99,16 @@ Additional slash commands are available for various system functions:
 - `/load` - Load a saved conversation  
 - `/subscribe` - Manage subscription settings
 
+## Command Completion
+
+The CLI provides tab completion for slash commands, including:
+
+- `/todos` - Base command
+- `/todos resume` - Resume incomplete to-do lists
+- `/todos clear-finished` - Clear completed to-do lists  
+- `/todos view` - View to-do list details
+- `/todos delete` - Delete to-do lists
+
 ## To-Do List Display Format
 
 When viewing to-do lists, they are displayed with clear visual indicators:
@@ -124,7 +134,7 @@ To-do lists persist across chat sessions:
 - Lists are saved locally in `.amazonq/cli-todo-lists/`
 - You can resume work on incomplete lists in new sessions
 - Context and progress are preserved between sessions
-- Conversation summaries include to-do list IDs for continuity
+- Conversation summaries automatically include active to-do list IDs for continuity
 
 ### Resume Workflow
 When resuming a to-do list:

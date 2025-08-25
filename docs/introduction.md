@@ -10,5 +10,6 @@ These docs are experimental, work in progress, and subject to change. As of now,
 - **Agent Configuration**: Learn how to create and configure custom agents with specific tools, resources, and behaviors
 - **Built-in Tools**: Comprehensive guide to all available tools including file operations, AWS integration, and task management
 - **Slash Commands**: Direct system commands for managing to-do lists, knowledge bases, and other features
+- **To-Do List Management**: Persistent task tracking with automatic creation, progress monitoring, and cross-session resumption
 - **Knowledge Management**: Persistent knowledge bases with semantic search capabilities
 - **Migration Guide**: How to migrate from legacy profiles to the new agent system

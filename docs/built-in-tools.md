@@ -137,7 +137,7 @@ Create and manage to-do lists that persist across chat sessions. This tool allow
 - **Progress Tracking**: Tasks are marked as completed as Q works through them
 - **Persistent Storage**: To-do lists are saved locally and persist across sessions
 - **Context Tracking**: Important information and modified files are tracked with each task
-- **Resume Functionality**: Users can resume incomplete to-do lists from previous sessions
+- **Resume Functionality**: Users can resume incomplete to-do lists from previous sessions using `/todos resume`
 
 ### Commands
 
@@ -187,7 +187,7 @@ To-do lists are stored locally in the current working directory under:
 .amazonq/cli-todo-lists/
 ```
 
-Each to-do list is saved as a JSON file with a timestamp-based ID.
+Each to-do list is saved as a JSON file with a timestamp-based ID. The storage directory is automatically created when the chat session starts if it doesn't exist.
 
 ### Usage Patterns
 
@@ -199,9 +199,9 @@ Q: [Creates to-do list with steps like "Initialize project", "Configure TypeScri
 
 **Progress Tracking**: Q marks tasks as completed immediately after finishing them, providing visual feedback on progress.
 
-**Context Preservation**: Each completed task includes context about what was accomplished and which files were modified, helping maintain continuity across sessions.
+**Context Preservation**: Each completed task includes context about what was accomplished and which files were modified, helping maintain continuity across sessions. When resuming a to-do list, Q automatically loads the list using the `load` command and continues from where it left off.
 
-This tool has no configuration options and is trusted by default.
+This tool has no configuration options and is trusted by default. The `todo_list` tool appears as "trusted" in agent tool listings.
 
 ## Using Tool Settings in Agent Configuration
 

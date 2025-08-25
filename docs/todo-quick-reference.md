@@ -22,7 +22,7 @@ Q: [Automatically creates and displays a to-do list with steps like:]
 
 | Command | Purpose | Example |
 |---------|---------|---------|
-| `/todos resume` | Continue working on an incomplete list | Select from fuzzy-searchable list |
+| `/todos resume` | Continue working on an incomplete list | Interactive fuzzy-searchable selection |
 | `/todos view` | View list details without resuming | Browse all lists, see progress |
 | `/todos delete` | Remove a specific list | Choose from selection interface |
 | `/todos delete --all` | Remove all lists | Clears everything after confirmation |
@@ -76,7 +76,7 @@ Q: [Automatically creates and displays a to-do list with steps like:]
 
 ## Storage and Persistence
 
-- **Location**: `.amazonq/cli-todo-lists/` in your working directory
+- **Location**: `.amazonq/cli-todo-lists/` in your working directory (created automatically)
 - **Format**: JSON files with timestamp-based IDs
 - **Persistence**: Lists survive across chat sessions and CLI restarts
 - **Context**: Each task completion includes context and modified files
