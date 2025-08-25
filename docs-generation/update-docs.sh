@@ -11,4 +11,6 @@ documentation. Then read 'pr-contents.txt' to see the contents of the current PR
 After reading both the directory and the PR file, update the files in the 'docs' directory 
 with new documentation reflecting the proposed changes in the PR. Make new files as appropriate."
 
+cat pr-contents.txt
+
 echo -e $PROMPT | qchat chat --non-interactive
