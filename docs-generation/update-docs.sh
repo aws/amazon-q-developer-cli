@@ -1,8 +1,6 @@
 #!/bin/bash
 set -e
 
-BRANCH_NAME="docs-update-for-pr-$PR_NUMBER"
-
 if [ ! -f "$PR_FILE" ]; then
     echo "PR file not found, aborting"
     exit 1

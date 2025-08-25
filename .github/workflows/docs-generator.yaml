@@ -19,7 +19,8 @@ jobs:
       PR_FILE: "pr-contents.txt"
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GIT_HASH: "latest"
-      TEST_PR_NUMBER: 2533
+      PR_NUMBER: 2533
+      BRANCH_NAME: "docs-update-for-pr-${{ env.PR_NUMBER }}"
     permissions:
       id-token: write
       contents: write
@@ -49,14 +50,14 @@ jobs:
       run: bash docs-generation/setup_amazon_q.sh
 
     - name: Generate PR contents file
-      run: bash docs-generation/read-pr.sh ${{ env.TEST_PR_NUMBER }}
+      run: bash docs-generation/read-pr.sh
 
     - name: Update docs
       run: bash docs-generation/update-docs.sh
 
     - name: Create PR
       if: success()
-      run: bash docs-generation/create-docs-pr.sh ${{ env.TEST_PR_NUMBER }}
+      run: bash docs-generation/create-docs-pr.sh
 
     
     
