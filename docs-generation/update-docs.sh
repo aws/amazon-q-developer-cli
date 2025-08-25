@@ -11,7 +11,7 @@ fi
 # Create branch before making any changes
 git checkout -B "$BRANCH_NAME"
 if git ls-remote --exit-code --heads origin $BRANCH_NAME; then
-    git pull origin $BRANCH_NAME --force
+    git reset --hard origin/$BRANCH_NAME
 fi
 
 PROMPT="Before making any changes, read the 'docs' directory for the project's current
