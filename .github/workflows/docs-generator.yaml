@@ -20,7 +20,7 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       GIT_HASH: "latest"
       PR_NUMBER: 2533
-      BRANCH_NAME: "docs-update-for-pr-${{ env.PR_NUMBER }}"
+      BRANCH_NAME: "docs-update-for-pr-2533"
     permissions:
       id-token: write
       contents: write
