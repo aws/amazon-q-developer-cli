@@ -134,7 +134,7 @@ impl Introspect {
             queue,
             style,
         };
-         _ = self;
+        _ = self;
         queue!(output, style::Print("Introspecting to get you the right information"))?;
         Ok(())
     }
