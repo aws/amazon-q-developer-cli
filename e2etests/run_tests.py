@@ -201,6 +201,10 @@ def generate_report(results, features, test_suites, binary_path="q"):
     timestamp = datetime.now().isoformat()
     system_info = get_system_info(binary_path)
     
+    # Create reports directory if it doesn't exist
+    reports_dir = Path("reports")
+    reports_dir.mkdir(exist_ok=True)
+    
     # Calculate summary stats from individual tests
     total_individual_tests = 0
     passed_individual_tests = 0
@@ -251,13 +255,13 @@ def generate_report(results, features, test_suites, binary_path="q"):
     features_str = "-".join(features[:3]) + ("_more" if len(features) > 3 else "")
     suites_str = "-".join(test_suites)
     datetime_str = datetime.now().strftime("%m%d%y%H%M%S")
-    filename = f"qcli_test_summary_{features_str}_{suites_str}_{datetime_str}.json"
+    filename = reports_dir / f"qcli_test_summary_{features_str}_{suites_str}_{datetime_str}.json"
     
     # Save JSON report
     with open(filename, "w") as f:
         json.dump(report, f, indent=2)
     
-    report["filename"] = filename
+    report["filename"] = str(filename)
     return report
 
 def generate_html_report(json_filename):
@@ -270,8 +274,9 @@ def generate_html_report(json_filename):
     with open(template_path, 'r') as f:
         html_template = f.read()
     
-    # Generate HTML filename
-    html_filename = json_filename.replace('.json', '.html')
+    # Generate HTML filename in reports directory
+    json_path = Path(json_filename)
+    html_filename = json_path.with_suffix('.html')
     
     # Calculate stats
     total_features = len(report["features"])
