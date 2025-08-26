@@ -49,34 +49,53 @@ def parse_test_results(stdout):
     """Parse individual test results from cargo output with their outputs"""
     tests = []
     lines = stdout.split('\n')
-    current_output = []
     
-    for line in lines:
-        if line.startswith('test ') and (' ... ok' in line or ' ... FAILED' in line):
-            # Found test result - output above belongs to this test
-            if ' ... ok' in line:
-                test_name = line.split(' ... ok')[0].replace('test ', '').strip()
-                status = "passed"
-            elif ' ... FAILED' in line:
-                test_name = line.split(' ... FAILED')[0].replace('test ', '').strip()
-                status = "failed"
+    # Look for test lines followed by result lines
+    for i, line in enumerate(lines):
+        clean_line = line.strip()
+        
+        # Look for test declaration lines
+        if clean_line.startswith('test ') and ' ... ' in clean_line:
+            # Extract test name (everything between 'test ' and ' ... ')
+            test_name = clean_line.split(' ... ')[0].replace('test ', '').strip()
             
-            tests.append({
-                "name": test_name,
-                "status": status,
-                "output": '\n'.join(current_output + [line])
-            })
-            current_output = []
-        else:
-            # Collect output lines
-            current_output.append(line)
+            # Look ahead for the result (ok/FAILED) in the next few lines
+            status = None
+            result_line_idx = None
+            
+            # Check next 50 lines for result (increased from 20)
+            for j in range(i + 1, min(i + 51, len(lines))):
+                result_line = lines[j].strip()
+                if result_line == 'ok':
+                    status = "passed"
+                    result_line_idx = j
+                    break
+                elif result_line == 'FAILED':
+                    status = "failed"
+                    result_line_idx = j
+                    break
+            
+            # If we found a result, add the test
+            if status and test_name:
+                # Collect output between test declaration and result
+                output_lines = [clean_line]
+                if result_line_idx:
+                    for k in range(i + 1, result_line_idx + 1):
+                        if k < len(lines):
+                            output_lines.append(lines[k].strip())
+                
+                tests.append({
+                    "name": test_name,
+                    "status": status,
+                    "output": '\n'.join(output_lines[:30])  # Limit output size
+                })
     
     return tests
 
 def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
     """Run cargo test for a single feature with test suite"""
     feature_str = f"{feature},{test_suite}"
-    cmd = ["cargo", "test", "--tests", "--features", feature_str, "--", "--nocapture"]
+    cmd = ["cargo", "test", "--tests", "--features", feature_str, "--", "--nocapture", "--test-threads=1"]
     
     if not quiet:
         print(f"🔄 Running: {feature} with {test_suite}")
@@ -96,9 +115,18 @@ def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
         
         # Show individual test results
         print(f"\n📋 Individual Test Results for {feature}:")
-        for test in individual_tests:
-            status_icon = "✅" if test["status"] == "passed" else "❌"
-            print(f"  {status_icon} {test['name']} - {test['status']}")
+        if individual_tests:
+            for test in individual_tests:
+                status_icon = "✅" if test["status"] == "passed" else "❌"
+                print(f"  {status_icon} {test['name']} - {test['status']}")
+        else:
+            print(f"  ⚠️ No individual tests detected (parsing may have failed)")
+            print(f"  Debug: Looking for 'test ' lines in output...")
+            lines = result.stdout.split('\n')
+            test_lines = [line for line in lines if 'test ' in line and ' ... ' in line]
+            print(f"  Found {len(test_lines)} potential test lines:")
+            for line in test_lines[:3]:  # Show first 3
+                print(f"    {repr(line.strip())}")
     
     return {
         "feature": feature,
@@ -139,7 +167,10 @@ def run_tests_with_suites(features, test_suites, binary_path="q", quiet=False):
                 failed_count = sum(1 for t in individual_tests if t["status"] == "failed")
                 
                 status = "✅" if result["success"] else "❌"
-                print(f"{status} {feature} ({test_suite}) - {result['duration']}s - {passed_count} passed, {failed_count} failed")
+                if individual_tests:
+                    print(f"{status} {feature} ({test_suite}) - {result['duration']}s - {passed_count} passed, {failed_count} failed")
+                else:
+                    print(f"{status} {feature} ({test_suite}) - {result['duration']}s - No individual tests detected")
     
     return results
 
