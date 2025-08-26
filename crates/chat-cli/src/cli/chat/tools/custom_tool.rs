@@ -127,9 +127,6 @@ impl CustomToolClient {
             trust_sampling,
         } = config;
 
-        // Pass sampling_sender to all servers - sampling permission is now based on tool call state
-        let conditional_sampling_sender = sampling_sender;
-
         // Process environment variables if present
         let processed_env = env.map(|mut env_vars| {
             process_env_vars(&mut env_vars, &os.env);
@@ -146,7 +143,7 @@ impl CustomToolClient {
                "version": "1.0.0"
             }),
             env: processed_env,
-            sampling_sender: conditional_sampling_sender,
+            sampling_sender: sampling_sender,
         };
         let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
         Ok(CustomToolClient::Stdio {
