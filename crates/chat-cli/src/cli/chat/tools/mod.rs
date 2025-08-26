@@ -8,13 +8,22 @@ pub mod knowledge;
 pub mod thinking;
 pub mod use_aws;
 
-use std::borrow::{Borrow, Cow};
+use std::borrow::{
+    Borrow,
+    Cow,
+};
 use std::collections::HashMap;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use crossterm::queue;
-use crossterm::style::{self, Color};
+use crossterm::style::{
+    self,
+    Color,
+};
 use custom_tool::CustomTool;
 use execute::ExecuteCommand;
 use eyre::Result;
@@ -23,16 +32,26 @@ use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use introspect::Introspect;
 use knowledge::Knowledge;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use thinking::Thinking;
 use tracing::error;
 use use_aws::UseAws;
 
 use super::consts::{
-    MAX_TOOL_RESPONSE_SIZE, USER_AGENT_APP_NAME, USER_AGENT_ENV_VAR, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE,
+    MAX_TOOL_RESPONSE_SIZE,
+    USER_AGENT_APP_NAME,
+    USER_AGENT_ENV_VAR,
+    USER_AGENT_VERSION_KEY,
+    USER_AGENT_VERSION_VALUE,
 };
 use super::util::images::RichImageBlocks;
-use crate::cli::agent::{Agent, PermissionEvalResult};
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
