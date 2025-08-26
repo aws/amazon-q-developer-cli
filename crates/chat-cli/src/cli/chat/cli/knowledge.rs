@@ -605,7 +605,7 @@ mod tests {
     #[test]
     fn test_include_exclude_patterns_parsing() {
         // Test that include and exclude patterns are parsed correctly
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",
@@ -636,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_clap_markdown_parsing_issue() {
-        let help_result = TestCli::try_parse_from(&["test", "add", "--help"]);
+        let help_result = TestCli::try_parse_from(["test", "add", "--help"]);
         match help_result {
             Err(err) if err.kind() == clap::error::ErrorKind::DisplayHelp => {
                 // This is expected for --help
@@ -650,7 +650,7 @@ mod tests {
     #[test]
     fn test_empty_patterns_allowed() {
         // Test that commands work without any patterns
-        let result = TestCli::try_parse_from(&["test", "add", "/some/path"]);
+        let result = TestCli::try_parse_from(["test", "add", "/some/path"]);
         assert!(result.is_ok());
 
         let cli = result.unwrap();
@@ -669,7 +669,7 @@ mod tests {
     #[test]
     fn test_multiple_include_patterns() {
         // Test multiple include patterns
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",
@@ -694,7 +694,7 @@ mod tests {
     #[test]
     fn test_multiple_exclude_patterns() {
         // Test multiple exclude patterns
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",

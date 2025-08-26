@@ -116,5 +116,8 @@ pub fn ser_user_trigger_decision_event(
             ::aws_smithy_types::Number::NegInt((input.streak_length).into()),
         );
     }
+    if let Some(var_13) = &input.suggestion_type {
+        object.key("suggestionType").string(var_13.as_str());
+    }
     Ok(())
 }

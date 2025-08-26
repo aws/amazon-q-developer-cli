@@ -9,6 +9,8 @@ pub struct SubscriptionPlanDescription {
     pub feature_header: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub features: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub billing_interval: ::std::option::Option<::std::string::String>,
 }
 impl SubscriptionPlanDescription {
     #[allow(missing_docs)] // documentation missing in model
@@ -27,6 +29,11 @@ impl SubscriptionPlanDescription {
     pub fn features(&self) -> &[::std::string::String] {
         self.features.as_deref().unwrap_or_default()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn billing_interval(&self) -> ::std::option::Option<&str> {
+        self.billing_interval.as_deref()
+    }
 }
 impl SubscriptionPlanDescription {
     /// Creates a new builder-style object to manufacture
@@ -43,6 +50,7 @@ pub struct SubscriptionPlanDescriptionBuilder {
     pub(crate) title: ::std::option::Option<::std::string::String>,
     pub(crate) feature_header: ::std::option::Option<::std::string::String>,
     pub(crate) features: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+    pub(crate) billing_interval: ::std::option::Option<::std::string::String>,
 }
 impl SubscriptionPlanDescriptionBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -100,6 +108,23 @@ impl SubscriptionPlanDescriptionBuilder {
         &self.features
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn billing_interval(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.billing_interval = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_billing_interval(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.billing_interval = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_billing_interval(&self) -> &::std::option::Option<::std::string::String> {
+        &self.billing_interval
+    }
+
     /// Consumes the builder and constructs a
     /// [`SubscriptionPlanDescription`](crate::types::SubscriptionPlanDescription).
     pub fn build(self) -> crate::types::SubscriptionPlanDescription {
@@ -107,6 +132,7 @@ impl SubscriptionPlanDescriptionBuilder {
             title: self.title,
             feature_header: self.feature_header,
             features: self.features,
+            billing_interval: self.billing_interval,
         }
     }
 }
