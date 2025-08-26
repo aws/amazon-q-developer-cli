@@ -15,10 +15,12 @@ const TEST_NAMES: &[&str] = &[
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
+/// Tests the /usage command to display current context window usage
+/// Verifies token usage information, progress bar, breakdown sections, and Pro Tips
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage command...");
+    println!("🔍 Testing /usage command... | Description: Tests the /usage command to display current context window usage. Verifies token usage information, progress bar, breakdown sections, and Pro Tips");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -74,10 +76,12 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Tests the /usage --help command to display help information for the usage command
+/// Verifies Usage section, Options section, and help flags (-h, --help)
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage --help command...");
+    println!("🔍 Testing /usage --help command... | Description: Tests the /usage --help command to display help information for the usage command. Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -90,7 +94,7 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
     
     // Verify Usage section
-    assert!(response.contains("Usage:"), "Missing Usage section");
+    assert!(response.contains("Usage: XX "), "Missing Usage section");
     assert!(response.contains("/usage"), "Missing /usage command in usage section");
     println!("✅ Found Usage section with /usage command");
     
@@ -115,10 +119,12 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Tests the /usage -h command (short form of --help)
+/// Verifies Usage section, Options section, and help flags (-h, --help)
 #[test]
 #[cfg(all(any(feature = "usage", feature = "session_mgmt"), feature = "regression"))]
 fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage -h command...");
+    println!("🔍 Testing /usage -h command... | Description: Tests the /usage -h command (short form of --help). Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
