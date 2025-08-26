@@ -46,7 +46,7 @@ def parse_features():
 DEFAULT_TESTSUITE = "sanity"
 
 def parse_test_results(stdout):
-    """Parse individual test results from cargo output with their outputs"""
+    """Parse individual test results from cargo output with their outputs and descriptions"""
     tests = []
     lines = stdout.split('\n')
     
@@ -62,6 +62,7 @@ def parse_test_results(stdout):
             # Look ahead for the result (ok/FAILED) in the next few lines
             status = None
             result_line_idx = None
+            description = ""
             
             # Check next 50 lines for result (increased from 20)
             for j in range(i + 1, min(i + 51, len(lines))):
@@ -82,12 +83,23 @@ def parse_test_results(stdout):
                 if result_line_idx:
                     for k in range(i + 1, result_line_idx + 1):
                         if k < len(lines):
-                            output_lines.append(lines[k].strip())
+                            line_content = lines[k].strip()
+                            output_lines.append(line_content)
+                
+                # Extract description from the full output
+                full_output = '\n'.join(output_lines)
+                if "🔍 Testing" in full_output and "| Description:" in full_output:
+                    # Find the line with the description
+                    for line in output_lines:
+                        if "🔍 Testing" in line and "| Description:" in line:
+                            description = line.split("| Description:")[1].strip()
+                            break
                 
                 tests.append({
                     "name": test_name,
                     "status": status,
-                    "output": '\n'.join(output_lines[:30])  # Limit output size
+                    "output": '\n'.join(output_lines[:30]),  # Limit output size
+                    "description": description
                 })
     
     return tests
@@ -324,7 +336,9 @@ def generate_html_report(json_filename):
                     readable_name = test_name
                 
                 test_output = test.get('output', 'No output captured')
-                test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4><p><strong>Status:</strong> {test["status"].upper()}</p><button class="collapsible">📄 View Test Output</button><div class="content"><div class="stdout">{test_output}</div></div></div>'
+                test_description = test.get('description', '')
+                description_html = f'<p>{test_description}</p>' if test_description else ''
+                test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4>{description_html}<p><strong>Status:</strong> {test["status"].upper()}</p><button class="collapsible">📄 View Test Output</button><div class="content"><div class="stdout">{test_output}</div></div></div>'
             
             # Add stdout/stderr for this feature
             for result in report["detailed_results"]:
@@ -376,7 +390,9 @@ def print_summary(report):
         # Show individual test details
         for test in stats["individual_tests"]:
             test_status = "✅" if test["status"] == "passed" else "❌"
-            print(f"    {test_status} {test['name']}")
+            description = test.get('description', '')
+            desc_text = f" - {description}" if description else ""
+            print(f"    {test_status} {test['name']}{desc_text}")
     
     # Calculate feature-level stats
     total_features = len(report["features"])
