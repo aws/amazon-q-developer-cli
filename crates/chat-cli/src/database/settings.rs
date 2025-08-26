@@ -2,9 +2,16 @@ use std::fmt::Display;
 use std::io::SeekFrom;
 
 use fd_lock::RwLock;
-use serde_json::{Map, Value};
+use serde_json::{
+    Map,
+    Value,
+};
 use tokio::fs::File;
-use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{
+    AsyncReadExt,
+    AsyncSeekExt,
+    AsyncWriteExt,
+};
 
 use super::DatabaseError;
 
