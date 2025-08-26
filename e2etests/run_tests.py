@@ -46,17 +46,30 @@ def parse_features():
 DEFAULT_TESTSUITE = "sanity"
 
 def parse_test_results(stdout):
-    """Parse individual test results from cargo output"""
+    """Parse individual test results from cargo output with their outputs"""
     tests = []
     lines = stdout.split('\n')
+    current_output = []
     
     for line in lines:
-        if ' ... ok' in line and line.startswith('test '):
-            test_name = line.split(' ... ok')[0].replace('test ', '').strip()
-            tests.append({"name": test_name, "status": "passed"})
-        elif ' ... FAILED' in line and line.startswith('test '):
-            test_name = line.split(' ... FAILED')[0].replace('test ', '').strip()
-            tests.append({"name": test_name, "status": "failed"})
+        if line.startswith('test ') and (' ... ok' in line or ' ... FAILED' in line):
+            # Found test result - output above belongs to this test
+            if ' ... ok' in line:
+                test_name = line.split(' ... ok')[0].replace('test ', '').strip()
+                status = "passed"
+            elif ' ... FAILED' in line:
+                test_name = line.split(' ... FAILED')[0].replace('test ', '').strip()
+                status = "failed"
+            
+            tests.append({
+                "name": test_name,
+                "status": status,
+                "output": '\n'.join(current_output + [line])
+            })
+            current_output = []
+        else:
+            # Collect output lines
+            current_output.append(line)
     
     return tests
 
@@ -274,13 +287,14 @@ def generate_html_report(json_filename):
                 else:
                     readable_name = test_name
                 
-                test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4><p><strong>Status:</strong> {test["status"].upper()}</p></div>'
+                test_output = test.get('output', 'No output captured')
+                test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4><p><strong>Status:</strong> {test["status"].upper()}</p><button class="collapsible">📄 View Test Output</button><div class="content"><div class="stdout">{test_output}</div></div></div>'
             
             # Add stdout/stderr for this feature
             for result in report["detailed_results"]:
                 if result["feature"] == feature_name and result["test_suite"] == suite:
                     stderr_content = f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{result["stderr"]}</div>' if result['stderr'] else ''
-                    test_suites_content += f'<button class="collapsible">📄 View Command Output</button><div class="content"><p><strong>Command:</strong> {result["command"]}</p><p><strong>Duration:</strong> {result["duration"]}s</p><div class="stdout">{result["stdout"]}</div>{stderr_content}</div>'
+                    test_suites_content += f'<button class="collapsible">📄 View Full Command Output</button><div class="content"><p><strong>Command:</strong> {result["command"]}</p><p><strong>Duration:</strong> {result["duration"]}s</p><div class="stdout">{result["stdout"]}</div>{stderr_content}</div>'
             
             test_suites_content += "</div>"  # Close feature content
         
