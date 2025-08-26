@@ -217,9 +217,14 @@ def generate_report(results, features, test_suites, binary_path="q"):
     return report
 
 def generate_html_report(json_filename):
-    """Generate HTML report from JSON file"""
+    """Generate HTML report from JSON file using template"""
     with open(json_filename, 'r') as f:
         report = json.load(f)
+    
+    # Load HTML template
+    template_path = Path(__file__).parent / 'html_template.html'
+    with open(template_path, 'r') as f:
+        html_template = f.read()
     
     # Generate HTML filename
     html_filename = json_filename.replace('.json', '.html')
@@ -232,79 +237,8 @@ def generate_html_report(json_filename):
     # Get test suites from detailed results
     test_suites = list(set(result["test_suite"] for result in report["detailed_results"]))
     
-    html_content = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Q CLI Test Report</title>
-    <style>
-        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
-        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
-        .header {{ text-align: center; margin-bottom: 30px; }}
-        .summary-card {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-        .stats {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0; }}
-        .stat-item {{ background: white; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
-        .stat-item.success {{ border-left-color: #28a745; }}
-        .stat-item.failure {{ border-left-color: #dc3545; }}
-        .collapsible {{ background-color: #007bff; color: white; cursor: pointer; padding: 15px; border: none; text-align: left; outline: none; font-size: 16px; border-radius: 5px; margin: 5px 0; width: 100%; }}
-        .collapsible:hover {{ background-color: #0056b3; }}
-        .collapsible.active {{ background-color: #0056b3; }}
-        .content {{ padding: 0 18px; display: none; overflow: hidden; background-color: #f1f1f1; border-radius: 0 0 5px 5px; }}
-        .test-item {{ margin: 10px 0; padding: 10px; background: white; border-radius: 5px; }}
-        .test-passed {{ border-left: 4px solid #28a745; }}
-        .test-failed {{ border-left: 4px solid #dc3545; }}
-        .stdout {{ background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }}
-        .timestamp {{ color: #666; font-size: 14px; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>🧪 Q CLI E2E Test Report</h1>
-            <p class="timestamp">Generated: {report['timestamp']}</p>
-            <div class="system-info" style="background: #e9ecef; padding: 15px; border-radius: 5px; margin: 15px 0; text-align: left;">
-                <h3>💻 System Information</h3>
-                <p><strong>Platform:</strong> {report['system_info']['platform']}</p>
-                <p><strong>OS:</strong> {report['system_info']['os']} {report['system_info']['os_version']}</p>
-                <p><strong>Q Binary:</strong> {report['system_info']['q_binary_path']}</p>
-                <p><strong>Q Version:</strong> {report['system_info']['q_version']}</p>
-            </div>
-        </div>
-        
-        <div class="summary-card">
-            <h2>📊 Overall Summary</h2>
-            <div class="stats">
-                <div class="stat-item success">
-                    <h3>{report['summary']['success_rate']}%</h3>
-                    <p>Success Rate</p>
-                </div>
-                <div class="stat-item">
-                    <h3>{total_features}</h3>
-                    <p>Features Tested</p>
-                </div>
-                <div class="stat-item success">
-                    <h3>{features_100_pass}</h3>
-                    <p>Features 100% Pass</p>
-                </div>
-                <div class="stat-item failure">
-                    <h3>{features_failed}</h3>
-                    <p>Features with Failures</p>
-                </div>
-                <div class="stat-item success">
-                    <h3>{report['summary']['passed']}</h3>
-                    <p>Tests Passed</p>
-                </div>
-                <div class="stat-item failure">
-                    <h3>{report['summary']['failed']}</h3>
-                    <p>Tests Failed</p>
-                </div>
-            </div>
-        </div>
-"""
-    
-    # Add test suite sections
+    # Generate test suites content
+    test_suites_content = ""
     for suite in test_suites:
         suite_features = {}
         for result in report["detailed_results"]:
@@ -317,69 +251,57 @@ def generate_html_report(json_filename):
         suite_failed = sum(stats["failed"] for stats in suite_features.values())
         suite_rate = round((suite_passed / (suite_passed + suite_failed) * 100) if (suite_passed + suite_failed) > 0 else 0, 2)
         
-        html_content += f"""
-        <button class="collapsible">🧪 {suite.upper()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button>
-        <div class="content">
-"""
+        test_suites_content += f'<button class="collapsible">🧪 {suite.upper()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
         
         # Add features for this suite
         for feature_name, feature_stats in suite_features.items():
             feature_rate = round((feature_stats["passed"] / (feature_stats["passed"] + feature_stats["failed"]) * 100) if (feature_stats["passed"] + feature_stats["failed"]) > 0 else 0, 2)
             
-            html_content += f"""
-            <button class="collapsible">📦 {feature_name} - {feature_rate}% ({feature_stats["passed"]} passed, {feature_stats["failed"]} failed)</button>
-            <div class="content">
-"""
+            test_suites_content += f'<button class="collapsible">📦 {feature_name} - {feature_rate}% ({feature_stats["passed"]} passed, {feature_stats["failed"]} failed)</button><div class="content">'
             
             # Add individual tests
             for test in feature_stats["individual_tests"]:
                 test_class = "test-passed" if test["status"] == "passed" else "test-failed"
                 status_icon = "✅" if test["status"] == "passed" else "❌"
                 
-                html_content += f"""
-                <div class="test-item {test_class}">
-                    <h4>{status_icon} {test['name']}</h4>
-                    <p><strong>Status:</strong> {test['status'].upper()}</p>
-                </div>
-"""
+                # Convert test name to readable format
+                test_name = test['name']
+                if '::' in test_name:
+                    readable_name = test_name.split('::')[-1]
+                    if readable_name.startswith('test_'):
+                        readable_name = readable_name[5:]
+                    readable_name = ' '.join(word.capitalize() for word in readable_name.split('_'))
+                else:
+                    readable_name = test_name
+                
+                test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4><p><strong>Status:</strong> {test["status"].upper()}</p></div>'
             
             # Add stdout/stderr for this feature
             for result in report["detailed_results"]:
                 if result["feature"] == feature_name and result["test_suite"] == suite:
-                    html_content += f"""
-                    <button class="collapsible">📄 View Command Output</button>
-                    <div class="content">
-                        <p><strong>Command:</strong> {result['command']}</p>
-                        <p><strong>Duration:</strong> {result['duration']}s</p>
-                        <div class="stdout">{result['stdout']}</div>
-                        {f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{result["stderr"]}</div>' if result['stderr'] else ''}
-                    </div>
-"""
+                    stderr_content = f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{result["stderr"]}</div>' if result['stderr'] else ''
+                    test_suites_content += f'<button class="collapsible">📄 View Command Output</button><div class="content"><p><strong>Command:</strong> {result["command"]}</p><p><strong>Duration:</strong> {result["duration"]}s</p><div class="stdout">{result["stdout"]}</div>{stderr_content}</div>'
             
-            html_content += "</div>"  # Close feature content
+            test_suites_content += "</div>"  # Close feature content
         
-        html_content += "</div>"  # Close suite content
+        test_suites_content += "</div>"  # Close suite content
     
-    html_content += """
-    </div>
-    
-    <script>
-        var coll = document.getElementsByClassName("collapsible");
-        for (var i = 0; i < coll.length; i++) {
-            coll[i].addEventListener("click", function() {
-                this.classList.toggle("active");
-                var content = this.nextElementSibling;
-                if (content.style.display === "block") {
-                    content.style.display = "none";
-                } else {
-                    content.style.display = "block";
-                }
-            });
-        }
-    </script>
-</body>
-</html>
-"""
+    # Fill template with data
+    html_content = html_template.format(
+        timestamp=report['timestamp'],
+        success_rate=report['summary']['success_rate'],
+        total_features=total_features,
+        features_100_pass=features_100_pass,
+        features_failed=features_failed,
+        tests_passed=report['summary']['passed'],
+        tests_failed=report['summary']['failed'],
+        test_suites_content=test_suites_content,
+        platform=report['system_info']['platform'],
+        os=report['system_info']['os'],
+        os_version=report['system_info']['os_version'],
+        q_binary_path=report['system_info']['q_binary_path'],
+        q_version=report['system_info']['q_version']
+    )
     
     with open(html_filename, 'w') as f:
         f.write(html_content)

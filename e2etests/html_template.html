@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q CLI Test Report</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; margin-bottom: 30px; }}
+        .summary-card {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
+        .summary-content {{ display: flex; gap: 30px; align-items: center; }}
+        .stats-column {{ flex: 1; }}
+        .chart-column {{ flex: 0 0 300px; text-align: center; }}
+        .stats {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }}
+        .stat-item {{ background: white; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
+        .stat-item.success {{ border-left-color: #28a745; }}
+        .stat-item.failure {{ border-left-color: #dc3545; }}
+        .collapsible {{ background-color: #007bff; color: white; cursor: pointer; padding: 15px; border: none; text-align: left; outline: none; font-size: 16px; border-radius: 5px; margin: 5px 0; width: 100%; }}
+        .collapsible:hover {{ background-color: #0056b3; }}
+        .collapsible.active {{ background-color: #0056b3; }}
+        .content {{ padding: 0 18px; display: none; overflow: hidden; background-color: #f1f1f1; border-radius: 0 0 5px 5px; }}
+        .test-item {{ margin: 10px 0; padding: 10px; background: white; border-radius: 5px; }}
+        .test-passed {{ border-left: 4px solid #28a745; }}
+        .test-failed {{ border-left: 4px solid #dc3545; }}
+        .stdout {{ background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; }}
+        .timestamp {{ color: #666; font-size: 14px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🧪 Q CLI E2E Test Report</h1>
+            <p class="timestamp">Generated: {timestamp}</p>
+        </div>
+        
+        <div class="summary-card">
+            <h2>📊 Overall Summary</h2>
+            <div class="summary-content">
+                <div class="stats-column">
+                    <div class="stats">
+                        <div class="stat-item success">
+                            <h3>{success_rate}%</h3>
+                            <p>Success Rate</p>
+                        </div>
+                        <div class="stat-item">
+                            <h3>{total_features}</h3>
+                            <p>Features Tested</p>
+                        </div>
+                        <div class="stat-item success">
+                            <h3>{features_100_pass}</h3>
+                            <p>Features 100% Pass</p>
+                        </div>
+                        <div class="stat-item failure">
+                            <h3>{features_failed}</h3>
+                            <p>Features with Failures</p>
+                        </div>
+                        <div class="stat-item success">
+                            <h3>{tests_passed}</h3>
+                            <p>Tests Passed</p>
+                        </div>
+                        <div class="stat-item failure">
+                            <h3>{tests_failed}</h3>
+                            <p>Tests Failed</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-column">
+                    <canvas id="successChart" width="250" height="250"></canvas>
+                    <p style="margin-top: 10px; font-weight: bold;">Success Rate: {success_rate}%</p>
+                </div>
+            </div>
+        </div>
+        
+        {test_suites_content}
+        
+        <div class="system-info" style="background: #e9ecef; padding: 15px; border-radius: 5px; margin: 30px 0; text-align: left;">
+            <h3>💻 System Information</h3>
+            <p><strong>Platform:</strong> {platform}</p>
+            <p><strong>OS:</strong> {os} {os_version}</p>
+            <p><strong>Q Binary:</strong> {q_binary_path}</p>
+            <p><strong>Q Version:</strong> {q_version}</p>
+        </div>
+    </div>
+    
+    <script>
+        window.onload = function() {{
+            var canvas = document.getElementById('successChart');
+            if (!canvas) return;
+            
+            var ctx = canvas.getContext('2d');
+            var centerX = canvas.width / 2;
+            var centerY = canvas.height / 2;
+            var radius = 100;
+            
+            var successRate = {success_rate};
+            var failureRate = 100 - successRate;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            if (successRate === 100) {{
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#28a745';
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('100%', centerX, centerY + 7);
+            }} else if (successRate === 0) {{
+                ctx.beginPath();
+                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+                ctx.fillStyle = '#dc3545';
+                ctx.fill();
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('0%', centerX, centerY + 7);
+            }} else {{
+                var successAngle = (successRate / 100) * 2 * Math.PI;
+                
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, -Math.PI/2, -Math.PI/2 + successAngle);
+                ctx.closePath();
+                ctx.fillStyle = '#28a745';
+                ctx.fill();
+                
+                ctx.beginPath();
+                ctx.moveTo(centerX, centerY);
+                ctx.arc(centerX, centerY, radius, -Math.PI/2 + successAngle, -Math.PI/2 + 2 * Math.PI);
+                ctx.closePath();
+                ctx.fillStyle = '#dc3545';
+                ctx.fill();
+                
+                ctx.fillStyle = 'white';
+                ctx.font = 'bold 16px Arial';
+                ctx.textAlign = 'center';
+                
+                if (successRate > 15) {{
+                    var successLabelAngle = -Math.PI/2 + successAngle / 2;
+                    var successLabelX = centerX + Math.cos(successLabelAngle) * (radius * 0.7);
+                    var successLabelY = centerY + Math.sin(successLabelAngle) * (radius * 0.7) + 5;
+                    ctx.fillText(successRate + '%', successLabelX, successLabelY);
+                }}
+                
+                if (failureRate > 15) {{
+                    var failureLabelAngle = -Math.PI/2 + successAngle + (2 * Math.PI - successAngle) / 2;
+                    var failureLabelX = centerX + Math.cos(failureLabelAngle) * (radius * 0.7);
+                    var failureLabelY = centerY + Math.sin(failureLabelAngle) * (radius * 0.7) + 5;
+                    ctx.fillText(failureRate + '%', failureLabelX, failureLabelY);
+                }}
+            }}
+        }};
+        
+        var coll = document.getElementsByClassName("collapsible");
+        for (var i = 0; i < coll.length; i++) {{
+            coll[i].addEventListener("click", function() {{
+                this.classList.toggle("active");
+                var content = this.nextElementSibling;
+                if (content.style.display === "block") {{
+                    content.style.display = "none";
+                }} else {{
+                    content.style.display = "block";
+                }}
+            }});
+        }}
+    </script>
+</body>
+</html>
