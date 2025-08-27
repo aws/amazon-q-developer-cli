@@ -7,10 +7,10 @@ mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 mod line_tracker;
-mod new_server_messenger;
 mod parser;
 mod prompt;
 mod prompt_parser;
+mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;

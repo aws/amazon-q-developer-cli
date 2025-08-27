@@ -1,4 +1,4 @@
-pub mod new_client;
-pub mod new_messenger;
+pub mod client;
+pub mod messenger;
 
-pub use new_client::*;
+pub use client::*;

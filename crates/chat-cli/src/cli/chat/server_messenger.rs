@@ -4,13 +4,17 @@ use rmcp::model::{
     ListResourcesResult,
     ListToolsResult,
 };
+use rmcp::{
+    Peer,
+    RoleClient,
+};
 use tokio::sync::mpsc::{
     Receiver,
     Sender,
     channel,
 };
 
-use crate::mcp_client::new_messenger::{
+use crate::mcp_client::messenger::{
     Messenger,
     MessengerError,
     MessengerResult,
@@ -23,18 +27,22 @@ pub enum UpdateEventMessage {
     ListToolsResult {
         server_name: String,
         result: Result<ListToolsResult>,
+        peer: Option<Peer<RoleClient>>,
     },
     ListPromptsResult {
         server_name: String,
         result: Result<ListPromptsResult>,
+        peer: Option<Peer<RoleClient>>,
     },
     ListResourcesResult {
         server_name: String,
         result: Result<ListResourcesResult>,
+        peer: Option<Peer<RoleClient>>,
     },
     ResourceTemplatesListResult {
         server_name: String,
         result: Result<ListResourceTemplatesResult>,
+        peer: Option<Peer<RoleClient>>,
     },
     InitStart {
         server_name: String,
@@ -74,34 +82,49 @@ pub struct ServerMessenger {
 
 #[async_trait::async_trait]
 impl Messenger for ServerMessenger {
-    async fn send_tools_list_result(&self, result: Result<ListToolsResult>) -> MessengerResult {
+    async fn send_tools_list_result(
+        &self,
+        result: Result<ListToolsResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ListToolsResult {
                 server_name: self.server_name.clone(),
                 result,
+                peer,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
     }
 
-    async fn send_prompts_list_result(&self, result: Result<ListPromptsResult>) -> MessengerResult {
+    async fn send_prompts_list_result(
+        &self,
+        result: Result<ListPromptsResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ListPromptsResult {
                 server_name: self.server_name.clone(),
                 result,
+                peer,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
     }
 
-    async fn send_resources_list_result(&self, result: Result<ListResourcesResult>) -> MessengerResult {
+    async fn send_resources_list_result(
+        &self,
+        result: Result<ListResourcesResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ListResourcesResult {
                 server_name: self.server_name.clone(),
                 result,
+                peer,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
@@ -110,12 +133,14 @@ impl Messenger for ServerMessenger {
     async fn send_resource_templates_list_result(
         &self,
         result: Result<ListResourceTemplatesResult>,
+        peer: Option<Peer<RoleClient>>,
     ) -> MessengerResult {
         Ok(self
             .update_event_sender
             .send(UpdateEventMessage::ResourceTemplatesListResult {
                 server_name: self.server_name.clone(),
                 result,
+                peer,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)

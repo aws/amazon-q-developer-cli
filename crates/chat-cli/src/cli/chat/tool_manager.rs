@@ -65,7 +65,7 @@ use crate::cli::agent::{
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
-use crate::cli::chat::new_server_messenger::{
+use crate::cli::chat::server_messenger::{
     ServerMessenger,
     ServerMessengerBuilder,
     UpdateEventMessage,
@@ -85,7 +85,7 @@ use crate::cli::chat::tools::{
 };
 use crate::database::Database;
 use crate::database::settings::Setting;
-use crate::mcp_client::new_messenger::Messenger;
+use crate::mcp_client::messenger::Messenger;
 use crate::mcp_client::{
     McpClient,
     RunningClient,
@@ -397,7 +397,7 @@ impl ToolManagerBuilder {
 
                     let temp_messenger = messenger_builder.build_with_name(name);
                     let _ = temp_messenger
-                        .send_tools_list_result(Err(ServiceError::UnexpectedResponse))
+                        .send_tools_list_result(Err(ServiceError::UnexpectedResponse), None)
                         .await;
                 },
             }
@@ -1277,7 +1277,11 @@ fn spawn_orchestrator_task(
             // request method on the mcp client no longer buffers all the pages from
             // list calls.
             match msg {
-                UpdateEventMessage::ListToolsResult { server_name, result } => {
+                UpdateEventMessage::ListToolsResult {
+                    server_name,
+                    result,
+                    peer,
+                } => {
                     let time_taken = loading_servers
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
@@ -1343,6 +1347,18 @@ fn spawn_orchestrator_task(
 
                     match result {
                         Ok(result) => {
+                            if let Some(peer) = peer {
+                                if peer.is_transport_closed() {
+                                    error!(
+                                        "Received tool list result from {server_name} but transport has been closed. Ignoring."
+                                    );
+                                    return;
+                                }
+                            } else {
+                                error!("Received tool list result from {server_name} without a peer. Ignoring.");
+                                return;
+                            }
+
                             let mut specs = result
                                 .tools
                                 .into_iter()
@@ -1367,6 +1383,7 @@ fn spawn_orchestrator_task(
                                 &result_tools,
                             )
                             .await;
+
                             if let Some(sender) = &loading_status_sender {
                                 // Anomalies here are not considered fatal, thus we shall give
                                 // warnings.
@@ -1469,8 +1486,23 @@ fn spawn_orchestrator_task(
                         }
                     }
                 },
-                UpdateEventMessage::ListPromptsResult { server_name, result } => match result {
+                UpdateEventMessage::ListPromptsResult {
+                    server_name,
+                    result,
+                    peer,
+                } => match result {
                     Ok(prompt_list_result) => {
+                        if let Some(peer) = peer {
+                            if peer.is_transport_closed() {
+                                error!(
+                                    "Received prompt list result from {server_name} but transport has been closed. Ignoring."
+                                );
+                                return;
+                            }
+                        } else {
+                            error!("Received prompt list result from {server_name} without a peer. Ignoring.");
+                            return;
+                        }
                         // We first need to clear all the PromptGets that are associated with
                         // this server because PromptsListResult is declaring what is available
                         // (and not the diff)
@@ -1515,14 +1547,8 @@ fn spawn_orchestrator_task(
                             .or_insert(vec![record]);
                     },
                 },
-                UpdateEventMessage::ListResourcesResult {
-                    server_name: _,
-                    result: _,
-                } => {},
-                UpdateEventMessage::ResourceTemplatesListResult {
-                    server_name: _,
-                    result: _,
-                } => {},
+                UpdateEventMessage::ListResourcesResult { .. } => {},
+                UpdateEventMessage::ResourceTemplatesListResult { .. } => {},
                 UpdateEventMessage::InitStart { server_name, .. } => {
                     pending.write().await.insert(server_name.clone());
                     loading_servers.insert(server_name, std::time::Instant::now());

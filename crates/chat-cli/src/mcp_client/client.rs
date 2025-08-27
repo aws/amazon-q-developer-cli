@@ -22,7 +22,7 @@ use rmcp::{
 use tokio::process::Command;
 use tracing::error;
 
-use super::new_messenger::Messenger;
+use super::messenger::Messenger;
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
 
@@ -68,7 +68,7 @@ macro_rules! paginated_fetch {
                 final_result.$result_field.append(&mut content);
             }
 
-            if let Err(e) = $messenger.$messenger_method(final_result).await {
+            if let Err(e) = $messenger.$messenger_method(final_result, Some($service)).await {
                 error!(target: "mcp", "Initial {} result failed to send for server {}: {}",
                        stringify!($result_field), $server_name, e);
             }
@@ -224,5 +224,60 @@ where
             messenger: self.messenger,
             server_name: self.server_name
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_substitute_env_vars() {
+        // Set a test environment variable
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
+        }
+
+        // Test basic substitution
+        assert_eq!(
+            substitute_env_vars("Value is ${env:TEST_VAR}", &os.env),
+            "Value is test_value"
+        );
+
+        // Test multiple substitutions
+        assert_eq!(
+            substitute_env_vars("${env:TEST_VAR} and ${env:TEST_VAR}", &os.env),
+            "test_value and test_value"
+        );
+
+        // Test non-existent variable
+        assert_eq!(
+            substitute_env_vars("${env:NON_EXISTENT_VAR}", &os.env),
+            "${NON_EXISTENT_VAR}"
+        );
+
+        // Test mixed content
+        assert_eq!(
+            substitute_env_vars("Prefix ${env:TEST_VAR} suffix", &os.env),
+            "Prefix test_value suffix"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_env_vars() {
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
+        }
+
+        let mut env_vars = HashMap::new();
+        env_vars.insert("KEY1".to_string(), "Value is ${env:TEST_VAR}".to_string());
+        env_vars.insert("KEY2".to_string(), "No substitution".to_string());
+
+        process_env_vars(&mut env_vars, &os.env);
+
+        assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
+        assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
     }
 }
