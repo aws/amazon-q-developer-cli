@@ -145,7 +145,6 @@ use crate::cli::chat::cli::prompts::{
     PromptsSubcommand,
 };
 use crate::cli::chat::message::UserMessage;
-use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -2878,7 +2877,7 @@ impl ChatSession {
             Ok(s) => s,
             Err(e) => return Err(ChatError::Custom(format!("Error deserializing todo list: {e}").into())),
         };
-        let summary_content = format!(
+        let request_content = format!(
             "[SYSTEM NOTE: This is an automated request, not from the user]\n
             Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
             Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
@@ -2889,23 +2888,13 @@ impl ChatSession {
             id
         );
 
-        let summary_message = UserMessage::new_prompt(summary_content.clone(), None);
+        let summary_message = UserMessage::new_prompt(request_content.clone(), None);
 
-        // Only send the todo_list tool
-        let mut tools = self.conversation.tools.clone();
-        tools.retain(|k, v| match k {
-            ToolOrigin::Native => {
-                v.retain(|tool| match tool {
-                    api_client::model::Tool::ToolSpecification(tool_spec) => tool_spec.name == "todo_list",
-                });
-                true
-            },
-            ToolOrigin::McpServer(_) => false,
-        });
+        ChatSession::reset_user_turn(self);
 
         Ok(ChatState::HandleInput {
             input: summary_message
-                .into_user_input_message(self.conversation.model.clone(), &tools)
+                .into_user_input_message(self.conversation.model.clone(), &self.conversation.tools)
                 .content,
         })
     }

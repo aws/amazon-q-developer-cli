@@ -77,7 +77,7 @@ impl TodoSubcommand {
                 let mut cleared_one = false;
 
                 for todo_status in todos.iter() {
-                    if todo_status.completed.iter().all(|b| *b) {
+                    if todo_status.tasks.iter().all(|b| b.completed) {
                         match delete_todo(os, &todo_status.id).await {
                             Ok(_) => cleared_one = true,
                             Err(e) => {
@@ -185,8 +185,8 @@ impl TodoSubcommand {
         let (todos, _) = get_all_todos(os).await?;
         for todo in todos.iter() {
             out.push(TodoDisplayEntry {
-                num_completed: todo.completed.iter().filter(|b| **b).count(),
-                num_tasks: todo.completed.len(),
+                num_completed: todo.tasks.iter().filter(|t| t.completed).count(),
+                num_tasks: todo.tasks.len(),
                 description: todo.description.clone(),
                 id: todo.id.clone(),
             });

@@ -26,14 +26,16 @@ use serde::{
 use super::InvokeOutput;
 use crate::os::Os;
 
-// Local directory to store todo lists
-const TODO_LIST_DIR: &str = ".amazonq/cli-todo-lists/";
+#[derive(Debug, Default, Serialize, Deserialize, Clone)]
+pub struct Task {
+    pub task_description: String,
+    pub completed: bool,
+}
 
 /// Contains all state to be serialized and deserialized into a todo list
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct TodoListState {
-    pub tasks: Vec<String>,
-    pub completed: Vec<bool>,
+    pub tasks: Vec<Task>,
     pub description: String,
     pub context: Vec<String>,
     pub modified_files: Vec<String>,
@@ -43,7 +45,9 @@ pub struct TodoListState {
 impl TodoListState {
     /// Creates a local directory to store todo lists
     pub async fn init_dir(os: &Os) -> Result<()> {
-        os.fs.create_dir_all(os.env.current_dir()?.join(TODO_LIST_DIR)).await?;
+        os.fs
+            .create_dir_all(os.env.current_dir()?.join(get_todo_list_dir(os)?))
+            .await?;
         Ok(())
     }
 
@@ -72,8 +76,8 @@ impl TodoListState {
     /// Displays the TodoListState as a to-do list
     pub fn display_list(&self, output: &mut impl Write) -> Result<()> {
         queue!(output, style::Print("TODO:\n".yellow()))?;
-        for (index, (task, completed)) in self.tasks.iter().zip(self.completed.iter()).enumerate() {
-            queue_next_without_newline(output, task.clone(), *completed)?;
+        for (index, task) in self.tasks.iter().enumerate() {
+            queue_next_without_newline(output, task.task_description.clone(), task.completed)?;
             if index < self.tasks.len() - 1 {
                 queue!(output, style::Print("\n"))?;
             }
@@ -117,12 +121,16 @@ pub fn generate_new_todo_id() -> String {
 
 /// Converts a todo list id to an absolute path in the cwd
 pub fn id_to_path(os: &Os, id: &str) -> Result<PathBuf> {
-    Ok(os.env.current_dir()?.join(TODO_LIST_DIR).join(format!("{id}.json")))
+    Ok(os
+        .env
+        .current_dir()?
+        .join(get_todo_list_dir(os)?)
+        .join(format!("{id}.json")))
 }
 
 /// Gets all todo lists from the local directory
 pub async fn get_all_todos(os: &Os) -> Result<(Vec<TodoListState>, Vec<Report>)> {
-    let todo_list_dir = os.env.current_dir()?.join(TODO_LIST_DIR);
+    let todo_list_dir = os.env.current_dir()?.join(get_todo_list_dir(os)?);
     let mut read_dir_output = os.fs.read_dir(todo_list_dir).await?;
 
     let mut todos = Vec::new();
@@ -152,6 +160,12 @@ pub async fn get_all_todos(os: &Os) -> Result<(Vec<TodoListState>, Vec<Report>)>
 pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
     os.fs.remove_file(id_to_path(os, id)?).await?;
     Ok(())
+}
+
+/// Returns the local todo list storage directory
+pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(".amazonq").join("cli-todo-lists"))
 }
 
 /// Contains the command definitions that allow the model to create,
@@ -203,11 +217,17 @@ impl TodoList {
                 todo_list_description: task_description,
             } => {
                 let new_id = generate_new_todo_id();
+                let mut todo_tasks = Vec::new();
+                for task_description in tasks {
+                    todo_tasks.push(Task {
+                        task_description: task_description.clone(),
+                        completed: false,
+                    });
+                }
 
                 // Create a new todo list with the given tasks and save state
                 let state = TodoListState {
-                    tasks: tasks.clone(),
-                    completed: vec![false; tasks.len()],
+                    tasks: todo_tasks.clone(),
                     description: task_description.clone(),
                     context: Vec::new(),
                     modified_files: Vec::new(),
@@ -226,7 +246,7 @@ impl TodoList {
                 let mut state = TodoListState::load(os, id).await?;
 
                 for i in completed_indices.iter() {
-                    state.completed[*i] = true;
+                    state.tasks[*i].completed = true;
                 }
 
                 state.context.push(context_update.clone());
@@ -239,21 +259,17 @@ impl TodoList {
                 // As tasks are being completed, display only the newly completed tasks
                 // and the next. Only display the whole list when all tasks are completed
                 let last_completed = completed_indices.iter().max().unwrap();
-                if *last_completed == state.tasks.len() - 1 || state.completed.iter().all(|c| *c) {
+                if *last_completed == state.tasks.len() - 1 || state.tasks.iter().all(|t| t.completed) {
                     state.display_list(output)?;
                 } else {
                     let mut display_list = TodoListState {
                         tasks: completed_indices.iter().map(|i| state.tasks[*i].clone()).collect(),
                         ..Default::default()
                     };
-                    for _ in 0..completed_indices.len() {
-                        display_list.completed.push(true);
-                    }
 
                     // For next state, mark it true/false depending on actual completion state
                     // This only matters when the model skips around tasks
                     display_list.tasks.push(state.tasks[*last_completed + 1].clone());
-                    display_list.completed.push(state.completed[*last_completed + 1]);
 
                     display_list.display_list(output)?;
                 }
@@ -271,9 +287,12 @@ impl TodoList {
                 current_id: id,
             } => {
                 let mut state = TodoListState::load(os, id).await?;
-                for (i, task) in insert_indices.iter().zip(new_tasks.iter()) {
-                    state.tasks.insert(*i, task.clone());
-                    state.completed.insert(*i, false);
+                for (i, task_description) in insert_indices.iter().zip(new_tasks.iter()) {
+                    let new_task = Task {
+                        task_description: task_description.clone(),
+                        completed: false,
+                    };
+                    state.tasks.insert(*i, new_task);
                 }
                 if let Some(description) = new_description {
                     state.description = description.clone();
@@ -294,7 +313,6 @@ impl TodoList {
                 remove_indices.sort();
                 for i in remove_indices.iter().rev() {
                     state.tasks.remove(*i);
-                    state.completed.remove(*i);
                 }
                 if let Some(description) = new_description {
                     state.description = description.clone();
