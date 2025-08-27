@@ -1,4 +1,7 @@
 #!/bin/bash
+
+# This was taken and modified from the terminal-bench-test folder.
+
 set -e
 # if git hash empty then set to latest auto
 sudo apt-get update

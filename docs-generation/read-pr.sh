@@ -5,7 +5,7 @@ set -e
 echo "====== PR Information ======\n" > $PR_FILE
 gh pr view $PR_NUMBER --json title,body --jq '"Title: " + .title + "\nDescription: " + .body' >> $PR_FILE
 
-# Include PR diffs
+# Add PR diffs
 echo -e "\n====== PR Diffs ======\n" >> $PR_FILE
 gh pr diff $PR_NUMBER >> $PR_FILE
 
