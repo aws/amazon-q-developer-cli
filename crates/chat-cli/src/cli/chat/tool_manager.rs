@@ -43,6 +43,7 @@ use tokio::sync::{
     Mutex,
     Notify,
     RwLock,
+    mpsc::UnboundedReceiver,
 };
 use tokio::task::JoinHandle;
 use tracing::{
@@ -91,6 +92,7 @@ use crate::mcp_client::{
     JsonRpcResponse,
     Messenger,
     PromptGet,
+    sampling_ipc::PendingSamplingRequest,
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
@@ -269,6 +271,9 @@ impl ToolManagerBuilder {
             .map(|(server_name, _)| server_name.clone())
             .collect();
 
+        // Create channel for sampling requests
+        let (sampling_sender, sampling_receiver) = tokio::sync::mpsc::unbounded_channel();
+
         let pre_initialized = enabled_servers
             .into_iter()
             .filter_map(|(server_name, server_config)| {
@@ -288,7 +293,12 @@ impl ToolManagerBuilder {
                     );
                     None
                 } else {
-                    let custom_tool_client = CustomToolClient::from_config(server_name.clone(), server_config, os);
+                    let custom_tool_client = CustomToolClient::from_config(
+                        server_name.clone(),
+                        server_config,
+                        os,
+                        Some(sampling_sender.clone()),
+                    );
                     Some((server_name, custom_tool_client))
                 }
             })
@@ -392,7 +402,7 @@ impl ToolManagerBuilder {
             }
         }
 
-        Ok(ToolManager {
+        let tool_manager = ToolManager {
             conversation_id,
             clients,
             pending_clients: pending,
@@ -414,8 +424,11 @@ impl ToolManagerBuilder {
             },
             messenger_builder: Some(messenger_builder),
             is_first_launch: self.is_first_launch,
+            sampling_receiver,
             ..Default::default()
-        })
+        };
+
+        Ok(tool_manager)
     }
 }
 
@@ -497,7 +510,7 @@ type PromptsChannelPair = (
     tokio::sync::broadcast::Receiver<PromptQueryResult>,
 );
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 /// Manages the lifecycle and interactions with tools from various sources, including MCP servers.
 /// This struct is responsible for initializing tools, handling tool requests, and maintaining
 /// a cache of available prompts from connected servers.
@@ -558,6 +571,9 @@ pub struct ToolManager {
     /// The value is the load message (i.e. load time, warnings, and errors)
     pub mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
 
+    /// Channel receiver for incoming sampling requests from MCP servers
+    pub sampling_receiver: UnboundedReceiver<PendingSamplingRequest>,
+
     /// List of disabled MCP server names for display purposes
     disabled_servers: Vec<String>,
 
@@ -572,6 +588,32 @@ pub struct ToolManager {
     pub agent: Arc<Mutex<Agent>>,
 
     is_first_launch: bool,
+}
+
+impl Default for ToolManager {
+    fn default() -> Self {
+        let (_sender, receiver) = tokio::sync::mpsc::unbounded_channel();
+        Self {
+            conversation_id: Default::default(),
+            clients: Default::default(),
+            pending_clients: Default::default(),
+            has_new_stuff: Default::default(),
+            prompts_sender_receiver_pair: Default::default(),
+            new_tool_specs: Default::default(),
+            notify: Default::default(),
+            loading_status_sender: Default::default(),
+            loading_display_task: Default::default(),
+            tn_map: Default::default(),
+            schema: Default::default(),
+            is_interactive: Default::default(),
+            mcp_load_record: Default::default(),
+            sampling_receiver: receiver,
+            disabled_servers: Default::default(),
+            messenger_builder: Default::default(),
+            agent: Default::default(),
+            is_first_launch: Default::default(),
+        }
+    }
 }
 
 impl Clone for ToolManager {
@@ -619,6 +661,17 @@ impl ToolManager {
         let _ = self.load_tools(os, output).await?;
 
         Ok(())
+    }
+
+    /// Set the ApiClient for all MCP clients that have sampling enabled
+    pub fn set_streaming_client(&self, api_client: crate::api_client::ApiClient) {
+        tracing::info!(target: "mcp", "Setting ApiClient for MCP clients with sampling enabled");
+
+        for (server_name, client) in &self.clients {
+            // Use the shared reference to call set_streaming_client
+            client.set_streaming_client(api_client.clone());
+            tracing::debug!(target: "mcp", "Set ApiClient for server: {}", server_name);
+        }
     }
 
     pub async fn load_tools(
