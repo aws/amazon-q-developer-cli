@@ -15,12 +15,6 @@ workspace = true
 default = []
 wayland = ["arboard/wayland-data-control"]
 
-[[bin]]
-name = "test_mcp_server"
-path = "test_mcp_server/test_server.rs"
-test = true
-doc = false
-
 [dependencies]
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true

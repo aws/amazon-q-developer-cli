@@ -49,7 +49,6 @@ use tokio::sync::{
 use tokio::task::JoinHandle;
 use tracing::{
     error,
-    info,
     warn,
 };
 
@@ -370,7 +369,7 @@ impl ToolManagerBuilder {
             .collect::<Vec<_>>();
 
         for (mut name, mcp_client) in pre_initialized {
-            let init_res = mcp_client.init().await;
+            let init_res = mcp_client.init(os).await;
             match init_res {
                 Ok(mut running_service) => {
                     while let Some(collided_service) = clients.insert(name.clone(), running_service) {
@@ -1470,19 +1469,8 @@ fn spawn_orchestrator_task(
                         }
                     }
                 },
-                UpdateEventMessage::ListPromptsResult {
-                    server_name,
-                    result,
-                    pid,
-                } => match result {
-                    Ok(prompt_list_result) if pid.is_some() => {
-                        let pid = pid.unwrap();
-                        if !is_process_running(pid) {
-                            info!(
-                                "Received prompt list result from {server_name} but its associated process {pid} is no longer running. Ignoring."
-                            );
-                            return;
-                        }
+                UpdateEventMessage::ListPromptsResult { server_name, result } => match result {
+                    Ok(prompt_list_result) => {
                         // We first need to clear all the PromptGets that are associated with
                         // this server because PromptsListResult is declaring what is available
                         // (and not the diff)
@@ -1508,9 +1496,6 @@ fn spawn_orchestrator_task(
                                 });
                         }
                     },
-                    Ok(_) => {
-                        error!("Received prompt list result without pid from {server_name}. Ignoring.");
-                    },
                     Err(e) => {
                         error!("Error fetching prompts from server {server_name}: {:?}", e);
                         let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
@@ -1533,12 +1518,10 @@ fn spawn_orchestrator_task(
                 UpdateEventMessage::ListResourcesResult {
                     server_name: _,
                     result: _,
-                    pid: _,
                 } => {},
                 UpdateEventMessage::ResourceTemplatesListResult {
                     server_name: _,
                     result: _,
-                    pid: _,
                 } => {},
                 UpdateEventMessage::InitStart { server_name, .. } => {
                     pending.write().await.insert(server_name.clone());

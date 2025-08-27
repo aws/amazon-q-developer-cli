@@ -2,7 +2,6 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
-mod error_formatter;
 mod input_source;
 mod message;
 mod parse;
@@ -12,7 +11,6 @@ mod new_server_messenger;
 mod parser;
 mod prompt;
 mod prompt_parser;
-mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;

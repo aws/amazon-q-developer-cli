@@ -7,7 +7,6 @@ use crossterm::{
     style,
 };
 use eyre::Result;
-use regex::Regex;
 use rmcp::RoleClient;
 use rmcp::model::{
     CallToolRequestParam,
@@ -18,7 +17,6 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tokio::sync::RwLock;
 use tracing::warn;
 
 use super::InvokeOutput;
@@ -28,15 +26,6 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::mcp_client::{
-    Client as McpClient,
-    ClientConfig as McpClientConfig,
-    JsonRpcResponse,
-    JsonRpcStdioTransport,
-    Messenger,
-    ServerCapabilities,
-    StdioTransport,
-};
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
@@ -67,128 +56,6 @@ pub fn default_timeout() -> u64 {
     120 * 1000
 }
 
-/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
-fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
-    // Create a regex to match ${env:VAR_NAME} pattern
-    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
-
-    re.replace_all(input, |caps: &regex::Captures<'_>| {
-        let var_name = &caps[1];
-        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
-    })
-    .to_string()
-}
-
-/// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
-/// with their actual values from the environment
-fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
-    for (_, value) in env_vars.iter_mut() {
-        *value = substitute_env_vars(value, env);
-    }
-}
-
-#[derive(Debug)]
-pub enum CustomToolClient {
-    Stdio {
-        /// This is the server name as recognized by the model (post sanitized)
-        server_name: String,
-        client: McpClient<StdioTransport>,
-        server_capabilities: RwLock<Option<ServerCapabilities>>,
-    },
-}
-
-impl CustomToolClient {
-    // TODO: add support for http transport
-    pub fn from_config(server_name: String, config: CustomToolConfig, os: &crate::os::Os) -> Result<Self> {
-        let CustomToolConfig {
-            command,
-            args,
-            env,
-            timeout,
-            disabled: _,
-            ..
-        } = config;
-
-        // Process environment variables if present
-        let processed_env = env.map(|mut env_vars| {
-            process_env_vars(&mut env_vars, &os.env);
-            env_vars
-        });
-
-        let mcp_client_config = McpClientConfig {
-            server_name: server_name.clone(),
-            bin_path: command.clone(),
-            args,
-            timeout,
-            client_info: serde_json::json!({
-               "name": "Q CLI Chat",
-               "version": "1.0.0"
-            }),
-            env: processed_env,
-        };
-        let client = McpClient::<JsonRpcStdioTransport>::from_config(mcp_client_config)?;
-        Ok(CustomToolClient::Stdio {
-            server_name,
-            client,
-            server_capabilities: RwLock::new(None),
-        })
-    }
-
-    pub async fn init(&self) -> Result<()> {
-        match self {
-            CustomToolClient::Stdio {
-                client,
-                server_capabilities,
-                ..
-            } => {
-                if let Some(messenger) = &client.messenger {
-                    let _ = messenger.send_init_msg().await;
-                }
-                // We'll need to first initialize. This is the handshake every client and server
-                // needs to do before proceeding to anything else
-                let cap = client.init().await?;
-                // We'll be scrapping this for background server load: https://github.com/aws/amazon-q-developer-cli/issues/1466
-                // So don't worry about the tidiness for now
-                server_capabilities.write().await.replace(cap);
-                Ok(())
-            },
-        }
-    }
-
-    pub fn assign_messenger(&mut self, messenger: Box<dyn Messenger>) {
-        match self {
-            CustomToolClient::Stdio { client, .. } => {
-                client.messenger = Some(messenger);
-            },
-        }
-    }
-
-    pub fn get_server_name(&self) -> &str {
-        match self {
-            CustomToolClient::Stdio { server_name, .. } => server_name.as_str(),
-        }
-    }
-
-    pub async fn request(&self, method: &str, params: Option<serde_json::Value>) -> Result<JsonRpcResponse> {
-        match self {
-            CustomToolClient::Stdio { client, .. } => Ok(client.request(method, params).await?),
-        }
-    }
-
-    pub fn get_pid(&self) -> Option<u32> {
-        match self {
-            CustomToolClient::Stdio { client, .. } => client.server_process_id.as_ref().map(|pid| pid.as_u32()),
-        }
-    }
-
-    #[allow(dead_code)]
-    pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<()> {
-        match self {
-            CustomToolClient::Stdio { client, .. } => Ok(client.notify(method, params).await?),
-        }
-    }
-}
-
 /// Represents a custom tool that can be invoked through the Model Context Protocol (MCP).
 #[derive(Clone, Debug)]
 pub struct CustomTool {
@@ -212,10 +79,9 @@ impl CustomTool {
             name: Cow::from(self.name.clone()),
             arguments: self.params.clone(),
         };
-        tracing::error!("## mcp: tool call with params: {:?}", params);
+
         let mut resp = self.client.call_tool(params).await?;
 
-        tracing::error!("## mcp: {:?}", resp.content);
         if resp.is_error.is_none_or(|v| !v) {
             for content in &mut resp.content {
                 if let RawContent::Image(content) = &mut content.raw {

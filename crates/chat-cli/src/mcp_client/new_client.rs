@@ -1,3 +1,6 @@
+use std::collections::HashMap;
+
+use regex::Regex;
 use rmcp::model::{
     ListPromptsResult,
     ListToolsResult,
@@ -21,6 +24,7 @@ use tracing::error;
 
 use super::new_messenger::Messenger;
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
+use crate::os::Os;
 
 pub type RunningClient<M> = RunningService<RoleClient, McpClient<M>>;
 
@@ -72,6 +76,26 @@ macro_rules! paginated_fetch {
     };
 }
 
+/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
+fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
+    // Create a regex to match ${env:VAR_NAME} pattern
+    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+
+    re.replace_all(input, |caps: &regex::Captures<'_>| {
+        let var_name = &caps[1];
+        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
+    })
+    .to_string()
+}
+
+/// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
+/// with their actual values from the environment
+fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
+    for (_, value) in env_vars.iter_mut() {
+        *value = substitute_env_vars(value, env);
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum McpClientError {
     #[error(transparent)]
@@ -99,17 +123,18 @@ where
         }
     }
 
-    pub async fn init(self) -> Result<RunningService<RoleClient, McpClient<M>>, McpClientError> {
+    pub async fn init(mut self, os: &Os) -> Result<RunningService<RoleClient, McpClient<M>>, McpClientError> {
         let CustomToolConfig {
             command: command_as_str,
             args,
-            env,
+            env: config_envs,
             ..
-        } = &self.config;
+        } = &mut self.config;
         let mut command = Command::new(command_as_str);
 
         command.envs(std::env::vars()).args(args);
-        if let Some(envs) = env {
+        if let Some(envs) = config_envs {
+            process_env_vars(envs, &os.env);
             command.envs(envs);
         }
 

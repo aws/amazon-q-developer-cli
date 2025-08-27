@@ -1,5 +1,6 @@
 use rmcp::model::{
     ListPromptsResult,
+    ListResourceTemplatesResult,
     ListResourcesResult,
     ListToolsResult,
 };
@@ -9,7 +10,6 @@ use tokio::sync::mpsc::{
     channel,
 };
 
-use crate::mcp_client::ResourceTemplatesListResult;
 use crate::mcp_client::new_messenger::{
     Messenger,
     MessengerError,
@@ -34,7 +34,7 @@ pub enum UpdateEventMessage {
     },
     ResourceTemplatesListResult {
         server_name: String,
-        result: Result<ResourceTemplatesListResult>,
+        result: Result<ListResourceTemplatesResult>,
     },
     InitStart {
         server_name: String,
@@ -109,7 +109,7 @@ impl Messenger for ServerMessenger {
 
     async fn send_resource_templates_list_result(
         &self,
-        result: Result<ResourceTemplatesListResult>,
+        result: Result<ListResourceTemplatesResult>,
     ) -> MessengerResult {
         Ok(self
             .update_event_sender

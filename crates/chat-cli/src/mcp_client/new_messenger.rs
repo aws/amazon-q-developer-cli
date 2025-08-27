@@ -1,12 +1,11 @@
 use rmcp::ServiceError;
 use rmcp::model::{
     ListPromptsResult,
+    ListResourceTemplatesResult,
     ListResourcesResult,
     ListToolsResult,
 };
 use thiserror::Error;
-
-use super::ResourceTemplatesListResult;
 
 pub type Result<V> = core::result::Result<V, ServiceError>;
 pub type MessengerResult = core::result::Result<(), MessengerError>;
@@ -32,7 +31,7 @@ pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
 
     /// Sends the result of a resource templates list operation to the consumer
     /// This function is used to deliver information about available resource templates
-    async fn send_resource_templates_list_result(&self, result: Result<ResourceTemplatesListResult>)
+    async fn send_resource_templates_list_result(&self, result: Result<ListResourceTemplatesResult>)
     -> MessengerResult;
 
     /// Signals to the orchestrator that a server has started initializing
@@ -71,7 +70,7 @@ impl Messenger for NullMessenger {
 
     async fn send_resource_templates_list_result(
         &self,
-        _result: Result<ResourceTemplatesListResult>,
+        _result: Result<ListResourceTemplatesResult>,
     ) -> MessengerResult {
         Ok(())
     }
