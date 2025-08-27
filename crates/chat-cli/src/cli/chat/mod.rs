@@ -1695,7 +1695,7 @@ impl ChatSession {
         }
         println!("GOT THE LLM RESPONSE, the json is, {}", agent_config_json);
         // Parse and validate the generated config
-        let agent_config = match self.parse_and_validate_agent_config(&agent_config_json, schema) {
+        let agent_config = match parse_and_validate_agent_config(&agent_config_json, schema) {
             Ok(config) => config,
             Err(err) => {
                 execute!(
@@ -1709,7 +1709,7 @@ impl ChatSession {
         };
 
         // Save the agent config to file
-        if let Err(err) = self.save_agent_config(os, &agent_config, agent_name).await {
+        if let Err(err) = save_agent_config(os, &agent_config, agent_name).await {
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -1780,53 +1780,6 @@ impl ChatSession {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
-    }
-
-    // Helper method to parse and validate the generated agent config
-    fn parse_and_validate_agent_config(
-        &self,
-        response: &str,
-        schema: &str,
-    ) -> Result<Agent, String> {
-        let agent: Agent = serde_json::from_str(response)
-            .map_err(|e| format!("Failed to parse JSON: {e}"))?;
-        
-        // Validate against schema
-        let schema_value: serde_json::Value = serde_json::from_str(schema)
-            .map_err(|e| format!("Invalid schema: {e}"))?;
-        let agent_value = serde_json::to_value(&agent)
-            .map_err(|e| format!("Failed to serialize agent for validation: {e}"))?;
-        
-        if let Err(e) = jsonschema::validate(&schema_value, &agent_value) {
-            return Err(format!("Agent config validation failed: {}", e.to_string()));
-        }
-        
-        Ok(agent)
-    }
-
-    // Helper method to save the agent config to file
-    async fn save_agent_config(
-        &self,
-        os: &mut Os,
-        config: &Agent,
-        agent_name: &str,
-    ) -> Result<(), ChatError> {
-        let config_dir = directories::chat_local_agent_dir(os).map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
-
-        tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
-            ChatError::Custom(format!("Failed to create config directory: {}", e).into())
-        })?;
-
-        let config_file = config_dir.join(format!("{}.json", agent_name));
-        let config_json = serde_json::to_string_pretty(config).map_err(|e| {
-            ChatError::Custom(format!("Failed to serialize agent config: {}", e).into())
-        })?;
-
-        tokio::fs::write(&config_file, config_json).await.map_err(|e| {
-            ChatError::Custom(format!("Failed to write agent config file: {}", e).into())
-        })?;
-
-        Ok(())
     }
 
     /// Read input from the user.
@@ -3697,4 +3650,50 @@ mod tests {
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
     }
+}
+
+
+// Helper method to parse and validate the generated agent config
+fn parse_and_validate_agent_config(
+    response: &str,
+    schema: &str,
+) -> Result<Agent, String> {
+    let agent: Agent = serde_json::from_str(response)
+        .map_err(|e| format!("Failed to parse JSON: {e}"))?;
+    
+    // Validate against schema
+    let schema_value: serde_json::Value = serde_json::from_str(schema)
+        .map_err(|e| format!("Invalid schema: {e}"))?;
+    let agent_value = serde_json::to_value(&agent)
+        .map_err(|e| format!("Failed to serialize agent for validation: {e}"))?;
+    
+    if let Err(e) = jsonschema::validate(&schema_value, &agent_value) {
+        return Err(format!("Agent config validation failed: {}", e.to_string()));
+    }
+    
+    Ok(agent)
+}
+
+// Helper method to save the agent config to file
+async fn save_agent_config(
+    os: &mut Os,
+    config: &Agent,
+    agent_name: &str,
+) -> Result<(), ChatError> {
+    let config_dir = directories::chat_local_agent_dir(os).map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
+
+    tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
+        ChatError::Custom(format!("Failed to create config directory: {}", e).into())
+    })?;
+
+    let config_file = config_dir.join(format!("{}.json", agent_name));
+    let config_json = serde_json::to_string_pretty(config).map_err(|e| {
+        ChatError::Custom(format!("Failed to serialize agent config: {}", e).into())
+    })?;
+
+    tokio::fs::write(&config_file, config_json).await.map_err(|e| {
+        ChatError::Custom(format!("Failed to write agent config file: {}", e).into())
+    })?;
+
+    Ok(())
 }

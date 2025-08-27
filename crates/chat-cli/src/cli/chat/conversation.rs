@@ -73,9 +73,7 @@ use crate::cli::chat::cli::model::{
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 use eyre::Result;
-use crate::cli::agent::{McpServerConfig};
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
-use crate::util::directories;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -218,76 +216,6 @@ impl ConversationState {
             tangent_state: None,
         }
     }
-
-    /// Searches all configuration sources for MCP servers and returns a deduplicated list.
-    /// Priority order: Agent configs > Workspace legacy > Global legacy
-    pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
-        let mut servers = HashMap::<String, McpServerInfo>::new();
-        let mut seen_names = HashSet::<String>::new();
-
-        // 1. Load from agent configurations (highest priority)
-        let mut stderr = std::io::stderr();
-        let (agents, _) = Agents::load(os, None, true, &mut stderr, true).await;
-        print!("Loaded {} agents from agent configurations", agents.agents.len());
-        
-        for (_, agent) in agents.agents {
-            for (server_name, server_config) in agent.mcp_servers.mcp_servers {
-                if !seen_names.contains(&server_name) {
-                    servers.insert(server_name.clone(), McpServerInfo {
-                        name: server_name.clone(),
-                        config: server_config,
-                        source: McpServerSource::Agent(agent.name.clone()),
-                    });
-                    seen_names.insert(server_name);
-                }
-            }
-        }
-
-        // 2. Load from workspace legacy config (medium priority)
-        if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
-            if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
-                for (server_name, server_config) in workspace_config.mcp_servers {
-                    if !seen_names.contains(&server_name) {
-                        servers.insert(server_name.clone(), McpServerInfo {
-                            name: server_name.clone(),
-                            config: server_config,
-                            source: McpServerSource::WorkspaceLegacy,
-                        });
-                        seen_names.insert(server_name);
-                    }
-                }
-            }
-        }
-
-        // 3. Load from global legacy config (lowest priority)
-        if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
-            if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
-                for (server_name, server_config) in global_config.mcp_servers {
-                    if !seen_names.contains(&server_name) {
-                        servers.insert(server_name.clone(), McpServerInfo {
-                            name: server_name.clone(),
-                            config: server_config,
-                            source: McpServerSource::GlobalLegacy,
-                        });
-                        seen_names.insert(server_name);
-                    }
-                }
-            }
-        }
-
-        // Convert to sorted vector
-        let mut result: Vec<McpServerInfo> = servers.into_values().collect();
-        result.sort_by(|a, b| a.name.cmp(&b.name));
-        
-        Ok(result)
-    }
-
-    /// Get only enabled MCP servers (excludes disabled ones)
-    pub async fn get_enabled_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
-        let all_servers = Self::get_all_available_mcp_servers(os).await?;
-        Ok(all_servers.into_iter().filter(|server| !server.config.disabled).collect())
-    }
-
 
     pub fn latest_summary(&self) -> Option<&str> {
         self.latest_summary.as_ref().map(|(s, _)| s.as_str())
