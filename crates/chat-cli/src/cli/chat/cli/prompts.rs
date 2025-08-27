@@ -230,7 +230,7 @@ pub enum PromptsSubcommand {
 impl PromptsSubcommand {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let PromptsSubcommand::Get {
-            orig_input: _,
+            orig_input,
             name,
             arguments,
         } = self
@@ -286,10 +286,8 @@ impl PromptsSubcommand {
         session.pending_prompts.clear();
         session.pending_prompts.append(&mut VecDeque::from(prompts.messages));
 
-        execute!(session.stderr, style::Print("\n"))?;
-
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
+        Ok(ChatState::HandleInput {
+            input: orig_input.unwrap_or_default(),
         })
     }
 

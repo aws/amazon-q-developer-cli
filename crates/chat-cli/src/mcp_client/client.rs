@@ -152,6 +152,17 @@ where
                 service_method: list_tools,
                 result_field: tools,
                 messenger_method: send_tools_list_result,
+                service: service_clone.clone(),
+                messenger: messenger_clone,
+                server_name: server_name
+            };
+
+            paginated_fetch! {
+                final_result_type: ListPromptsResult,
+                content_type: rmcp::model::Prompt,
+                service_method: list_prompts,
+                result_field: prompts,
+                messenger_method: send_prompts_list_result,
                 service: service_clone,
                 messenger: messenger_clone,
                 server_name: server_name
