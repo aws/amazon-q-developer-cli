@@ -8,6 +8,7 @@ use core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
     RecordUserTurnCompletionArgs,
+    TangentModeSessionArgs,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
@@ -314,6 +315,22 @@ impl TelemetryThread {
         args: RecordUserTurnCompletionArgs,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id,
+            result,
+            args,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    pub async fn send_tangent_mode_session(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::TangentModeSession {
             conversation_id,
             result,
             args,
