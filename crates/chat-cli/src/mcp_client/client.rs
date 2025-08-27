@@ -1,32 +1,43 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
+use std::process::Stdio;
 
 use regex::Regex;
 use rmcp::model::{
+    ErrorCode,
+    Implementation,
+    InitializeRequestParam,
     ListPromptsResult,
     ListToolsResult,
     LoggingLevel,
     LoggingMessageNotificationParam,
     PaginatedRequestParam,
+    ServerNotification,
+    ServerRequest,
 };
 use rmcp::service::{
     ClientInitializeError,
     NotificationContext,
-    RunningService,
 };
-use rmcp::transport::TokioChildProcess;
+use rmcp::transport::{
+    ConfigureCommandExt,
+    TokioChildProcess,
+};
 use rmcp::{
-    ClientHandler,
+    ErrorData,
     RoleClient,
+    Service,
+    ServiceError,
     ServiceExt,
 };
 use tokio::process::Command;
+use tokio::task::JoinHandle;
 use tracing::error;
 
 use super::messenger::Messenger;
+use crate::cli::chat::server_messenger::ServerMessenger;
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
-
-pub type RunningClient<M> = RunningService<RoleClient, McpClient<M>>;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -102,20 +113,23 @@ pub enum McpClientError {
     ClientInitializeError(#[from] Box<ClientInitializeError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+    #[error(transparent)]
+    JoinError(#[from] tokio::task::JoinError),
+    #[error("Client has not finished initializing")]
+    NotReady,
 }
+
+pub type RunningService = rmcp::service::RunningService<RoleClient, UninitMcpClient>;
 
 #[derive(Debug)]
-pub struct McpClient<M> {
+pub struct UninitMcpClient {
     pub config: CustomToolConfig,
     server_name: String,
-    messenger: M,
+    messenger: ServerMessenger,
 }
 
-impl<M> McpClient<M>
-where
-    M: Messenger,
-{
-    pub fn new(server_name: String, config: CustomToolConfig, messenger: M) -> Self {
+impl UninitMcpClient {
+    pub fn new(server_name: String, config: CustomToolConfig, messenger: ServerMessenger) -> Self {
         Self {
             server_name,
             config,
@@ -123,60 +137,108 @@ where
         }
     }
 
-    pub async fn init(mut self, os: &Os) -> Result<RunningService<RoleClient, McpClient<M>>, McpClientError> {
-        let CustomToolConfig {
-            command: command_as_str,
-            args,
-            env: config_envs,
-            ..
-        } = &mut self.config;
-        let mut command = Command::new(command_as_str);
+    pub async fn init(mut self, os: &Os) -> Result<InitializedMcpClient, McpClientError> {
+        let os_clone = os.clone();
 
-        command.envs(std::env::vars()).args(args);
-        if let Some(envs) = config_envs {
-            process_env_vars(envs, &os.env);
-            command.envs(envs);
-        }
+        let handle: JoinHandle<Result<RunningService, McpClientError>> = tokio::spawn(async move {
+            let CustomToolConfig {
+                command: command_as_str,
+                args,
+                env: config_envs,
+                ..
+            } = &mut self.config;
 
-        let messenger_clone = self.messenger.duplicate();
-        let server_name = self.server_name.clone();
+            let command = Command::new(command_as_str).configure(|cmd| {
+                if let Some(envs) = config_envs {
+                    process_env_vars(envs, &os_clone.env);
+                    cmd.envs(envs);
+                }
+                cmd.envs(std::env::vars()).args(args).process_group(0);
+            });
 
-        let service = self.serve(TokioChildProcess::new(command)?).await.map_err(Box::new)?;
+            let messenger_clone = self.messenger.duplicate();
+            let server_name = self.server_name.clone();
 
-        // list tools here as per our existing protocol
-        let service_clone = service.clone();
-        tokio::spawn(async move {
-            paginated_fetch! {
-                final_result_type: ListToolsResult,
-                content_type: rmcp::model::Tool,
-                service_method: list_tools,
-                result_field: tools,
-                messenger_method: send_tools_list_result,
-                service: service_clone.clone(),
-                messenger: messenger_clone,
-                server_name: server_name
+            let result: Result<_, McpClientError> = async {
+                // Spawn the child process with stderr piped
+                let (tokio_child_process, child_stderr) =
+                    TokioChildProcess::builder(command).stderr(Stdio::piped()).spawn()?;
+
+                // Attempt to serve the process
+                let service = self
+                    .serve::<TokioChildProcess, _, _>(tokio_child_process)
+                    .await
+                    .map_err(Box::new)?;
+
+                Ok((service, child_stderr))
+            }
+            .await;
+
+            let (service, _child_stderr) = match result {
+                Ok((service, stderr)) => (service, stderr),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let error_data = ErrorData {
+                        code: ErrorCode::RESOURCE_NOT_FOUND,
+                        message: Cow::from(msg),
+                        data: None,
+                    };
+                    let err = ServiceError::McpError(error_data);
+
+                    if let Err(send_err) = messenger_clone.send_tools_list_result(Err(err), None).await {
+                        error!("Error sending tool result for {server_name}: {send_err}");
+                    }
+
+                    return Err(e);
+                },
             };
 
-            paginated_fetch! {
-                final_result_type: ListPromptsResult,
-                content_type: rmcp::model::Prompt,
-                service_method: list_prompts,
-                result_field: prompts,
-                messenger_method: send_prompts_list_result,
-                service: service_clone,
-                messenger: messenger_clone,
-                server_name: server_name
-            };
+            let service_clone = service.clone();
+            tokio::spawn(async move {
+                let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
+                    let init_result = service_clone.peer_info();
+                    if let Some(init_result) = init_result {
+                        if init_result.capabilities.tools.is_some() {
+                            paginated_fetch! {
+                                final_result_type: ListToolsResult,
+                                content_type: rmcp::model::Tool,
+                                service_method: list_tools,
+                                result_field: tools,
+                                messenger_method: send_tools_list_result,
+                                service: service_clone.clone(),
+                                messenger: messenger_clone,
+                                server_name: server_name
+                            };
+                        }
+
+                        if init_result.capabilities.prompts.is_some() {
+                            paginated_fetch! {
+                                final_result_type: ListPromptsResult,
+                                content_type: rmcp::model::Prompt,
+                                service_method: list_prompts,
+                                result_field: prompts,
+                                messenger_method: send_prompts_list_result,
+                                service: service_clone,
+                                messenger: messenger_clone,
+                                server_name: server_name
+                            };
+                        }
+                    }
+                    Ok(())
+                }
+                .await;
+
+                if let Err(e) = result {
+                    error!(target: "mcp", "Error in MCP client initialization: {}", e);
+                }
+            });
+
+            Ok(service)
         });
 
-        Ok(service)
+        Ok(InitializedMcpClient::Pending(handle))
     }
-}
 
-impl<M> ClientHandler for McpClient<M>
-where
-    M: Messenger,
-{
     async fn on_logging_message(
         &self,
         params: LoggingMessageNotificationParam,
@@ -235,6 +297,90 @@ where
             messenger: self.messenger,
             server_name: self.server_name
         };
+    }
+
+    fn on_cancelled(
+        &self,
+        _params: rmcp::model::CancelledNotificationParam,
+        _context: NotificationContext<RoleClient>,
+    ) {
+        self.messenger.send_deinit_msg();
+    }
+}
+
+impl Service<RoleClient> for UninitMcpClient {
+    async fn handle_request(
+        &self,
+        request: <RoleClient as rmcp::service::ServiceRole>::PeerReq,
+        _context: rmcp::service::RequestContext<RoleClient>,
+    ) -> Result<<RoleClient as rmcp::service::ServiceRole>::Resp, rmcp::ErrorData> {
+        match request {
+            ServerRequest::PingRequest(_) => Err(rmcp::ErrorData::method_not_found::<rmcp::model::PingRequestMethod>()),
+            ServerRequest::CreateMessageRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+                rmcp::model::CreateMessageRequestMethod,
+            >()),
+            ServerRequest::ListRootsRequest(_) => {
+                Err(rmcp::ErrorData::method_not_found::<rmcp::model::ListRootsRequestMethod>())
+            },
+            ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+                rmcp::model::ElicitationCreateRequestMethod,
+            >()),
+        }
+    }
+
+    async fn handle_notification(
+        &self,
+        notification: <RoleClient as rmcp::service::ServiceRole>::PeerNot,
+        context: NotificationContext<RoleClient>,
+    ) -> Result<(), rmcp::ErrorData> {
+        match notification {
+            ServerNotification::ToolListChangedNotification(_) => self.on_tool_list_changed(context).await,
+            ServerNotification::LoggingMessageNotification(notification) => {
+                self.on_logging_message(notification.params, context).await;
+            },
+            ServerNotification::PromptListChangedNotification(_) => self.on_prompt_list_changed(context).await,
+            ServerNotification::CancelledNotification(notification) => self.on_cancelled(notification.params, context),
+            // TODO: support these
+            ServerNotification::ResourceUpdatedNotification(_) => (),
+            ServerNotification::ResourceListChangedNotification(_) => (),
+            ServerNotification::ProgressNotification(_) => (),
+        };
+        Ok(())
+    }
+
+    fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
+        InitializeRequestParam {
+            protocol_version: Default::default(),
+            capabilities: Default::default(),
+            client_info: Implementation {
+                name: "Q DEV CLI".to_string(),
+                version: "1.0.0".to_string(),
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InitializedMcpClient {
+    Pending(JoinHandle<Result<RunningService, McpClientError>>),
+    Ready(RunningService),
+}
+
+impl InitializedMcpClient {
+    pub async fn get_running_service(&mut self) -> Result<&RunningService, McpClientError> {
+        match self {
+            InitializedMcpClient::Pending(handle) if handle.is_finished() => {
+                let running_service = handle.await??;
+                *self = InitializedMcpClient::Ready(running_service);
+                let InitializedMcpClient::Ready(running_service) = self else {
+                    unreachable!()
+                };
+
+                Ok(running_service)
+            },
+            InitializedMcpClient::Ready(running_service) => Ok(running_service),
+            InitializedMcpClient::Pending(_) => Err(McpClientError::NotReady),
+        }
     }
 }
 

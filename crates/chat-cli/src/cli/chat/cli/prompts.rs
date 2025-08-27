@@ -25,6 +25,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::mcp_client::McpClientError;
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
@@ -45,7 +46,9 @@ pub enum GetPromptError {
     #[error("Missing channel")]
     MissingChannel,
     #[error(transparent)]
-    ServiceError(#[from] rmcp::ServiceError),
+    McpClient(#[from] McpClientError),
+    #[error(transparent)]
+    Service(#[from] rmcp::ServiceError),
 }
 
 /// Command-line arguments for prompt operations

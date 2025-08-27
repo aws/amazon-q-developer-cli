@@ -10,7 +10,7 @@ mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
-mod server_messenger;
+pub mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -2424,7 +2424,7 @@ impl ChatSession {
             .set_tool_use_id(tool_use_id.clone())
             .set_tool_name(tool_use.name.clone())
             .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
-            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use) {
+            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use).await {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);

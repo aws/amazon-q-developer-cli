@@ -49,6 +49,7 @@ use tokio::sync::{
 use tokio::task::JoinHandle;
 use tracing::{
     error,
+    info,
     warn,
 };
 
@@ -66,7 +67,6 @@ use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
-    ServerMessenger,
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
@@ -87,8 +87,8 @@ use crate::database::Database;
 use crate::database::settings::Setting;
 use crate::mcp_client::messenger::Messenger;
 use crate::mcp_client::{
-    McpClient,
-    RunningClient,
+    InitializedMcpClient,
+    UninitMcpClient,
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
@@ -267,16 +267,6 @@ impl ToolManagerBuilder {
             .map(|(server_name, _)| server_name.clone())
             .collect();
 
-        let mut clients = HashMap::<String, RunningClient<ServerMessenger>>::new();
-        let new_tool_specs = self.new_tool_specs;
-        let has_new_stuff = self.has_new_stuff;
-        let pending = Arc::new(RwLock::new(HashSet::<String>::new()));
-        let notify = Arc::new(Notify::new());
-        let load_record = self.mcp_load_record;
-        let agent = self.agent.unwrap_or_default();
-        let database = os.database.clone();
-        let mut messenger_builder = self.messenger_builder.take();
-
         let pre_initialized = enabled_servers
             .iter()
             .filter(|(server_name, _)| {
@@ -300,6 +290,20 @@ impl ToolManagerBuilder {
                 }
             })
             .collect::<Vec<_>>();
+
+        let mut clients = HashMap::<String, InitializedMcpClient>::new();
+        let new_tool_specs = self.new_tool_specs;
+        let has_new_stuff = self.has_new_stuff;
+        let pending = Arc::new(RwLock::new({
+            let mut pending = HashSet::<String>::new();
+            pending.extend(pre_initialized.iter().map(|(name, _)| name.clone()));
+            pending
+        }));
+        let notify = Arc::new(Notify::new());
+        let load_record = self.mcp_load_record;
+        let agent = self.agent.unwrap_or_default();
+        let database = os.database.clone();
+        let mut messenger_builder = self.messenger_builder.take();
 
         let mut loading_servers = HashMap::<String, Instant>::new();
         for (server_name, _) in &pre_initialized {
@@ -359,7 +363,7 @@ impl ToolManagerBuilder {
             .map(|(server_name, server_config)| {
                 (
                     server_name.clone(),
-                    McpClient::new(
+                    UninitMcpClient::new(
                         server_name.clone(),
                         server_config,
                         messenger_builder.build_with_name(server_name),
@@ -519,7 +523,7 @@ pub struct ToolManager {
 
     /// Map of server names to their corresponding client instances.
     /// These clients are used to communicate with MCP servers.
-    pub clients: HashMap<String, RunningClient<ServerMessenger>>,
+    pub clients: HashMap<String, InitializedMcpClient>,
 
     /// A list of client names that are still in the process of being initialized
     pub pending_clients: Arc<RwLock<HashSet<String>>>,
@@ -612,7 +616,32 @@ impl ToolManager {
     ///   function)
     /// - Calling load tools
     pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent) -> eyre::Result<()> {
-        self.clients.clear();
+        let to_evict = self.clients.drain().collect::<Vec<_>>();
+        tokio::spawn(async move {
+            for (server_name, initialized_client) in to_evict {
+                info!("Evicting {server_name} due to agent swap");
+                match initialized_client {
+                    InitializedMcpClient::Pending(handle) => {
+                        let server_name_clone = server_name.clone();
+                        tokio::spawn(async move {
+                            match handle.await {
+                                Ok(Ok(client)) => match client.cancel().await {
+                                    Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
+                                    Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
+                                },
+                                Ok(Err(_)) | Err(_) => {
+                                    error!("Server {server_name_clone} has failed to cancel");
+                                },
+                            }
+                        });
+                    },
+                    InitializedMcpClient::Ready(running_service) => match running_service.cancel().await {
+                        Ok(_) => info!("Server {server_name} evicted due to agent swap"),
+                        Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
+                    },
+                }
+            }
+        });
 
         let mut agent_lock = self.agent.lock().await;
         *agent_lock = agent.clone();
@@ -624,9 +653,7 @@ impl ToolManager {
         let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
-        // we can discard the output here and let background server load take care of getting the
-        // new tools
-        let _ = self.load_tools(os, output).await?;
+        self.load_tools(os, output).await?;
 
         Ok(())
     }
@@ -778,7 +805,7 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
-    pub fn get_tool_from_tool_use(&self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
+    pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
         let map_err = |parse_error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
@@ -822,7 +849,7 @@ impl ToolManager {
                         })
                     },
                 }?;
-                let Some(client) = self.clients.get(server_name) else {
+                let Some(client) = self.clients.get_mut(server_name) else {
                     return Err(ToolResult {
                         tool_use_id: value.id,
                         content: vec![ToolResultContentBlock::Text(format!(
@@ -832,13 +859,19 @@ impl ToolManager {
                     });
                 };
 
-                let custom_tool = CustomTool {
+                let running_service = (*client.get_running_service().await.map_err(|e| ToolResult {
+                    tool_use_id: value.id.clone(),
+                    content: vec![ToolResultContentBlock::Text(format!("Mcp tool client not ready: {e}"))],
+                    status: ToolResultStatus::Error,
+                })?)
+                .clone();
+
+                Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
-                    server_name: server_name.clone(),
-                    client: (*client).clone(),
+                    server_name: server_name.to_owned(),
+                    client: running_service,
                     params: value.args.as_object().cloned(),
-                };
-                Tool::Custom(custom_tool)
+                })
             },
         })
     }
@@ -934,7 +967,7 @@ impl ToolManager {
     }
 
     pub async fn get_prompt(
-        &self,
+        &mut self,
         name: String,
         arguments: Option<Vec<String>>,
     ) -> Result<GetPromptResult, GetPromptError> {
@@ -996,7 +1029,7 @@ impl ToolManager {
                     };
 
                     let server_name = &bundle.server_name;
-                    let client = self.clients.get(server_name).ok_or(GetPromptError::MissingClient)?;
+                    let client = self.clients.get_mut(server_name).ok_or(GetPromptError::MissingClient)?;
                     let PromptBundle { prompt_get, .. } = bundle;
                     let arguments = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
                         let params = schema.iter().zip(value.iter()).fold(
@@ -1015,8 +1048,11 @@ impl ToolManager {
                     } else {
                         None
                     };
+
                     let params = GetPromptRequestParam { name, arguments };
-                    let resp = client.get_prompt(params).await?;
+                    let running_service = client.get_running_service().await?;
+                    let resp = running_service.get_prompt(params).await?;
+
                     Ok(resp)
                 },
                 (None, _) => Err(GetPromptError::PromptNotFound(prompt_name)),
