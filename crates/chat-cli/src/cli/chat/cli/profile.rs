@@ -1,13 +1,11 @@
 use std::borrow::Cow;
-use std::io::Write;
-
 use std::collections::{
     HashMap,
-    HashSet
+    HashSet,
 };
+use std::io::Write;
 
 use clap::Subcommand;
-use dialoguer::MultiSelect;
 use crossterm::style::{
     self,
     Attribute,
@@ -17,7 +15,11 @@ use crossterm::{
     execute,
     queue,
 };
-use dialoguer::Select;
+use dialoguer::{
+    MultiSelect,
+    Select,
+};
+use eyre::Result;
 use syntect::easy::HighlightLines;
 use syntect::highlighting::{
     Style,
@@ -32,8 +34,10 @@ use syntect::util::{
 use crate::cli::agent::{
     Agent,
     Agents,
+    McpServerConfig,
     create_agent,
 };
+use crate::cli::chat::conversation::McpServerInfo;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -41,12 +45,8 @@ use crate::cli::chat::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories::chat_global_agent_path;
-use crate::cli::chat::conversation::McpServerInfo;
 use crate::util::directories;
-use crate::cli::agent::McpServerConfig;
-use crate::cli::chat::conversation::McpServerSource;
-use eyre::Result;
+use crate::util::directories::chat_global_agent_path;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -102,19 +102,18 @@ pub enum AgentSubcommand {
 }
 
 fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Vec<&McpServerInfo>> {
-    let items: Vec<String> = servers.iter()
+    let items: Vec<String> = servers
+        .iter()
         .map(|server| format!("{} ({})", server.name, server.config.command))
         .collect();
-    
+
     let selections = MultiSelect::new()
         .with_prompt("Select MCP servers (use Space to toggle, Enter to confirm)")
         .items(&items)
         .interact()?;
-    
-    let selected_servers: Vec<&McpServerInfo> = selections.iter()
-        .filter_map(|&i| servers.get(i))
-        .collect();
-    
+
+    let selected_servers: Vec<&McpServerInfo> = selections.iter().filter_map(|&i| servers.get(i)).collect();
+
     Ok(selected_servers)
 }
 
@@ -223,34 +222,60 @@ impl AgentSubcommand {
             Self::Generate { name, description } => {
                 let agent_name = match name {
                     Some(n) => n,
-                    None => {
-                        match session.read_user_input("Enter agent name: ", false) {
+                    None => match session.read_user_input("Enter agent name: ", false) {
                         Some(input) => input.trim().to_string(),
-                        None => return Ok(ChatState::PromptUser { skip_printing_tools: true }),
-                        }
-                    }
+                        None => {
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        },
+                    },
                 };
 
                 let agent_description = if description.is_empty() {
                     match session.read_user_input("Enter agent description: ", false) {
                         Some(input) => input.trim().to_string(),
-                        None => return Ok(ChatState::PromptUser { skip_printing_tools: true }),
+                        None => {
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        },
                     }
                 } else {
                     description.join(" ")
                 };
 
-                let mcp_servers = get_enabled_mcp_servers(os).await.map_err(|e| ChatError::Custom(e.to_string().into()))?;
+                let mcp_servers = get_enabled_mcp_servers(os)
+                    .await
+                    .map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
                 let selected_servers = if !mcp_servers.is_empty() {
                     prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
                 } else {
                     Vec::new()
                 };
+
+                let mcp_servers_json = if !selected_servers.is_empty() {
+                    let servers: std::collections::HashMap<String, serde_json::Value> = selected_servers
+                        .iter()
+                        .map(|server| {
+                            (
+                                server.name.clone(),
+                                serde_json::to_value(&server.config).unwrap_or_default(),
+                            )
+                        })
+                        .collect();
+                    serde_json::to_string(&servers).unwrap_or_default()
+                } else {
+                    "{}".to_string()
+                };
                 use schemars::schema_for;
                 let schema = schema_for!(Agent);
-                let schema_string = serde_json::to_string_pretty(&schema).map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
-                return session.generate_agent_config(os, &agent_name, &agent_description, &selected_servers, &schema_string).await;
+                let schema_string = serde_json::to_string_pretty(&schema)
+                    .map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
+                return session
+                    .generate_agent_config(os, &agent_name, &agent_description, &mcp_servers_json, &schema_string)
+                    .await;
             },
             Self::Set { .. } | Self::Delete { .. } => {
                 // As part of the agent implementation, we are disabling the ability to
@@ -386,21 +411,23 @@ fn highlight_json(output: &mut impl Write, json_str: &str) -> eyre::Result<()> {
 pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
     let mut servers = HashMap::<String, McpServerInfo>::new();
     let mut seen_names = HashSet::<String>::new();
+    let mut seen_commands = HashSet::<String>::new();
 
     // 1. Load from agent configurations (highest priority)
     let mut stderr = std::io::stderr();
     let (agents, _) = Agents::load(os, None, true, &mut stderr, true).await;
     print!("Loaded {} agents from agent configurations", agents.agents.len());
-    
+
     for (_, agent) in agents.agents {
         for (server_name, server_config) in agent.mcp_servers.mcp_servers {
-            if !seen_names.contains(&server_name) {
+            if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
+                seen_names.insert(server_name.clone());
+                seen_commands.insert(server_config.command.clone());
+
                 servers.insert(server_name.clone(), McpServerInfo {
-                    name: server_name.clone(),
+                    name: server_name,
                     config: server_config,
-                    source: McpServerSource::Agent(agent.name.clone()),
                 });
-                seen_names.insert(server_name);
             }
         }
     }
@@ -409,13 +436,14 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
         if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
             for (server_name, server_config) in workspace_config.mcp_servers {
-                if !seen_names.contains(&server_name) {
+                if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
+                    seen_names.insert(server_name.clone());
+                    seen_commands.insert(server_config.command.clone());
+
                     servers.insert(server_name.clone(), McpServerInfo {
-                        name: server_name.clone(),
+                        name: server_name,
                         config: server_config,
-                        source: McpServerSource::WorkspaceLegacy,
                     });
-                    seen_names.insert(server_name);
                 }
             }
         }
@@ -425,13 +453,13 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
         if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
             for (server_name, server_config) in global_config.mcp_servers {
-                if !seen_names.contains(&server_name) {
+                if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
+                    seen_names.insert(server_name.clone());
+                    seen_commands.insert(server_config.command.clone());
                     servers.insert(server_name.clone(), McpServerInfo {
                         name: server_name.clone(),
                         config: server_config,
-                        source: McpServerSource::GlobalLegacy,
                     });
-                    seen_names.insert(server_name);
                 }
             }
         }
@@ -440,12 +468,15 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     // Convert to sorted vector
     let mut result: Vec<McpServerInfo> = servers.into_values().collect();
     result.sort_by(|a, b| a.name.cmp(&b.name));
-    
+
     Ok(result)
 }
 
 /// Get only enabled MCP servers (excludes disabled ones)
 pub async fn get_enabled_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
     let all_servers = get_all_available_mcp_servers(os).await?;
-    Ok(all_servers.into_iter().filter(|server| !server.config.disabled).collect())
+    Ok(all_servers
+        .into_iter()
+        .filter(|server| !server.config.disabled)
+        .collect())
 }

@@ -126,8 +126,8 @@ use winnow::Partial;
 use winnow::stream::Offset;
 
 use super::agent::{
+    Agent,
     DEFAULT_AGENT_NAME,
-    Agent, 
     PermissionEvalResult,
 };
 use crate::api_client::model::ToolResultStatus;
@@ -144,8 +144,6 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
-use crate::cli::chat::conversation::McpServerInfo;
-use crate::cli::chat::tools::sanitize_path_tool_arg;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -163,8 +161,10 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
-use crate::util::MCP_SERVER_TOOL_DELIMITER;
-use crate::util::directories;
+use crate::util::{
+    MCP_SERVER_TOOL_DELIMITER,
+    directories,
+};
 
 const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
@@ -1550,8 +1550,8 @@ impl ChatSession {
         os: &mut Os,
         agent_name: &str,
         agent_description: &str,
-        selected_servers: &Vec<&McpServerInfo>,
-        schema: &str
+        selected_servers: &str,
+        schema: &str,
     ) -> Result<ChatState, ChatError> {
         // Same pattern as compact_history for handling ctrl+c interruption
         let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
@@ -1586,7 +1586,7 @@ impl ChatSession {
         os: &mut Os,
         agent_name: &str,
         agent_description: &str,
-        selected_servers: &Vec<&McpServerInfo>,
+        selected_servers: &str,
         schema: &str,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
@@ -1605,10 +1605,25 @@ impl ChatSession {
             });
         }
 
+        let prepopulated_agent = Agent {
+            name: agent_name.to_string(),
+            description: Some(agent_description.to_string()),
+            ..Default::default()
+        };
+        let prepopulated_content = prepopulated_agent
+            .to_str_pretty()
+            .map_err(|e| ChatError::Custom(format!("Error prepopulating agent fields: {}", e).into()))?;
+
         // Create the agent generation request - this now works!
         let generation_state = self
             .conversation
-            .create_agent_generation_request(agent_name, agent_description, selected_servers, schema)
+            .create_agent_generation_request(
+                agent_name,
+                agent_description,
+                selected_servers,
+                schema,
+                prepopulated_content.as_str(),
+            )
             .await?;
 
         if self.interactive {
@@ -1640,10 +1655,10 @@ impl ChatSession {
                     )?;
                 }
                 return Err(err);
-            }
+            },
         };
 
-        let (agent_config_json, request_metadata) = {
+        let (agent_config_json, _request_metadata) = {
             loop {
                 match response.recv().await {
                     Some(Ok(parser::ResponseEvent::EndStream {
@@ -1652,7 +1667,7 @@ impl ChatSession {
                     })) => {
                         self.user_turn_request_metadata.push(request_metadata.clone());
                         break (message.content().to_string(), request_metadata);
-                    }
+                    },
                     Some(Ok(_)) => (),
                     Some(Err(err)) => {
                         if let Some(request_id) = &err.request_metadata.request_id {
@@ -1673,13 +1688,11 @@ impl ChatSession {
                         .await;
 
                         return Err(err.into());
-                    }
+                    },
                     None => {
                         error!("response stream receiver closed before receiving a stop event");
-                        return Err(ChatError::Custom(
-                            "Stream failed during agent generation".into(),
-                        ));
-                    }
+                        return Err(ChatError::Custom("Stream failed during agent generation".into()));
+                    },
                 }
             }
         };
@@ -1693,9 +1706,8 @@ impl ChatSession {
                 cursor::Show
             )?;
         }
-        println!("GOT THE LLM RESPONSE, the json is, {}", agent_config_json);
-        // Parse and validate the generated config
-        let agent_config = match parse_and_validate_agent_config(&agent_config_json, schema) {
+        // Parse and validate the initial generated config
+        let initial_agent_config = match parse_and_validate_agent_config(&agent_config_json, schema) {
             Ok(config) => config,
             Err(err) => {
                 execute!(
@@ -1705,11 +1717,72 @@ impl ChatSession {
                     style::SetForegroundColor(Color::Reset)
                 )?;
                 return Err(ChatError::Custom(format!("Invalid agent config: {}", err).into()));
-            }
+            },
         };
 
-        // Save the agent config to file
-        if let Err(err) = save_agent_config(os, &agent_config, agent_name).await {
+        // Display the generated agent config with syntax highlighting
+        execute!(
+            self.stderr,
+            style::SetForegroundColor(Color::Green),
+            style::Print(format!("✓ Generated agent config for '{}':\n\n", agent_name)),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+
+        let formatted_json = serde_json::to_string_pretty(&initial_agent_config)
+            .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {}", e).into()))?;
+
+        execute!(
+            self.stderr,
+            style::SetForegroundColor(Color::Yellow),
+            style::Print(format!(
+                "Opening editor for the '{}' agent configuration...\n",
+                agent_name
+            )),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+
+        // Create temporary file for editing
+        let temp_dir = std::env::temp_dir();
+        let temp_file = temp_dir.join(format!("{}_agent_config.json", agent_name));
+        tokio::fs::write(&temp_file, &formatted_json)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
+
+        // Launch editor directly without showing the JSON first
+        let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string()); // nano is more user-friendly than vi
+        let mut cmd = std::process::Command::new(editor_cmd);
+        let status = cmd.arg(&temp_file).status()?;
+
+        if !status.success() {
+            return Err(ChatError::Custom("Editor process did not exit successfully".into()));
+        }
+
+        // Read back the edited content
+        let edited_content = tokio::fs::read_to_string(&temp_file)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to read edited file: {}", e).into()))?;
+
+        // Clean up temp file
+        let _ = tokio::fs::remove_file(&temp_file).await;
+
+        // Parse and validate the edited config
+        let final_agent_config = match parse_and_validate_agent_config(&edited_content, schema) {
+            Ok(config) => config,
+            Err(err) => {
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("✗ Invalid edited configuration: {}\n\n", err)),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+                return Err(ChatError::Custom(
+                    format!("Invalid agent config after editing: {}", err).into(),
+                ));
+            },
+        };
+
+        // Save the final agent config to file
+        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name).await {
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -1719,63 +1792,15 @@ impl ChatSession {
             return Err(err);
         }
 
-        self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
-            .await;
-
-        // Print success output to the user
-        {
-            execute!(
-                self.stderr,
-                style::SetForegroundColor(Color::Green),
-                style::Print(format!("✔ Agent '{}' has been generated successfully!\n\n", agent_name)),
-                style::SetForegroundColor(Color::DarkGrey)
-            )?;
-
-            let mut output = Vec::new();
-            let config_dir = directories::chat_local_agent_dir(os).map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
-            let config_file = config_dir.join(format!("{}.json", agent_name));
-            execute!(
-                output,
-                style::Print(format!("• Agent name: {}\n", agent_name)),
-                style::Print(format!("• Description: {}\n", agent_description)),
-                style::Print(format!("• Tools generated: {}\n", agent_config.tools.len())),
-                style::Print(format!("• Config saved to: {}\n", config_file.display())),
-            )?;
-            animate_output(&mut self.stderr, &output)?;
-
-            // Show a preview of the generated system prompt
-            let terminal_width = self.terminal_width();
-            let border = "═".repeat(terminal_width.min(80));
-            execute!(
-                self.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(&border),
-                style::Print("\n"),
-                style::SetAttribute(Attribute::Bold),
-                style::Print("                       GENERATED SYSTEM PROMPT"),
-                style::Print("\n"),
-                style::Print(&border),
-                style::SetAttribute(Attribute::Reset),
-                style::Print("\n\n"),
-            )?;
-
-            let preview_prompt = match &agent_config.prompt {
-                Some(prompt) if prompt.len() > 500 => format!("{}...", &prompt[..500]),
-                Some(prompt) => prompt.clone(),
-                None => String::new(),
-            };
-
-            execute!(
-                self.stderr,
-                style::Print(&preview_prompt),
-                style::Print("\n\n"),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(&border),
-                style::Print("\n\n"),
-                style::SetForegroundColor(Color::Reset)
-            )?;
-        }
+        execute!(
+            self.stderr,
+            style::SetForegroundColor(Color::Green),
+            style::Print(format!(
+                "✓ Agent '{}' has been created and saved successfully!\n",
+                agent_name
+            )),
+            style::SetForegroundColor(Color::Reset)
+        )?;
 
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
@@ -3652,48 +3677,38 @@ mod tests {
     }
 }
 
-
 // Helper method to parse and validate the generated agent config
-fn parse_and_validate_agent_config(
-    response: &str,
-    schema: &str,
-) -> Result<Agent, String> {
-    let agent: Agent = serde_json::from_str(response)
-        .map_err(|e| format!("Failed to parse JSON: {e}"))?;
-    
+fn parse_and_validate_agent_config(response: &str, schema: &str) -> Result<Agent, String> {
+    let agent: Agent = serde_json::from_str(response).map_err(|e| format!("Failed to parse JSON: {e}"))?;
+
     // Validate against schema
-    let schema_value: serde_json::Value = serde_json::from_str(schema)
-        .map_err(|e| format!("Invalid schema: {e}"))?;
-    let agent_value = serde_json::to_value(&agent)
-        .map_err(|e| format!("Failed to serialize agent for validation: {e}"))?;
-    
+    let schema_value: serde_json::Value = serde_json::from_str(schema).map_err(|e| format!("Invalid schema: {e}"))?;
+    let agent_value =
+        serde_json::to_value(&agent).map_err(|e| format!("Failed to serialize agent for validation: {e}"))?;
+
     if let Err(e) = jsonschema::validate(&schema_value, &agent_value) {
-        return Err(format!("Agent config validation failed: {}", e.to_string()));
+        return Err(format!("Agent config validation failed: {e}"));
     }
-    
+
     Ok(agent)
 }
 
 // Helper method to save the agent config to file
-async fn save_agent_config(
-    os: &mut Os,
-    config: &Agent,
-    agent_name: &str,
-) -> Result<(), ChatError> {
-    let config_dir = directories::chat_local_agent_dir(os).map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
+async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str) -> Result<(), ChatError> {
+    let config_dir = directories::chat_local_agent_dir(os)
+        .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
 
-    tokio::fs::create_dir_all(&config_dir).await.map_err(|e| {
-        ChatError::Custom(format!("Failed to create config directory: {}", e).into())
-    })?;
+    tokio::fs::create_dir_all(&config_dir)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
 
     let config_file = config_dir.join(format!("{}.json", agent_name));
-    let config_json = serde_json::to_string_pretty(config).map_err(|e| {
-        ChatError::Custom(format!("Failed to serialize agent config: {}", e).into())
-    })?;
+    let config_json = serde_json::to_string_pretty(config)
+        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
 
-    tokio::fs::write(&config_file, config_json).await.map_err(|e| {
-        ChatError::Custom(format!("Failed to write agent config file: {}", e).into())
-    })?;
+    tokio::fs::write(&config_file, config_json)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
 
     Ok(())
 }

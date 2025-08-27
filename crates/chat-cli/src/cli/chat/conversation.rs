@@ -12,6 +12,7 @@ use crossterm::{
     execute,
     style,
 };
+use eyre::Result;
 use serde::{
     Deserialize,
     Serialize,
@@ -60,7 +61,7 @@ use crate::api_client::model::{
     ToolSpecification,
     UserInputMessage,
 };
-use crate::cli::agent::{Agents};
+use crate::cli::agent::Agents;
 use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
@@ -70,10 +71,9 @@ use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
 };
+use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
-use eyre::Result;
-use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -90,14 +90,6 @@ pub struct HistoryEntry {
 pub struct McpServerInfo {
     pub name: String,
     pub config: CustomToolConfig,
-    pub source: McpServerSource,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum McpServerSource {
-    Agent(String),           // Agent name
-    GlobalLegacy,
-    WorkspaceLegacy,
 }
 
 /// Tracks state related to an ongoing conversation.
@@ -652,22 +644,23 @@ impl ConversationState {
         &mut self,
         agent_name: &str,
         agent_description: &str,
-        selected_servers: &Vec<&McpServerInfo>,
-        schema: &str
+        selected_servers: &str,
+        schema: &str,
+        prepopulated_content: &str,
     ) -> Result<FigConversationState, ChatError> {
         let generation_content = format!(
             "[SYSTEM NOTE: This is an automated agent generation request, not from the user]\n\n\
 FORMAT REQUIREMENTS: Generate a JSON configuration for a custom coding agent. \
 IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO ```json tags, NO conversational text.\n\n\
-Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\nThe configuration must conform to this JSON schema:\n{}\n\nReturn only the JSON configuration, no additional text.
-Focus on creating practical tools that align with the agent's described purpose. \
-The system prompt should be detailed and establish clear behavioral guidelines. \
-DO NOT wrap your response in code blocks. DO NOT include markdown formatting. \
-Return ONLY the raw JSON with no other text.",
-            agent_name, agent_description, schema
+Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
+The configuration must conform to this JSON schema:\n{}\n\n\
+We have a prepopulated template: {} \n\n\
+Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
+Return only the JSON configuration, no additional text.",
+   agent_name, agent_description, schema, prepopulated_content, selected_servers
         );
 
-        let generation_message = Some(UserMessage::new_prompt(generation_content.clone(), None));
+        let generation_message = UserMessage::new_prompt(generation_content.clone(), None);
 
         // Use empty history since this is a standalone generation request
         let history = VecDeque::new();
@@ -686,14 +679,10 @@ Return ONLY the raw JSON with no other text.",
 
         Ok(FigConversationState {
             conversation_id: Some(self.conversation_id.clone()),
-            user_input_message: generation_message
-                .unwrap_or(UserMessage::new_prompt(generation_content, None)) // should not happen
-                .into_user_input_message(self.model.clone(), &tools),
+            user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
             history: Some(flatten_history(history.iter())),
         })
     }
-
-
 
     pub fn current_profile(&self) -> Option<&str> {
         if let Some(cm) = self.context_manager.as_ref() {
