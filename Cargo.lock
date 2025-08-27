@@ -48,7 +48,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amzn-codewhisperer-client"
-version = "0.1.10231"
+version = "0.1.10613"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -67,7 +67,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-codewhisperer-streaming-client"
-version = "0.1.10231"
+version = "0.1.10613"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -86,7 +86,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-consolas-client"
-version = "0.1.10231"
+version = "0.1.10613"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -105,7 +105,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-qdeveloper-streaming-client"
-version = "0.1.10231"
+version = "0.1.10613"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -1207,7 +1207,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chat_cli"
-version = "1.14.0"
+version = "1.14.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -5565,7 +5565,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.14.0"
+version = "1.14.1"
 dependencies = [
  "anyhow",
  "bm25",

@@ -65,6 +65,7 @@ impl std::fmt::Display for TodoDisplayEntry {
 
 impl TodoSubcommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        TodoListState::init_dir(os).await.map_err(|e| ChatError::Custom(format!("Could not create todos directory: {e}").into()))?;
         match self {
             Self::ClearFinished => {
                 let (todos, errors) = match get_all_todos(os).await {

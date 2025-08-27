@@ -8,7 +8,6 @@ use crossterm::style::{
 };
 use eyre::Result;
 use semantic_search_client::{
-    KnowledgeContext,
     OperationStatus,
     SystemStatus,
 };
@@ -37,6 +36,9 @@ pub enum KnowledgeSubcommand {
         /// Exclude patterns (e.g., `node_modules/**`, `target/**`)
         #[arg(long, action = clap::ArgAction::Append)]
         exclude: Vec<String>,
+        /// Index type to use (Fast, Best)
+        #[arg(long)]
+        index_type: Option<String>,
     },
     /// Remove specified knowledge base entry by path
     #[command(alias = "rm")]
@@ -100,6 +102,11 @@ impl KnowledgeSubcommand {
         }
     }
 
+    /// Get the current agent from the session
+    fn get_agent(session: &ChatSession) -> Option<&crate::cli::Agent> {
+        session.conversation.agents.get_active()
+    }
+
     async fn execute_operation(&self, os: &Os, session: &mut ChatSession) -> OperationResult {
         match self {
             KnowledgeSubcommand::Show => {
@@ -108,150 +115,166 @@ impl KnowledgeSubcommand {
                     Err(e) => OperationResult::Error(format!("Failed to show knowledge base entries: {}", e)),
                 }
             },
-            KnowledgeSubcommand::Add { path, include, exclude } => Self::handle_add(os, path, include, exclude).await,
-            KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, path).await,
-            KnowledgeSubcommand::Update { path } => Self::handle_update(os, path).await,
+            KnowledgeSubcommand::Add {
+                path,
+                include,
+                exclude,
+                index_type,
+            } => Self::handle_add(os, session, path, include, exclude, index_type).await,
+            KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, session, path).await,
+            KnowledgeSubcommand::Update { path } => Self::handle_update(os, session, path).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(os, session).await,
-            KnowledgeSubcommand::Status => Self::handle_status(os).await,
-            KnowledgeSubcommand::Cancel { operation_id } => Self::handle_cancel(os, operation_id.as_deref()).await,
+            KnowledgeSubcommand::Status => Self::handle_status(os, session).await,
+            KnowledgeSubcommand::Cancel { operation_id } => {
+                Self::handle_cancel(os, session, operation_id.as_deref()).await
+            },
         }
     }
 
     async fn handle_show(os: &Os, session: &mut ChatSession) -> Result<(), std::io::Error> {
-        match KnowledgeStore::get_async_instance_with_os(os).await {
-            Ok(store) => {
-                let store = store.lock().await;
-                let entries = store.get_all().await.unwrap_or_else(|e| {
-                    let _ = queue!(
+        let agent_name = Self::get_agent(session).map(|a| a.name.clone());
+
+        // Show agent-specific knowledge
+        if let Some(agent) = agent_name {
+            queue!(
+                session.stderr,
+                style::SetAttribute(crossterm::style::Attribute::Bold),
+                style::SetForegroundColor(Color::Magenta),
+                style::Print(format!("👤 Agent ({}):\n", agent)),
+                style::SetAttribute(crossterm::style::Attribute::Reset),
+            )?;
+
+            match KnowledgeStore::get_async_instance(os, Self::get_agent(session)).await {
+                Ok(store) => {
+                    let store = store.lock().await;
+                    let contexts = store.get_all().await.unwrap_or_default();
+
+                    if contexts.is_empty() {
+                        queue!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print("    <none>\n\n"),
+                            style::SetForegroundColor(Color::Reset)
+                        )?;
+                    } else {
+                        Self::format_knowledge_entries_with_indent(session, &contexts, "    ")?;
+                    }
+                },
+                Err(_) => {
+                    queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
-                        style::Print(&format!("Error getting knowledge base entries: {}\n", e)),
-                        style::ResetColor
-                    );
-                    Vec::new()
-                });
-                let _ = Self::format_knowledge_entries(session, &entries);
-            },
-            Err(e) => {
-                queue!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(&format!("Error accessing knowledge base: {}\n", e)),
-                    style::SetForegroundColor(Color::Reset)
-                )?;
-            },
-        }
-        Ok(())
-    }
-
-    fn format_knowledge_entries(
-        session: &mut ChatSession,
-        knowledge_entries: &[KnowledgeContext],
-    ) -> Result<(), std::io::Error> {
-        if knowledge_entries.is_empty() {
-            queue!(
-                session.stderr,
-                style::Print("\nNo knowledge base entries found.\n"),
-                style::Print("💡 Tip: If indexing is in progress, entries may not appear until indexing completes.\n"),
-                style::Print("   Use 'knowledge status' to check active operations.\n\n")
-            )?;
-        } else {
-            queue!(
-                session.stderr,
-                style::Print("\n📚 Knowledge Base Entries:\n"),
-                style::Print(format!("{}\n", "━".repeat(80)))
-            )?;
-
-            for entry in knowledge_entries {
-                Self::format_single_entry(session, &entry)?;
-                queue!(session.stderr, style::Print(format!("{}\n", "━".repeat(80))))?;
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("    <none>\n\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                },
             }
-            // Add final newline to match original formatting exactly
-            queue!(session.stderr, style::Print("\n"))?;
         }
+
         Ok(())
     }
 
-    fn format_single_entry(session: &mut ChatSession, entry: &&KnowledgeContext) -> Result<(), std::io::Error> {
-        queue!(
-            session.stderr,
-            style::SetAttribute(style::Attribute::Bold),
-            style::SetForegroundColor(Color::Cyan),
-            style::Print(format!("📂 {}: ", entry.id)),
-            style::SetForegroundColor(Color::Green),
-            style::Print(&entry.name),
-            style::SetAttribute(style::Attribute::Reset),
-            style::Print("\n")
-        )?;
-
-        queue!(
-            session.stderr,
-            style::Print(format!("   Description: {}\n", entry.description)),
-            style::Print(format!(
-                "   Created: {}\n",
-                entry.created_at.format("%Y-%m-%d %H:%M:%S")
-            )),
-            style::Print(format!(
-                "   Updated: {}\n",
-                entry.updated_at.format("%Y-%m-%d %H:%M:%S")
-            ))
-        )?;
-
-        if let Some(path) = &entry.source_path {
-            queue!(session.stderr, style::Print(format!("   Source: {}\n", path)))?;
-        }
-
-        queue!(
-            session.stderr,
-            style::Print("   Items: "),
-            style::SetForegroundColor(Color::Yellow),
-            style::Print(format!("{}", entry.item_count)),
-            style::SetForegroundColor(Color::Reset),
-            style::Print(" | Persistent: ")
-        )?;
-
-        if entry.persistent {
+    fn format_knowledge_entries_with_indent(
+        session: &mut ChatSession,
+        contexts: &[semantic_search_client::KnowledgeContext],
+        indent: &str,
+    ) -> Result<(), std::io::Error> {
+        for ctx in contexts {
+            // Main entry line with name and ID
             queue!(
                 session.stderr,
+                style::Print(format!("{}📂 ", indent)),
+                style::SetAttribute(style::Attribute::Bold),
+                style::SetForegroundColor(Color::Grey),
+                style::Print(&ctx.name),
                 style::SetForegroundColor(Color::Green),
-                style::Print("Yes"),
+                style::Print(format!(" ({})", &ctx.id[..8])),
+                style::SetAttribute(style::Attribute::Reset),
                 style::SetForegroundColor(Color::Reset),
                 style::Print("\n")
             )?;
-        } else {
+
+            // Description line with original description
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("No"),
+                style::Print(format!("{}   ", indent)),
+                style::SetForegroundColor(Color::Grey),
+                style::Print(format!("{}\n", ctx.description)),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+
+            // Stats line with improved colors
+            queue!(
+                session.stderr,
+                style::Print(format!("{}   ", indent)),
+                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{} items", ctx.item_count)),
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(" • "),
+                style::SetForegroundColor(Color::Blue),
+                style::Print(ctx.embedding_type.description()),
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(" • "),
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(format!("{}", ctx.updated_at.format("%m/%d %H:%M"))),
                 style::SetForegroundColor(Color::Reset),
-                style::Print("\n")
+                style::Print("\n\n")
             )?;
         }
         Ok(())
     }
 
     /// Handle add operation
+    fn get_db_patterns(os: &crate::os::Os, setting: crate::database::settings::Setting) -> Vec<String> {
+        os.database
+            .settings
+            .get(setting)
+            .and_then(|v| v.as_array())
+            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+            .unwrap_or_default()
+    }
+
     async fn handle_add(
         os: &Os,
+        session: &mut ChatSession,
         path: &str,
         include_patterns: &[String],
         exclude_patterns: &[String],
+        index_type: &Option<String>,
     ) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
-                let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+                let agent = Self::get_agent(session);
+
+                let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
                     Ok(store) => store,
                     Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {}", e)),
                 };
                 let mut store = async_knowledge_store.lock().await;
 
-                let options = if include_patterns.is_empty() && exclude_patterns.is_empty() {
-                    crate::util::knowledge_store::AddOptions::with_db_defaults(os)
+                let include = if include_patterns.is_empty() {
+                    Self::get_db_patterns(os, crate::database::settings::Setting::KnowledgeDefaultIncludePatterns)
                 } else {
-                    crate::util::knowledge_store::AddOptions::new()
-                        .with_include_patterns(include_patterns.to_vec())
-                        .with_exclude_patterns(exclude_patterns.to_vec())
+                    include_patterns.to_vec()
                 };
+
+                let exclude = if exclude_patterns.is_empty() {
+                    Self::get_db_patterns(os, crate::database::settings::Setting::KnowledgeDefaultExcludePatterns)
+                } else {
+                    exclude_patterns.to_vec()
+                };
+
+                let embedding_type_resolved = index_type.clone().or_else(|| {
+                    os.database
+                        .settings
+                        .get(crate::database::settings::Setting::KnowledgeIndexType)
+                        .and_then(|v| v.as_str().map(|s| s.to_string()))
+                });
+
+                let options = crate::util::knowledge_store::AddOptions::new()
+                    .with_include_patterns(include)
+                    .with_exclude_patterns(exclude)
+                    .with_embedding_type(embedding_type_resolved);
 
                 match store.add(path, &sanitized_path.clone(), options).await {
                     Ok(message) => OperationResult::Info(message),
@@ -269,30 +292,40 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle remove operation
-    async fn handle_remove(os: &Os, path: &str) -> OperationResult {
+    async fn handle_remove(os: &Os, session: &ChatSession, path: &str) -> OperationResult {
         let sanitized_path = sanitize_path_tool_arg(os, path);
+        let agent = Self::get_agent(session);
 
-        let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
             Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {}", e)),
         };
         let mut store = async_knowledge_store.lock().await;
 
+        let scope_desc = "agent";
+
         // Try path first, then name
         if store.remove_by_path(&sanitized_path.to_string_lossy()).await.is_ok() {
-            OperationResult::Success(format!("Removed knowledge base entry with path '{}'", path))
+            OperationResult::Success(format!(
+                "Removed {} knowledge base entry with path '{}'",
+                scope_desc, path
+            ))
         } else if store.remove_by_name(path).await.is_ok() {
-            OperationResult::Success(format!("Removed knowledge base entry with name '{}'", path))
+            OperationResult::Success(format!(
+                "Removed {} knowledge base entry with name '{}'",
+                scope_desc, path
+            ))
         } else {
-            OperationResult::Warning(format!("Entry not found in knowledge base: {}", path))
+            OperationResult::Warning(format!("Entry not found in {} knowledge base: {}", scope_desc, path))
         }
     }
 
     /// Handle update operation
-    async fn handle_update(os: &Os, path: &str) -> OperationResult {
+    async fn handle_update(os: &Os, session: &ChatSession, path: &str) -> OperationResult {
         match Self::validate_and_sanitize_path(os, path) {
             Ok(sanitized_path) => {
-                let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+                let agent = Self::get_agent(session);
+                let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
                     Ok(store) => store,
                     Err(e) => {
                         return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e));
@@ -330,7 +363,8 @@ impl KnowledgeSubcommand {
             return OperationResult::Info("Clear operation cancelled".to_string());
         }
 
-        let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+        let agent = Self::get_agent(session);
+        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
             Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
         };
@@ -363,8 +397,9 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle status operation
-    async fn handle_status(os: &Os) -> OperationResult {
-        let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+    async fn handle_status(os: &Os, session: &ChatSession) -> OperationResult {
+        let agent = Self::get_agent(session);
+        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
             Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
         };
@@ -474,8 +509,9 @@ impl KnowledgeSubcommand {
     }
 
     /// Handle cancel operation
-    async fn handle_cancel(os: &Os, operation_id: Option<&str>) -> OperationResult {
-        let async_knowledge_store = match KnowledgeStore::get_async_instance_with_os(os).await {
+    async fn handle_cancel(os: &Os, session: &ChatSession, operation_id: Option<&str>) -> OperationResult {
+        let agent = Self::get_agent(session);
+        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
             Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
         };
@@ -569,7 +605,7 @@ mod tests {
     #[test]
     fn test_include_exclude_patterns_parsing() {
         // Test that include and exclude patterns are parsed correctly
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",
@@ -586,7 +622,10 @@ mod tests {
         assert!(result.is_ok());
         let cli = result.unwrap();
 
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert_eq!(include, vec!["*.rs", "**/*.md"]);
             assert_eq!(exclude, vec!["node_modules/**", "target/**"]);
@@ -597,7 +636,7 @@ mod tests {
 
     #[test]
     fn test_clap_markdown_parsing_issue() {
-        let help_result = TestCli::try_parse_from(&["test", "add", "--help"]);
+        let help_result = TestCli::try_parse_from(["test", "add", "--help"]);
         match help_result {
             Err(err) if err.kind() == clap::error::ErrorKind::DisplayHelp => {
                 // This is expected for --help
@@ -611,11 +650,14 @@ mod tests {
     #[test]
     fn test_empty_patterns_allowed() {
         // Test that commands work without any patterns
-        let result = TestCli::try_parse_from(&["test", "add", "/some/path"]);
+        let result = TestCli::try_parse_from(["test", "add", "/some/path"]);
         assert!(result.is_ok());
 
         let cli = result.unwrap();
-        if let KnowledgeSubcommand::Add { path, include, exclude } = cli.knowledge {
+        if let KnowledgeSubcommand::Add {
+            path, include, exclude, ..
+        } = cli.knowledge
+        {
             assert_eq!(path, "/some/path");
             assert!(include.is_empty());
             assert!(exclude.is_empty());
@@ -627,7 +669,7 @@ mod tests {
     #[test]
     fn test_multiple_include_patterns() {
         // Test multiple include patterns
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",
@@ -652,7 +694,7 @@ mod tests {
     #[test]
     fn test_multiple_exclude_patterns() {
         // Test multiple exclude patterns
-        let result = TestCli::try_parse_from(&[
+        let result = TestCli::try_parse_from([
             "test",
             "add",
             "/some/path",

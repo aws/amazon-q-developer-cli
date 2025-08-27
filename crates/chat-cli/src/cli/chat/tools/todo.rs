@@ -59,6 +59,7 @@ impl TodoListState {
 
     /// Saves this TodoListState with the given id
     pub async fn save(&self, os: &Os, id: &str) -> Result<()> {
+        Self::init_dir(os).await?;
         let path = id_to_path(os, id)?;
         Self::init_dir(os).await?;
         if !os.fs.exists(&path) {

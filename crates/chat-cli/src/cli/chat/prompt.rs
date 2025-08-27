@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
 
 use eyre::Result;
 use rustyline::completion::{
@@ -37,6 +38,10 @@ use winnow::stream::AsChar;
 
 pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
+use super::tool_manager::{
+    PromptQuery,
+    PromptQueryResult,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 
@@ -90,6 +95,9 @@ pub const COMMANDS: &[&str] = &[
     "/todos delete",
 ];
 
+pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
+pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
+
 /// Complete commands that start with a slash
 fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
     (
@@ -139,29 +147,63 @@ impl PathCompleter {
 }
 
 pub struct PromptCompleter {
-    sender: std::sync::mpsc::Sender<Option<String>>,
-    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+    sender: PromptQuerySender,
+    receiver: RefCell<PromptQueryResponseReceiver>,
 }
 
 impl PromptCompleter {
-    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
-        PromptCompleter { sender, receiver }
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
+        PromptCompleter {
+            sender,
+            receiver: RefCell::new(receiver),
+        }
     }
 
     fn complete_prompt(&self, word: &str) -> Result<Vec<String>, ReadlineError> {
         let sender = &self.sender;
-        let receiver = &self.receiver;
-        sender
-            .send(if !word.is_empty() { Some(word.to_string()) } else { None })
-            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
-        let prompt_info = receiver
-            .recv()
-            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?
-            .iter()
-            .map(|n| format!("@{n}"))
-            .collect::<Vec<_>>();
+        let receiver = self.receiver.borrow_mut();
+        let query = PromptQuery::Search(if !word.is_empty() { Some(word.to_string()) } else { None });
 
-        Ok(prompt_info)
+        sender
+            .send(query)
+            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
+        // We only want stuff from the current tail end onward
+        let mut new_receiver = receiver.resubscribe();
+
+        // Here we poll on the receiver for [max_attempts] number of times.
+        // The reason for this is because we are trying to receive something managed by an async
+        // channel from a sync context.
+        // If we ever switch back to a single threaded runtime for whatever reason, this function
+        // will not panic but nothing will be fetched because the thread that is doing
+        // try_recv is also the thread that is supposed to be doing the sending.
+        let mut attempts = 0;
+        let max_attempts = 5;
+        let query_res = loop {
+            match new_receiver.try_recv() {
+                Ok(result) => break result,
+                Err(_e) if attempts < max_attempts - 1 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                },
+                Err(e) => {
+                    return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                        "Failed to receive prompt info from complete prompt after {} attempts: {:?}",
+                        max_attempts,
+                        e
+                    ))));
+                },
+            }
+        };
+        let matches = match query_res {
+            PromptQueryResult::Search(list) => list.into_iter().map(|n| format!("@{n}")).collect::<Vec<_>>(),
+            PromptQueryResult::List(_) => {
+                return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                    "Wrong query response type received",
+                ))));
+            },
+        };
+
+        Ok(matches)
     }
 }
 
@@ -171,7 +213,7 @@ pub struct ChatCompleter {
 }
 
 impl ChatCompleter {
-    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
         Self {
             path_completer: PathCompleter::new(),
             prompt_completer: PromptCompleter::new(sender, receiver),
@@ -352,17 +394,22 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add profile part if present
+            // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
             }
 
-            // Add warning symbol if present
+            // Add tangent indicator if present (yellow)
+            if components.tangent_mode {
+                result.push_str(&"↯ ".yellow().to_string());
+            }
+
+            // Add warning symbol if present (red)
             if components.warning {
                 result.push_str(&"!".red().to_string());
             }
 
-            // Add the prompt symbol
+            // Add the prompt symbol (magenta)
             result.push_str(&"> ".magenta().to_string());
 
             Cow::Owned(result)
@@ -375,8 +422,8 @@ impl Highlighter for ChatHelper {
 
 pub fn rl(
     os: &Os,
-    sender: std::sync::mpsc::Sender<Option<String>>,
-    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+    sender: PromptQuerySender,
+    receiver: PromptQueryResponseReceiver,
 ) -> Result<Editor<ChatHelper, DefaultHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -421,6 +468,16 @@ pub fn rl(
         EventHandler::Simple(Cmd::CompleteHint),
     );
 
+    // Add custom keybinding for Ctrl+T to toggle tangent mode (configurable)
+    let tangent_key_char = match os.database.settings.get_string(Setting::TangentModeKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('t'),
+        _ => 't', // Default to 't' if setting is missing or invalid
+    };
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char(tangent_key_char), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
+    );
+
     Ok(rl)
 }
 
@@ -433,8 +490,8 @@ mod tests {
 
     #[test]
     fn test_chat_completer_command_completion() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
@@ -455,8 +512,8 @@ mod tests {
 
     #[test]
     fn test_chat_completer_no_completion() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "Hello, how are you?";
         let pos = line.len();
@@ -474,8 +531,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_basic() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -490,8 +547,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_warning() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -506,8 +563,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -522,8 +579,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile_and_warning() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -541,8 +598,8 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_invalid_format() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
             hinter: ChatHinter::new(true),
@@ -553,6 +610,54 @@ mod tests {
         let invalid_prompt = "invalid prompt format";
         let highlighted = helper.highlight_prompt(invalid_prompt, true);
         assert_eq!(highlighted, invalid_prompt);
+    }
+
+    #[test]
+    fn test_highlight_prompt_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode prompt highlighting - ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("↯ > ", true);
+        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_tangent_mode_with_warning() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode with warning - ↯ yellow, ! red, > magenta
+        let highlighted = helper.highlight_prompt("↯ !> ", true);
+        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_profile_with_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test profile with tangent mode - [dev] cyan, ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
+        assert_eq!(
+            highlighted,
+            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+        );
     }
 
     #[test]

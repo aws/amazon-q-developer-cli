@@ -16,6 +16,10 @@ use std::io::{
 use std::process::ExitCode;
 
 use agent::AgentArgs;
+pub use agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
 use anstream::println;
 pub use chat::ConversationState;
 pub use chat::tools::todo::TodoListState;

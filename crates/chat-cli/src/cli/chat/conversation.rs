@@ -125,6 +125,21 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+    #[serde(default = "default_true")]
+    pub mcp_enabled: bool,
+    /// Tangent mode checkpoint - stores main conversation when in tangent mode
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    tangent_state: Option<ConversationCheckpoint>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ConversationCheckpoint {
+    /// Main conversation history stored while in tangent mode
+    main_history: VecDeque<HistoryEntry>,
+    /// Main conversation next message
+    main_next_message: Option<UserMessage>,
+    /// Main conversation transcript
+    main_transcript: VecDeque<String>,
 }
 
 impl ConversationState {
@@ -135,6 +150,7 @@ impl ConversationState {
         tool_manager: ToolManager,
         current_model_id: Option<String>,
         os: &Os,
+        mcp_enabled: bool,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -181,6 +197,8 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            mcp_enabled,
+            tangent_state: None,
         }
     }
 
@@ -198,6 +216,42 @@ impl ConversationState {
         self.history.clear();
         if !preserve_summary {
             self.latest_summary = None;
+        }
+    }
+
+    /// Check if currently in tangent mode
+    pub fn is_in_tangent_mode(&self) -> bool {
+        self.tangent_state.is_some()
+    }
+
+    /// Create a checkpoint of current conversation state
+    fn create_checkpoint(&self) -> ConversationCheckpoint {
+        ConversationCheckpoint {
+            main_history: self.history.clone(),
+            main_next_message: self.next_message.clone(),
+            main_transcript: self.transcript.clone(),
+        }
+    }
+
+    /// Restore conversation state from checkpoint
+    fn restore_from_checkpoint(&mut self, checkpoint: ConversationCheckpoint) {
+        self.history = checkpoint.main_history;
+        self.next_message = checkpoint.main_next_message;
+        self.transcript = checkpoint.main_transcript;
+        self.valid_history_range = (0, self.history.len());
+    }
+
+    /// Enter tangent mode - creates checkpoint of current state
+    pub fn enter_tangent_mode(&mut self) {
+        if self.tangent_state.is_none() {
+            self.tangent_state = Some(self.create_checkpoint());
+        }
+    }
+
+    /// Exit tangent mode - restore from checkpoint
+    pub fn exit_tangent_mode(&mut self) {
+        if let Some(checkpoint) = self.tangent_state.take() {
+            self.restore_from_checkpoint(checkpoint);
         }
     }
 
@@ -706,6 +760,31 @@ impl ConversationState {
         }
         self.transcript.push_back(message);
     }
+
+    /// Swapping agent involves the following:
+    /// - Reinstantiate the context manager
+    /// - Swap agent on tool manager
+    pub async fn swap_agent(
+        &mut self,
+        os: &mut Os,
+        output: &mut impl Write,
+        agent_name: &str,
+    ) -> Result<(), ChatError> {
+        let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
+        self.context_manager.replace({
+            ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
+                .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
+        });
+
+        self.tool_manager
+            .swap_agent(os, output, agent)
+            .await
+            .map_err(ChatError::AgentSwapError)?;
+
+        self.update_state(true).await;
+
+        Ok(())
+    }
 }
 
 /// Represents a conversation state that can be converted into a [FigConversationState] (the type
@@ -988,6 +1067,9 @@ fn enforce_tool_use_history_invariants(history: &mut VecDeque<HistoryEntry>, too
     }
 }
 
+fn default_true() -> bool {
+    true
+}
 #[cfg(test)]
 mod tests {
     use super::super::message::AssistantToolUse;
@@ -1106,6 +1188,7 @@ mod tests {
             tool_manager,
             None,
             &os,
+            false,
         )
         .await;
 
@@ -1138,6 +1221,7 @@ mod tests {
             tool_manager.clone(),
             None,
             &os,
+            false,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1173,6 +1257,7 @@ mod tests {
             tool_manager.clone(),
             None,
             &os,
+            false,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1227,6 +1312,7 @@ mod tests {
             tool_manager,
             None,
             &os,
+            false,
         )
         .await;
 
@@ -1259,5 +1345,78 @@ mod tests {
             conversation.push_assistant_message(&mut os, AssistantMessage::new_response(None, i.to_string()), None);
             conversation.set_next_user_message(i.to_string()).await;
         }
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false, // mcp_enabled
+        )
+        .await;
+
+        // Initially not in tangent mode
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Add some main conversation history
+        conversation
+            .set_next_user_message("main conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+        conversation.transcript.push_back("main transcript".to_string());
+
+        let main_history_len = conversation.history.len();
+        let main_transcript_len = conversation.transcript.len();
+
+        // Enter tangent mode (toggle from normal to tangent)
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // History should be preserved for tangent (not cleared)
+        assert_eq!(conversation.history.len(), main_history_len);
+        assert_eq!(conversation.transcript.len(), main_transcript_len);
+        assert!(conversation.next_message.is_none());
+
+        // Add tangent conversation
+        conversation
+            .set_next_user_message("tangent conversation".to_string())
+            .await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "tangent response".to_string()),
+            None,
+        );
+
+        // During tangent mode, history should have grown
+        assert_eq!(conversation.history.len(), main_history_len + 1);
+        assert_eq!(conversation.transcript.len(), main_transcript_len + 1);
+
+        // Exit tangent mode (toggle from tangent to normal)
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Main conversation should be restored (tangent additions discarded)
+        assert_eq!(conversation.history.len(), main_history_len); // Back to original length
+        assert_eq!(conversation.transcript.len(), main_transcript_len); // Back to original length
+        assert!(conversation.transcript.contains(&"main transcript".to_string()));
+        assert!(!conversation.transcript.iter().any(|t| t.contains("tangent")));
+
+        // Test multiple toggles
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
     }
 }

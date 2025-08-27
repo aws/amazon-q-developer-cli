@@ -5,10 +5,7 @@
 
 use std::env;
 
-use crate::embedding::{
-    BM25TextEmbedder,
-    run_standard_benchmark,
-};
+use crate::embedding::run_standard_benchmark;
 #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 use crate::embedding::{
     CandleTextEmbedder,
@@ -54,28 +51,7 @@ fn benchmark_candle_model(model_type: ModelType) {
     }
 }
 
-/// Run benchmark for BM25 model
-fn benchmark_bm25_model() {
-    match BM25TextEmbedder::new() {
-        Ok(embedder) => {
-            println!("Benchmarking BM25 model");
-            let results = run_standard_benchmark(&embedder);
-            println!(
-                "Model: {}, Embedding dim: {}, Single time: {:?}, Batch time: {:?}, Avg per text: {:?}",
-                results.model_name,
-                results.embedding_dim,
-                results.single_time,
-                results.batch_time,
-                results.avg_time_per_text()
-            );
-        },
-        Err(e) => {
-            println!("Failed to load BM25 model: {}", e);
-        },
-    }
-}
-
-/// Standardized benchmark test for all embedding models
+/// Standardized benchmark test for embedding models
 #[test]
 fn test_standard_benchmark() {
     if should_skip_real_embedder_tests() {
@@ -84,9 +60,6 @@ fn test_standard_benchmark() {
 
     println!("Running standardized benchmark tests for embedding models");
     println!("--------------------------------------------------------");
-
-    // Benchmark BM25 model (available on all platforms)
-    benchmark_bm25_model();
 
     // Benchmark Candle models (not available on Linux ARM)
     #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]

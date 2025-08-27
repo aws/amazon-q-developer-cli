@@ -8,6 +8,20 @@
       "required": []
     }
   },
+  "introspect": {
+    "name": "introspect",
+    "description": "ALWAYS use this tool when users ask ANY question about Q CLI itself, its capabilities, features, commands, or functionality. This includes questions like 'Can you...', 'Do you have...', 'How do I...', 'What can you do...', or any question about Q's abilities. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context').",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The user's question about Q CLI usage, features, or capabilities"
+        }
+      },
+      "required": []
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
