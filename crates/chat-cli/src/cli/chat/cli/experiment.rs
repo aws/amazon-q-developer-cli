@@ -39,6 +39,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables complex reasoning with step-by-step thought processes",
         setting_key: Setting::EnabledThinking,
     },
+    Experiment {
+        name: "Tangent Mode",
+        description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
+        setting_key: Setting::EnabledTangentMode,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]
