@@ -71,6 +71,7 @@ use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
 };
+use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::mcp_client::Prompt;
 use crate::os::Os;
 
@@ -83,6 +84,12 @@ pub struct HistoryEntry {
     assistant: AssistantMessage,
     #[serde(default)]
     request_metadata: Option<RequestMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub config: CustomToolConfig,
 }
 
 /// Tracks state related to an ongoing conversation.
@@ -649,6 +656,50 @@ impl ConversationState {
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
         self.latest_summary = Some((summary, request_metadata));
+    }
+
+    pub async fn create_agent_generation_request(
+        &mut self,
+        agent_name: &str,
+        agent_description: &str,
+        selected_servers: &str,
+        schema: &str,
+        prepopulated_content: &str,
+    ) -> Result<FigConversationState, ChatError> {
+        let generation_content = format!(
+            "[SYSTEM NOTE: This is an automated agent generation request, not from the user]\n\n\
+FORMAT REQUIREMENTS: Generate a JSON configuration for a custom coding agent. \
+IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO ```json tags, NO conversational text.\n\n\
+Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
+The configuration must conform to this JSON schema:\n{}\n\n\
+We have a prepopulated template: {} \n\n\
+Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
+Return only the JSON configuration, no additional text.",
+   agent_name, agent_description, schema, prepopulated_content, selected_servers
+        );
+
+        let generation_message = UserMessage::new_prompt(generation_content.clone(), None);
+
+        // Use empty history since this is a standalone generation request
+        let history = VecDeque::new();
+
+        // Only send the dummy tool spec to prevent the model from attempting tool use during generation
+        let mut tools = self.tools.clone();
+        tools.retain(|k, v| match k {
+            ToolOrigin::Native => {
+                v.retain(|tool| match tool {
+                    Tool::ToolSpecification(tool_spec) => tool_spec.name == DUMMY_TOOL_NAME,
+                });
+                true
+            },
+            ToolOrigin::McpServer(_) => false,
+        });
+
+        Ok(FigConversationState {
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
+            history: Some(flatten_history(history.iter())),
+        })
     }
 
     pub fn current_profile(&self) -> Option<&str> {

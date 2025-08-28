@@ -208,17 +208,21 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(
+        &mut self,
+        path: &Path,
+        legacy_mcp_config: Option<&McpServerConfig>,
+        output: &mut impl Write,
+    ) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
-        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
-                        stderr,
+                        output,
                         style::SetForegroundColor(Color::Yellow),
                         style::Print("WARNING: "),
                         style::ResetColor,
@@ -238,7 +242,7 @@ impl Agent {
             }
         }
 
-        stderr.flush()?;
+        output.flush()?;
 
         Ok(())
     }
@@ -299,8 +303,8 @@ impl Agent {
                 } else {
                     None
                 };
-
-                agent.thaw(&config_path, legacy_mcp_config.as_ref())?;
+                let mut stderr = std::io::stderr();
+                agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -312,6 +316,7 @@ impl Agent {
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
         mcp_enabled: bool,
+        output: &mut impl Write,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -326,11 +331,11 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), output)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None)?;
+            agent.thaw(agent_path.as_ref(), None, output)?;
         }
         Ok(agent)
     }
@@ -495,7 +500,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -533,7 +538,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -834,6 +839,7 @@ async fn load_agents_from_entries(
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
+    output: &mut impl Write,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -844,7 +850,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await);
         }
     }
 

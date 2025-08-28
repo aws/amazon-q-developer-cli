@@ -524,6 +524,7 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 pub enum MessageMetaTag {
     /// A /compact request
     Compact,
+    GenerateAgent,
     /// A /tangent request
     TangentMode,
 }
