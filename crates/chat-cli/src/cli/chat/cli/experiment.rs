@@ -61,9 +61,9 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
 
         current_states.push(is_enabled);
         // Create clean single-line format: "Knowledge    [ON]   - Description"
-        let status_indicator = if is_enabled { 
+        let status_indicator = if is_enabled {
             style::Stylize::green("[ON] ")
-        } else { 
+        } else {
             style::Stylize::grey("[OFF]")
         };
         let label = format!(
