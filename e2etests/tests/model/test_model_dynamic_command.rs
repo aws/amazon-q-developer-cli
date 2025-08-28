@@ -174,7 +174,7 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(feature = "model", feature = "regression"))]
+#[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /model -h command...");
     

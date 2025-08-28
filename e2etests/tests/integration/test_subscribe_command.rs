@@ -48,7 +48,7 @@ fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "subscribe", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_manage_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe command...");
 
@@ -126,7 +126,7 @@ fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "subscribe", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /subscribe -h command...");
 

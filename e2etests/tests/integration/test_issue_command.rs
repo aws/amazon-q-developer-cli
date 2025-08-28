@@ -78,7 +78,7 @@ fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "issue_reporting", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /issue -f command with critical bug...");
     
@@ -149,7 +149,7 @@ fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "issue_reporting", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /issue -h command...");
      

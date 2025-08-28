@@ -85,7 +85,7 @@ fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "hooks", feature = "integration"), feature = "regression"))]
+#[cfg(all(feature = "hooks", feature = "sanity"))]
 fn test_hooks_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /hooks -h command...");
     

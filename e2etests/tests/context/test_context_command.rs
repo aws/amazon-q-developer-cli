@@ -467,7 +467,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
 }
 
 #[test]
-#[cfg(all(feature = "context", feature = "regression"))]
+#[cfg(all(feature = "context", feature = "sanity"))]
 fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /context clear command...");
 
