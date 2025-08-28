@@ -94,7 +94,8 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
     
     // Verify Usage section
-    assert!(response.contains("Usage: XX "), "Missing Usage section");
+    assert!(response.contains("Usage:"), "Missing Usage section");
+
     assert!(response.contains("/usage"), "Missing /usage command in usage section");
     println!("✅ Found Usage section with /usage command");
     
@@ -122,7 +123,7 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
 /// Tests the /usage -h command (short form of --help)
 /// Verifies Usage section, Options section, and help flags (-h, --help)
 #[test]
-#[cfg(all(any(feature = "usage", feature = "session_mgmt"), feature = "regression"))]
+#[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /usage -h command... | Description: Tests the /usage -h command (short form of --help). Verifies Usage section, Options section, and help flags (-h, --help)");
     

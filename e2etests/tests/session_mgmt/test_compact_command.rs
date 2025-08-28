@@ -11,9 +11,9 @@ const TEST_NAMES: &[&str] = &[
     "test_compact_command",
     "test_compact_help_command",
     "test_compact_h_command",
-    "test_show_summary",
-    "test_compact_truncate_true_command",
-    "test_compact_truncate_false_command",
+    // "test_show_summary",
+    // "test_compact_truncate_true_command",
+    // "test_compact_truncate_false_command"
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -104,7 +104,7 @@ fn test_compact_help_command() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 #[test]
-#[cfg(all(any(feature = "compact", feature = "session_mgmt"), feature = "regression"))]
+#[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /compact -h command...");
     

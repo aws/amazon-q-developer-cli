@@ -7,8 +7,14 @@ import argparse
 import json
 import time
 import platform
+import re
 from datetime import datetime
 from pathlib import Path
+
+def strip_ansi(text):
+    """Remove ANSI escape sequences from text"""
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    return ansi_escape.sub('', text)
 
 def parse_features():
     """Parse features from Cargo.toml, handling grouped features correctly"""
@@ -64,8 +70,8 @@ def parse_test_results(stdout):
             result_line_idx = None
             description = ""
             
-            # Check next 50 lines for result (increased from 20)
-            for j in range(i + 1, min(i + 51, len(lines))):
+            # Check all remaining lines for result
+            for j in range(i + 1, len(lines)):
                 result_line = lines[j].strip()
                 if result_line == 'ok':
                     status = "passed"
@@ -98,7 +104,7 @@ def parse_test_results(stdout):
                 tests.append({
                     "name": test_name,
                     "status": status,
-                    "output": '\n'.join(output_lines[:30]),  # Limit output size
+                    "output": strip_ansi('\n'.join(output_lines)),  # Full output
                     "description": description
                 })
     
@@ -145,8 +151,8 @@ def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
         "test_suite": test_suite,
         "success": result.returncode == 0,
         "duration": round(end_time - start_time, 2),
-        "stdout": result.stdout,
-        "stderr": result.stderr,
+        "stdout": strip_ansi(result.stdout),
+        "stderr": strip_ansi(result.stderr),
         "command": " ".join(cmd),
         "individual_tests": individual_tests
     }
@@ -264,10 +270,20 @@ def generate_report(results, features, test_suites, binary_path="q"):
     }
     
     # Generate filename with features and test suites
-    features_str = "-".join(features[:3]) + ("_more" if len(features) > 3 else "")
-    suites_str = "-".join(test_suites)
+    # If running all features (sanity/regression mode), use only test suite names
+    grouped_features, standalone_features = parse_features()
+    all_available_features = list(grouped_features.keys()) + standalone_features
+    
+    if set(features) == set(all_available_features):
+        # Running all features - use only test suite names
+        features_str = "-".join(test_suites)
+    else:
+        # Running specific features - include feature names
+        features_str = "-".join(features[:3]) + ("_more" if len(features) > 3 else "")
+        features_str += "_" + "-".join(test_suites)
+    
     datetime_str = datetime.now().strftime("%m%d%y%H%M%S")
-    filename = reports_dir / f"qcli_test_summary_{features_str}_{suites_str}_{datetime_str}.json"
+    filename = reports_dir / f"qcli_test_summary_{features_str}_{datetime_str}.json"
     
     # Save JSON report
     with open(filename, "w") as f:
@@ -335,7 +351,7 @@ def generate_html_report(json_filename):
                 else:
                     readable_name = test_name
                 
-                test_output = test.get('output', 'No output captured')
+                test_output = strip_ansi(test.get('output', 'No output captured'))
                 test_description = test.get('description', '')
                 description_html = f'<p>{test_description}</p>' if test_description else ''
                 test_suites_content += f'<div class="test-item {test_class}"><h4>{status_icon} {readable_name}</h4>{description_html}<p><strong>Status:</strong> {test["status"].upper()}</p><button class="collapsible">📄 View Test Output</button><div class="content"><div class="stdout">{test_output}</div></div></div>'
@@ -343,8 +359,8 @@ def generate_html_report(json_filename):
             # Add stdout/stderr for this feature
             for result in report["detailed_results"]:
                 if result["feature"] == feature_name and result["test_suite"] == suite:
-                    stderr_content = f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{result["stderr"]}</div>' if result['stderr'] else ''
-                    test_suites_content += f'<button class="collapsible">📄 View Full Command Output</button><div class="content"><p><strong>Command:</strong> {result["command"]}</p><p><strong>Duration:</strong> {result["duration"]}s</p><div class="stdout">{result["stdout"]}</div>{stderr_content}</div>'
+                    stderr_content = f'<div class="stdout" style="border-left-color: #dc3545;"><strong>STDERR:</strong><br>{strip_ansi(result["stderr"])}</div>' if result['stderr'] else ''
+                    test_suites_content += f'<button class="collapsible">📄 View Full Command Output</button><div class="content"><p><strong>Command:</strong> {result["command"]}</p><p><strong>Duration:</strong> {result["duration"]}s</p><div class="stdout">{strip_ansi(result["stdout"])}</div>{stderr_content}</div>'
             
             test_suites_content += "</div>"  # Close feature content
         
