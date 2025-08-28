@@ -1,8 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{
-    HashMap,
-    HashSet,
-};
+use std::collections::HashMap;
 use std::io::Write;
 
 use clap::Subcommand;
@@ -424,8 +421,6 @@ fn highlight_json(output: &mut impl Write, json_str: &str) -> eyre::Result<()> {
 /// Priority order: Agent configs > Workspace legacy > Global legacy
 pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> {
     let mut servers = HashMap::<String, McpServerInfo>::new();
-    let mut seen_names = HashSet::<String>::new();
-    let mut seen_commands = HashSet::<String>::new();
 
     // 1. Load from agent configurations (highest priority)
     let mut null_writer = NullWriter;
@@ -433,10 +428,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
 
     for (_, agent) in agents.agents {
         for (server_name, server_config) in agent.mcp_servers.mcp_servers {
-            if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
-                seen_names.insert(server_name.clone());
-                seen_commands.insert(server_config.command.clone());
-
+            if !servers.values().any(|s| s.config.command == server_config.command) {
                 servers.insert(server_name.clone(), McpServerInfo {
                     name: server_name,
                     config: server_config,
@@ -449,10 +441,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
         if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
             for (server_name, server_config) in workspace_config.mcp_servers {
-                if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
-                    seen_names.insert(server_name.clone());
-                    seen_commands.insert(server_config.command.clone());
-
+                if !servers.values().any(|s| s.config.command == server_config.command) {
                     servers.insert(server_name.clone(), McpServerInfo {
                         name: server_name,
                         config: server_config,
@@ -466,11 +455,9 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
         if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
             for (server_name, server_config) in global_config.mcp_servers {
-                if !seen_names.contains(&server_name) && !seen_commands.contains(&server_config.command) {
-                    seen_names.insert(server_name.clone());
-                    seen_commands.insert(server_config.command.clone());
+                if !servers.values().any(|s| s.config.command == server_config.command) {
                     servers.insert(server_name.clone(), McpServerInfo {
-                        name: server_name.clone(),
+                        name: server_name,
                         config: server_config,
                     });
                 }
@@ -478,11 +465,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
         }
     }
 
-    // Convert to sorted vector
-    let mut result: Vec<McpServerInfo> = servers.into_values().collect();
-    result.sort_by(|a, b| a.name.cmp(&b.name));
-
-    Ok(result)
+    Ok(servers.into_values().collect())
 }
 
 /// Get only enabled MCP servers (excludes disabled ones)
