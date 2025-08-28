@@ -45,8 +45,11 @@ use crate::cli::chat::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories;
 use crate::util::directories::chat_global_agent_path;
+use crate::util::{
+    NullWriter,
+    directories,
+};
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -180,8 +183,14 @@ impl AgentSubcommand {
                     return Err(ChatError::Custom("Editor process did not exit with success".into()));
                 }
 
-                let new_agent =
-                    Agent::load(os, &path_with_file_name, &mut None, session.conversation.mcp_enabled).await;
+                let new_agent = Agent::load(
+                    os,
+                    &path_with_file_name,
+                    &mut None,
+                    session.conversation.mcp_enabled,
+                    &mut session.stderr,
+                )
+                .await;
                 match new_agent {
                     Ok(agent) => {
                         session.conversation.agents.agents.insert(agent.name.clone(), agent);
@@ -414,8 +423,8 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     let mut seen_commands = HashSet::<String>::new();
 
     // 1. Load from agent configurations (highest priority)
-    let mut stderr = std::io::stderr();
-    let (agents, _) = Agents::load(os, None, true, &mut stderr, true).await;
+    let mut null_writer = NullWriter;
+    let (agents, _) = Agents::load(os, None, true, &mut null_writer, true).await;
     print!("Loaded {} agents from agent configurations", agents.agents.len());
 
     for (_, agent) in agents.agents {
