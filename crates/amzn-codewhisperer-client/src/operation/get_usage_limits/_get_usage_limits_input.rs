@@ -6,6 +6,8 @@ pub struct GetUsageLimitsInput {
     /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
     /// ID users.
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    /// The origin of the client request to get limits for.
+    pub origin: ::std::option::Option<crate::types::Origin>,
     #[allow(missing_docs)] // documentation missing in model
     pub resource_type: ::std::option::Option<crate::types::ResourceType>,
     #[allow(missing_docs)] // documentation missing in model
@@ -16,6 +18,11 @@ impl GetUsageLimitsInput {
     /// ID users.
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
+        self.origin.as_ref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -41,6 +48,7 @@ impl GetUsageLimitsInput {
 #[non_exhaustive]
 pub struct GetUsageLimitsInputBuilder {
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) origin: ::std::option::Option<crate::types::Origin>,
     pub(crate) resource_type: ::std::option::Option<crate::types::ResourceType>,
     pub(crate) is_email_required: ::std::option::Option<bool>,
 }
@@ -63,6 +71,23 @@ impl GetUsageLimitsInputBuilder {
     /// ID users.
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         &self.profile_arn
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn origin(mut self, input: crate::types::Origin) -> Self {
+        self.origin = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
+        self.origin = input;
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
+        &self.origin
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -109,6 +134,7 @@ impl GetUsageLimitsInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::get_usage_limits::GetUsageLimitsInput {
             profile_arn: self.profile_arn,
+            origin: self.origin,
             resource_type: self.resource_type,
             is_email_required: self.is_email_required,
         })

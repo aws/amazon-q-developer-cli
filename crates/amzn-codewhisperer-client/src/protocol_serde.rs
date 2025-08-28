@@ -212,6 +212,8 @@ pub(crate) mod shape_conversation_state;
 
 pub(crate) mod shape_customizations;
 
+pub(crate) mod shape_disclaimer_list;
+
 pub(crate) mod shape_editor_state;
 
 pub(crate) mod shape_event_list;

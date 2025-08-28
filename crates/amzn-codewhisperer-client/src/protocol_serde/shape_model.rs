@@ -51,6 +51,11 @@ where
                                 crate::protocol_serde::shape_supported_input_types_list::de_supported_input_types_list(tokens)?,
                             );
                             },
+                            "supportsPromptCache" => {
+                                builder = builder.set_supports_prompt_cache(
+                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

@@ -11,6 +11,7 @@ impl super::Client {
     ///   [`ListAvailableSubscriptionsOutput`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsOutput)
     ///   with field(s):
     ///   - [`subscription_plans(Vec::<SubscriptionPlan>)`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsOutput::subscription_plans): (undocumented)
+    ///   - [`disclaimer(Option<Vec::<String>>)`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsOutput::disclaimer): (undocumented)
     /// - On failure, responds with [`SdkError<ListAvailableSubscriptionsError>`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsError)
     pub fn list_available_subscriptions(
         &self,

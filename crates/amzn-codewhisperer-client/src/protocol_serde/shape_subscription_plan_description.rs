@@ -41,6 +41,13 @@ where
                                 builder = builder
                                     .set_features(crate::protocol_serde::shape_feature_list::de_feature_list(tokens)?);
                             },
+                            "billingInterval" => {
+                                builder = builder.set_billing_interval(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

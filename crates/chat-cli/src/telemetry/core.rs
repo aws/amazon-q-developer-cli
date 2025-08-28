@@ -286,6 +286,25 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::TangentModeSession {
+                conversation_id,
+                result,
+                args: TangentModeSessionArgs { duration_seconds },
+            } => Some(
+                CodewhispererterminalChatSlashCommandExecuted {
+                    create_time: self.created_time,
+                    value: Some(duration_seconds as f64),
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_chat_slash_command: Some("tangent".to_string().into()),
+                    codewhispererterminal_chat_slash_subcommand: Some("exit".to_string().into()),
+                    result: Some(result.to_string().into()),
+                    reason: None,
+                    codewhispererterminal_in_cloudshell: None,
+                }
+                .into_metric_datum(),
+            ),
             EventType::ToolUseSuggested {
                 conversation_id,
                 utterance_id,
@@ -529,6 +548,13 @@ pub struct ChatAddedMessageParams {
     pub message_meta_tags: Vec<MessageMetaTag>,
 }
 
+/// Optional fields for tangent mode session telemetry event.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct TangentModeSessionArgs {
+    /// Duration of tangent mode session in seconds
+    pub duration_seconds: i64,
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct RecordUserTurnCompletionArgs {
     pub request_ids: Vec<Option<String>>,
@@ -592,6 +618,11 @@ pub enum EventType {
         conversation_id: String,
         result: TelemetryResult,
         args: RecordUserTurnCompletionArgs,
+    },
+    TangentModeSession {
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
     },
     ToolUseSuggested {
         conversation_id: String,

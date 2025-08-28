@@ -463,11 +463,19 @@ pub(crate) fn subscription_info_correct_errors(
     if builder.r#type.is_none() {
         builder.r#type = "no value was set".parse::<crate::types::SubscriptionType>().ok()
     }
-    if builder.upgrade_capable.is_none() {
-        builder.upgrade_capable = Some(Default::default())
+    if builder.upgrade_capability.is_none() {
+        builder.upgrade_capability = "no value was set".parse::<crate::types::UpgradeCapability>().ok()
     }
-    if builder.overage_capable.is_none() {
-        builder.overage_capable = Some(Default::default())
+    if builder.overage_capability.is_none() {
+        builder.overage_capability = "no value was set".parse::<crate::types::OverageCapability>().ok()
+    }
+    if builder.subscription_management_target.is_none() {
+        builder.subscription_management_target = "no value was set"
+            .parse::<crate::types::SubscriptionManagementTarget>()
+            .ok()
+    }
+    if builder.subscription_title.is_none() {
+        builder.subscription_title = Some(Default::default())
     }
     builder
 }
