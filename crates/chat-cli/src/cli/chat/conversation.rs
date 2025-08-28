@@ -139,6 +139,9 @@ struct ConversationCheckpoint {
     main_next_message: Option<UserMessage>,
     /// Main conversation transcript
     main_transcript: VecDeque<String>,
+    /// Timestamp when tangent mode was entered (milliseconds since epoch)
+    #[serde(default = "time::OffsetDateTime::now_utc")]
+    tangent_start_time: time::OffsetDateTime,
 }
 
 impl ConversationState {
@@ -229,6 +232,7 @@ impl ConversationState {
             main_history: self.history.clone(),
             main_next_message: self.next_message.clone(),
             main_transcript: self.transcript.clone(),
+            tangent_start_time: time::OffsetDateTime::now_utc(),
         }
     }
 
@@ -245,6 +249,14 @@ impl ConversationState {
         if self.tangent_state.is_none() {
             self.tangent_state = Some(self.create_checkpoint());
         }
+    }
+
+    /// Get tangent mode duration in seconds if currently in tangent mode
+    pub fn get_tangent_duration_seconds(&self) -> Option<i64> {
+        self.tangent_state.as_ref().map(|checkpoint| {
+            let now = time::OffsetDateTime::now_utc();
+            (now - checkpoint.tangent_start_time).whole_seconds()
+        })
     }
 
     /// Exit tangent mode - restore from checkpoint
@@ -1411,5 +1423,41 @@ mod tests {
         assert!(conversation.is_in_tangent_mode());
         conversation.exit_tangent_mode();
         assert!(!conversation.is_in_tangent_mode());
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_duration() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false, // mcp_enabled
+        )
+        .await;
+
+        // Initially not in tangent mode, no duration
+        assert!(conversation.get_tangent_duration_seconds().is_none());
+
+        // Enter tangent mode
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Should have a duration (likely 0 seconds since it just started)
+        let duration = conversation.get_tangent_duration_seconds();
+        assert!(duration.is_some());
+        assert!(duration.unwrap() >= 0);
+
+        // Exit tangent mode
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // No duration when not in tangent mode
+        assert!(conversation.get_tangent_duration_seconds().is_none());
     }
 }
