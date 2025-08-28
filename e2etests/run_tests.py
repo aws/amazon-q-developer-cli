@@ -328,7 +328,7 @@ def generate_html_report(json_filename):
         suite_failed = sum(stats["failed"] for stats in suite_features.values())
         suite_rate = round((suite_passed / (suite_passed + suite_failed) * 100) if (suite_passed + suite_failed) > 0 else 0, 2)
         
-        test_suites_content += f'<button class="collapsible">🧪 {suite.upper()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
+        test_suites_content += f'<button class="collapsible">🧪 {suite.capitalize()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
         
         # Add features for this suite
         for feature_name, feature_stats in suite_features.items():
