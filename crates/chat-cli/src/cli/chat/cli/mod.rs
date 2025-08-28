@@ -2,6 +2,7 @@ pub mod clear;
 pub mod compact;
 pub mod context;
 pub mod editor;
+pub mod experiment;
 pub mod hooks;
 pub mod knowledge;
 pub mod mcp;
@@ -20,6 +21,7 @@ use clear::ClearArgs;
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
+use experiment::ExperimentArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
@@ -83,6 +85,8 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// Toggle experimental features
+    Experiment(ExperimentArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
     /// Toggle tangent mode for isolated conversations
@@ -144,6 +148,7 @@ impl SlashCommand {
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
+            Self::Experiment(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
@@ -177,6 +182,7 @@ impl SlashCommand {
             Self::Usage(_) => "usage",
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
+            Self::Experiment(_) => "experiment",
             Self::Subscribe(_) => "subscribe",
             Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {

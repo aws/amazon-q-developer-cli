@@ -56,6 +56,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/built-in-tools.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/built-in-tools.md"));
 
+        documentation.push_str("\n\n--- docs/experiments.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/experiments.md"));
+
         documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
 
@@ -84,6 +87,8 @@ impl Introspect {
         documentation.push_str(
             "• Built-in Tools: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/built-in-tools.md\n",
         );
+        documentation
+            .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
         documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
@@ -129,12 +134,11 @@ impl Introspect {
         })
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(output: &mut impl Write) -> Result<()> {
         use crossterm::{
             queue,
             style,
         };
-        _ = self;
         queue!(output, style::Print("Introspecting to get you the right information"))?;
         Ok(())
     }
