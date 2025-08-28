@@ -139,6 +139,7 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
+use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::model::find_model;
 use crate::cli::chat::cli::prompts::{
     GetPromptError,
@@ -1552,6 +1553,7 @@ impl ChatSession {
         agent_description: &str,
         selected_servers: &str,
         schema: &str,
+        is_global: bool,
     ) -> Result<ChatState, ChatError> {
         // Same pattern as compact_history for handling ctrl+c interruption
         let request_metadata: Arc<Mutex<Option<RequestMetadata>>> = Arc::new(Mutex::new(None));
@@ -1559,7 +1561,7 @@ impl ChatSession {
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
 
         tokio::select! {
-            res = self.generate_agent_config_impl(os, agent_name, agent_description, selected_servers, schema, request_metadata_clone) => res,
+            res = self.generate_agent_config_impl(os, agent_name, agent_description, selected_servers, schema, is_global, request_metadata_clone) => res,
             Ok(_) = ctrl_c_stream.recv() => {
                 debug!(?request_metadata, "ctrlc received in generate agent config");
                 // Wait for handle_response to finish handling the ctrlc.
@@ -1581,6 +1583,7 @@ impl ChatSession {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn generate_agent_config_impl(
         &mut self,
         os: &mut Os,
@@ -1588,6 +1591,7 @@ impl ChatSession {
         agent_description: &str,
         selected_servers: &str,
         schema: &str,
+        is_global: bool,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
         debug!(?agent_name, ?agent_description, "generating agent config");
@@ -1707,7 +1711,7 @@ impl ChatSession {
             )?;
         }
         // Parse and validate the initial generated config
-        let initial_agent_config = match parse_and_validate_agent_config(&agent_config_json, schema) {
+        let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
             Ok(config) => config,
             Err(err) => {
                 execute!(
@@ -1731,42 +1735,10 @@ impl ChatSession {
         let formatted_json = serde_json::to_string_pretty(&initial_agent_config)
             .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {}", e).into()))?;
 
-        execute!(
-            self.stderr,
-            style::SetForegroundColor(Color::Yellow),
-            style::Print(format!(
-                "Opening editor for the '{}' agent configuration...\n",
-                agent_name
-            )),
-            style::SetForegroundColor(Color::Reset)
-        )?;
-
-        // Create temporary file for editing
-        let temp_dir = std::env::temp_dir();
-        let temp_file = temp_dir.join(format!("{}_agent_config.json", agent_name));
-        tokio::fs::write(&temp_file, &formatted_json)
-            .await
-            .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
-
-        // Launch editor directly without showing the JSON first
-        let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string()); // nano is more user-friendly than vi
-        let mut cmd = std::process::Command::new(editor_cmd);
-        let status = cmd.arg(&temp_file).status()?;
-
-        if !status.success() {
-            return Err(ChatError::Custom("Editor process did not exit successfully".into()));
-        }
-
-        // Read back the edited content
-        let edited_content = tokio::fs::read_to_string(&temp_file)
-            .await
-            .map_err(|e| ChatError::Custom(format!("Failed to read edited file: {}", e).into()))?;
-
-        // Clean up temp file
-        let _ = tokio::fs::remove_file(&temp_file).await;
+        let edited_content = open_editor(Some(formatted_json))?;
 
         // Parse and validate the edited config
-        let final_agent_config = match parse_and_validate_agent_config(&edited_content, schema) {
+        let final_agent_config = match serde_json::from_str::<Agent>(&edited_content) {
             Ok(config) => config,
             Err(err) => {
                 execute!(
@@ -1782,7 +1754,7 @@ impl ChatSession {
         };
 
         // Save the final agent config to file
-        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name).await {
+        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, is_global).await {
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -3677,26 +3649,15 @@ mod tests {
     }
 }
 
-// Helper method to parse and validate the generated agent config
-fn parse_and_validate_agent_config(response: &str, schema: &str) -> Result<Agent, String> {
-    let agent: Agent = serde_json::from_str(response).map_err(|e| format!("Failed to parse JSON: {e}"))?;
-
-    // Validate against schema
-    let schema_value: serde_json::Value = serde_json::from_str(schema).map_err(|e| format!("Invalid schema: {e}"))?;
-    let agent_value =
-        serde_json::to_value(&agent).map_err(|e| format!("Failed to serialize agent for validation: {e}"))?;
-
-    if let Err(e) = jsonschema::validate(&schema_value, &agent_value) {
-        return Err(format!("Agent config validation failed: {e}"));
-    }
-
-    Ok(agent)
-}
-
 // Helper method to save the agent config to file
-async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str) -> Result<(), ChatError> {
-    let config_dir = directories::chat_local_agent_dir(os)
-        .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?;
+async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+    let config_dir = if is_global {
+        directories::chat_global_agent_path(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
+    } else {
+        directories::chat_local_agent_dir(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
+    };
 
     tokio::fs::create_dir_all(&config_dir)
         .await

@@ -80,12 +80,7 @@ pub enum AgentSubcommand {
         from: Option<String>,
     },
     /// Generate an agent configuration using AI
-    Generate {
-        /// Name of the agent to generate
-        name: Option<String>,
-        /// Description of what the agent should do
-        description: Vec<String>,
-    },
+    Generate {},
     /// Delete the specified agent
     #[command(hide = true)]
     Delete { name: String },
@@ -228,40 +223,43 @@ impl AgentSubcommand {
                 )?;
             },
 
-            Self::Generate { name, description } => {
-                let agent_name = match name {
-                    Some(n) => n,
-                    None => match session.read_user_input("Enter agent name: ", false) {
-                        Some(input) => input.trim().to_string(),
-                        None => {
-                            return Ok(ChatState::PromptUser {
-                                skip_printing_tools: true,
-                            });
-                        },
+            Self::Generate {} => {
+                let agent_name = match session.read_user_input("Enter agent name: ", false) {
+                    Some(input) => input.trim().to_string(),
+                    None => {
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
                     },
                 };
 
-                let agent_description = if description.is_empty() {
-                    match session.read_user_input("Enter agent description: ", false) {
-                        Some(input) => input.trim().to_string(),
-                        None => {
-                            return Ok(ChatState::PromptUser {
-                                skip_printing_tools: true,
-                            });
-                        },
-                    }
-                } else {
-                    description.join(" ")
+                let agent_description = match session.read_user_input("Enter agent description: ", false) {
+                    Some(input) => input.trim().to_string(),
+                    None => {
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
                 };
+
+                let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
+                let scope_selection = Select::new()
+                    .with_prompt("Agent scope")
+                    .items(&scope_options)
+                    .default(0)
+                    .interact()
+                    .map_err(|e| ChatError::Custom(format!("Failed to get scope selection: {}", e).into()))?;
+
+                let is_global = scope_selection == 1;
 
                 let mcp_servers = get_enabled_mcp_servers(os)
                     .await
                     .map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
-                let selected_servers = if !mcp_servers.is_empty() {
-                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
-                } else {
+                let selected_servers = if mcp_servers.is_empty() {
                     Vec::new()
+                } else {
+                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
                 };
 
                 let mcp_servers_json = if !selected_servers.is_empty() {
@@ -283,7 +281,14 @@ impl AgentSubcommand {
                 let schema_string = serde_json::to_string_pretty(&schema)
                     .map_err(|e| ChatError::Custom(format!("Failed to serialize agent schema: {e}").into()))?;
                 return session
-                    .generate_agent_config(os, &agent_name, &agent_description, &mcp_servers_json, &schema_string)
+                    .generate_agent_config(
+                        os,
+                        &agent_name,
+                        &agent_description,
+                        &mcp_servers_json,
+                        &schema_string,
+                        is_global,
+                    )
                     .await;
             },
             Self::Set { .. } | Self::Delete { .. } => {
@@ -425,7 +430,6 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     // 1. Load from agent configurations (highest priority)
     let mut null_writer = NullWriter;
     let (agents, _) = Agents::load(os, None, true, &mut null_writer, true).await;
-    print!("Loaded {} agents from agent configurations", agents.agents.len());
 
     for (_, agent) in agents.agents {
         for (server_name, server_config) in agent.mcp_servers.mcp_servers {
