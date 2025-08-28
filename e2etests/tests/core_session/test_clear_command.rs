@@ -4,7 +4,7 @@ use q_cli_e2e_tests::q_chat_helper::QChatSession;
 #[test]
 #[cfg(all(feature = "clear", feature = "sanity"))]
 fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /clear command...");
+    println!("🔍 Testing /clear command... | Description: Tests the /clear command to clear conversation history and verify that previous context is no longer remembered by the AI");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");

@@ -4,7 +4,7 @@ use q_cli_e2e_tests::q_chat_helper::QChatSession;
 #[test]
 #[cfg(all(feature = "help", feature = "sanity"))]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /help command...");
+    println!("🔍 Testing /help command... | Description: Tests the /help command to display all available commands and verify core functionality like quit, clear, tools, and help commands are present");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");

@@ -39,7 +39,7 @@ impl<'a> Drop for FileCleanup<'a> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save command...");
+    println!("🔍 Testing /save command... | Description: Tests the /save command to export conversation state to a file and verify successful file creation with conversation data");
     
     let save_path = "/tmp/qcli_test_save.json";
     let _cleanup = FileCleanup { path: save_path };
@@ -84,7 +84,7 @@ fn test_save_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_command_argument_validation() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save command...");
+    println!("🔍 Testing /save command argument validation... | Description: Tests the /save command without required arguments to verify proper error handling and usage display");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -122,7 +122,7 @@ fn test_save_command_argument_validation() -> Result<(), Box<dyn std::error::Err
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save --help command...");
+    println!("🔍 Testing /save --help command... | Description: Tests the /save --help command to display comprehensive help information for save functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -164,7 +164,7 @@ fn test_save_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save -h command...");
+    println!("🔍 Testing /save -h command... | Description: Tests the /save -h command (short form) to display save help information");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -205,7 +205,7 @@ fn test_save_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save --force command...");
+    println!("🔍 Testing /save --force command... | Description: Tests the /save --force command to overwrite existing files and verify force save functionality");
     
     let save_path = "/tmp/qcli_test_save.json";
     let _cleanup = FileCleanup { path: save_path };
@@ -263,7 +263,7 @@ fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /save -f command...");
+    println!("🔍 Testing /save -f command... | Description: Tests the /save -f command (short form) to force overwrite existing files");
     
     let save_path = "/tmp/qcli_test_save.json";
     let _cleanup = FileCleanup { path: save_path };
@@ -321,7 +321,7 @@ fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_load_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /load --help command...");
+    println!("🔍 Testing /load --help command... | Description: Tests the /load --help command to display comprehensive help information for load functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -362,7 +362,7 @@ fn test_load_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_load_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /load -h command...");
+    println!("🔍 Testing /load -h command... | Description: Tests the /load -h command (short form) to display load help information");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -403,7 +403,7 @@ fn test_load_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /load command...");
+    println!("🔍 Testing /load command... | Description: Tests the /load command to import conversation state from a saved file and verify successful restoration");
     
     let save_path = "/tmp/qcli_test_load.json";
     let _cleanup = FileCleanup { path: save_path };
@@ -457,7 +457,7 @@ fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "save_load", feature = "sanity"))]
 fn test_load_command_argument_validation() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /load command...");
+    println!("🔍 Testing /load command argument validation... | Description: Tests the /load command without required arguments to verify proper error handling and usage display");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

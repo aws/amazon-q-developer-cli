@@ -21,7 +21,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact command...");
+    println!("🔍 Testing /compact command... | Description: Tests the /compact command to compress conversation history and verify successful compaction or appropriate messaging for short conversations");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -63,7 +63,7 @@ fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact --help command...");
+    println!("🔍 Testing /compact --help command... | Description: Tests the /compact --help command to display comprehensive help information for conversation compaction functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -106,7 +106,7 @@ fn test_compact_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "compact", feature = "sanity"))]
 fn test_compact_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /compact -h command...");
+    println!("🔍 Testing /compact -h command... | Description: Tests the /compact -h command (short form) to display compact help information");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

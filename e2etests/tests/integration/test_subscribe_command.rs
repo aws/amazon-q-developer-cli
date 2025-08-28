@@ -20,7 +20,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /subscribe command...");
+    println!("🔍 Testing /subscribe command... | Description: Tests the /subscribe command to display Q Developer Pro subscription information and IAM Identity Center details");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -50,7 +50,7 @@ fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_manage_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /subscribe command...");
+    println!("🔍 Testing /subscribe --manage command... | Description: Tests the /subscribe --manage command to access subscription management interface for Q Developer Pro");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -80,7 +80,7 @@ fn test_subscribe_manage_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /subscribe --help command...");
+    println!("🔍 Testing /subscribe --help command... | Description: Tests the /subscribe --help command to display comprehensive help information for subscription management");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -128,7 +128,7 @@ fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "subscribe", feature = "sanity"))]
 fn test_subscribe_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /subscribe -h command...");
+    println!("🔍 Testing /subscribe -h command... | Description: Tests the /subscribe -h command (short form) to display subscription help information");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

@@ -18,7 +18,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model command with dynamic selection...");
+    println!("🔍 Testing /model command with dynamic selection... | Description: Tests the /model command interactive selection interface to choose different models and verify selection confirmation");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -137,7 +137,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model --help command...");
+    println!("🔍 Testing /model --help command... | Description: Tests the /model --help command to display help information for model selection functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -176,7 +176,7 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model -h command...");
+    println!("🔍 Testing /model -h command... | Description: Tests the /model -h command (short form) to display help information for model selection functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
