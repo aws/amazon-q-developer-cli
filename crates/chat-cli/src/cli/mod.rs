@@ -22,6 +22,7 @@ pub use agent::{
 };
 use anstream::println;
 pub use chat::ConversationState;
+pub use chat::tools::todo::TodoListState;
 use clap::{
     ArgAction,
     CommandFactory,
