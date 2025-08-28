@@ -36,6 +36,28 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 
 **When enabled:** The AI will show its thinking process when working through complex problems or multi-step reasoning.
 
+### Tangent Mode
+**Command:** `/tangent`  
+**Description:** Enables conversation checkpointing for exploring tangential topics
+
+**Features:**
+- Create conversation checkpoints to explore side topics
+- Return to the main conversation thread at any time
+- Preserve conversation context while branching off
+- Keyboard shortcut support (default: Ctrl+T)
+
+**Usage:**
+```
+/tangent                    # Toggle tangent mode on/off
+```
+
+**Settings:**
+- `chat.enableTangentMode` - Enable/disable tangent mode feature (boolean)
+- `chat.tangentModeKey` - Keyboard shortcut key (single character, default: 't')
+- `introspect.tangentMode` - Auto-enter tangent mode for introspect questions (boolean)
+
+**When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
+
 ## Managing Experiments
 
 Use the `/experiment` command to toggle experimental features:
