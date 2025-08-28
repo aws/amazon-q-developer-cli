@@ -89,7 +89,9 @@ pub enum SlashCommand {
     Experiment(ExperimentArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
-    /// Toggle tangent mode for isolated conversations
+    /// (Beta) Toggle tangent mode for isolated conversations. Requires "q settings
+    /// chat.enableTangentMode true"
+    #[command(hide = true)]
     Tangent(TangentArgs),
     #[command(flatten)]
     Persist(PersistSubcommand),

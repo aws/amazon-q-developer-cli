@@ -2092,8 +2092,13 @@ impl ChatSession {
         if os
             .database
             .settings
-            .get_bool(Setting::IntrospectTangentMode)
+            .get_bool(Setting::EnabledTangentMode)
             .unwrap_or(false)
+            && os
+                .database
+                .settings
+                .get_bool(Setting::IntrospectTangentMode)
+                .unwrap_or(false)
             && !self.conversation.is_in_tangent_mode()
             && self
                 .tool_uses
