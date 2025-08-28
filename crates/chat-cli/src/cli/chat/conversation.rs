@@ -492,13 +492,16 @@ impl ConversationState {
         // Run hooks and add to conversation start and next user message.
         let mut agent_spawn_context = None;
         if let Some(cm) = self.context_manager.as_mut() {
+            let colors = ColorManager::from_settings(&os.database.settings);
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, user_prompt).await?;
+            let agent_spawn = cm
+                .run_hooks(HookTrigger::AgentSpawn, output, user_prompt, &colors)
+                .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
                 let per_prompt = cm
-                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt())
+                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt(), &colors)
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
                     next_message.additional_context = ctx;

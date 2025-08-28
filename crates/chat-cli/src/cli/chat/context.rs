@@ -14,6 +14,7 @@ use serde::{
     Serializer,
 };
 
+use super::ColorManager;
 use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
 use crate::cli::agent::Agent;
@@ -248,10 +249,11 @@ impl ContextManager {
         trigger: HookTrigger,
         output: &mut impl Write,
         prompt: Option<&str>,
+        colors: &ColorManager,
     ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
-        self.hook_executor.run_hooks(hooks, output, prompt).await
+        self.hook_executor.run_hooks(hooks, output, prompt, colors).await
     }
 }
 

@@ -11,7 +11,6 @@ use clap::Args;
 use crossterm::style::{
     self,
     Attribute,
-    Color,
 };
 use crossterm::{
     cursor,
@@ -38,24 +37,6 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
-
-// Simple color utility for hooks (which don't have access to ColorManager)
-// Uses colors that work well across different terminal themes
-struct HookColors;
-
-impl HookColors {
-    fn error() -> Color {
-        ColorManager::default().error()
-    }
-
-    fn info() -> Color {
-        ColorManager::default().info()
-    }
-
-    fn warning() -> Color {
-        ColorManager::default().warning()
-    }
-}
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
@@ -93,6 +74,7 @@ impl HookExecutor {
         hooks: HashMap<HookTrigger, Vec<Hook>>,
         output: &mut impl Write,
         prompt: Option<&str>,
+        colors: &ColorManager,
     ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
@@ -113,10 +95,10 @@ impl HookExecutor {
         let spinner_text = |complete: usize, total: usize| {
             format!(
                 "{}{}{} of {}{}{} hooks finished",
-                crossterm::style::SetForegroundColor(HookColors::info()),
+                crossterm::style::SetForegroundColor(colors.info()),
                 complete,
                 crossterm::style::SetForegroundColor(crossterm::style::Color::Reset),
-                crossterm::style::SetForegroundColor(HookColors::info()),
+                crossterm::style::SetForegroundColor(colors.info()),
                 total,
                 crossterm::style::SetForegroundColor(crossterm::style::Color::Reset),
             )
@@ -146,13 +128,13 @@ impl HookExecutor {
             if let Err(err) = &result {
                 queue!(
                     output,
-                    style::SetForegroundColor(HookColors::error()),
+                    style::SetForegroundColor(colors.error()),
                     style::Print("✗ "),
-                    style::SetForegroundColor(HookColors::info()),
+                    style::SetForegroundColor(colors.info()),
                     style::Print(&hook.1.command),
                     style::ResetColor,
                     style::Print(" failed after "),
-                    style::SetForegroundColor(HookColors::warning()),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!("{:.2} s", duration.as_secs_f32())),
                     style::ResetColor,
                     style::Print(format!(": {}\n", err)),
@@ -171,22 +153,22 @@ impl HookExecutor {
                 let symbol = if total == complete {
                     format!(
                         "{}✓{}",
-                        crossterm::style::SetForegroundColor(HookColors::info()),
+                        crossterm::style::SetForegroundColor(colors.info()),
                         crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
                     )
                 } else {
                     format!(
                         "{}✗{}",
-                        crossterm::style::SetForegroundColor(HookColors::error()),
+                        crossterm::style::SetForegroundColor(colors.error()),
                         crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
                     )
                 };
 
                 queue!(
                     output,
-                    style::SetForegroundColor(HookColors::info()),
+                    style::SetForegroundColor(colors.info()),
                     style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
-                    style::SetForegroundColor(HookColors::warning()),
+                    style::SetForegroundColor(colors.warning()),
                     style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
                     style::ResetColor,
                 )?;

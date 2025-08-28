@@ -72,6 +72,24 @@ pub enum ColorCategory {
     Data,
 }
 
+impl std::str::FromStr for ColorCategory {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "success" => Ok(Self::Success),
+            "error" => Ok(Self::Error),
+            "warning" => Ok(Self::Warning),
+            "info" => Ok(Self::Info),
+            "secondary" => Ok(Self::Secondary),
+            "primary" => Ok(Self::Primary),
+            "action" => Ok(Self::Action),
+            "data" => Ok(Self::Data),
+            _ => Err(()),
+        }
+    }
+}
+
 impl ColorCategory {
     pub fn as_str(&self) -> &'static str {
         match self {
@@ -407,19 +425,9 @@ impl TryFrom<&str> for Setting {
                     let category_str = captures.get(2).unwrap().as_str();
 
                     if let Ok(theme) = theme_str.parse() {
-                        let category = match category_str {
-                            "success" => ColorCategory::Success,
-                            "error" => ColorCategory::Error,
-                            "warning" => ColorCategory::Warning,
-                            "info" => ColorCategory::Info,
-                            "secondary" => ColorCategory::Secondary,
-                            "primary" => ColorCategory::Primary,
-                            "action" => ColorCategory::Action,
-                            "data" => ColorCategory::Data,
-                            _ => return Err(DatabaseError::InvalidSetting(value.to_string())),
-                        };
-
-                        return Ok(Self::Color { theme, category });
+                        if let Ok(category) = category_str.parse() {
+                            return Ok(Self::Color { theme, category });
+                        }
                     }
                 }
 
