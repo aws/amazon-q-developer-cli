@@ -81,7 +81,10 @@ impl Introspect {
             "\nNOTE: Settings are managed via `q settings` command from terminal, not slash commands in chat.\n",
         );
 
-        documentation.push_str("\n\n--- GitHub References ---\n");
+        documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
+        documentation.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
+
+        documentation.push_str("--- GitHub References ---\n");
         documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
         documentation.push_str("• README.md: https://github.com/aws/amazon-q-developer-cli/blob/main/README.md\n");
         documentation.push_str(
