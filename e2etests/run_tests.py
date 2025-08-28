@@ -377,10 +377,7 @@ def generate_html_report(json_filename):
         tests_failed=report['summary']['failed'],
         test_suites_content=test_suites_content,
         platform=report['system_info']['platform'],
-        os=report['system_info']['os'],
-        os_version=report['system_info']['os_version'],
-        q_binary_path=report['system_info']['q_binary_path'],
-        q_version=report['system_info']['q_version']
+        q_binary_info=f"{report['system_info']['q_binary_path']} ({report['system_info']['q_version']})",
     )
     
     with open(html_filename, 'w') as f:
