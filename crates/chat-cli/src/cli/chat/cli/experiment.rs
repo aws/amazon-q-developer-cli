@@ -60,8 +60,12 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         let is_enabled = os.database.settings.get_bool(experiment.setting_key).unwrap_or(false);
 
         current_states.push(is_enabled);
-        // Create clean single-line format: "Knowledge    [✅ ON]   - Description"
-        let status_indicator = if is_enabled { "[✅ ON] " } else { "[❌ OFF]" };
+        // Create clean single-line format: "Knowledge    [ON]   - Description"
+        let status_indicator = if is_enabled { 
+            style::Stylize::green("[ON] ")
+        } else { 
+            style::Stylize::grey("[OFF]")
+        };
         let label = format!(
             "{:<18} {} - {}",
             experiment.name,
@@ -73,8 +77,8 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
 
     experiment_labels.push(String::new());
     experiment_labels.push(format!(
-        "⚠️  {}",
-        style::Stylize::dark_grey("Experimental features may be changed or removed at any time")
+        "{}",
+        style::Stylize::white("⚠ Experimental features may be changed or removed at any time")
     ));
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
