@@ -99,8 +99,13 @@ impl Introspect {
         if os
             .database
             .settings
-            .get_bool(Setting::IntrospectTangentMode)
+            .get_bool(Setting::EnabledTangentMode)
             .unwrap_or(false)
+            && os
+                .database
+                .settings
+                .get_bool(Setting::IntrospectTangentMode)
+                .unwrap_or(false)
         {
             let tangent_key_char = os
                 .database

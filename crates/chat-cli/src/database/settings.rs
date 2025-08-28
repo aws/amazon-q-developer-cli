@@ -41,6 +41,8 @@ pub enum Setting {
     KnowledgeIndexType,
     #[strum(message = "Key binding for fuzzy search command (single character)")]
     SkimCommandKey,
+    #[strum(message = "Enable tangent mode feature (boolean)")]
+    EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
     TangentModeKey,
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
@@ -90,6 +92,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
@@ -133,6 +136,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),

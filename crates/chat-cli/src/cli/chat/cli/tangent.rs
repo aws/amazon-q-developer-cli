@@ -10,6 +10,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[derive(Debug, PartialEq, Args)]
@@ -17,6 +18,23 @@ pub struct TangentArgs;
 
 impl TangentArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Check if tangent mode is enabled
+        if !os
+            .database
+            .settings
+            .get_bool(Setting::EnabledTangentMode)
+            .unwrap_or(false)
+        {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\nTangent mode is disabled. Enable it with: q settings chat.enableTangentMode true\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
         if session.conversation.is_in_tangent_mode() {
             // Get duration before exiting tangent mode
             let duration_seconds = session.conversation.get_tangent_duration_seconds().unwrap_or(0);
