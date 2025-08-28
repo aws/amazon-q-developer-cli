@@ -137,6 +137,7 @@ use crate::api_client::{
 };
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
+use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
@@ -145,6 +146,7 @@ use crate::cli::chat::cli::prompts::{
     GetPromptError,
     PromptsSubcommand,
 };
+use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
 use crate::mcp_client::Prompt;
@@ -3099,6 +3101,43 @@ impl ChatSession {
             tracing::warn!("Failed to send slash command telemetry: {}", e);
         }
     }
+
+    /// Prompts Q to resume a to-do list with the given id by calling the load
+    /// command of the todo_list tool
+    pub async fn resume_todo_request(&mut self, os: &mut Os, id: &str) -> Result<ChatState, ChatError> {
+        // Have to unpack each value separately since Reports can't be converted to
+        // ChatError
+        let todo_list = match TodoListState::load(os, id).await {
+            Ok(todo) => todo,
+            Err(e) => {
+                return Err(ChatError::Custom(format!("Error getting todo list: {e}").into()));
+            },
+        };
+        let contents = match serde_json::to_string(&todo_list) {
+            Ok(s) => s,
+            Err(e) => return Err(ChatError::Custom(format!("Error deserializing todo list: {e}").into())),
+        };
+        let request_content = format!(
+            "[SYSTEM NOTE: This is an automated request, not from the user]\n
+            Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
+            Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
+            You do not need to display the tasks to the user yourself. You can begin completing the tasks after calling the `load` command.\n
+            TODO LIST CONTENTS: {}\n
+            ID: {}\n",
+            contents,
+            id
+        );
+
+        let summary_message = UserMessage::new_prompt(request_content.clone(), None);
+
+        ChatSession::reset_user_turn(self);
+
+        Ok(ChatState::HandleInput {
+            input: summary_message
+                .into_user_input_message(self.conversation.model.clone(), &self.conversation.tools)
+                .content,
+        })
+    }
 }
 
 /// Replaces amzn_codewhisperer_client::types::SubscriptionStatus with a more descriptive type.
@@ -3159,7 +3198,7 @@ async fn get_subscription_status_with_spinner(
     .await;
 }
 
-async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
+pub async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,

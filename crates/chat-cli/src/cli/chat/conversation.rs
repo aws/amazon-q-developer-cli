@@ -563,12 +563,15 @@ impl ConversationState {
                             2) Bullet points for all significant tools executed and their results\n\
                             3) Bullet points for any code or technical information shared\n\
                             4) A section of key insights gained\n\n\
+                            5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
                             FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
                             ## CONVERSATION SUMMARY\n\
                             * Topic 1: Key information\n\
                             * Topic 2: Key information\n\n\
                             ## TOOLS EXECUTED\n\
                             * Tool X: Result Y\n\n\
+                            ## TODO ID\n\
+                            * <id>\n\n\
                             Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
                             FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
                     custom_prompt.as_ref()
@@ -583,12 +586,15 @@ impl ConversationState {
                         2) Bullet points for all significant tools executed and their results\n\
                         3) Bullet points for any code or technical information shared\n\
                         4) A section of key insights gained\n\n\
+                        5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
                         FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
                         ## CONVERSATION SUMMARY\n\
                         * Topic 1: Key information\n\
                         * Topic 2: Key information\n\n\
                         ## TOOLS EXECUTED\n\
                         * Tool X: Result Y\n\n\
+                        ## TODO ID\n\
+                        * <id>\n\n\
                         Remember this is a DOCUMENT not a chat response.\n\
                         FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
             },
