@@ -147,6 +147,8 @@ struct ConversationCheckpoint {
     main_next_message: Option<UserMessage>,
     /// Main conversation transcript
     main_transcript: VecDeque<String>,
+    /// Main conversation summary
+    main_latest_summary: Option<(String, RequestMetadata)>,
     /// Timestamp when tangent mode was entered (milliseconds since epoch)
     #[serde(default = "time::OffsetDateTime::now_utc")]
     tangent_start_time: time::OffsetDateTime,
@@ -240,6 +242,7 @@ impl ConversationState {
             main_history: self.history.clone(),
             main_next_message: self.next_message.clone(),
             main_transcript: self.transcript.clone(),
+            main_latest_summary: self.latest_summary.clone(),
             tangent_start_time: time::OffsetDateTime::now_utc(),
         }
     }
@@ -249,6 +252,7 @@ impl ConversationState {
         self.history = checkpoint.main_history;
         self.next_message = checkpoint.main_next_message;
         self.transcript = checkpoint.main_transcript;
+        self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
     }
 
