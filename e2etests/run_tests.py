@@ -27,6 +27,7 @@ def parse_features():
     # Group features (features that contain other features)
     grouped_features = {}
     grouped_sub_features = set()
+    child_features = set()
     
     # First pass: identify grouped features and their sub-features
     for feature_name, feature_deps in features.items():
@@ -37,6 +38,7 @@ def parse_features():
             # This is a grouped feature
             grouped_features[feature_name] = feature_deps
             grouped_sub_features.update(feature_deps)
+            child_features.update(feature_deps)
     
     # Second pass: identify standalone features (not part of any group)
     standalone_features = []
@@ -46,7 +48,7 @@ def parse_features():
             feature_name not in grouped_sub_features):
             standalone_features.append(feature_name)
     
-    return grouped_features, standalone_features
+    return grouped_features, standalone_features, child_features
 
 # Default test suite - always required for cargo test
 DEFAULT_TESTSUITE = "sanity"
@@ -157,6 +159,16 @@ def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
         "individual_tests": individual_tests
     }
 
+def validate_features(features):
+    """Validate that all features exist in Cargo.toml"""
+    grouped_features, standalone_features, child_features = parse_features()
+    valid_features = set(grouped_features.keys()) | set(standalone_features) | child_features
+    invalid_features = [f for f in features if f not in valid_features and f not in {"sanity", "regression"}]
+    if invalid_features:
+        print(f"❌ Error: Invalid feature(s): {', '.join(invalid_features)}")
+        print(f"Available features: {', '.join(sorted(valid_features))}")
+        sys.exit(1)
+
 def get_test_suites_from_features(features):
     """Extract test suites (sanity/regression) from feature list"""
     test_suites = []
@@ -164,6 +176,11 @@ def get_test_suites_from_features(features):
         test_suites.append("sanity")
     if "regression" in features:
         test_suites.append("regression")
+    
+    # Check if both sanity and regression are specified
+    if len(test_suites) > 1:
+        print("❌ Error: Only a single test suite is allowed. Cannot run both 'sanity' and 'regression' together.")
+        sys.exit(1)
     
     if not test_suites:
         test_suites = [DEFAULT_TESTSUITE]
@@ -271,7 +288,7 @@ def generate_report(results, features, test_suites, binary_path="q"):
     
     # Generate filename with features and test suites
     # If running all features (sanity/regression mode), use only test suite names
-    grouped_features, standalone_features = parse_features()
+    grouped_features, standalone_features, _ = parse_features()
     all_available_features = list(grouped_features.keys()) + standalone_features
     
     if set(features) == set(all_available_features):
@@ -448,7 +465,7 @@ def dev_debug():
     print("🔧 Developer Debug Mode")
     print("=" * 30)
     
-    grouped_features, standalone_features = parse_features()
+    grouped_features, standalone_features, child_features = parse_features()
     
     print("\n📦 Grouped Features:")
     for group, deps in grouped_features.items():
@@ -458,10 +475,15 @@ def dev_debug():
     for feature in standalone_features:
         print(f"  {feature}")
     
+    print(f"\n👶 Child Features:")
+    for feature in sorted(child_features):
+        print(f"  {feature}")
+    
     print(f"\n📊 Summary:")
     print(f"  Grouped: {len(grouped_features)}")
     print(f"  Standalone: {len(standalone_features)}")
-    print(f"  Total: {len(grouped_features) + len(standalone_features)}")
+    print(f"  Child: {len(child_features)}")
+    print(f"  Total: {len(grouped_features) + len(standalone_features) + len(child_features)}")
 
 def main():
     parser = argparse.ArgumentParser(
@@ -476,7 +498,7 @@ def main():
   %(prog)s --features sanity                   # Run all tests with sanity suite
   %(prog)s --features regression               # Run all tests with regression suite
   %(prog)s --features "usage,regression"       # Run usage tests with regression suite
-  %(prog)s --features "sanity,regression"      # Run all tests with both suites
+
   
   # Multiple features (different ways)
   %(prog)s --features "usage,agent,context"    # Comma-separated features
@@ -529,12 +551,13 @@ def main():
     
     if not args.features:
         # Run all features with default test suite
-        grouped_features, standalone_features = parse_features()
+        grouped_features, standalone_features, _ = parse_features()
         all_features = list(grouped_features.keys()) + standalone_features
         test_suites = [DEFAULT_TESTSUITE]
     else:
         # Parse requested features
         requested_features = [f.strip() for f in args.features.split(",")]
+        validate_features(requested_features)
         test_suites = get_test_suites_from_features(requested_features)
         
         # Remove test suites from feature list
@@ -542,7 +565,7 @@ def main():
         
         if not features_only:
             # Only sanity/regression specified - run all features
-            grouped_features, standalone_features = parse_features()
+            grouped_features, standalone_features, _ = parse_features()
             all_features = list(grouped_features.keys()) + standalone_features
         else:
             all_features = features_only
