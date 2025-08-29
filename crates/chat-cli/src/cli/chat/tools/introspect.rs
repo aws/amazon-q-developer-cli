@@ -56,6 +56,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/built-in-tools.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/built-in-tools.md"));
 
+        documentation.push_str("\n\n--- docs/experiments.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/experiments.md"));
+
         documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
 
@@ -78,12 +81,17 @@ impl Introspect {
             "\nNOTE: Settings are managed via `q settings` command from terminal, not slash commands in chat.\n",
         );
 
-        documentation.push_str("\n\n--- GitHub References ---\n");
+        documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
+        documentation.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
+
+        documentation.push_str("--- GitHub References ---\n");
         documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
         documentation.push_str("• README.md: https://github.com/aws/amazon-q-developer-cli/blob/main/README.md\n");
         documentation.push_str(
             "• Built-in Tools: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/built-in-tools.md\n",
         );
+        documentation
+            .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
         documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
@@ -99,8 +107,13 @@ impl Introspect {
         if os
             .database
             .settings
-            .get_bool(Setting::IntrospectTangentMode)
+            .get_bool(Setting::EnabledTangentMode)
             .unwrap_or(false)
+            && os
+                .database
+                .settings
+                .get_bool(Setting::IntrospectTangentMode)
+                .unwrap_or(false)
         {
             let tangent_key_char = os
                 .database
@@ -129,12 +142,11 @@ impl Introspect {
         })
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(output: &mut impl Write) -> Result<()> {
         use crossterm::{
             queue,
             style,
         };
-        _ = self;
         queue!(output, style::Print("Introspecting to get you the right information"))?;
         Ok(())
     }

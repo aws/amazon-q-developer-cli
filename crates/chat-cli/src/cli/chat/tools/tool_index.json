@@ -10,7 +10,7 @@
   },
   "introspect": {
     "name": "introspect",
-    "description": "ALWAYS use this tool when users ask ANY question about Q CLI itself, its capabilities, features, commands, or functionality. This includes questions like 'Can you...', 'Do you have...', 'How do I...', 'What can you do...', or any question about Q's abilities. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context').",
+    "description": "ALWAYS use this tool when users ask ANY question about Q CLI itself, its capabilities, features, commands, or functionality. This includes questions like 'Can you...', 'Do you have...', 'How do I...', 'What can you do...', or any question about Q's abilities. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context'). CRITICAL: Only provide information explicitly documented in Q CLI documentation. If details about any tool, feature, or command are not documented, clearly state the information is not available rather than generating assumptions.",
     "input_schema": {
       "type": "object",
       "properties": {

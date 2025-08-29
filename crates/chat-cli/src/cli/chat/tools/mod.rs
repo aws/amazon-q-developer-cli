@@ -155,7 +155,7 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.queue_description(output),
             Tool::Custom(custom_tool) => custom_tool.queue_description(output),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
-            Tool::Introspect(introspect) => introspect.queue_description(output),
+            Tool::Introspect(_) => Introspect::queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
             Tool::Todo(_) => Ok(()),
