@@ -9,7 +9,7 @@ fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");
     
-    let response = chat.send_prompt("What is AWS?")?;
+    let response = chat.execute_command("What is AWS?")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -62,7 +62,7 @@ fn test_simple_greeting() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");
     
-    let response = chat.send_prompt("Hello")?;
+    let response = chat.execute_command("Hello")?;
     
     println!("📝 Greeting response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
