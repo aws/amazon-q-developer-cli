@@ -153,7 +153,10 @@ impl UninitMcpClient {
                     process_env_vars(envs, &os_clone.env);
                     cmd.envs(envs);
                 }
-                cmd.envs(std::env::vars()).args(args).process_group(0);
+                cmd.envs(std::env::vars()).args(args);
+
+                #[cfg(not(windows))]
+                cmd.process_group(0);
             });
 
             let messenger_clone = self.messenger.duplicate();
