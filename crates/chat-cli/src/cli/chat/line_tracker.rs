@@ -34,6 +34,7 @@ impl FileLineTracker {
     }
 
     pub fn lines_by_agent(&self) -> isize {
-        (self.after_fswrite_lines as isize) - (self.before_fswrite_lines as isize)
+        let lines = (self.after_fswrite_lines as isize) - (self.before_fswrite_lines as isize);
+        lines.abs()
     }
 }
