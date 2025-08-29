@@ -8,6 +8,7 @@ use dialoguer::Select;
 use eyre::Result;
 
 use crate::cli::chat::tools::todo::{
+    TodoList,
     TodoListState,
     delete_todo,
     get_all_todos,
@@ -17,7 +18,6 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::database::settings::Setting;
 use crate::os::Os;
 
 /// Defines subcommands that allow users to view and manage todo lists
@@ -67,16 +67,11 @@ impl std::fmt::Display for TodoDisplayEntry {
 impl TodoSubcommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Check if todo lists are enabled
-        if !os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTodoLists)
-            .unwrap_or(false)
-        {
+        if !TodoList::is_enabled(os) {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(style::Color::Red),
-                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoLists true\n"),
+                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )?;
             return Ok(ChatState::PromptUser {

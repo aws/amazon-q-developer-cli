@@ -47,7 +47,7 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     Experiment {
         name: "Todo Lists",
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
-        setting_key: Setting::EnabledTodoLists,
+        setting_key: Setting::EnabledTodoList,
     },
 ];
 

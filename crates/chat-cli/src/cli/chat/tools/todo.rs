@@ -214,18 +214,17 @@ pub enum TodoList {
 }
 
 impl TodoList {
+    /// Checks if todo lists are enabled
+    pub fn is_enabled(os: &Os) -> bool {
+        os.database.settings.get_bool(Setting::EnabledTodoList).unwrap_or(false)
+    }
+
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
-        // Check if todo lists are enabled
-        if !os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTodoLists)
-            .unwrap_or(false)
-        {
+        if !Self::is_enabled(os) {
             queue!(
                 output,
                 style::SetForegroundColor(style::Color::Red),
-                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoLists true"),
+                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true"),
                 style::SetForegroundColor(style::Color::Reset)
             )?;
             return Ok(InvokeOutput {
