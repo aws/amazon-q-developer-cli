@@ -419,6 +419,44 @@ impl AsyncSemanticSearchClient {
             .await
     }
 
+    /// Search in a specific context
+    ///
+    /// # Arguments
+    ///
+    /// * `context_id` - ID of the context to search in
+    /// * `query_text` - Search query
+    /// * `result_limit` - Maximum number of results to return (if None, uses default_results from
+    ///   config)
+    ///
+    /// # Returns
+    ///
+    /// A vector of search results
+    pub async fn search_context(
+        &self,
+        context_id: &str,
+        query_text: &str,
+        result_limit: Option<usize>,
+    ) -> Result<SearchResults> {
+        if context_id.is_empty() {
+            return Err(SemanticSearchError::InvalidArgument(
+                "Context ID cannot be empty".to_string(),
+            ));
+        }
+
+        if query_text.is_empty() {
+            return Err(SemanticSearchError::InvalidArgument(
+                "Query text cannot be empty".to_string(),
+            ));
+        }
+
+        let effective_limit = result_limit.unwrap_or(self.config.default_results);
+
+        self.context_manager
+            .search_context(context_id, query_text, effective_limit, &*self.embedder)
+            .await?
+            .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))
+    }
+
     /// Cancels a running background operation.
     ///
     /// This method attempts to cancel an operation identified by its UUID.

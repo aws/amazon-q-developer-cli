@@ -10,6 +10,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[derive(Debug, PartialEq, Args)]
@@ -17,8 +18,43 @@ pub struct TangentArgs;
 
 impl TangentArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Check if tangent mode is enabled
+        if !os
+            .database
+            .settings
+            .get_bool(Setting::EnabledTangentMode)
+            .unwrap_or(false)
+        {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\nTangent mode is disabled. Enable it with: q settings chat.enableTangentMode true\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
         if session.conversation.is_in_tangent_mode() {
+            // Get duration before exiting tangent mode
+            let duration_seconds = session.conversation.get_tangent_duration_seconds().unwrap_or(0);
+
             session.conversation.exit_tangent_mode();
+
+            // Send telemetry for tangent mode session
+            if let Err(err) = os
+                .telemetry
+                .send_tangent_mode_session(
+                    &os.database,
+                    session.conversation.conversation_id().to_string(),
+                    crate::telemetry::TelemetryResult::Succeeded,
+                    crate::telemetry::core::TangentModeSessionArgs { duration_seconds },
+                )
+                .await
+            {
+                tracing::warn!(?err, "Failed to send tangent mode session telemetry");
+            }
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::DarkGrey),
@@ -67,5 +103,45 @@ impl TangentArgs {
         Ok(ChatState::PromptUser {
             skip_printing_tools: false,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::agent::Agents;
+    use crate::cli::chat::conversation::ConversationState;
+    use crate::cli::chat::tool_manager::ToolManager;
+    use crate::os::Os;
+
+    #[tokio::test]
+    async fn test_tangent_mode_duration_tracking() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false, // mcp_enabled
+        )
+        .await;
+
+        // Test entering tangent mode
+        assert!(!conversation.is_in_tangent_mode());
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Should have a duration
+        let duration = conversation.get_tangent_duration_seconds();
+        assert!(duration.is_some());
+        assert!(duration.unwrap() >= 0);
+
+        // Test exiting tangent mode
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
+        assert!(conversation.get_tangent_duration_seconds().is_none());
     }
 }

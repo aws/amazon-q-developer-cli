@@ -219,4 +219,21 @@ impl UpdateUsageLimitsFluentBuilder {
     pub fn get_justification(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_justification()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn permanent_override(mut self, input: bool) -> Self {
+        self.inner = self.inner.permanent_override(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_permanent_override(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_permanent_override(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_permanent_override(&self) -> &::std::option::Option<bool> {
+        self.inner.get_permanent_override()
+    }
 }

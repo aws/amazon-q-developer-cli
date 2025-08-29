@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "amzn-codewhisperer-client"
-version = "0.1.10231"
+version = "0.1.10613"
 authors = ["Grant Gurvis <grangurv@amazon.com>"]
 build = false
 exclude = [

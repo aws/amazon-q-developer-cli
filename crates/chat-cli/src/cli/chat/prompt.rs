@@ -58,6 +58,7 @@ pub const COMMANDS: &[&str] = &[
     "/tools reset",
     "/mcp",
     "/model",
+    "/experiment",
     "/agent",
     "/agent help",
     "/agent list",
@@ -88,6 +89,11 @@ pub const COMMANDS: &[&str] = &[
     "/save",
     "/load",
     "/subscribe",
+    "/todos",
+    "/todos resume",
+    "/todos clear-finished",
+    "/todos view",
+    "/todos delete",
 ];
 
 pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;

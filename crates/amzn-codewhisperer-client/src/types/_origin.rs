@@ -19,6 +19,7 @@
 ///     Origin::Documentation => { /* ... */ },
 ///     Origin::Gitlab => { /* ... */ },
 ///     Origin::Ide => { /* ... */ },
+///     Origin::InlineChat => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
 ///     Origin::MdCe => { /* ... */ },
@@ -28,6 +29,7 @@
 ///     Origin::QDevBext => { /* ... */ },
 ///     Origin::SageMaker => { /* ... */ },
 ///     Origin::ServiceInternal => { /* ... */ },
+///     Origin::SmAiStudioIde => { /* ... */ },
 ///     Origin::UnifiedSearch => { /* ... */ },
 ///     Origin::UnknownValue => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -80,6 +82,8 @@ pub enum Origin {
     Gitlab,
     /// Any IDE caller.
     Ide,
+    /// Q Developer Inline Chat.
+    InlineChat,
     /// AWS Marketing Website (https://aws.amazon.com)
     Marketing,
     /// MD.
@@ -99,6 +103,8 @@ pub enum Origin {
     /// Internal Service Traffic (Integ Tests, Canaries, etc.). This is the default when no Origin
     /// header present in request.
     ServiceInternal,
+    /// SageMaker AI Studio IDE Chat
+    SmAiStudioIde,
     /// Unified Search in AWS Management Console (https://<region>.console.aws.amazon.com)
     UnifiedSearch,
     /// Origin header is not set.
@@ -121,6 +127,7 @@ impl ::std::convert::From<&str> for Origin {
             "DOCUMENTATION" => Origin::Documentation,
             "GITLAB" => Origin::Gitlab,
             "IDE" => Origin::Ide,
+            "INLINE_CHAT" => Origin::InlineChat,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
             "MD_CE" => Origin::MdCe,
@@ -130,6 +137,7 @@ impl ::std::convert::From<&str> for Origin {
             "Q_DEV_BEXT" => Origin::QDevBext,
             "SAGE_MAKER" => Origin::SageMaker,
             "SERVICE_INTERNAL" => Origin::ServiceInternal,
+            "SM_AI_STUDIO_IDE" => Origin::SmAiStudioIde,
             "UNIFIED_SEARCH" => Origin::UnifiedSearch,
             "UNKNOWN" => Origin::UnknownValue,
             other => Origin::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
@@ -156,6 +164,7 @@ impl Origin {
             Origin::Documentation => "DOCUMENTATION",
             Origin::Gitlab => "GITLAB",
             Origin::Ide => "IDE",
+            Origin::InlineChat => "INLINE_CHAT",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
             Origin::MdCe => "MD_CE",
@@ -165,6 +174,7 @@ impl Origin {
             Origin::QDevBext => "Q_DEV_BEXT",
             Origin::SageMaker => "SAGE_MAKER",
             Origin::ServiceInternal => "SERVICE_INTERNAL",
+            Origin::SmAiStudioIde => "SM_AI_STUDIO_IDE",
             Origin::UnifiedSearch => "UNIFIED_SEARCH",
             Origin::UnknownValue => "UNKNOWN",
             Origin::Unknown(value) => value.as_str(),
@@ -181,6 +191,7 @@ impl Origin {
             "DOCUMENTATION",
             "GITLAB",
             "IDE",
+            "INLINE_CHAT",
             "MARKETING",
             "MD",
             "MD_CE",
@@ -190,6 +201,7 @@ impl Origin {
             "Q_DEV_BEXT",
             "SAGE_MAKER",
             "SERVICE_INTERNAL",
+            "SM_AI_STUDIO_IDE",
             "UNIFIED_SEARCH",
             "UNKNOWN",
         ]
@@ -222,6 +234,7 @@ impl ::std::fmt::Display for Origin {
             Origin::Documentation => write!(f, "DOCUMENTATION"),
             Origin::Gitlab => write!(f, "GITLAB"),
             Origin::Ide => write!(f, "IDE"),
+            Origin::InlineChat => write!(f, "INLINE_CHAT"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),
             Origin::MdCe => write!(f, "MD_CE"),
@@ -231,6 +244,7 @@ impl ::std::fmt::Display for Origin {
             Origin::QDevBext => write!(f, "Q_DEV_BEXT"),
             Origin::SageMaker => write!(f, "SAGE_MAKER"),
             Origin::ServiceInternal => write!(f, "SERVICE_INTERNAL"),
+            Origin::SmAiStudioIde => write!(f, "SM_AI_STUDIO_IDE"),
             Origin::UnifiedSearch => write!(f, "UNIFIED_SEARCH"),
             Origin::UnknownValue => write!(f, "UNKNOWN"),
             Origin::Unknown(value) => write!(f, "{}", value),
