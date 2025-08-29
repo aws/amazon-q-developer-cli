@@ -207,7 +207,8 @@
                     // Check passed tests bar
                     if (mouseX >= x + barWidth * 0.8 && mouseX <= x + barWidth * 1.5 && 
                         mouseY >= height - padding - passedHeight && mouseY <= height - padding) {{
-                        tooltip.innerHTML = features[i] + ': ' + passedTests[i] + ' passed tests';
+                        var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        tooltip.innerHTML = featureName + ': ' + passedTests[i] + ' passed tests';
                         tooltip.style.left = (e.pageX + 10) + 'px';
                         tooltip.style.top = (e.pageY - 30) + 'px';
                         tooltip.style.display = 'block';
