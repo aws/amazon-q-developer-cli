@@ -12,10 +12,11 @@
         .summary-content {{ display: flex; gap: 30px; align-items: center; }}
         .stats-column {{ flex: 1; }}
         .chart-column {{ flex: 0 0 300px; text-align: center; }}
-        .stats {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; }}
-        .stat-item {{ background: white; padding: 15px; border-radius: 8px; text-align: center; border-left: 4px solid #007bff; }}
-        .stat-item.success {{ border-left-color: #28a745; }}
-        .stat-item.failure {{ border-left-color: #dc3545; }}
+        .summary-table {{ width: 60%; border-collapse: collapse; margin: 20px 0; }}
+        .summary-table td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        .summary-table .success {{ color: #28a745; font-weight: bold; }}
+        .summary-table .failure {{ color: #dc3545; font-weight: bold; }}
+        .summary-table .neutral {{ color: #007bff; font-weight: bold; }}
         .collapsible {{ background-color: #007bff; color: white; cursor: pointer; padding: 15px; border: none; text-align: left; outline: none; font-size: 16px; border-radius: 5px; margin: 5px 0; width: 100%; }}
         .collapsible:hover {{ background-color: #0056b3; }}
         .collapsible.active {{ background-color: #0056b3; }}
@@ -38,32 +39,20 @@
             <h2>📊 Summary</h2>
             <div class="summary-content">
                 <div class="stats-column">
-                    <div class="stats">
-                        <div class="stat-item success">
-                            <h3>{success_rate}%</h3>
-                            <p>Success Rate</p>
-                        </div>
-                        <div class="stat-item">
-                            <h3>{total_features}</h3>
-                            <p>Features Tested</p>
-                        </div>
-                        <div class="stat-item success">
-                            <h3>{features_100_pass}</h3>
-                            <p>Features 100% Pass</p>
-                        </div>
-                        <div class="stat-item failure">
-                            <h3>{features_failed}</h3>
-                            <p>Features with Failures</p>
-                        </div>
-                        <div class="stat-item success">
-                            <h3>{tests_passed}</h3>
-                            <p>Tests Passed</p>
-                        </div>
-                        <div class="stat-item failure">
-                            <h3>{tests_failed}</h3>
-                            <p>Tests Failed</p>
-                        </div>
-                    </div>
+                    <table class="summary-table">
+                        <tr>
+                            <td>Features Tested</td>
+                            <td class="neutral">{total_features}</td>
+                        </tr>
+                        <tr>
+                            <td>Tests Passed</td>
+                            <td class="success">{tests_passed}</td>
+                        </tr>
+                        <tr>
+                            <td>Tests Failed</td>
+                            <td class="failure">{tests_failed}</td>
+                        </tr>
+                    </table>
                 </div>
                 <div class="chart-column">
                     <canvas id="successChart" width="250" height="250"></canvas>
