@@ -334,28 +334,24 @@ impl TodoList {
                 (state, id.clone())
             },
             TodoList::Lookup => {
-                let path = get_todo_list_dir(os)?;
                 queue!(output, style::Print("Finding existing todo lists...".yellow()))?;
-                if os.fs.exists(&path) {
-                    let mut ids = Vec::new();
-                    let mut entries = os.fs.read_dir(&path).await?;
-                    while let Some(entry) = entries.next_entry().await? {
-                        let entry_path = entry.path();
-                        ids.push(
-                            entry_path
-                                .file_stem()
-                                .map(|f| f.to_string_lossy().to_string())
-                                .unwrap_or_default(),
-                        );
+                let (todo_lists, _) = get_all_todos(os).await?;
+                if !todo_lists.is_empty() {
+                    let mut displays = Vec::new();
+                    for list in todo_lists {
+                        let num_completed = list.tasks.iter().filter(|t| t.completed).count();
+                        let completion_status = format!("{}/{}", num_completed, list.tasks.len());
+                        displays.push(format!(
+                            "Description: {} \nStatus: {} \nID: {}",
+                            list.description, completion_status, list.id
+                        ));
                     }
-                    if !ids.is_empty() {
-                        return Ok(InvokeOutput {
-                            output: super::OutputKind::Text(format!("Existing todo IDs:\n {}", ids.join("\n"))),
-                        });
-                    }
+                    return Ok(InvokeOutput {
+                        output: super::OutputKind::Text(displays.join("\n\n")),
+                    });
                 }
                 return Ok(InvokeOutput {
-                    output: super::OutputKind::Text("No todo lists in the user's current directory.".to_string()),
+                    output: super::OutputKind::Text("No todo lists exist".to_string()),
                 });
             },
         };
