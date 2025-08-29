@@ -20,7 +20,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage command... | Description: Tests the /usage command to display current context window usage. Verifies token usage information, progress bar, breakdown sections, and Pro Tips");
+    println!("\n🔍 Testing /usage command... | Description: Tests the /usage command to display current context window usage. Verifies token usage information, progress bar, breakdown sections, and Pro Tips");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -81,7 +81,7 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage --help command... | Description: Tests the /usage --help command to display help information for the usage command. Verifies Usage section, Options section, and help flags (-h, --help)");
+    println!("\n🔍 Testing /usage --help command... | Description: Tests the /usage --help command to display help information for the usage command. Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -125,7 +125,7 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /usage -h command... | Description: Tests the /usage -h command (short form of --help). Verifies Usage section, Options section, and help flags (-h, --help)");
+    println!("\n🔍 Testing /usage -h command... | Description: Tests the /usage -h command (short form of --help). Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

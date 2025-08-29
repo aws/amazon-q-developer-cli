@@ -10,7 +10,7 @@ static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 const TEST_NAMES: &[&str] = &[
     "test_hooks_command",
     "test_hooks_help_command",
-     "test_hooks_h_command",
+    "test_hooks_h_command",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -18,7 +18,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "hooks", feature = "sanity"))]
 fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /hooks command... | Description: Tests the /hooks command to display configured hooks or show no hooks message when none are configured");
+    println!("\n🔍 Testing /hooks command... | Description: Tests the /hooks command to display configured hooks or show no hooks message when none are configured");
     
     let session = get_chat_session();
    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -48,7 +48,7 @@ fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "hooks", feature = "sanity"))]
 fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /hooks --help command... | Description: Tests the /hooks --help command to display comprehensive help information for hooks functionality and configuration");
+    println!("\n🔍 Testing /hooks --help command... | Description: Tests the /hooks --help command to display comprehensive help information for hooks functionality and configuration");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -87,7 +87,7 @@ fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "hooks", feature = "sanity"))]
 fn test_hooks_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /hooks -h command... | Description: Tests the /hooks -h command (short form) to display hooks help information and verify flag handling");
+    println!("\n🔍 Testing /hooks -h command... | Description: Tests the /hooks -h command (short form) to display hooks help information and verify flag handling");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

@@ -18,7 +18,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor --help command... | Description: Tests the /editor --help command to display help information for the editor functionality including usage and options");
+    println!("\n🔍 Testing /editor --help command... | Description: Tests the /editor --help command to display help information for the editor functionality including usage and options");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -61,7 +61,7 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /help editor command... | Description: Tests the /help editor command to display editor-specific help information and usage instructions");
+    println!("\n🔍 Testing /help editor command... | Description: Tests the /help editor command to display editor-specific help information and usage instructions");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -104,7 +104,7 @@ fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor -h command... | Description: Tests the /editor -h command (short form) to display editor help information and verify proper flag handling");
+    println!("\n🔍 Testing /editor -h command... | Description: Tests the /editor -h command (short form) to display editor help information and verify proper flag handling");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

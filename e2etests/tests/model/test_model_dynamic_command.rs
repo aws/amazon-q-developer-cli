@@ -18,7 +18,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model command with dynamic selection... | Description: Tests the /model command interactive selection interface to choose different models and verify selection confirmation");
+    println!("\n🔍 Testing /model command with dynamic selection... | Description: Tests the /model command interactive selection interface to choose different models and verify selection confirmation");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -63,7 +63,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
         // After finding prompt, parse model lines
         if found_prompt {
             let cleaned_line = strip_ansi(trimmed_line);
-            println!("🔍 Row: '{}' -> Cleaned: '{}'", trimmed_line, cleaned_line);
+            println!("\n🔍 Row: '{}' -> Cleaned: '{}'", trimmed_line, cleaned_line);
             
             if !trimmed_line.is_empty() {
                 // Check if line contains a model (starts with ❯, spaces, or contains model names)
@@ -74,7 +74,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
                         .trim()
                         .to_string();
                     
-                    println!("🔍 Extracted model: '{}'", model_name);
+                    println!("\n🔍 Extracted model: '{}'", model_name);
                     if !model_name.is_empty() {
                         models.push(model_name);
                     }
@@ -137,7 +137,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model --help command... | Description: Tests the /model --help command to display help information for model selection functionality");
+    println!("\n🔍 Testing /model --help command... | Description: Tests the /model --help command to display help information for model selection functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -176,7 +176,7 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "model", feature = "sanity"))]
 fn test_model_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /model -h command... | Description: Tests the /model -h command (short form) to display help information for model selection functionality");
+    println!("\n🔍 Testing /model -h command... | Description: Tests the /model -h command (short form) to display help information for model selection functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

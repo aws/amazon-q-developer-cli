@@ -26,7 +26,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /mcp --help command... | Description: Tests the /mcp --help command to display help information for MCP server management functionality");
+    println!("\n🔍 Testing /mcp --help command... | Description: Tests the /mcp --help command to display help information for MCP server management functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -69,7 +69,7 @@ fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_loading_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing MCP loading... | Description: Tests MCP server loading status and displays information about loaded MCP servers with timing");
+    println!("\n🔍 Testing MCP loading... | Description: Tests MCP server loading status and displays information about loaded MCP servers with timing");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -109,7 +109,7 @@ fn test_mcp_loading_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp remove --help command... | Description: Tests the q mcp remove --help command to display help information for removing MCP servers");
+    println!("\n🔍 Testing q mcp remove --help command... | Description: Tests the q mcp remove --help command to display help information for removing MCP servers");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -156,13 +156,13 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp add --help command... | Description: Tests the q mcp add --help command to display help information for adding new MCP servers");
+    println!("\n🔍 Testing q mcp add --help command... | Description: Tests the q mcp add --help command to display help information for adding new MCP servers");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute mcp add --help command
-    println!("🔍 Executing command: 'q mcp add --help'");
+    println!("\n🔍 Executing command: 'q mcp add --help'");
     let response = chat.execute_command("q mcp add --help")?;
     
     println!("📝 Restart response: {} bytes", response.len());
@@ -214,7 +214,7 @@ fn test_q_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp --help command... | Description: Tests the q mcp --help command to display comprehensive MCP management help including all subcommands");
+    println!("\n🔍 Testing q mcp --help command... | Description: Tests the q mcp --help command to display comprehensive MCP management help including all subcommands");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -271,13 +271,13 @@ fn test_q_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp import --help command... | Description: Tests the q mcp import --help command to display help information for importing MCP server configurations");
+    println!("\n🔍 Testing q mcp import --help command... | Description: Tests the q mcp import --help command to display help information for importing MCP server configurations");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute mcp import --help command
-    println!("🔍 Executing command: 'q mcp import --help'");
+    println!("\n🔍 Executing command: 'q mcp import --help'");
     let response = chat.execute_command("q mcp import --help")?;
     
     println!("📝 Restart response: {} bytes", response.len());
@@ -333,7 +333,7 @@ fn test_q_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp list command... | Description: Tests the q mcp list command to display all configured MCP servers and their status");
+    println!("\n🔍 Testing q mcp list command... | Description: Tests the q mcp list command to display all configured MCP servers and their status");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -376,7 +376,7 @@ fn test_q_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp list --help command... | Description: Tests the q mcp list --help command to display help information for listing MCP servers");
+    println!("\n🔍 Testing q mcp list --help command... | Description: Tests the q mcp list --help command to display help information for listing MCP servers");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -426,13 +426,13 @@ fn test_q_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp status --help command... | Description: Tests the q mcp status --help command to display help information for checking MCP server status");
+    println!("\n🔍 Testing q mcp status --help command... | Description: Tests the q mcp status --help command to display help information for checking MCP server status");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute mcp status --help command
-    println!("🔍 Executing command: 'q mcp status --help'");
+    println!("\n🔍 Executing command: 'q mcp status --help'");
     let response = chat.execute_command("q mcp status --help")?;
 
     println!("📝 Restart response: {} bytes", response.len());
@@ -482,10 +482,10 @@ fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp add command... | Description: Tests the complete workflow of adding and removing an MCP server including configuration and cleanup");
+    println!("\n🔍 Testing q mcp add command... | Description: Tests the complete workflow of adding and removing an MCP server including configuration and cleanup");
 
     // First install uv dependency before starting Q Chat
-    println!("🔍 Installing uv dependency...");
+    println!("\n🔍 Installing uv dependency...");
 
     std::process::Command::new("pip3")
         .args(["install", "uv", "--break-system-packages"])
@@ -498,7 +498,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute mcp add command
-    println!("🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
+    println!("\n🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
     let response = chat.execute_command("q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest")?;
     
     println!("📝 Response: {} bytes", response.len());
@@ -525,7 +525,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found successful addition message");
     
     // Now test removing the MCP server
-    println!("🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
+    println!("\n🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
     let remove_response = chat.execute_command("q mcp remove --name aws-documentation")?;
     println!("📝 Remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
@@ -561,10 +561,10 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_q_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing q mcp status --name <server-name> command... | Description: Tests the q mcp status command with server name to display detailed status information for a specific MCP server");
+    println!("\n🔍 Testing q mcp status --name <server-name> command... | Description: Tests the q mcp status command with server name to display detailed status information for a specific MCP server");
 
     // First install uv dependency before starting Q Chat
-    println!("🔍 Installing uv dependency...");
+    println!("\n🔍 Installing uv dependency...");
 
     std::process::Command::new("pip3")
         .args(["install", "uv", "--break-system-packages"])
@@ -577,7 +577,7 @@ fn test_q_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute mcp add command
-    println!("🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
+    println!("\n🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
     let response = chat.execute_command("q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest")?;
     
     println!("📝 Response: {} bytes", response.len());
@@ -629,7 +629,7 @@ fn test_q_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
       assert!(show_response.contains("Env Vars"), "Missing Env Vars");
     
     // Now test removing the MCP server
-    println!("🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
+    println!("\n🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
     let remove_response = chat.execute_command("q mcp remove --name aws-documentation")?;
     println!("📝 Remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");

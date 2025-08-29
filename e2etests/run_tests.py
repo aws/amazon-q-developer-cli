@@ -61,7 +61,7 @@ def parse_test_results(stdout):
         clean_line = line.strip()
         
         # Look for test declaration lines
-        if clean_line.startswith('test ') and ' ... ' in clean_line:
+        if clean_line.startswith('test ') and ' ...' in clean_line:
             # Extract test name (everything between 'test ' and ' ... ')
             test_name = clean_line.split(' ... ')[0].replace('test ', '').strip()
             

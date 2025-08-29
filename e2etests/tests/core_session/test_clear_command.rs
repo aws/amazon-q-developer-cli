@@ -4,13 +4,13 @@ use q_cli_e2e_tests::q_chat_helper::QChatSession;
 #[test]
 #[cfg(all(feature = "clear", feature = "sanity"))]
 fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /clear command... | Description: Tests the /clear command to clear conversation history and verify that previous context is no longer remembered by the AI");
+    println!("\n🔍 Testing /clear command... | Description: Tests the /clear command to clear conversation history and verify that previous context is no longer remembered by the AI");
     
     let mut chat = QChatSession::new()?;
     println!("✅ Q Chat session started");
     
     // Send initial message
-    println!("🔍 Sending prompt: 'My name is TestUser'");
+    println!("\n🔍 Sending prompt: 'My name is TestUser'");
     let _initial_response = chat.send_prompt("My name is TestUser")?;
     println!("📝 Initial response: {} bytes", _initial_response.len());
     println!("📝 INITIAL RESPONSE OUTPUT:");
@@ -18,13 +18,13 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END INITIAL RESPONSE");
     
     // Execute clear command
-    println!("🔍 Executing command: '/clear'");
+    println!("\n🔍 Executing command: '/clear'");
     let _clear_response = chat.execute_command("/clear")?;
 
     println!("✅ Clear command executed");
     
     // Check if AI remembers previous conversation
-    println!("🔍 Sending prompt: 'What is my name?'");
+    println!("\n🔍 Sending prompt: 'What is my name?'");
     let test_response = chat.send_prompt("What is my name?")?;
     println!("📝 Test response: {} bytes", test_response.len());
     println!("📝 TEST RESPONSE OUTPUT:");
