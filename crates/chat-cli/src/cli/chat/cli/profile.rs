@@ -221,18 +221,18 @@ impl AgentSubcommand {
             },
 
             Self::Generate {} => {
-                let agent_name = match session.read_user_input("Enter agent name: ", false) {
-                    Some(input) => input.trim().to_string(),
-                    None => {
+                let agent_name = match crate::util::input("Enter agent name: ", None) {
+                    Ok(input) => input.trim().to_string(),
+                    Err(_) => {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,
                         });
                     },
                 };
 
-                let agent_description = match session.read_user_input("Enter agent description: ", false) {
-                    Some(input) => input.trim().to_string(),
-                    None => {
+                let agent_description = match crate::util::input("Enter agent description: ", None) {
+                    Ok(input) => input.trim().to_string(),
+                    Err(_) => {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,
                         });
@@ -240,12 +240,32 @@ impl AgentSubcommand {
                 };
 
                 let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
-                let scope_selection = Select::new()
+                let scope_selection = match Select::with_theme(&crate::util::dialoguer_theme())
                     .with_prompt("Agent scope")
                     .items(&scope_options)
                     .default(0)
-                    .interact()
-                    .map_err(|e| ChatError::Custom(format!("Failed to get scope selection: {}", e).into()))?;
+                    .interact_on_opt(&dialoguer::console::Term::stdout())
+                {
+                    Ok(sel) => {
+                        let _ = crossterm::execute!(
+                            std::io::stdout(),
+                            crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                        );
+                        sel
+                    },
+                    // Ctrl‑C -> Err(Interrupted)
+                    Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    }),
+                    Err(e) => return Err(ChatError::Custom(format!("Failed to get scope selection: {e}").into())),
+                };
+
+                let scope_selection = match scope_selection {
+                    Some(selection) => selection,
+                    None => return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    }),
+                };
 
                 let is_global = scope_selection == 1;
 
