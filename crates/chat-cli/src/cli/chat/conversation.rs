@@ -188,19 +188,7 @@ impl ConversationState {
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
             context_message_length: None,
@@ -852,6 +840,22 @@ Return only the JSON configuration, no additional text.",
 
         Ok(())
     }
+}
+
+pub fn format_tool_spec(tool_spec: HashMap<String, ToolSpec>) -> HashMap<ToolOrigin, Vec<Tool>> {
+    tool_spec
+        .into_values()
+        .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+            let tool = Tool::ToolSpecification(ToolSpecification {
+                name: v.name,
+                description: v.description,
+                input_schema: v.input_schema.into(),
+            });
+            acc.entry(v.tool_origin)
+                .and_modify(|tools| tools.push(tool.clone()))
+                .or_insert(vec![tool]);
+            acc
+        })
 }
 
 /// Represents a conversation state that can be converted into a [FigConversationState] (the type
