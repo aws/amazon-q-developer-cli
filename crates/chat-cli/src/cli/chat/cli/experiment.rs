@@ -75,11 +75,13 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         experiment_labels.push(label);
     }
 
-    experiment_labels.push(String::new());
-    experiment_labels.push(format!(
-        "{}",
-        style::Stylize::white("⚠ Experimental features may be changed or removed at any time")
-    ));
+    // Show disclaimer before selection
+    queue!(
+        session.stderr,
+        style::SetForegroundColor(Color::Yellow),
+        style::Print("⚠ Experimental features may be changed or removed at any time\n\n"),
+        style::ResetColor,
+    )?;
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an experiment to toggle")
@@ -102,14 +104,14 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
     queue!(session.stderr, style::ResetColor)?;
 
     if let Some(index) = selection {
-        // Clear the dialoguer selection line to avoid showing old status
+        // Clear the dialoguer selection line and disclaimer
         queue!(
             session.stderr,
-            crossterm::cursor::MoveUp(1),
-            crossterm::terminal::Clear(crossterm::terminal::ClearType::CurrentLine),
+            crossterm::cursor::MoveUp(3), // Move up past selection + 2 disclaimer lines
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::FromCursorDown),
         )?;
 
-        // Skip if user selected disclaimer or empty line
+        // Skip if user selected disclaimer or empty line (last 2 items)
         if index >= AVAILABLE_EXPERIMENTS.len() {
             return Ok(Some(ChatState::PromptUser {
                 skip_printing_tools: false,
