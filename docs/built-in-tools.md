@@ -5,6 +5,7 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`execute_bash`](#execute_bash-tool) — Execute a shell command.
 - [`fs_read`](#fs_read-tool) — Read files, directories, and images.
 - [`fs_write`](#fs_write-tool) — Create and edit files.
+- [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
@@ -83,6 +84,24 @@ Tool for creating and editing files.
 |--------|------|---------|-------------|
 | `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
 | `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+
+## Introspect Tool
+
+Provide information about Q CLI capabilities, features, commands, and documentation. This tool accesses Q CLI's built-in documentation and help content to answer questions about the CLI's functionality.
+
+### Usage
+
+The introspect tool is automatically used when you ask questions about Q CLI itself, such as:
+- "What can you do?"
+- "How do I save conversations?"
+- "What commands are available?"
+- "Do you have feature X?"
+
+### Behavior
+
+- Tries to provide the information that is explicitly documented
+- Accesses README, built-in tools documentation, experiments, and settings information
+- Automatically enters tangent mode when configured to do so and if we set the setting introspect.tangentMode = true.
 
 ## Report_issue Tool
 
