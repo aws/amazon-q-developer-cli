@@ -1875,7 +1875,7 @@ fn queue_failure_message(
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
-            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
+            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
         )),
         style::ResetColor,
     )?)
