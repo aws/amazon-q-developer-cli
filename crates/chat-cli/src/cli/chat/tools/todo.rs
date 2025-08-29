@@ -92,9 +92,9 @@ fn queue_next_without_newline(output: &mut impl Write, task: String, completed: 
     if completed {
         queue!(
             output,
-            style::SetAttribute(style::Attribute::Italic),
             style::SetForegroundColor(style::Color::Green),
-            style::Print(" ■ "),
+            style::Print("[x] "),
+            style::SetAttribute(style::Attribute::Italic),
             style::SetForegroundColor(style::Color::DarkGrey),
             style::Print(task),
             style::SetAttribute(style::Attribute::NoItalic),
@@ -103,7 +103,7 @@ fn queue_next_without_newline(output: &mut impl Write, task: String, completed: 
         queue!(
             output,
             style::SetForegroundColor(style::Color::Reset),
-            style::Print(format!(" ☐ {task}")),
+            style::Print(format!("[ ] {task}")),
         )?;
     }
     Ok(())
@@ -207,10 +207,22 @@ pub enum TodoList {
         new_description: Option<String>,
         current_id: String,
     },
+
+    // Shows the model the IDs of all existing todo lists
+    Lookup,
 }
 
 impl TodoList {
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
+        if let Some(id) = self.get_id() {
+            if !os.fs.exists(id_to_path(os, &id)?) {
+                let error_string = "No todo list exists with the given ID";
+                queue!(output, style::Print(error_string.yellow()))?;
+                return Ok(InvokeOutput {
+                    output: super::OutputKind::Text(error_string.to_string()),
+                });
+            }
+        }
         let (state, id) = match self {
             TodoList::Create {
                 tasks,
@@ -321,6 +333,31 @@ impl TodoList {
                 state.display_list(output)?;
                 (state, id.clone())
             },
+            TodoList::Lookup => {
+                let path = get_todo_list_dir(os)?;
+                queue!(output, style::Print("Finding existing todo lists...".yellow()))?;
+                if os.fs.exists(&path) {
+                    let mut ids = Vec::new();
+                    let mut entries = os.fs.read_dir(&path).await?;
+                    while let Some(entry) = entries.next_entry().await? {
+                        let entry_path = entry.path();
+                        ids.push(
+                            entry_path
+                                .file_stem()
+                                .map(|f| f.to_string_lossy().to_string())
+                                .unwrap_or_default(),
+                        );
+                    }
+                    if !ids.is_empty() {
+                        return Ok(InvokeOutput {
+                            output: super::OutputKind::Text(format!("Existing todo IDs:\n {}", ids.join("\n"))),
+                        });
+                    }
+                }
+                return Ok(InvokeOutput {
+                    output: super::OutputKind::Text("No todo lists in the user's current directory.".to_string()),
+                });
+            },
         };
 
         let invoke_output = format!("TODO LIST STATE: {}\n\n ID: {id}", serde_json::to_string(&state)?);
@@ -330,6 +367,12 @@ impl TodoList {
     }
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
+        // Rather than throwing an error, let invoke() handle this case
+        if let Some(id) = self.get_id() {
+            if !os.fs.exists(id_to_path(os, &id)?) {
+                return Ok(());
+            }
+        }
         match self {
             TodoList::Create {
                 tasks,
@@ -359,12 +402,6 @@ impl TodoList {
                     if *i >= state.tasks.len() {
                         bail!("Index {i} is out of bounds for length {}, ", state.tasks.len());
                     }
-                }
-            },
-            TodoList::Load { load_id: id } => {
-                let state = TodoListState::load(os, id).await?;
-                if state.tasks.is_empty() {
-                    bail!("Loaded todo list is empty");
                 }
             },
             TodoList::Add {
@@ -406,8 +443,19 @@ impl TodoList {
                     }
                 }
             },
+            TodoList::Load { .. } | TodoList::Lookup => (),
         }
         Ok(())
+    }
+
+    pub fn get_id(&self) -> Option<String> {
+        match self {
+            TodoList::Add { current_id, .. }
+            | TodoList::Complete { current_id, .. }
+            | TodoList::Remove { current_id, .. } => Some(current_id.clone()),
+            TodoList::Load { load_id } => Some(load_id.clone()),
+            TodoList::Create { .. } | TodoList::Lookup => None,
+        }
     }
 }
 
