@@ -216,7 +216,7 @@ def get_system_info(binary_path="q"):
 
 def generate_report(results, features, test_suites, binary_path="q"):
     """Generate JSON report and console summary"""
-    timestamp = datetime.now().isoformat()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     system_info = get_system_info(binary_path)
     
     # Create reports directory if it doesn't exist
@@ -366,6 +366,11 @@ def generate_html_report(json_filename):
         
         test_suites_content += "</div>"  # Close suite content
     
+    # Prepare histogram data
+    feature_names = list(report['features'].keys())
+    feature_total_tests = [stats['passed'] + stats['failed'] for stats in report['features'].values()]
+    feature_passed_tests = [stats['passed'] for stats in report['features'].values()]
+    
     # Fill template with data
     html_content = html_template.format(
         timestamp=report['timestamp'],
@@ -378,6 +383,9 @@ def generate_html_report(json_filename):
         test_suites_content=test_suites_content,
         platform=report['system_info']['platform'],
         q_binary_info=f"{report['system_info']['q_binary_path']} ({report['system_info']['q_version']})",
+        feature_names=json.dumps(feature_names),
+        feature_total_tests=json.dumps(feature_total_tests),
+        feature_passed_tests=json.dumps(feature_passed_tests),
     )
     
     with open(html_filename, 'w') as f:

@@ -9,11 +9,14 @@
         .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
         .header {{ text-align: center; margin-bottom: 30px; }}
         .summary-card {{ background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }}
-        .summary-content {{ display: flex; gap: 30px; align-items: center; }}
+        .summary-content {{ display: flex; gap: 30px; align-items: flex-start; }}
         .stats-column {{ flex: 1; }}
-        .chart-column {{ flex: 0 0 300px; text-align: center; }}
-        .summary-table {{ width: 60%; border-collapse: collapse; margin: 20px 0; }}
-        .summary-table td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        .chart-column {{ flex: 1; text-align: center; display: flex; flex-direction: column; align-items: center; }}
+        .legend {{ display: flex; justify-content: center; gap: 20px; margin-top: 10px; }}
+        .legend-item {{ display: flex; align-items: center; gap: 5px; }}
+        .legend-color {{ width: 15px; height: 15px; border-radius: 3px; }}
+        .summary-table {{ width: auto; border-collapse: collapse; margin: 20px 0; }}
+        .summary-table td {{ padding: 12px 20px; text-align: left; border-bottom: 1px solid #ddd; white-space: nowrap; }}
         .summary-table .success {{ color: #28a745; font-weight: bold; }}
         .summary-table .failure {{ color: #dc3545; font-weight: bold; }}
         .summary-table .neutral {{ color: #007bff; font-weight: bold; }}
@@ -37,7 +40,20 @@
         
         <div class="summary-card">
             <h2>📊 Summary</h2>
-            <div class="summary-content">
+                <div class="chart-column">
+                    <canvas id="histogramChart" style="display: block; margin: 0 auto;"></canvas>
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #007bff;"></div>
+                            <span>Total Tests</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background-color: #28a745;"></div>
+                            <span>Passed Tests</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="summary-content">
                 <div class="stats-column">
                     <table class="summary-table">
                         <tr>
@@ -54,10 +70,6 @@
                         </tr>
                     </table>
                 </div>
-                <div class="chart-column">
-                    <canvas id="successChart" width="250" height="250"></canvas>
-                    <p style="margin-top: 10px; font-weight: bold;">Success Rate: {success_rate}%</p>
-                </div>
             </div>
         </div>
         
@@ -73,72 +85,143 @@
     
     <script>
         window.onload = function() {{
-            var canvas = document.getElementById('successChart');
+            var canvas = document.getElementById('histogramChart');
             if (!canvas) return;
             
+            // Make canvas responsive
+            var container = canvas.parentElement;
+            canvas.width = container.offsetWidth - 40;
+            canvas.height = 300;
+            
             var ctx = canvas.getContext('2d');
-            var centerX = canvas.width / 2;
-            var centerY = canvas.height / 2;
-            var radius = 100;
+            var width = canvas.width;
+            var height = canvas.height;
+            var padding = 50;
+            var chartWidth = width - 2 * padding;
+            var chartHeight = height - 2 * padding;
             
-            var successRate = {success_rate};
-            var failureRate = 100 - successRate;
+            // Sample data - this should be replaced with actual feature data
+            var features = {feature_names};
+            var totalTests = {feature_total_tests};
+            var passedTests = {feature_passed_tests};
             
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            if (!features || features.length === 0) return;
             
-            if (successRate === 100) {{
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+            var maxTests = Math.max(...totalTests);
+            var barWidth = Math.min(60, chartWidth / (features.length * 2.2));
+            
+            // Calculate actual chart width and center it
+            var actualChartWidth = (features.length * 2) * barWidth + barWidth;
+            var chartStartX = padding + (chartWidth - actualChartWidth) / 2;
+            
+            ctx.clearRect(0, 0, width, height);
+            
+            // Draw axes
+            ctx.strokeStyle = '#333';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(chartStartX, padding);
+            ctx.lineTo(chartStartX, height - padding);
+            var xAxisEnd = chartStartX + actualChartWidth;
+            ctx.lineTo(xAxisEnd, height - padding);
+            ctx.stroke();
+            
+            // Draw bars
+            for (var i = 0; i < features.length; i++) {{
+                var x = chartStartX + (i * 2 + 0.5) * barWidth;
+                
+                // Total tests bar (blue) - wider
+                var totalHeight = (totalTests[i] / maxTests) * chartHeight;
+                ctx.fillStyle = '#007bff';
+                ctx.fillRect(x, height - padding - totalHeight, barWidth * 0.7, totalHeight);
+                
+                // Passed tests bar (green) - with gap
+                var passedHeight = (passedTests[i] / maxTests) * chartHeight;
                 ctx.fillStyle = '#28a745';
-                ctx.fill();
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 20px Arial';
+                ctx.fillRect(x + barWidth * 0.8, height - padding - passedHeight, barWidth * 0.7, passedHeight);
+                
+                // Feature labels
+                ctx.fillStyle = '#333';
+                ctx.font = '12px Arial';
                 ctx.textAlign = 'center';
-                ctx.fillText('100%', centerX, centerY + 7);
-            }} else if (successRate === 0) {{
-                ctx.beginPath();
-                ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-                ctx.fillStyle = '#dc3545';
-                ctx.fill();
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 20px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText('0%', centerX, centerY + 7);
-            }} else {{
-                var successAngle = (successRate / 100) * 2 * Math.PI;
-                
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.arc(centerX, centerY, radius, -Math.PI/2, -Math.PI/2 + successAngle);
-                ctx.closePath();
-                ctx.fillStyle = '#28a745';
-                ctx.fill();
-                
-                ctx.beginPath();
-                ctx.moveTo(centerX, centerY);
-                ctx.arc(centerX, centerY, radius, -Math.PI/2 + successAngle, -Math.PI/2 + 2 * Math.PI);
-                ctx.closePath();
-                ctx.fillStyle = '#dc3545';
-                ctx.fill();
-                
-                ctx.fillStyle = 'white';
-                ctx.font = 'bold 16px Arial';
-                ctx.textAlign = 'center';
-                
-                if (successRate > 15) {{
-                    var successLabelAngle = -Math.PI/2 + successAngle / 2;
-                    var successLabelX = centerX + Math.cos(successLabelAngle) * (radius * 0.7);
-                    var successLabelY = centerY + Math.sin(successLabelAngle) * (radius * 0.7) + 5;
-                    ctx.fillText(successRate + '%', successLabelX, successLabelY);
-                }}
-                
-                if (failureRate > 15) {{
-                    var failureLabelAngle = -Math.PI/2 + successAngle + (2 * Math.PI - successAngle) / 2;
-                    var failureLabelX = centerX + Math.cos(failureLabelAngle) * (radius * 0.7);
-                    var failureLabelY = centerY + Math.sin(failureLabelAngle) * (radius * 0.7) + 5;
-                    ctx.fillText(failureRate + '%', failureLabelX, failureLabelY);
-                }}
+                var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                ctx.fillText(featureName, x + barWidth * 0.75, height - padding + 15);
             }}
+            
+            // Y-axis labels
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'right';
+            var steps = Math.max(1, maxTests);
+            for (var i = 0; i <= steps; i += 2) {{
+                var y = height - padding - (i / steps) * chartHeight;
+                ctx.fillText(i, chartStartX - 10, y + 4);
+            }}
+            
+            // X-axis label
+            ctx.fillStyle = '#333';
+            ctx.font = '14px Arial';
+            ctx.textAlign = 'center';
+            var xAxisCenter = (chartStartX + xAxisEnd) / 2;
+            ctx.fillText('Features', xAxisCenter, height - 5);
+            
+            // Add hover functionality with tooltip
+            var tooltip = document.createElement('div');
+            tooltip.style.position = 'absolute';
+            tooltip.style.background = 'rgba(0,0,0,0.8)';
+            tooltip.style.color = 'white';
+            tooltip.style.padding = '5px 10px';
+            tooltip.style.borderRadius = '4px';
+            tooltip.style.fontSize = '12px';
+            tooltip.style.pointerEvents = 'none';
+            tooltip.style.display = 'none';
+            tooltip.style.zIndex = '1000';
+            document.body.appendChild(tooltip);
+            
+            canvas.addEventListener('mousemove', function(e) {{
+                var rect = canvas.getBoundingClientRect();
+                var mouseX = e.clientX - rect.left;
+                var mouseY = e.clientY - rect.top;
+                var found = false;
+                
+                // Check if mouse is over any bar
+                for (var i = 0; i < features.length; i++) {{
+                    var x = chartStartX + (i * 2 + 0.5) * barWidth;
+                    var totalHeight = (totalTests[i] / maxTests) * chartHeight;
+                    var passedHeight = (passedTests[i] / maxTests) * chartHeight;
+                    
+                    // Check total tests bar
+                    if (mouseX >= x && mouseX <= x + barWidth * 0.7 && 
+                        mouseY >= height - padding - totalHeight && mouseY <= height - padding) {{
+                        var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+                        tooltip.innerHTML = featureName + ': ' + totalTests[i] + ' total tests';
+                        tooltip.style.left = (e.pageX + 10) + 'px';
+                        tooltip.style.top = (e.pageY - 30) + 'px';
+                        tooltip.style.display = 'block';
+                        found = true;
+                        break;
+                    }}
+                    
+                    // Check passed tests bar
+                    if (mouseX >= x + barWidth * 0.8 && mouseX <= x + barWidth * 1.5 && 
+                        mouseY >= height - padding - passedHeight && mouseY <= height - padding) {{
+                        tooltip.innerHTML = features[i] + ': ' + passedTests[i] + ' passed tests';
+                        tooltip.style.left = (e.pageX + 10) + 'px';
+                        tooltip.style.top = (e.pageY - 30) + 'px';
+                        tooltip.style.display = 'block';
+                        found = true;
+                        break;
+                    }}
+                }}
+                
+                if (!found) {{
+                    tooltip.style.display = 'none';
+                }}
+            }});
+            
+            canvas.addEventListener('mouseleave', function() {{
+                tooltip.style.display = 'none';
+            }});
         }};
         
         var coll = document.getElementsByClassName("collapsible");
