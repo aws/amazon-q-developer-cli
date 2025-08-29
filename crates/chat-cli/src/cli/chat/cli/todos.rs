@@ -4,7 +4,7 @@ use crossterm::style::{
     self,
     Stylize,
 };
-use dialoguer::FuzzySelect;
+use dialoguer::Select;
 use eyre::Result;
 
 use crate::cli::chat::tools::todo::{
@@ -196,7 +196,7 @@ impl TodoSubcommand {
 }
 
 fn fuzzy_select_todos(entries: &[TodoDisplayEntry], prompt_str: &str) -> Option<usize> {
-    FuzzySelect::new()
+    Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt(prompt_str)
         .items(entries)
         .report(false)
