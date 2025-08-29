@@ -24,6 +24,7 @@ use serde::{
 };
 
 use super::InvokeOutput;
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -214,6 +215,23 @@ pub enum TodoList {
 
 impl TodoList {
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
+        // Check if todo lists are enabled
+        if !os
+            .database
+            .settings
+            .get_bool(Setting::EnabledTodoLists)
+            .unwrap_or(false)
+        {
+            queue!(
+                output,
+                style::SetForegroundColor(style::Color::Red),
+                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoLists true"),
+                style::SetForegroundColor(style::Color::Reset)
+            )?;
+            return Ok(InvokeOutput {
+                output: super::OutputKind::Text("Todo lists are disabled.".to_string()),
+            });
+        }
         if let Some(id) = self.get_id() {
             if !os.fs.exists(id_to_path(os, &id)?) {
                 let error_string = "No todo list exists with the given ID";

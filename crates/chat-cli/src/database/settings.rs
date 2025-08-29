@@ -75,6 +75,8 @@ pub enum Setting {
     ChatDisableAutoCompaction,
     #[strum(message = "Show conversation history hints (boolean)")]
     ChatEnableHistoryHints,
+    #[strum(message = "Enable the todo list feature (boolean)")]
+    EnabledTodoLists,
 }
 
 impl AsRef<str> for Setting {
@@ -109,6 +111,7 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultAgent => "chat.defaultAgent",
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
+            Self::EnabledTodoLists => "chat.enableTodoLists",
         }
     }
 }
@@ -153,6 +156,7 @@ impl TryFrom<&str> for Setting {
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
+            "chat.enableTodoLists" => Ok(Self::EnabledTodoLists),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

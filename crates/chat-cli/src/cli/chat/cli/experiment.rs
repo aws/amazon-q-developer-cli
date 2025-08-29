@@ -44,6 +44,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
         setting_key: Setting::EnabledTangentMode,
     },
+    Experiment {
+        name: "Todo Lists",
+        description: "Enables Q to create todo lists that can be viewed and managed using /todos",
+        setting_key: Setting::EnabledTodoLists,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]
