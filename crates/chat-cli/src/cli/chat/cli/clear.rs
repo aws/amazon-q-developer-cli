@@ -14,13 +14,14 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::os::Os;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ClearArgs;
 
 impl ClearArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         execute!(
             session.stderr,
             style::SetForegroundColor(Color::DarkGrey),
@@ -41,7 +42,7 @@ impl ClearArgs {
         )?;
 
         // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
-        let user_input = match session.read_user_input("> ".yellow().to_string().as_str(), true) {
+        let user_input = match session.read_user_input(os, "> ".yellow().to_string().as_str(), true) {
             Some(input) => input,
             None => "".to_string(),
         };
