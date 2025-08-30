@@ -8,6 +8,7 @@ use dialoguer::Select;
 use eyre::Result;
 
 use crate::cli::chat::tools::todo::{
+    TodoList,
     TodoListState,
     delete_todo,
     get_all_todos,
@@ -65,6 +66,18 @@ impl std::fmt::Display for TodoDisplayEntry {
 
 impl TodoSubcommand {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Check if todo lists are enabled
+        if !TodoList::is_enabled(os) {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(style::Color::Red),
+                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true\n"),
+                style::SetForegroundColor(style::Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
         TodoListState::init_dir(os)
             .await
             .map_err(|e| ChatError::Custom(format!("Could not create todos directory: {e}").into()))?;

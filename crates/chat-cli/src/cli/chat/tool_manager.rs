@@ -650,6 +650,9 @@ impl ToolManager {
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
                 tool_specs.remove("knowledge");
             }
+            if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
+                tool_specs.remove("todo_list");
+            }
 
             #[cfg(windows)]
             {

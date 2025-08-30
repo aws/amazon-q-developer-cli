@@ -12,6 +12,7 @@ use crossterm::{
 };
 use dialoguer::Select;
 
+use crate::cli::chat::conversation::format_tool_spec;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -43,6 +44,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         name: "Tangent Mode",
         description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
         setting_key: Setting::EnabledTangentMode,
+    },
+    Experiment {
+        name: "Todo Lists",
+        description: "Enables Q to create todo lists that can be viewed and managed using /todos",
+        setting_key: Setting::EnabledTodoList,
     },
 ];
 
@@ -135,11 +141,14 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
             .map_err(|e| ChatError::Custom(format!("Failed to update experiment setting: {e}").into()))?;
 
         // Reload tools to reflect the experiment change
-        let _ = session
+        let tools = session
             .conversation
             .tool_manager
             .load_tools(os, &mut session.stderr)
-            .await;
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))?;
+
+        session.conversation.tools = format_tool_spec(tools);
 
         let status_text = if new_state { "enabled" } else { "disabled" };
 
