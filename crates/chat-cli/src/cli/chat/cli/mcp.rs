@@ -14,6 +14,10 @@ use crate::cli::chat::{
     ChatState,
 };
 
+/// Arguments for the MCP (Model Context Protocol) command.
+///
+/// This struct handles MCP-related functionality, allowing users to view
+/// the status of MCP servers and their loading progress.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct McpArgs;

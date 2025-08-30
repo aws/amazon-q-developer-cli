@@ -15,7 +15,9 @@ use crate::cli::chat::{
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
+/// Command-line arguments for the editor functionality
 pub struct EditorArgs {
+    /// Initial text to populate in the editor
     pub initial_text: Vec<String>,
 }
 

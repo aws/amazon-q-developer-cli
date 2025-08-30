@@ -286,6 +286,7 @@ Notes:
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
 • 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history"
 )]
+/// Arguments for the hooks command that displays configured context hooks
 pub struct HooksArgs;
 
 impl HooksArgs {

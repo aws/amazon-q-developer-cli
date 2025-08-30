@@ -38,6 +38,7 @@ Notes:
 • Agent rules apply only to the current agent 
 • Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
 )]
+/// Subcommands for managing context rules and files in Amazon Q chat sessions
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
     Show {
@@ -52,17 +53,20 @@ pub enum ContextSubcommand {
         #[arg(short, long)]
         force: bool,
         #[arg(required = true)]
+        /// Paths or glob patterns to remove from context rules
         paths: Vec<String>,
     },
     /// Remove specified rules
     #[command(alias = "rm")]
     Remove {
+        /// Paths or glob patterns to remove from context rules
         #[arg(required = true)]
         paths: Vec<String>,
     },
     /// Remove all rules
     Clear,
     #[command(hide = true)]
+    /// Display information about agent format hooks (deprecated)
     Hooks,
 }
 

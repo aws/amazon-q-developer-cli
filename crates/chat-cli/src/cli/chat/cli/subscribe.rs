@@ -28,9 +28,11 @@ const SUBSCRIBE_TEXT: &str = color_print::cstr! { "During the upgrade, you'll be
 
 Need help? Visit our subscription support page> <blue!>https://docs.aws.amazon.com/console/amazonq/upgrade-builder-id</blue!>" };
 
+/// Arguments for the subscribe command to manage Q Developer Pro subscriptions
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct SubscribeArgs {
+    /// Open the AWS console to manage an existing subscription
     #[arg(long)]
     manage: bool,
 }

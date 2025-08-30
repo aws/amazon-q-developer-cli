@@ -60,10 +60,11 @@ impl ModelInfo {
         self.model_name.as_deref().unwrap_or(&self.model_id)
     }
 }
+
+/// Command-line arguments for model selection operations
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ModelArgs;
-
 impl ModelArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
