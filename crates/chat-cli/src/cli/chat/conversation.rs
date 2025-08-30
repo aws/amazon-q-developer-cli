@@ -288,7 +288,7 @@ impl ConversationState {
             if candidate_asst.is_some() && candidate_user.is_some() {
                 let assistant = candidate_asst.take().unwrap();
                 let user = candidate_user.take().unwrap();
-                self.append_assistant_transcript(&assistant);
+                self.append_assistant_transcript_for_reply(&assistant);
                 self.history.push_back(HistoryEntry {
                     user,
                     assistant,
@@ -334,7 +334,7 @@ impl ConversationState {
         debug_assert!(self.next_message.is_some(), "next_message should exist");
         let next_user_message = self.next_message.take().expect("next user message should exist");
 
-        self.append_assistant_transcript(&message);
+        self.append_assistant_transcript_for_reply(&message);
         self.history.push_back(HistoryEntry {
             user: next_user_message,
             assistant: message,
@@ -802,11 +802,8 @@ Return only the JSON configuration, no additional text.",
         self.append_transcript(format!("> {}", message.replace("\n", "> \n")));
     }
 
-    pub fn append_assistant_transcript(&mut self, message: &AssistantMessage) {
-        let tool_uses = message.tool_uses().map_or("none".to_string(), |tools| {
-            tools.iter().map(|tool| tool.name.clone()).collect::<Vec<_>>().join(",")
-        });
-        self.append_transcript(format!("{}\n[Tool uses: {tool_uses}]", message.content()));
+    pub fn append_assistant_transcript_for_reply(&mut self, message: &AssistantMessage) {
+        self.append_transcript(message.content().to_string());
     }
 
     pub fn append_transcript(&mut self, message: String) {
