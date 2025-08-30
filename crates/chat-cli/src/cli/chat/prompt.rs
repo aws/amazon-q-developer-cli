@@ -277,6 +277,7 @@ impl ChatHinter {
     }
 
     /// Updates the history with a new command
+    #[cfg(test)]
     pub fn update_history(&mut self, command: &str) {
         let command = command.trim();
         if !command.is_empty() && !command.contains('\n') && !command.contains('\r') {
@@ -362,10 +363,6 @@ pub struct ChatHelper {
 }
 
 impl ChatHelper {
-    /// Updates the history of the ChatHinter with a new command
-    pub fn update_hinter_history(&mut self, command: &str) {
-        self.hinter.update_history(command);
-    }
 }
 
 impl Validator for ChatHelper {
@@ -410,8 +407,12 @@ impl Highlighter for ChatHelper {
                 result.push_str(&"!".red().to_string());
             }
 
-            // Add the prompt symbol (magenta)
-            result.push_str(&"> ".magenta().to_string());
+            // Add the prompt symbol (magenta for >, green for $)
+            if components.leader == "$" {
+                result.push_str(&"$ ".green().to_string());
+            } else {
+                result.push_str(&"> ".magenta().to_string());
+            }
 
             Cow::Owned(result)
         } else {
@@ -437,14 +438,14 @@ pub fn rl(
         .build();
 
     // Default to disabled if setting doesn't exist
-    let history_hints_enabled = os
+    let _history_hints_enabled = os
         .database
         .settings
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(history_hints_enabled),
+        hinter: ChatHinter::new(_history_hints_enabled),
         validator: MultiLineValidator,
     };
 
@@ -590,7 +591,7 @@ mod tests {
 
         // Test profile + warning prompt highlighting
         let highlighted = helper.highlight_prompt("[dev] !> ", true);
-        // Should have cyan profile + red warning + cyan bold prompt
+        // Should have cyan profile + red warning + magenta prompt
         assert_eq!(
             highlighted,
             format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
@@ -659,6 +660,36 @@ mod tests {
             highlighted,
             format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
         );
+    }
+
+    #[test]
+    fn test_highlight_prompt_dollar_leader() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test $ leader - should be green
+        let highlighted = helper.highlight_prompt("$ ", true);
+        assert_eq!(highlighted, "$ ".green().to_string());
+    }
+
+    #[test]
+    fn test_highlight_prompt_dollar_leader_with_warning() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true),
+            validator: MultiLineValidator,
+        };
+
+        // Test $ leader with warning - ! red, $ green
+        let highlighted = helper.highlight_prompt("!$ ", true);
+        assert_eq!(highlighted, format!("{}{}", "!".red(), "$ ".green()));
     }
 
     #[test]
