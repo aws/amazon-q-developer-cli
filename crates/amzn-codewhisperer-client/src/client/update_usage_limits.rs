@@ -11,6 +11,7 @@ impl super::Client {
     ///   - [`feature_type(UsageLimitType)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::feature_type) / [`set_feature_type(Option<UsageLimitType>)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::set_feature_type):<br>required: **true**<br>(undocumented)<br>
     ///   - [`requested_limit(i64)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::requested_limit) / [`set_requested_limit(Option<i64>)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::set_requested_limit):<br>required: **true**<br>(undocumented)<br>
     ///   - [`justification(impl Into<String>)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::justification) / [`set_justification(Option<String>)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::set_justification):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`permanent_override(bool)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::permanent_override) / [`set_permanent_override(Option<bool>)`](crate::operation::update_usage_limits::builders::UpdateUsageLimitsFluentBuilder::set_permanent_override):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`UpdateUsageLimitsOutput`](crate::operation::update_usage_limits::UpdateUsageLimitsOutput)
     ///   with field(s):

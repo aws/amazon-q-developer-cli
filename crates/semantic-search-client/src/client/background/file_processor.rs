@@ -33,6 +33,7 @@ impl FileProcessor {
         let dir_path = dir_path.to_path_buf();
         let active_operations = operation_manager.get_active_operations_ref().clone();
         let pattern_filter = Self::create_pattern_filter(include_patterns, exclude_patterns)?;
+        let max_files = self.config.max_files;
 
         let count_result = tokio::task::spawn_blocking(move || {
             let mut count = 0;
@@ -73,7 +74,7 @@ impl FileProcessor {
                     }
                 }
 
-                if count > 5000 {
+                if count > max_files {
                     break;
                 }
             }

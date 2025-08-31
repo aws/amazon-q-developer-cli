@@ -15,6 +15,8 @@ pub struct UpdateUsageLimitsInput {
     pub requested_limit: ::std::option::Option<i64>,
     #[allow(missing_docs)] // documentation missing in model
     pub justification: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub permanent_override: ::std::option::Option<bool>,
 }
 impl UpdateUsageLimitsInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -46,6 +48,11 @@ impl UpdateUsageLimitsInput {
     pub fn justification(&self) -> ::std::option::Option<&str> {
         self.justification.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn permanent_override(&self) -> ::std::option::Option<bool> {
+        self.permanent_override
+    }
 }
 impl UpdateUsageLimitsInput {
     /// Creates a new builder-style object to manufacture
@@ -66,6 +73,7 @@ pub struct UpdateUsageLimitsInputBuilder {
     pub(crate) feature_type: ::std::option::Option<crate::types::UsageLimitType>,
     pub(crate) requested_limit: ::std::option::Option<i64>,
     pub(crate) justification: ::std::option::Option<::std::string::String>,
+    pub(crate) permanent_override: ::std::option::Option<bool>,
 }
 impl UpdateUsageLimitsInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -173,6 +181,23 @@ impl UpdateUsageLimitsInputBuilder {
         &self.justification
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn permanent_override(mut self, input: bool) -> Self {
+        self.permanent_override = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_permanent_override(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.permanent_override = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_permanent_override(&self) -> &::std::option::Option<bool> {
+        &self.permanent_override
+    }
+
     /// Consumes the builder and constructs a
     /// [`UpdateUsageLimitsInput`](crate::operation::update_usage_limits::UpdateUsageLimitsInput).
     pub fn build(
@@ -188,6 +213,7 @@ impl UpdateUsageLimitsInputBuilder {
             feature_type: self.feature_type,
             requested_limit: self.requested_limit,
             justification: self.justification,
+            permanent_override: self.permanent_override,
         })
     }
 }

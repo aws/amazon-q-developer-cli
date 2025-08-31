@@ -1,24 +1,15 @@
 use std::io::Write;
-use std::path::{
-    Path,
-    PathBuf,
-};
+use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 
 use clap::Args;
 use crossterm::execute;
-use crossterm::style::{
-    self,
-    Color,
-};
+use crossterm::style::{self, Color};
+use eyre::Result;
 use time::OffsetDateTime;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
-use crate::cli::chat::{
-    ChatError,
-    ChatSession,
-    ChatState,
-};
 use crate::util::directories::logs_dir;
 
 /// Arguments for the logdump command that collects logs for support investigation
@@ -26,9 +17,11 @@ use crate::util::directories::logs_dir;
 pub struct LogdumpArgs;
 
 impl LogdumpArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self) -> Result<ExitCode> {
+        let mut stderr = std::io::stderr();
+
         execute!(
-            session.stderr,
+            stderr,
             style::SetForegroundColor(Color::Cyan),
             style::Print("Collecting logs...\n"),
             style::ResetColor,
@@ -46,7 +39,7 @@ impl LogdumpArgs {
         match self.create_log_dump(&zip_path).await {
             Ok(log_count) => {
                 execute!(
-                    session.stderr,
+                    stderr,
                     style::SetForegroundColor(Color::Green),
                     style::Print(format!(
                         "✓ Successfully created {} with {} log files\n",
@@ -54,21 +47,18 @@ impl LogdumpArgs {
                     )),
                     style::ResetColor,
                 )?;
+                Ok(ExitCode::SUCCESS)
             },
             Err(e) => {
                 execute!(
-                    session.stderr,
+                    stderr,
                     style::SetForegroundColor(Color::Red),
                     style::Print(format!("✗ Failed to create log dump: {}\n\n", e)),
                     style::ResetColor,
                 )?;
-                return Err(ChatError::Custom(format!("Log dump failed: {}", e).into()));
+                Err(eyre::eyre!("Log dump failed: {}", e))
             },
         }
-
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
     }
 
     async fn create_log_dump(&self, zip_path: &Path) -> Result<usize, Box<dyn std::error::Error>> {
@@ -76,50 +66,24 @@ impl LogdumpArgs {
         let mut zip = ZipWriter::new(file);
         let mut log_count = 0;
 
-        log_count += self.collect_chat_logs(&mut zip)?;
+        log_count += self.collect_qchat_log(&mut zip)?;
 
         zip.finish()?;
         Ok(log_count)
     }
 
-    fn collect_chat_logs(&self, zip: &mut ZipWriter<std::fs::File>) -> Result<usize, Box<dyn std::error::Error>> {
+    fn collect_qchat_log(&self, zip: &mut ZipWriter<std::fs::File>) -> Result<usize, Box<dyn std::error::Error>> {
         let mut count = 0;
 
-        // Use the unified logs_dir function to get the correct log directory
-        // This will recursively collect all log files from $TMPDIR/qlog
+        // Get the qchat.log file specifically
         if let Ok(log_dir) = logs_dir() {
-            if log_dir.exists() {
-                count += self.collect_logs_from_dir(&log_dir, zip, "logs")?;
+            let qchat_log_path = log_dir.join("qchat.log");
+            if qchat_log_path.exists() {
+                count += self.add_log_file_to_zip(&qchat_log_path, zip, "logs")?;
             }
         }
 
         Ok(count)
-    }
-
-    fn collect_logs_from_dir(
-        &self,
-        dir: &Path,
-        zip: &mut ZipWriter<std::fs::File>,
-        prefix: &str,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let mut count = 0;
-        let entries = std::fs::read_dir(dir)?;
-
-        for entry in entries.flatten() {
-            let path = entry.path();
-
-            if path.is_file() && self.is_log_file(&path) {
-                count += self.add_log_file_to_zip(&path, zip, prefix)?;
-            } else if path.is_dir() {
-                count += self.collect_logs_from_subdir(&path, zip, prefix)?;
-            }
-        }
-
-        Ok(count)
-    }
-
-    fn is_log_file(&self, path: &Path) -> bool {
-        path.extension().map(|ext| ext == "log").unwrap_or(false)
     }
 
     fn add_log_file_to_zip(
@@ -140,20 +104,6 @@ impl LogdumpArgs {
         zip.start_file(filename, SimpleFileOptions::default())?;
         zip.write_all(&content)?;
         Ok(1)
-    }
-
-    fn collect_logs_from_subdir(
-        &self,
-        path: &Path,
-        zip: &mut ZipWriter<std::fs::File>,
-        prefix: &str,
-    ) -> Result<usize, Box<dyn std::error::Error>> {
-        let subdir_name = path
-            .file_name()
-            .unwrap_or_else(|| std::ffi::OsStr::new("unknown"))
-            .to_string_lossy();
-        let subdir_prefix = format!("{}/{}", prefix, subdir_name);
-        self.collect_logs_from_dir(path, zip, &subdir_prefix)
     }
 }
 
@@ -186,14 +136,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_collect_logs_from_dir() {
+    async fn test_collect_qchat_log() {
         let temp_dir = TempDir::new().unwrap();
         let log_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&log_dir).unwrap();
 
-        // Create some test log files
-        fs::write(log_dir.join("test1.log"), "log content 1").unwrap();
-        fs::write(log_dir.join("test2.log"), "log content 2").unwrap();
+        // Create a test qchat.log file and some other files
+        fs::write(log_dir.join("qchat.log"), "qchat log content").unwrap();
+        fs::write(log_dir.join("other.log"), "other log content").unwrap();
         fs::write(log_dir.join("not_a_log.json"), "not a log").unwrap();
 
         let zip_path = temp_dir.path().join("test.zip");
@@ -201,24 +151,27 @@ mod tests {
         let mut zip = ZipWriter::new(file);
 
         let logdump = LogdumpArgs;
-        let result = logdump.collect_logs_from_dir(&log_dir, &mut zip, "test_logs");
+
+        // Mock the logs_dir to return our test directory
+        let qchat_log_path = log_dir.join("qchat.log");
+        let result = logdump.add_log_file_to_zip(&qchat_log_path, &mut zip, "logs");
 
         assert!(result.is_ok());
         let count = result.unwrap();
-        assert_eq!(count, 2); // Should collect .log files, but not .json
+        assert_eq!(count, 1); // Should collect only the qchat.log file
 
         zip.finish().unwrap();
 
-        // Verify the zip contains the expected files
+        // Verify the zip contains the expected file
         let file = fs::File::open(&zip_path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
-        assert_eq!(archive.len(), 2);
+        assert_eq!(archive.len(), 1);
 
-        let names: Vec<String> = (0..archive.len())
-            .map(|i| archive.by_index(i).unwrap().name().to_string())
-            .collect();
+        let mut file_in_zip = archive.by_index(0).unwrap();
+        assert_eq!(file_in_zip.name(), "logs/qchat.log");
 
-        assert!(names.contains(&"test_logs/test1.log".to_string()));
-        assert!(names.contains(&"test_logs/test2.log".to_string()));
+        let mut contents = String::new();
+        std::io::Read::read_to_string(&mut file_in_zip, &mut contents).unwrap();
+        assert_eq!(contents, "qchat log content");
     }
 }

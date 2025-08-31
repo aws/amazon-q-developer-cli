@@ -24,5 +24,8 @@ pub fn ser_update_usage_limits_input_input(
     if let Some(var_6) = &input.justification {
         object.key("justification").string(var_6.as_str());
     }
+    if let Some(var_7) = &input.permanent_override {
+        object.key("permanentOverride").boolean(*var_7);
+    }
     Ok(())
 }
