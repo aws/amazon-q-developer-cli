@@ -28,7 +28,15 @@ impl McpServerConfig {
             .get("mcpServers")
             .cloned()
             .ok_or(eyre::eyre!("No mcp servers found in config"))?;
-        Ok(serde_json::from_value(config)?)
+
+        let mut mcp_config: Self = serde_json::from_value(config)?;
+        // Substitute environment variables in MCP server configurations
+        for server_config in mcp_config.mcp_servers.values_mut() {
+            if let Some(ref mut env_vars) = server_config.env {
+                crate::cli::chat::tools::custom_tool::process_env_vars(env_vars, &os.env);
+            }
+        }
+        Ok(mcp_config)
     }
 
     pub async fn save_to_file(&self, os: &Os, path: impl AsRef<Path>) -> eyre::Result<()> {
@@ -47,5 +55,71 @@ impl McpServerConfig {
             "mcpServers": transparent_json
         });
         Ok(serde_json::to_string_pretty(&non_transparent_json)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::os::Os;
+
+    #[tokio::test]
+    async fn test_load_from_file_with_env_substitution() {
+        let os = Os::new().await.unwrap();
+
+        // Set test environment variables
+        unsafe {
+            os.env.set_var("TEST_DB_URL", "postgresql://localhost:5432/test");
+            os.env.set_var("TEST_PORT", "3000");
+        }
+
+        // Create test MCP config with environment variables
+        let config = json!({
+            "mcpServers": {
+                "database-server": {
+                    "command": "node",
+                    "args": ["server.js"],
+                    "env": {
+                        "DATABASE_URL": "${env:TEST_DB_URL}",
+                        "PORT": "${env:TEST_PORT}",
+                        "NODE_ENV": "test",
+                        "MISSING": "${env:DOES_NOT_EXIST}"
+                    },
+                }
+            }
+        });
+
+        // Create a temporary file using the Os filesystem
+        let temp_path = "/tmp/test_config.json";
+        os.fs.create_dir_all("/tmp").await.unwrap();
+        os.fs
+            .write(temp_path, serde_json::to_string_pretty(&config).unwrap())
+            .await
+            .unwrap();
+
+        // Load and test
+        let loaded_config = McpServerConfig::load_from_file(&os, temp_path).await.unwrap();
+
+        let server = loaded_config.mcp_servers.get("database-server").unwrap();
+        let env_vars = server.env.as_ref().unwrap();
+
+        // Verify substitution worked
+        assert_eq!(
+            env_vars.get("DATABASE_URL").unwrap(),
+            "postgresql://localhost:5432/test"
+        );
+        assert_eq!(env_vars.get("PORT").unwrap(), "3000");
+        assert_eq!(env_vars.get("NODE_ENV").unwrap(), "test");
+        // Non-existent variable should keep original format
+        assert_eq!(env_vars.get("MISSING").unwrap(), "${env:DOES_NOT_EXIST}");
+
+        // Verify other fields are preserved
+        assert_eq!(server.command, "node");
+        assert_eq!(server.args, vec!["server.js"]);
+
+        // Clean up
+        let _ = os.fs.remove_file(temp_path).await;
     }
 }
