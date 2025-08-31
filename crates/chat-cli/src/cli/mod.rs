@@ -113,7 +113,7 @@ pub enum RootSubcommand {
     Diagnostic(diagnostics::DiagnosticArgs),
     /// Create a new Github issue
     Issue(issue::IssueArgs),
-    /// Create a zip file with logs for support investigation
+    /// Create a zip file with logs for investigation
     Logdump(LogdumpArgs),
     /// Version
     #[command(hide = true)]

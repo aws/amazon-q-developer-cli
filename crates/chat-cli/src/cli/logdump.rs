@@ -1,10 +1,16 @@
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::process::ExitCode;
 
 use clap::Args;
 use crossterm::execute;
-use crossterm::style::{self, Color};
+use crossterm::style::{
+    self,
+    Color,
+};
 use eyre::Result;
 use time::OffsetDateTime;
 use zip::ZipWriter;
