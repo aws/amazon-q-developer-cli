@@ -168,6 +168,8 @@ Configure knowledge base behavior:
 
 ## Agent-Specific Knowledge Bases
 
+> **Note**: Agent-specific knowledge bases are available in development versions but not yet released. In current releases (v1.14.1 and earlier), all knowledge bases are stored globally at `~/.aws/amazonq/knowledge_bases/` and shared across all agents.
+
 ### Isolated Knowledge Storage
 
 Each agent maintains its own isolated knowledge base, ensuring that knowledge contexts are scoped to the specific agent you're working with. This provides better organization and prevents knowledge conflicts between different agents.
