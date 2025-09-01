@@ -345,13 +345,17 @@ def generate_html_report(json_filename):
         suite_failed = sum(stats["failed"] for stats in suite_features.values())
         suite_rate = round((suite_passed / (suite_passed + suite_failed) * 100) if (suite_passed + suite_failed) > 0 else 0, 2)
         
-        test_suites_content += f'<button class="collapsible">🧪 {suite.capitalize()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
+        suite_failed_class = ' collapsible-failed' if suite_failed > 0 else ''
+        test_suites_content += f'<button class="collapsible{suite_failed_class}">🧪 {suite.capitalize()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
         
         # Add features for this suite
         for feature_name, feature_stats in suite_features.items():
             feature_rate = round((feature_stats["passed"] / (feature_stats["passed"] + feature_stats["failed"]) * 100) if (feature_stats["passed"] + feature_stats["failed"]) > 0 else 0, 2)
             
-            test_suites_content += f'<button class="collapsible">📦 {feature_name} - {feature_rate}% ({feature_stats["passed"]} passed, {feature_stats["failed"]} failed)</button><div class="content">'
+            # Format feature name: remove underscores and capitalize first letter
+            formatted_feature_name = feature_name.replace('_', ' ').title()
+            failed_class = ' collapsible-failed' if feature_stats["failed"] > 0 else ''
+            test_suites_content += f'<button class="collapsible{failed_class}">📦 {formatted_feature_name} - {feature_rate}% ({feature_stats["passed"]} passed, {feature_stats["failed"]} failed)</button><div class="content">'
             
             # Add individual tests
             for test in feature_stats["individual_tests"]:
