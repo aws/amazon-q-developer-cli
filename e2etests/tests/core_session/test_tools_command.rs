@@ -17,9 +17,27 @@ const TEST_NAMES: &[&str] = &[
     "test_tools_trust_help_command",
     "test_tools_untrust_help_command",
     "test_tools_schema_help_command",
+    "test_fs_write_and_fs_read_tools",
+    "test_execute_bash_tool",
+    "test_report_issue_tool",
+    "test_use_aws_tool"
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
+
+#[allow(dead_code)]
+struct FileCleanup<'a> {
+    path: &'a str,
+}
+
+impl<'a> Drop for FileCleanup<'a> {
+    fn drop(&mut self) {
+        if std::path::Path::new(self.path).exists() {
+            let _ = std::fs::remove_file(self.path);
+            println!("✅ Cleaned up test file");
+        }
+    }
+}
 
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
@@ -520,3 +538,186 @@ fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }*/
+
+#[test]
+#[cfg(all(feature = "tools", feature = "sanity"))]
+fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing `fs_write` and `fs_read` tool ... | Description: Test the fs_write and fs_read tool's create command functionality");
+
+    let save_path = "demo.txt";
+    let _cleanup = FileCleanup { path: save_path };
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    // Test fs_write tool by asking to create a file with "Hello World" content
+    let response = chat.execute_command(&format!("Create a file at {} with content 'Hello World'", save_path))?;
+
+    println!("📝 fs_write response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("fs_write"), "Missing fs_write tool usage indication");
+    println!("✅ Found fs_write tool usage indication");
+    
+    // Verify file path in response
+    assert!(response.contains("demo.txt"), "Missing expected file path");
+    println!("✅ Found expected file path in response");
+
+     // Allow the tool execution
+    let allow_response = chat.execute_command("y")?;
+    
+    println!("📝 Allow response: {} bytes", allow_response.len());
+    println!("📝 ALLOW RESPONSE:");
+    println!("{}", allow_response);
+    println!("📝 END ALLOW RESPONSE");
+    
+    // Verify content reference
+    assert!(allow_response.contains("Hello World"), "Missing expected content reference");
+    println!("✅ Found expected content reference");
+    
+    // Verify success indication
+    assert!(allow_response.contains("Created"), "Missing success indication");
+    println!("✅ Found success indication");
+
+    // Test fs_read tool by asking to read the created file
+    let response = chat.execute_command(&format!("Read file {}'", save_path))?;
+
+    println!("📝 fs_read response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("fs_read"), "Missing fs_read tool usage indication");
+    println!("✅ Found fs_read tool usage indication");
+    
+    // Verify file path in response
+    assert!(response.contains("demo.txt"), "Missing expected file path");
+    println!("✅ Found expected file path in response");
+    
+    // Verify content reference
+    assert!(allow_response.contains("Hello World"), "Missing expected content reference");
+    println!("✅ Found expected content reference");
+    
+    println!("✅ All fs_write and fs_read tool functionality verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "tools", feature = "sanity"))]
+fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing `execute_bash` tool ... | Description: Test the execute_bash tool");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    // Test execute_bash tool by asking to run pwd command
+    let response = chat.execute_command("Run pwd")?;
+
+    println!("📝 execute_bash response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("execute_bash"), "Missing execute_bash tool usage indication");
+    println!("✅ Found execute_bash tool usage indication");
+    
+    // Verify command in response
+    assert!(response.contains("pwd"), "Missing expected command");
+    println!("✅ Found pwd command in response");
+    
+    // Verify success indication
+    assert!(response.contains("current working directory"), "Missing success indication");
+    println!("✅ Found success indication");
+    
+    println!("✅ All execute_bash functionality verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "tools", feature = "sanity"))]
+fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing `report_issue` tool ... | Description: Test the report_issue tool");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    // Test report_issue tool by asking to report an issue
+    let response = chat.execute_command("Report an issue: 'File creation not working properly'")?;
+
+    println!("📝 report_issue response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("gh_issue"), "Missing report_issue tool usage indication");
+    println!("✅ Found report_issue tool usage indication");
+    
+    // Verify command executed successfully (GitHub opens automatically)
+    assert!(response.contains("Heading over to GitHub..."), "Missing browser opening confirmation");
+    println!("✅ Found browser opening confirmation");
+    
+    println!("✅ All report_issue functionality verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "tools", feature = "sanity"))]
+fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing `use_aws` tool ... | Description: Test the use_aws tool");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    // Test use_aws tool by asking to describe EC2 instances in us-west-2
+    let response = chat.execute_command("Describe EC2 instances in us-west-2")?;
+
+    println!("📝 use_aws response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("use_aws"), "Missing use_aws tool usage indication");
+    println!("✅ Found use_aws tool usage indication");
+    
+    // // Verify command executed successfully.
+    assert!(response.contains("aws"), "Missing aws information");
+    println!("✅ Found aws information");
+    
+    println!("✅ All use_aws functionality verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
