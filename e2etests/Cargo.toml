@@ -24,14 +24,14 @@ session_mgmt = ["compact", "usage"] # Session Management Commands (/compact, /us
 compact = [] # Compact Commands
 usage = [] # Usage Commands
 
-integration = ["subscribe", "hooks", "editor"] # Integration Commands (/subscribe, /hooks, /editor help)
+integration = ["subscribe", "hooks", "editor", "issue_reporting"] # Integration Commands (/subscribe, /hooks, /editor, /issue help)
 subscribe = [] # Subscribe Commands
 hooks = [] # Hooks Commands
 editor = [] # Editor Commands
+issue_reporting = [] # Issue Reporting Commands
 
 mcp = [] # MCP Commands (/mcp, /mcp --help)
 ai_prompts = [] # AI Prompts ("What is AWS?", "Hello")
-issue_reporting = [] # Issue Reporting Commands
 
 regression = [] # Regression Tests
 sanity = [] # Sanity Tests - Quick smoke tests for basic functionality

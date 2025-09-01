@@ -1,6 +1,34 @@
 #[allow(unused_imports)]
-use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
-use std::sync::atomic::AtomicUsize;
+use q_cli_e2e_tests::q_chat_helper;
+use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+static INIT: Once = Once::new();
+static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
+
+pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
+    unsafe {
+        INIT.call_once(|| {
+            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
+            println!("✅ Q Chat session started");
+            CHAT_SESSION = Some(Mutex::new(chat));
+        });
+        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
+    }
+}
+
+pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
+    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
+    if count == total_tests {
+        unsafe {
+            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
+                if let Ok(mut chat) = session.lock() {
+                    chat.quit()?;
+                    println!("✅ Test completed successfully");
+                }
+            }
+        }
+    }
+  Ok(count)
+}
 
 #[allow(dead_code)]
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -23,7 +51,7 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /usage command... | Description: Tests the /usage command to display current context window usage. Verifies token usage information, progress bar, breakdown sections, and Pro Tips");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/usage")?;
     
@@ -84,8 +112,8 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /usage --help command... | Description: Tests the /usage --help command to display help information for the usage command. Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
-
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+     
     let response = chat.execute_command("/usage --help")?;
     
     println!("📝 Usage help response: {} bytes", response.len());
@@ -128,7 +156,7 @@ fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /usage -h command... | Description: Tests the /usage -h command (short form of --help). Verifies Usage section, Options section, and help flags (-h, --help)");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/usage -h")?;
     

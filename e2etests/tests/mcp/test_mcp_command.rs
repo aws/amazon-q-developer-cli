@@ -1,7 +1,34 @@
 #[allow(unused_imports)]
-use q_cli_e2e_tests::{get_chat_session, cleanup_if_last_test};
-use std::sync::atomic::{AtomicUsize};
+use q_cli_e2e_tests::q_chat_helper;
+use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+static INIT: Once = Once::new();
+static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
+    unsafe {
+        INIT.call_once(|| {
+            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
+            println!("✅ Q Chat session started");
+            CHAT_SESSION = Some(Mutex::new(chat));
+        });
+        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
+    }
+}
+
+pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
+    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
+    if count == total_tests {
+        unsafe {
+            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
+                if let Ok(mut chat) = session.lock() {
+                    chat.quit()?;
+                    println!("✅ Test completed successfully");
+                }
+            }
+        }
+    }
+  Ok(count)
+}
 #[allow(dead_code)]
 static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
 
@@ -482,7 +509,7 @@ fn test_q_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing q mcp add command... | Description: Tests the complete workflow of adding and removing an MCP server including configuration and cleanup");
+    println!("\n🔍 Testing q mcp add command... | Description: Tests the complete workflow of checking, removing if exists, and adding an MCP server including configuration and cleanup");
 
     // First install uv dependency before starting Q Chat
     println!("\n🔍 Installing uv dependency...");
@@ -497,7 +524,47 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    // Execute mcp add command
+    // First check if MCP already exists using q mcp list
+    println!("\n🔍 Checking if aws-documentation MCP already exists...");
+    let list_response = chat.execute_command("q mcp list")?;
+    
+    println!("📝 List response: {} bytes", list_response.len());
+    println!("📝 LIST RESPONSE:");
+    println!("{}", list_response);
+    println!("📝 END LIST RESPONSE");
+    
+    // Allow the list command
+    let list_allow_response = chat.execute_command("y")?;
+    println!("📝 List allow response: {} bytes", list_allow_response.len());
+    println!("📝 LIST ALLOW RESPONSE:");
+    println!("{}", list_allow_response);
+    println!("📝 END LIST ALLOW RESPONSE");
+    
+    // Check if aws-documentation exists in the list
+    if list_allow_response.contains("aws-documentation") {
+        println!("\n🔍 aws-documentation MCP already exists, removing it first...");
+        
+        let remove_response = chat.execute_command("q mcp remove --name aws-documentation")?;
+        println!("📝 Remove response: {} bytes", remove_response.len());
+        println!("📝 REMOVE RESPONSE:");
+        println!("{}", remove_response);
+        println!("📝 END REMOVE RESPONSE");
+        
+        // Allow the remove command
+        let remove_allow_response = chat.execute_command("y")?;
+        println!("📝 Remove allow response: {} bytes", remove_allow_response.len());
+        println!("📝 REMOVE ALLOW RESPONSE:");
+        println!("{}", remove_allow_response);
+        println!("📝 END REMOVE ALLOW RESPONSE");
+        
+        // Verify successful removal
+        assert!(remove_allow_response.contains("Removed") && remove_allow_response.contains("'aws-documentation'"), "Missing removal success message");
+        println!("✅ Successfully removed existing aws-documentation MCP");
+    } else {
+        println!("✅ aws-documentation MCP does not exist, proceeding with add");
+    }
+
+    // Now add the MCP server
     println!("\n🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
     let response = chat.execute_command("q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest")?;
     

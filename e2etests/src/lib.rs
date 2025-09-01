@@ -1,37 +1,3 @@
-// Q CLI E2E Test Framework
-// This library provides end-to-end testing utilities for Amazon Q CLI
-
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-
-static INIT: Once = Once::new();
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
-    }
-}
-
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-    Ok(count)
-}
-
 pub mod q_chat_helper {
     //! Helper module for Q CLI testing with hybrid approach
     //! - expectrl for commands (/help, /tools)
@@ -138,12 +104,12 @@ pub mod q_chat_helper {
                     },
                     Ok(_) => {
                         // No more data, but wait a bit more in case there's more coming
-                        std::thread::sleep(Duration::from_millis(4000));
+                        std::thread::sleep(Duration::from_millis(5000));
                         if total_content.len() > 0 { break; }
                     },
                     Err(_) => break,
                 }
-                std::thread::sleep(Duration::from_millis(4000));
+                std::thread::sleep(Duration::from_millis(5000));
             }
             
             Ok(total_content)
