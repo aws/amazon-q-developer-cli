@@ -406,6 +406,11 @@ impl ChatArgs {
             return Ok(());
         }
 
+        // Skip if the feature is disabled
+        if !os.database.settings.get_bool(crate::database::settings::Setting::ChatPromptToResume).unwrap_or(false) {
+            return Ok(());
+        }
+
         // Check for existing conversation in current directory
         let previous_conversation = std::env::current_dir()
             .ok()
