@@ -311,3 +311,153 @@ fn test_show_summary() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "compact", feature = "sanity"))]
+fn test_max_message_truncate_true() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /compact --truncate-large-messages true --max-message-length command...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let response = chat.execute_command("What is AWS?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("What is DL?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("/compact --truncate-large-messages true  --max-message-length 5")?;
+    
+    println!("📝 Compact response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify compact response - either success or too short
+    if response.to_lowercase().contains("truncating") {
+        println!("✅ Truncation of large messages verified!");
+        if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
+            println!("✅ Found compact success message");
+        }
+    } else if response.contains("Conversation") && response.contains("short") {
+        println!("✅ Found conversation too short message");
+    } else {
+        panic!("Missing expected message");
+    }
+    
+    // Verify compact sumary response
+    assert!(response.to_lowercase().contains("conversation") && response.to_lowercase().contains("summary"), "Missing Summary section");
+    println!("✅ All compact content verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "compact", feature = "sanity"))]
+fn test_max_message_truncate_false() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /compact --truncate-large-messages false --max-message-length command...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let response = chat.execute_command("What is AWS?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("What is DL?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("/compact --truncate-large-messages false  --max-message-length 5")?;
+    
+    println!("📝 Compact response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify compact response - either success or too short
+    if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
+        println!("✅ Found compact success message");
+    } else if response.contains("Conversation") && response.contains("short") {
+        println!("✅ Found conversation too short message");
+    } else {
+        panic!("Missing expected compact response");
+    }
+    
+    // Verify compact sumary response
+    assert!(response.to_lowercase().contains("conversation") && response.to_lowercase().contains("summary"), "Missing Summary section");
+    println!("✅ All compact content verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "compact", feature = "sanity"))]
+fn test_max_message_length_invalid() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /compact --max-message-length command...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    let response = chat.execute_command("What is AWS?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("What is DL?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("/compact --max-message-length 5")?;
+    
+    println!("📝 Compact response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify error message for missing required argument
+    assert!(response.contains("error"), "Missing error message");
+    assert!(response.contains("--truncate-large-messages") && response.contains("<TRUNCATE_LARGE_MESSAGES>") && response.contains("--max-message-length") && response.contains("<MAX_MESSAGE_LENGTH>"), "Missing required argument info");
+    assert!(response.contains("Usage"), "Missing usage info");
+    assert!(response.contains("--help"), "Missing help suggestion");
+    println!("✅ Found expected error message for missing --truncate-large-messages argument");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
