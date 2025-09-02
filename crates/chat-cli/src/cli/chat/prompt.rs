@@ -67,6 +67,7 @@ pub const COMMANDS: &[&str] = &[
     "/agent rename",
     "/agent set",
     "/agent schema",
+    "/agent generate",
     "/prompts",
     "/context",
     "/context help",
