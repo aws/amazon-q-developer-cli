@@ -125,7 +125,7 @@ impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
         // Process args to handle comma-separated values, escaping, and JSON arrays
         let processed_args = self.process_args()?;
-        
+
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
@@ -198,12 +198,12 @@ impl AddArgs {
 
     fn process_args(&self) -> Result<Vec<String>> {
         let mut processed_args = Vec::new();
-        
+
         for arg in &self.args {
             let parsed = parse_args(arg)?;
             processed_args.extend(parsed);
         }
-        
+
         Ok(processed_args)
     }
 }
@@ -531,20 +531,22 @@ fn parse_args(arg: &str) -> Result<Vec<String>> {
         match serde_json::from_str::<Vec<String>>(arg) {
             Ok(args) => return Ok(args),
             Err(_) => {
-                bail!("Failed to parse arguments as JSON array. Expected format: '[\"arg1\", \"arg2\", \"arg,with,commas\"]'");
-            }
+                bail!(
+                    "Failed to parse arguments as JSON array. Expected format: '[\"arg1\", \"arg2\", \"arg,with,commas\"]'"
+                );
+            },
         }
     }
 
     // Check if the string contains escaped commas
     let has_escaped_commas = arg.contains("\\,");
-    
+
     if has_escaped_commas {
         // Parse with escape support
         let mut args = Vec::new();
         let mut current_arg = String::new();
         let mut chars = arg.chars().peekable();
-        
+
         while let Some(ch) = chars.next() {
             match ch {
                 '\\' => {
@@ -566,15 +568,15 @@ fn parse_args(arg: &str) -> Result<Vec<String>> {
                 },
                 _ => {
                     current_arg.push(ch);
-                }
+                },
             }
         }
-        
+
         // Add the last argument
         if !current_arg.is_empty() || !args.is_empty() {
             args.push(current_arg.trim().to_string());
         }
-        
+
         Ok(args)
     } else {
         // Default behavior: split on commas (backward compatibility)
@@ -693,9 +695,7 @@ mod tests {
                 name: "test_server".to_string(),
                 scope: None,
                 command: "test_command".to_string(),
-                args: vec![
-                    "awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),
-                ],
+                args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
                     [
