@@ -9,12 +9,12 @@ edition = "2021"
 expectrl = "0.7"
 
 [features]
-core_session = ["help", "tools", "quit", "clear"] # Core Session Commands (/help, /tools, /quit, /clear)
+core_session = ["help", "quit", "clear"] # Core Session Commands (/help, /quit, /clear)
 help = [] # Help Command (/help)
-tools = [] # Tools Command (/tools)
 quit = [] # Quit Command (/quit)
 clear = [] # Clear Command (/clear)
 
+tools = [] # Tools Command (/tools)
 agent = [] # Agent Commands (/agent list, /agent create, etc.)
 context = [] # Context Commands (/context show, /context add, etc.)
 save_load = [] # Save/Load Commands (/save, /load, help)

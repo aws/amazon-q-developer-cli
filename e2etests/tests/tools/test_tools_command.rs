@@ -1,9 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+#[allow(dead_code)]
 static INIT: Once = Once::new();
+#[allow(dead_code)]
 static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+#[allow(dead_code)]
 pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     unsafe {
         INIT.call_once(|| {
@@ -15,6 +18,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     }
 }
 
+#[allow(dead_code)]
 pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {
@@ -47,7 +51,8 @@ const TEST_NAMES: &[&str] = &[
     "test_fs_write_and_fs_read_tools",
     "test_execute_bash_tool",
     "test_report_issue_tool",
-    "test_use_aws_tool"
+    "test_use_aws_tool",
+    "test_trust_execute_bash_for_direct_execution"
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -734,11 +739,62 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
     assert!(response.contains("Using tool") && response.contains("use_aws"), "Missing use_aws tool usage indication");
     println!("✅ Found use_aws tool usage indication");
     
-    // // Verify command executed successfully.
+    // Verify command executed successfully.
     assert!(response.contains("aws"), "Missing aws information");
     println!("✅ Found aws information");
     
     println!("✅ All use_aws functionality verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "tools", feature = "sanity"))]
+fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description:Tests the ability to trust the execute_bash tool so it runs commands without asking for user confirmation each time");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap();
+
+    // First, trust the execute_bash tool
+    let trust_response = chat.execute_command("/tools trust execute_bash")?;
+    
+    println!("📝 Trust response: {} bytes", trust_response.len());
+    println!("📝 TRUST OUTPUT:");
+    println!("{}", trust_response);
+    println!("📝 END TRUST OUTPUT");
+    
+    // Verify trust confirmation
+    assert!(trust_response.contains("trusted") || trust_response.contains("execute_bash"), "Missing trust confirmation");
+    println!("✅ Found trust confirmation");
+
+    // Now test execute_bash tool with a simple command that should run directly without confirmation
+    let response = chat.execute_command("Run mkdir -p test_dir && echo 'test' > test_dir/test.txt")?;
+
+    println!("📝 execute_bash response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify tool usage indication
+    assert!(response.contains("Using tool") && response.contains("execute_bash"), "Missing execute_bash tool usage indication");
+    println!("✅ Found execute_bash tool usage indication");
+    
+    // Verify the command was executed directly without asking for confirmation
+    assert!(response.contains("Created") && response.contains("directory") && response.contains("test_dir") , "Missing success message");
+    println!("✅ Found success message");
+    
+    println!("✅ All trusted execute_bash functionality verified!");
+
+    chat.execute_command("Delete the directory test_dir/test.txt")?;
+     
+    println!("✅ Directory successfully deleted");
     
     // Release the lock before cleanup
     drop(chat);

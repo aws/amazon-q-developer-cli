@@ -15,9 +15,12 @@ const TEST_NAMES: &[&str] = &[
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
 
+#[allow(dead_code)]
 static INIT: Once = Once::new();
+#[allow(dead_code)]
 static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+#[allow(dead_code)]
 pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     unsafe {
         INIT.call_once(|| {
@@ -29,6 +32,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     }
 }
 
+#[allow(dead_code)]
 pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {

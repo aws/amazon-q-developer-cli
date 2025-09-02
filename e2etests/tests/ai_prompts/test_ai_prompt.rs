@@ -1,9 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+#[allow(dead_code)]
 static INIT: Once = Once::new();
+#[allow(dead_code)]
 static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+#[allow(dead_code)]
 pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     unsafe {
         INIT.call_once(|| {
@@ -15,6 +18,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     }
 }
 
+#[allow(dead_code)]
 pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {
@@ -126,10 +130,10 @@ fn test_simple_greeting() -> Result<(), Box<dyn std::error::Error>> {
         println!("✅ AI recognized and responded to greeting appropriately");
     } else if response.len() > 20 {
         println!("✅ Got substantial response ({} bytes) to greeting", response.len());
-        println!("ℹ️ Response doesn't contain typical greeting words but seems AI-generated");
+        println!("⚠️ Response doesn't contain typical greeting words but seems AI-generated");
     } else {
-        println!("ℹ️ Got minimal response - unclear if AI-generated or echo");
-        println!("ℹ️ Response length: {} bytes", response.len());
+        println!("⚠️ Got minimal response - unclear if AI-generated or echo");
+        println!("⚠️ Response length: {} bytes", response.len());
     }
 
     println!("✅ Test completed successfully");

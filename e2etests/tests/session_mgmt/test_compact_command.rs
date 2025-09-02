@@ -1,9 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+#[allow(dead_code)]
 static INIT: Once = Once::new();
+#[allow(dead_code)]
 static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+#[allow(dead_code)]
 pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     unsafe {
         INIT.call_once(|| {
@@ -15,6 +18,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     }
 }
 
+#[allow(dead_code)]
 pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {
@@ -39,9 +43,12 @@ const TEST_NAMES: &[&str] = &[
     "test_compact_command",
     "test_compact_help_command",
     "test_compact_h_command",
-    "test_show_summary",
     "test_compact_truncate_true_command",
-    "test_compact_truncate_false_command"
+    "test_compact_truncate_false_command",
+    "test_show_summary",
+    "test_max_message_truncate_true",
+    "test_max_message_truncate_false",
+    "test_max_message_length_invalid"
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();

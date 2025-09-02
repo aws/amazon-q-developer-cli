@@ -1,9 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
+#[allow(dead_code)]
 static INIT: Once = Once::new();
+#[allow(dead_code)]
 static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
 
+#[allow(dead_code)]
 pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     unsafe {
         INIT.call_once(|| {
@@ -15,6 +18,7 @@ pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
     }
 }
 
+#[allow(dead_code)]
 pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
     let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
     if count == total_tests {
@@ -52,7 +56,7 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Send initial message
     println!("\n🔍 Sending prompt: 'My name is TestUser'");
-    let _initial_response = chat.send_prompt("My name is TestUser")?;
+    let _initial_response = chat.execute_command("My name is TestUser")?;
     println!("📝 Initial response: {} bytes", _initial_response.len());
     println!("📝 INITIAL RESPONSE OUTPUT:");
     println!("{}", _initial_response);
@@ -66,7 +70,7 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Check if AI remembers previous conversation
     println!("\n🔍 Sending prompt: 'What is my name?'");
-    let test_response = chat.send_prompt("What is my name?")?;
+    let test_response = chat.execute_command("What is my name?")?;
     println!("📝 Test response: {} bytes", test_response.len());
     println!("📝 TEST RESPONSE OUTPUT:");
     println!("{}", test_response);

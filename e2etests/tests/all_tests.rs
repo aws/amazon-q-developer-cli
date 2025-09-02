@@ -8,3 +8,4 @@ mod mcp;
 mod model;
 mod save_load;
 mod session_mgmt;
+mod tools;
