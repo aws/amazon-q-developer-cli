@@ -62,6 +62,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
 
+        documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
+
         documentation.push_str("\n\n--- CONTRIBUTING.md ---\n");
         documentation.push_str(include_str!("../../../../../../CONTRIBUTING.md"));
 
@@ -93,6 +96,8 @@ impl Introspect {
         documentation
             .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
         documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
+        documentation
+            .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
 

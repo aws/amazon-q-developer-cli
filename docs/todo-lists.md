@@ -91,3 +91,56 @@ If lists exist but won't load:
 1. **Check permissions**: Ensure read access to `.amazonq/cli-todo-lists/`
 2. **Verify format**: Lists should be valid JSON files
 3. **Check file integrity**: Corrupted files may prevent loading
+
+## `todo_list` vs. `/todos`
+The `todo_list` tool is specifically for the model to call. The model is allowed to create TODO lists, mark tasks as complete, add/remove
+tasks, load TODO lists with a given ID (which are automatically provided when resuming TODO lists), and search for existing TODO lists.
+
+The `/todos` command is for the user to manage existing TODO lists created by the model. The user can view, resume, and delete TODO lists
+by using the appropriate subcommand and selecting the TODO list to perform the action on.
+
+## Examples
+#### Asking Q to make a TODO list:
+```
+> Make a todo list with 3 read-only tasks.
+
+> I'll create a todo list with 3 read-only tasks for you.
+
+🛠️  Using tool: todo_list (trusted)
+ ⋮ 
+ ● TODO:
+[ ] Review project documentation
+[ ] Check system status
+[ ] Read latest updates
+ ⋮ 
+ ● Completed in 0.4s
+```
+
+#### Selecting a TODO list to view:
+```
+> /todos view
+
+? Select a to-do list to view: ›
+❯ ✗ Unfinished todo list (0/3)
+  ✔ Completed todo list (3/3)
+```
+
+#### Resuming a TODO list (after selecting):
+```
+> /todos resume
+
+⟳ Resuming: Read-only tasks for information gathering
+
+🛠️  Using tool: todo_list (trusted)
+ ⋮ 
+ ● TODO:
+[x] Review project documentation
+[ ] Check system status
+[ ] Read latest updates
+ ⋮ 
+ ● Completed in 0.1s
+ ```
+
+
+
+
