@@ -108,7 +108,7 @@ syntect = "5.2.0"
 sysinfo = "0.33.1"
 tempfile = "3.18.0"
 thiserror = "2.0.12"
-time = { version = "0.3.39", features = ["parsing", "formatting", "local-offset", "macros", "serde"] }
+time = { version = "0.3.43", features = ["parsing", "formatting", "local-offset", "macros", "serde"] }
 tokio = { version = "1.45.0", features = ["full"] }
 tokio-tungstenite = "0.26.2"
 tokio-util = { version = "0.7.15", features = ["codec", "compat"] }
