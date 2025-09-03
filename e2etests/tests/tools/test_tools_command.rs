@@ -574,7 +574,7 @@ fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `fs_write` and `fs_read` tool ... | Description: Test the fs_write and fs_read tool's create command functionality");
+    println!("\n🔍 Testing `fs_write` and `fs_read` tool ... | Description: Tests the fs_write and fs_read tools by creating a file with specific content and reading it back to verify file I/O operations work correctly");
 
     let save_path = "demo.txt";
     let _cleanup = FileCleanup { path: save_path };
@@ -648,7 +648,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `execute_bash` tool ... | Description: Test the execute_bash tool");
+    println!("\n🔍 Testing `execute_bash` tool ... | Description: Tests the execute_bash tool by running the 'pwd' command and verifying proper command execution and output");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -687,7 +687,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `report_issue` tool ... | Description: Test the report_issue tool");
+    println!("\n🔍 Testing `report_issue` tool ... | Description: Tests the GitHub issue reporting functionality by creating a sample issue and verifying the browser opens GitHub for issue submission");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -722,7 +722,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `use_aws` tool ... | Description: Test the use_aws tool");
+    println!("\n🔍 Testing `use_aws` tool ... | Description: Tests the use_aws tool by executing AWS commands to describe EC2 instances and verifying proper AWS CLI integration");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -757,7 +757,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description:Tests the ability to trust the execute_bash tool so it runs commands without asking for user confirmation each time");
+    println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description: Tests the ability to trust the execute_bash tool so it runs commands without asking for user confirmation each time");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
