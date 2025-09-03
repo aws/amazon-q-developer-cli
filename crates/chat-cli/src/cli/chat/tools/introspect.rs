@@ -62,6 +62,12 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
 
+        documentation.push_str("\n\n--- docs/tangent-mode.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/tangent-mode.md"));
+
+        documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
+
         documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
 
@@ -96,6 +102,11 @@ impl Introspect {
         documentation
             .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
         documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
+        documentation
+            .push_str("• Tangent Mode: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/tangent-mode.md\n");
+        documentation.push_str(
+            "• Introspect Tool: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/introspect-tool.md\n",
+        );
         documentation
             .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
         documentation
