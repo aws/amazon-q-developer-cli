@@ -94,6 +94,7 @@ pub struct ApiClient {
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
+    #[allow(dead_code)]
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
 }
@@ -277,11 +278,8 @@ impl ApiClient {
 
         let mut models = Vec::new();
         let mut default_model = None;
-        let request = self
-            .client
-            .list_available_models()
-            .set_origin(Some(Cli));
-            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let request = self.client.list_available_models().set_origin(Some(Cli));
+        // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -338,10 +336,8 @@ impl ApiClient {
     }
 
     pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
-        let request = self
-            .client
-            .get_profile();
-            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let request = self.client.get_profile();
+        // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
 
         let response = request.send().await?;
         let mcp_enabled = response
