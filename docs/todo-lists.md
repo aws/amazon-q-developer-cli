@@ -92,6 +92,13 @@ If lists exist but won't load:
 2. **Verify format**: Lists should be valid JSON files
 3. **Check file integrity**: Corrupted files may prevent loading
 
+## `todo_list` vs. `/todos`
+The `todo_list` tool is specifically for the model to call. The model is allowed to create TODO lists, mark tasks as complete, add/remove
+tasks, load TODO lists with a given ID (which are automatically provided when resuming TODO lists), and search for existing TODO lists.
+
+The `/todos` command is for the user to manage existing TODO lists created by the model. The user can view, resume, and delete TODO lists
+by using the appropriate subcommand and selecting the TODO list to perform the action on.
+
 ## Examples
 #### Asking Q to make a TODO list:
 ```
@@ -109,7 +116,7 @@ If lists exist but won't load:
  ● Completed in 0.4s
 ```
 
-#### Selecting a TODO list to view
+#### Selecting a TODO list to view:
 ```
 > /todos view
 
@@ -118,7 +125,7 @@ If lists exist but won't load:
   ✔ Completed todo list (3/3)
 ```
 
-#### Resuming a TODO list (after selecting)
+#### Resuming a TODO list (after selecting):
 ```
 > /todos resume
 
