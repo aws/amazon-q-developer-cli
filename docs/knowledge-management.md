@@ -177,7 +177,7 @@ Each agent maintains its own isolated knowledge base, ensuring that knowledge co
 Knowledge bases are stored in the following directory structure:
 
 ```
-~/.q/knowledge_bases/
+~/.aws/amazonq/knowledge_bases/
 ├── q_cli_default/          # Default agent knowledge base
 │   ├── contexts.json       # Metadata for all contexts
 │   ├── context-id-1/       # Individual context storage
@@ -186,13 +186,13 @@ Knowledge bases are stored in the following directory structure:
 │   └── context-id-2/
 │       ├── data.json
 │       └── bm25_data.json
-├── my-custom-agent/        # Custom agent knowledge base
+├── my-custom-agent_<alphanumeric-code>/        # Custom agent knowledge base
 │   ├── contexts.json
 │   ├── context-id-3/
 │   │   └── data.json
 │   └── context-id-4/
 │       └── data.json
-└── another-agent/          # Another agent's knowledge base
+└── another-agent_<alphanumeric-code>/          # Another agent's knowledge base
     ├── contexts.json
     └── context-id-5/
         └── data.json
