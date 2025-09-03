@@ -91,3 +91,49 @@ If lists exist but won't load:
 1. **Check permissions**: Ensure read access to `.amazonq/cli-todo-lists/`
 2. **Verify format**: Lists should be valid JSON files
 3. **Check file integrity**: Corrupted files may prevent loading
+
+## Examples
+#### Asking Q to make a TODO list:
+```
+> Make a todo list with 3 read-only tasks.
+
+> I'll create a todo list with 3 read-only tasks for you.
+
+🛠️  Using tool: todo_list (trusted)
+ ⋮ 
+ ● TODO:
+[ ] Review project documentation
+[ ] Check system status
+[ ] Read latest updates
+ ⋮ 
+ ● Completed in 0.4s
+```
+
+#### Selecting a TODO list to view
+```
+> /todos view
+
+? Select a to-do list to view: ›
+❯ ✗ Unfinished todo list (0/3)
+  ✔ Completed todo list (3/3)
+```
+
+#### Resuming a TODO list (after selecting)
+```
+> /todos resume
+
+⟳ Resuming: Read-only tasks for information gathering
+
+🛠️  Using tool: todo_list (trusted)
+ ⋮ 
+ ● TODO:
+[x] Review project documentation
+[ ] Check system status
+[ ] Read latest updates
+ ⋮ 
+ ● Completed in 0.1s
+ ```
+
+
+
+
