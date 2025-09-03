@@ -8,8 +8,18 @@ import json
 import time
 import platform
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
+
+def show_spinner(stop_event):
+    """Show rotating spinner animation"""
+    spinner = ['|', '/', '-', '\\']
+    i = 0
+    while not stop_event.is_set():
+        print(f"\rExecuting... {spinner[i % len(spinner)]}", end="", flush=True)
+        time.sleep(0.1)
+        i += 1
 
 def strip_ansi(text):
     """Remove ANSI escape sequences from text"""
@@ -121,9 +131,19 @@ def run_single_cargo_test(feature, test_suite, binary_path="q", quiet=False):
         print(f"🔄 Running: {feature} with {test_suite}")
         print(f"Command: {' '.join(cmd)}")
     
+    # Start rotating animation
+    stop_animation = threading.Event()
+    animation_thread = threading.Thread(target=show_spinner, args=(stop_animation,))
+    animation_thread.start()
+    
     start_time = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True)
     end_time = time.time()
+    
+    # Stop animation
+    stop_animation.set()
+    animation_thread.join()
+    print("\r", end="")  # Clear spinner line
     
     # Parse individual test results
     individual_tests = parse_test_results(result.stdout)
