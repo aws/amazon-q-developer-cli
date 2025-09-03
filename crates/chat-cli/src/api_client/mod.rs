@@ -230,7 +230,7 @@ impl ApiClient {
                 true => OptOutPreference::OptIn,
                 false => OptOutPreference::OptOut,
             })
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .set_model_id(model)
             .send()
             .await?;
@@ -280,8 +280,8 @@ impl ApiClient {
         let request = self
             .client
             .list_available_models()
-            .set_origin(Some(Cli))
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+            .set_origin(Some(Cli));
+            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -340,8 +340,8 @@ impl ApiClient {
     pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
         let request = self
             .client
-            .get_profile()
-            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+            .get_profile();
+            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
 
         let response = request.send().await?;
         let mcp_enabled = response
@@ -399,7 +399,7 @@ impl ApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
-                .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+                // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
                 .send()
                 .await
             {
