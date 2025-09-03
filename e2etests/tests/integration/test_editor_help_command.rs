@@ -11,6 +11,8 @@ const TEST_NAMES: &[&str] = &[
     "test_editor_help_command",
     "test_help_editor_command",
     "test_editor_h_command",
+    "test_editor_command_interaction",
+    "test_editor_command_error",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -167,6 +169,108 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found help flags: -h, --help with Print help description");
     
     println!("✅ All editor help content verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "editor", feature = "sanity"))]
+fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /editor command interaction...");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    // Execute /editor command to open editor panel
+    let response = chat.execute_command("/editor")?;
+    
+    println!("📝 Editor command response: {} bytes", response.len());
+    println!("📝 EDITOR RESPONSE:");
+    println!("{}", response);
+    println!("📝 END EDITOR RESPONSE");
+    
+    // Press 'i' to enter insert mode
+    let insert_response = chat.execute_command("i")?;
+    println!("📝 Insert mode response: {} bytes", insert_response.len());
+    
+    // Type "what is aws?"
+    let type_response = chat.execute_command("what is aws?")?;
+    println!("📝 Type response: {} bytes", type_response.len());
+    
+    // Press Esc to exit insert mode
+    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    println!("📝 Esc response: {} bytes", esc_response.len());
+    
+    // Execute :wq to save and quit
+    let wq_response = chat.execute_command(":wq")?;
+    
+    println!("📝 Final wq response: {} bytes", wq_response.len());
+    println!("📝 WQ RESPONSE:");
+    println!("{}", wq_response);
+    println!("📝 END WQ RESPONSE");
+    
+    // Verify expected output
+    assert!(wq_response.contains("Content loaded from editor. Submitting prompt..."), "Missing expected editor output message");
+    println!("✅ Found expected editor output: 'Content loaded from editor. Submitting prompt...'");
+    
+    println!("✅ Editor command interaction test completed successfully!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "editor", feature = "sanity"))]
+fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /editor command error handling");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    // Execute /editor command to open editor panel
+    let response = chat.execute_command("/editor nonexistent_file.txt")?;
+    
+    println!("📝 Editor command response: {} bytes", response.len());
+    println!("📝 EDITOR RESPONSE:");
+    println!("{}", response);
+    println!("📝 END EDITOR RESPONSE");
+    
+    // Press 'i' to enter insert mode
+    let insert_response = chat.execute_command("i")?;
+    println!("📝 Insert mode response: {} bytes", insert_response.len());
+    
+    
+    // Press Esc to exit insert mode
+    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    println!("📝 Esc response: {} bytes", esc_response.len());
+    
+    // Execute :wq to save and quit
+    let wq_response = chat.execute_command(":wq")?;
+    
+    println!("📝 Final wq response: {} bytes", wq_response.len());
+    println!("📝 WQ RESPONSE:");
+    println!("{}", wq_response);
+    println!("📝 END WQ RESPONSE");
+    
+    // Verify expected output
+    assert!(wq_response.contains("Content loaded from editor. Submitting prompt..."), "Missing expected editor output message");
+    println!("✅ Found expected editor output: 'Content loaded from editor. Submitting prompt...'");
+   
+    assert!(wq_response.contains("nonexistent_file.txt") && wq_response.contains("does not exist"), "Missing file validation error message");
+    println!("✅ Found expected file validation error message");
+
+    println!("✅ Editor command error test completed successfully!");
     
     // Release the lock before cleanup
     drop(chat);
