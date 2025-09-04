@@ -609,7 +609,7 @@ impl ApiClient {
 
     // Add a helper method to check if using non-default endpoint
     fn is_custom_endpoint(database: &Database) -> bool {
-        database.settings.get(Setting::ApiCodeWhispererService).is_ok()
+        database.settings.get(Setting::ApiCodeWhispererService).is_some()
     }
 }
 
