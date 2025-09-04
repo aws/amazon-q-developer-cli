@@ -44,6 +44,7 @@ type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
 ///
@@ -156,6 +157,10 @@ pub fn example_agent_config(os: &Os) -> Result<PathBuf> {
 /// Legacy global MCP server config path
 pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
+}
+
+pub fn chat_cli_bash_history_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(CLI_BASH_HISTORY_PATH))
 }
 
 /// Legacy workspace MCP server config path
