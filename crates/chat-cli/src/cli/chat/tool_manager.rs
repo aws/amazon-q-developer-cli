@@ -794,6 +794,17 @@ impl ToolManager {
             status: ToolResultStatus::Error,
         };
 
+        // Check if the tool is actually allowed by the agent configuration
+        if !self.schema.contains_key(&value.name) {
+            return Err(ToolResult {
+                tool_use_id: value.id.clone(),
+                content: vec![ToolResultContentBlock::Text(format!(
+                    "No tool with \"{}\" is found", value.name
+                ))],
+                status: ToolResultStatus::Error,
+            });
+        }
+
         Ok(match value.name.as_str() {
             "fs_read" => Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
             "fs_write" => Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),

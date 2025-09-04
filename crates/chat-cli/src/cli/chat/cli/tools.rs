@@ -99,6 +99,8 @@ impl ToolsArgs {
             (ToolOrigin::McpServer(name_a), ToolOrigin::McpServer(name_b)) => name_a.cmp(name_b),
         });
 
+        let mut any_tools_displayed = false;
+
         for (origin, tools) in origin_tools.iter() {
             // Note that Tool is model facing and thus would have names recognized by model.
             // Here we need to convert them to their host / user facing counter part.
@@ -115,6 +117,13 @@ impl ToolsArgs {
                         .map_or(Some(spec.name.as_str()), |info| Some(info.host_tool_name.as_str()))
                 })
                 .collect::<BTreeSet<_>>();
+
+            // Skip origins with no tools
+            if sorted_tools.is_empty() {
+                continue;
+            }
+
+            any_tools_displayed = true;
 
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
                 let width = longest - tool_name.len() + 4;
@@ -156,7 +165,7 @@ impl ToolsArgs {
             }
         }
 
-        if origin_tools.is_empty() {
+        if !any_tools_displayed {
             queue!(
                 session.stderr,
                 style::Print(
