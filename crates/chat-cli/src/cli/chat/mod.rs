@@ -1715,24 +1715,18 @@ impl ChatSession {
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
             Ok(config) => config,
-            Err(err) => {
+            Err(_) => {
                 execute!(
                     self.stderr,
                     style::SetForegroundColor(Color::Red),
-                    style::Print(format!("✗ Failed to parse generated agent config: {}\n\n", err)),
+                    style::Print("✗ The LLM did not generate a valid agent configuration. Please try again.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
-                return Err(ChatError::Custom(format!("Invalid agent config: {}", err).into()));
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
             },
         };
-
-        // Display the generated agent config with syntax highlighting
-        execute!(
-            self.stderr,
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("✓ Generated agent config for '{}':\n\n", agent_name)),
-            style::SetForegroundColor(Color::Reset)
-        )?;
 
         let formatted_json = serde_json::to_string_pretty(&initial_agent_config)
             .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {}", e).into()))?;
@@ -1749,9 +1743,9 @@ impl ChatSession {
                     style::Print(format!("✗ Invalid edited configuration: {}\n\n", err)),
                     style::SetForegroundColor(Color::Reset)
                 )?;
-                return Err(ChatError::Custom(
-                    format!("Invalid agent config after editing: {}", err).into(),
-                ));
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
             },
         };
 

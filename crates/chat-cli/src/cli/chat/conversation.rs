@@ -193,19 +193,7 @@ impl ConversationState {
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
             context_message_length: None,
@@ -289,24 +277,28 @@ impl ConversationState {
         fn stringify_prompt_message_content(prompt_msg_content: PromptMessageContent) -> String {
             match prompt_msg_content {
                 PromptMessageContent::Text { text } => text,
-                PromptMessageContent::Image { image } => {
-                    let length = image.raw.data.len();
-                    // TODO: add support for image for prompt
-                    format!("Image of size {length}")
-                },
+                PromptMessageContent::Image { image } => image.raw.data,
                 PromptMessageContent::Resource { resource } => {
                     // TODO: add support for resources for prompt
                     match resource.raw.resource {
-                        ResourceContents::TextResourceContents { uri, mime_type, text } => {
+                        ResourceContents::TextResourceContents {
+                            uri, mime_type, text, ..
+                        } => {
                             let mime_type = mime_type.as_deref().unwrap_or("unknown");
                             format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
                         },
-                        ResourceContents::BlobResourceContents { uri, mime_type, blob } => {
+                        ResourceContents::BlobResourceContents {
+                            uri, mime_type, blob, ..
+                        } => {
                             let mime_type = mime_type.as_deref().unwrap_or("unknown");
                             format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
                         },
                     }
                 },
+                PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
+                    "Resource link with uri: {}, name: {}",
+                    link.raw.uri, link.raw.name
+                )),
             }
         }
 
@@ -713,6 +705,7 @@ IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO 
 Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
 The configuration must conform to this JSON schema:\n{}\n\n\
 We have a prepopulated template: {} \n\n\
+Please change the useLegacyMcpJson field to false. 
 Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
 Return only the JSON configuration, no additional text.",
    agent_name, agent_description, schema, prepopulated_content, selected_servers
@@ -888,6 +881,22 @@ Return only the JSON configuration, no additional text.",
 
         Ok(())
     }
+}
+
+pub fn format_tool_spec(tool_spec: HashMap<String, ToolSpec>) -> HashMap<ToolOrigin, Vec<Tool>> {
+    tool_spec
+        .into_values()
+        .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+            let tool = Tool::ToolSpecification(ToolSpecification {
+                name: v.name,
+                description: v.description,
+                input_schema: v.input_schema.into(),
+            });
+            acc.entry(v.tool_origin)
+                .and_modify(|tools| tools.push(tool.clone()))
+                .or_insert(vec![tool]);
+            acc
+        })
 }
 
 /// Represents a conversation state that can be converted into a [FigConversationState] (the type

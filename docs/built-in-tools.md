@@ -9,6 +9,7 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
+- [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
@@ -118,6 +119,12 @@ This tool has no configuration options.
 ## Thinking Tool
 
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
+
+This tool has no configuration options.
+
+## Todo_list Tool
+
+Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.amazonq/cli-todo-lists/`.
 
 This tool has no configuration options.
 

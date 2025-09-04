@@ -8,10 +8,7 @@ use crossterm::{
 };
 use eyre::Result;
 use rmcp::RoleClient;
-use rmcp::model::{
-    CallToolRequestParam,
-    RawContent,
-};
+use rmcp::model::CallToolRequestParam;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -80,17 +77,9 @@ impl CustomTool {
             arguments: self.params.clone(),
         };
 
-        let mut resp = self.client.call_tool(params).await?;
+        let resp = self.client.call_tool(params).await?;
 
         if resp.is_error.is_none_or(|v| !v) {
-            for content in &mut resp.content {
-                if let RawContent::Image(content) = &mut content.raw {
-                    content.data = format!(
-                        "Redacted base64 encoded string of an image of size {}",
-                        content.data.len()
-                    );
-                }
-            }
             Ok(InvokeOutput {
                 output: super::OutputKind::Json(serde_json::json!(resp)),
             })

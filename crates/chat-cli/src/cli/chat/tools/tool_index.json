@@ -309,9 +309,10 @@
             "complete", 
             "load", 
             "add", 
-            "remove"
+            "remove",
+            "lookup"
           ],
-          "description": "The command to run. Allowed options are `create`, `complete`, `load`, `add`, and `remove`."
+          "description": "The command to run. Allowed options are `create`, `complete`, `load`, `add`, `remove`, and `lookup`. Call `lookup` without arguments to see a list of all existing TODO list IDs."
         },
         "tasks": {
           "description": "Required parameter of `create` command containing the list of DISTINCT tasks to be added to the TODO list.",

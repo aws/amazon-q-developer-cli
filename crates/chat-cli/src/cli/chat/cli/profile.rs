@@ -107,20 +107,31 @@ pub enum AgentSubcommand {
     },
 }
 
-fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Vec<&McpServerInfo>> {
+fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {
     let items: Vec<String> = servers
         .iter()
         .map(|server| format!("{} ({})", server.name, server.config.command))
         .collect();
 
-    let selections = MultiSelect::new()
+    let selections = match MultiSelect::new()
         .with_prompt("Select MCP servers (use Space to toggle, Enter to confirm)")
         .items(&items)
-        .interact()?;
+        .interact_on_opt(&dialoguer::console::Term::stdout())
+    {
+        Ok(sel) => sel,
+        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+            return Ok(None);
+        },
+        Err(e) => return Err(eyre::eyre!("Failed to get MCP server selection: {e}")),
+    };
 
-    let selected_servers: Vec<&McpServerInfo> = selections.iter().filter_map(|&i| servers.get(i)).collect();
+    let selected_servers: Vec<&McpServerInfo> = selections
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|&i| servers.get(i))
+        .collect();
 
-    Ok(selected_servers)
+    Ok(Some(selected_servers))
 }
 
 impl AgentSubcommand {
@@ -232,18 +243,18 @@ impl AgentSubcommand {
             },
 
             Self::Generate {} => {
-                let agent_name = match session.read_user_input("Enter agent name: ", false) {
-                    Some(input) => input.trim().to_string(),
-                    None => {
+                let agent_name = match crate::util::input("Enter agent name: ", None) {
+                    Ok(input) => input.trim().to_string(),
+                    Err(_) => {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,
                         });
                     },
                 };
 
-                let agent_description = match session.read_user_input("Enter agent description: ", false) {
-                    Some(input) => input.trim().to_string(),
-                    None => {
+                let agent_description = match crate::util::input("Enter agent description: ", None) {
+                    Ok(input) => input.trim().to_string(),
+                    Err(_) => {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,
                         });
@@ -251,12 +262,36 @@ impl AgentSubcommand {
                 };
 
                 let scope_options = vec!["Local (current workspace)", "Global (all workspaces)"];
-                let scope_selection = Select::new()
+                let scope_selection = match Select::with_theme(&crate::util::dialoguer_theme())
                     .with_prompt("Agent scope")
                     .items(&scope_options)
                     .default(0)
-                    .interact()
-                    .map_err(|e| ChatError::Custom(format!("Failed to get scope selection: {}", e).into()))?;
+                    .interact_on_opt(&dialoguer::console::Term::stdout())
+                {
+                    Ok(sel) => {
+                        let _ = crossterm::execute!(
+                            std::io::stdout(),
+                            crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                        );
+                        sel
+                    },
+                    // Ctrl‑C -> Err(Interrupted)
+                    Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
+                    Err(e) => return Err(ChatError::Custom(format!("Failed to get scope selection: {e}").into())),
+                };
+
+                let scope_selection = match scope_selection {
+                    Some(selection) => selection,
+                    None => {
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
+                };
 
                 let is_global = scope_selection == 1;
 
@@ -267,7 +302,12 @@ impl AgentSubcommand {
                 let selected_servers = if mcp_servers.is_empty() {
                     Vec::new()
                 } else {
-                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    match prompt_mcp_server_selection(&mcp_servers)
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
+                        Some(servers) => servers,
+                        None => return Ok(ChatState::default()),
+                    }
                 };
 
                 let mcp_servers_json = if !selected_servers.is_empty() {

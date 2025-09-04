@@ -159,6 +159,7 @@ pub struct ToolManagerBuilder {
     has_new_stuff: Arc<AtomicBool>,
     mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
     new_tool_specs: NewToolSpecs,
+    pending_clients: Option<Arc<RwLock<HashSet<String>>>>,
     is_first_launch: bool,
     agent: Option<Arc<Mutex<Agent>>>,
 }
@@ -175,6 +176,7 @@ impl Default for ToolManagerBuilder {
             has_new_stuff: Default::default(),
             mcp_load_record: Default::default(),
             new_tool_specs: Default::default(),
+            pending_clients: Default::default(),
             is_first_launch: true,
             agent: Default::default(),
         }
@@ -195,6 +197,7 @@ impl From<&mut ToolManager> for ToolManagerBuilder {
             has_new_stuff: value.has_new_stuff.clone(),
             mcp_load_record: value.mcp_load_record.clone(),
             new_tool_specs: value.new_tool_specs.clone(),
+            pending_clients: Some(value.pending_clients.clone()),
             // if we are getting a builder from an instantiated tool manager this field would be
             // false
             is_first_launch: false,
@@ -296,11 +299,11 @@ impl ToolManagerBuilder {
         let mut clients = HashMap::<String, InitializedMcpClient>::new();
         let new_tool_specs = self.new_tool_specs;
         let has_new_stuff = self.has_new_stuff;
-        let pending = Arc::new(RwLock::new({
+        let pending = self.pending_clients.unwrap_or(Arc::new(RwLock::new({
             let mut pending = HashSet::<String>::new();
             pending.extend(pre_initialized.iter().map(|(name, _)| name.clone()));
             pending
-        }));
+        })));
         let notify = Arc::new(Notify::new());
         let load_record = self.mcp_load_record;
         let agent = self.agent.unwrap_or_default();
@@ -687,6 +690,9 @@ impl ToolManager {
             }
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
                 tool_specs.remove("knowledge");
+            }
+            if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
+                tool_specs.remove("todo_list");
             }
 
             #[cfg(windows)]
