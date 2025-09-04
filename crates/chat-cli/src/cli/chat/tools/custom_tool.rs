@@ -1,6 +1,9 @@
 use std::collections::HashMap;
 use std::io::Write;
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    OnceLock,
+};
 
 use crossterm::{
     queue,
@@ -64,21 +67,32 @@ pub fn default_timeout() -> u64 {
     120 * 1000
 }
 
-/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
-fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
-    // Create a regex to match ${env:VAR_NAME} pattern
-    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+// Regex pattern for environment variable substitution, compiled once
+static ENV_VAR_REGEX: OnceLock<Regex> = OnceLock::new();
 
-    re.replace_all(input, |caps: &regex::Captures<'_>| {
-        let var_name = &caps[1];
-        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
-    })
-    .to_string()
+fn get_env_var_regex() -> &'static Regex {
+    ENV_VAR_REGEX.get_or_init(|| Regex::new(r"\$\{env:([^}]+)\}").unwrap())
+}
+
+/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
+pub fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
+    get_env_var_regex()
+        .replace_all(input, |caps: &regex::Captures<'_>| {
+            let var_name = &caps[1];
+            match env.get(var_name) {
+                Ok(value) => value,
+                Err(_) => {
+                    tracing::warn!("Environment variable '{}' not found", var_name);
+                    format!("${{env:{}}}", var_name)
+                },
+            }
+        })
+        .to_string()
 }
 
 /// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
 /// with their actual values from the environment
-fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
+pub fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
     for (_, value) in env_vars.iter_mut() {
         *value = substitute_env_vars(value, env);
     }
