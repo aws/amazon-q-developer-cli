@@ -10,12 +10,12 @@ use chat_cli::{
     self,
     JsonRpcRequest,
     JsonRpcResponse,
-    JsonRpcStdioTransport,
     PreServerRequestHandler,
     Response,
     Server,
     ServerError,
     ServerRequestHandler,
+    stdio::JsonRpcStdioTransport,
 };
 use tokio::sync::Mutex;
 
@@ -194,11 +194,40 @@ impl ServerRequestHandler for Handler {
                 });
                 Ok(Some(serde_json::json!(kv)))
             },
-            // This is a test path relevant only to sampling
-            "trigger_server_request" => {
-                let Some(ref send_request) = self.send_request else {
+            "discover_tools" => {
+                let Some(ref _send_request) = self.send_request else {
                     return Err(ServerError::MissingMethod);
                 };
+                
+                let task_description = if let Some(params) = params {
+                    params.get("task_description")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or("unknown task")
+                        .to_string()
+                } else {
+                    "unknown task".to_string()
+                };
+                
+                let sampling_params = Some(serde_json::json!({
+                  "messages": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "text",
+                        "text": format!("You are a tool selection assistant. Based on this task: '{}', should I enable data processing tools? Respond with 'YES' if the task involves data, files, or processing. Otherwise respond 'NO'.", task_description)
+                      }
+                    }
+                  ],
+                  "maxTokens": 10
+                }));
+                
+                self.send_request.as_ref().unwrap()("sampling/createMessage", sampling_params)?;
+                Ok(Some(serde_json::json!({
+                    "message": format!("Tool discovery initiated for task: {}", task_description)
+                })))
+            },
+            // This is a test path relevant only to sampling
+            "trigger_server_request" => {
                 let params = Some(serde_json::json!({
                   "messages": [
                     {
@@ -221,7 +250,7 @@ impl ServerRequestHandler for Handler {
                   "systemPrompt": "You are a helpful assistant.",
                   "maxTokens": 100
                 }));
-                send_request("sampling/createMessage", params)?;
+                self.send_request.as_ref().unwrap()("sampling/createMessage", params)?;
                 Ok(None)
             },
             "store_mock_prompts" => {
@@ -314,6 +343,17 @@ impl ServerRequestHandler for Handler {
                 serde_json::to_value::<u8>(self.prompt_list_call_no.load(Ordering::Relaxed))
                     .expect("Failed to convert list call no to u8"),
             )),
+            "tools/call" => {
+                // Handle MCP tools/call method
+                if let Some(params) = params {
+                    if let Some(tool_name) = params.get("name").and_then(|n| n.as_str()) {
+                        let tool_args = params.get("arguments");
+                        // Delegate to the specific tool handler
+                        return self.handle_incoming(tool_name, tool_args.cloned()).await;
+                    }
+                }
+                Err(ServerError::MissingMethod)
+            },
             _ => Err(ServerError::MissingMethod),
         }
     }
