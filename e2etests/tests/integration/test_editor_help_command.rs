@@ -13,6 +13,7 @@ const TEST_NAMES: &[&str] = &[
     "test_editor_h_command",
     "test_editor_command_interaction",
     "test_editor_command_error",
+    "test_editor_with_file_path",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -182,7 +183,7 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor command interaction...");
+    println!("🔍 Testing /editor command interaction... | Description: Test that the /editor command successfully launches the integrated editor interface");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -233,7 +234,7 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor command error handling");
+    println!("🔍 Testing /editor command error handling ... | Description: Tests the /editor <non_exixt_filepath> command error handling when attempting to open a nonexistent file");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -271,6 +272,63 @@ fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found expected file validation error message");
 
     println!("✅ Editor command error test completed successfully!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "editor", feature = "sanity"))]
+fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
+    println!("🔍 Testing /editor <filepath> command... | Description: Tests the /editor <filepath> command to load an existing file into the editor and verify content loading");
+    
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    let test_file_path = format!("{}/test_editor_file.txt", home_dir);
+    
+    // Create a test file
+    std::fs::write(&test_file_path, "Hello from test file\nThis is a test file for editor command.")?;
+    println!("✅ Created test file at {}", test_file_path);
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    // Execute /editor command with file path
+    let response = chat.execute_command(&format!("/editor {}", test_file_path))?;
+    
+    println!("📝 Editor with file response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+     // Press 'i' to enter insert mode
+    let insert_response = chat.execute_command("i")?;
+    println!("📝 Insert mode response: {} bytes", insert_response.len());
+    
+    
+    // Press Esc to exit insert mode
+    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    println!("📝 Esc response: {} bytes", esc_response.len());
+    
+    // Execute :wq to save and quit
+    let wq_response = chat.execute_command(":wq")?;
+
+    println!("📝 Final wq response: {} bytes", wq_response.len());
+    println!("📝 WQ RESPONSE:");
+    println!("{}", wq_response);
+    println!("📝 END WQ RESPONSE");
+    
+    // Verify the file content is loaded in editor
+    assert!(wq_response.contains("Hello from test file"), "File content not loaded in editor");
+    println!("✅ File content loaded successfully in editor");
+    
+    // Clean up test file
+    std::fs::remove_file(test_file_path).ok();
+    println!("✅ Cleaned up test file");
     
     // Release the lock before cleanup
     drop(chat);
