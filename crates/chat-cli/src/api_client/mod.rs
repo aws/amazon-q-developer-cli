@@ -194,12 +194,19 @@ impl ApiClient {
             },
         }
 
-        let profile = match database.get_auth_profile() {
-            Ok(profile) => profile,
-            Err(err) => {
-                error!("Failed to get auth profile: {err}");
-                None
-            },
+        // Check if using custom endpoint
+        let use_profile = !Self::is_custom_endpoint(database);
+        let profile = if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => profile,
+                Err(err) => {
+                    error!("Failed to get auth profile: {err}");
+                    None
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile ARN");
+            None
         };
 
         Ok(Self {
@@ -231,7 +238,7 @@ impl ApiClient {
                 true => OptOutPreference::OptIn,
                 false => OptOutPreference::OptOut,
             })
-            // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .set_model_id(model)
             .send()
             .await?;
@@ -278,8 +285,11 @@ impl ApiClient {
 
         let mut models = Vec::new();
         let mut default_model = None;
-        let request = self.client.list_available_models().set_origin(Some(Cli));
-        // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let request = self
+            .client
+            .list_available_models()
+            .set_origin(Some(Cli))
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
         let mut paginator = request.into_paginator().send();
 
         while let Some(result) = paginator.next().await {
@@ -336,8 +346,10 @@ impl ApiClient {
     }
 
     pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
-        let request = self.client.get_profile();
-        // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let request = self
+            .client
+            .get_profile()
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
 
         let response = request.send().await?;
         let mcp_enabled = response
@@ -395,7 +407,7 @@ impl ApiClient {
             match client
                 .generate_assistant_response()
                 .conversation_state(conversation_state)
-                // .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
+                .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
                 .send()
                 .await
             {
@@ -593,6 +605,11 @@ impl ApiClient {
         }
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
+    }
+
+    // Add a helper method to check if using non-default endpoint
+    fn is_custom_endpoint(database: &Database) -> bool {
+        database.settings.get(Setting::ApiCodeWhispererService).is_ok()
     }
 }
 
