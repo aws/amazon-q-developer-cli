@@ -30,6 +30,7 @@ use rmcp::{
     ServiceError,
     ServiceExt,
 };
+use tokio::io::AsyncReadExt as _;
 use tokio::process::Command;
 use tokio::task::JoinHandle;
 use tracing::error;
@@ -119,16 +120,19 @@ pub enum McpClientError {
     NotReady,
 }
 
-pub type RunningService = rmcp::service::RunningService<RoleClient, UninitMcpClient>;
+pub type RunningService = rmcp::service::RunningService<RoleClient, McpClientService>;
 
+/// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
+/// server driven data flow (i.e. requests and notifications that are sent from the server) are
+/// handled.
 #[derive(Debug)]
-pub struct UninitMcpClient {
+pub struct McpClientService {
     pub config: CustomToolConfig,
     server_name: String,
     messenger: ServerMessenger,
 }
 
-impl UninitMcpClient {
+impl McpClientService {
     pub fn new(server_name: String, config: CustomToolConfig, messenger: ServerMessenger) -> Self {
         Self {
             server_name,
@@ -177,7 +181,7 @@ impl UninitMcpClient {
             }
             .await;
 
-            let (service, _child_stderr) = match result {
+            let (service, child_stderr) = match result {
                 Ok((service, stderr)) => (service, stderr),
                 Err(e) => {
                     let msg = e.to_string();
@@ -195,6 +199,28 @@ impl UninitMcpClient {
                     return Err(e);
                 },
             };
+
+            if let Some(mut stderr) = child_stderr {
+                let server_name_clone = server_name.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match stderr.read(&mut buf).await {
+                            Ok(0) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} stderr listening process exited due to EOF");
+                                break;
+                            },
+                            Ok(size) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} logged to its stderr: {}", String::from_utf8_lossy(&buf[0..size]));
+                            },
+                            Err(e) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} stderr listening process exited due to error: {e}");
+                                break; // Error reading
+                            },
+                        }
+                    }
+                });
+            }
 
             let service_clone = service.clone();
             tokio::spawn(async move {
@@ -301,17 +327,9 @@ impl UninitMcpClient {
             server_name: self.server_name
         };
     }
-
-    fn on_cancelled(
-        &self,
-        _params: rmcp::model::CancelledNotificationParam,
-        _context: NotificationContext<RoleClient>,
-    ) {
-        self.messenger.send_deinit_msg();
-    }
 }
 
-impl Service<RoleClient> for UninitMcpClient {
+impl Service<RoleClient> for McpClientService {
     async fn handle_request(
         &self,
         request: <RoleClient as rmcp::service::ServiceRole>::PeerReq,
@@ -342,8 +360,8 @@ impl Service<RoleClient> for UninitMcpClient {
                 self.on_logging_message(notification.params, context).await;
             },
             ServerNotification::PromptListChangedNotification(_) => self.on_prompt_list_changed(context).await,
-            ServerNotification::CancelledNotification(notification) => self.on_cancelled(notification.params, context),
             // TODO: support these
+            ServerNotification::CancelledNotification(_) => (),
             ServerNotification::ResourceUpdatedNotification(_) => (),
             ServerNotification::ResourceListChangedNotification(_) => (),
             ServerNotification::ProgressNotification(_) => (),
@@ -363,6 +381,14 @@ impl Service<RoleClient> for UninitMcpClient {
     }
 }
 
+/// InitializedMcpClient is the return of [McpClientService::init].
+/// This is necessitated by the fact that [Service::serve], the command to spawn the process, is
+/// async and does not resolve immediately. This delay can be significant and causes long perceived
+/// latency during start up. However, our current architecture still requires the main chat loop to
+/// have ownership of [RunningService].  
+/// The solution chosen here is to instead spawn a task and have [Service::serve] called there and
+/// return the handle to said task, stored in the [InitializedMcpClient::Pending] variant. This
+/// enum is then flipped lazily (if applicable) when a [RunningService] is needed.
 #[derive(Debug)]
 pub enum InitializedMcpClient {
     Pending(JoinHandle<Result<RunningService, McpClientError>>),

@@ -90,7 +90,7 @@ use crate::database::settings::Setting;
 use crate::mcp_client::messenger::Messenger;
 use crate::mcp_client::{
     InitializedMcpClient,
-    UninitMcpClient,
+    McpClientService,
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
@@ -365,7 +365,7 @@ impl ToolManagerBuilder {
             .map(|(server_name, server_config)| {
                 (
                     server_name.clone(),
-                    UninitMcpClient::new(
+                    McpClientService::new(
                         server_name.clone(),
                         server_config,
                         messenger_builder.build_with_name(server_name),
