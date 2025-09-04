@@ -214,6 +214,9 @@ def run_tests_with_suites(features, test_suites, binary_path="q", quiet=False):
     results = []
     
     for test_suite in test_suites:
+        print(f"\n🧪 Running {test_suite.capitalize()} Test Suite")
+        print("=" * 40)
+        
         for feature in features:
             if feature not in {"sanity", "regression"}:
                 result = run_single_cargo_test(feature, test_suite, binary_path, quiet)
