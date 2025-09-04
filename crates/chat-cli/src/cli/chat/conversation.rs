@@ -210,13 +210,11 @@ impl ConversationState {
         &self.history
     }
 
-    /// Clears the conversation history and optionally the summary.
-    pub fn clear(&mut self, preserve_summary: bool) {
+    /// Clears the conversation history and summary.
+    pub fn clear(&mut self) {
         self.next_message = None;
         self.history.clear();
-        if !preserve_summary {
-            self.latest_summary = None;
-        }
+        self.latest_summary = None;
     }
 
     /// Check if currently in tangent mode

@@ -47,7 +47,7 @@ impl ClearArgs {
         };
 
         if ["y", "Y"].contains(&user_input.as_str()) {
-            session.conversation.clear(true);
+            session.conversation.clear();
             if let Some(cm) = session.conversation.context_manager.as_mut() {
                 cm.hook_executor.cache.clear();
             }
