@@ -635,7 +635,7 @@ Usage:
     
     # Generate and display report
     report = generate_report(results, all_features, test_suites, args.binary)
-    print_summary(report)
+    print_summary(report, args.quiet)
     
     # Exit with appropriate code
     sys.exit(0 if report["summary"]["failed"] == 0 else 1)
