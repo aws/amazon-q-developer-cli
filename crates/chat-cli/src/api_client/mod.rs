@@ -94,7 +94,6 @@ pub struct ApiClient {
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
-    #[allow(dead_code)]
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
 }
