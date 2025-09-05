@@ -103,7 +103,7 @@ skim = { version = "0.16.2" }
 spinners = "4.1.0"
 strip-ansi-escapes = "0.2.1"
 strum = { version = "0.27.1", features = ["derive"] }
-syn = "2.0.101"
+syn = "2.0.106"
 syntect = "5.2.0"
 sysinfo = "0.33.1"
 tempfile = "3.18.0"
