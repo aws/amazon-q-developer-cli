@@ -9,3 +9,4 @@ mod model;
 mod save_load;
 mod session_mgmt;
 mod tools;
+mod q_subcommand;

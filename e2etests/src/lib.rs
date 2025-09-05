@@ -129,4 +129,59 @@ pub mod q_chat_helper {
             Ok(())
         }
     }
+
+    /// Start a terminal session
+    pub fn start_q_subcommand(command: &str, args: &[&str]) -> Result<expectrl::Session<expectrl::process::unix::UnixProcess, expectrl::process::unix::PtyStream>, Error> {
+        let full_command = if args.is_empty() {
+            command.to_string()
+        } else {
+            format!("{} {}", command, args.join(" "))
+        };
+        
+        let mut session = expectrl::spawn(&full_command)?;
+        session.set_expect_timeout(Some(Duration::from_secs(60)));
+        std::thread::sleep(Duration::from_secs(2));
+        
+        Ok(session)
+    }
+
+    /// Read response from a session
+    pub fn read_session_response(session: &mut expectrl::Session<expectrl::process::unix::UnixProcess, expectrl::process::unix::PtyStream>) -> Result<String, Error> {
+        let mut total_content = String::new();
+        
+        // Wait longer for chat responses
+        std::thread::sleep(Duration::from_secs(10));
+        
+        for _ in 0..60 {
+            let mut buffer = [0u8; 1024];
+            match session.try_read(&mut buffer) {
+                Ok(bytes_read) if bytes_read > 0 => {
+                    let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
+                    total_content.push_str(&chunk);
+                },
+                Ok(_) => {
+                    std::thread::sleep(Duration::from_millis(500));
+                    if total_content.len() > 100 { break; }
+                },
+                Err(_) => break,
+            }
+            std::thread::sleep(Duration::from_millis(500));
+        }
+        
+        Ok(total_content)
+    }
+
+    /// Execute a Q subcommand and return the response
+    pub fn execute_q_subcommand(command: &str, args: &[&str]) -> Result<String, Error> {
+        let mut session = start_q_subcommand(command, args)?;
+        let content = read_session_response(&mut session)?;
+        
+        let full_command = if args.is_empty() {
+            command.to_string()
+        } else {
+            format!("{} {}", command, args.join(" "))
+        };
+        let prompt = format!("(base) user@host ~ % {}\n", full_command);
+        Ok(format!("{}{}", prompt, content))
+    }
 }
