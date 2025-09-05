@@ -373,8 +373,8 @@ def generate_html_report(json_filename):
         suite_failed_class = ' collapsible-failed' if suite_failed > 0 else ''
         test_suites_content += f'<button class="collapsible{suite_failed_class}">🧪 {suite.capitalize()} Test Suite - {suite_rate}% Success Rate ({suite_passed} passed, {suite_failed} failed)</button><div class="content">'
         
-        # Add features for this suite
-        for feature_name, feature_stats in suite_features.items():
+        # Add features for this suite (sorted alphabetically)
+        for feature_name, feature_stats in sorted(suite_features.items()):
             feature_rate = round((feature_stats["passed"] / (feature_stats["passed"] + feature_stats["failed"]) * 100) if (feature_stats["passed"] + feature_stats["failed"]) > 0 else 0, 2)
             
             # Format feature name: remove underscores and capitalize first letter
@@ -413,10 +413,11 @@ def generate_html_report(json_filename):
         
         test_suites_content += "</div>"  # Close suite content
     
-    # Prepare histogram data
-    feature_names = list(report['features'].keys())
-    feature_total_tests = [stats['passed'] + stats['failed'] for stats in report['features'].values()]
-    feature_passed_tests = [stats['passed'] for stats in report['features'].values()]
+    # Prepare histogram data (sorted alphabetically)
+    sorted_features = sorted(report['features'].items())
+    feature_names = [name for name, _ in sorted_features]
+    feature_total_tests = [stats['passed'] + stats['failed'] for _, stats in sorted_features]
+    feature_passed_tests = [stats['passed'] for _, stats in sorted_features]
     
     # Fill template with data
     html_content = html_template.format(
