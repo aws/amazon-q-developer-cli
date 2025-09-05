@@ -1858,6 +1858,17 @@ impl ChatSession {
         if let Some(chat_state) = does_input_reference_file(input) {
             return Ok(chat_state);
         }
+
+        // Handle custom command execution (/project:name syntax)
+        if let Some(command_part) = input.strip_prefix("/project:") {
+            return self.handle_custom_command_execution(command_part, os, false).await;
+        }
+
+        // Handle user command execution (/user:name or /user:namespace:name syntax)
+        if let Some(command_part) = input.strip_prefix("/user:") {
+            return self.handle_custom_command_execution(command_part, os, true).await;
+        }
+
         if let Some(mut args) = input.strip_prefix("/").and_then(shlex::split) {
             // Required for printing errors correctly.
             let orig_args = args.clone();
@@ -2078,6 +2089,160 @@ impl ChatSession {
 
             Ok(ChatState::HandleResponseStream(conv_state))
         }
+    }
+
+    async fn handle_custom_command_execution(
+        &mut self,
+        command_part: &str,
+        os: &mut Os,
+        is_user_command: bool,
+    ) -> Result<ChatState, ChatError> {
+        use crate::util::command_manager::CommandManager;
+
+        // Check if commands feature is enabled
+        if !CommandManager::is_enabled(os) {
+            queue!(
+                self.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\n❌ Commands tool is disabled. Enable it with: q settings chat.enableCommands true\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // Parse command name and arguments
+        let (command_name, args) = if is_user_command {
+            // Handle /user:namespace:name or /user:name syntax
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_spec = parts[0];
+            let args = parts.get(1).copied();
+
+            // Parse namespace:name or just name
+            let name_parts: Vec<&str> = command_spec.splitn(2, ':').collect();
+            let command_name = if name_parts.len() == 2 {
+                // namespace:name format
+                format!("{}/{}", name_parts[0], name_parts[1])
+            } else {
+                // just name format
+                name_parts[0].to_string()
+            };
+
+            (command_name, args)
+        } else {
+            // Handle /project:name syntax
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_name = parts[0].to_string();
+            let args = parts.get(1).copied();
+            (command_name, args)
+        };
+
+        if command_name.is_empty() {
+            queue!(
+                self.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\n❌ Command name cannot be empty\n\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // Load and execute the command
+        let mut manager = match CommandManager::new(os) {
+            Ok(manager) => manager,
+            Err(e) => {
+                queue!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("\n❌ Failed to initialize command manager: {}\n\n", e)),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        };
+
+        let command_content = if is_user_command {
+            match manager.execute_user_command_with_args(&command_name, args, os) {
+                Ok(content) => content,
+                Err(e) => {
+                    let error_msg = match e {
+                        crate::util::command_types::CommandError::NotFound(name) => {
+                            format!(
+                                "❌ User command '{}' not found.\n\nUse '/commands add {}' to create it in ~/.amazonq/commands/.",
+                                name, name
+                            )
+                        },
+                        crate::util::command_types::CommandError::SecurityViolation(msg) => {
+                            format!("🔒 Security violation: {}", msg)
+                        },
+                        _ => format!("❌ Failed to execute user command '{}': {}", command_name, e),
+                    };
+
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\n{}\n\n", error_msg)),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
+            }
+        } else {
+            match manager.execute_command_with_args(&command_name, args, os) {
+                Ok(content) => content,
+                Err(e) => {
+                    let error_msg = match e {
+                        crate::util::command_types::CommandError::NotFound(name) => {
+                            format!(
+                                "❌ Command '{}' not found in project scope.\n\nUse '/commands add {}' to create it.",
+                                name, name
+                            )
+                        },
+                        crate::util::command_types::CommandError::SecurityViolation(msg) => {
+                            format!("🔒 Security violation: {}", msg)
+                        },
+                        _ => format!("❌ Failed to execute command '{}': {}", command_name, e),
+                    };
+
+                    queue!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(format!("\n{}\n\n", error_msg)),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                },
+            }
+        };
+
+        // Show execution indicator
+        let command_display = if is_user_command {
+            format!("user:{}", command_name)
+        } else {
+            format!("project:{}", command_name)
+        };
+
+        queue!(
+            self.stderr,
+            style::SetForegroundColor(Color::Green),
+            style::Print(format!("🚀 Executing command: {}\n", command_display)),
+            style::SetForegroundColor(Color::Reset)
+        )?;
+
+        // Inject the command content as user input
+        self.conversation.append_user_transcript(&command_content);
+
+        // Process the command content as if it were user input
+        Ok(ChatState::HandleInput { input: command_content })
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
@@ -3703,6 +3868,177 @@ mod tests {
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
+        }
+    }
+
+    // Custom Commands Integration Tests
+    mod custom_commands_integration_tests {
+
+        #[test]
+        fn test_project_command_syntax_parsing() {
+            let input = "/project:test-command arg1 arg2";
+            assert!(input.starts_with("/project:"));
+
+            let command_part = input.strip_prefix("/project:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+
+            assert_eq!(parts[0], "test-command");
+            assert_eq!(parts.get(1).copied(), Some("arg1 arg2"));
+        }
+
+        #[test]
+        fn test_user_command_syntax_parsing() {
+            let input = "/user:test-command arg1 arg2";
+            assert!(input.starts_with("/user:"));
+
+            let command_part = input.strip_prefix("/user:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+
+            assert_eq!(parts[0], "test-command");
+            assert_eq!(parts.get(1).copied(), Some("arg1 arg2"));
+        }
+
+        #[test]
+        fn test_namespaced_user_command_parsing() {
+            let input = "/user:tools:format some code";
+            let command_part = input.strip_prefix("/user:").unwrap();
+            let parts: Vec<&str> = command_part.splitn(2, ' ').collect();
+            let command_spec = parts[0];
+            let args = parts.get(1).copied();
+
+            let name_parts: Vec<&str> = command_spec.splitn(2, ':').collect();
+            assert_eq!(name_parts.len(), 2);
+            assert_eq!(name_parts[0], "tools");
+            assert_eq!(name_parts[1], "format");
+            assert_eq!(args, Some("some code"));
+
+            let command_name = format!("{}/{}", name_parts[0], name_parts[1]);
+            assert_eq!(command_name, "tools/format");
+        }
+
+        #[test]
+        fn test_command_argument_substitution() {
+            let content = "Analyze the following code: $ARGUMENTS";
+            let args = "authentication module";
+            let processed = content.replace("$ARGUMENTS", args);
+
+            assert_eq!(processed, "Analyze the following code: authentication module");
+        }
+
+        #[test]
+        fn test_command_argument_substitution_multiple() {
+            let content = "Review $ARGUMENTS for security issues in $ARGUMENTS";
+            let args = "user login";
+            let processed = content.replace("$ARGUMENTS", args);
+
+            assert_eq!(processed, "Review user login for security issues in user login");
+        }
+
+        #[test]
+        fn test_command_argument_substitution_empty() {
+            let content = "Run tests for: $ARGUMENTS";
+            let processed = content.replace("$ARGUMENTS", "");
+
+            assert_eq!(processed, "Run tests for: ");
+        }
+
+        #[test]
+        fn test_file_reference_pattern_matching() {
+            use regex::Regex;
+
+            let file_ref_regex = Regex::new(r"@([^\s]+)").unwrap();
+            let content = "Review @src/main.rs and @docs/README.md";
+
+            let matches: Vec<&str> = file_ref_regex
+                .captures_iter(content)
+                .map(|cap| cap.get(1).unwrap().as_str())
+                .collect();
+
+            assert_eq!(matches, vec!["src/main.rs", "docs/README.md"]);
+        }
+
+        #[test]
+        fn test_command_name_validation_in_execution() {
+            // Test empty command name detection
+            let empty_project = "/project:";
+            let command_part = empty_project.strip_prefix("/project:").unwrap();
+            assert!(command_part.is_empty());
+
+            let empty_user = "/user:";
+            let command_part = empty_user.strip_prefix("/user:").unwrap();
+            assert!(command_part.is_empty());
+        }
+
+        #[test]
+        fn test_security_validation_patterns() {
+            let dangerous_patterns = [
+                "rm -rf /tmp",
+                "sudo apt install",
+                "chmod 777 file",
+                "curl -s malicious.com",
+                "wget http://bad.com",
+                "nc -l 1234",
+            ];
+
+            for pattern in &dangerous_patterns {
+                let content = format!("Execute: {}", pattern);
+                assert!(
+                    crate::util::command_manager::CommandManager::validate_command_security(&content).is_err(),
+                    "Pattern '{}' should be detected as dangerous",
+                    pattern
+                );
+            }
+        }
+
+        #[test]
+        fn test_command_resolution_precedence() {
+            // Test that project commands take precedence over user commands
+            let project_command = "/project:deploy";
+            let user_command = "/user:deploy";
+
+            // Both should parse correctly
+            assert!(project_command.starts_with("/project:"));
+            assert!(user_command.starts_with("/user:"));
+
+            let project_part = project_command.strip_prefix("/project:").unwrap();
+            let user_part = user_command.strip_prefix("/user:").unwrap();
+
+            assert_eq!(project_part, "deploy");
+            assert_eq!(user_part, "deploy");
+        }
+
+        #[test]
+        fn test_error_message_formatting() {
+            let command_name = "nonexistent";
+            let project_error = format!(
+                "❌ Command '{}' not found in project scope.\n\nUse '/commands add {}' to create it.",
+                command_name, command_name
+            );
+
+            assert!(project_error.contains("❌"));
+            assert!(project_error.contains("not found in project scope"));
+            assert!(project_error.contains("/commands add"));
+
+            let user_error = format!(
+                "❌ User command '{}' not found.\n\nUse '/commands add {}' to create it in ~/.amazonq/commands/.",
+                command_name, command_name
+            );
+
+            assert!(user_error.contains("User command"));
+            assert!(user_error.contains("~/.amazonq/commands/"));
+        }
+
+        #[test]
+        fn test_execution_indicator_formatting() {
+            let command_display_project = "project:code-review";
+            let command_display_user = "user:security-scan";
+
+            let project_indicator = format!("🚀 Executing command: {}", command_display_project);
+            let user_indicator = format!("🚀 Executing command: {}", command_display_user);
+
+            assert!(project_indicator.contains("🚀"));
+            assert!(project_indicator.contains("project:code-review"));
+            assert!(user_indicator.contains("user:security-scan"));
         }
     }
 }

@@ -694,6 +694,9 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
+            if !crate::cli::chat::tools::commands::Commands::is_enabled(os) {
+                tool_specs.remove("commands");
+            }
 
             #[cfg(windows)]
             {
@@ -838,6 +841,9 @@ impl ToolManager {
             "introspect" => Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(map_err)?),
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
+            "commands" => Tool::Commands(
+                serde_json::from_value::<crate::cli::chat::tools::commands::Commands>(value.args).map_err(map_err)?,
+            ), // NEW: Add commands parsing
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             // Note that this name is namespaced with server_name{DELIMITER}tool_name
             name => {
