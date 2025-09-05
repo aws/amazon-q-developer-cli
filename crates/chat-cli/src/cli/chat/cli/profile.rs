@@ -60,6 +60,7 @@ Notes
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
 )]
+/// Subcommands for managing agents in the chat CLI
 pub enum AgentSubcommand {
     /// List all available agents
     List,
@@ -80,20 +81,30 @@ pub enum AgentSubcommand {
     Generate {},
     /// Delete the specified agent
     #[command(hide = true)]
-    Delete { name: String },
+    Delete {
+        /// Name of the agent to delete
+        name: String,
+    },
     /// Switch to the specified agent
     #[command(hide = true)]
-    Set { name: String },
+    Set {
+        /// Name of the agent to switch to
+        name: String,
+    },
     /// Show agent config schema
     Schema,
     /// Define a default agent to use when q chat launches
     SetDefault {
+        /// Name of the agent to set as default
         #[arg(long, short)]
         name: String,
     },
     /// Swap to a new agent at runtime
     #[command(alias = "switch")]
-    Swap { name: Option<String> },
+    Swap {
+        /// Optional name of the agent to swap to. If not provided, a selection dialog will be shown
+        name: Option<String>,
+    },
 }
 
 fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {

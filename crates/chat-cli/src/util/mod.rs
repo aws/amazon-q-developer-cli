@@ -3,7 +3,6 @@ pub mod directories;
 pub mod knowledge_store;
 pub mod open;
 pub mod pattern_matching;
-pub mod process;
 pub mod spinner;
 pub mod system_info;
 #[cfg(test)]

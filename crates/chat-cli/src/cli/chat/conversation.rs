@@ -13,6 +13,12 @@ use crossterm::{
     style,
 };
 use eyre::Result;
+use rmcp::model::{
+    PromptMessage,
+    PromptMessageContent,
+    PromptMessageRole,
+    ResourceContents,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -72,7 +78,6 @@ use crate::cli::chat::cli::model::{
     get_model_info,
 };
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
-use crate::mcp_client::Prompt;
 use crate::os::Os;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
@@ -268,23 +273,57 @@ impl ConversationState {
 
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
-    pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) -> Option<String> {
+    pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
+        fn stringify_prompt_message_content(prompt_msg_content: PromptMessageContent) -> String {
+            match prompt_msg_content {
+                PromptMessageContent::Text { text } => text,
+                PromptMessageContent::Image { image } => image.raw.data,
+                PromptMessageContent::Resource { resource } => {
+                    // TODO: add support for resources for prompt
+                    match resource.raw.resource {
+                        ResourceContents::TextResourceContents {
+                            uri, mime_type, text, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+                        },
+                        ResourceContents::BlobResourceContents {
+                            uri, mime_type, blob, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
+                        },
+                    }
+                },
+                PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
+                    "Resource link with uri: {}, name: {}",
+                    link.raw.uri, link.raw.name
+                )),
+            }
+        }
+
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        debug_assert!(prompts.back().is_some_and(|p| p.role == crate::mcp_client::Role::User));
+        debug_assert!(prompts.back().is_some_and(|p| p.role == PromptMessageRole::User));
         let last_msg = prompts.pop_back()?;
         let (mut candidate_user, mut candidate_asst) = (None::<UserMessage>, None::<AssistantMessage>);
-        while let Some(prompt) = prompts.pop_front() {
-            let Prompt { role, content } = prompt;
+        while let Some(prompt_msg) = prompts.pop_front() {
+            let PromptMessage {
+                role,
+                content: prompt_msg_content,
+            } = prompt_msg;
+            let content_str = stringify_prompt_message_content(prompt_msg_content);
+
             match role {
-                crate::mcp_client::Role::User => {
-                    let user_msg = UserMessage::new_prompt(content.to_string(), None);
+                PromptMessageRole::User => {
+                    let user_msg = UserMessage::new_prompt(content_str, None);
                     candidate_user.replace(user_msg);
                 },
-                crate::mcp_client::Role::Assistant => {
-                    let assistant_msg = AssistantMessage::new_response(None, content.into());
+                PromptMessageRole::Assistant => {
+                    let assistant_msg = AssistantMessage::new_response(None, content_str);
                     candidate_asst.replace(assistant_msg);
                 },
             }
+
             if candidate_asst.is_some() && candidate_user.is_some() {
                 let assistant = candidate_asst.take().unwrap();
                 let user = candidate_user.take().unwrap();
@@ -296,7 +335,8 @@ impl ConversationState {
                 });
             }
         }
-        Some(last_msg.content.to_string())
+
+        Some(stringify_prompt_message_content(last_msg.content))
     }
 
     pub fn next_user_message(&self) -> Option<&UserMessage> {

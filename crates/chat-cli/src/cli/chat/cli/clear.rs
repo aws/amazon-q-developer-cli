@@ -17,6 +17,7 @@ use crate::cli::chat::{
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
+/// Arguments for the clear command that erases conversation history and context.
 pub struct ClearArgs;
 
 impl ClearArgs {
