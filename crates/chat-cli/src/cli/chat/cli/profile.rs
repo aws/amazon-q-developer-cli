@@ -60,6 +60,7 @@ Notes
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
 )]
+/// Subcommands for managing agents in the chat CLI
 pub enum AgentSubcommand {
     /// List all available agents
     List,
@@ -80,36 +81,57 @@ pub enum AgentSubcommand {
     Generate {},
     /// Delete the specified agent
     #[command(hide = true)]
-    Delete { name: String },
+    Delete {
+        /// Name of the agent to delete
+        name: String,
+    },
     /// Switch to the specified agent
     #[command(hide = true)]
-    Set { name: String },
+    Set {
+        /// Name of the agent to switch to
+        name: String,
+    },
     /// Show agent config schema
     Schema,
     /// Define a default agent to use when q chat launches
     SetDefault {
+        /// Name of the agent to set as default
         #[arg(long, short)]
         name: String,
     },
     /// Swap to a new agent at runtime
     #[command(alias = "switch")]
-    Swap { name: Option<String> },
+    Swap {
+        /// Optional name of the agent to swap to. If not provided, a selection dialog will be shown
+        name: Option<String>,
+    },
 }
 
-fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Vec<&McpServerInfo>> {
+fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {
     let items: Vec<String> = servers
         .iter()
         .map(|server| format!("{} ({})", server.name, server.config.command))
         .collect();
 
-    let selections = MultiSelect::new()
+    let selections = match MultiSelect::new()
         .with_prompt("Select MCP servers (use Space to toggle, Enter to confirm)")
         .items(&items)
-        .interact()?;
+        .interact_on_opt(&dialoguer::console::Term::stdout())
+    {
+        Ok(sel) => sel,
+        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+            return Ok(None);
+        },
+        Err(e) => return Err(eyre::eyre!("Failed to get MCP server selection: {e}")),
+    };
 
-    let selected_servers: Vec<&McpServerInfo> = selections.iter().filter_map(|&i| servers.get(i)).collect();
+    let selected_servers: Vec<&McpServerInfo> = selections
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|&i| servers.get(i))
+        .collect();
 
-    Ok(selected_servers)
+    Ok(Some(selected_servers))
 }
 
 impl AgentSubcommand {
@@ -280,7 +302,12 @@ impl AgentSubcommand {
                 let selected_servers = if mcp_servers.is_empty() {
                     Vec::new()
                 } else {
-                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    match prompt_mcp_server_selection(&mcp_servers)
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
+                        Some(servers) => servers,
+                        None => return Ok(ChatState::default()),
+                    }
                 };
 
                 let mcp_servers_json = if !selected_servers.is_empty() {
