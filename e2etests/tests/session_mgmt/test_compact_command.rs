@@ -48,7 +48,9 @@ const TEST_NAMES: &[&str] = &[
     "test_show_summary",
     "test_max_message_truncate_true",
     "test_max_message_truncate_false",
-    "test_max_message_length_invalid"
+    "test_max_message_length_invalid",
+    "test_compact_messages_to_exclude_command",
+    "test_compact_messages_to_exclude_show_sumary_command",
 ];
 #[allow(dead_code)]
 const TOTAL_TESTS: usize = TEST_NAMES.len();
@@ -507,6 +509,65 @@ fn test_compact_messages_to_exclude_command() -> Result<(), Box<dyn std::error::
         panic!("Missing expected compact response");
     }
     
+    println!("✅ All compact content verified!");
+    
+    // Release the lock before cleanup
+    drop(chat);
+    
+    // Cleanup only if this is the last test
+    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "compact", feature = "sanity"))]
+fn test_compact_messages_to_exclude_show_sumary_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing /compact command... | Description: Test /compact --messages-to-exclude <MESSAGES_TO_EXCLUDE> --show-summary command compacts the conversation by summarizing it to free up context space, excluding provided number of user-assistant message pair from the summarization process and prints the coversation summary.");
+    
+    let session = get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    let response = chat.execute_command("/clear")?;
+    let response = chat.execute_command("y")?;
+    let response = chat.execute_command("What is AWS?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("What is fibonacci?")?;
+    
+    println!("📝 AI response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    let response = chat.execute_command("/compact --messages-to-exclude 1 --show-summary")?;
+    
+    println!("📝 Compact response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify compact response - either success or too short
+    if response.contains("history") && response.contains("compacted") && response.contains("successfully") {
+        println!("✅ Found compact success message");
+    } else if response.contains("Conversation") && response.contains("short") {
+        println!("✅ Found conversation too short message");
+    } else {
+        panic!("Missing expected compact response");
+    }
+    
+    // Verify compact sumary response
+    assert!(response.to_lowercase().contains("conversation") && response.to_lowercase().contains("summary"), "Missing Summary section");
+    println!("✅ All compact content verified!");
+
+    // Verify messages got excluded
+    assert!(!response.to_lowercase().contains("fibonacci"), "Fibonacci should not be present in compact response");
+    println!("✅ All compact content verified!");
+
     println!("✅ All compact content verified!");
     
     // Release the lock before cleanup
