@@ -175,6 +175,11 @@ pub(crate) fn de_list_available_subscriptions(
                         crate::protocol_serde::shape_subscription_plan_list::de_subscription_plan_list(tokens)?,
                     );
                 },
+                "disclaimer" => {
+                    builder = builder.set_disclaimer(crate::protocol_serde::shape_disclaimer_list::de_disclaimer_list(
+                        tokens,
+                    )?);
+                },
                 _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
             },
             other => {

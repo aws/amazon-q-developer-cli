@@ -213,18 +213,18 @@ impl Agent {
         &mut self,
         path: &Path,
         legacy_mcp_config: Option<&McpServerConfig>,
+        output: &mut impl Write,
         colors: &ColorManager,
     ) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
-        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
-                        stderr,
+                        output,
                         style::SetForegroundColor(colors.warning()),
                         style::Print("WARNING: "),
                         style::ResetColor,
@@ -244,7 +244,7 @@ impl Agent {
             }
         }
 
-        stderr.flush()?;
+        output.flush()?;
 
         Ok(())
     }
@@ -305,8 +305,8 @@ impl Agent {
                 } else {
                     None
                 };
-
-                agent.thaw(&config_path, legacy_mcp_config.as_ref(), colors)?;
+                let mut stderr = std::io::stderr();
+                agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr, colors)?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -318,6 +318,7 @@ impl Agent {
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
         mcp_enabled: bool,
+        output: &mut impl Write,
         colors: &ColorManager,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
@@ -333,11 +334,11 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), colors)?;
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), output, colors)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None, colors)?;
+            agent.thaw(agent_path.as_ref(), None, output, colors)?;
         }
         Ok(agent)
     }
@@ -504,7 +505,8 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
+            let results =
+                load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -542,7 +544,8 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, &colors).await;
+            let results =
+                load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output, &colors).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -815,12 +818,13 @@ impl Agents {
             #[cfg(not(windows))]
             "execute_bash" => "trust read-only commands".white(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".white(),
-            "use_aws" => "trust read-only commands".white(),
-            "report_issue" => "trusted".green().bold(),
-            "thinking" => "trusted (prerelease)".green().bold(),
-            _ if self.trust_all_tools => "trusted".white().bold(),
-            _ => "not trusted".white(),
+            "execute_cmd" => "trust read-only commands".dark_grey(),
+            "use_aws" => "trust read-only commands".dark_grey(),
+            "report_issue" => "trusted".dark_green().bold(),
+            "thinking" => "trusted (prerelease)".dark_green().bold(),
+            "todo_list" => "trusted".dark_green().bold(),
+            _ if self.trust_all_tools => "trusted".dark_grey().bold(),
+            _ => "not trusted".dark_grey(),
         };
 
         format!("{} {label}", "*".reset())
@@ -842,6 +846,7 @@ async fn load_agents_from_entries(
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
+    output: &mut impl Write,
     colors: &ColorManager,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
@@ -853,7 +858,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, colors).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, output, colors).await);
         }
     }
 

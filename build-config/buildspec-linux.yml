@@ -44,4 +44,3 @@ artifacts:
     # Signatures
     - ./*.asc
     - ./*.sig
-

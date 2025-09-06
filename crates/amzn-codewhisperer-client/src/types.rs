@@ -109,6 +109,7 @@ pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
 pub use crate::types::_opt_out_preference::OptOutPreference;
 pub use crate::types::_origin::Origin;
+pub use crate::types::_overage_capability::OverageCapability;
 pub use crate::types::_overage_configuration::OverageConfiguration;
 pub use crate::types::_overage_status::OverageStatus;
 pub use crate::types::_package_info::PackageInfo;
@@ -139,6 +140,7 @@ pub use crate::types::_shell_state::ShellState;
 pub use crate::types::_span::Span;
 pub use crate::types::_sso_identity_details::SsoIdentityDetails;
 pub use crate::types::_subscription_info::SubscriptionInfo;
+pub use crate::types::_subscription_management_target::SubscriptionManagementTarget;
 pub use crate::types::_subscription_name::SubscriptionName;
 pub use crate::types::_subscription_plan::SubscriptionPlan;
 pub use crate::types::_subscription_plan_description::SubscriptionPlanDescription;
@@ -147,6 +149,7 @@ pub use crate::types::_subscription_status::SubscriptionStatus;
 pub use crate::types::_subscription_type::SubscriptionType;
 pub use crate::types::_suggested_fix::SuggestedFix;
 pub use crate::types::_suggestion_state::SuggestionState;
+pub use crate::types::_suggestion_type::SuggestionType;
 pub use crate::types::_supplemental_context::SupplementalContext;
 pub use crate::types::_supplemental_context_metadata::SupplementalContextMetadata;
 pub use crate::types::_supplemental_context_type::SupplementalContextType;
@@ -199,6 +202,7 @@ pub use crate::types::_transformation_type::TransformationType;
 pub use crate::types::_transformation_upload_artifact_type::TransformationUploadArtifactType;
 pub use crate::types::_transformation_upload_context::TransformationUploadContext;
 pub use crate::types::_transformation_user_action_status::TransformationUserActionStatus;
+pub use crate::types::_upgrade_capability::UpgradeCapability;
 pub use crate::types::_upload_context::UploadContext;
 pub use crate::types::_upload_intent::UploadIntent;
 pub use crate::types::_usage_breakdown::UsageBreakdown;
@@ -440,6 +444,8 @@ mod _opt_out_preference;
 
 mod _origin;
 
+mod _overage_capability;
+
 mod _overage_configuration;
 
 mod _overage_status;
@@ -500,6 +506,8 @@ mod _sso_identity_details;
 
 mod _subscription_info;
 
+mod _subscription_management_target;
+
 mod _subscription_name;
 
 mod _subscription_plan;
@@ -515,6 +523,8 @@ mod _subscription_type;
 mod _suggested_fix;
 
 mod _suggestion_state;
+
+mod _suggestion_type;
 
 mod _supplemental_context;
 
@@ -619,6 +629,8 @@ mod _transformation_upload_artifact_type;
 mod _transformation_upload_context;
 
 mod _transformation_user_action_status;
+
+mod _upgrade_capability;
 
 mod _upload_context;
 

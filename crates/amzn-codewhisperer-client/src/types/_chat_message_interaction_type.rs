@@ -12,6 +12,7 @@
 /// ```text
 /// # let chatmessageinteractiontype = unimplemented!();
 /// match chatmessageinteractiontype {
+///     ChatMessageInteractionType::AgenticCodeAccepted => { /* ... */ },
 ///     ChatMessageInteractionType::ClickBodyLink => { /* ... */ },
 ///     ChatMessageInteractionType::ClickFollowUp => { /* ... */ },
 ///     ChatMessageInteractionType::ClickLink => { /* ... */ },
@@ -56,6 +57,8 @@
 )]
 pub enum ChatMessageInteractionType {
     #[allow(missing_docs)] // documentation missing in model
+    AgenticCodeAccepted,
+    #[allow(missing_docs)] // documentation missing in model
     ClickBodyLink,
     #[allow(missing_docs)] // documentation missing in model
     ClickFollowUp,
@@ -82,6 +85,7 @@ pub enum ChatMessageInteractionType {
 impl ::std::convert::From<&str> for ChatMessageInteractionType {
     fn from(s: &str) -> Self {
         match s {
+            "AGENTIC_CODE_ACCEPTED" => ChatMessageInteractionType::AgenticCodeAccepted,
             "CLICK_BODY_LINK" => ChatMessageInteractionType::ClickBodyLink,
             "CLICK_FOLLOW_UP" => ChatMessageInteractionType::ClickFollowUp,
             "CLICK_LINK" => ChatMessageInteractionType::ClickLink,
@@ -108,6 +112,7 @@ impl ChatMessageInteractionType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            ChatMessageInteractionType::AgenticCodeAccepted => "AGENTIC_CODE_ACCEPTED",
             ChatMessageInteractionType::ClickBodyLink => "CLICK_BODY_LINK",
             ChatMessageInteractionType::ClickFollowUp => "CLICK_FOLLOW_UP",
             ChatMessageInteractionType::ClickLink => "CLICK_LINK",
@@ -124,6 +129,7 @@ impl ChatMessageInteractionType {
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
         &[
+            "AGENTIC_CODE_ACCEPTED",
             "CLICK_BODY_LINK",
             "CLICK_FOLLOW_UP",
             "CLICK_LINK",
@@ -156,6 +162,7 @@ impl ChatMessageInteractionType {
 impl ::std::fmt::Display for ChatMessageInteractionType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            ChatMessageInteractionType::AgenticCodeAccepted => write!(f, "AGENTIC_CODE_ACCEPTED"),
             ChatMessageInteractionType::ClickBodyLink => write!(f, "CLICK_BODY_LINK"),
             ChatMessageInteractionType::ClickFollowUp => write!(f, "CLICK_FOLLOW_UP"),
             ChatMessageInteractionType::ClickLink => write!(f, "CLICK_LINK"),

@@ -8,6 +8,7 @@ use core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
     RecordUserTurnCompletionArgs,
+    TangentModeSessionArgs,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
@@ -322,6 +323,22 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    pub async fn send_tangent_mode_session(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::TangentModeSession {
+            conversation_id,
+            result,
+            args,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
     pub async fn send_tool_use_suggested(
         &self,
         database: &Database,
@@ -572,12 +589,17 @@ impl TelemetryClient {
         } = &event.ty
         {
             let user_context = self.user_context().unwrap();
+            // Short-Term fix for Validation errors -
+            // chatAddMessageEvent.timeBetweenChunks' : Member must have length less than or equal to 100
+            let time_between_chunks_truncated = time_between_chunks_ms
+                .as_ref()
+                .map(|chunks| chunks.iter().take(100).cloned().collect());
 
             let chat_add_message_event = match ChatAddMessageEvent::builder()
                 .conversation_id(conversation_id)
                 .message_id(message_id.clone().unwrap_or("not_set".to_string()))
                 .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
-                .set_time_between_chunks(time_between_chunks_ms.clone())
+                .set_time_between_chunks(time_between_chunks_truncated)
                 .set_response_length(*assistant_response_length)
                 .build()
             {
