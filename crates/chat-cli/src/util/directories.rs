@@ -44,6 +44,8 @@ type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const WORKSPACE_PROMPTS_DIR_RELATIVE: &str = ".amazonq/prompts";
+const GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/prompts";
 const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
@@ -178,6 +180,17 @@ pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
 pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
     Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
+}
+
+/// The directory containing global prompts
+pub fn chat_global_prompts_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME))
+}
+
+/// The directory containing local prompts
+pub fn chat_local_prompts_dir(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(WORKSPACE_PROMPTS_DIR_RELATIVE))
 }
 
 /// Canonicalizes path given by expanding the path given
