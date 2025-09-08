@@ -62,6 +62,15 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/agent-file-locations.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/agent-file-locations.md"));
 
+        documentation.push_str("\n\n--- docs/tangent-mode.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/tangent-mode.md"));
+
+        documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
+
+        documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
+
         documentation.push_str("\n\n--- CONTRIBUTING.md ---\n");
         documentation.push_str(include_str!("../../../../../../CONTRIBUTING.md"));
 
@@ -81,7 +90,10 @@ impl Introspect {
             "\nNOTE: Settings are managed via `q settings` command from terminal, not slash commands in chat.\n",
         );
 
-        documentation.push_str("\n\n--- GitHub References ---\n");
+        documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
+        documentation.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
+
+        documentation.push_str("--- GitHub References ---\n");
         documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
         documentation.push_str("• README.md: https://github.com/aws/amazon-q-developer-cli/blob/main/README.md\n");
         documentation.push_str(
@@ -90,6 +102,13 @@ impl Introspect {
         documentation
             .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
         documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
+        documentation
+            .push_str("• Tangent Mode: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/tangent-mode.md\n");
+        documentation.push_str(
+            "• Introspect Tool: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/introspect-tool.md\n",
+        );
+        documentation
+            .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
 

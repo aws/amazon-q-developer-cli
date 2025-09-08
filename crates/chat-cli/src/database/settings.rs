@@ -372,6 +372,8 @@ impl Setting {
             Self::Color { theme, category } => format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into(),
         }
     }
+    #[strum(message = "Enable the todo list feature (boolean)")]
+    EnabledTodoList,
 }
 
 impl AsRef<str> for Setting {
@@ -412,6 +414,7 @@ impl AsRef<str> for Setting {
                 // This is a limitation - callers should use as_string() instead
                 "chat.theme.default"
             },
+            Self::EnabledTodoList => "chat.enableTodoList",
         }
     }
 }
@@ -475,6 +478,8 @@ impl TryFrom<&str> for Setting {
 
                 Err(DatabaseError::InvalidSetting(value.to_string()))
             },
+            "chat.enableTodoList" => Ok(Self::EnabledTodoList),
+            _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
 }

@@ -244,9 +244,55 @@ impl FsWrite {
 
         let tracker = line_tracker.entry(path.to_string_lossy().to_string()).or_default();
         tracker.after_fswrite_lines = after_lines;
+
+        // Calculate actual lines added and removed by analyzing the diff
+        let (lines_added, lines_removed) = self.calculate_diff_lines(os).await?;
+        tracker.lines_added_by_agent = lines_added;
+        tracker.lines_removed_by_agent = lines_removed;
+
         tracker.is_first_write = false;
 
         Ok(())
+    }
+
+    async fn calculate_diff_lines(&self, os: &Os) -> Result<(usize, usize)> {
+        let path = self.path(os);
+
+        let result = match self {
+            FsWrite::Create { .. } => {
+                // For create operations, all lines in the new file are added
+                let new_content = os.fs.read_to_string(&path).await?;
+                let lines_added = new_content.lines().count();
+                (lines_added, 0)
+            },
+            FsWrite::StrReplace { old_str, new_str, .. } => {
+                // Use actual diff analysis for accurate line counting
+                let diff = similar::TextDiff::from_lines(old_str, new_str);
+                let mut lines_added = 0;
+                let mut lines_removed = 0;
+
+                for change in diff.iter_all_changes() {
+                    match change.tag() {
+                        similar::ChangeTag::Insert => lines_added += 1,
+                        similar::ChangeTag::Delete => lines_removed += 1,
+                        similar::ChangeTag::Equal => {},
+                    }
+                }
+                (lines_added, lines_removed)
+            },
+            FsWrite::Insert { new_str, .. } => {
+                // For insert operations, all lines in new_str are added
+                let lines_added = new_str.lines().count();
+                (lines_added, 0)
+            },
+            FsWrite::Append { new_str, .. } => {
+                // For append operations, all lines in new_str are added
+                let lines_added = new_str.lines().count();
+                (lines_added, 0)
+            },
+        };
+
+        Ok(result)
     }
 
     pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {

@@ -72,6 +72,8 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 // TODO(bskiser): confirm timeout is updated to an appropriate value?
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
+pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
+
 #[derive(Clone, Debug)]
 pub struct ModelListResult {
     pub models: Vec<Model>,
@@ -191,12 +193,19 @@ impl ApiClient {
             },
         }
 
-        let profile = match database.get_auth_profile() {
-            Ok(profile) => profile,
-            Err(err) => {
-                error!("Failed to get auth profile: {err}");
-                None
-            },
+        // Check if using custom endpoint
+        let use_profile = !Self::is_custom_endpoint(database);
+        let profile = if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => profile,
+                Err(err) => {
+                    error!("Failed to get auth profile: {err}");
+                    None
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile ARN");
+            None
         };
 
         Ok(Self {
@@ -596,6 +605,11 @@ impl ApiClient {
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
     }
+
+    // Add a helper method to check if using non-default endpoint
+    fn is_custom_endpoint(database: &Database) -> bool {
+        database.settings.get(Setting::ApiCodeWhispererService).is_some()
+    }
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {
@@ -616,7 +630,7 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 fn retry_config() -> RetryConfig {
     RetryConfig::adaptive()
         .with_max_attempts(3)
-        .with_max_backoff(Duration::from_secs(10))
+        .with_max_backoff(MAX_RETRY_DELAY_DURATION)
 }
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {

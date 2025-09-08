@@ -20,6 +20,12 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+
+/// Arguments for the usage command that displays token usage statistics and context window
+/// information.
+///
+/// This command shows how many tokens are being used by different components (context files, tools,
+/// assistant responses, and user prompts) within the current chat session's context window.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct UsageArgs;

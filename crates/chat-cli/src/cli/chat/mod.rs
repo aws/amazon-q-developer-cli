@@ -3,7 +3,6 @@ pub mod colors;
 mod consts;
 pub mod context;
 mod conversation;
-mod error_formatter;
 mod input_source;
 mod message;
 mod parse;
@@ -12,7 +11,7 @@ mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
-mod server_messenger;
+pub mod server_messenger;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -83,6 +82,7 @@ use parser::{
     SendMessageStream,
 };
 use regex::Regex;
+use rmcp::model::PromptMessage;
 use spinners::{
     Spinner,
     Spinners,
@@ -150,7 +150,6 @@ use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::database::settings::Setting;
-use crate::mcp_client::Prompt;
 use crate::os::Os;
 use crate::telemetry::core::{
     AgentConfigInitArgs,
@@ -598,7 +597,7 @@ pub struct ChatSession {
     /// Any failed requests that could be useful for error report/debugging
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
-    pending_prompts: VecDeque<Prompt>,
+    pending_prompts: VecDeque<PromptMessage>,
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
@@ -1744,24 +1743,18 @@ impl ChatSession {
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
             Ok(config) => config,
-            Err(err) => {
+            Err(_) => {
                 execute!(
                     self.stderr,
                     style::SetForegroundColor(Color::Red),
-                    style::Print(format!("✗ Failed to parse generated agent config: {}\n\n", err)),
+                    style::Print("✗ The LLM did not generate a valid agent configuration. Please try again.\n\n"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
-                return Err(ChatError::Custom(format!("Invalid agent config: {}", err).into()));
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
             },
         };
-
-        // Display the generated agent config with syntax highlighting
-        execute!(
-            self.stderr,
-            style::SetForegroundColor(Color::Green),
-            style::Print(format!("✓ Generated agent config for '{}':\n\n", agent_name)),
-            style::SetForegroundColor(Color::Reset)
-        )?;
 
         let formatted_json = serde_json::to_string_pretty(&initial_agent_config)
             .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {}", e).into()))?;
@@ -1778,9 +1771,9 @@ impl ChatSession {
                     style::Print(format!("✗ Invalid edited configuration: {}\n\n", err)),
                     style::SetForegroundColor(Color::Reset)
                 )?;
-                return Err(ChatError::Custom(
-                    format!("Invalid agent config after editing: {}", err).into(),
-                ));
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
             },
         };
 
@@ -2721,7 +2714,7 @@ impl ChatSession {
             .set_tool_use_id(tool_use_id.clone())
             .set_tool_name(tool_use.name.clone())
             .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
-            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use) {
+            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use).await {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -2880,7 +2873,7 @@ impl ChatSession {
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" from mcp server "),
                 style::SetForegroundColor(self.colors.action()),
-                style::Print(tool.client.get_server_name()),
+                style::Print(&tool.server_name),
                 style::SetForegroundColor(Color::Reset),
             )?;
         }
