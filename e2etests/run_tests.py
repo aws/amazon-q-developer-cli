@@ -15,11 +15,12 @@ from pathlib import Path
 def show_spinner(stop_event):
     """Show rotating spinner animation"""
     spinner = ['|', '/', '-', '\\']
-    i = 0
     while not stop_event.is_set():
-        print(f"\rExecuting... {spinner[i % len(spinner)]}", end="", flush=True)
-        time.sleep(0.1)
-        i += 1
+        for char in spinner:
+            if stop_event.is_set():
+                break
+            print(f"\rExecuting... {char}", end="", flush=True)
+            time.sleep(0.1)
 
 def strip_ansi(text):
     """Remove ANSI escape sequences from text"""
