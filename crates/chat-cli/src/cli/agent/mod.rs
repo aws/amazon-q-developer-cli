@@ -181,7 +181,7 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
+            resources: vec!["file://AmazonQ.md", "file://AGENTS.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
                 .into_iter()
                 .map(Into::into)
                 .collect::<Vec<_>>(),
