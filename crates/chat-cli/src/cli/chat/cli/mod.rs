@@ -1,6 +1,7 @@
 pub mod clear;
 pub mod compact;
 pub mod context;
+pub mod delegate;
 pub mod editor;
 pub mod experiment;
 pub mod hooks;
@@ -20,6 +21,7 @@ use clap::Parser;
 use clear::ClearArgs;
 use compact::CompactArgs;
 use context::ContextSubcommand;
+use delegate::DelegateArgs;
 use editor::EditorArgs;
 use experiment::ExperimentArgs;
 use hooks::HooksArgs;
@@ -100,6 +102,9 @@ pub enum SlashCommand {
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
+    /// Launch and manage asynchronous subagent processes
+    #[command(subcommand, hide = true)]
+    Delegate(DelegateArgs),
 }
 
 impl SlashCommand {
@@ -164,6 +169,7 @@ impl SlashCommand {
             //     })
             // },
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
+            Self::Delegate(args) => args.execute(os, session).await,
         }
     }
 
@@ -192,6 +198,7 @@ impl SlashCommand {
                 PersistSubcommand::Load { .. } => "load",
             },
             Self::Todos(_) => "todos",
+            Self::Delegate(_) => "delegate",
         }
     }
 
