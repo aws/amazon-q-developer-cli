@@ -83,6 +83,8 @@ pub enum Setting {
         theme: ThemeName,
         category: ColorCategory,
     },
+    #[strum(message = "Enable the todo list feature (boolean)")]
+    EnabledTodoList,
 }
 
 /// Semantic color categories for consistent theming
@@ -370,10 +372,9 @@ impl Setting {
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints".into(),
             Self::ChatTheme => "chat.theme".into(),
             Self::Color { theme, category } => format!("chat.theme.{}.{}", theme.as_str(), category.as_str()).into(),
+            Self::EnabledTodoList => "chat.enableTodoList".into(),
         }
     }
-    #[strum(message = "Enable the todo list feature (boolean)")]
-    EnabledTodoList,
 }
 
 impl AsRef<str> for Setting {
@@ -460,6 +461,7 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.theme" => Ok(Self::ChatTheme),
+            "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             _ => {
                 // Check for theme color pattern: chat.theme.{theme}.{color}
                 static THEME_COLOR_REGEX: std::sync::OnceLock<Regex> = std::sync::OnceLock::new();
@@ -478,7 +480,6 @@ impl TryFrom<&str> for Setting {
 
                 Err(DatabaseError::InvalidSetting(value.to_string()))
             },
-            "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

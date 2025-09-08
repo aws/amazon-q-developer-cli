@@ -631,7 +631,7 @@ impl ToolManager {
     /// - Swapping the old with the new (the old would be dropped after we exit the scope of this
     ///   function)
     /// - Calling load tools
-    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent, colors: &colorManager) -> eyre::Result<()> {
+    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent, colors: &ColorManager) -> eyre::Result<()> {
         let to_evict = self.clients.drain().collect::<Vec<_>>();
         tokio::spawn(async move {
             for (server_name, initialized_client) in to_evict {
@@ -1470,7 +1470,7 @@ fn spawn_orchestrator_task(
                                 .insert(server_name.clone(), (sanitized_mapping, specs));
                             has_new_stuff.store(true, Ordering::Release);
                             // Maintain a record of the server load:
-                            let colors = ColorManager::default();
+                            let colors = ColorManager::new_with_default_theme();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                             if let Err(e) = &process_result {
                                 let _ = queue_warn_message(
@@ -1509,7 +1509,7 @@ fn spawn_orchestrator_task(
                             // Log error to chat Log
                             error!("Error loading server {server_name}: {:?}", e);
                             // Maintain a record of the server load:
-                            let colors = ColorManager::default();
+                            let colors = ColorManager::new_with_default_theme();
                             let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                             let fail_load_msg = eyre::eyre!("{}", e);
                             let _ = queue_failure_message(

@@ -230,7 +230,7 @@ mod tests {
         let images = handle_images_from_paths(
             &mut vec![],
             &[image_path.to_string_lossy().to_string()],
-            &ColorManager::default(),
+            &ColorManager::new_with_default_theme(),
         );
 
         assert_eq!(images.len(), 1);
@@ -265,7 +265,7 @@ mod tests {
         let images = handle_images_from_paths(
             &mut output,
             &[large_image_path.to_string_lossy().to_string()],
-            &ColorManager::default(),
+            &ColorManager::new_with_default_theme(),
         );
         let output_str = output.to_str_lossy();
         print!("{}", output_str);
@@ -285,7 +285,7 @@ mod tests {
             std::fs::write(&image_path, b"fake_image_data").unwrap();
         }
 
-        let images = handle_images_from_paths(&mut vec![], &paths, &ColorManager::default());
+        let images = handle_images_from_paths(&mut vec![], &paths, &ColorManager::new_with_default_theme());
 
         assert_eq!(images.len(), MAX_NUMBER_OF_IMAGES_PER_REQUEST);
     }

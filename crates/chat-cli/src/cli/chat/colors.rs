@@ -29,7 +29,7 @@ impl ColorManager {
     ///
     /// WARNING: This bypasses user theme settings. Use `from_settings()` instead
     /// when Settings are available to respect user configuration.
-    pub fn default() -> Self {
+    pub fn new_with_default_theme() -> Self {
         Self {
             theme: ColorTheme::default(),
         }
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_color_manager_default() {
-        let manager = ColorManager::default();
+        let manager = ColorManager::new_with_default_theme();
         assert_eq!(manager.success(), Color::Green);
         assert_eq!(manager.error(), Color::Red);
         assert_eq!(manager.warning(), Color::Yellow);

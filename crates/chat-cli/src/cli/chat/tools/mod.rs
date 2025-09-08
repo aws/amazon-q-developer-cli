@@ -390,7 +390,7 @@ fn supports_truecolor(os: &Os) -> bool {
 
 /// Helper function to display a purpose if available (for execute commands)
 pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Result<()> {
-    display_purpose_with_colors(purpose, updates, &ColorManager::default())
+    display_purpose_with_colors(purpose, updates, &ColorManager::new_with_default_theme())
 }
 
 /// Helper function to display a purpose with custom colors
@@ -423,7 +423,7 @@ pub fn display_purpose_with_colors(
 /// * `is_error` - Whether this is an error message (changes formatting)
 /// * `use_bullet` - Whether to use a bullet point instead of a tick/exclamation
 pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool) -> Result<()> {
-    queue_function_result_with_colors(result, updates, is_error, use_bullet, &ColorManager::default())
+    queue_function_result_with_colors(result, updates, is_error, use_bullet, &ColorManager::new_with_default_theme())
 }
 
 pub fn queue_function_result_with_colors(

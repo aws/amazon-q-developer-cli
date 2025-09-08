@@ -23,6 +23,7 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::Settings;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
