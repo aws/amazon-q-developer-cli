@@ -1195,6 +1195,7 @@ mod tests {
     use crate::cli::chat::tool_manager::ToolManager;
 
     const AMAZONQ_FILENAME: &str = "AmazonQ.md";
+    const AGENTS_FILENAME: &str = "AGENTS.md";
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -1407,11 +1408,13 @@ mod tests {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
             agent.resources.push(AMAZONQ_FILENAME.into());
+            agent.resources.push(AGENTS_FILENAME.into());
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent").expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();
+        os.fs.write(AGENTS_FILENAME, "test agents context").await.unwrap();
         let mut output = vec![];
 
         let mut tool_manager = ToolManager::default();
