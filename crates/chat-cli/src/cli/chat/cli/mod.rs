@@ -2,6 +2,7 @@ pub mod clear;
 pub mod compact;
 pub mod context;
 pub mod editor;
+pub mod experiment;
 pub mod hooks;
 pub mod knowledge;
 pub mod mcp;
@@ -10,6 +11,8 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod subscribe;
+pub mod tangent;
+pub mod todos;
 pub mod tools;
 pub mod usage;
 
@@ -18,6 +21,7 @@ use clear::ClearArgs;
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
+use experiment::ExperimentArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
@@ -25,6 +29,8 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use tangent::TangentArgs;
+use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
@@ -79,12 +85,21 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// Toggle experimental features
+    Experiment(ExperimentArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
+    /// (Beta) Toggle tangent mode for isolated conversations. Requires "q settings
+    /// chat.enableTangentMode true"
+    #[command(hide = true)]
+    Tangent(TangentArgs),
     #[command(flatten)]
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    /// View, manage, and resume to-do lists
+    #[command(subcommand)]
+    Todos(TodoSubcommand),
 }
 
 impl SlashCommand {
@@ -135,7 +150,9 @@ impl SlashCommand {
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
+            Self::Experiment(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
+            Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
             //     if let Err(err) = subcommand.execute(os, database, telemetry).await {
@@ -146,6 +163,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
 
@@ -166,11 +184,14 @@ impl SlashCommand {
             Self::Usage(_) => "usage",
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
+            Self::Experiment(_) => "experiment",
             Self::Subscribe(_) => "subscribe",
+            Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Todos(_) => "todos",
         }
     }
 

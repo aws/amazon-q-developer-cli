@@ -19,6 +19,8 @@ use crossterm::{
     style,
 };
 
+use crate::api_client::MAX_RETRY_DELAY_DURATION;
+
 #[derive(Debug, Clone)]
 pub struct DelayTrackingInterceptor {
     minor_delay_threshold: Duration,
@@ -62,20 +64,16 @@ impl Intercept for DelayTrackingInterceptor {
         let now = Instant::now();
 
         if let Some(last_attempt_time) = cfg.load::<LastAttemptTime>() {
-            let delay = now.duration_since(last_attempt_time.0);
+            let delay = now.duration_since(last_attempt_time.0).min(MAX_RETRY_DELAY_DURATION);
 
             if delay >= self.major_delay_threshold {
                 Self::print_warning(format!(
-                    "Auto Retry #{} delayed by {:.1}s. Service is under heavy load - consider switching models.",
+                    "Retry #{}, retrying within {:.1}s..",
                     attempt_number,
-                    delay.as_secs_f64()
+                    MAX_RETRY_DELAY_DURATION.as_secs_f64()
                 ));
             } else if delay >= self.minor_delay_threshold {
-                Self::print_warning(format!(
-                    "Auto Retry #{} delayed by {:.1}s due to transient issues.",
-                    attempt_number,
-                    delay.as_secs_f64()
-                ));
+                Self::print_warning(format!("Retry #{}, retrying within 5s..", attempt_number,));
             }
         }
 

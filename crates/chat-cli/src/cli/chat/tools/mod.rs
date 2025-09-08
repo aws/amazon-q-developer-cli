@@ -3,8 +3,10 @@ pub mod execute;
 pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
+pub mod introspect;
 pub mod knowledge;
 pub mod thinking;
+pub mod todo;
 pub mod use_aws;
 
 use std::borrow::{
@@ -29,12 +31,14 @@ use eyre::Result;
 use fs_read::FsRead;
 use fs_write::FsWrite;
 use gh_issue::GhIssue;
+use introspect::Introspect;
 use knowledge::Knowledge;
 use serde::{
     Deserialize,
     Serialize,
 };
 use thinking::Thinking;
+use todo::TodoList;
 use tracing::error;
 use use_aws::UseAws;
 
@@ -54,7 +58,7 @@ use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
-pub const NATIVE_TOOLS: [&str; 7] = [
+pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -65,6 +69,7 @@ pub const NATIVE_TOOLS: [&str; 7] = [
     "gh_issue",
     "knowledge",
     "thinking",
+    "todo_list",
 ];
 
 /// Represents an executable tool use.
@@ -77,8 +82,10 @@ pub enum Tool {
     UseAws(UseAws),
     Custom(CustomTool),
     GhIssue(GhIssue),
+    Introspect(Introspect),
     Knowledge(Knowledge),
     Thinking(Thinking),
+    Todo(TodoList),
 }
 
 impl Tool {
@@ -94,23 +101,27 @@ impl Tool {
             Tool::UseAws(_) => "use_aws",
             Tool::Custom(custom_tool) => &custom_tool.name,
             Tool::GhIssue(_) => "gh_issue",
+            Tool::Introspect(_) => "introspect",
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
+            Tool::Todo(_) => "todo_list",
         }
         .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.
-    pub fn requires_acceptance(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn requires_acceptance(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         match self {
-            Tool::FsRead(fs_read) => fs_read.eval_perm(agent),
-            Tool::FsWrite(fs_write) => fs_write.eval_perm(agent),
-            Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(agent),
-            Tool::UseAws(use_aws) => use_aws.eval_perm(agent),
-            Tool::Custom(custom_tool) => custom_tool.eval_perm(agent),
+            Tool::FsRead(fs_read) => fs_read.eval_perm(os, agent),
+            Tool::FsWrite(fs_write) => fs_write.eval_perm(os, agent),
+            Tool::ExecuteCommand(execute_command) => execute_command.eval_perm(os, agent),
+            Tool::UseAws(use_aws) => use_aws.eval_perm(os, agent),
+            Tool::Custom(custom_tool) => custom_tool.eval_perm(os, agent),
             Tool::GhIssue(_) => PermissionEvalResult::Allow,
+            Tool::Introspect(_) => PermissionEvalResult::Allow,
             Tool::Thinking(_) => PermissionEvalResult::Allow,
-            Tool::Knowledge(knowledge) => knowledge.eval_perm(agent),
+            Tool::Todo(_) => PermissionEvalResult::Allow,
+            Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
         }
     }
 
@@ -120,6 +131,7 @@ impl Tool {
         os: &Os,
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
+        agent: Option<&crate::cli::agent::Agent>,
     ) -> Result<InvokeOutput> {
         match self {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
@@ -128,8 +140,10 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
-            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout).await,
+            Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
+            Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, agent).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
+            Tool::Todo(todo) => todo.invoke(os, stdout).await,
         }
     }
 
@@ -142,8 +156,10 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.queue_description(output),
             Tool::Custom(custom_tool) => custom_tool.queue_description(output),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
+            Tool::Introspect(_) => Introspect::queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
+            Tool::Todo(_) => Ok(()),
         }
     }
 
@@ -156,8 +172,10 @@ impl Tool {
             Tool::UseAws(use_aws) => use_aws.validate(os).await,
             Tool::Custom(custom_tool) => custom_tool.validate(os).await,
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
+            Tool::Introspect(introspect) => introspect.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
+            Tool::Todo(todo) => todo.validate(os).await,
         }
     }
 

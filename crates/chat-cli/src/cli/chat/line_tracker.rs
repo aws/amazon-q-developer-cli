@@ -13,6 +13,10 @@ pub struct FileLineTracker {
     pub before_fswrite_lines: usize,
     /// Line count after `fs_write` executes
     pub after_fswrite_lines: usize,
+    /// Lines added by agent in the current operation
+    pub lines_added_by_agent: usize,
+    /// Lines removed by agent in the current operation
+    pub lines_removed_by_agent: usize,
     /// Whether or not this is the first `fs_write` invocation
     pub is_first_write: bool,
 }
@@ -23,6 +27,8 @@ impl Default for FileLineTracker {
             prev_fswrite_lines: 0,
             before_fswrite_lines: 0,
             after_fswrite_lines: 0,
+            lines_added_by_agent: 0,
+            lines_removed_by_agent: 0,
             is_first_write: true,
         }
     }
@@ -34,6 +40,6 @@ impl FileLineTracker {
     }
 
     pub fn lines_by_agent(&self) -> isize {
-        (self.after_fswrite_lines as isize) - (self.before_fswrite_lines as isize)
+        (self.lines_added_by_agent + self.lines_removed_by_agent) as isize
     }
 }

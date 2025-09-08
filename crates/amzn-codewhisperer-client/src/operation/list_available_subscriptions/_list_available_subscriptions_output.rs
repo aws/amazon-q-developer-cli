@@ -5,6 +5,8 @@
 pub struct ListAvailableSubscriptionsOutput {
     #[allow(missing_docs)] // documentation missing in model
     pub subscription_plans: ::std::vec::Vec<crate::types::SubscriptionPlan>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub disclaimer: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
     _request_id: Option<String>,
 }
 impl ListAvailableSubscriptionsOutput {
@@ -12,6 +14,13 @@ impl ListAvailableSubscriptionsOutput {
     pub fn subscription_plans(&self) -> &[crate::types::SubscriptionPlan] {
         use std::ops::Deref;
         self.subscription_plans.deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.disclaimer.is_none()`.
+    pub fn disclaimer(&self) -> &[::std::string::String] {
+        self.disclaimer.as_deref().unwrap_or_default()
     }
 }
 impl ::aws_types::request_id::RequestId for ListAvailableSubscriptionsOutput {
@@ -34,6 +43,7 @@ impl ListAvailableSubscriptionsOutput {
 #[non_exhaustive]
 pub struct ListAvailableSubscriptionsOutputBuilder {
     pub(crate) subscription_plans: ::std::option::Option<::std::vec::Vec<crate::types::SubscriptionPlan>>,
+    pub(crate) disclaimer: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
     _request_id: Option<String>,
 }
 impl ListAvailableSubscriptionsOutputBuilder {
@@ -60,6 +70,27 @@ impl ListAvailableSubscriptionsOutputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_subscription_plans(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::SubscriptionPlan>> {
         &self.subscription_plans
+    }
+
+    /// Appends an item to `disclaimer`.
+    ///
+    /// To override the contents of this collection use [`set_disclaimer`](Self::set_disclaimer).
+    pub fn disclaimer(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        let mut v = self.disclaimer.unwrap_or_default();
+        v.push(input.into());
+        self.disclaimer = ::std::option::Option::Some(v);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_disclaimer(mut self, input: ::std::option::Option<::std::vec::Vec<::std::string::String>>) -> Self {
+        self.disclaimer = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_disclaimer(&self) -> &::std::option::Option<::std::vec::Vec<::std::string::String>> {
+        &self.disclaimer
     }
 
     pub(crate) fn _request_id(mut self, request_id: impl Into<String>) -> Self {
@@ -89,6 +120,7 @@ impl ListAvailableSubscriptionsOutputBuilder {
                     "subscription_plans was not specified but it is required when building ListAvailableSubscriptionsOutput",
                 )
             })?,
+            disclaimer: self.disclaimer,
             _request_id: self._request_id,
         })
     }

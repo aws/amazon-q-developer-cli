@@ -20,6 +20,7 @@ use crate::cli::agent::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
+use crate::util::pattern_matching::matches_any_pattern;
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
@@ -311,9 +312,13 @@ impl Knowledge {
         Ok(())
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
-        // Get the async knowledge store singleton with OS-aware directory
-        let async_knowledge_store = KnowledgeStore::get_async_instance_with_os(os)
+    pub async fn invoke(
+        &self,
+        os: &Os,
+        _updates: &mut impl Write,
+        agent: Option<&crate::cli::Agent>,
+    ) -> Result<InvokeOutput> {
+        let async_knowledge_store = KnowledgeStore::get_async_instance(os, agent)
             .await
             .map_err(|e| eyre::eyre!("Failed to access knowledge base: {}", e))?;
         let mut store = async_knowledge_store.lock().await;
@@ -488,9 +493,11 @@ impl Knowledge {
         })
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         _ = self;
-        if agent.allowed_tools.contains("knowledge") {
+        _ = os;
+
+        if matches_any_pattern(&agent.allowed_tools, "knowledge") {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask

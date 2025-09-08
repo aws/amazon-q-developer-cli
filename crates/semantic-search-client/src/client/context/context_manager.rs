@@ -107,6 +107,27 @@ impl ContextManager {
         Ok(all_results)
     }
 
+    /// Search in a specific context
+    pub async fn search_context(
+        &self,
+        context_id: &str,
+        query_text: &str,
+        effective_limit: usize,
+        embedder: &dyn TextEmbedderTrait,
+    ) -> Result<Option<SearchResults>> {
+        let contexts_metadata = self.contexts.read().await;
+        let context_meta = contexts_metadata
+            .get(context_id)
+            .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))?;
+
+        if context_meta.embedding_type.is_bm25() {
+            Ok(self.search_bm25_context(context_id, query_text, effective_limit).await)
+        } else {
+            self.search_semantic_context(context_id, query_text, effective_limit, embedder)
+                .await
+        }
+    }
+
     async fn search_bm25_context(&self, context_id: &str, query_text: &str, limit: usize) -> Option<SearchResults> {
         let bm25_contexts = tokio::time::timeout(Duration::from_millis(100), self.bm25_contexts.read())
             .await

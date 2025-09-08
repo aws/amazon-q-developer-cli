@@ -14,17 +14,23 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 
+/// Commands for persisting and loading conversation state
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum PersistSubcommand {
     /// Save the current conversation
     Save {
+        /// Path where the conversation will be saved
         path: String,
         #[arg(short, long)]
+        /// Force overwrite if file already exists
         force: bool,
     },
     /// Load a previous conversation
-    Load { path: String },
+    Load {
+        /// Path to the conversation file to load
+        path: String,
+    },
 }
 
 impl PersistSubcommand {
@@ -95,6 +101,8 @@ impl PersistSubcommand {
 
                 let mut new_state: ConversationState = tri!(serde_json::from_str(&contents), "import from", &path);
                 std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
+                std::mem::swap(&mut new_state.mcp_enabled, &mut session.conversation.mcp_enabled);
+                std::mem::swap(&mut new_state.model_info, &mut session.conversation.model_info);
                 std::mem::swap(
                     &mut new_state.context_manager,
                     &mut session.conversation.context_manager,

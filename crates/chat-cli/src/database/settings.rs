@@ -15,34 +15,68 @@ use tokio::io::{
 
 use super::DatabaseError;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, strum::EnumIter, strum::EnumMessage)]
 pub enum Setting {
+    #[strum(message = "Enable/disable telemetry collection (boolean)")]
     TelemetryEnabled,
+    #[strum(message = "Legacy client identifier for telemetry (string)")]
     OldClientId,
+    #[strum(message = "Share content with CodeWhisperer service (boolean)")]
     ShareCodeWhispererContent,
+    #[strum(message = "Enable thinking tool for complex reasoning (boolean)")]
     EnabledThinking,
+    #[strum(message = "Enable knowledge base functionality (boolean)")]
     EnabledKnowledge,
+    #[strum(message = "Default file patterns to include in knowledge base (array)")]
     KnowledgeDefaultIncludePatterns,
+    #[strum(message = "Default file patterns to exclude from knowledge base (array)")]
     KnowledgeDefaultExcludePatterns,
+    #[strum(message = "Maximum number of files for knowledge indexing (number)")]
     KnowledgeMaxFiles,
+    #[strum(message = "Text chunk size for knowledge processing (number)")]
     KnowledgeChunkSize,
+    #[strum(message = "Overlap between text chunks (number)")]
     KnowledgeChunkOverlap,
+    #[strum(message = "Type of knowledge index to use (string)")]
     KnowledgeIndexType,
+    #[strum(message = "Key binding for fuzzy search command (single character)")]
     SkimCommandKey,
+    #[strum(message = "Enable tangent mode feature (boolean)")]
+    EnabledTangentMode,
+    #[strum(message = "Key binding for tangent mode toggle (single character)")]
+    TangentModeKey,
+    #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
+    IntrospectTangentMode,
+    #[strum(message = "Show greeting message on chat start (boolean)")]
     ChatGreetingEnabled,
+    #[strum(message = "API request timeout in seconds (number)")]
     ApiTimeout,
+    #[strum(message = "Enable edit mode for chat interface (boolean)")]
     ChatEditMode,
+    #[strum(message = "Enable desktop notifications (boolean)")]
     ChatEnableNotifications,
+    #[strum(message = "CodeWhisperer service endpoint URL (string)")]
     ApiCodeWhispererService,
+    #[strum(message = "Q service endpoint URL (string)")]
     ApiQService,
+    #[strum(message = "MCP server initialization timeout (number)")]
     McpInitTimeout,
+    #[strum(message = "Non-interactive MCP timeout (number)")]
     McpNoInteractiveTimeout,
+    #[strum(message = "Track previously loaded MCP servers (boolean)")]
     McpLoadedBefore,
+    #[strum(message = "Default AI model for conversations (string)")]
     ChatDefaultModel,
+    #[strum(message = "Disable markdown formatting in chat (boolean)")]
     ChatDisableMarkdownRendering,
+    #[strum(message = "Default agent configuration (string)")]
     ChatDefaultAgent,
+    #[strum(message = "Disable automatic conversation summarization (boolean)")]
     ChatDisableAutoCompaction,
+    #[strum(message = "Show conversation history hints (boolean)")]
     ChatEnableHistoryHints,
+    #[strum(message = "Enable the todo list feature (boolean)")]
+    EnabledTodoList,
 }
 
 impl AsRef<str> for Setting {
@@ -60,6 +94,9 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::EnabledTangentMode => "chat.enableTangentMode",
+            Self::TangentModeKey => "chat.tangentModeKey",
+            Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
             Self::ChatEditMode => "chat.editMode",
@@ -74,6 +111,7 @@ impl AsRef<str> for Setting {
             Self::ChatDefaultAgent => "chat.defaultAgent",
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
+            Self::EnabledTodoList => "chat.enableTodoList",
         }
     }
 }
@@ -101,6 +139,9 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
+            "chat.tangentModeKey" => Ok(Self::TangentModeKey),
+            "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),
             "chat.editMode" => Ok(Self::ChatEditMode),
@@ -115,6 +156,7 @@ impl TryFrom<&str> for Setting {
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
+            "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
