@@ -70,7 +70,7 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "$", "\n", "\r", "IFS"];
 
         if args
             .iter()
@@ -328,6 +328,7 @@ mod tests {
             (r#"find / -fprintf "/path/to/file" <data-to-write> -quit"#, true),
             (r"find . -${t}exec touch asdf \{\} +", true),
             (r"find . -${t:=exec} touch asdf2 \{\} +", true),
+            (r#"find /tmp -name "*"  -exe$9c touch /tmp/find_result {} +"#, true),
             // `grep` command arguments
             ("echo 'test data' | grep -P '(?{system(\"date\")})'", true),
             ("echo 'test data' | grep --perl-regexp '(?{system(\"date\")})'", true),
