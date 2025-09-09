@@ -288,30 +288,30 @@ mod linux_tests {
         let direct_file = "/home/user/a.txt";
         let nested_file = "/home/user/folder/a.txt";
         let other_file = "/home/admin/a.txt";
-        
+
         // Case 1: Path with trailing slash
         let mut builder1 = GlobSetBuilder::new();
         add_gitignore_globs(&mut builder1, "/home/user/").unwrap();
         let globset1 = builder1.build().unwrap();
-        
+
         assert!(globset1.is_match(direct_file));
         assert!(globset1.is_match(nested_file));
         assert!(!globset1.is_match(other_file));
-        
+
         // Case 2: Path without trailing slash - should behave same as case 1
         let mut builder2 = GlobSetBuilder::new();
         add_gitignore_globs(&mut builder2, "/home/user").unwrap();
         let globset2 = builder2.build().unwrap();
-        
+
         assert!(globset2.is_match(direct_file));
         assert!(globset2.is_match(nested_file));
         assert!(!globset1.is_match(other_file));
-        
+
         // Case 3: File path - should only match exact file
         let mut builder3 = GlobSetBuilder::new();
         add_gitignore_globs(&mut builder3, "/home/user/a.txt").unwrap();
         let globset3 = builder3.build().unwrap();
-        
+
         assert!(globset3.is_match(direct_file));
         assert!(!globset3.is_match(nested_file));
         assert!(!globset1.is_match(other_file));
