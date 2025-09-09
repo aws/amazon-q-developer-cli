@@ -27,10 +27,29 @@ use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
-// TODO: support http transport type
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+pub enum TransportType {
+    /// Server-Sent Events transport for real-time communication
+    Sse,
+    /// Standard input/output transport (default)
+    Stdio,
+    /// HTTP transport for web-based communication
+    Http,
+}
+
+impl Default for TransportType {
+    fn default() -> Self {
+        Self::Stdio
+    }
+}
+
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 pub struct CustomToolConfig {
+    /// The type of transport the mcp server is expecting
+    #[serde(default)]
+    pub r#type: TransportType,
     /// The command string used to initialize the mcp server
+    #[serde(default)]
     pub command: String,
     /// A list of arguments to be used to run the command with
     #[serde(default)]
