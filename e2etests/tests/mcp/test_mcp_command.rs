@@ -48,7 +48,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /mcp --help command... | Description: Tests the /mcp --help command to display help information for MCP server management functionality");
+    println!("\n🔍 Testing /mcp --help command... | Description: Tests the <code>/mcp --help</code> command to display help information for MCP server management functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -91,7 +91,7 @@ fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "mcp", feature = "sanity"))]
 fn test_mcp_loading_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing MCP loading... | Description: Tests MCP server loading status and displays information about loaded MCP servers with timing");
+    println!("\n🔍 Testing /mcp command... | Description: Tests the <code>/mcp</code> command to display MCP server loading status and information");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

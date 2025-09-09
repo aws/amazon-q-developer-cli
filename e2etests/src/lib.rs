@@ -130,58 +130,36 @@ pub mod q_chat_helper {
         }
     }
 
-    /// Start a terminal session
-    pub fn start_q_subcommand(command: &str, args: &[&str]) -> Result<expectrl::Session<expectrl::process::unix::UnixProcess, expectrl::process::unix::PtyStream>, Error> {
-        let full_command = if args.is_empty() {
-            command.to_string()
-        } else {
-            format!("{} {}", command, args.join(" "))
-        };
-        
-        let mut session = expectrl::spawn(&full_command)?;
-        session.set_expect_timeout(Some(Duration::from_secs(60)));
-        std::thread::sleep(Duration::from_secs(2));
-        
-        Ok(session)
+    /// Execute Q CLI subcommand in normal terminal and return response
+    pub fn execute_q_subcommand(binary: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+        execute_q_subcommand_with_stdin(binary, args, None)
     }
 
-    /// Read response from a session
-    pub fn read_session_response(session: &mut expectrl::Session<expectrl::process::unix::UnixProcess, expectrl::process::unix::PtyStream>) -> Result<String, Error> {
-        let mut total_content = String::new();
+    /// Execute Q CLI subcommand with optional stdin input and return response
+    pub fn execute_q_subcommand_with_stdin(binary: &str, args: &[&str], input: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+        let q_binary = std::env::var("Q_CLI_PATH").unwrap_or_else(|_| binary.to_string());
         
-        // Wait longer for chat responses
-        std::thread::sleep(Duration::from_secs(10));
+        let full_command = format!("{} {}", q_binary, args.join(" "));
+        let prompt = format!("(base) user@host ~ % {}\n", full_command);
         
-        for _ in 0..60 {
-            let mut buffer = [0u8; 1024];
-            match session.try_read(&mut buffer) {
-                Ok(bytes_read) if bytes_read > 0 => {
-                    let chunk = String::from_utf8_lossy(&buffer[..bytes_read]);
-                    total_content.push_str(&chunk);
-                },
-                Ok(_) => {
-                    std::thread::sleep(Duration::from_millis(500));
-                    if total_content.len() > 100 { break; }
-                },
-                Err(_) => break,
+        let mut child = Command::new(&q_binary)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        
+        if let Some(stdin_input) = input {
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin.write_all(stdin_input.as_bytes())?;
             }
-            std::thread::sleep(Duration::from_millis(500));
         }
         
-        Ok(total_content)
+        let output = child.wait_with_output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        Ok(format!("{}{}{}", prompt, stderr, stdout))
     }
 
-    /// Execute a Q subcommand and return the response
-    pub fn execute_q_subcommand(command: &str, args: &[&str]) -> Result<String, Error> {
-        let mut session = start_q_subcommand(command, args)?;
-        let content = read_session_response(&mut session)?;
-        
-        let full_command = if args.is_empty() {
-            command.to_string()
-        } else {
-            format!("{} {}", command, args.join(" "))
-        };
-        let prompt = format!("(base) user@host ~ % {}\n", full_command);
-        Ok(format!("{}{}", prompt, content))
-    }
 }

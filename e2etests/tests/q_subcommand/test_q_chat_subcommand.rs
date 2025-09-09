@@ -1,19 +1,18 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 
-/// Tests the q chat command startup and /help functionality
 #[test]
 #[cfg(all(feature = "q_subcommand", feature = "sanity"))]
-fn test_q_chat_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing q chat command... | Description: Tests the q chat command that opens Q terminal for interactive AI conversations.");
+fn test_q_chat_subcommand() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing q chat subcommand... | Description: Tests the <code> q chat </code> subcommand that opens Q terminal for interactive AI conversations.");
     
-    println!("\n🛠️ Running 'q chat' command...");
+    println!("\n🔍 Executing 'q chat' subcommand...");
     let response = q_chat_helper::execute_q_subcommand("q", &["chat", "\"what is aws?\""])?;
 
     println!("📝 Chat response: {} bytes", response.len());
-    println!("📝 CHAT OUTPUT:");
+    println!("📝 FULL OUTPUT:");
     println!("{}", response);
-    println!("📝 END CHAT OUTPUT");
+    println!("📝 END OUTPUT");
 
     // Validate we got a proper AWS response
     assert!(response.contains("Amazon Web Services") || response.contains("AWS"), 
@@ -22,9 +21,9 @@ fn test_q_chat_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ Got substantial AI response ({} bytes)!", response.len());
 
-    println!("✅ Chat command executed!");
+    println!("✅ Chat subcommand executed!");
     
-    println!("✅ q chat command executed successfully!");
+    println!("✅ q chat subcommand executed successfully!");
     
     Ok(())
 }

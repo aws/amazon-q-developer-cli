@@ -147,7 +147,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     let lines: Vec<&str> = whoami_response.lines().collect();
     let username = lines.iter()
         .find(|line| !line.starts_with("!") && !line.starts_with(">") && !line.trim().is_empty())
-        .unwrap_or(&"shrebhaa")
+        .expect("Failed to get username from whoami command")
         .trim();
     println!("✅ Current username: {}", username);
     

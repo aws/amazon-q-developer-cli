@@ -6,7 +6,7 @@ mod core_session;
 mod integration;
 mod mcp;
 mod model;
+mod q_subcommand;
 mod save_load;
 mod session_mgmt;
 mod tools;
-mod q_subcommand;
