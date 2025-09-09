@@ -1,8 +1,14 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::{
+    Deref,
+    DerefMut,
+};
 use std::process::Stdio;
+use std::str::FromStr;
 
 use regex::Regex;
+use reqwest::Client;
 use rmcp::model::{
     ErrorCode,
     Implementation,
@@ -17,11 +23,19 @@ use rmcp::model::{
 };
 use rmcp::service::{
     ClientInitializeError,
+    DynService,
     NotificationContext,
+};
+use rmcp::transport::auth::AuthClient;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransportConfig,
+    StreamableHttpClientWorker,
 };
 use rmcp::transport::{
     ConfigureCommandExt,
+    StreamableHttpClientTransport,
     TokioChildProcess,
+    WorkerTransport,
 };
 use rmcp::{
     ErrorData,
@@ -31,14 +45,31 @@ use rmcp::{
     ServiceExt,
 };
 use tokio::io::AsyncReadExt as _;
-use tokio::process::Command;
+use tokio::process::{
+    ChildStderr,
+    Command,
+};
 use tokio::task::JoinHandle;
 use tracing::error;
+use url::Url;
 
 use super::messenger::Messenger;
+use super::{
+    AuthClientDropGuard,
+    OauthUtilError,
+    compute_key,
+};
 use crate::cli::chat::server_messenger::ServerMessenger;
-use crate::cli::chat::tools::custom_tool::CustomToolConfig;
+use crate::cli::chat::tools::custom_tool::{
+    CustomToolConfig,
+    TransportType,
+};
+use crate::mcp_client::get_auth_manager;
 use crate::os::Os;
+use crate::util::directories::{
+    DirectoryError,
+    get_mcp_auth_dir,
+};
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -118,9 +149,64 @@ pub enum McpClientError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("Client has not finished initializing")]
     NotReady,
+    #[error(transparent)]
+    Directory(#[from] DirectoryError),
+    #[error(transparent)]
+    Oauth(#[from] OauthUtilError),
+    #[error(transparent)]
+    Parse(#[from] url::ParseError),
 }
 
-pub type RunningService = rmcp::service::RunningService<RoleClient, McpClientService>;
+pub struct RunningService {
+    pub inner_service: rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
+    #[allow(dead_code)]
+    pub auth_dropguard: Option<AuthClientDropGuard>,
+}
+
+impl Deref for RunningService {
+    type Target = rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner_service
+    }
+}
+
+impl DerefMut for RunningService {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner_service
+    }
+}
+
+pub type HttpTransport = (
+    WorkerTransport<StreamableHttpClientWorker<AuthClient<Client>>>,
+    AuthClientDropGuard,
+);
+pub type StdioTransport = (TokioChildProcess, Option<ChildStderr>);
+
+// TODO: add sse support (even though it's deprecated)
+/// Represents the different transport mechanisms available for MCP (Model Context Protocol)
+/// communication.
+///
+/// This enum encapsulates the two primary ways to communicate with MCP servers:
+/// - HTTP-based transport for remote servers
+/// - Standard I/O transport for local process-based servers
+pub enum Transport {
+    /// HTTP transport for communicating with remote MCP servers over network protocols.
+    /// Uses a streamable HTTP client with authentication support.
+    Http(HttpTransport),
+    /// Standard I/O transport for communicating with local MCP servers via child processes.
+    /// Communication happens through stdin/stdout pipes.
+    Stdio(StdioTransport),
+}
+
+impl std::fmt::Debug for Transport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transport::Http(_) => f.debug_tuple("Http").field(&"HttpTransport").finish(),
+            Transport::Stdio(_) => f.debug_tuple("Stdio").field(&"TokioChildProcess").finish(),
+        }
+    }
+}
 
 /// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
 /// server driven data flow (i.e. requests and notifications that are sent from the server) are
@@ -145,44 +231,33 @@ impl McpClientService {
         let os_clone = os.clone();
 
         let handle: JoinHandle<Result<RunningService, McpClientError>> = tokio::spawn(async move {
-            let CustomToolConfig {
-                command: command_as_str,
-                args,
-                env: config_envs,
-                ..
-            } = &mut self.config;
-
-            let command = Command::new(command_as_str).configure(|cmd| {
-                if let Some(envs) = config_envs {
-                    process_env_vars(envs, &os_clone.env);
-                    cmd.envs(envs);
-                }
-                cmd.envs(std::env::vars()).args(args);
-
-                #[cfg(not(windows))]
-                cmd.process_group(0);
-            });
-
             let messenger_clone = self.messenger.duplicate();
             let server_name = self.server_name.clone();
 
             let result: Result<_, McpClientError> = async {
-                // Spawn the child process with stderr piped
-                let (tokio_child_process, child_stderr) =
-                    TokioChildProcess::builder(command).stderr(Stdio::piped()).spawn()?;
+                let (service, stderr, auth_client) = match self.get_transport(&os_clone, &messenger_clone).await? {
+                    Transport::Stdio((child_process, stderr)) => {
+                        let service = self
+                            .into_dyn()
+                            .serve::<TokioChildProcess, _, _>(child_process)
+                            .await
+                            .map_err(Box::new)?;
 
-                // Attempt to serve the process
-                let service = self
-                    .serve::<TokioChildProcess, _, _>(tokio_child_process)
-                    .await
-                    .map_err(Box::new)?;
+                        (service, stderr, None)
+                    },
+                    Transport::Http((transport, auth_dg)) => {
+                        let service = self.into_dyn().serve(transport).await.map_err(Box::new)?;
 
-                Ok((service, child_stderr))
+                        (service, None, Some(auth_dg))
+                    },
+                };
+
+                Ok((service, stderr, auth_client))
             }
             .await;
 
-            let (service, child_stderr) = match result {
-                Ok((service, stderr)) => (service, stderr),
+            let (service, child_stderr, auth_dropguard) = match result {
+                Ok((service, stderr, auth_dg)) => (service, stderr, auth_dg),
                 Err(e) => {
                     let msg = e.to_string();
                     let error_data = ErrorData {
@@ -262,10 +337,67 @@ impl McpClientService {
                 }
             });
 
-            Ok(service)
+            Ok(RunningService {
+                inner_service: service,
+                auth_dropguard,
+            })
         });
 
         Ok(InitializedMcpClient::Pending(handle))
+    }
+
+    async fn get_transport(&mut self, os: &Os, messenger: &Box<dyn Messenger>) -> Result<Transport, McpClientError> {
+        // TODO: figure out what to do with headers
+        let CustomToolConfig {
+            r#type: transport_type,
+            url,
+            command: command_as_str,
+            args,
+            env: config_envs,
+            ..
+        } = &mut self.config;
+
+        match transport_type {
+            TransportType::Stdio => {
+                let command = Command::new(command_as_str).configure(|cmd| {
+                    if let Some(envs) = config_envs {
+                        process_env_vars(envs, &os.env);
+                        cmd.envs(envs);
+                    }
+                    cmd.envs(std::env::vars()).args(args);
+
+                    #[cfg(not(windows))]
+                    cmd.process_group(0);
+                });
+
+                let (tokio_child_process, child_stderr) =
+                    TokioChildProcess::builder(command).stderr(Stdio::piped()).spawn()?;
+
+                Ok(Transport::Stdio((tokio_child_process, child_stderr)))
+            },
+            TransportType::Http => {
+                let cred_dir = get_mcp_auth_dir(os)?;
+                let url = Url::from_str(url)?;
+                let key = compute_key(&url);
+                let cred_full_path = cred_dir.join(format!("{key}.token.json"));
+
+                let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
+                let client = AuthClient::new(reqwest::Client::default(), am);
+                let transport =
+                    StreamableHttpClientTransport::with_client(client.clone(), StreamableHttpClientTransportConfig {
+                        uri: url.as_str().into(),
+                        allow_stateless: false,
+                        ..Default::default()
+                    });
+
+                let auth_dg = AuthClientDropGuard {
+                    path: cred_full_path,
+                    auth_client: client,
+                };
+
+                Ok(Transport::Http((transport, auth_dg)))
+            },
+        }
     }
 
     async fn on_logging_message(
@@ -389,10 +521,18 @@ impl Service<RoleClient> for McpClientService {
 /// The solution chosen here is to instead spawn a task and have [Service::serve] called there and
 /// return the handle to said task, stored in the [InitializedMcpClient::Pending] variant. This
 /// enum is then flipped lazily (if applicable) when a [RunningService] is needed.
-#[derive(Debug)]
 pub enum InitializedMcpClient {
     Pending(JoinHandle<Result<RunningService, McpClientError>>),
     Ready(RunningService),
+}
+
+impl std::fmt::Debug for InitializedMcpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitializedMcpClient::Pending(_) => f.debug_tuple("Pending").field(&"JoinHandle<..>").finish(),
+            InitializedMcpClient::Ready(_) => f.debug_tuple("Ready").field(&"RunningService<..>").finish(),
+        }
+    }
 }
 
 impl InitializedMcpClient {

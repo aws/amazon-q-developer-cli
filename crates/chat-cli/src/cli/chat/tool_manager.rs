@@ -630,9 +630,12 @@ impl ToolManager {
                         let server_name_clone = server_name.clone();
                         tokio::spawn(async move {
                             match handle.await {
-                                Ok(Ok(client)) => match client.cancel().await {
-                                    Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
-                                    Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
+                                Ok(Ok(client)) => {
+                                    let client = client.inner_service;
+                                    match client.cancel().await {
+                                        Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
+                                        Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
+                                    }
                                 },
                                 Ok(Err(_)) | Err(_) => {
                                     error!("Server {server_name_clone} has failed to cancel");
@@ -640,9 +643,12 @@ impl ToolManager {
                             }
                         });
                     },
-                    InitializedMcpClient::Ready(running_service) => match running_service.cancel().await {
-                        Ok(_) => info!("Server {server_name} evicted due to agent swap"),
-                        Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
+                    InitializedMcpClient::Ready(running_service) => {
+                        let client = running_service.inner_service;
+                        match client.cancel().await {
+                            Ok(_) => info!("Server {server_name} evicted due to agent swap"),
+                            Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
+                        }
                     },
                 }
             }
@@ -1595,6 +1601,37 @@ fn spawn_orchestrator_task(
                 },
                 UpdateEventMessage::ListResourcesResult { .. } => {},
                 UpdateEventMessage::ResourceTemplatesListResult { .. } => {},
+                UpdateEventMessage::OauthLink { server_name, link } => {
+                    let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                    let msg = eyre::eyre!(link);
+                    let _ = queue_oauth_message(server_name.as_str(), &msg, &mut buf_writer);
+                    let _ = buf_writer.flush();
+                    drop(buf_writer);
+                    let record_str = String::from_utf8_lossy(record_temp_buf).to_string();
+                    let record = LoadingRecord::Warn(record_str.clone());
+                    load_record
+                        .lock()
+                        .await
+                        .entry(server_name.clone())
+                        .and_modify(|load_record| {
+                            load_record.push(record.clone());
+                        })
+                        .or_insert(vec![record]);
+                    if let Some(sender) = &loading_status_sender {
+                        let msg = LoadingMsg::Warn {
+                            name: server_name.clone(),
+                            msg: eyre::eyre!("{}", record_str),
+                            time: "0.0".to_string(),
+                        };
+                        if let Err(e) = sender.send(msg).await {
+                            warn!(
+                                "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                e
+                            );
+                            loading_status_sender.take();
+                        }
+                    }
+                },
                 UpdateEventMessage::InitStart { server_name, .. } => {
                     pending.write().await.insert(server_name.clone());
                     loading_servers.insert(server_name, std::time::Instant::now());
@@ -1872,6 +1909,21 @@ fn queue_failure_message(
         style::Print(format!(
             " - run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
         )),
+        style::ResetColor,
+    )?)
+}
+
+fn queue_oauth_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print("⚠ "),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(name),
+        style::ResetColor,
+        style::Print(" requires OAuth authentication. Please visit:\n"),
+        style::SetForegroundColor(style::Color::Cyan),
+        style::Print(msg),
         style::ResetColor,
     )?)
 }

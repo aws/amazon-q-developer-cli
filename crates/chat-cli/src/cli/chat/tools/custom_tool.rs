@@ -28,9 +28,8 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub enum TransportType {
-    /// Server-Sent Events transport for real-time communication
-    Sse,
     /// Standard input/output transport (default)
     Stdio,
     /// HTTP transport for web-based communication
@@ -48,6 +47,12 @@ pub struct CustomToolConfig {
     /// The type of transport the mcp server is expecting
     #[serde(default)]
     pub r#type: TransportType,
+    /// The URL endpoint for HTTP-based MCP servers
+    #[serde(default)]
+    pub url: String,
+    /// HTTP headers to include when communicating with HTTP-based MCP servers
+    #[serde(default)]
+    pub headers: HashMap<String, String>,
     /// The command string used to initialize the mcp server
     #[serde(default)]
     pub command: String,

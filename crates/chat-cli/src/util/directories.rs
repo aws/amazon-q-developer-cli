@@ -237,6 +237,14 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
     Ok(knowledge_bases_dir(os)?.join(unique_id))
 }
 
+/// The directory for MCP authentication cache
+///
+/// This is the same directory used by IDE for SSO cache storage.
+/// - All platforms: `$HOME/.aws/sso/cache`
+pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
 /// Generate a unique identifier for an agent based on its path and name
 fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
     use std::collections::hash_map::DefaultHasher;
