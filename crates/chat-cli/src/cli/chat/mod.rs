@@ -39,6 +39,7 @@ use clap::{
     Args,
     CommandFactory,
     Parser,
+    ValueEnum,
 };
 use cli::compact::CompactStrategy;
 use cli::model::{
@@ -189,6 +190,16 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum WrapMode {
+    /// Always wrap at terminal width
+    Always,
+    /// Never wrap (raw output)
+    Never,
+    /// Auto-detect based on output target (default)
+    Auto,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resumes the previous conversation from this directory.
@@ -212,6 +223,9 @@ pub struct ChatArgs {
     pub no_interactive: bool,
     /// The first question to ask
     pub input: Option<String>,
+    /// Control line wrapping behavior (default: auto-detect)
+    #[arg(short = 'w', long, value_enum)]
+    pub wrap: Option<WrapMode>,
 }
 
 impl ChatArgs {
@@ -388,6 +402,7 @@ impl ChatArgs {
             tool_config,
             !self.no_interactive,
             mcp_enabled,
+            self.wrap,
         )
         .await?
         .spawn(os)
@@ -597,6 +612,7 @@ pub struct ChatSession {
     interactive: bool,
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
+    wrap: Option<WrapMode>,
 }
 
 impl ChatSession {
@@ -616,6 +632,7 @@ impl ChatSession {
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
         mcp_enabled: bool,
+        wrap: Option<WrapMode>,
     ) -> Result<Self> {
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -707,6 +724,7 @@ impl ChatSession {
             interactive,
             inner: Some(ChatState::default()),
             ctrlc_rx,
+            wrap,
         })
     }
 
@@ -2395,8 +2413,20 @@ impl ChatSession {
         let mut buf = String::new();
         let mut offset = 0;
         let mut ended = false;
+        let terminal_width = match self.wrap {
+            Some(WrapMode::Never) => None,
+            Some(WrapMode::Always) => Some(self.terminal_width()),
+            Some(WrapMode::Auto) | None => {
+                if std::io::stdout().is_terminal() {
+                    Some(self.terminal_width())
+                } else {
+                    None
+                }
+            },
+        };
+
         let mut state = ParseState::new(
-            Some(self.terminal_width()),
+            terminal_width,
             os.database.settings.get_bool(Setting::ChatDisableMarkdownRendering),
         );
         let mut response_prefix_printed = false;
@@ -3458,6 +3488,7 @@ mod tests {
             tool_config,
             true,
             false,
+            None,
         )
         .await
         .unwrap()
