@@ -2,6 +2,9 @@
 
 The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
 
+> [!TIP]
+> We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
+
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
@@ -15,6 +18,7 @@ Every agent configuration file can include the following sections:
 - [`resources`](#resources-field) — Resources available to the agent.
 - [`hooks`](#hooks-field) — Commands run at specific trigger points.
 - [`useLegacyMcpJson`](#uselegacymcpjson-field) — Whether to include legacy MCP configuration.
+- [`model`](#model-field) — The model ID to use for this agent.
 
 ## Name Field
 
@@ -290,6 +294,20 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 
 When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
 
+## Model Field
+
+The `model` field specifies the model ID to use for this agent. If not specified, the agent will use the default model.
+
+```json
+{
+  "model": "claude-sonnet-4"
+}
+```
+
+The model ID must match one of the available models returned by the Q CLI's model service. You can see available models by using the `/model` command in an active chat session.
+
+If the specified model is not available, the agent will fall back to the default model and display a warning.
+
 ## Complete Example
 
 Here's a complete example of an agent configuration file:
@@ -348,6 +366,7 @@ Here's a complete example of an agent configuration file:
       }
     ]
   },
-  "useLegacyMcpJson": true
+  "useLegacyMcpJson": true,
+  "model": "claude-sonnet-4"
 }
 ```
