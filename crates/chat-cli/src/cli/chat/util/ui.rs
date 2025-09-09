@@ -117,10 +117,10 @@ pub fn draw_box(
 #[cfg(test)]
 mod tests {
     use bstr::ByteSlice;
-    use crossterm::style::Color;
 
     use super::*;
     use crate::cli::chat::GREETING_BREAK_POINT;
+    use crate::cli::chat::colors::ColorManager;
 
     #[tokio::test]
     async fn test_draw_tip_box() {
@@ -133,7 +133,7 @@ mod tests {
             "Did you know?",
             short_tip,
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            ColorManager::new_with_default_theme().secondary(),
         )
         .expect("Failed to draw tip box");
 
@@ -144,7 +144,7 @@ mod tests {
             "Did you know?",
             long_tip,
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            ColorManager::new_with_default_theme().secondary(),
         )
         .expect("Failed to draw tip box");
 
@@ -160,7 +160,7 @@ mod tests {
             "Did you know?",
             long_tip_with_one_long_word.as_str(),
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            ColorManager::new_with_default_theme().secondary(),
         )
         .expect("Failed to draw tip box");
         // Test with a long tip with two long words that should wrap
@@ -170,7 +170,7 @@ mod tests {
             "Did you know?",
             long_tip_with_two_long_words.as_str(),
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            ColorManager::new_with_default_theme().secondary(),
         )
         .expect("Failed to draw tip box");
 

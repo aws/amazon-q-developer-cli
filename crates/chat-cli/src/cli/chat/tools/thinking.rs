@@ -1,9 +1,8 @@
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
+use crossterm::{
+    queue,
+    style,
 };
 use eyre::Result;
 use serde::Deserialize;
@@ -12,8 +11,16 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::database::settings::Setting;
+use crate::cli::chat::colors::ColorManager;
+use crate::database::settings::{
+    Setting,
+    Settings,
+};
 use crate::os::Os;
+use crate::{
+    with_color,
+    with_info,
+};
 
 /// The Think tool allows the model to reason through complex problems during response generation.
 /// It provides a dedicated space for the model to process information from tool call results,
@@ -37,15 +44,12 @@ impl Thinking {
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
         // Only show a description if there's actual thought content
         if !self.thought.trim().is_empty() {
+            let settings = Settings::default();
+            let color_manager = ColorManager::from_settings(&settings);
+
             // Show a preview of the thought that will be displayed
-            queue!(
-                output,
-                style::SetForegroundColor(Color::Blue),
-                style::Print("I'll share my reasoning process: "),
-                style::SetForegroundColor(Color::Reset),
-                style::Print(&self.thought),
-                style::Print("\n")
-            )?;
+            with_info!(output, &color_manager, "I'll share my reasoning process: ")?;
+            queue!(output, style::Print(&self.thought), style::Print("\n"))?;
         }
         Ok(())
     }

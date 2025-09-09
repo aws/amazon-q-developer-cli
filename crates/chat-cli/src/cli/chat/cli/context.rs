@@ -75,7 +75,7 @@ impl ContextSubcommand {
         let Some(context_manager) = &mut session.conversation.context_manager else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                style::SetForegroundColor(session.colors.error()),
                 style::Print("\nContext management is not available.\n\n"),
                 style::SetForegroundColor(Color::Reset)
             )?;
@@ -99,7 +99,7 @@ impl ContextSubcommand {
                 execute!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::SetForegroundColor(Color::Magenta),
+                    style::SetForegroundColor(session.colors.action()),
                     style::Print(format!("👤 Agent ({}):\n", context_manager.current_profile)),
                     style::SetAttribute(Attribute::Reset),
                 )?;
@@ -107,7 +107,7 @@ impl ContextSubcommand {
                 if agent_owned_list.is_empty() {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        style::SetForegroundColor(session.colors.secondary()),
                         style::Print("    <none>\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
@@ -120,7 +120,7 @@ impl ContextSubcommand {
                         {
                             execute!(
                                 session.stderr,
-                                style::SetForegroundColor(Color::Green),
+                                style::SetForegroundColor(session.colors.success()),
                                 style::Print(format!(
                                     "({} match{})",
                                     context_files.len(),
@@ -179,7 +179,7 @@ impl ContextSubcommand {
                 if profile_context_files.is_empty() {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        style::SetForegroundColor(session.colors.secondary()),
                         style::Print("No files in the current directory matched the rules above.\n\n"),
                         style::SetForegroundColor(Color::Reset)
                     )?;
@@ -191,7 +191,7 @@ impl ContextSubcommand {
                         .sum::<usize>();
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(
                             "{} matched file{} in use:\n",
@@ -208,14 +208,14 @@ impl ContextSubcommand {
                         execute!(
                             session.stderr,
                             style::Print(format!("{} {} ", icon, filename)),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print(format!("(~{} tkns)\n", est_tokens)),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                         if expand {
                             execute!(
                                 session.stderr,
-                                style::SetForegroundColor(Color::DarkGrey),
+                                style::SetForegroundColor(session.colors.secondary()),
                                 style::Print(format!("{}\n\n", content)),
                                 style::SetForegroundColor(Color::Reset)
                             )?;
@@ -242,7 +242,7 @@ impl ContextSubcommand {
                         if !dropped_files.is_empty() {
                             execute!(
                                 session.stderr,
-                                style::SetForegroundColor(Color::DarkYellow),
+                                style::SetForegroundColor(session.colors.warning()),
                                 style::Print(format!(
                                     "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
                                     context_files_max_size
@@ -258,7 +258,7 @@ impl ContextSubcommand {
                                 execute!(
                                     session.stderr,
                                     style::Print(format!("{} ", filename)),
-                                    style::SetForegroundColor(Color::DarkGrey),
+                                    style::SetForegroundColor(session.colors.secondary()),
                                     style::Print(format!("(~{} tkns)\n", est_tokens)),
                                     style::SetForegroundColor(Color::Reset),
                                 )?;
@@ -283,7 +283,7 @@ impl ContextSubcommand {
                         execute!(
                             session.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(session.colors.primary()),
                             style::Print(&border),
                             style::Print("\n"),
                             style::SetAttribute(Attribute::Bold),
@@ -302,7 +302,7 @@ impl ContextSubcommand {
                 Ok(_) => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         style::Print(format!("\nAdded {} path(s) to context.\n", paths.len())),
                         style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
@@ -311,7 +311,7 @@ impl ContextSubcommand {
                 Err(e) => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!("\nError: {}\n\n", e)),
                         style::SetForegroundColor(Color::Reset)
                     )?;
@@ -321,7 +321,7 @@ impl ContextSubcommand {
                 Ok(_) => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         style::Print(format!("\nRemoved {} path(s) from context.\n\n", paths.len(),)),
                         style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                         style::SetForegroundColor(Color::Reset)
@@ -330,7 +330,7 @@ impl ContextSubcommand {
                 Err(e) => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!("\nError: {}\n\n", e)),
                         style::SetForegroundColor(Color::Reset)
                     )?;
@@ -340,7 +340,7 @@ impl ContextSubcommand {
                 context_manager.clear();
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print("\nCleared context\n"),
                     style::Print("Note: Context modifications via slash command is temporary.\n\n"),
                     style::SetForegroundColor(Color::Reset)
@@ -349,11 +349,11 @@ impl ContextSubcommand {
             Self::Hooks => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print(
                         "The /context hooks command is deprecated.\n\nConfigure hooks directly with your agent instead: "
                     ),
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
                     style::SetForegroundColor(Color::Reset),
                     style::Print("\n"),

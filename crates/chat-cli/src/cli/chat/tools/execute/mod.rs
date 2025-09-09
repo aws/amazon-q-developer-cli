@@ -1,9 +1,8 @@
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
+use crossterm::{
+    queue,
+    style,
 };
 use eyre::Result;
 use regex::Regex;
@@ -15,6 +14,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::sanitize_unicode_tags;
 use crate::cli::chat::tools::{
     InvokeOutput,
@@ -22,8 +22,13 @@ use crate::cli::chat::tools::{
     OutputKind,
 };
 use crate::cli::chat::util::truncate_safe;
+use crate::database::settings::Settings;
 use crate::os::Os;
 use crate::util::pattern_matching::matches_any_pattern;
+use crate::{
+    with_color,
+    with_success,
+};
 
 // Platform-specific modules
 #[cfg(windows)]
@@ -164,13 +169,11 @@ impl ExecuteCommand {
             queue!(output, style::Print("\n"),)?;
         }
 
-        queue!(
-            output,
-            style::SetForegroundColor(Color::Green),
-            style::Print(&self.command),
-            style::Print("\n"),
-            style::ResetColor
-        )?;
+        let settings = Settings::default();
+        let color_manager = ColorManager::from_settings(&settings);
+
+        with_success!(output, &color_manager, "{}", &self.command)?;
+        queue!(output, style::Print("\n"))?;
 
         // Add the summary if available
         if let Some(ref summary) = self.summary {

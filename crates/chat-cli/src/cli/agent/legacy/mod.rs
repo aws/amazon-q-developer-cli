@@ -17,6 +17,7 @@ use super::{
 };
 use crate::cli::agent::hook::Hook;
 use crate::cli::agent::legacy::context::LegacyContextConfig;
+use crate::cli::chat::colors::ColorManager;
 use crate::os::Os;
 use crate::util::directories;
 
@@ -26,6 +27,7 @@ use crate::util::directories;
 /// Returns [Some] with the newly migrated agents if the migration was performed, [None] if the
 /// migration was already done previously.
 pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>>> {
+    let colors = ColorManager::from_settings(&os.database.settings);
     let has_migrated = os.database.get_has_migrated()?;
     if !force && has_migrated.is_some_and(|has_migrated| has_migrated) {
         return Ok(None);
@@ -110,10 +112,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             .interact_on_opt(&dialoguer::console::Term::stdout())
         {
             Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                );
+                let _ = crossterm::execute!(std::io::stdout(), crossterm::style::SetForegroundColor(colors.action()));
                 sel
             },
             // Ctrl‑C -> Err(Interrupted)

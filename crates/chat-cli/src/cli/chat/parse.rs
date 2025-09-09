@@ -290,7 +290,7 @@ fn code<'a, 'b>(
         let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
-        queue(&mut o, style::SetForegroundColor(Color::Green))?;
+        queue(&mut o, style::SetForegroundColor(CODE_COLOR))?;
         queue(&mut o, style::Print(out))?;
         queue(&mut o, style::ResetColor)
     }

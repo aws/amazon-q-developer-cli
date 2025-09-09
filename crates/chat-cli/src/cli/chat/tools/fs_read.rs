@@ -2,10 +2,9 @@ use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
 
-use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
+use crossterm::{
+    queue,
+    style,
 };
 use eyre::{
     Result,
@@ -23,6 +22,7 @@ use tracing::{
     warn,
 };
 
+use super::super::colors::ColorManager;
 use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
@@ -81,10 +81,11 @@ impl FsRead {
             self.operations[0].queue_description(os, updates).await
         } else {
             // Multiple operations - display as batch
+            let colors = ColorManager::from_settings(&os.database.settings);
             queue!(
                 updates,
                 style::Print("Batch fs_read operation with "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(colors.success()),
                 style::Print(self.operations.len()),
                 style::ResetColor,
                 style::Print(" operations:\n")
@@ -369,9 +370,9 @@ impl FsReadOperation {
     pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
         match self {
             FsReadOperation::Line(fs_line) => fs_line.queue_description(os, updates).await,
-            FsReadOperation::Directory(fs_directory) => fs_directory.queue_description(updates),
-            FsReadOperation::Search(fs_search) => fs_search.queue_description(updates),
-            FsReadOperation::Image(fs_image) => fs_image.queue_description(updates),
+            FsReadOperation::Directory(fs_directory) => fs_directory.queue_description(os, updates),
+            FsReadOperation::Search(fs_search) => fs_search.queue_description(os, updates),
+            FsReadOperation::Image(fs_image) => fs_image.queue_description(os, updates),
         }
     }
 
@@ -380,7 +381,7 @@ impl FsReadOperation {
             FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates).await,
             FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates).await,
             FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates).await,
-            FsReadOperation::Image(fs_image) => fs_image.invoke(updates).await,
+            FsReadOperation::Image(fs_image) => fs_image.invoke(os, updates).await,
         }
     }
 }
@@ -411,20 +412,22 @@ impl FsImage {
         Ok(())
     }
 
-    pub async fn invoke(&self, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
         let pre_processed_paths: Vec<String> = self.image_paths.iter().map(|path| pre_process(path)).collect();
-        let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
+        let colors = ColorManager::from_settings(&os.database.settings);
+        let valid_images = handle_images_from_paths(updates, &pre_processed_paths, &colors);
         super::queue_function_result("Successfully read image", updates, false, false)?;
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
         })
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+        let colors = ColorManager::from_settings(&os.database.settings);
         queue!(
             updates,
             style::Print("Reading images: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print(&self.image_paths.join("\n")),
             style::Print("\n"),
             style::ResetColor,
@@ -462,10 +465,11 @@ impl FsLine {
         let file_bytes = os.fs.read(&path).await?;
         let file_content = String::from_utf8_lossy(&file_bytes);
         let line_count = file_content.lines().count();
+        let colors = ColorManager::from_settings(&os.database.settings);
         queue!(
             updates,
             style::Print("Reading file: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(", "),
@@ -478,7 +482,7 @@ impl FsLine {
             _ if end == line_count => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(colors.success()),
                 style::Print(start),
                 style::ResetColor,
                 style::Print(" to end of file"),
@@ -486,11 +490,11 @@ impl FsLine {
             _ => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(colors.success()),
                 style::Print(start),
                 style::ResetColor,
                 style::Print(" to "),
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(colors.success()),
                 style::Print(end),
                 style::ResetColor,
             )?),
@@ -590,15 +594,16 @@ impl FsSearch {
         Ok(())
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+        let colors = ColorManager::from_settings(&os.database.settings);
         queue!(
             updates,
             style::Print("Searching: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(" for pattern: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print(&self.pattern.to_lowercase()),
             style::ResetColor,
         )?;
@@ -686,11 +691,12 @@ impl FsDirectory {
         Ok(())
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+        let colors = ColorManager::from_settings(&os.database.settings);
         queue!(
             updates,
             style::Print("Reading directory: "),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(colors.success()),
             style::Print(&self.path),
             style::ResetColor,
             style::Print(" "),

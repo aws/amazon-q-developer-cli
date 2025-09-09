@@ -101,7 +101,7 @@ impl PromptsArgs {
             style::SetAttribute(Attribute::Reset),
             style::Print("You can use a prompt by typing "),
             style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("'@<prompt name> [...args]'"),
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset),
@@ -186,7 +186,7 @@ impl PromptsArgs {
                     for (i, arg) in args.iter().enumerate() {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print(match arg.required {
                                 Some(true) => format!("{}*", arg.name),
                                 _ => arg.name.clone(),
@@ -249,13 +249,13 @@ impl PromptsSubcommand {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print("Prompt "),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(session.colors.primary()),
                             style::Print(prompt_name),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print(" is ambiguous. Use one of the following "),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(session.colors.primary()),
                             style::Print(alt_msg),
                             style::SetForegroundColor(Color::Reset),
                         )?;
@@ -264,15 +264,15 @@ impl PromptsSubcommand {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print("Prompt "),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(session.colors.primary()),
                             style::Print(prompt_name),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print(" not found. Use "),
-                            style::SetForegroundColor(Color::Cyan),
+                            style::SetForegroundColor(session.colors.primary()),
                             style::Print("/prompts list"),
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print(" to see available prompts.\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;

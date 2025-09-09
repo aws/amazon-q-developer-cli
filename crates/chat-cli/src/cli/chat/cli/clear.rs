@@ -2,7 +2,6 @@ use clap::Args;
 use crossterm::style::{
     self,
     Color,
-    Stylize,
 };
 use crossterm::{
     cursor,
@@ -24,25 +23,31 @@ impl ClearArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print(
                 "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
             ),
             style::Print("["),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("y"),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print("/"),
-            style::SetForegroundColor(Color::Green),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("n"),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print("]:\n\n"),
             style::SetForegroundColor(Color::Reset),
             cursor::Show,
         )?;
 
         // Setting `exit_on_single_ctrl_c` for better ux: exit the confirmation dialog rather than the CLI
-        let user_input = match session.read_user_input("> ".yellow().to_string().as_str(), true) {
+        let prompt = format!(
+            "{}{}{}",
+            crossterm::style::SetForegroundColor(session.colors.warning()),
+            "> ",
+            crossterm::style::SetForegroundColor(crossterm::style::Color::Reset)
+        );
+        let user_input = match session.read_user_input(&prompt, true) {
             Some(input) => input,
             None => "".to_string(),
         };
@@ -54,7 +59,7 @@ impl ClearArgs {
             }
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Green),
+                style::SetForegroundColor(session.colors.success()),
                 style::Print("\nConversation history cleared.\n\n"),
                 style::SetForegroundColor(Color::Reset)
             )?;

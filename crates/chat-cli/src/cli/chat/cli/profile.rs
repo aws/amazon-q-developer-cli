@@ -34,6 +34,7 @@ use crate::cli::agent::{
     McpServerConfig,
     create_agent,
 };
+use crate::cli::chat::colors::ColorManager;
 use crate::cli::chat::conversation::McpServerInfo;
 use crate::cli::chat::{
     ChatError,
@@ -142,7 +143,7 @@ impl AgentSubcommand {
             ($err:expr) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    style::SetForegroundColor(session.colors.error()),
                     style::Print(format!("\nError: {}\n\n", $err)),
                     style::SetForegroundColor(Color::Reset)
                 )?
@@ -158,7 +159,7 @@ impl AgentSubcommand {
                     if active_profile.is_some_and(|p| p == *profile) {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(session.colors.success()),
                             style::Print("* "),
                             style::Print(&profile.name),
                             style::SetForegroundColor(Color::Reset),
@@ -203,6 +204,7 @@ impl AgentSubcommand {
                     &mut None,
                     session.conversation.mcp_enabled,
                     &mut session.stderr,
+                    &session.colors,
                 )
                 .await;
                 match new_agent {
@@ -212,7 +214,7 @@ impl AgentSubcommand {
                     Err(e) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            style::SetForegroundColor(session.colors.error()),
                             style::Print("Error: "),
                             style::ResetColor,
                             style::Print(&e),
@@ -228,15 +230,15 @@ impl AgentSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print("Agent "),
-                    style::SetForegroundColor(Color::Cyan),
+                    style::SetForegroundColor(session.colors.primary()),
                     style::Print(name),
-                    style::SetForegroundColor(Color::Green),
+                    style::SetForegroundColor(session.colors.success()),
                     style::Print(" has been created successfully"),
                     style::SetForegroundColor(Color::Reset),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("Changes take effect on next launch"),
                     style::SetForegroundColor(Color::Reset)
                 )?;
@@ -351,7 +353,7 @@ impl AgentSubcommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print(format!(
                         "To make changes or create agents, please do so via create the corresponding config in {}, where you would also find an example config for your reference.\nTo switch agent, launch another instance of q chat with --agent.\n\n",
                         global_path
@@ -369,7 +371,7 @@ impl AgentSubcommand {
 
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        style::SetForegroundColor(session.colors.success()),
                         style::Print("✓ Default agent set to '"),
                         style::Print(&agent.name),
                         style::Print("'. This will take effect the next time q chat is launched.\n"),
@@ -379,7 +381,7 @@ impl AgentSubcommand {
                 None => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print("Error: "),
                         style::ResetColor,
                         style::Print(format!("No agent with name {name} found\n")),
@@ -388,7 +390,11 @@ impl AgentSubcommand {
             },
             Self::Swap { name } => {
                 if let Some(name) = name {
-                    session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                    let colors = ColorManager::from_settings(&os.database.settings);
+                    session
+                        .conversation
+                        .swap_agent(os, &mut session.stderr, &name, &colors)
+                        .await?;
                 } else {
                     let labels = session
                         .conversation
@@ -425,7 +431,11 @@ impl AgentSubcommand {
                     };
 
                     if let Some(name) = name {
-                        session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                        let colors = ColorManager::from_settings(&os.database.settings);
+                        session
+                            .conversation
+                            .swap_agent(os, &mut session.stderr, &name, &colors)
+                            .await?;
                     }
                 }
             },

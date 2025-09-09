@@ -1,8 +1,5 @@
 use clap::Args;
-use crossterm::style::{
-    Color,
-    Stylize,
-};
+use crossterm::style::Color;
 use crossterm::{
     cursor,
     execute,
@@ -45,7 +42,7 @@ impl SubscribeArgs {
         {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                style::SetForegroundColor(session.colors.warning()),
                 style::Print("\nYour Q Developer Pro subscription is managed through IAM Identity Center.\n\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
@@ -56,13 +53,13 @@ impl SubscribeArgs {
                     if status != ActualSubscriptionStatus::Active {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            style::SetForegroundColor(session.colors.warning()),
                             style::Print("You don't seem to have a Q Developer Pro subscription. "),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print("Use "),
-                            style::SetForegroundColor(Color::Green),
+                            style::SetForegroundColor(session.colors.success()),
                             style::Print("/subscribe"),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::SetForegroundColor(session.colors.secondary()),
                             style::Print(" to upgrade your subscription.\n\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;
@@ -71,7 +68,7 @@ impl SubscribeArgs {
                 Err(err) => {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        style::SetForegroundColor(session.colors.error()),
                         style::Print(format!("Failed to get subscription status: {}\n\n", err)),
                         style::SetForegroundColor(Color::Reset),
                     )?;
@@ -89,7 +86,11 @@ impl SubscribeArgs {
             if is_remote() || crate::util::open::open_url_async(&url).await.is_err() {
                 execute!(
                     session.stderr,
-                    style::Print(format!("Open this URL to manage your subscription: {}\n\n", url.blue())),
+                    style::Print("Open this URL to manage your subscription: "),
+                    style::SetForegroundColor(session.colors.info()),
+                    style::Print(&url),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n\n"),
                     style::ResetColor,
                     style::SetForegroundColor(Color::Reset),
                 )?;
@@ -113,7 +114,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
             if status == ActualSubscriptionStatus::Active {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    style::SetForegroundColor(session.colors.warning()),
                     style::Print("Your Builder ID already has a Q Developer Pro subscription.\n\n"),
                     style::SetForegroundColor(Color::Reset),
                 )?;
@@ -123,7 +124,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
         Err(e) => {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                style::SetForegroundColor(session.colors.error()),
                 style::Print(format!("{}\n\n", e)),
                 style::SetForegroundColor(Color::Reset),
             )?;
@@ -135,19 +136,20 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     queue!(
         session.stderr,
         style::Print(SUBSCRIBE_TITLE_TEXT),
-        style::SetForegroundColor(Color::Grey),
+        style::SetForegroundColor(session.colors.secondary()),
         style::Print(format!("\n\n{}\n\n", SUBSCRIBE_TEXT)),
         style::SetForegroundColor(Color::Reset),
         cursor::Show
     )?;
 
     let prompt = format!(
-        "{}{}{}{}{}",
-        "Would you like to open the AWS console to upgrade? [".dark_grey(),
-        "y".green(),
-        "/".dark_grey(),
-        "n".green(),
-        "]: ".dark_grey(),
+        "{}Would you like to open the AWS console to upgrade? [{}y{}/{}n{}]: {}",
+        crossterm::style::SetForegroundColor(session.colors.secondary()),
+        crossterm::style::SetForegroundColor(session.colors.success()),
+        crossterm::style::SetForegroundColor(session.colors.secondary()),
+        crossterm::style::SetForegroundColor(session.colors.success()),
+        crossterm::style::SetForegroundColor(session.colors.secondary()),
+        crossterm::style::SetForegroundColor(Color::Reset),
     );
 
     let user_input = session.read_user_input(&prompt, true);
@@ -160,7 +162,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     if !user_input.is_some_and(|i| ["y", "Y"].contains(&i.as_str())) {
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            style::SetForegroundColor(session.colors.error()),
             style::Print("Upgrade cancelled.\n\n"),
             style::SetForegroundColor(Color::Reset),
         )?;
@@ -180,12 +182,12 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     if is_remote() || crate::util::open::open_url_async(&url).await.is_err() {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!(
-                "{} Having issues opening the AWS console? Try copy and pasting the URL > {}\n\n",
-                "?".magenta(),
-                url.blue()
-            )),
+            style::SetForegroundColor(session.colors.secondary()),
+            style::Print("? Having issues opening the AWS console? Try copy and pasting the URL > "),
+            style::SetForegroundColor(session.colors.info()),
+            style::Print(&url),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
             style::SetForegroundColor(Color::Reset),
         )?;
     }

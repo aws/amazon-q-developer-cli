@@ -40,11 +40,11 @@ impl UsageArgs {
         if !state.dropped_context_files.is_empty() {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(session.colors.warning()),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                style::SetForegroundColor(session.colors.success()),
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(session.colors.warning()),
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )?;
@@ -94,7 +94,7 @@ impl UsageArgs {
                     total_token_used,
                     context_window_size / 1000
                 )),
-                style::SetForegroundColor(Color::DarkRed),
+                style::SetForegroundColor(session.colors.error()),
                 style::Print("█".repeat(progress_bar_width)),
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" "),
@@ -112,8 +112,8 @@ impl UsageArgs {
                     context_window_size / 1000
                 )),
                 // Context files
-                style::SetForegroundColor(Color::DarkCyan),
-                // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
+                style::SetForegroundColor(session.colors.data()),
+                // add a nice visual to mimic "tiny" progress, so the overall progress bar doesn't look too
                 // empty
                 style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
                     1
@@ -122,7 +122,7 @@ impl UsageArgs {
                 })),
                 style::Print("█".repeat(context_width)),
                 // Tools
-                style::SetForegroundColor(Color::DarkRed),
+                style::SetForegroundColor(session.colors.error()),
                 style::Print("|".repeat(if tools_width == 0 && *tools_token_count > 0 {
                     1
                 } else {
@@ -130,7 +130,7 @@ impl UsageArgs {
                 })),
                 style::Print("█".repeat(tools_width)),
                 // Assistant responses
-                style::SetForegroundColor(Color::Blue),
+                style::SetForegroundColor(session.colors.info()),
                 style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
                     1
                 } else {
@@ -138,10 +138,10 @@ impl UsageArgs {
                 })),
                 style::Print("█".repeat(assistant_width)),
                 // User prompts
-                style::SetForegroundColor(Color::Magenta),
+                style::SetForegroundColor(session.colors.action()),
                 style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
                 style::Print("█".repeat(user_width)),
-                style::SetForegroundColor(Color::DarkGrey),
+                style::SetForegroundColor(session.colors.secondary()),
                 style::Print("█".repeat(left_over_width)),
                 style::Print(" "),
                 style::SetForegroundColor(Color::Reset),
@@ -156,7 +156,7 @@ impl UsageArgs {
 
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkCyan),
+            style::SetForegroundColor(session.colors.data()),
             style::Print("█ Context files: "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
@@ -164,7 +164,7 @@ impl UsageArgs {
                 context_token_count,
                 (context_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
-            style::SetForegroundColor(Color::DarkRed),
+            style::SetForegroundColor(session.colors.error()),
             style::Print("█ Tools:    "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
@@ -172,7 +172,7 @@ impl UsageArgs {
                 tools_token_count,
                 (tools_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
-            style::SetForegroundColor(Color::Blue),
+            style::SetForegroundColor(session.colors.info()),
             style::Print("█ Q responses: "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
@@ -180,7 +180,7 @@ impl UsageArgs {
                 assistant_token_count,
                 (assistant_token_count.value() as f32 / context_window_size as f32) * 100.0
             )),
-            style::SetForegroundColor(Color::Magenta),
+            style::SetForegroundColor(session.colors.action()),
             style::Print("█ Your prompts: "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
@@ -195,21 +195,21 @@ impl UsageArgs {
             style::SetAttribute(Attribute::Bold),
             style::Print("\n💡 Pro Tips:\n"),
             style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("/compact"),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print(" to replace the conversation history with its summary\n"),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("/clear"),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print(" to erase the entire chat history\n"),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            style::SetForegroundColor(session.colors.success()),
             style::Print("/context show"),
-            style::SetForegroundColor(Color::DarkGrey),
+            style::SetForegroundColor(session.colors.secondary()),
             style::Print(" to see tokens per context file\n\n"),
             style::SetForegroundColor(Color::Reset),
         )?;

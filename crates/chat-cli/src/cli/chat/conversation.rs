@@ -7,7 +7,6 @@ use std::io::Write;
 use std::sync::atomic::Ordering;
 
 use chrono::Local;
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
@@ -30,6 +29,7 @@ use tracing::{
 
 use super::cli::compact::CompactStrategy;
 use super::cli::model::context_window_tokens;
+use super::colors::ColorManager;
 use super::consts::{
     DUMMY_TOOL_NAME,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
@@ -480,13 +480,14 @@ impl ConversationState {
 
         let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
         if !context.dropped_context_files.is_empty() {
+            let colors = ColorManager::from_settings(&os.database.settings);
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                style::SetForegroundColor(colors.success()),
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                style::SetForegroundColor(colors.warning()),
                 style::Print("to learn more.\n"),
                 style::SetForegroundColor(style::Color::Reset)
             )
@@ -541,13 +542,16 @@ impl ConversationState {
         // Run hooks and add to conversation start and next user message.
         let mut agent_spawn_context = None;
         if let Some(cm) = self.context_manager.as_mut() {
+            let colors = ColorManager::from_settings(&os.database.settings);
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, user_prompt).await?;
+            let agent_spawn = cm
+                .run_hooks(HookTrigger::AgentSpawn, output, user_prompt, &colors)
+                .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
                 let per_prompt = cm
-                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt())
+                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt(), &colors)
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
                     next_message.additional_context = ctx;
@@ -863,6 +867,7 @@ Return only the JSON configuration, no additional text.",
         os: &mut Os,
         output: &mut impl Write,
         agent_name: &str,
+        colors: &ColorManager,
     ) -> Result<(), ChatError> {
         let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
         self.context_manager.replace({
@@ -871,7 +876,7 @@ Return only the JSON configuration, no additional text.",
         });
 
         self.tool_manager
-            .swap_agent(os, output, agent)
+            .swap_agent(os, output, agent, colors)
             .await
             .map_err(ChatError::AgentSwapError)?;
 
