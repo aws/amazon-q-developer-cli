@@ -2,7 +2,8 @@
 
 The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
 
-> [!info] We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
+> [!info]
+> We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
 
 Every agent configuration file can include the following sections:
 
