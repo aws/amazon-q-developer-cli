@@ -107,15 +107,27 @@ impl ExecuteCommand {
                 // Special casing for `find` so that we support most cases while safeguarding
                 // against unwanted mutations
                 Some(cmd)
-                    if cmd == "find"
-                        && cmd_args.iter().any(|arg| {
-                            arg.contains("-exec") // includes -execdir
-                                || arg.contains("-delete")
-                                || arg.contains("-ok") // includes -okdir
-                                || arg.contains("-fprint") // includes -fprint0 and -fprintf
-                        }) =>
-                {
-                    return true;
+                if cmd == "find"
+                    && cmd_args.iter().any(|arg| {
+                    arg.contains("-delete")
+                        || arg.contains("-ok") // includes -okdir
+                        || arg.contains("-fprint") // includes -fprint0 and -fprintf
+                }) =>
+                    {
+                        return true;
+                    },
+                // Check -exec commands separately to allow readonly commands
+                Some(cmd) if cmd == "find" && cmd_args.iter().any(|arg| arg.contains("-exec")) => {
+                    // Find the -exec argument and check if the following command is readonly
+                    for (i, arg) in cmd_args.iter().enumerate() {
+                        if arg == "-exec" || arg == "-execdir" {
+                            // Check if there's a next argument (the command to execute)
+                            if let Some(exec_cmd) = cmd_args.get(i + 1) {
+                                return !READONLY_COMMANDS.contains(&exec_cmd.as_str());
+                            }
+                        }
+                    }
+                    return true; // If we can't parse properly, require confirmation
                 },
                 Some(cmd) => {
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
@@ -123,8 +135,8 @@ impl ExecuteCommand {
                     // regexp.
                     if cmd == "grep"
                         && cmd_args
-                            .iter()
-                            .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
+                        .iter()
+                        .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
                     {
                         return true;
                     }
@@ -326,6 +338,11 @@ mod tests {
             ),
             ("find important-dir/ -name '*.txt'", false),
             (r#"find / -fprintf "/path/to/file" <data-to-write> -quit"#, true),
+            // `find` with readonly -exec commands (should be allowed)
+            ("find . -name '*.rs' -exec grep -l pattern {} \\;", false),
+            ("find . -type f -exec cat {} \\;", false),
+            ("find . -name '*.txt' -exec head {} \\;", false),
+            ("find . -type f -exec ls -l {} \\;", false),
             (r"find . -${t}exec touch asdf \{\} +", true),
             (r"find . -${t:=exec} touch asdf2 \{\} +", true),
             // `grep` command arguments
@@ -336,7 +353,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-            .unwrap();
+                .unwrap();
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
@@ -374,7 +391,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-            .unwrap();
+                .unwrap();
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
@@ -410,7 +427,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-            .unwrap();
+                .unwrap();
             assert_eq!(
                 tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
                 *expected,
@@ -444,7 +461,7 @@ mod tests {
         let tool_one = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "git status",
         }))
-        .unwrap();
+            .unwrap();
 
         let res = tool_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
@@ -452,7 +469,7 @@ mod tests {
         let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "this_is_not_a_read_only_command",
         }))
-        .unwrap();
+            .unwrap();
 
         let res = tool_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
@@ -460,21 +477,21 @@ mod tests {
         let tool_allow_wild_card = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_wild_card some_arg",
         }))
-        .unwrap();
+            .unwrap();
         let res = tool_allow_wild_card.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         let tool_allow_exact_should_ask = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact some_arg",
         }))
-        .unwrap();
+            .unwrap();
         let res = tool_allow_exact_should_ask.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
         let tool_allow_exact_should_allow = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact",
         }))
-        .unwrap();
+            .unwrap();
         let res = tool_allow_exact_should_allow.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
