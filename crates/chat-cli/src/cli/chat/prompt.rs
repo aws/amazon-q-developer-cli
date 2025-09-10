@@ -479,9 +479,13 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
     );
 
-    // Add custom keybinding for Ctrl+g to accept hint (like fish shell)
+    // Add custom keybinding for autocompletion hint acceptance (configurable)
+    let autocompletion_key_char = match os.database.settings.get_string(Setting::AutocompletionKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('g'),
+        _ => 'g', // Default to 'g' if setting is missing or invalid
+    };
     rl.bind_sequence(
-        KeyEvent(KeyCode::Char('g'), Modifiers::CTRL),
+        KeyEvent(KeyCode::Char(autocompletion_key_char), Modifiers::CTRL),
         EventHandler::Simple(Cmd::CompleteHint),
     );
 
