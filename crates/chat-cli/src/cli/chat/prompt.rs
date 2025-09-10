@@ -495,6 +495,16 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
     );
 
+    // Add custom keybinding for Ctrl+D to open delegate command (configurable)
+    let delegate_key_char = match os.database.settings.get_string(Setting::DelegateModeKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('d'),
+        _ => 'd', // Default to 'd' if setting is missing or invalid
+    };
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char(delegate_key_char), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+    );
+
     Ok(rl)
 }
 
