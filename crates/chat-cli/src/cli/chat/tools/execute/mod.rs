@@ -128,16 +128,18 @@ impl ExecuteCommand {
                     },
                 // Check -exec commands separately to allow readonly commands
                 Some(cmd) if cmd == "find" && cmd_args.iter().any(|arg| arg.contains("-exec")) => {
-                    // Find the -exec argument and check if the following command is readonly
+                    // Find all -exec arguments and check if ANY command is non-readonly
                     for (i, arg) in cmd_args.iter().enumerate() {
                         if arg == "-exec" || arg == "-execdir" {
                             // Check if there's a next argument (the command to execute)
                             if let Some(exec_cmd) = cmd_args.get(i + 1) {
-                                return !READONLY_COMMANDS.contains(&exec_cmd.as_str());
+                                if !READONLY_COMMANDS.contains(&exec_cmd.as_str()) {
+                                    return true; // Found a non-readonly command, require confirmation
+                                }
                             }
                         }
                     }
-                    return true; // If we can't parse properly, require confirmation
+                    return false; // All exec commands are readonly
                 },
                 Some(cmd) => {
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
@@ -353,6 +355,14 @@ mod tests {
             ("find . -type f -exec cat {} \\;", false),
             ("find . -name '*.txt' -exec head {} \\;", false),
             ("find . -type f -exec ls -l {} \\;", false),
+            // Multiple -exec commands - mixed readonly and non-readonly
+            ("find . -exec cat {} \\; -exec rm {} \\;", true),
+            ("find . -exec ls {} \\; -exec touch newfile \\;", true),
+            ("find . -exec grep pattern {} \\; -exec chmod 755 {} \\;", true),
+            // Multiple -exec commands - all readonly (should be allowed)
+            ("find . -exec cat {} \\; -exec grep pattern {} \\;", false),
+            ("find . -exec ls -l {} \\; -exec head {} \\;", false),
+            ("find . -exec echo {} \\; -exec tail {} \\;", false),
             (r"find . -${t}exec touch asdf \{\} +", true),
             (r"find . -${t:=exec} touch asdf2 \{\} +", true),
             // `grep` command arguments
