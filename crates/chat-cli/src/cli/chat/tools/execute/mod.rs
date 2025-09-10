@@ -83,11 +83,7 @@ impl ExecuteCommand {
         // Check for patterns that are dangerous only when they appear in the middle of arguments
         if args.iter().any(|arg| {
             DANGEROUS_MID_PATTERNS.iter().any(|p| {
-                if let Some(pos) = arg.find(p) {
-                    pos + p.len() < arg.len()  // Dangerous if there are more characters after the pattern
-                } else {
-                    false
-                }
+                arg.contains(p) && !arg.ends_with(p)
             })
         }) {
             return true;
