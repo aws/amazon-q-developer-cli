@@ -71,6 +71,17 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
 
+        documentation.push_str("\n\n--- changelog (from feed.json) ---\n");
+        // Include recent changelog entries from feed.json
+        let feed = crate::cli::feed::Feed::load();
+        let recent_entries = feed.get_all_changelogs().into_iter().take(5).collect::<Vec<_>>();
+        for entry in recent_entries {
+            documentation.push_str(&format!("\n## {} ({})\n", entry.version, entry.date));
+            for change in &entry.changes {
+                documentation.push_str(&format!("- {}: {}\n", change.change_type, change.description));
+            }
+        }
+
         documentation.push_str("\n\n--- CONTRIBUTING.md ---\n");
         documentation.push_str(include_str!("../../../../../../CONTRIBUTING.md"));
 

@@ -42,9 +42,9 @@ use clap::{
 };
 use cli::compact::CompactStrategy;
 use cli::model::{
+    find_model,
     get_available_models,
     select_model,
-    find_model,
 };
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
@@ -166,6 +166,7 @@ use crate::telemetry::{
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     directories,
+    ui,
 };
 
 const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
@@ -343,7 +344,9 @@ impl ChatArgs {
         // Fallback logic: try user's saved default, then system default
         let fallback_model_id = || {
             if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-                find_model(&models, &saved).map(|m| m.model_id.clone()).or(Some(default_model_opt.model_id.clone()))
+                find_model(&models, &saved)
+                    .map(|m| m.model_id.clone())
+                    .or(Some(default_model_opt.model_id.clone()))
             } else {
                 Some(default_model_opt.model_id.clone())
             }
@@ -432,8 +435,11 @@ const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
 const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
 const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
+// Maximum number of times to show the changelog announcement per version
+const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
+
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 18] = [
+const ROTATING_TIPS: [&str; 19] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -467,6 +473,7 @@ const ROTATING_TIPS: [&str; 18] = [
     color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
     color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
     color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
+    color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -1089,6 +1096,34 @@ impl ChatSession {
 
         Ok(())
     }
+
+    async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
+        let current_version = env!("CARGO_PKG_VERSION");
+        let last_version = os.database.get_changelog_last_version()?;
+        let show_count = os.database.get_changelog_show_count()?.unwrap_or(0);
+
+        // Check if version changed or if we haven't shown it max times yet
+        let should_show = match &last_version {
+            Some(last) if last == current_version => show_count < CHANGELOG_MAX_SHOW_COUNT,
+            _ => true, // New version or no previous version
+        };
+
+        if should_show {
+            // Use the shared rendering function
+            ui::render_changelog_content(&mut self.stderr)?;
+
+            // Update the database entries
+            os.database.set_changelog_last_version(current_version)?;
+            let new_count = if last_version.as_deref() == Some(current_version) {
+                show_count + 1
+            } else {
+                1
+            };
+            os.database.set_changelog_show_count(new_count)?;
+        }
+
+        Ok(())
+    }
 }
 
 impl Drop for ChatSession {
@@ -1234,6 +1269,9 @@ impl ChatSession {
             )?;
             execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
         }
+
+        // Check if we should show the whats-new announcement
+        self.show_changelog_announcement(os).await?;
 
         if self.all_tools_trusted() {
             queue!(
