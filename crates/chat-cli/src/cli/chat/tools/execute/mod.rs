@@ -70,12 +70,26 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", "${", "\n", "\r", "IFS"];
+        const DANGEROUS_MID_PATTERNS: &[&str] = &[";"];
 
         if args
             .iter()
             .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
         {
+            return true;
+        }
+
+        // Check for patterns that are dangerous only when they appear in the middle of arguments
+        if args.iter().any(|arg| {
+            DANGEROUS_MID_PATTERNS.iter().any(|p| {
+                if let Some(pos) = arg.find(p) {
+                    pos + p.len() < arg.len()  // Dangerous if there are more characters after the pattern
+                } else {
+                    false
+                }
+            })
+        }) {
             return true;
         }
 
