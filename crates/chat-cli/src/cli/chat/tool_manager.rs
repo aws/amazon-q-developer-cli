@@ -875,17 +875,19 @@ impl ToolManager {
                     });
                 };
 
-                let running_service = (*client.get_running_service().await.map_err(|e| ToolResult {
+                let running_service = client.get_running_service().await.map_err(|e| ToolResult {
                     tool_use_id: value.id.clone(),
                     content: vec![ToolResultContentBlock::Text(format!("Mcp tool client not ready: {e}"))],
                     status: ToolResultStatus::Error,
-                })?)
-                .clone();
+                })?;
+
+                let auth_client = running_service.get_auth_client();
 
                 Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
                     server_name: server_name.to_owned(),
-                    client: running_service,
+                    client: (*running_service).clone(),
+                    auth_client,
                     params: value.args.as_object().cloned(),
                 })
             },

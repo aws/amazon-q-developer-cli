@@ -5,7 +5,6 @@ use std::ops::{
     DerefMut,
 };
 use std::process::Stdio;
-use std::str::FromStr;
 
 use regex::Regex;
 use reqwest::Client;
@@ -27,15 +26,9 @@ use rmcp::service::{
     NotificationContext,
 };
 use rmcp::transport::auth::AuthClient;
-use rmcp::transport::streamable_http_client::{
-    StreamableHttpClientTransportConfig,
-    StreamableHttpClientWorker,
-};
 use rmcp::transport::{
     ConfigureCommandExt,
-    StreamableHttpClientTransport,
     TokioChildProcess,
-    WorkerTransport,
 };
 use rmcp::{
     ErrorData,
@@ -50,26 +43,25 @@ use tokio::process::{
     Command,
 };
 use tokio::task::JoinHandle;
-use tracing::error;
-use url::Url;
+use tracing::{
+    error,
+    info,
+};
 
 use super::messenger::Messenger;
+use super::oauth_util::HttpTransport;
 use super::{
     AuthClientDropGuard,
     OauthUtilError,
-    compute_key,
+    get_http_transport,
 };
 use crate::cli::chat::server_messenger::ServerMessenger;
 use crate::cli::chat::tools::custom_tool::{
     CustomToolConfig,
     TransportType,
 };
-use crate::mcp_client::get_auth_manager;
 use crate::os::Os;
-use crate::util::directories::{
-    DirectoryError,
-    get_mcp_auth_dir,
-};
+use crate::util::directories::DirectoryError;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -152,15 +144,23 @@ pub enum McpClientError {
     #[error(transparent)]
     Directory(#[from] DirectoryError),
     #[error(transparent)]
-    Oauth(#[from] OauthUtilError),
+    OauthUtil(#[from] OauthUtilError),
     #[error(transparent)]
     Parse(#[from] url::ParseError),
+    #[error(transparent)]
+    Auth(#[from] crate::auth::AuthError),
 }
 
 pub struct RunningService {
     pub inner_service: rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
     #[allow(dead_code)]
     pub auth_dropguard: Option<AuthClientDropGuard>,
+}
+
+impl RunningService {
+    pub fn get_auth_client(&self) -> Option<AuthClient<Client>> {
+        self.auth_dropguard.as_ref().map(|a| a.auth_client.clone())
+    }
 }
 
 impl Deref for RunningService {
@@ -177,10 +177,6 @@ impl DerefMut for RunningService {
     }
 }
 
-pub type HttpTransport = (
-    WorkerTransport<StreamableHttpClientWorker<AuthClient<Client>>>,
-    AuthClientDropGuard,
-);
 pub type StdioTransport = (TokioChildProcess, Option<ChildStderr>);
 
 // TODO: add sse support (even though it's deprecated)
@@ -231,11 +227,13 @@ impl McpClientService {
         let os_clone = os.clone();
 
         let handle: JoinHandle<Result<RunningService, McpClientError>> = tokio::spawn(async move {
-            let messenger_clone = self.messenger.duplicate();
+            let messenger_clone = self.messenger.clone();
             let server_name = self.server_name.clone();
+            let backup_config = self.config.clone();
 
             let result: Result<_, McpClientError> = async {
-                let (service, stderr, auth_client) = match self.get_transport(&os_clone, &messenger_clone).await? {
+                let messenger_dup = messenger_clone.duplicate();
+                let (service, stderr, auth_client) = match self.get_transport(&os_clone, &*messenger_dup).await? {
                     Transport::Stdio((child_process, stderr)) => {
                         let service = self
                             .into_dyn()
@@ -245,10 +243,71 @@ impl McpClientService {
 
                         (service, stderr, None)
                     },
-                    Transport::Http((transport, auth_dg)) => {
-                        let service = self.into_dyn().serve(transport).await.map_err(Box::new)?;
+                    Transport::Http(http_transport) => {
+                        match http_transport {
+                            HttpTransport::WithAuth((transport, mut auth_dg)) => {
+                                // The crate does not automatically refresh tokens when they expire. We
+                                // would need to handle that here
+                                let url = self.config.url.clone();
+                                let service = match self.into_dyn().serve(transport).await.map_err(Box::new) {
+                                    Ok(service) => service,
+                                    Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
+                                        let refresh_res =
+                                            auth_dg.auth_client.auth_manager.lock().await.refresh_token().await;
+                                        let new_self = McpClientService::new(
+                                            server_name.clone(),
+                                            backup_config,
+                                            messenger_clone.clone(),
+                                        );
 
-                        (service, None, Some(auth_dg))
+                                        let new_transport =
+                                            get_http_transport(&os_clone, true, &url, &*messenger_dup).await?;
+
+                                        match new_transport {
+                                            HttpTransport::WithAuth((new_transport, new_auth_dg)) => {
+                                                auth_dg.should_write = false;
+                                                auth_dg = new_auth_dg;
+
+                                                match refresh_res {
+                                                    Ok(_token) => {
+                                                        new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                    },
+                                                    Err(e) => {
+                                                        info!("Retry for http transport failed {e}. Possible reauth needed");
+                                                        // This could be because the refresh token is expired, in which
+                                                        // case we would need to have user go through the auth flow
+                                                        // again
+                                                        let new_transport  =
+                                                            get_http_transport(&os_clone, true, &url, &*messenger_dup).await?;
+                                                        
+                                                        match new_transport {
+                                                            HttpTransport::WithAuth((new_transport, new_auth_dg)) => {
+                                                                auth_dg = new_auth_dg;
+                                                                auth_dg.should_write = false;
+                                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                            },
+                                                            HttpTransport::WithoutAuth(new_transport) => {
+                                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                            },
+                                                        }
+                                                    },
+                                                }
+                                            },
+                                            HttpTransport::WithoutAuth(new_transport) => 
+                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?,
+                                        }
+                                    },
+                                    Err(e) => return Err(e.into()),
+                                };
+
+                                (service, None, Some(auth_dg))
+                            },
+                            HttpTransport::WithoutAuth(transport) => {
+                                let service = self.into_dyn().serve(transport).await.map_err(Box::new)?;
+
+                                (service, None, None)
+                            },
+                        }
                     },
                 };
 
@@ -346,7 +405,7 @@ impl McpClientService {
         Ok(InitializedMcpClient::Pending(handle))
     }
 
-    async fn get_transport(&mut self, os: &Os, messenger: &Box<dyn Messenger>) -> Result<Transport, McpClientError> {
+    async fn get_transport(&mut self, os: &Os, messenger: &dyn Messenger) -> Result<Transport, McpClientError> {
         // TODO: figure out what to do with headers
         let CustomToolConfig {
             r#type: transport_type,
@@ -376,26 +435,9 @@ impl McpClientService {
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
             TransportType::Http => {
-                let cred_dir = get_mcp_auth_dir(os)?;
-                let url = Url::from_str(url)?;
-                let key = compute_key(&url);
-                let cred_full_path = cred_dir.join(format!("{key}.token.json"));
+                let http_transport = get_http_transport(os, false, url, messenger).await?;
 
-                let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
-                let client = AuthClient::new(reqwest::Client::default(), am);
-                let transport =
-                    StreamableHttpClientTransport::with_client(client.clone(), StreamableHttpClientTransportConfig {
-                        uri: url.as_str().into(),
-                        allow_stateless: false,
-                        ..Default::default()
-                    });
-
-                let auth_dg = AuthClientDropGuard {
-                    path: cred_full_path,
-                    auth_client: client,
-                };
-
-                Ok(Transport::Http((transport, auth_dg)))
+                Ok(Transport::Http(http_transport))
             },
         }
     }

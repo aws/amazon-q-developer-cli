@@ -111,7 +111,7 @@ impl Messenger for NullMessenger {
         Ok(())
     }
 
-    async fn send_oauth_link(&self, link: String) -> MessengerResult {
+    async fn send_oauth_link(&self, _link: String) -> MessengerResult {
         Ok(())
     }
 

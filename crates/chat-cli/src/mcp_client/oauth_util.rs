@@ -1,16 +1,10 @@
-use std::io::stderr;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 
-use crossterm::execute;
-use crossterm::style::{
-    Color,
-    Print,
-    ResetColor,
-    SetForegroundColor,
-};
+use http::StatusCode;
 use http_body_util::Full;
 use hyper::Response;
 use hyper::body::Bytes;
@@ -18,11 +12,19 @@ use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
 use rmcp::serde_json;
-use rmcp::transport::AuthorizationManager;
 use rmcp::transport::auth::{
     AuthClient,
     OAuthState,
     OAuthTokenResponse,
+};
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransportConfig,
+    StreamableHttpClientWorker,
+};
+use rmcp::transport::{
+    AuthorizationManager,
+    StreamableHttpClientTransport,
+    WorkerTransport,
 };
 use sha2::{
     Digest,
@@ -37,6 +39,11 @@ use tracing::{
 use url::Url;
 
 use super::messenger::Messenger;
+use crate::os::Os;
+use crate::util::directories::{
+    DirectoryError,
+    get_mcp_auth_dir,
+};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OauthUtilError {
@@ -52,6 +59,10 @@ pub enum OauthUtilError {
     MissingAuthorizationManager,
     #[error(transparent)]
     OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
+    #[error(transparent)]
+    Directory(#[from] DirectoryError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
 }
 
 /// A guard that automatically cancels the cancellation token when dropped.
@@ -68,14 +79,29 @@ impl Drop for LoopBackDropGuard {
 }
 
 pub struct AuthClientDropGuard {
-    pub path: PathBuf,
+    pub should_write: bool,
+    pub cred_full_path: PathBuf,
     pub auth_client: AuthClient<Client>,
+}
+
+impl AuthClientDropGuard {
+    pub fn new(cred_full_path: PathBuf, auth_client: AuthClient<Client>) -> Self {
+        Self {
+            should_write: true,
+            cred_full_path,
+            auth_client,
+        }
+    }
 }
 
 impl Drop for AuthClientDropGuard {
     fn drop(&mut self) {
+        if !self.should_write {
+            return;
+        }
+
         let auth_client_clone = self.auth_client.clone();
-        let path = self.path.clone();
+        let path = self.cred_full_path.clone();
 
         tokio::spawn(async move {
             let Ok((client_id, cred)) = auth_client_clone.auth_manager.lock().await.get_credentials().await else {
@@ -109,24 +135,69 @@ impl Drop for AuthClientDropGuard {
     }
 }
 
-pub async fn get_auth_manager(
+pub enum HttpTransport {
+    WithAuth(
+        (
+            WorkerTransport<StreamableHttpClientWorker<AuthClient<Client>>>,
+            AuthClientDropGuard,
+        ),
+    ),
+    WithoutAuth(WorkerTransport<StreamableHttpClientWorker<Client>>),
+}
+
+pub async fn get_http_transport(
+    os: &Os,
+    delete_cache: bool,
+    url: &str,
+    messenger: &dyn Messenger,
+) -> Result<HttpTransport, OauthUtilError> {
+    let cred_dir = get_mcp_auth_dir(os)?;
+    let url = Url::from_str(url)?;
+    let key = compute_key(&url);
+    let cred_full_path = cred_dir.join(format!("{key}.token.json"));
+
+    if delete_cache && cred_full_path.is_file() {
+        tokio::fs::remove_file(&cred_full_path).await?;
+    }
+
+    let reqwest_client = reqwest::Client::default();
+    let probe_resp = reqwest_client.get(url.clone()).send().await?;
+    match probe_resp.status() {
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
+            let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
+            let auth_client = AuthClient::new(reqwest_client, am);
+            let transport =
+                StreamableHttpClientTransport::with_client(auth_client.clone(), StreamableHttpClientTransportConfig {
+                    uri: url.as_str().into(),
+                    allow_stateless: false,
+                    ..Default::default()
+                });
+
+            let auth_dg = AuthClientDropGuard::new(cred_full_path, auth_client);
+
+            Ok(HttpTransport::WithAuth((transport, auth_dg)))
+        },
+        _ => {
+            let transport = StreamableHttpClientTransport::from_uri(url.as_str());
+
+            Ok(HttpTransport::WithoutAuth(transport))
+        },
+    }
+}
+
+async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
-    messenger: &Box<dyn Messenger>,
+    messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let content_as_bytes = tokio::fs::read(cred_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
-    error!("## mcp: content as bytes: {:?}", content_as_bytes);
 
     match content_as_bytes {
         Ok(bytes) => {
             let token = serde_json::from_slice::<OAuthTokenResponse>(&bytes)?;
 
             oauth_state.set_credentials("id", token).await?;
-            if let Err(e) = oauth_state.refresh_token().await {
-                info!("Token refresh failed: {e}. Continuing with reauth.");
-                return get_auth_manager_impl(oauth_state, messenger).await;
-            }
 
             Ok(oauth_state
                 .into_authorization_manager()
@@ -141,14 +212,14 @@ pub async fn get_auth_manager(
 
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
-    messenger: &Box<dyn Messenger>,
+    messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<String>();
 
-    info!("Listening on local host port {:?} for oauth", socket_addr);
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
+    info!("Listening on local host port {:?} for oauth", actual_addr);
 
     oauth_state
         .start_authorization(&["mcp", "profile", "email"], &format!("http://{}", actual_addr))
