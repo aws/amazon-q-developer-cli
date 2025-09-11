@@ -187,6 +187,8 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
                     <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
 <em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
                     <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
+<em>Ctrl(^) + d</em>         <black!>Start delegate command for task delegation</black!>
+                    <black!>Change the keybind using: q settings chat.delegateModeKey x</black!>
 <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
