@@ -20,7 +20,6 @@ use eyre::{
     Result,
     bail,
 };
-use serde_json;
 
 use super::agent::{
     Agent,
