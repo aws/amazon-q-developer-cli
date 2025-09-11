@@ -3,23 +3,17 @@ use std::collections::HashMap;
 use std::io::Write;
 
 use crossterm::{
-    execute,
     queue,
     style,
 };
 use eyre::Result;
-use reqwest::Client;
 use rmcp::model::CallToolRequestParam;
-use rmcp::transport::auth::AuthClient;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
 };
-use tracing::{
-    info,
-    warn,
-};
+use tracing::warn;
 
 use super::InvokeOutput;
 use crate::cli::agent::{
@@ -95,47 +89,19 @@ pub struct CustomTool {
     pub server_name: String,
     /// Reference to the client that manages communication with the tool's server process.
     pub client: RunningService,
-    /// Optional authentication client for handling authentication with HTTP-based MCP servers.
-    /// This is used when the MCP server requires authentication for tool invocation.
-    pub auth_client: Option<AuthClient<Client>>,
     /// Optional parameters to pass to the tool when invoking the method.
     /// Structured as a JSON value to accommodate various parameter types and structures.
     pub params: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl CustomTool {
-    pub async fn invoke(&self, _os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, _os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
         let params = CallToolRequestParam {
             name: Cow::from(self.name.clone()),
             arguments: self.params.clone(),
         };
 
-        let mut has_retried = false;
-        let resp = loop {
-            match self.client.call_tool(params.clone()).await {
-                Ok(resp) => break resp,
-                Err(_e) if !has_retried => {
-                    // TODO: discern error type prior to retrying
-                    has_retried = true;
-                    if let Some(auth_client) = &self.auth_client {
-                        let auth_res = auth_client.auth_manager.lock().await.refresh_token().await;
-                        if let Err(e) = auth_res {
-                            let _ = execute!(
-                                updates,
-                                style::SetForegroundColor(style::Color::Red),
-                                style::Print(format!(
-                                    "Authentication token has expired: {e}. Please reauthenticate by restarting session.\n"
-                                )),
-                                style::ResetColor,
-                            );
-                        } else {
-                            info!("Token refreshed for {}", self.server_name);
-                        }
-                    }
-                },
-                Err(e) => return Err(e.into()),
-            }
-        };
+        let resp = self.client.call_tool(params.clone()).await?;
 
         if resp.is_error.is_none_or(|v| !v) {
             Ok(InvokeOutput {

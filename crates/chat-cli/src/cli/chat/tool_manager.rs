@@ -891,13 +891,10 @@ impl ToolManager {
                     status: ToolResultStatus::Error,
                 })?;
 
-                let auth_client = running_service.get_auth_client();
-
                 Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
                     server_name: server_name.to_owned(),
                     client: running_service.clone(),
-                    auth_client,
                     params: value.args.as_object().cloned(),
                 })
             },
