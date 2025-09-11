@@ -9,7 +9,6 @@ use crossterm::{
 };
 use eyre::Result;
 use reqwest::Client;
-use rmcp::RoleClient;
 use rmcp::model::CallToolRequestParam;
 use rmcp::transport::auth::AuthClient;
 use schemars::JsonSchema;
@@ -29,6 +28,7 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
+use crate::mcp_client::RunningService;
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
@@ -94,7 +94,7 @@ pub struct CustomTool {
     /// prefixed to the tool name when presented to the model for disambiguation.
     pub server_name: String,
     /// Reference to the client that manages communication with the tool's server process.
-    pub client: rmcp::Peer<RoleClient>,
+    pub client: RunningService,
     /// Optional authentication client for handling authentication with HTTP-based MCP servers.
     /// This is used when the MCP server requires authentication for tool invocation.
     pub auth_client: Option<AuthClient<Client>>,

@@ -1,24 +1,11 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
-use std::ops::{
-    Deref,
-    DerefMut,
-};
 use std::process::Stdio;
 
 use regex::Regex;
 use reqwest::Client;
 use rmcp::model::{
-    ErrorCode,
-    Implementation,
-    InitializeRequestParam,
-    ListPromptsResult,
-    ListToolsResult,
-    LoggingLevel,
-    LoggingMessageNotificationParam,
-    PaginatedRequestParam,
-    ServerNotification,
-    ServerRequest,
+    CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult, Implementation, InitializeRequestParam, ListPromptsResult, ListToolsResult, LoggingLevel, LoggingMessageNotificationParam, PaginatedRequestParam, ServerNotification, ServerRequest
 };
 use rmcp::service::{
     ClientInitializeError,
@@ -151,30 +138,95 @@ pub enum McpClientError {
     Auth(#[from] crate::auth::AuthError),
 }
 
+macro_rules! decorate_with_auth_retry {
+    ($param_type:ty, $method_name:ident, $return_type:ty) => {
+        pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            let first_attempt = match &self.inner_service {
+                InnerService::Original(rs) => rs.$method_name(param.clone()).await,
+                InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
+            };
+
+            match first_attempt {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    // TODO: discern error type prior to retrying
+                    // Not entirely sure what is thrown when auth is required
+                    if let Some(auth_client) = self.get_auth_client() {
+                        let refresh_result = auth_client.auth_manager.lock().await.refresh_token().await;
+                        match refresh_result {
+                            Ok(_) => {
+                                // Retry the operation after token refresh
+                                match &self.inner_service {
+                                    InnerService::Original(rs) => rs.$method_name(param).await,
+                                    InnerService::Peer(peer) => peer.$method_name(param).await,
+                                }
+                            },
+                            Err(_) => {
+                                // If refresh fails, return the original error
+                                Err(e)
+                            }
+                        }
+                    } else {
+                        // No auth client available, return original error
+                        Err(e)
+                    }
+                },
+            }
+        }
+    };
+}
+
+pub enum InnerService {
+    Original(rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>),
+    Peer(rmcp::service::Peer<RoleClient>),
+}
+
+impl std::fmt::Debug for InnerService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InnerService::Original(_) => f.debug_tuple("Original").field(&"RunningService<..>").finish(),
+            InnerService::Peer(peer) => f.debug_tuple("Peer").field(peer).finish(),
+        }
+    }
+}
+
+impl Clone for InnerService {
+    fn clone(&self) -> Self {
+        match self {
+            InnerService::Original(rs) => InnerService::Peer((*rs).clone()),
+            InnerService::Peer(peer) => InnerService::Peer(peer.clone())
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct RunningService {
-    pub inner_service: rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
-    #[allow(dead_code)]
-    pub auth_dropguard: Option<AuthClientDropGuard>,
+    pub inner_service: InnerService,
+    auth_dropguard: Option<AuthClientDropGuard>,
+}
+
+impl Clone for RunningService {
+    fn clone(&self) -> Self {
+        let auth_dropguard = self.auth_dropguard.as_ref().map(|dg| {
+            let mut dg = dg.clone();
+            dg.should_write = false;
+            dg
+        });
+
+        RunningService {
+            inner_service: self.inner_service.clone(),
+            auth_dropguard
+        }
+    }
 }
 
 impl RunningService {
     pub fn get_auth_client(&self) -> Option<AuthClient<Client>> {
         self.auth_dropguard.as_ref().map(|a| a.auth_client.clone())
     }
-}
 
-impl Deref for RunningService {
-    type Target = rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner_service
-    }
-}
-
-impl DerefMut for RunningService {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner_service
-    }
+    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
+    decorate_with_auth_retry!(GetPromptRequestParam, get_prompt, GetPromptResult);
 }
 
 pub type StdioTransport = (TokioChildProcess, Option<ChildStderr>);
@@ -397,7 +449,7 @@ impl McpClientService {
             });
 
             Ok(RunningService {
-                inner_service: service,
+                inner_service: InnerService::Original(service),
                 auth_dropguard,
             })
         });

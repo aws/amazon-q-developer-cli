@@ -90,6 +90,7 @@ use crate::database::settings::Setting;
 use crate::mcp_client::messenger::Messenger;
 use crate::mcp_client::{
     InitializedMcpClient,
+    InnerService,
     McpClientService,
 };
 use crate::os::Os;
@@ -631,7 +632,9 @@ impl ToolManager {
                         tokio::spawn(async move {
                             match handle.await {
                                 Ok(Ok(client)) => {
-                                    let client = client.inner_service;
+                                    let InnerService::Original(client) = client.inner_service else {
+                                        unreachable!();
+                                    };
                                     match client.cancel().await {
                                         Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
                                         Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
@@ -644,7 +647,9 @@ impl ToolManager {
                         });
                     },
                     InitializedMcpClient::Ready(running_service) => {
-                        let client = running_service.inner_service;
+                        let InnerService::Original(client) = running_service.inner_service else {
+                            unreachable!();
+                        };
                         match client.cancel().await {
                             Ok(_) => info!("Server {server_name} evicted due to agent swap"),
                             Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
@@ -886,7 +891,7 @@ impl ToolManager {
                 Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
                     server_name: server_name.to_owned(),
-                    client: (*running_service).clone(),
+                    client: running_service.clone(),
                     auth_client,
                     params: value.args.as_object().cloned(),
                 })

@@ -78,6 +78,7 @@ impl Drop for LoopBackDropGuard {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct AuthClientDropGuard {
     pub should_write: bool,
     pub cred_full_path: PathBuf,
