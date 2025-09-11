@@ -72,7 +72,10 @@ impl ExecuteCommand {
         };
         const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
 
-        if DANGEROUS_PATTERNS.iter().any(|p| contains_in_middle(&self.command, p)) {
+        if DANGEROUS_PATTERNS
+            .iter()
+            .any(|p| contains_but_not_ends_with(&self.command, p))
+        {
             return true;
         }
 
@@ -104,15 +107,15 @@ impl ExecuteCommand {
                 // Special casing for `find` so that we support most cases while safeguarding
                 // against unwanted mutations
                 Some(cmd)
-                if cmd == "find"
-                    && cmd_args.iter().any(|arg| {
-                    arg.contains("-delete")
+                    if cmd == "find"
+                        && cmd_args.iter().any(|arg| {
+                            arg.contains("-delete")
                         || arg.contains("-ok") // includes -okdir
                         || arg.contains("-fprint") // includes -fprint0 and -fprintf
-                }) =>
-                    {
-                        return true;
-                    },
+                        }) =>
+                {
+                    return true;
+                },
                 // Check -exec commands separately to allow readonly commands
                 Some(cmd) if cmd == "find" && cmd_args.iter().any(|arg| arg.contains("-exec")) => {
                     // Find all -exec arguments and check if ANY command is non-readonly
@@ -121,12 +124,12 @@ impl ExecuteCommand {
                             // Check if there's a next argument (the command to execute)
                             if let Some(exec_cmd) = cmd_args.get(i + 1) {
                                 if !READONLY_COMMANDS.contains(&exec_cmd.as_str()) {
-                                    return true; // Found a non-readonly command, require confirmation
+                                    return true;
                                 }
                             }
                         }
                     }
-                    return false; // All exec commands are readonly
+                    return false;
                 },
                 Some(cmd) => {
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
@@ -134,8 +137,8 @@ impl ExecuteCommand {
                     // regexp.
                     if cmd == "grep"
                         && cmd_args
-                        .iter()
-                        .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
+                            .iter()
+                            .any(|arg| arg.contains("-P") || arg.contains("--perl-regexp"))
                     {
                         return true;
                     }
@@ -279,9 +282,9 @@ pub fn format_output(output: &str, max_size: usize) -> String {
     )
 }
 
-fn contains_in_middle(target: &str, pattern: &str) -> bool {
+fn contains_but_not_ends_with(target: &str, pattern: &str) -> bool {
     if let Some(pos) = target.find(pattern) {
-        pos > 0 && pos + pattern.len() < target.len()
+        pos + pattern.len() < target.len()
     } else {
         false
     }
@@ -295,44 +298,43 @@ mod tests {
     use crate::cli::agent::ToolSettingTarget;
 
     #[test]
-    fn test_contains_in_middle() {
+    fn test_contains_but_not_ends_with() {
         let test_cases = &[
             // Semicolon tests
             ("find . -exec cat {} \\; -exec grep pattern {} \\;", ";", true),
             ("echo hello; echo world", ";", true),
             ("echo hello", ";", false),
-            (";echo hello", ";", false),
             ("echo hello;", ";", false),
             // Pipe tests
             ("echo hello | grep world", "|", true),
             ("echo hello|grep world", "|", true),
-            ("|echo hello", "|", false),
+            ("< input.txt wc -l", "<", true),
             ("echo hello|", "|", false),
             // Ampersand tests
             ("echo hello & echo world", "&", true),
             ("echo hello&echo world", "&", true),
-            ("&echo hello", "&", false),
+            ("&echo hello", "&", true),
             ("echo hello&", "&", false),
             // Greater than tests
             ("echo hello > file.txt", ">", true),
             ("echo hello>file.txt", ">", true),
-            (">echo hello", ">", false),
+            ("> out.txt echo hello", ">", true),
             ("echo hello>", ">", false),
             // Less than tests
             ("cat < input.txt", "<", true),
             ("cat<input.txt", "<", true),
-            ("<cat input.txt", "<", false),
             ("cat input.txt<", "<", false),
             // Dollar sign tests
             ("echo $HOME test", "$", true),
             ("echo test$HOME", "$", true),
-            ("$echo test", "$", false),
             ("echo test$", "$", false),
+            ("$(date)", "$", true),
+            ("${HOME}", "$", true),
         ];
 
         for (target, pattern, expected) in test_cases {
             assert_eq!(
-                contains_in_middle(target, pattern),
+                contains_but_not_ends_with(target, pattern),
                 *expected,
                 "expected contains_in_middle('{}', '{}') to be {}",
                 target,
@@ -413,7 +415,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-                .unwrap();
+            .unwrap();
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
@@ -451,7 +453,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-                .unwrap();
+            .unwrap();
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
@@ -487,7 +489,7 @@ mod tests {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
                 "command": cmd,
             }))
-                .unwrap();
+            .unwrap();
             assert_eq!(
                 tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
                 *expected,
@@ -521,7 +523,7 @@ mod tests {
         let tool_one = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "git status",
         }))
-            .unwrap();
+        .unwrap();
 
         let res = tool_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
@@ -529,7 +531,7 @@ mod tests {
         let tool_two = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "this_is_not_a_read_only_command",
         }))
-            .unwrap();
+        .unwrap();
 
         let res = tool_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
@@ -537,21 +539,21 @@ mod tests {
         let tool_allow_wild_card = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_wild_card some_arg",
         }))
-            .unwrap();
+        .unwrap();
         let res = tool_allow_wild_card.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
         let tool_allow_exact_should_ask = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact some_arg",
         }))
-            .unwrap();
+        .unwrap();
         let res = tool_allow_exact_should_ask.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
 
         let tool_allow_exact_should_allow = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "allow_exact",
         }))
-            .unwrap();
+        .unwrap();
         let res = tool_allow_exact_should_allow.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
