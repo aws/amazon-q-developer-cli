@@ -83,6 +83,11 @@ fn write_plist() {
 fn main() {
     println!("cargo:rerun-if-changed=def.json");
 
+    // Download feed.json if FETCH_FEED environment variable is set
+    if std::env::var("FETCH_FEED").is_ok() {
+        download_feed_json();
+    }
+
     #[cfg(target_os = "macos")]
     write_plist();
 
@@ -326,9 +331,12 @@ fn main() {
 /// Downloads the latest feed.json from the autocomplete repository.
 /// This ensures official builds have the most up-to-date changelog information.
 ///
-/// TODO - temporarily disabled since GitHub API seems to be very strict with rate limiting,
-/// causing builds to fail.
-#[allow(dead_code)]
+/// # Errors
+///
+/// Prints cargo warnings if:
+/// - `curl` command is not available
+/// - Network request fails
+/// - File write operation fails
 fn download_feed_json() {
     use std::process::Command;
 
