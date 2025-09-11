@@ -70,22 +70,9 @@ impl ExecuteCommand {
         let Some(args) = shlex::split(&self.command) else {
             return true;
         };
-        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", "${", "\n", "\r", "IFS"];
-        const DANGEROUS_MID_PATTERNS: &[&str] = &[";"];
+        const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "${", "\n", "\r", "IFS"];
 
-        if args
-            .iter()
-            .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
-        {
-            return true;
-        }
-
-        // Check for patterns that are dangerous only when they appear in the middle of arguments
-        if args.iter().any(|arg| {
-            DANGEROUS_MID_PATTERNS.iter().any(|p| {
-                arg.contains(p) && !arg.ends_with(p)
-            })
-        }) {
+        if DANGEROUS_PATTERNS.iter().any(|p| contains_in_middle(&self.command, p)) {
             return true;
         }
 
@@ -292,12 +279,68 @@ pub fn format_output(output: &str, max_size: usize) -> String {
     )
 }
 
+fn contains_in_middle(target: &str, pattern: &str) -> bool {
+    if let Some(pos) = target.find(pattern) {
+        pos > 0 && pos + pattern.len() < target.len()
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
+
+    #[test]
+    fn test_contains_in_middle() {
+        let test_cases = &[
+            // Semicolon tests
+            ("find . -exec cat {} \\; -exec grep pattern {} \\;", ";", true),
+            ("echo hello; echo world", ";", true),
+            ("echo hello", ";", false),
+            (";echo hello", ";", false),
+            ("echo hello;", ";", false),
+            // Pipe tests
+            ("echo hello | grep world", "|", true),
+            ("echo hello|grep world", "|", true),
+            ("|echo hello", "|", false),
+            ("echo hello|", "|", false),
+            // Ampersand tests
+            ("echo hello & echo world", "&", true),
+            ("echo hello&echo world", "&", true),
+            ("&echo hello", "&", false),
+            ("echo hello&", "&", false),
+            // Greater than tests
+            ("echo hello > file.txt", ">", true),
+            ("echo hello>file.txt", ">", true),
+            (">echo hello", ">", false),
+            ("echo hello>", ">", false),
+            // Less than tests
+            ("cat < input.txt", "<", true),
+            ("cat<input.txt", "<", true),
+            ("<cat input.txt", "<", false),
+            ("cat input.txt<", "<", false),
+            // Dollar sign tests
+            ("echo $HOME test", "$", true),
+            ("echo test$HOME", "$", true),
+            ("$echo test", "$", false),
+            ("echo test$", "$", false),
+        ];
+
+        for (target, pattern, expected) in test_cases {
+            assert_eq!(
+                contains_in_middle(target, pattern),
+                *expected,
+                "expected contains_in_middle('{}', '{}') to be {}",
+                target,
+                pattern,
+                expected
+            );
+        }
+    }
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -353,16 +396,13 @@ mod tests {
             // `find` with readonly -exec commands (should be allowed)
             ("find . -name '*.rs' -exec grep -l pattern {} \\;", false),
             ("find . -type f -exec cat {} \\;", false),
+            ("find . -type f -exec rm {} \\;", true),
             ("find . -name '*.txt' -exec head {} \\;", false),
             ("find . -type f -exec ls -l {} \\;", false),
             // Multiple -exec commands - mixed readonly and non-readonly
             ("find . -exec cat {} \\; -exec rm {} \\;", true),
             ("find . -exec ls {} \\; -exec touch newfile \\;", true),
             ("find . -exec grep pattern {} \\; -exec chmod 755 {} \\;", true),
-            // Multiple -exec commands - all readonly (should be allowed)
-            ("find . -exec cat {} \\; -exec grep pattern {} \\;", false),
-            ("find . -exec ls -l {} \\; -exec head {} \\;", false),
-            ("find . -exec echo {} \\; -exec tail {} \\;", false),
             (r"find . -${t}exec touch asdf \{\} +", true),
             (r"find . -${t:=exec} touch asdf2 \{\} +", true),
             // `grep` command arguments
