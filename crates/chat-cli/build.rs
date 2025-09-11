@@ -355,8 +355,10 @@ fn download_feed_json() {
         .args([
             "-H",
             "Accept: application/vnd.github.v3.raw",
-            "-s", // silent
-            "-f", // fail on HTTP errors
+            "-f",           // fail on HTTP errors
+            "-s",           // silent
+            "-v",           // verbose output printed to stderr
+            "--show-error", // print error message to stderr (since -s is used)
             "https://api.github.com/repos/aws/amazon-q-developer-cli-autocomplete/contents/feed.json",
         ])
         .output();
@@ -371,9 +373,9 @@ fn download_feed_json() {
         },
         Ok(result) => {
             let error_msg = if !result.stderr.is_empty() {
-                format!("HTTP error: {}", String::from_utf8_lossy(&result.stderr))
+                format!("{}", String::from_utf8_lossy(&result.stderr))
             } else {
-                "HTTP error occurred".to_string()
+                "An unknown error occurred".to_string()
             };
             panic!("Failed to download feed.json: {}", error_msg);
         },
