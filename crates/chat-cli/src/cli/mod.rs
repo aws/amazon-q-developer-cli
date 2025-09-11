@@ -2,7 +2,7 @@ mod agent;
 pub mod chat;
 mod debug;
 mod diagnostics;
-mod feed;
+pub mod feed;
 mod issue;
 mod mcp;
 mod settings;

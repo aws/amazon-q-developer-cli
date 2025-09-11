@@ -274,6 +274,28 @@ impl Database {
             .and_then(|s| Uuid::from_str(&s).ok()))
     }
 
+    /// Get changelog last version from state table
+    pub fn get_changelog_last_version(&self) -> Result<Option<String>, DatabaseError> {
+        self.get_entry::<String>(Table::State, "changelog.lastVersion")
+    }
+
+    /// Set changelog last version in state table
+    pub fn set_changelog_last_version(&self, version: &str) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, "changelog.lastVersion", version)?;
+        Ok(())
+    }
+
+    /// Get changelog show count from state table
+    pub fn get_changelog_show_count(&self) -> Result<Option<i64>, DatabaseError> {
+        self.get_entry::<i64>(Table::State, "changelog.showCount")
+    }
+
+    /// Set changelog show count in state table
+    pub fn set_changelog_show_count(&self, count: i64) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, "changelog.showCount", count)?;
+        Ok(())
+    }
+
     /// Set the client ID used for telemetry requests.
     pub fn set_client_id(&mut self, client_id: Uuid) -> Result<usize, DatabaseError> {
         self.set_json_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
