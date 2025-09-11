@@ -181,10 +181,15 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: vec!["file://AmazonQ.md", "file://AGENTS.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
-                .into_iter()
-                .map(Into::into)
-                .collect::<Vec<_>>(),
+            resources: vec![
+                "file://AmazonQ.md",
+                "file://AGENTS.md",
+                "file://README.md",
+                "file://.amazonq/rules/**/*.md",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
             hooks: Default::default(),
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,

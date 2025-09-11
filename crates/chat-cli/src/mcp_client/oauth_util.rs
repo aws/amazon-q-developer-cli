@@ -33,6 +33,7 @@ use sha2::{
 use tokio::sync::oneshot::Sender;
 use tokio_util::sync::CancellationToken;
 use tracing::{
+    debug,
     error,
     info,
 };
@@ -78,6 +79,13 @@ impl Drop for LoopBackDropGuard {
     }
 }
 
+/// A guard that manages the lifecycle of an authenticated MCP client and automatically
+/// persists OAuth credentials when dropped.
+///
+/// This struct wraps an `AuthClient` and ensures that OAuth tokens are written to disk
+/// when the guard goes out of scope, unless explicitly disabled via `should_write`.
+/// This provides automatic credential caching for MCP server connections that require
+/// OAuth authentication.
 #[derive(Clone, Debug)]
 pub struct AuthClientDropGuard {
     pub should_write: bool,
@@ -136,6 +144,16 @@ impl Drop for AuthClientDropGuard {
     }
 }
 
+/// HTTP transport wrapper that handles both authenticated and non-authenticated MCP connections.
+///
+/// This enum provides two variants for different authentication scenarios:
+/// - `WithAuth`: Used when the MCP server requires OAuth authentication, containing both the
+///   transport worker and an auth client guard that manages credential persistence
+/// - `WithoutAuth`: Used for servers that don't require authentication, containing only the basic
+///   transport worker
+///
+/// The appropriate variant is automatically selected based on the server's response to
+/// an initial probe request during transport creation.
 pub enum HttpTransport {
     WithAuth(
         (
@@ -150,6 +168,7 @@ pub async fn get_http_transport(
     os: &Os,
     delete_cache: bool,
     url: &str,
+    auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
 ) -> Result<HttpTransport, OauthUtilError> {
     let cred_dir = get_mcp_auth_dir(os)?;
@@ -165,8 +184,14 @@ pub async fn get_http_transport(
     let probe_resp = reqwest_client.get(url.clone()).send().await?;
     match probe_resp.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
-            let auth_client = AuthClient::new(reqwest_client, am);
+            debug!("## mcp: requires auth, auth client passed in is {:?}", auth_client);
+            let auth_client = match auth_client {
+                Some(auth_client) => auth_client,
+                None => {
+                    let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
+                    AuthClient::new(reqwest_client, am)
+                },
+            };
             let transport =
                 StreamableHttpClientTransport::with_client(auth_client.clone(), StreamableHttpClientTransportConfig {
                     uri: url.as_str().into(),
@@ -175,6 +200,7 @@ pub async fn get_http_transport(
                 });
 
             let auth_dg = AuthClientDropGuard::new(cred_full_path, auth_client);
+            debug!("## mcp: transport obtained");
 
             Ok(HttpTransport::WithAuth((transport, auth_dg)))
         },
@@ -191,7 +217,7 @@ async fn get_auth_manager(
     cred_full_path: PathBuf,
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
-    let content_as_bytes = tokio::fs::read(cred_full_path).await;
+    let content_as_bytes = tokio::fs::read(&cred_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
 
     match content_as_bytes {
@@ -200,12 +226,15 @@ async fn get_auth_manager(
 
             oauth_state.set_credentials("id", token).await?;
 
+            debug!("## mcp: credentials set with cache");
+
             Ok(oauth_state
                 .into_authorization_manager()
                 .ok_or(OauthUtilError::MissingAuthorizationManager)?)
         },
         Err(e) => {
             info!("Error reading cached credentials: {e}");
+            debug!("## mcp: cache read failed. constructing auth manager from scratch");
             get_auth_manager_impl(oauth_state, messenger).await
         },
     }

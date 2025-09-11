@@ -5,7 +5,20 @@ use std::process::Stdio;
 use regex::Regex;
 use reqwest::Client;
 use rmcp::model::{
-    CallToolRequestParam, CallToolResult, ErrorCode, GetPromptRequestParam, GetPromptResult, Implementation, InitializeRequestParam, ListPromptsResult, ListToolsResult, LoggingLevel, LoggingMessageNotificationParam, PaginatedRequestParam, ServerNotification, ServerRequest
+    CallToolRequestParam,
+    CallToolResult,
+    ErrorCode,
+    GetPromptRequestParam,
+    GetPromptResult,
+    Implementation,
+    InitializeRequestParam,
+    ListPromptsResult,
+    ListToolsResult,
+    LoggingLevel,
+    LoggingMessageNotificationParam,
+    PaginatedRequestParam,
+    ServerNotification,
+    ServerRequest,
 };
 use rmcp::service::{
     ClientInitializeError,
@@ -31,6 +44,7 @@ use tokio::process::{
 };
 use tokio::task::JoinHandle;
 use tracing::{
+    debug,
     error,
     info,
 };
@@ -152,7 +166,7 @@ macro_rules! decorate_with_auth_retry {
                     // TODO: discern error type prior to retrying
                     // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.get_auth_client() {
-                        let refresh_result = auth_client.auth_manager.lock().await.refresh_token().await;
+                        let refresh_result = auth_client.get_access_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 // Retry the operation after token refresh
@@ -163,8 +177,11 @@ macro_rules! decorate_with_auth_retry {
                             },
                             Err(_) => {
                                 // If refresh fails, return the original error
+                                // Currently our event loop just does not allow us easy ways to
+                                // reauth entirely once a session starts since this would mean
+                                // swapping of transport (which also means swapping of client)
                                 Err(e)
-                            }
+                            },
                         }
                     } else {
                         // No auth client available, return original error
@@ -176,6 +193,11 @@ macro_rules! decorate_with_auth_retry {
     };
 }
 
+/// Wrapper around rmcp service types to enable cloning.
+///
+/// This exists because `rmcp::service::RunningService` is not directly cloneable as it is a
+/// pointer type to `Peer<C>`. This enum allows us to hold either the original service or its
+/// peer representation, enabling cloning by converting the original service to a peer when needed.
 pub enum InnerService {
     Original(rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>),
     Peer(rmcp::service::Peer<RoleClient>),
@@ -194,11 +216,22 @@ impl Clone for InnerService {
     fn clone(&self) -> Self {
         match self {
             InnerService::Original(rs) => InnerService::Peer((*rs).clone()),
-            InnerService::Peer(peer) => InnerService::Peer(peer.clone())
+            InnerService::Peer(peer) => InnerService::Peer(peer.clone()),
         }
     }
 }
 
+/// A wrapper around MCP (Model Context Protocol) service instances that manages
+/// authentication and enables cloning functionality.
+///
+/// This struct holds either an original `RunningService` or its peer representation,
+/// along with an optional authentication drop guard for managing OAuth tokens.
+/// The authentication drop guard handles token lifecycle and cleanup when the
+/// service is dropped.
+///
+/// # Fields
+/// * `inner_service` - The underlying MCP service instance (original or peer)
+/// * `auth_dropguard` - Optional authentication manager for OAuth token handling
 #[derive(Debug)]
 pub struct RunningService {
     pub inner_service: InnerService,
@@ -215,18 +248,19 @@ impl Clone for RunningService {
 
         RunningService {
             inner_service: self.inner_service.clone(),
-            auth_dropguard
+            auth_dropguard,
         }
     }
 }
 
 impl RunningService {
+    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
+
+    decorate_with_auth_retry!(GetPromptRequestParam, get_prompt, GetPromptResult);
+
     pub fn get_auth_client(&self) -> Option<AuthClient<Client>> {
         self.auth_dropguard.as_ref().map(|a| a.auth_client.clone())
     }
-
-    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
-    decorate_with_auth_retry!(GetPromptRequestParam, get_prompt, GetPromptResult);
 }
 
 pub type StdioTransport = (TokioChildProcess, Option<ChildStderr>);
@@ -304,8 +338,9 @@ impl McpClientService {
                                 let service = match self.into_dyn().serve(transport).await.map_err(Box::new) {
                                     Ok(service) => service,
                                     Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
+                                        debug!("## mcp: first hand shake attempt failed: {:?}", e);
                                         let refresh_res =
-                                            auth_dg.auth_client.auth_manager.lock().await.refresh_token().await;
+                                            auth_dg.auth_client.get_access_token().await;
                                         let new_self = McpClientService::new(
                                             server_name.clone(),
                                             backup_config,
@@ -313,7 +348,7 @@ impl McpClientService {
                                         );
 
                                         let new_transport =
-                                            get_http_transport(&os_clone, true, &url, &*messenger_dup).await?;
+                                            get_http_transport(&os_clone, true, &url, Some(auth_dg.auth_client.clone()), &*messenger_dup).await?;
 
                                         match new_transport {
                                             HttpTransport::WithAuth((new_transport, new_auth_dg)) => {
@@ -325,13 +360,14 @@ impl McpClientService {
                                                         new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
                                                     },
                                                     Err(e) => {
+                                                        error!("## mcp: token refresh attempt failed: {:?}", e);
                                                         info!("Retry for http transport failed {e}. Possible reauth needed");
                                                         // This could be because the refresh token is expired, in which
                                                         // case we would need to have user go through the auth flow
                                                         // again
                                                         let new_transport  =
-                                                            get_http_transport(&os_clone, true, &url, &*messenger_dup).await?;
-                                                        
+                                                            get_http_transport(&os_clone, true, &url, None, &*messenger_dup).await?;
+
                                                         match new_transport {
                                                             HttpTransport::WithAuth((new_transport, new_auth_dg)) => {
                                                                 auth_dg = new_auth_dg;
@@ -345,7 +381,7 @@ impl McpClientService {
                                                     },
                                                 }
                                             },
-                                            HttpTransport::WithoutAuth(new_transport) => 
+                                            HttpTransport::WithoutAuth(new_transport) =>
                                                 new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?,
                                         }
                                     },
@@ -487,7 +523,7 @@ impl McpClientService {
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
             TransportType::Http => {
-                let http_transport = get_http_transport(os, false, url, messenger).await?;
+                let http_transport = get_http_transport(os, false, url, None, messenger).await?;
 
                 Ok(Transport::Http(http_transport))
             },

@@ -138,6 +138,11 @@ enum LoadingMsg {
     /// This is sent when all tool initialization is complete or when the application is shutting
     /// down.
     Terminate { still_loading: Vec<String> },
+    /// Indicates that a server requires user authentication and provides a sign-in link.
+    /// This message is used to notify the user about authentication requirements for MCP servers
+    /// that need OAuth or other authentication methods. Contains the server name and the
+    /// authentication message (typically a URL or instructions).
+    SignInNotice { name: String },
 }
 
 /// Used to denote the loading outcome associated with a server.
@@ -1183,6 +1188,15 @@ fn spawn_display_task(
                                 execute!(output, style::Print("\n"),)?;
                                 break;
                             },
+                            LoadingMsg::SignInNotice { name } => {
+                                execute!(
+                                    output,
+                                    cursor::MoveToColumn(0),
+                                    cursor::MoveUp(1),
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                )?;
+                                queue_oauth_message(&name, &mut output)?;
+                            },
                         },
                         Err(_e) => {
                             spinner_logo_idx = (spinner_logo_idx + 1) % SPINNER_CHARS.len();
@@ -1611,7 +1625,7 @@ fn spawn_orchestrator_task(
                 UpdateEventMessage::OauthLink { server_name, link } => {
                     let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
                     let msg = eyre::eyre!(link);
-                    let _ = queue_oauth_message(server_name.as_str(), &msg, &mut buf_writer);
+                    let _ = queue_oauth_message_with_link(server_name.as_str(), &msg, &mut buf_writer);
                     let _ = buf_writer.flush();
                     drop(buf_writer);
                     let record_str = String::from_utf8_lossy(record_temp_buf).to_string();
@@ -1625,10 +1639,8 @@ fn spawn_orchestrator_task(
                         })
                         .or_insert(vec![record]);
                     if let Some(sender) = &loading_status_sender {
-                        let msg = LoadingMsg::Warn {
+                        let msg = LoadingMsg::SignInNotice {
                             name: server_name.clone(),
-                            msg: eyre::eyre!("{}", record_str),
-                            time: "0.0".to_string(),
                         };
                         if let Err(e) = sender.send(msg).await {
                             warn!(
@@ -1920,7 +1932,7 @@ fn queue_failure_message(
     )?)
 }
 
-fn queue_oauth_message(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
         style::SetForegroundColor(style::Color::Yellow),
@@ -1928,10 +1940,23 @@ fn queue_oauth_message(name: &str, msg: &eyre::Report, output: &mut impl Write) 
         style::SetForegroundColor(style::Color::Blue),
         style::Print(name),
         style::ResetColor,
-        style::Print(" requires OAuth authentication. Please visit:\n"),
-        style::SetForegroundColor(style::Color::Cyan),
+        style::Print(" requires OAuth authentication. Use /mcp to see the auth link\n"),
+    )?)
+}
+
+fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print("⚠ "),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(name),
+        style::ResetColor,
+        style::Print(" requires OAuth authentication. Follow this link to proceed: \n"),
+        style::SetForegroundColor(style::Color::Yellow),
         style::Print(msg),
         style::ResetColor,
+        style::Print("\n")
     )?)
 }
 
