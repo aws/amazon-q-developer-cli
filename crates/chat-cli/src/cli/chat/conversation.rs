@@ -863,7 +863,7 @@ Return only the JSON configuration, no additional text.",
         self.history.pop_back()?;
         Some(())
     }
-    
+
     /// Swapping agent involves the following:
     /// - Reinstantiate the context manager
     /// - Swap agent on tool manager

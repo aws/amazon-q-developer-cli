@@ -10,7 +10,7 @@ use crossterm::{
     execute,
     style,
 };
-use dialoguer::FuzzySelect;
+use dialoguer::Select;
 use eyre::Result;
 
 use crate::cli::chat::capture::{
@@ -285,7 +285,7 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String
 }
 
 fn fuzzy_select_captures(entries: &[CaptureDisplayEntry], prompt_str: &str) -> Option<usize> {
-    FuzzySelect::new()
+    Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt(prompt_str)
         .items(entries)
         .report(false)
