@@ -25,10 +25,6 @@ use crate::os::Os;
 // The shadow repo path that MUST be appended with a session-specific directory
 pub const SHADOW_REPO_DIR: &str = "/Users/kiranbug/.amazonq/captures/";
 
-// The maximum size in bytes of the cwd for automatically enabling captures
-// Currently set to 4GB
-// pub const AUTOMATIC_INIT_THRESHOLD: u64 = 4_294_967_296;
-
 // CURRENT APPROACH:
 // We only enable automatically enable checkpoints when the user is already in a git repo.
 // Otherwise, the user must manually enable checkpoints using `/checkpoint init`.
