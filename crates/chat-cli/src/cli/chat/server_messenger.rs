@@ -44,6 +44,10 @@ pub enum UpdateEventMessage {
         result: Result<ListResourceTemplatesResult>,
         peer: Option<Peer<RoleClient>>,
     },
+    OauthLink {
+        server_name: String,
+        link: String,
+    },
     InitStart {
         server_name: String,
     },
@@ -141,6 +145,17 @@ impl Messenger for ServerMessenger {
                 server_name: self.server_name.clone(),
                 result,
                 peer,
+            })
+            .await
+            .map_err(|e| MessengerError::Custom(e.to_string()))?)
+    }
+
+    async fn send_oauth_link(&self, link: String) -> MessengerResult {
+        Ok(self
+            .update_event_sender
+            .send(UpdateEventMessage::OauthLink {
+                server_name: self.server_name.clone(),
+                link,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
