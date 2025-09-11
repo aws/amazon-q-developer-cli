@@ -397,7 +397,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_auto_allow_readonly_default() {
         let os = Os::new().await.unwrap();
-        
+
         // Test read-only operation with default settings (auto_allow_readonly = false)
         let readonly_cmd = use_aws! {{
             "service_name": "s3",
@@ -429,7 +429,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_auto_allow_readonly_enabled() {
         let os = Os::new().await.unwrap();
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -475,7 +475,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_auto_allow_readonly_with_denied_services() {
         let os = Os::new().await.unwrap();
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
