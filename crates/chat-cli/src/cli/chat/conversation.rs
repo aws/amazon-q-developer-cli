@@ -269,6 +269,27 @@ impl ConversationState {
         }
     }
 
+    /// Exit tangent mode and preserve the last conversation entry (user + assistant)
+    pub fn exit_tangent_mode_with_tail(&mut self) {
+        if let Some(checkpoint) = self.tangent_state.take() {
+            // Capture the last history entry from tangent conversation if it exists
+            // and if it's different from what was in the main conversation
+            let last_entry = if self.history.len() > checkpoint.main_history.len() {
+                self.history.back().cloned()
+            } else {
+                None // No new entries in tangent mode
+            };
+
+            // Restore from checkpoint
+            self.restore_from_checkpoint(checkpoint);
+
+            // Add the last entry if it exists
+            if let Some(entry) = last_entry {
+                self.history.push_back(entry);
+            }
+        }
+    }
+
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
     pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
@@ -1567,5 +1588,100 @@ mod tests {
 
         // No duration when not in tangent mode
         assert!(conversation.get_tangent_duration_seconds().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_with_tail() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add main conversation
+        conversation.set_next_user_message("main question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+
+        let main_history_len = conversation.history.len();
+
+        // Enter tangent mode
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Add tangent conversation
+        conversation.set_next_user_message("tangent question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "tangent response".to_string()),
+            None,
+        );
+
+        // Exit tangent mode with tail
+        conversation.exit_tangent_mode_with_tail();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Should have main conversation + last assistant message from tangent
+        assert_eq!(conversation.history.len(), main_history_len + 1);
+
+        // Check that the last message is the tangent response
+        if let Some(entry) = conversation.history.back() {
+            assert_eq!(entry.assistant.content(), "tangent response");
+        } else {
+            panic!("Expected history entry at the end");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_with_tail_edge_cases() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add main conversation
+        conversation.set_next_user_message("main question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+
+        let main_history_len = conversation.history.len();
+
+        // Test: Enter tangent mode but don't add any new conversation
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Exit tangent mode with tail (should not add anything since no new entries)
+        conversation.exit_tangent_mode_with_tail();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Should have same length as before (no new entries added)
+        assert_eq!(conversation.history.len(), main_history_len);
+
+        // Test: Call exit_tangent_mode_with_tail when not in tangent mode (should do nothing)
+        conversation.exit_tangent_mode_with_tail();
+        assert_eq!(conversation.history.len(), main_history_len);
     }
 }
