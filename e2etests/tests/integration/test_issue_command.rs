@@ -52,7 +52,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /issue command with bug report... | Description: Tests the /issue command to create a bug report and verify it opens GitHub issue creation interface");
+    println!("\n🔍 Testing /issue command with bug report... | Description: Tests the <code> /issue</code> command to create a bug report and verify it opens GitHub issue creation interface");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -82,7 +82,7 @@ fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /issue --force command with critical bug... | Description: Tests the /issue --force command to create a critical bug report and verify forced issue creation workflow");
+    println!("\n🔍 Testing /issue --force command with critical bug... | Description: Tests the <code> /issue --force</code> command to create a critical bug report and verify forced issue creation workflow");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -112,7 +112,7 @@ fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /issue -f command with critical bug... | Description: Tests the /issue -f command (short form) to create a critical bug report with force flag");
+    println!("\n🔍 Testing /issue -f command with critical bug... | Description: Tests the <code> /issue -f</code> command (short form) to create a critical bug report with force flag");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -143,7 +143,7 @@ fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /issue --help command... | Description: Tests the /issue --help command to display help information for issue reporting functionality including options and usage");
+    println!("\n🔍 Testing /issue --help command... | Description: Tests the <code> /issue --help</code> command to display help information for issue reporting functionality including options and usage");
      
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -183,7 +183,7 @@ fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /issue -h command... | Description: Tests the /issue -h command (short form) to display issue reporting help information");
+    println!("\n🔍 Testing /issue -h command... | Description: Tests the <code> /issue -h</code> command (short form) to display issue reporting help information");
      
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

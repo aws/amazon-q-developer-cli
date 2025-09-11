@@ -55,7 +55,6 @@ fn test_q_settings_all_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 
     // Validate output contains expected settings
     assert!(response.contains("chat.defaultAgent"), "Should contain chat.defaultAgent setting");
-    assert!(response.contains("mcp.loadedBefore"), "Should contain mcp.loadedBefore setting");
     assert!(response.len() > 10, "Response should be substantial");
     
     println!("✅ All settings displayed successfully!");

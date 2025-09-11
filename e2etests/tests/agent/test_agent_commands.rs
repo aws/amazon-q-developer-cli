@@ -56,7 +56,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent command... | Description: Tests the /agent command without subcommands to display help information. Verifies agent management description, usage, available subcommands, and options");
+    println!("\n🔍 Testing /agent command... | Description: Tests the <code> /agent</code> command without subcommands to display help information. Verifies agent management description, usage, available subcommands, and options");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -109,7 +109,7 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent create --name <agent_name> command... | Description: Tests the /agent create command to create a new agent with specified name. Verifies agent creation process, file system operations, and cleanup");
+    println!("\n🔍 Testing /agent create --name <agent_name> command... | Description: Tests the <code> /agent create</code> command to create a new agent with specified name. Verifies agent creation process, file system operations, and cleanup");
     
     let timestamp = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -178,7 +178,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent create without required arguments... | Description: Tests the /agent create command without required arguments to verify error handling. Verifies proper error messages, usage information, and help suggestions");
+    println!("\n🔍 Testing /agent create without required arguments... | Description: Tests the <code> /agent create</code> command without required arguments to verify error handling. Verifies proper error messages, usage information, and help suggestions");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -229,7 +229,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent help... | Description: Tests the /agent help command to display comprehensive agent help information. Verifies agent descriptions, usage notes, launch instructions, and configuration paths");
+    println!("\n🔍 Testing /agent help... | Description: Tests the <code> /agent help</code> command to display comprehensive agent help information. Verifies agent descriptions, usage notes, launch instructions, and configuration paths");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -286,7 +286,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent invalidcommand... | Description: Tests the /agent command with invalid subcommand to verify error handling. Verifies that invalid commands display help information with available commands and options");
+    println!("\n🔍 Testing /agent invalidcommand... | Description: Tests the <code> /agent</code> command with invalid subcommand to verify error handling. Verifies that invalid commands display help information with available commands and options");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -325,7 +325,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent list command... | Description: Tests the /agent list command to display all available agents. Verifies agent listing format and presence of default agent");
+    println!("\n🔍 Testing /agent list command... | Description: Tests the <code> /agent list</code> command to display all available agents. Verifies agent listing format and presence of default agent");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -400,7 +400,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent set-default with valid arguments... | Description: Tests the /agent set-default command with valid arguments to set default agent. Verifies success messages and confirmation of default agent configuration");
+    println!("\n🔍 Testing /agent set-default with valid arguments... | Description: Tests the <code> /agent set-default</code> command with valid arguments to set default agent. Verifies success messages and confirmation of default agent configuration");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -441,7 +441,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent set-default without required arguments... | Description: Tests the /agent set-default command without required arguments to verify error handling. Verifies error messages, usage information, and available options display");
+    println!("\n🔍 Testing /agent set-default without required arguments... | Description: Tests the <code> /agent set-default</code> command without required arguments to verify error handling. Verifies error messages, usage information, and available options display");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

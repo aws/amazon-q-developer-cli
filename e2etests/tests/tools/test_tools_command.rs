@@ -74,7 +74,7 @@ impl<'a> Drop for FileCleanup<'a> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools command... | Description: Tests the /tools command to display all available tools with their permission status including built-in and MCP tools");
+    println!("\n🔍 Testing /tools command... | Description: Tests the <code>/tools</code> command to display all available tools with their permission status including built-in and MCP tools");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -129,7 +129,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools --help command... | Description: Tests the /tools --help command to display comprehensive help information about tools management including available subcommands and options");
+    println!("\n🔍 Testing /tools --help command... | Description: Tests the <code> /tools --help</code> command to display comprehensive help information about tools management including available subcommands and options");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -175,7 +175,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools trust-all command... | Description: Tests the /tools trust-all command to trust all available tools and verify all tools show trusted status, then tests reset functionality");
+    println!("\n🔍 Testing /tools trust-all command... | Description: Tests the <code> /tools trust-all</code> command to trust all available tools and verify all tools show trusted status, then tests reset functionality");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -255,7 +255,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools trust-all --help command... | Description: Tests the /tools trust-all --help command to display help information for the trust-all subcommand");
+    println!("\n🔍 Testing /tools trust-all --help command... | Description: Tests the <code> /tools trust-all --help</code>command to display help information for the trust-all subcommand");
   
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -291,7 +291,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools reset --help command... | Description: Tests the /tools reset --help command to display help information for the reset subcommand");
+    println!("\n🔍 Testing /tools reset --help command... | Description: Tests the <code> /tools reset --help</code> command to display help information for the reset subcommand");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -326,7 +326,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools trust command... | Description: Tests the /tools trust and untrust commands to manage individual tool permissions and verify trust status changes");
+    println!("\n🔍 Testing /tools trust command... | Description: Tests the <code> /tools</code> trust and untrust commands to manage individual tool permissions and verify trust status changes");
   
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -404,7 +404,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools trust --help command... | Description: Tests the /tools trust --help command to display help information for trusting specific tools");
+    println!("\n🔍 Testing /tools trust --help command... | Description: Tests the <code>/tools trust --help</code> command to display help information for trusting specific tools");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -443,7 +443,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools untrust --help command... | Description: Tests the /tools untrust --help command to display help information for untrusting specific tools");
+    println!("\n🔍 Testing /tools untrust --help command... | Description: Tests the <code>/tools untrust --help</code> command to display help information for untrusting specific tools");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -482,7 +482,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /tools schema --help command... | Description: Tests the /tools schema --help command to display help information for viewing tool schemas");
+    println!("\n🔍 Testing /tools schema --help command... | Description: Tests the <code>/tools schema --help</code> command to display help information for viewing tool schemas");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -574,7 +574,7 @@ fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `fs_write` and `fs_read` tool ... | Description: Tests the fs_write and fs_read tools by creating a file with specific content and reading it back to verify file I/O operations work correctly");
+    println!("\n🔍 Testing `fs_write` and `fs_read` tool ... | Description: Tests the <code> fs_write</code> and <code> fs_read</code> tools by creating a file with specific content and reading it back to verify file I/O operations work correctly");
 
     let save_path = "demo.txt";
     let _cleanup = FileCleanup { path: save_path };
@@ -648,7 +648,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `execute_bash` tool ... | Description: Tests the execute_bash tool by running the 'pwd' command and verifying proper command execution and output");
+    println!("\n🔍 Testing `execute_bash` tool ... | Description: Tests the <code>execute_bash</code> tool by running the 'pwd' command and verifying proper command execution and output");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -687,7 +687,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `report_issue` tool ... | Description: Tests the GitHub issue reporting functionality by creating a sample issue and verifying the browser opens GitHub for issue submission");
+    println!("\n🔍 Testing `report_issue` tool ... | Description: Tests the <code> report_issue</code> reporting functionality by creating a sample issue and verifying the browser opens GitHub for issue submission");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -722,7 +722,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing `use_aws` tool ... | Description: Tests the use_aws tool by executing AWS commands to describe EC2 instances and verifying proper AWS CLI integration");
+    println!("\n🔍 Testing `use_aws` tool ... | Description: Tests the <code>use_aws</code> tool by executing AWS commands to describe EC2 instances and verifying proper AWS CLI integration");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -757,7 +757,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "tools", feature = "sanity"))]
 fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description: Tests the ability to trust the execute_bash tool so it runs commands without asking for user confirmation each time");
+    println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description: Tests the ability to trust the <code>execute_bash</code> tool so it runs commands without asking for user confirmation each time");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

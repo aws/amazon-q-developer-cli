@@ -56,7 +56,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context show command... | Description: Tests the /context show command to display current context information including agent configuration and context files");
+    println!("\n🔍 Testing /context show command... | Description: Tests the <code> /context show</code> command to display current context information including agent configuration and context files");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -90,7 +90,7 @@ fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context help command... | Description: Tests the /context help command to display comprehensive help information for context management including usage, commands, and options");
+    println!("\n🔍 Testing /context help command... | Description: Tests the <code> /context help</code> command to display comprehensive help information for context management including usage, commands, and options");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -132,7 +132,7 @@ fn test_context_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context without sub command... | Description: Tests the /context command without subcommands to verify it displays help information with usage and available commands");
+    println!("\n🔍 Testing /context without sub command... | Description: Tests the <code> /context</code> command without subcommands to verify it displays help information with usage and available commands");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -170,7 +170,7 @@ fn test_context_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context invalid command... | Description: Tests the /context command with invalid subcommand to verify proper error handling and help display");
+    println!("\n🔍 Testing /context invalid command... | Description: Tests the <code> /context test</code> command with invalid subcommand to verify proper error handling and help display");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -200,7 +200,7 @@ fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_non_existing_file_context() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context add non-existing file command... | Description: Tests the /context add command with non-existing file to verify proper error handling and force option suggestion");
+    println!("\n🔍 Testing /context add non-existing file command... | Description: Tests the <code> /context add</code> command with non-existing file to verify proper error handling and force option suggestion");
 
     let non_existing_file_path = "/tmp/non_existing_file.py";
 
@@ -231,7 +231,7 @@ fn test_add_non_existing_file_context() -> Result<(), Box<dyn std::error::Error>
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context remove non existing file command... | Description: Tests the /context remove command with non-existing file to verify proper error handling");
+    println!("\n🔍 Testing /context remove non existing file command... | Description: Tests the <code> /context remove</code> command with non-existing file to verify proper error handling");
 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -259,7 +259,7 @@ fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std:
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context add <filename> command and /context remove <filename> command... | Description: Tests the complete workflow of adding a file to context, verifying it appears in context show, then removing it and verifying removal");
+    println!("\n🔍 Testing /context add <filename> command and /context remove <filename> command... | Description: Tests the <code> /context add</code> command to add a file to context and <code> /context remove</code> command to remove a file from context");
 
     let test_file_path = "/tmp/test_context_file_.py";
     // Create a test file
@@ -333,7 +333,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context add *.py glob pattern command... | Description: Tests the /context add command with glob patterns to add multiple files matching a pattern and verify pattern-based context management");
+    println!("\n🔍 Testing /context add *.py glob pattern command... | Description: Tests the <code> /context add</code> command with glob patterns to add multiple files matching a pattern and verify pattern-based context management");
 
     let test_file1_path = "/tmp/test_context_file1.py";
     let test_file2_path = "/tmp/test_context_file2.py";
@@ -415,8 +415,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context add <filename1> <filename2> <filename3> command and /context remove <filename1> <filename2> <filename3>... | Description: Tests adding and removing multiple files in a single command to verify batch context operations");
-    
+    println!("\n🔍 Testing /context add <filename1> <filename2> <filename3> command and /context remove <filename1> <filename2> <filename3>... | Description: Tests the <code> /context add</code> command with multiple files to verify batch context operations and <code> /context remove</code> command with multiple files to verify");   
     let test_file1_path = "/tmp/test_context_file1.py";
     let test_file2_path = "/tmp/test_context_file2.py";
     let test_file3_path = "/tmp/test_context_file.js";
@@ -500,7 +499,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
 #[test]
 #[cfg(all(feature = "context", feature = "sanity"))]
 fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /context clear command... | Description: Tests the /context clear command to remove all files from context and verify the context is completely cleared");
+    println!("\n🔍 Testing /context clear command... | Description: Tests the <code> /context clear</code> command to remove all files from context and verify the context is completely cleared");
 
     let test_file_path = "/tmp/test_context_file.py";
     

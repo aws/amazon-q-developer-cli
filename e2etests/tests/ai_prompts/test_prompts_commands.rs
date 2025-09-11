@@ -50,7 +50,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_prompts_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /prompts command... | Description: Tests the /prompts command to display available prompts with usage instructions and argument requirements");
+    println!("\n🔍 Testing /prompts command... | Description: Tests the <code> /prompts</code> command to display available prompts with usage instructions and argument requirements");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -89,7 +89,7 @@ fn test_prompts_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_prompts_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /prompts --help command... | Description: Tests the /prompts --help command to display comprehensive help information about prompts functionality and MCP server integration");
+    println!("\n🔍 Testing /prompts --help command... | Description: Tests the <code> /prompts --help</code> command to display comprehensive help information about prompts functionality and MCP server integration");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();
@@ -150,7 +150,7 @@ fn test_prompts_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_prompts_list_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /prompts list command... | Description: Tests the /prompts list command to display all available prompts with their arguments and usage information");
+    println!("\n🔍 Testing /prompts list command... | Description: Tests the <code> /prompts list</code> command to display all available prompts with their arguments and usage information");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

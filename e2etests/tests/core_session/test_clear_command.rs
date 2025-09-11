@@ -47,7 +47,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "clear", feature = "sanity"))]
 fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /clear command... | Description: Tests the /clear command to clear conversation history and verify that previous context is no longer remembered by the AI");
+    println!("\n🔍 Testing /clear command... | Description: Tests the <code> /clear</code> command to clear conversation history and verify that previous context is no longer remembered by the AI");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

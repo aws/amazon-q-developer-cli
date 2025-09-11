@@ -47,7 +47,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "help", feature = "sanity"))]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /help command... | Description: Tests the /help command to display all available commands and verify core functionality like quit, clear, tools, and help commands are present");
+    println!("\n🔍 Testing /help command... | Description: Tests the <code> /help</code> command to display all available commands and verify core functionality like quit, clear, tools, and help commands are present");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

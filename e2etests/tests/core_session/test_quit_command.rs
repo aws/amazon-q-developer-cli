@@ -32,7 +32,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 #[test]
 #[cfg(all(feature = "quit", feature = "sanity"))]
 fn test_quit_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /quit command... | Description: Tests the /quit command to properly terminate the Q Chat session and exit cleanly");
+    println!("\n🔍 Testing /quit command... | Description: Tests the <code> /quit</code> command to properly terminate the Q Chat session and exit cleanly");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap();

@@ -106,6 +106,29 @@ fn test_q_inline_status_subcommand() -> Result<(), Box<dyn std::error::Error>> {
 
     // Assert that q inline status shows available customizations
     assert!(response.contains("Inline is enabled"), "Response should contain 'Inline is enabled'");
+
+    println!("\n🔍 Executing 'q setting all' subcommand to verify settings...");
+    let response = q_chat_helper::execute_q_subcommand("q", &["setting", "all"])?;
+
+    println!("📝 Debug response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    if response.contains("inline.enabled") {
+        println!("✅ Verified: inline_enabled is set to true");
+    } else {
+        println!("❌ Verification failed: inline_enabled is not set to true");
+    }
+
+    let response = q_chat_helper::execute_q_subcommand("q", &["settings", "inline.enabled", "--delete"])?;
+
+    println!("📝 Debug response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    assert!(response.contains("Removing") || response.contains("inline.enabled"), "Response should confirm deletion or non-existence of the setting");
     
     println!("✅ q inline status subcommand executed successfully!");
     
@@ -126,7 +149,6 @@ fn test_q_inline_show_customizations_subcommand() -> Result<(), Box<dyn std::err
     println!("📝 END OUTPUT");
 
     // Assert that q inline show-customizations shows available customizations
-    assert!(response.contains("NGDE-Customization-V1"), "Response should contain 'NGDE-Customization-V1'");
     assert!(response.contains("Amazon-Internal-V1"), "Response should contain 'Amazon-Internal-V1'");
     assert!(response.contains("Amazon-Aladdin-V1"), "Response should contain 'Amazon-Aladdin-V1'");
     

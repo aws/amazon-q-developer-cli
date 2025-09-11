@@ -54,7 +54,7 @@ pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Res
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /editor --help command... | Description: Tests the /editor --help command to display help information for the editor functionality including usage and options");
+    println!("\n🔍 Testing /editor --help command... | Description: Tests the <code> /editor --help</code> command to display help information for the editor functionality including usage and options");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -97,7 +97,7 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /help editor command... | Description: Tests the /help editor command to display editor-specific help information and usage instructions");
+    println!("\n🔍 Testing /help editor command... | Description: Tests the <code> /help editor</code> command to display editor-specific help information and usage instructions");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -140,7 +140,7 @@ fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /editor -h command... | Description: Tests the /editor -h command (short form) to display editor help information and verify proper flag handling");
+    println!("\n🔍 Testing /editor -h command... | Description: Tests the <code> /editor -h</code> command (short form) to display editor help information and verify proper flag handling");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -183,7 +183,7 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor command interaction... | Description: Test that the /editor command successfully launches the integrated editor interface");
+    println!("🔍 Testing /editor command interaction... | Description: Test that the <code> /editor</code> command successfully launches the integrated editor interface");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -234,7 +234,7 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor command error handling ... | Description: Tests the /editor <non_exixt_filepath> command error handling when attempting to open a nonexistent file");
+    println!("🔍 Testing /editor command error handling ... | Description: Tests the <code> /editor <non_exixt_filepath> </code> command error handling when attempting to open a nonexistent file");
     
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -285,7 +285,7 @@ fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Testing /editor <filepath> command... | Description: Tests the /editor <filepath> command to load an existing file into the editor and verify content loading");
+    println!("🔍 Testing /editor <filepath> command... | Description: Tests the <code> /editor <filepath></code> command to load an existing file into the editor and verify content loading");
     
     let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
     let test_file_path = format!("{}/test_editor_file.txt", home_dir);
