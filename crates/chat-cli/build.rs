@@ -355,9 +355,9 @@ fn download_feed_json() {
         .args([
             "-H",
             "Accept: application/vnd.github.v3.raw",
-            "-f", // fail on HTTP errors
-            "-s", // silent
-            "-v", // verbose output printed to stderr
+            "-f",           // fail on HTTP errors
+            "-s",           // silent
+            "-v",           // verbose output printed to stderr
             "--show-error", // print error message to stderr (since -s is used)
             "https://api.github.com/repos/aws/amazon-q-developer-cli-autocomplete/contents/feed.json",
         ])
