@@ -71,7 +71,7 @@ pub enum GetPromptError {
 
 /// Get list of available prompt names from both global and local directories
 fn get_available_prompt_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
-    let mut prompt_names = Vec::new();
+    let mut prompt_names = std::collections::HashSet::new();
 
     // Check global prompts
     if let Ok(global_dir) = chat_global_prompts_dir(os) {
@@ -81,14 +81,14 @@ fn get_available_prompt_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
                 let path = entry.path();
                 if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
                     if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        prompt_names.push(file_stem.to_string());
+                        prompt_names.insert(file_stem.to_string());
                     }
                 }
             }
         }
     }
 
-    // Check local prompts (can override global ones)
+    // Check local prompts - add them to the set (duplicates will be handled by display logic)
     if let Ok(local_dir) = chat_local_prompts_dir(os) {
         if local_dir.exists() {
             for entry in fs::read_dir(&local_dir)? {
@@ -96,17 +96,14 @@ fn get_available_prompt_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
                 let path = entry.path();
                 if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
                     if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        let name = file_stem.to_string();
-                        // Remove duplicate if it exists (local overrides global)
-                        prompt_names.retain(|n| n != &name);
-                        prompt_names.push(name);
+                        prompt_names.insert(file_stem.to_string());
                     }
                 }
             }
         }
     }
 
-    Ok(prompt_names)
+    Ok(prompt_names.into_iter().collect())
 }
 
 /// Validate prompt name to ensure it's safe and follows naming conventions
@@ -191,7 +188,10 @@ impl PromptsArgs {
         if let Some(subcommand) = self.subcommand {
             if matches!(
                 subcommand,
-                PromptsSubcommand::Get { .. } | PromptsSubcommand::Create { .. } | PromptsSubcommand::Edit { .. }
+                PromptsSubcommand::Get { .. }
+                    | PromptsSubcommand::Create { .. }
+                    | PromptsSubcommand::Edit { .. }
+                    | PromptsSubcommand::Delete { .. }
             ) {
                 return subcommand.execute(os, session).await;
             }
@@ -287,7 +287,7 @@ impl PromptsArgs {
             let global_dir = chat_global_prompts_dir(os).ok();
             let local_dir = chat_local_prompts_dir(os).ok();
 
-            let mut global_only_prompts = Vec::new();
+            let mut global_prompts = Vec::new();
             let mut local_prompts = Vec::new();
             let mut overridden_globals = Vec::new();
 
@@ -301,17 +301,19 @@ impl PromptsArgs {
                     .map(|dir| dir.join(format!("{}.md", name)).exists())
                     .unwrap_or(false);
 
+                if global_exists {
+                    global_prompts.push(name);
+                }
+
                 if local_exists {
                     local_prompts.push(name);
                     if global_exists {
                         overridden_globals.push(name);
                     }
-                } else if global_exists {
-                    global_only_prompts.push(name);
                 }
             }
 
-            if !global_only_prompts.is_empty() {
+            if !global_prompts.is_empty() {
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
@@ -319,7 +321,7 @@ impl PromptsArgs {
                     style::SetAttribute(Attribute::Reset),
                     style::Print("\n"),
                 )?;
-                for name in &global_only_prompts {
+                for name in &global_prompts {
                     queue!(
                         session.stderr,
                         style::Print("- "),
@@ -330,7 +332,7 @@ impl PromptsArgs {
             }
 
             if !local_prompts.is_empty() {
-                if !global_only_prompts.is_empty() {
+                if !global_prompts.is_empty() {
                     queue!(session.stderr, style::Print("\n"))?;
                 }
                 queue!(
@@ -440,7 +442,7 @@ pub enum PromptsSubcommand {
         /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
-    /// Create a new local prompt
+    /// Create a new prompt
     Create {
         /// Name of the prompt to create
         #[arg(short = 'n', long)]
@@ -448,11 +450,25 @@ pub enum PromptsSubcommand {
         /// Content of the prompt (if not provided, opens editor)
         #[arg(long)]
         content: Option<String>,
+        /// Create in global directory instead of local
+        #[arg(long)]
+        global: bool,
     },
-    /// Edit an existing local prompt
+    /// Edit an existing prompt
     Edit {
         /// Name of the prompt to edit
         name: String,
+        /// Edit global prompt instead of local
+        #[arg(long)]
+        global: bool,
+    },
+    /// Delete an existing prompt
+    Delete {
+        /// Name of the prompt to delete
+        name: String,
+        /// Delete global prompt instead of local
+        #[arg(long)]
+        global: bool,
     },
 }
 
@@ -464,8 +480,11 @@ impl PromptsSubcommand {
                 name,
                 arguments: _,
             } => Self::execute_get(os, session, orig_input, name).await,
-            PromptsSubcommand::Create { name, content } => Self::execute_create(os, session, name, content).await,
-            PromptsSubcommand::Edit { name } => Self::execute_edit(os, session, name).await,
+            PromptsSubcommand::Create { name, content, global } => {
+                Self::execute_create(os, session, name, content, global).await
+            },
+            PromptsSubcommand::Edit { name, global } => Self::execute_edit(os, session, name, global).await,
+            PromptsSubcommand::Delete { name, global } => Self::execute_delete(os, session, name, global).await,
             PromptsSubcommand::List { .. } => {
                 unreachable!("List has already been parsed out at this point");
             },
@@ -556,6 +575,7 @@ impl PromptsSubcommand {
         session: &mut ChatSession,
         name: String,
         content: Option<String>,
+        global: bool,
     ) -> Result<ChatState, ChatError> {
         // Validate prompt name first
         if let Err(validation_error) = validate_prompt_name(&name) {
@@ -575,8 +595,12 @@ impl PromptsSubcommand {
             });
         }
 
-        // Ensure local .amazonq/prompts directory exists
-        let prompts_dir = chat_local_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        // Choose directory based on global flag
+        let prompts_dir = if global {
+            chat_global_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?
+        } else {
+            chat_local_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?
+        };
 
         if !prompts_dir.exists() {
             fs::create_dir_all(&prompts_dir).map_err(|e| ChatError::Custom(e.to_string().into()))?;
@@ -584,8 +608,9 @@ impl PromptsSubcommand {
 
         let file_path = prompts_dir.join(format!("{}.md", name));
 
-        // Check if local prompt already exists
+        // Check if prompt already exists in target location
         if file_path.exists() {
+            let location = if global { "global" } else { "local" };
             queue!(
                 session.stderr,
                 style::Print("\n"),
@@ -594,10 +619,17 @@ impl PromptsSubcommand {
                 style::SetForegroundColor(Color::Cyan),
                 style::Print(&name),
                 style::SetForegroundColor(Color::Yellow),
-                style::Print(" already exists. Use "),
+                style::Print(" already exists in "),
+                style::Print(location),
+                style::Print(" directory. Use "),
                 style::SetForegroundColor(Color::Cyan),
                 style::Print("/prompts edit "),
                 style::Print(&name),
+                if global {
+                    style::Print(" --global")
+                } else {
+                    style::Print("")
+                },
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(" to modify it.\n"),
                 style::SetForegroundColor(Color::Reset),
@@ -607,35 +639,51 @@ impl PromptsSubcommand {
             });
         }
 
-        // Check if global prompt with same name exists and ask for confirmation
-        let global_exists = if let Ok(global_dir) = chat_global_prompts_dir(os) {
-            let global_path = global_dir.join(format!("{}.md", name));
-            global_path.exists()
-        } else {
-            false
-        };
+        // Check for conflicts between global and local
+        if !global {
+            // Creating local: check if global exists
+            let global_exists = if let Ok(global_dir) = chat_global_prompts_dir(os) {
+                let global_path = global_dir.join(format!("{}.md", name));
+                global_path.exists()
+            } else {
+                false
+            };
 
-        if global_exists {
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠ Warning: A global prompt named '"),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("' already exists.\n"),
-                style::Print("Creating this local prompt will override the global one.\n"),
-                style::SetForegroundColor(Color::Reset),
-            )?;
+            if global_exists {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: A global prompt named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' already exists.\n"),
+                    style::Print("Creating this local prompt will override the global one.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
 
-            // Flush stderr to ensure the warning is displayed before asking for input
-            execute!(session.stderr)?;
+                // Flush stderr to ensure the warning is displayed before asking for input
+                execute!(session.stderr)?;
 
-            // Ask for user confirmation
-            let user_input = match session.read_user_input("Do you want to continue? (y/n): ", false) {
-                Some(input) => input.trim().to_lowercase(),
-                None => {
+                // Ask for user confirmation
+                let user_input = match session.read_user_input("Do you want to continue? (y/n): ", false) {
+                    Some(input) => input.trim().to_lowercase(),
+                    None => {
+                        queue!(
+                            session.stderr,
+                            style::Print("\n"),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("✓ Prompt creation cancelled.\n"),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
+                };
+
+                if user_input != "y" && user_input != "yes" {
                     queue!(
                         session.stderr,
                         style::Print("\n"),
@@ -646,20 +694,63 @@ impl PromptsSubcommand {
                     return Ok(ChatState::PromptUser {
                         skip_printing_tools: true,
                     });
-                },
+                }
+            }
+        } else {
+            // Creating global: check if local exists
+            let local_exists = if let Ok(local_dir) = chat_local_prompts_dir(os) {
+                let local_path = local_dir.join(format!("{}.md", name));
+                local_path.exists()
+            } else {
+                false
             };
 
-            if user_input != "y" && user_input != "yes" {
+            if local_exists {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
-                    style::Print("✓ Prompt creation cancelled.\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: A local prompt named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' already exists.\n"),
+                    style::Print("The local prompt will continue to override this global one.\n"),
                     style::SetForegroundColor(Color::Reset),
                 )?;
-                return Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                });
+
+                // Flush stderr to ensure the warning is displayed before asking for input
+                execute!(session.stderr)?;
+
+                // Ask for user confirmation
+                let user_input = match session.read_user_input("Do you want to continue? (y/n): ", false) {
+                    Some(input) => input.trim().to_lowercase(),
+                    None => {
+                        queue!(
+                            session.stderr,
+                            style::Print("\n"),
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("✓ Prompt creation cancelled.\n"),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    },
+                };
+
+                if user_input != "y" && user_input != "yes" {
+                    queue!(
+                        session.stderr,
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("✓ Prompt creation cancelled.\n"),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                }
             }
         }
 
@@ -668,11 +759,14 @@ impl PromptsSubcommand {
                 // Write the prompt file with provided content
                 fs::write(&file_path, &content).map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
+                let location = if global { "global" } else { "local" };
                 queue!(
                     session.stderr,
                     style::Print("\n"),
                     style::SetForegroundColor(Color::Green),
-                    style::Print("✓ Created local prompt "),
+                    style::Print("✓ Created "),
+                    style::Print(location),
+                    style::Print(" prompt "),
                     style::SetForegroundColor(Color::Cyan),
                     style::Print(&name),
                     style::SetForegroundColor(Color::Green),
@@ -699,10 +793,13 @@ impl PromptsSubcommand {
                 // Try to open the editor
                 match open_editor_file(&file_path) {
                     Ok(()) => {
+                        let location = if global { "global" } else { "local" };
                         queue!(
                             session.stderr,
                             style::SetForegroundColor(Color::Green),
-                            style::Print("✓ Created local prompt "),
+                            style::Print("✓ Created "),
+                            style::Print(location),
+                            style::Print(" prompt "),
                             style::SetForegroundColor(Color::Cyan),
                             style::Print(&name),
                             style::SetForegroundColor(Color::Green),
@@ -737,70 +834,305 @@ impl PromptsSubcommand {
         })
     }
 
-    async fn execute_edit(os: &Os, session: &mut ChatSession, name: String) -> Result<ChatState, ChatError> {
-        // Find the prompt file path
-        if let Some((_, file_path)) =
-            load_prompt_by_name(os, &name).map_err(|e| ChatError::Custom(e.to_string().into()))?
-        {
+    async fn execute_edit(
+        os: &Os,
+        session: &mut ChatSession,
+        name: String,
+        global: bool,
+    ) -> Result<ChatState, ChatError> {
+        // Find the prompt file path based on global flag
+        let file_path = if global {
+            // Look for global prompt specifically
+            let global_dir = chat_global_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            let global_path = global_dir.join(format!("{}.md", name));
+            if global_path.exists() {
+                global_path
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Global prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            }
+        } else {
+            // Look for local prompt specifically, or fall back to global
+            let local_dir = chat_local_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            let local_path = local_dir.join(format!("{}.md", name));
+            if local_path.exists() {
+                local_path
+            } else if let Some((_, _path)) =
+                load_prompt_by_name(os, &name).map_err(|e| ChatError::Custom(e.to_string().into()))?
+            {
+                // Found global prompt, but user wants to edit local
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Local prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found, but global version exists.\n"),
+                    style::Print("Use "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts edit "),
+                    style::Print(&name),
+                    style::Print(" --global"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" to edit the global version, or\n"),
+                    style::Print("use "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts create "),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" to create a local override.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            }
+        };
+
+        let location = if global { "global" } else { "local" };
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::Green),
+            style::Print("Opening editor for "),
+            style::Print(location),
+            style::Print(" prompt: "),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(&name),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("File: "),
+            style::Print(file_path.display().to_string()),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Try to open the editor
+        match open_editor_file(&file_path) {
+            Ok(()) => {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("✓ Prompt edited successfully.\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            Err(err) => {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error opening editor: "),
+                    style::Print(err.to_string()),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("Tip: You can edit this file directly: "),
+                    style::Print(file_path.display().to_string()),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n\n"),
+                )?;
+            },
+        }
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    async fn execute_delete(
+        os: &Os,
+        session: &mut ChatSession,
+        name: String,
+        global: bool,
+    ) -> Result<ChatState, ChatError> {
+        // Find the prompt file path based on global flag
+        let file_path = if global {
+            // Look for global prompt specifically
+            let global_dir = chat_global_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            let global_path = global_dir.join(format!("{}.md", name));
+            if global_path.exists() {
+                global_path
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Global prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            }
+        } else {
+            // Look for local prompt specifically
+            let local_dir = chat_local_prompts_dir(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            let local_path = local_dir.join(format!("{}.md", name));
+            if local_path.exists() {
+                local_path
+            } else {
+                // Check if global exists to provide helpful message
+                let global_exists = if let Ok(global_dir) = chat_global_prompts_dir(os) {
+                    let global_path = global_dir.join(format!("{}.md", name));
+                    global_path.exists()
+                } else {
+                    false
+                };
+
+                if global_exists {
+                    queue!(
+                        session.stderr,
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("Local prompt "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&name),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print(" not found, but global version exists.\n"),
+                        style::Print("Use "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print("/prompts delete "),
+                        style::Print(&name),
+                        style::Print(" --global"),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print(" to delete the global version.\n"),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                } else {
+                    queue!(
+                        session.stderr,
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print("Prompt "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&name),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print(" not found.\n"),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                }
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            }
+        };
+
+        let location = if global { "global" } else { "local" };
+
+        // Ask for confirmation
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("⚠ Warning: This will permanently delete the "),
+            style::Print(location),
+            style::Print(" prompt '"),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(&name),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("'.\n"),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("File: "),
+            style::Print(file_path.display().to_string()),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+
+        // Flush stderr to ensure the warning is displayed before asking for input
+        execute!(session.stderr)?;
+
+        // Ask for user confirmation
+        let user_input = match session.read_user_input("Are you sure you want to delete this prompt? (y/n): ", false) {
+            Some(input) => input.trim().to_lowercase(),
+            None => {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("✓ Deletion cancelled.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
+            },
+        };
+
+        if user_input != "y" && user_input != "yes" {
             queue!(
                 session.stderr,
                 style::Print("\n"),
                 style::SetForegroundColor(Color::Green),
-                style::Print("Opening editor for prompt: "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(&name),
+                style::Print("✓ Deletion cancelled.\n"),
                 style::SetForegroundColor(Color::Reset),
-                style::Print("\n"),
-                style::SetForegroundColor(Color::DarkGrey),
-                style::Print("File: "),
-                style::Print(file_path.display().to_string()),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("\n\n"),
             )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
 
-            // Try to open the editor
-            match open_editor_file(&file_path) {
-                Ok(()) => {
-                    queue!(
-                        session.stderr,
-                        style::SetForegroundColor(Color::Green),
-                        style::Print("✓ Prompt edited successfully.\n\n"),
-                        style::SetForegroundColor(Color::Reset),
-                    )?;
-                },
-                Err(err) => {
-                    queue!(
-                        session.stderr,
-                        style::SetForegroundColor(Color::Red),
-                        style::Print("Error opening editor: "),
-                        style::Print(err.to_string()),
-                        style::SetForegroundColor(Color::Reset),
-                        style::Print("\n"),
-                        style::SetForegroundColor(Color::DarkGrey),
-                        style::Print("Tip: You can edit this file directly: "),
-                        style::Print(file_path.display().to_string()),
-                        style::SetForegroundColor(Color::Reset),
-                        style::Print("\n\n"),
-                    )?;
-                },
-            }
-        } else {
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("Prompt "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(" not found. Use "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print("/prompts create "),
-                style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(" to create it.\n"),
-                style::SetForegroundColor(Color::Reset),
-            )?;
+        // Delete the file
+        match fs::remove_file(&file_path) {
+            Ok(()) => {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("✓ Deleted "),
+                    style::Print(location),
+                    style::Print(" prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" successfully.\n\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            Err(err) => {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error deleting prompt: "),
+                    style::Print(err.to_string()),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n\n"),
+                )?;
+            },
         }
 
         Ok(ChatState::PromptUser {
@@ -814,6 +1146,7 @@ impl PromptsSubcommand {
             PromptsSubcommand::Get { .. } => "get",
             PromptsSubcommand::Create { .. } => "create",
             PromptsSubcommand::Edit { .. } => "edit",
+            PromptsSubcommand::Delete { .. } => "delete",
         }
     }
 }
@@ -912,5 +1245,33 @@ mod tests {
 
         // Verify local version was loaded
         assert_eq!(shared_content, "Local version");
+    }
+
+    #[test]
+    fn test_validate_prompt_name() {
+        // Empty name
+        assert!(validate_prompt_name("").is_err());
+        assert!(validate_prompt_name("   ").is_err());
+
+        // Too long name (over 50 characters)
+        let long_name = "a".repeat(51);
+        assert!(validate_prompt_name(&long_name).is_err());
+
+        // Exactly 50 characters should be valid
+        let max_name = "a".repeat(50);
+        assert!(validate_prompt_name(&max_name).is_ok());
+
+        // Path separators
+        assert!(validate_prompt_name("path/name").is_err());
+        assert!(validate_prompt_name("path\\name").is_err());
+        assert!(validate_prompt_name("/name").is_err());
+        assert!(validate_prompt_name("name/").is_err());
+
+        // Hyphens and underscores
+        assert!(validate_prompt_name("-name").is_ok());
+        assert!(validate_prompt_name("_name").is_ok());
+
+        // Numbers
+        assert!(validate_prompt_name("123").is_ok());
     }
 }
