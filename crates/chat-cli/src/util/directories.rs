@@ -10,6 +10,7 @@ use globset::{
 };
 use thiserror::Error;
 
+use crate::cli::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 
 #[derive(Debug, Error)]
@@ -43,6 +44,7 @@ type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
 ///
@@ -157,6 +159,10 @@ pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
 }
 
+pub fn chat_cli_bash_history_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(CLI_BASH_HISTORY_PATH))
+}
+
 /// Legacy workspace MCP server config path
 pub fn chat_legacy_workspace_mcp_config(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
@@ -187,7 +193,11 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
 /// patterns to exist in a globset.
 pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<()> {
     let glob_for_file = Glob::new(path)?;
-    let glob_for_dir = Glob::new(&format!("{path}/**"))?;
+
+    // remove existing slash in path so we don't end up with double slash
+    // Glob doesn't normalize the path so it doesn't work with double slash
+    let dir_pattern: String = format!("{}/**", path.trim_end_matches('/'));
+    let glob_for_dir = Glob::new(&dir_pattern)?;
 
     builder.add(glob_for_file);
     builder.add(glob_for_dir);
@@ -220,6 +230,47 @@ pub fn knowledge_bases_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("knowledge_bases"))
 }
 
+/// The directory for agent-specific knowledge base storage
+pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<PathBuf> {
+    let unique_id = if let Some(agent) = agent {
+        generate_agent_unique_id(agent)
+    } else {
+        // Default agent case
+        DEFAULT_AGENT_NAME.to_string()
+    };
+    Ok(knowledge_bases_dir(os)?.join(unique_id))
+}
+
+/// The directory for MCP authentication cache
+///
+/// This is the same directory used by IDE for SSO cache storage.
+/// - All platforms: `$HOME/.aws/sso/cache`
+pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
+/// Generate a unique identifier for an agent based on its path and name
+fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{
+        Hash,
+        Hasher,
+    };
+
+    if let Some(path) = &agent.path {
+        // Create a hash from the agent's path for uniqueness
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        let path_hash = hasher.finish();
+
+        // Combine hash with agent name for readability
+        format!("{}_{:x}", agent.name, path_hash)
+    } else {
+        // For agents without a path (like default), use just the name
+        agent.name.clone()
+    }
+}
+
 /// The path to the fig settings file
 pub fn settings_path() -> Result<PathBuf> {
     Ok(fig_data_dir()?.join("settings.json"))
@@ -238,6 +289,40 @@ mod linux_tests {
     fn all_paths() {
         assert!(logs_dir().is_ok());
         assert!(settings_path().is_ok());
+    }
+
+    #[test]
+    fn test_add_gitignore_globs() {
+        let direct_file = "/home/user/a.txt";
+        let nested_file = "/home/user/folder/a.txt";
+        let other_file = "/home/admin/a.txt";
+
+        // Case 1: Path with trailing slash
+        let mut builder1 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder1, "/home/user/").unwrap();
+        let globset1 = builder1.build().unwrap();
+
+        assert!(globset1.is_match(direct_file));
+        assert!(globset1.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 2: Path without trailing slash - should behave same as case 1
+        let mut builder2 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder2, "/home/user").unwrap();
+        let globset2 = builder2.build().unwrap();
+
+        assert!(globset2.is_match(direct_file));
+        assert!(globset2.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 3: File path - should only match exact file
+        let mut builder3 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder3, "/home/user/a.txt").unwrap();
+        let globset3 = builder3.build().unwrap();
+
+        assert!(globset3.is_match(direct_file));
+        assert!(!globset3.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
     }
 }
 

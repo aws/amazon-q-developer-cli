@@ -87,6 +87,7 @@ def build_chat_bin(
         env={
             **os.environ,
             **rust_env(release=release),
+            "FETCH_FEED": "1",  # Always fetch latest feed.json for official builds
         },
     )
 

@@ -209,16 +209,21 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetUsageLimi
                         query.push_kv("profileArn", &::aws_smithy_http::query::fmt_string(inner_1));
                     }
                 }
-                if let ::std::option::Option::Some(inner_2) = &_input.resource_type {
+                if let ::std::option::Option::Some(inner_2) = &_input.origin {
                     {
-                        query.push_kv("resourceType", &::aws_smithy_http::query::fmt_string(inner_2));
+                        query.push_kv("origin", &::aws_smithy_http::query::fmt_string(inner_2));
                     }
                 }
-                if let ::std::option::Option::Some(inner_3) = &_input.is_email_required {
+                if let ::std::option::Option::Some(inner_3) = &_input.resource_type {
+                    {
+                        query.push_kv("resourceType", &::aws_smithy_http::query::fmt_string(inner_3));
+                    }
+                }
+                if let ::std::option::Option::Some(inner_4) = &_input.is_email_required {
                     {
                         query.push_kv(
                             "isEmailRequired",
-                            ::aws_smithy_types::primitive::Encoder::from(*inner_3).encode(),
+                            ::aws_smithy_types::primitive::Encoder::from(*inner_4).encode(),
                         );
                     }
                 }

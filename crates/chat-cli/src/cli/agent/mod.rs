@@ -161,6 +161,9 @@ pub struct Agent {
     /// you configure in the mcpServers field in this config
     #[serde(default)]
     pub use_legacy_mcp_json: bool,
+    /// The model ID to use for this agent. If not specified, uses the default model.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -181,13 +184,19 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
-                .into_iter()
-                .map(Into::into)
-                .collect::<Vec<_>>(),
+            resources: vec![
+                "file://AmazonQ.md",
+                "file://AGENTS.md",
+                "file://README.md",
+                "file://.amazonq/rules/**/*.md",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
             hooks: Default::default(),
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
+            model: None,
             path: None,
         }
     }
@@ -208,17 +217,21 @@ impl Agent {
     /// This function mutates the agent to a state that is usable for runtime.
     /// Practically this means to convert some of the fields value to their usable counterpart.
     /// For example, converting the mcp array to actual mcp config and populate the agent file path.
-    fn thaw(&mut self, path: &Path, legacy_mcp_config: Option<&McpServerConfig>) -> Result<(), AgentConfigError> {
+    fn thaw(
+        &mut self,
+        path: &Path,
+        legacy_mcp_config: Option<&McpServerConfig>,
+        output: &mut impl Write,
+    ) -> Result<(), AgentConfigError> {
         let Self { mcp_servers, .. } = self;
 
         self.path = Some(path.to_path_buf());
 
-        let mut stderr = std::io::stderr();
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
-                        stderr,
+                        output,
                         style::SetForegroundColor(Color::Yellow),
                         style::Print("WARNING: "),
                         style::ResetColor,
@@ -238,7 +251,7 @@ impl Agent {
             }
         }
 
-        stderr.flush()?;
+        output.flush()?;
 
         Ok(())
     }
@@ -299,8 +312,8 @@ impl Agent {
                 } else {
                     None
                 };
-
-                agent.thaw(&config_path, legacy_mcp_config.as_ref())?;
+                let mut stderr = std::io::stderr();
+                agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
                 Ok((agent, config_path))
             },
             _ => bail!("Agent {agent_name} does not exist"),
@@ -312,6 +325,7 @@ impl Agent {
         agent_path: impl AsRef<Path>,
         legacy_mcp_config: &mut Option<McpServerConfig>,
         mcp_enabled: bool,
+        output: &mut impl Write,
     ) -> Result<Agent, AgentConfigError> {
         let content = os.fs.read(&agent_path).await?;
         let mut agent = serde_json::from_slice::<Agent>(&content).map_err(|e| AgentConfigError::InvalidJson {
@@ -326,11 +340,11 @@ impl Agent {
                     legacy_mcp_config.replace(config);
                 }
             }
-            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref())?;
+            agent.thaw(agent_path.as_ref(), legacy_mcp_config.as_ref(), output)?;
         } else {
             agent.clear_mcp_configs();
             // Thaw the agent with empty MCP config to finalize normalization.
-            agent.thaw(agent_path.as_ref(), None)?;
+            agent.thaw(agent_path.as_ref(), None, output)?;
         }
         Ok(agent)
     }
@@ -495,7 +509,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -533,7 +547,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -809,7 +823,9 @@ impl Agents {
             "execute_cmd" => "trust read-only commands".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
+            "introspect" => "trusted".dark_green().bold(),
             "thinking" => "trusted (prerelease)".dark_green().bold(),
+            "todo_list" => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };
@@ -833,6 +849,7 @@ async fn load_agents_from_entries(
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
+    output: &mut impl Write,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
@@ -843,7 +860,7 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled).await);
+            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await);
         }
     }
 
@@ -1207,6 +1224,7 @@ mod tests {
             resources: Vec::new(),
             hooks: Default::default(),
             use_legacy_mcp_json: false,
+            model: None,
             path: None,
         };
 
@@ -1276,5 +1294,63 @@ mod tests {
             "Unknown server should not be trusted, instead found: {}",
             label
         );
+    }
+
+    #[test]
+    fn test_agent_model_field() {
+        // Test deserialization with model field
+        let agent_json = r#"{
+            "name": "test-agent",
+            "model": "claude-sonnet-4"
+        }"#;
+
+        let agent: Agent = serde_json::from_str(agent_json).expect("Failed to deserialize agent with model");
+        assert_eq!(agent.model, Some("claude-sonnet-4".to_string()));
+
+        // Test default agent has no model
+        let default_agent = Agent::default();
+        assert_eq!(default_agent.model, None);
+
+        // Test serialization includes model field
+        let agent_with_model = Agent {
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        let serialized = serde_json::to_string(&agent_with_model).expect("Failed to serialize");
+        assert!(serialized.contains("\"model\":\"test-model\""));
+    }
+
+    #[test]
+    fn test_agent_model_fallback_priority() {
+        // Test that agent model is checked and falls back correctly
+        let mut agents = Agents::default();
+
+        // Create agent with unavailable model
+        let agent_with_invalid_model = Agent {
+            name: "test-agent".to_string(),
+            model: Some("unavailable-model".to_string()),
+            ..Default::default()
+        };
+
+        agents.agents.insert("test-agent".to_string(), agent_with_invalid_model);
+        agents.active_idx = "test-agent".to_string();
+
+        // Verify the agent has the model set
+        assert_eq!(
+            agents.get_active().and_then(|a| a.model.as_ref()),
+            Some(&"unavailable-model".to_string())
+        );
+
+        // Test agent without model
+        let agent_without_model = Agent {
+            name: "no-model-agent".to_string(),
+            model: None,
+            ..Default::default()
+        };
+
+        agents.agents.insert("no-model-agent".to_string(), agent_without_model);
+        agents.active_idx = "no-model-agent".to_string();
+
+        assert_eq!(agents.get_active().and_then(|a| a.model.as_ref()), None);
     }
 }

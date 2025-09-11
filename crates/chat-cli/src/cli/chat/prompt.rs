@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::path::PathBuf;
 
 use eyre::Result;
 use rustyline::completion::{
@@ -13,7 +14,10 @@ use rustyline::highlight::{
     Highlighter,
 };
 use rustyline::hint::Hinter as RustylineHinter;
-use rustyline::history::DefaultHistory;
+use rustyline::history::{
+    FileHistory,
+    SearchDirection,
+};
 use rustyline::validate::{
     ValidationContext,
     ValidationResult,
@@ -44,6 +48,7 @@ use super::tool_manager::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::util::directories::chat_cli_bash_history_path;
 
 pub const COMMANDS: &[&str] = &[
     "/clear",
@@ -58,6 +63,7 @@ pub const COMMANDS: &[&str] = &[
     "/tools reset",
     "/mcp",
     "/model",
+    "/experiment",
     "/agent",
     "/agent help",
     "/agent list",
@@ -66,6 +72,7 @@ pub const COMMANDS: &[&str] = &[
     "/agent rename",
     "/agent set",
     "/agent schema",
+    "/agent generate",
     "/prompts",
     "/context",
     "/context help",
@@ -85,6 +92,7 @@ pub const COMMANDS: &[&str] = &[
     "/compact",
     "/compact help",
     "/usage",
+    "/changelog",
     "/save",
     "/load",
     "/subscribe",
@@ -94,6 +102,11 @@ pub const COMMANDS: &[&str] = &[
     "/capture clean",
     "/capture expand",
     "/capture diff",
+    "/todos",
+    "/todos resume",
+    "/todos clear-finished",
+    "/todos view",
+    "/todos delete",
 ];
 
 pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
@@ -261,31 +274,26 @@ impl Completer for ChatCompleter {
 
 /// Custom hinter that provides shadowtext suggestions
 pub struct ChatHinter {
-    /// Command history for providing suggestions based on past commands
-    history: Vec<String>,
     /// Whether history-based hints are enabled
     history_hints_enabled: bool,
+    history_path: PathBuf,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new(history_hints_enabled: bool) -> Self {
+    pub fn new(history_hints_enabled: bool, history_path: PathBuf) -> Self {
         Self {
-            history: Vec::new(),
             history_hints_enabled,
+            history_path,
         }
     }
 
-    /// Updates the history with a new command
-    pub fn update_history(&mut self, command: &str) {
-        let command = command.trim();
-        if !command.is_empty() && !command.contains('\n') && !command.contains('\r') {
-            self.history.push(command.to_string());
-        }
+    pub fn get_history_path(&self) -> PathBuf {
+        self.history_path.clone()
     }
 
-    /// Finds the best hint for the current input
-    fn find_hint(&self, line: &str) -> Option<String> {
+    /// Finds the best hint for the current input using rustyline's history
+    fn find_hint(&self, line: &str, ctx: &Context<'_>) -> Option<String> {
         // If line is empty, no hint
         if line.is_empty() {
             return None;
@@ -299,13 +307,20 @@ impl ChatHinter {
                 .map(|cmd| cmd[line.len()..].to_string());
         }
 
-        // Try to find a hint from history if history hints are enabled
+        // Try to find a hint from rustyline's history if history hints are enabled
         if self.history_hints_enabled {
-            return self.history
-                .iter()
-                .rev() // Start from most recent
-                .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
-                .map(|cmd| cmd[line.len()..].to_string());
+            let history = ctx.history();
+            let history_len = history.len();
+            if history_len == 0 {
+                return None;
+            }
+
+            if let Ok(Some(search_result)) = history.starts_with(line, history_len - 1, SearchDirection::Reverse) {
+                let entry = search_result.entry.to_string();
+                if entry.len() > line.len() {
+                    return Some(entry[line.len()..].to_string());
+                }
+            }
         }
 
         None
@@ -315,13 +330,13 @@ impl ChatHinter {
 impl RustylineHinter for ChatHinter {
     type Hint = String;
 
-    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
+    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
         // Only provide hints when cursor is at the end of the line
         if pos < line.len() {
             return None;
         }
 
-        self.find_hint(line)
+        self.find_hint(line, ctx)
     }
 }
 
@@ -362,9 +377,8 @@ pub struct ChatHelper {
 }
 
 impl ChatHelper {
-    /// Updates the history of the ChatHinter with a new command
-    pub fn update_hinter_history(&mut self, command: &str) {
-        self.hinter.update_history(command);
+    pub fn get_history_path(&self) -> PathBuf {
+        self.hinter.get_history_path()
     }
 }
 
@@ -425,7 +439,7 @@ pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
     receiver: PromptQueryResponseReceiver,
-) -> Result<Editor<ChatHelper, DefaultHistory>> {
+) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
         _ => EditMode::Emacs,
@@ -436,20 +450,29 @@ pub fn rl(
         .edit_mode(edit_mode)
         .build();
 
-    // Default to disabled if setting doesn't exist
     let history_hints_enabled = os
         .database
         .settings
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
+
+    let history_path = chat_cli_bash_history_path(os)?;
+
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(history_hints_enabled),
+        hinter: ChatHinter::new(history_hints_enabled, history_path),
         validator: MultiLineValidator,
     };
 
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
+
+    // Load history from ~/.aws/amazonq/cli_history
+    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
+        if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
+            eprintln!("Warning: Failed to load history: {}", e);
+        }
+    }
 
     // Add custom keybinding for Alt+Enter to insert a newline
     rl.bind_sequence(
@@ -486,6 +509,7 @@ pub fn rl(
 mod tests {
     use crossterm::style::Stylize;
     use rustyline::highlight::Highlighter;
+    use rustyline::history::DefaultHistory;
 
     use super::*;
 
@@ -536,7 +560,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -552,7 +576,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -568,7 +592,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -584,7 +608,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -603,7 +627,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -619,7 +643,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -634,7 +658,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -649,7 +673,7 @@ mod tests {
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -663,7 +687,7 @@ mod tests {
 
     #[test]
     fn test_chat_hinter_command_hint() {
-        let hinter = ChatHinter::new(true);
+        let hinter = ChatHinter::new(true, PathBuf::new());
 
         // Test hint for a command
         let line = "/he";
@@ -693,11 +717,7 @@ mod tests {
 
     #[test]
     fn test_chat_hinter_history_hint_disabled() {
-        let mut hinter = ChatHinter::new(false);
-
-        // Add some history
-        hinter.update_history("Hello, world!");
-        hinter.update_history("How are you?");
+        let hinter = ChatHinter::new(false, PathBuf::new());
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";

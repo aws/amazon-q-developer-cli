@@ -6,6 +6,7 @@ impl super::Client {
     ///
     /// - The fluent builder is configurable:
     ///   - [`profile_arn(impl Into<String>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_profile_arn):<br>required: **false**<br>The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder ID users.<br>
+    ///   - [`origin(Origin)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::origin) / [`set_origin(Option<Origin>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_origin):<br>required: **false**<br>The origin of the client request to get limits for.<br>
     ///   - [`resource_type(ResourceType)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::resource_type) / [`set_resource_type(Option<ResourceType>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_resource_type):<br>required: **false**<br>(undocumented)<br>
     ///   - [`is_email_required(bool)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::is_email_required) / [`set_is_email_required(Option<bool>)`](crate::operation::get_usage_limits::builders::GetUsageLimitsFluentBuilder::set_is_email_required):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with

@@ -49,10 +49,10 @@ pub enum CaptureSubcommand {
     /// Delete shadow repository
     Clean,
 
-    /// Display more information about a turn-level snapshot
+    /// Display more information about a turn-level checkpoint
     Expand { tag: String },
 
-    /// Display a diff between two captures
+    /// Display a diff between two checkpoints
     Diff { tag1: String, tag2: String },
 }
 

@@ -1,8 +1,10 @@
 pub mod capture;
+pub mod changelog;
 pub mod clear;
 pub mod compact;
 pub mod context;
 pub mod editor;
+pub mod experiment;
 pub mod hooks;
 pub mod knowledge;
 pub mod mcp;
@@ -12,14 +14,17 @@ pub mod profile;
 pub mod prompts;
 pub mod subscribe;
 pub mod tangent;
+pub mod todos;
 pub mod tools;
 pub mod usage;
 
+use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
+use experiment::ExperimentArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
 use mcp::McpArgs;
@@ -28,6 +33,7 @@ use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use tangent::TangentArgs;
+use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::capture::CaptureSubcommand;
@@ -73,6 +79,9 @@ pub enum SlashCommand {
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
     Issue(issue::IssueArgs),
+    /// View changelog for Amazon Q CLI
+    #[command(name = "changelog")]
+    Changelog(ChangelogArgs),
     /// View and retrieve prompts
     Prompts(PromptsArgs),
     /// View context hooks
@@ -83,9 +92,13 @@ pub enum SlashCommand {
     Mcp(McpArgs),
     /// Select a model for the current conversation session
     Model(ModelArgs),
+    /// Toggle experimental features
+    Experiment(ExperimentArgs),
     /// Upgrade to a Q Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
-    /// Toggle tangent mode for isolated conversations
+    /// (Beta) Toggle tangent mode for isolated conversations. Requires "q settings
+    /// chat.enableTangentMode true"
+    #[command(hide = true)]
     Tangent(TangentArgs),
     #[command(flatten)]
     Persist(PersistSubcommand),
@@ -93,6 +106,9 @@ pub enum SlashCommand {
     // Root(RootSubcommand),
     #[command(subcommand)]
     Capture(CaptureSubcommand),
+    /// View, manage, and resume to-do lists
+    #[command(subcommand)]
+    Todos(TodoSubcommand),
 }
 
 impl SlashCommand {
@@ -138,11 +154,13 @@ impl SlashCommand {
                     skip_printing_tools: true,
                 })
             },
+            Self::Changelog(args) => args.execute(session).await,
             Self::Prompts(args) => args.execute(session).await,
             Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
+            Self::Experiment(args) => args.execute(os, session).await,
             Self::Subscribe(args) => args.execute(os, session).await,
             Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
@@ -156,6 +174,7 @@ impl SlashCommand {
             //     })
             // },
             Self::Capture(subcommand) => subcommand.execute(os, session).await,
+            Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
 
@@ -171,11 +190,13 @@ impl SlashCommand {
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
+            Self::Changelog(_) => "changelog",
             Self::Prompts(_) => "prompts",
             Self::Hooks(_) => "hooks",
             Self::Usage(_) => "usage",
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
+            Self::Experiment(_) => "experiment",
             Self::Subscribe(_) => "subscribe",
             Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {
@@ -183,6 +204,7 @@ impl SlashCommand {
                 PersistSubcommand::Load { .. } => "load",
             },
             Self::Capture(_) => "capture",
+            Self::Todos(_) => "todos",
         }
     }
 

@@ -41,6 +41,8 @@ pub struct UserTriggerDecisionEvent {
     pub deleted_character_count: i32,
     #[allow(missing_docs)] // documentation missing in model
     pub streak_length: i32,
+    #[allow(missing_docs)] // documentation missing in model
+    pub suggestion_type: ::std::option::Option<crate::types::SuggestionType>,
 }
 impl UserTriggerDecisionEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -145,6 +147,11 @@ impl UserTriggerDecisionEvent {
     pub fn streak_length(&self) -> i32 {
         self.streak_length
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn suggestion_type(&self) -> ::std::option::Option<&crate::types::SuggestionType> {
+        self.suggestion_type.as_ref()
+    }
 }
 impl UserTriggerDecisionEvent {
     /// Creates a new builder-style object to manufacture
@@ -177,6 +184,7 @@ pub struct UserTriggerDecisionEventBuilder {
     pub(crate) added_character_count: ::std::option::Option<i32>,
     pub(crate) deleted_character_count: ::std::option::Option<i32>,
     pub(crate) streak_length: ::std::option::Option<i32>,
+    pub(crate) suggestion_type: ::std::option::Option<crate::types::SuggestionType>,
 }
 impl UserTriggerDecisionEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -529,6 +537,23 @@ impl UserTriggerDecisionEventBuilder {
         &self.streak_length
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn suggestion_type(mut self, input: crate::types::SuggestionType) -> Self {
+        self.suggestion_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_suggestion_type(mut self, input: ::std::option::Option<crate::types::SuggestionType>) -> Self {
+        self.suggestion_type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_suggestion_type(&self) -> &::std::option::Option<crate::types::SuggestionType> {
+        &self.suggestion_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent). This method will
     /// fail if any of the following fields are not set:
@@ -598,6 +623,7 @@ impl UserTriggerDecisionEventBuilder {
             added_character_count: self.added_character_count.unwrap_or_default(),
             deleted_character_count: self.deleted_character_count.unwrap_or_default(),
             streak_length: self.streak_length.unwrap_or_default(),
+            suggestion_type: self.suggestion_type,
         })
     }
 }

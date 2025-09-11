@@ -18,5 +18,11 @@ pub fn ser_user_context(
     if let Some(var_2) = &input.ide_version {
         object.key("ideVersion").string(var_2.as_str());
     }
+    if let Some(var_3) = &input.plugin_version {
+        object.key("pluginVersion").string(var_3.as_str());
+    }
+    if let Some(var_4) = &input.lsp_version {
+        object.key("lspVersion").string(var_4.as_str());
+    }
     Ok(())
 }

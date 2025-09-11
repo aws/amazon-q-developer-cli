@@ -2,7 +2,8 @@
 
 The /knowledge command provides persistent knowledge base functionality for Amazon Q CLI, allowing you to store, search, and manage contextual information that persists across chat sessions.
 
-> Note: This is a beta feature that must be enabled before use.
+> [!NOTE]
+> This is a beta feature that must be enabled before use.
 
 ## Getting Started
 
@@ -165,6 +166,66 @@ Configure knowledge base behavior:
 `q settings knowledge.indexType Fast` # Default index type (Fast or Best)
 `q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.md"]'` # Default include patterns
 `q settings knowledge.defaultExcludePatterns '["target/**", "node_modules/**"]'` # Default exclude patterns
+
+## Agent-Specific Knowledge Bases
+
+### Isolated Knowledge Storage
+
+Each agent maintains its own isolated knowledge base, ensuring that knowledge contexts are scoped to the specific agent you're working with. This provides better organization and prevents knowledge conflicts between different agents.
+
+### Folder Structure
+
+Knowledge bases are stored in the following directory structure:
+
+```
+~/.aws/amazonq/knowledge_bases/
+├── q_cli_default/          # Default agent knowledge base
+│   ├── contexts.json       # Metadata for all contexts
+│   ├── context-id-1/       # Individual context storage
+│   │   ├── data.json       # Semantic search data
+│   │   └── bm25_data.json  # BM25 search data (if using Fast index)
+│   └── context-id-2/
+│       ├── data.json
+│       └── bm25_data.json
+├── my-custom-agent_<alphanumeric-code>/        # Custom agent knowledge base
+│   ├── contexts.json
+│   ├── context-id-3/
+│   │   └── data.json
+│   └── context-id-4/
+│       └── data.json
+└── another-agent_<alphanumeric-code>/          # Another agent's knowledge base
+    ├── contexts.json
+    └── context-id-5/
+        └── data.json
+```
+
+### How Agent Isolation Works
+
+- **Automatic Scoping**: When you use `/knowledge` commands, they automatically operate on the current agent's knowledge base
+- **No Cross-Agent Access**: Agent A cannot access or search knowledge contexts created by Agent B
+- **Independent Configuration**: Each agent can have different knowledge base settings and contexts
+- **Migration Support**: Legacy knowledge bases are automatically migrated to the default agent on first use
+
+### Agent Switching
+
+When you switch between agents, your knowledge commands will automatically work with that agent's specific knowledge base:
+
+```bash
+# Working with default agent
+/knowledge add /path/to/docs
+
+# Switch to custom agent
+q chat --agent my-custom-agent
+
+# This creates a separate knowledge base for my-custom-agent
+/knowledge add /path/to/agent/docs
+
+# Switch back to default
+q chat
+
+# Only sees the original project-docs, not agent-specific-docs
+/knowledge show
+```
 
 ## How It Works
 

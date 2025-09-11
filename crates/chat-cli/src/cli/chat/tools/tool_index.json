@@ -8,6 +8,20 @@
       "required": []
     }
   },
+  "introspect": {
+    "name": "introspect",
+    "description": "ALWAYS use this tool when users ask ANY question about Q CLI itself, its capabilities, features, commands, or functionality. This includes questions like 'Can you...', 'Do you have...', 'How do I...', 'What can you do...', or any question about Q's abilities. When mentioning commands in your response, always prefix them with '/' (e.g., '/save', '/load', '/context'). CRITICAL: Only provide information explicitly documented in Q CLI documentation. If details about any tool, feature, or command are not documented, clearly state the information is not available rather than generating assumptions.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The user's question about Q CLI usage, features, or capabilities"
+        }
+      },
+      "required": []
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
@@ -280,6 +294,90 @@
       "required": [
         "command"
       ]
+    }
+  },
+  "todo_list": {
+    "name": "todo_list",
+    "description": "A tool for creating a TODO list and keeping track of tasks. This tool should be requested EVERY time the user gives you a task that will take multiple steps. A TODO list should be made BEFORE executing any steps. Steps should be marked off AS YOU COMPLETE THEM. DO NOT display your own tasks or todo list AT ANY POINT; this is done for you. Complete the tasks in the same order that you provide them. If the user tells you to skip a step, DO NOT mark it as completed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "enum": [
+            "create", 
+            "complete", 
+            "load", 
+            "add", 
+            "remove",
+            "lookup"
+          ],
+          "description": "The command to run. Allowed options are `create`, `complete`, `load`, `add`, `remove`, and `lookup`. Call `lookup` without arguments to see a list of all existing TODO list IDs."
+        },
+        "tasks": {
+          "description": "Required parameter of `create` command containing the list of DISTINCT tasks to be added to the TODO list.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "todo_list_description": {
+          "description": "Required parameter of `create` command containing a BRIEF summary of the todo list being created. The summary should be detailed enough to refer to without knowing the problem context beforehand.",
+          "type": "string"
+        },
+        "completed_indices": {
+          "description": "Required parameter of `complete` command containing the 0-INDEXED numbers of EVERY completed task. Each task should be marked as completed IMMEDIATELY after it is finished.",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "context_update": {
+          "description": "Required parameter of `complete` command containing important task context. Use this command to track important information about the task AND information about files you have read.",
+          "type": "string"
+        },
+        "modified_files": {
+          "description": "Optional parameter of `complete` command containing a list of paths of files that were modified during the task. This is useful for tracking file changes that are important to the task.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "load_id": {
+          "description": "Required parameter of `load` command containing ID of todo list to load",
+          "type": "string"
+        },
+        "current_id": {
+          "description": "Required parameter of `complete`, `add`, and `remove` commands containing the ID of the currently loaded todo list. The ID will ALWAYS be provided after every `todo_list` call after the serialized todo list state.",
+          "type": "string"
+        },
+        "new_tasks": {
+          "description": "Required parameter of `add` command containing a list of new tasks to be added to the to-do list.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "insert_indices": {
+          "description": "Required parameter of `add` command containing a list of 0-INDEXED positions to insert the new tasks. There MUST be an index for every new task being added.",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        },
+        "new_description": {
+          "description": "Optional parameter of `add` and `remove` containing a new todo list description. Use this when the updated set of tasks significantly change the goal or overall procedure of the todo list.",
+          "type": "string"
+        },
+        "remove_indices": {
+          "description": "Required parameter of `remove` command containing a list of 0-INDEXED positions of tasks to remove.",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": ["command"]
     }
   }
 }

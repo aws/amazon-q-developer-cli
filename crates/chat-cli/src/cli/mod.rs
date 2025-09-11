@@ -1,8 +1,8 @@
 mod agent;
-mod chat;
+pub mod chat;
 mod debug;
 mod diagnostics;
-mod feed;
+pub mod feed;
 mod issue;
 mod mcp;
 mod settings;
@@ -16,8 +16,13 @@ use std::io::{
 use std::process::ExitCode;
 
 use agent::AgentArgs;
+pub use agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
 use anstream::println;
 pub use chat::ConversationState;
+pub use chat::tools::todo::TodoListState;
 use clap::{
     ArgAction,
     CommandFactory,
@@ -326,6 +331,12 @@ impl Cli {
 
 #[cfg(test)]
 mod test {
+    use chat::WrapMode::{
+        Always,
+        Auto,
+        Never,
+    };
+
     use super::*;
     use crate::util::CHAT_BINARY_NAME;
     use crate::util::test::assert_parse;
@@ -365,6 +376,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })),
             verbose: 2,
             help_all: false,
@@ -404,6 +416,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -420,6 +433,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -436,6 +450,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -452,6 +467,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                wrap: None,
             })
         );
         assert_parse!(
@@ -464,6 +480,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                wrap: None,
             })
         );
     }
@@ -480,6 +497,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -496,6 +514,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -512,6 +531,50 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
+                wrap: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_different_wrap_modes() {
+        assert_parse!(
+            ["chat", "-w", "never"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Never),
+            })
+        );
+        assert_parse!(
+            ["chat", "--wrap", "always"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Always),
+            })
+        );
+        assert_parse!(
+            ["chat", "--wrap", "auto"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Auto),
             })
         );
     }

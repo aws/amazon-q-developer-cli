@@ -29,6 +29,12 @@ pub const SHADOW_REPO_DIR: &str = "/Users/kiranbug/.amazonq/captures/";
 // Currently set to 4GB
 // pub const AUTOMATIC_INIT_THRESHOLD: u64 = 4_294_967_296;
 
+// CURRENT APPROACH:
+// We only enable automatically enable checkpoints when the user is already in a git repo.
+// Otherwise, the user must manually enable checkpoints using `/checkpoint init`.
+// This is done so the user is aware that initializing checkpoints outside of a git repo may
+// lead to long startup times.
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CaptureManager {
     pub shadow_repo_path: PathBuf,

@@ -8,7 +8,7 @@ authors = ["Amazon Q CLI Team (q-cli@amazon.com)", "Chay Nabors (nabochay@amazon
 edition = "2024"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "1.14.1"
+version = "1.15.0"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -129,6 +129,7 @@ winnow = "=0.6.2"
 winreg = "0.55.0"
 schemars = "1.0.4"
 jsonschema = "0.30.0"
+rmcp = { version = "0.6.3", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 
 [workspace.lints.rust]
 future_incompatible = "warn"

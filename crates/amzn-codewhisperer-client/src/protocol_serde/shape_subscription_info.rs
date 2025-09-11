@@ -33,14 +33,41 @@ where
                                         .transpose()?,
                                 );
                             },
-                            "upgradeCapable" => {
-                                builder = builder.set_upgrade_capable(
-                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                            "upgradeCapability" => {
+                                builder = builder.set_upgrade_capability(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| {
+                                            s.to_unescaped()
+                                                .map(|u| crate::types::UpgradeCapability::from(u.as_ref()))
+                                        })
+                                        .transpose()?,
                                 );
                             },
-                            "overageCapable" => {
-                                builder = builder.set_overage_capable(
-                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                            "overageCapability" => {
+                                builder = builder.set_overage_capability(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| {
+                                            s.to_unescaped()
+                                                .map(|u| crate::types::OverageCapability::from(u.as_ref()))
+                                        })
+                                        .transpose()?,
+                                );
+                            },
+                            "subscriptionManagementTarget" => {
+                                builder = builder.set_subscription_management_target(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| {
+                                            s.to_unescaped()
+                                                .map(|u| crate::types::SubscriptionManagementTarget::from(u.as_ref()))
+                                        })
+                                        .transpose()?,
+                                );
+                            },
+                            "subscriptionTitle" => {
+                                builder = builder.set_subscription_title(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
                                 );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

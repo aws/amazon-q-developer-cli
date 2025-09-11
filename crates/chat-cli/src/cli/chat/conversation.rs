@@ -6,11 +6,18 @@ use std::collections::{
 use std::io::Write;
 use std::sync::atomic::Ordering;
 
-use chrono::Utc;
+use chrono::Local;
 use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
+};
+use eyre::Result;
+use rmcp::model::{
+    PromptMessage,
+    PromptMessageContent,
+    PromptMessageRole,
+    ResourceContents,
 };
 use serde::{
     Deserialize,
@@ -71,7 +78,7 @@ use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
 };
-use crate::mcp_client::Prompt;
+use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
@@ -83,6 +90,12 @@ pub struct HistoryEntry {
     assistant: AssistantMessage,
     #[serde(default)]
     request_metadata: Option<RequestMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct McpServerInfo {
+    pub name: String,
+    pub config: CustomToolConfig,
 }
 
 /// Tracks state related to an ongoing conversation.
@@ -142,6 +155,11 @@ struct ConversationCheckpoint {
     main_next_message: Option<UserMessage>,
     /// Main conversation transcript
     main_transcript: VecDeque<String>,
+    /// Main conversation summary
+    main_latest_summary: Option<(String, RequestMetadata)>,
+    /// Timestamp when tangent mode was entered (milliseconds since epoch)
+    #[serde(default = "time::OffsetDateTime::now_utc")]
+    tangent_start_time: time::OffsetDateTime,
 }
 
 impl ConversationState {
@@ -178,19 +196,7 @@ impl ConversationState {
             history: VecDeque::new(),
             valid_history_range: Default::default(),
             transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
-            tools: tool_config
-                .into_values()
-                .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
-                    let tool = Tool::ToolSpecification(ToolSpecification {
-                        name: v.name,
-                        description: v.description,
-                        input_schema: v.input_schema.into(),
-                    });
-                    acc.entry(v.tool_origin)
-                        .and_modify(|tools| tools.push(tool.clone()))
-                        .or_insert(vec![tool]);
-                    acc
-                }),
+            tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
             context_message_length: None,
@@ -213,13 +219,11 @@ impl ConversationState {
         &self.history
     }
 
-    /// Clears the conversation history and optionally the summary.
-    pub fn clear(&mut self, preserve_summary: bool) {
+    /// Clears the conversation history and summary.
+    pub fn clear(&mut self) {
         self.next_message = None;
         self.history.clear();
-        if !preserve_summary {
-            self.latest_summary = None;
-        }
+        self.latest_summary = None;
     }
 
     /// Check if currently in tangent mode
@@ -233,6 +237,8 @@ impl ConversationState {
             main_history: self.history.clone(),
             main_next_message: self.next_message.clone(),
             main_transcript: self.transcript.clone(),
+            main_latest_summary: self.latest_summary.clone(),
+            tangent_start_time: time::OffsetDateTime::now_utc(),
         }
     }
 
@@ -241,6 +247,7 @@ impl ConversationState {
         self.history = checkpoint.main_history;
         self.next_message = checkpoint.main_next_message;
         self.transcript = checkpoint.main_transcript;
+        self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
     }
 
@@ -249,6 +256,14 @@ impl ConversationState {
         if self.tangent_state.is_none() {
             self.tangent_state = Some(self.create_checkpoint());
         }
+    }
+
+    /// Get tangent mode duration in seconds if currently in tangent mode
+    pub fn get_tangent_duration_seconds(&self) -> Option<i64> {
+        self.tangent_state.as_ref().map(|checkpoint| {
+            let now = time::OffsetDateTime::now_utc();
+            (now - checkpoint.tangent_start_time).whole_seconds()
+        })
     }
 
     /// Exit tangent mode - restore from checkpoint
@@ -260,23 +275,57 @@ impl ConversationState {
 
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
-    pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) -> Option<String> {
+    pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
+        fn stringify_prompt_message_content(prompt_msg_content: PromptMessageContent) -> String {
+            match prompt_msg_content {
+                PromptMessageContent::Text { text } => text,
+                PromptMessageContent::Image { image } => image.raw.data,
+                PromptMessageContent::Resource { resource } => {
+                    // TODO: add support for resources for prompt
+                    match resource.raw.resource {
+                        ResourceContents::TextResourceContents {
+                            uri, mime_type, text, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+                        },
+                        ResourceContents::BlobResourceContents {
+                            uri, mime_type, blob, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
+                        },
+                    }
+                },
+                PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
+                    "Resource link with uri: {}, name: {}",
+                    link.raw.uri, link.raw.name
+                )),
+            }
+        }
+
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        debug_assert!(prompts.back().is_some_and(|p| p.role == crate::mcp_client::Role::User));
+        debug_assert!(prompts.back().is_some_and(|p| p.role == PromptMessageRole::User));
         let last_msg = prompts.pop_back()?;
         let (mut candidate_user, mut candidate_asst) = (None::<UserMessage>, None::<AssistantMessage>);
-        while let Some(prompt) = prompts.pop_front() {
-            let Prompt { role, content } = prompt;
+        while let Some(prompt_msg) = prompts.pop_front() {
+            let PromptMessage {
+                role,
+                content: prompt_msg_content,
+            } = prompt_msg;
+            let content_str = stringify_prompt_message_content(prompt_msg_content);
+
             match role {
-                crate::mcp_client::Role::User => {
-                    let user_msg = UserMessage::new_prompt(content.to_string(), None);
+                PromptMessageRole::User => {
+                    let user_msg = UserMessage::new_prompt(content_str, None);
                     candidate_user.replace(user_msg);
                 },
-                crate::mcp_client::Role::Assistant => {
-                    let assistant_msg = AssistantMessage::new_response(None, content.into());
+                PromptMessageRole::Assistant => {
+                    let assistant_msg = AssistantMessage::new_response(None, content_str);
                     candidate_asst.replace(assistant_msg);
                 },
             }
+
             if candidate_asst.is_some() && candidate_user.is_some() {
                 let assistant = candidate_asst.take().unwrap();
                 let user = candidate_user.take().unwrap();
@@ -288,7 +337,8 @@ impl ConversationState {
                 });
             }
         }
-        Some(last_msg.content.to_string())
+
+        Some(stringify_prompt_message_content(last_msg.content))
     }
 
     pub fn next_user_message(&self) -> Option<&UserMessage> {
@@ -312,7 +362,7 @@ impl ConversationState {
             input
         };
 
-        let msg = UserMessage::new_prompt(input, Some(Utc::now()));
+        let msg = UserMessage::new_prompt(input, Some(Local::now().fixed_offset()));
         self.next_message = Some(msg);
     }
 
@@ -404,7 +454,7 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_tool_use_results_with_images(
             tool_results,
             images,
-            Some(Utc::now()),
+            Some(Local::now().fixed_offset()),
         ));
     }
 
@@ -413,7 +463,7 @@ impl ConversationState {
         self.next_message = Some(UserMessage::new_cancelled_tool_uses(
             Some(deny_input),
             tools_to_be_abandoned.iter().map(|t| t.id.as_str()),
-            Some(Utc::now()),
+            Some(Local::now().fixed_offset()),
         ));
     }
 
@@ -547,12 +597,15 @@ impl ConversationState {
                             2) Bullet points for all significant tools executed and their results\n\
                             3) Bullet points for any code or technical information shared\n\
                             4) A section of key insights gained\n\n\
+                            5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
                             FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
                             ## CONVERSATION SUMMARY\n\
                             * Topic 1: Key information\n\
                             * Topic 2: Key information\n\n\
                             ## TOOLS EXECUTED\n\
                             * Tool X: Result Y\n\n\
+                            ## TODO ID\n\
+                            * <id>\n\n\
                             Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
                             FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
                     custom_prompt.as_ref()
@@ -567,12 +620,15 @@ impl ConversationState {
                         2) Bullet points for all significant tools executed and their results\n\
                         3) Bullet points for any code or technical information shared\n\
                         4) A section of key insights gained\n\n\
+                        5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
                         FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
                         ## CONVERSATION SUMMARY\n\
                         * Topic 1: Key information\n\
                         * Topic 2: Key information\n\n\
                         ## TOOLS EXECUTED\n\
                         * Tool X: Result Y\n\n\
+                        ## TODO ID\n\
+                        * <id>\n\n\
                         Remember this is a DOCUMENT not a chat response.\n\
                         FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
             },
@@ -634,6 +690,51 @@ impl ConversationState {
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
         self.latest_summary = Some((summary, request_metadata));
+    }
+
+    pub async fn create_agent_generation_request(
+        &mut self,
+        agent_name: &str,
+        agent_description: &str,
+        selected_servers: &str,
+        schema: &str,
+        prepopulated_content: &str,
+    ) -> Result<FigConversationState, ChatError> {
+        let generation_content = format!(
+            "[SYSTEM NOTE: This is an automated agent generation request, not from the user]\n\n\
+FORMAT REQUIREMENTS: Generate a JSON configuration for a custom coding agent. \
+IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO ```json tags, NO conversational text.\n\n\
+Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
+The configuration must conform to this JSON schema:\n{}\n\n\
+We have a prepopulated template: {} \n\n\
+Please change the useLegacyMcpJson field to false. 
+Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
+Return only the JSON configuration, no additional text.",
+   agent_name, agent_description, schema, prepopulated_content, selected_servers
+        );
+
+        let generation_message = UserMessage::new_prompt(generation_content.clone(), None);
+
+        // Use empty history since this is a standalone generation request
+        let history = VecDeque::new();
+
+        // Only send the dummy tool spec to prevent the model from attempting tool use during generation
+        let mut tools = self.tools.clone();
+        tools.retain(|k, v| match k {
+            ToolOrigin::Native => {
+                v.retain(|tool| match tool {
+                    Tool::ToolSpecification(tool_spec) => tool_spec.name == DUMMY_TOOL_NAME,
+                });
+                true
+            },
+            ToolOrigin::McpServer(_) => false,
+        });
+
+        Ok(FigConversationState {
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
+            history: Some(flatten_history(history.iter())),
+        })
     }
 
     pub fn current_profile(&self) -> Option<&str> {
@@ -787,6 +888,22 @@ impl ConversationState {
 
         Ok(())
     }
+}
+
+pub fn format_tool_spec(tool_spec: HashMap<String, ToolSpec>) -> HashMap<ToolOrigin, Vec<Tool>> {
+    tool_spec
+        .into_values()
+        .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
+            let tool = Tool::ToolSpecification(ToolSpecification {
+                name: v.name,
+                description: v.description,
+                input_schema: v.input_schema.into(),
+            });
+            acc.entry(v.tool_origin)
+                .and_modify(|tools| tools.push(tool.clone()))
+                .or_insert(vec![tool]);
+            acc
+        })
 }
 
 /// Represents a conversation state that can be converted into a [FigConversationState] (the type
@@ -1087,6 +1204,7 @@ mod tests {
     use crate::cli::chat::tool_manager::ToolManager;
 
     const AMAZONQ_FILENAME: &str = "AmazonQ.md";
+    const AGENTS_FILENAME: &str = "AGENTS.md";
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -1299,11 +1417,13 @@ mod tests {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
             agent.resources.push(AMAZONQ_FILENAME.into());
+            agent.resources.push(AGENTS_FILENAME.into());
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent").expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();
+        os.fs.write(AGENTS_FILENAME, "test agents context").await.unwrap();
         let mut output = vec![];
 
         let mut tool_manager = ToolManager::default();
@@ -1420,5 +1540,41 @@ mod tests {
         assert!(conversation.is_in_tangent_mode());
         conversation.exit_tangent_mode();
         assert!(!conversation.is_in_tangent_mode());
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_duration() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false, // mcp_enabled
+        )
+        .await;
+
+        // Initially not in tangent mode, no duration
+        assert!(conversation.get_tangent_duration_seconds().is_none());
+
+        // Enter tangent mode
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Should have a duration (likely 0 seconds since it just started)
+        let duration = conversation.get_tangent_duration_seconds();
+        assert!(duration.is_some());
+        assert!(duration.unwrap() >= 0);
+
+        // Exit tangent mode
+        conversation.exit_tangent_mode();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // No duration when not in tangent mode
+        assert!(conversation.get_tangent_duration_seconds().is_none());
     }
 }
