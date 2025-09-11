@@ -144,6 +144,11 @@ impl RootSubcommand {
             );
         }
 
+        // Daily heartbeat check
+        if os.database.should_send_heartbeat() && os.telemetry.send_daily_heartbeat().is_ok() {
+            os.database.record_heartbeat_sent().ok();
+        }
+
         // Send executed telemetry.
         if self.valid_for_telemetry() {
             os.telemetry

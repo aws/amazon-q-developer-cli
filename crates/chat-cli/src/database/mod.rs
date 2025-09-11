@@ -61,6 +61,7 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 // We include this key to remove for backwards compatibility
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
+const HEARTBEAT_DATE_KEY: &str = "telemetry.lastHeartbeatDate";
 
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
@@ -309,6 +310,26 @@ impl Database {
     /// Set if user has already completed a migration
     pub fn set_has_migrated(&self) -> Result<usize, DatabaseError> {
         self.set_entry(Table::State, PROFILE_MIGRATION_KEY, true)
+    }
+
+    /// Check if daily heartbeat should be sent
+    pub fn should_send_heartbeat(&self) -> bool {
+        use chrono::Utc;
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+
+        match self.get_entry::<String>(Table::State, HEARTBEAT_DATE_KEY) {
+            Ok(Some(last_date)) => last_date != today,
+            Ok(None) => true, // First time - definitely send
+            Err(_) => false,  // Database error - don't send (might have already sent)
+        }
+    }
+
+    /// Record that heartbeat was sent today
+    pub fn record_heartbeat_sent(&self) -> Result<(), DatabaseError> {
+        use chrono::Utc;
+        let today = Utc::now().format("%Y-%m-%d").to_string();
+        self.set_entry(Table::State, HEARTBEAT_DATE_KEY, today)?;
+        Ok(())
     }
 
     // /// Get the model id used for last conversation state.
