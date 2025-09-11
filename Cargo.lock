@@ -5647,7 +5647,7 @@ dependencies = [
  "tracing",
  "uuid",
  "walkdir",
- "zip 4.3.0",
+ "zip 5.1.0",
 ]
 
 [[package]]
@@ -7978,9 +7978,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.3.0"
+version = "5.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9aed4ac33e8eb078c89e6cbb1d5c4c7703ec6d299fc3e7c3695af8f8b423468b"
+checksum = "014d9123d252f20eb6e9cfd9c1cbbcd84fe2409a67c4a0b5b7cc36593d18566d"
 dependencies = [
  "arbitrary",
  "crc32fast",
