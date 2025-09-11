@@ -139,7 +139,8 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
   "toolsSettings": {
     "use_aws": {
       "allowedServices": ["s3", "lambda", "ec2"],
-      "deniedServices": ["eks", "rds"]
+      "deniedServices": ["eks", "rds"],
+      "autoAllowReadonly": true
     }
   }
 }
@@ -151,6 +152,7 @@ Make AWS CLI API calls with the specified service, operation, and parameters.
 |--------|------|---------|-------------|
 | `allowedServices` | array of strings | `[]` | List of AWS services that can be accessed without prompting |
 | `deniedServices` | array of strings | `[]` | List of AWS services to deny. Deny rules are evaluated before allow rules |
+| `autoAllowReadonly` | boolean | `false` | Whether to automatically allow read-only operations (get, describe, list, ls, search, batch_get) without prompting |
 
 ## Using Tool Settings in Agent Configuration
 
