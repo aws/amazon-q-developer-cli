@@ -207,8 +207,12 @@ fn test_add_and_remove_mcp_subcommand() -> Result<(), Box<dyn std::error::Error>
     println!("{}", response);
     println!("📝 END OUTPUT");
     
-    // Check if aws-documentation exists in the list
-    if response.contains("aws-documentation") {
+    // Check if aws-documentation exists in the list or config file
+    let mcp_config_exists = std::fs::read_to_string(std::env::var("HOME").unwrap_or_default() + "/.aws/amazonq/mcp.json")
+        .map(|content| content.contains("aws-documentation"))
+        .unwrap_or(false);
+    
+    if response.contains("aws-documentation") && mcp_config_exists {
         println!("\n🔍 aws-documentation MCP already exists, removing it first...");
 
         let response = q_chat_helper::execute_q_subcommand("q", &["mcp", "remove", "--name", "aws-documentation"])?;
@@ -236,7 +240,7 @@ fn test_add_and_remove_mcp_subcommand() -> Result<(), Box<dyn std::error::Error>
     
     // Verify successful addition
     assert!(response.contains("Added") && response.contains("'aws-documentation'"), "Missing success message");
-    assert!(response.contains("/Users/") && response.contains("/.aws/amazonq/mcp.json"), "Missing config file path");
+    assert!(response.contains("/.aws/amazonq/mcp.json"), "Missing config file path");
     println!("✅ Found successful addition message");
     
     // Now test removing the MCP server
@@ -250,7 +254,7 @@ fn test_add_and_remove_mcp_subcommand() -> Result<(), Box<dyn std::error::Error>
     
     // Verify successful removal
     assert!(remove_response.contains("Removed") && remove_response.contains("'aws-documentation'"), "Missing removal success message");
-    assert!(remove_response.contains("/Users/") && remove_response.contains("/.aws/amazonq/mcp.json"), "Missing config file path in removal");
+    assert!(remove_response.contains("/.aws/amazonq/mcp.json"), "Missing config file path in removal");
     println!("✅ Found successful removal message");
 
     Ok(())
@@ -280,8 +284,12 @@ fn test_q_mcp_status_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", response);
     println!("📝 END OUTPUT");
     
-    // Check if aws-documentation exists in the list
-    if response.contains("aws-documentation") {
+    // Check if aws-documentation exists in the list or config file
+    let mcp_config_exists = std::fs::read_to_string(std::env::var("HOME").unwrap_or_default() + "/.aws/amazonq/mcp.json")
+        .map(|content| content.contains("aws-documentation"))
+        .unwrap_or(false);
+    
+    if response.contains("aws-documentation") && mcp_config_exists {
         println!("\n🔍 aws-documentation MCP already exists, removing it first...");
 
         let response = q_chat_helper::execute_q_subcommand("q", &["mcp", "remove", "--name", "aws-documentation"])?;
@@ -337,7 +345,7 @@ fn test_q_mcp_status_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     
     // Verify successful removal
     assert!(response.contains("Removed") && response.contains("'aws-documentation'"), "Missing removal success message");
-    assert!(response.contains("/Users/") && response.contains("/.aws/amazonq/mcp.json"), "Missing config file path in removal");
+    assert!(response.contains("/.aws/amazonq/mcp.json"), "Missing config file path in removal");
     println!("✅ Found successful removal message");
     
     Ok(())
