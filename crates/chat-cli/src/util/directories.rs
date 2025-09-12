@@ -43,6 +43,7 @@ pub enum DirectoryError {
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
+const GLOBAL_SHADOW_REPO_DIR: &str = ".aws/.amazonq/cli-captures";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
 const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
@@ -247,6 +248,10 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
 /// - All platforms: `$HOME/.aws/sso/cache`
 pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
+pub fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(GLOBAL_SHADOW_REPO_DIR).join(conversation_id))
 }
 
 /// Generate a unique identifier for an agent based on its path and name

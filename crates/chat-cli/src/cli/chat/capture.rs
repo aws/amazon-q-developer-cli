@@ -23,7 +23,7 @@ use crate::cli::ConversationState;
 use crate::os::Os;
 
 // The shadow repo path that MUST be appended with a session-specific directory
-pub const SHADOW_REPO_DIR: &str = "/Users/kiranbug/.amazonq/captures/";
+// pub const SHADOW_REPO_DIR: &str = "/Users/kiranbug/.amazonq/captures/";
 
 // CURRENT APPROACH:
 // We only enable automatically enable checkpoints when the user is already in a git repo.

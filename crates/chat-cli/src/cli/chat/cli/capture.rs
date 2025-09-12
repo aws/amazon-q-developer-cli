@@ -1,5 +1,4 @@
 use std::io::Write;
-use std::path::PathBuf;
 
 use clap::Subcommand;
 use crossterm::style::{
@@ -16,7 +15,6 @@ use eyre::Result;
 use crate::cli::chat::capture::{
     Capture,
     CaptureManager,
-    SHADOW_REPO_DIR,
 };
 use crate::cli::chat::{
     ChatError,
@@ -24,6 +22,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::util::directories::get_shadow_repo_dir;
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CaptureSubcommand {
@@ -68,7 +67,8 @@ impl CaptureSubcommand {
                     )
                 )?;
             } else {
-                let path = PathBuf::from(SHADOW_REPO_DIR).join(session.conversation.conversation_id());
+                let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
+                    .map_err(|e| ChatError::Custom(e.to_string().into()))?;
                 let start = std::time::Instant::now();
                 session.conversation.capture_manager = Some(
                     CaptureManager::manual_init(os, path)
