@@ -193,7 +193,11 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
 /// patterns to exist in a globset.
 pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<()> {
     let glob_for_file = Glob::new(path)?;
-    let glob_for_dir = Glob::new(&format!("{path}/**"))?;
+
+    // remove existing slash in path so we don't end up with double slash
+    // Glob doesn't normalize the path so it doesn't work with double slash
+    let dir_pattern: String = format!("{}/**", path.trim_end_matches('/'));
+    let glob_for_dir = Glob::new(&dir_pattern)?;
 
     builder.add(glob_for_file);
     builder.add(glob_for_dir);
@@ -237,6 +241,14 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
     Ok(knowledge_bases_dir(os)?.join(unique_id))
 }
 
+/// The directory for MCP authentication cache
+///
+/// This is the same directory used by IDE for SSO cache storage.
+/// - All platforms: `$HOME/.aws/sso/cache`
+pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
 /// Generate a unique identifier for an agent based on its path and name
 fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -277,6 +289,40 @@ mod linux_tests {
     fn all_paths() {
         assert!(logs_dir().is_ok());
         assert!(settings_path().is_ok());
+    }
+
+    #[test]
+    fn test_add_gitignore_globs() {
+        let direct_file = "/home/user/a.txt";
+        let nested_file = "/home/user/folder/a.txt";
+        let other_file = "/home/admin/a.txt";
+
+        // Case 1: Path with trailing slash
+        let mut builder1 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder1, "/home/user/").unwrap();
+        let globset1 = builder1.build().unwrap();
+
+        assert!(globset1.is_match(direct_file));
+        assert!(globset1.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 2: Path without trailing slash - should behave same as case 1
+        let mut builder2 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder2, "/home/user").unwrap();
+        let globset2 = builder2.build().unwrap();
+
+        assert!(globset2.is_match(direct_file));
+        assert!(globset2.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 3: File path - should only match exact file
+        let mut builder3 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder3, "/home/user/a.txt").unwrap();
+        let globset3 = builder3.build().unwrap();
+
+        assert!(globset3.is_match(direct_file));
+        assert!(!globset3.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
     }
 }
 

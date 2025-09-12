@@ -83,6 +83,11 @@ fn write_plist() {
 fn main() {
     println!("cargo:rerun-if-changed=def.json");
 
+    // Download feed.json if FETCH_FEED environment variable is set
+    if std::env::var("FETCH_FEED").is_ok() {
+        download_feed_json();
+    }
+
     #[cfg(target_os = "macos")]
     write_plist();
 
@@ -321,4 +326,61 @@ fn main() {
 
     // write an empty file to the output directory
     std::fs::write(format!("{}/mod.rs", outdir), pp).unwrap();
+}
+
+/// Downloads the latest feed.json from the autocomplete repository.
+/// This ensures official builds have the most up-to-date changelog information.
+///
+/// # Errors
+///
+/// Prints cargo warnings if:
+/// - `curl` command is not available
+/// - Network request fails
+/// - File write operation fails
+fn download_feed_json() {
+    use std::process::Command;
+
+    println!("cargo:warning=Downloading latest feed.json from autocomplete repo...");
+
+    // Check if curl is available first
+    let curl_check = Command::new("curl").arg("--version").output();
+
+    if curl_check.is_err() {
+        panic!(
+            "curl command not found. Cannot download latest feed.json. Please install curl or build without FETCH_FEED=1 to use existing feed.json."
+        );
+    }
+
+    let output = Command::new("curl")
+        .args([
+            "-H",
+            "Accept: application/vnd.github.v3.raw",
+            "-f",           // fail on HTTP errors
+            "-s",           // silent
+            "-v",           // verbose output printed to stderr
+            "--show-error", // print error message to stderr (since -s is used)
+            "https://api.github.com/repos/aws/amazon-q-developer-cli-autocomplete/contents/feed.json",
+        ])
+        .output();
+
+    match output {
+        Ok(result) if result.status.success() => {
+            if let Err(e) = std::fs::write("src/cli/feed.json", result.stdout) {
+                panic!("Failed to write feed.json: {}", e);
+            } else {
+                println!("cargo:warning=Successfully downloaded latest feed.json");
+            }
+        },
+        Ok(result) => {
+            let error_msg = if !result.stderr.is_empty() {
+                format!("{}", String::from_utf8_lossy(&result.stderr))
+            } else {
+                "An unknown error occurred".to_string()
+            };
+            panic!("Failed to download feed.json: {}", error_msg);
+        },
+        Err(e) => {
+            panic!("Failed to execute curl: {}", e);
+        },
+    }
 }

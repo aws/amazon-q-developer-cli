@@ -2,7 +2,8 @@
 
 The /knowledge command provides persistent knowledge base functionality for Amazon Q CLI, allowing you to store, search, and manage contextual information that persists across chat sessions.
 
-> Note: This is a beta feature that must be enabled before use.
+> [!NOTE]
+> This is a beta feature that must be enabled before use.
 
 ## Getting Started
 

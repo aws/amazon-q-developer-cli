@@ -90,6 +90,7 @@ use crate::database::settings::Setting;
 use crate::mcp_client::messenger::Messenger;
 use crate::mcp_client::{
     InitializedMcpClient,
+    InnerService,
     McpClientService,
 };
 use crate::os::Os;
@@ -137,6 +138,11 @@ enum LoadingMsg {
     /// This is sent when all tool initialization is complete or when the application is shutting
     /// down.
     Terminate { still_loading: Vec<String> },
+    /// Indicates that a server requires user authentication and provides a sign-in link.
+    /// This message is used to notify the user about authentication requirements for MCP servers
+    /// that need OAuth or other authentication methods. Contains the server name and the
+    /// authentication message (typically a URL or instructions).
+    SignInNotice { name: String },
 }
 
 /// Used to denote the loading outcome associated with a server.
@@ -630,9 +636,14 @@ impl ToolManager {
                         let server_name_clone = server_name.clone();
                         tokio::spawn(async move {
                             match handle.await {
-                                Ok(Ok(client)) => match client.cancel().await {
-                                    Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
-                                    Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
+                                Ok(Ok(client)) => {
+                                    let InnerService::Original(client) = client.inner_service else {
+                                        unreachable!();
+                                    };
+                                    match client.cancel().await {
+                                        Ok(_) => info!("Server {server_name_clone} evicted due to agent swap"),
+                                        Err(e) => error!("Server {server_name_clone} has failed to cancel: {e}"),
+                                    }
                                 },
                                 Ok(Err(_)) | Err(_) => {
                                     error!("Server {server_name_clone} has failed to cancel");
@@ -640,9 +651,14 @@ impl ToolManager {
                             }
                         });
                     },
-                    InitializedMcpClient::Ready(running_service) => match running_service.cancel().await {
-                        Ok(_) => info!("Server {server_name} evicted due to agent swap"),
-                        Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
+                    InitializedMcpClient::Ready(running_service) => {
+                        let InnerService::Original(client) = running_service.inner_service else {
+                            unreachable!();
+                        };
+                        match client.cancel().await {
+                            Ok(_) => info!("Server {server_name} evicted due to agent swap"),
+                            Err(e) => error!("Server {server_name} has failed to cancel: {e}"),
+                        }
                     },
                 }
             }
@@ -869,17 +885,16 @@ impl ToolManager {
                     });
                 };
 
-                let running_service = (*client.get_running_service().await.map_err(|e| ToolResult {
+                let running_service = client.get_running_service().await.map_err(|e| ToolResult {
                     tool_use_id: value.id.clone(),
                     content: vec![ToolResultContentBlock::Text(format!("Mcp tool client not ready: {e}"))],
                     status: ToolResultStatus::Error,
-                })?)
-                .clone();
+                })?;
 
                 Tool::Custom(CustomTool {
                     name: tool_name.to_owned(),
                     server_name: server_name.to_owned(),
-                    client: running_service,
+                    client: running_service.clone(),
                     params: value.args.as_object().cloned(),
                 })
             },
@@ -1169,6 +1184,15 @@ fn spawn_display_task(
                                 }
                                 execute!(output, style::Print("\n"),)?;
                                 break;
+                            },
+                            LoadingMsg::SignInNotice { name } => {
+                                execute!(
+                                    output,
+                                    cursor::MoveToColumn(0),
+                                    cursor::MoveUp(1),
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                )?;
+                                queue_oauth_message(&name, &mut output)?;
                             },
                         },
                         Err(_e) => {
@@ -1595,6 +1619,35 @@ fn spawn_orchestrator_task(
                 },
                 UpdateEventMessage::ListResourcesResult { .. } => {},
                 UpdateEventMessage::ResourceTemplatesListResult { .. } => {},
+                UpdateEventMessage::OauthLink { server_name, link } => {
+                    let mut buf_writer = BufWriter::new(&mut *record_temp_buf);
+                    let msg = eyre::eyre!(link);
+                    let _ = queue_oauth_message_with_link(server_name.as_str(), &msg, &mut buf_writer);
+                    let _ = buf_writer.flush();
+                    drop(buf_writer);
+                    let record_str = String::from_utf8_lossy(record_temp_buf).to_string();
+                    let record = LoadingRecord::Warn(record_str.clone());
+                    load_record
+                        .lock()
+                        .await
+                        .entry(server_name.clone())
+                        .and_modify(|load_record| {
+                            load_record.push(record.clone());
+                        })
+                        .or_insert(vec![record]);
+                    if let Some(sender) = &loading_status_sender {
+                        let msg = LoadingMsg::SignInNotice {
+                            name: server_name.clone(),
+                        };
+                        if let Err(e) = sender.send(msg).await {
+                            warn!(
+                                "Error sending update message to display task: {:?}\nAssume display task has completed",
+                                e
+                            );
+                            loading_status_sender.take();
+                        }
+                    }
+                },
                 UpdateEventMessage::InitStart { server_name, .. } => {
                     pending.write().await.insert(server_name.clone());
                     loading_servers.insert(server_name, std::time::Instant::now());
@@ -1870,9 +1923,37 @@ fn queue_failure_message(
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
-            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/{CHAT_BINARY_NAME} for detail\n"
+            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
         )),
         style::ResetColor,
+    )?)
+}
+
+fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print("⚠ "),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(name),
+        style::ResetColor,
+        style::Print(" requires OAuth authentication. Use /mcp to see the auth link\n"),
+    )?)
+}
+
+fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
+    Ok(queue!(
+        output,
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print("⚠ "),
+        style::SetForegroundColor(style::Color::Blue),
+        style::Print(name),
+        style::ResetColor,
+        style::Print(" requires OAuth authentication. Follow this link to proceed: \n"),
+        style::SetForegroundColor(style::Color::Yellow),
+        style::Print(msg),
+        style::ResetColor,
+        style::Print("\n")
     )?)
 }
 
