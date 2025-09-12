@@ -289,7 +289,7 @@ async fn get_auth_manager(
             };
             let reg_as_str = serde_json::to_string_pretty(&reg)?;
             let reg_parent_path = reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
-            tokio::fs::create_dir(reg_parent_path).await?;
+            tokio::fs::create_dir_all(reg_parent_path).await?;
             tokio::fs::write(reg_full_path, &reg_as_str).await?;
 
             Ok(am)

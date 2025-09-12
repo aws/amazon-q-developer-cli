@@ -494,7 +494,7 @@ mod tests {
         use crate::cli::agent::Agent;
 
         let os = Os::new().await.unwrap();
-        
+
         // Test read-only command with default settings (allow_read_only = false)
         let readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
             "command": "ls -la",
@@ -519,15 +519,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_enabled() {
+        use std::collections::HashMap;
+
         use crate::cli::agent::{
             Agent,
             ToolSettingTarget,
         };
-        use std::collections::HashMap;
 
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -566,15 +567,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_with_denied_commands() {
+        use std::collections::HashMap;
+
         use crate::cli::agent::{
             Agent,
             ToolSettingTarget,
         };
-        use std::collections::HashMap;
 
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -599,7 +601,9 @@ mod tests {
 
         let res = denied_readonly_cmd.eval_perm(&os, &agent);
         // Should deny even read-only commands if they're in denied list
-        assert!(matches!(res, PermissionEvalResult::Deny(ref commands) if commands.contains(&"\\Als .*\\z".to_string())));
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref commands) if commands.contains(&"\\Als .*\\z".to_string()))
+        );
 
         // Test different read-only command not in denied list
         let allowed_readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
