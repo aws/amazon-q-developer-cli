@@ -147,7 +147,7 @@ impl AgentArgs {
             Some(AgentSubcommands::Edit { name }) => {
                 let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name).await?;
-                
+
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
 

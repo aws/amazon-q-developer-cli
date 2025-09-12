@@ -252,7 +252,7 @@ impl AgentSubcommand {
                 let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
-                
+
                 let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
                 let mut cmd = std::process::Command::new(editor_cmd);
 
