@@ -166,7 +166,7 @@ macro_rules! decorate_with_auth_retry {
                     // TODO: discern error type prior to retrying
                     // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.get_auth_client() {
-                        let refresh_result = auth_client.get_access_token().await;
+                        let refresh_result = auth_client.auth_manager.lock().await.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 // Retry the operation after token refresh
@@ -340,7 +340,7 @@ impl McpClientService {
                                     Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
                                         debug!("## mcp: first hand shake attempt failed: {:?}", e);
                                         let refresh_res =
-                                            auth_dg.auth_client.get_access_token().await;
+                                            auth_dg.auth_client.auth_manager.lock().await.refresh_token().await;
                                         let new_self = McpClientService::new(
                                             server_name.clone(),
                                             backup_config,
