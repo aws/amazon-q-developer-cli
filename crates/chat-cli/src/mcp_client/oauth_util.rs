@@ -14,6 +14,7 @@ use reqwest::Client;
 use rmcp::serde_json;
 use rmcp::transport::auth::{
     AuthClient,
+    OAuthClientConfig,
     OAuthState,
     OAuthTokenResponse,
 };
@@ -25,6 +26,10 @@ use rmcp::transport::{
     AuthorizationManager,
     StreamableHttpClientTransport,
     WorkerTransport,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use sha2::{
     Digest,
@@ -64,6 +69,8 @@ pub enum OauthUtilError {
     Directory(#[from] DirectoryError),
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+    #[error("Malformed directory")]
+    MalformDirectory,
 }
 
 /// A guard that automatically cancels the cancellation token when dropped.
@@ -76,6 +83,27 @@ struct LoopBackDropGuard {
 impl Drop for LoopBackDropGuard {
     fn drop(&mut self) {
         self.cancellation_token.cancel();
+    }
+}
+
+/// This is modeled after [OAuthClientConfig]
+/// It's only here because [OAuthClientConfig] does not implement Serialize and Deserialize
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Registration {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub scopes: Vec<String>,
+    pub redirect_uri: String,
+}
+
+impl From<OAuthClientConfig> for Registration {
+    fn from(value: OAuthClientConfig) -> Self {
+        Self {
+            client_id: value.client_id,
+            client_secret: value.client_secret,
+            scopes: value.scopes,
+            redirect_uri: value.redirect_uri,
+        }
     }
 }
 
@@ -164,6 +192,10 @@ pub enum HttpTransport {
     WithoutAuth(WorkerTransport<StreamableHttpClientWorker<Client>>),
 }
 
+fn get_scopes() -> &'static [&'static str] {
+    &["openid", "mcp", "email", "profile"]
+}
+
 pub async fn get_http_transport(
     os: &Os,
     delete_cache: bool,
@@ -175,6 +207,7 @@ pub async fn get_http_transport(
     let url = Url::from_str(url)?;
     let key = compute_key(&url);
     let cred_full_path = cred_dir.join(format!("{key}.token.json"));
+    let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
 
     if delete_cache && cred_full_path.is_file() {
         tokio::fs::remove_file(&cred_full_path).await?;
@@ -188,7 +221,8 @@ pub async fn get_http_transport(
             let auth_client = match auth_client {
                 Some(auth_client) => auth_client,
                 None => {
-                    let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
+                    let am =
+                        get_auth_manager(url.clone(), cred_full_path.clone(), reg_full_path.clone(), messenger).await?;
                     AuthClient::new(reqwest_client, am)
                 },
             };
@@ -215,16 +249,19 @@ pub async fn get_http_transport(
 async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
+    reg_full_path: PathBuf,
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
-    let content_as_bytes = tokio::fs::read(&cred_full_path).await;
+    let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
+    let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
 
-    match content_as_bytes {
-        Ok(bytes) => {
-            let token = serde_json::from_slice::<OAuthTokenResponse>(&bytes)?;
+    match (cred_as_bytes, reg_as_bytes) {
+        (Ok(cred_as_bytes), Ok(reg_as_bytes)) => {
+            let token = serde_json::from_slice::<OAuthTokenResponse>(&cred_as_bytes)?;
+            let reg = serde_json::from_slice::<Registration>(&reg_as_bytes)?;
 
-            oauth_state.set_credentials("id", token).await?;
+            oauth_state.set_credentials(&reg.client_id, token).await?;
 
             debug!("## mcp: credentials set with cache");
 
@@ -232,10 +269,30 @@ async fn get_auth_manager(
                 .into_authorization_manager()
                 .ok_or(OauthUtilError::MissingAuthorizationManager)?)
         },
-        Err(e) => {
-            info!("Error reading cached credentials: {e}");
+        _ => {
+            info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            get_auth_manager_impl(oauth_state, messenger).await
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, messenger).await?;
+
+            // Client registration is done in [start_authorization]
+            // If we have gotten past that point that means we have the info to persist the
+            // registration on disk. These are info that we need to refresh stake
+            // tokens. This is in contrast to tokens, which we only persist when we drop
+            // the client (because that way we can write once and ensure what is on the
+            // disk always the most up to date)
+            let (client_id, _credentials) = am.get_credentials().await?;
+            let reg = Registration {
+                client_id,
+                client_secret: None,
+                scopes: get_scopes().iter().map(|s| (*s).to_string()).collect::<Vec<_>>(),
+                redirect_uri,
+            };
+            let reg_as_str = serde_json::to_string_pretty(&reg)?;
+            let reg_parent_path = reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+            tokio::fs::create_dir(reg_parent_path).await?;
+            tokio::fs::write(reg_full_path, &reg_as_str).await?;
+
+            Ok(am)
         },
     }
 }
@@ -243,7 +300,7 @@ async fn get_auth_manager(
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     messenger: &dyn Messenger,
-) -> Result<AuthorizationManager, OauthUtilError> {
+) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<String>();
@@ -251,9 +308,8 @@ async fn get_auth_manager_impl(
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
-    oauth_state
-        .start_authorization(&["mcp", "profile", "email"], &format!("http://{}", actual_addr))
-        .await?;
+    let redirect_uri = format!("http://{}", actual_addr);
+    oauth_state.start_authorization(get_scopes(), &redirect_uri).await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
@@ -264,7 +320,7 @@ async fn get_auth_manager_impl(
         .into_authorization_manager()
         .ok_or(OauthUtilError::MissingAuthorizationManager)?;
 
-    Ok(am)
+    Ok((am, redirect_uri))
 }
 
 pub fn compute_key(rs: &Url) -> String {
@@ -320,7 +376,7 @@ async fn make_svc(
                 {
                     sender.send(code).map_err(LoopBackError::Send)?;
                 }
-                mk_response("Auth code sent".to_string())
+                mk_response("You can close this page now".to_string())
             })
         }
     }

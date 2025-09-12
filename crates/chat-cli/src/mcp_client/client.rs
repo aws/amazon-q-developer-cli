@@ -152,6 +152,16 @@ pub enum McpClientError {
     Auth(#[from] crate::auth::AuthError),
 }
 
+/// Decorates the method passed in with retry logic, but only if the [RunningService] has an
+/// instance of [AuthClientDropGuard].
+/// The various methods to interact with the mcp server provided by RMCP supposedly does refresh
+/// token once the token expires but that logic would require us to also note down the time at
+/// which a token is obtained since the only time related information in the token is the duration
+/// for which a token is valid. However, if we do solely rely on the internals of these methods to
+/// refresh tokens, we would have no way of knowing when a token is obtained. (Maybe there is a
+/// method that would allow us to configure what extra info to include in the token. If you find it,
+/// feel free to remove this. That would also enable us to simplify the definition of
+/// [RunningService])
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
@@ -166,7 +176,7 @@ macro_rules! decorate_with_auth_retry {
                     // TODO: discern error type prior to retrying
                     // Not entirely sure what is thrown when auth is required
                     if let Some(auth_client) = self.get_auth_client() {
-                        let refresh_result = auth_client.get_access_token().await;
+                        let refresh_result = auth_client.auth_manager.lock().await.refresh_token().await;
                         match refresh_result {
                             Ok(_) => {
                                 // Retry the operation after token refresh
@@ -340,7 +350,7 @@ impl McpClientService {
                                     Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
                                         debug!("## mcp: first hand shake attempt failed: {:?}", e);
                                         let refresh_res =
-                                            auth_dg.auth_client.get_access_token().await;
+                                            auth_dg.auth_client.auth_manager.lock().await.refresh_token().await;
                                         let new_self = McpClientService::new(
                                             server_name.clone(),
                                             backup_config,
