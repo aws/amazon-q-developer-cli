@@ -24,7 +24,7 @@ Execute the specified bash command.
     "execute_bash": {
       "allowedCommands": ["git status", "git fetch"],
       "deniedCommands": ["git commit .*", "git push .*"],
-      "allowReadOnly": true
+      "autoAllowReadonly": true
     }
   }
 }
@@ -36,7 +36,7 @@ Execute the specified bash command.
 |--------|------|---------|------------------------------------------------------------------------------------------|
 | `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z |
 | `deniedCommands` | array of strings | `[]` | List of specific commands that are denied. Supports regex formatting. Note that regex entered are anchored with \A and \z. Deny rules are evaluated before allow rules |
-| `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
+| `autoAllowReadonly` | boolean | `false` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
 
