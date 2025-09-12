@@ -376,7 +376,7 @@ async fn make_svc(
                 {
                     sender.send(code).map_err(LoopBackError::Send)?;
                 }
-                mk_response("Auth code sent".to_string())
+                mk_response("You can close this page now".to_string())
             })
         }
     }
