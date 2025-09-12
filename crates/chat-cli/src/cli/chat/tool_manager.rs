@@ -150,9 +150,26 @@ enum LoadingMsg {
 /// surface (since we would only want to surface fatal errors in non-interactive mode).
 #[derive(Clone, Debug)]
 pub enum LoadingRecord {
-    Success(String),
-    Warn(String),
-    Err(String),
+    Success(String, String),
+    Warn(String, String),
+    Err(String, String),
+}
+
+impl LoadingRecord {
+    pub fn success(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Success(timestamp, msg)
+    }
+
+    pub fn warn(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Warn(timestamp, msg)
+    }
+
+    pub fn err(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Err(timestamp, msg)
+    }
 }
 
 pub struct ToolManagerBuilder {
@@ -815,7 +832,7 @@ impl ToolManager {
                 .lock()
                 .await
                 .iter()
-                .any(|(_, records)| records.iter().any(|record| matches!(record, LoadingRecord::Err(_))))
+                .any(|(_, records)| records.iter().any(|record| matches!(record, LoadingRecord::Err(..))))
         {
             queue!(
                 stderr,
@@ -963,7 +980,7 @@ impl ToolManager {
         if !conflicts.is_empty() {
             let mut record_lock = self.mcp_load_record.lock().await;
             for (server_name, msg) in conflicts {
-                let record = LoadingRecord::Err(msg);
+                let record = LoadingRecord::err(msg);
                 record_lock
                     .entry(server_name)
                     .and_modify(|v| v.push(record.clone()))
@@ -1495,9 +1512,9 @@ fn spawn_orchestrator_task(
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
                             let record = if process_result.is_err() {
-                                LoadingRecord::Warn(record)
+                                LoadingRecord::warn(record)
                             } else {
-                                LoadingRecord::Success(record)
+                                LoadingRecord::success(record)
                             };
                             load_record
                                 .lock()
@@ -1523,7 +1540,7 @@ fn spawn_orchestrator_task(
                             let _ = buf_writer.flush();
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                            let record = LoadingRecord::Err(record);
+                            let record = LoadingRecord::err(record);
                             load_record
                                 .lock()
                                 .await
@@ -1607,7 +1624,7 @@ fn spawn_orchestrator_task(
                         let _ = buf_writer.flush();
                         drop(buf_writer);
                         let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                        let record = LoadingRecord::Err(record);
+                        let record = LoadingRecord::err(record);
                         load_record
                             .lock()
                             .await
@@ -1627,7 +1644,7 @@ fn spawn_orchestrator_task(
                     let _ = buf_writer.flush();
                     drop(buf_writer);
                     let record_str = String::from_utf8_lossy(record_temp_buf).to_string();
-                    let record = LoadingRecord::Warn(record_str.clone());
+                    let record = LoadingRecord::warn(record_str.clone());
                     load_record
                         .lock()
                         .await
