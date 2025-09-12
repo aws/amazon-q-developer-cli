@@ -152,6 +152,16 @@ pub enum McpClientError {
     Auth(#[from] crate::auth::AuthError),
 }
 
+/// Decorates the method passed in with retry logic, but only if the [RunningService] has an
+/// instance of [AuthClientDropGuard].
+/// The various methods to interact with the mcp server provided by RMCP supposedly does refresh
+/// token once the token expires but that logic would require us to also note down the time at
+/// which a token is obtained since the only time related information in the token is the duration
+/// for which a token is valid. However, if we do solely rely on the internals of these methods to
+/// refresh tokens, we would have no way of knowing when a token is obtained. (Maybe there is a
+/// method that would allow us to configure what extra info to include in the token. If you find it,
+/// feel free to remove this. That would also enable us to simplify the definition of
+/// [RunningService])
 macro_rules! decorate_with_auth_retry {
     ($param_type:ty, $method_name:ident, $return_type:ty) => {
         pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {

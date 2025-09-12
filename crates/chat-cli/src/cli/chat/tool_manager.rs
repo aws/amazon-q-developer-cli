@@ -473,10 +473,11 @@ pub enum PromptQueryResult {
 /// - `IllegalChar`: The tool name contains characters that are not allowed
 /// - `EmptyDescription`: The tool description is empty or missing
 #[allow(dead_code)]
-enum OutOfSpecName {
+enum ToolValidationViolation {
     TooLong(String),
     IllegalChar(String),
     EmptyDescription(String),
+    DescriptionTooLong(String),
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -1720,7 +1721,7 @@ async fn process_tool_specs(
     //
     // For non-compliance due to point 1, we shall change it on behalf of the users.
     // For the rest, we simply throw a warning and reject the tool.
-    let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
+    let mut out_of_spec_tool_names = Vec::<ToolValidationViolation>::new();
     let mut hasher = DefaultHasher::new();
     let mut number_of_tools = 0_usize;
 
@@ -1745,12 +1746,18 @@ async fn process_tool_specs(
             }
         });
         if model_tool_name.len() > 64 {
-            out_of_spec_tool_names.push(OutOfSpecName::TooLong(spec.name.clone()));
+            out_of_spec_tool_names.push(ToolValidationViolation::TooLong(spec.name.clone()));
             continue;
         } else if spec.description.is_empty() {
-            out_of_spec_tool_names.push(OutOfSpecName::EmptyDescription(spec.name.clone()));
+            out_of_spec_tool_names.push(ToolValidationViolation::EmptyDescription(spec.name.clone()));
             continue;
         }
+
+        if spec.description.len() > 10_004 {
+            spec.description.truncate(10_004);
+            out_of_spec_tool_names.push(ToolValidationViolation::DescriptionTooLong(spec.name.clone()));
+        }
+
         tn_map.insert(model_tool_name.clone(), ToolInfo {
             server_name: server_name.to_string(),
             host_tool_name: spec.name.clone(),
@@ -1788,21 +1795,25 @@ async fn process_tool_specs(
     if !out_of_spec_tool_names.is_empty() {
         Err(eyre::eyre!(out_of_spec_tool_names.iter().fold(
             String::from(
-                "The following tools are out of spec. They will be excluded from the list of available tools:\n",
+                "The following tools are out of spec. They may have been excluded from the list of available tools:\n",
             ),
             |mut acc, name| {
                 let (tool_name, msg) = match name {
-                    OutOfSpecName::TooLong(tool_name) => (
+                    ToolValidationViolation::TooLong(tool_name) => (
                         tool_name.as_str(),
                         "tool name exceeds max length of 64 when combined with server name",
                     ),
-                    OutOfSpecName::IllegalChar(tool_name) => (
+                    ToolValidationViolation::IllegalChar(tool_name) => (
                         tool_name.as_str(),
                         "tool name must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$",
                     ),
-                    OutOfSpecName::EmptyDescription(tool_name) => {
+                    ToolValidationViolation::EmptyDescription(tool_name) => {
                         (tool_name.as_str(), "tool schema contains empty description")
                     },
+                    ToolValidationViolation::DescriptionTooLong(tool_name) => (
+                        tool_name.as_str(),
+                        "tool description is longer than 10024 characters and has been truncated",
+                    ),
                 };
                 acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
                 acc
