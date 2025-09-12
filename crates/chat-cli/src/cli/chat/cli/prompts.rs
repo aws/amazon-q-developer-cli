@@ -1,44 +1,20 @@
-use std::collections::{
-    HashMap,
-    VecDeque,
-};
+use std::collections::{HashMap, VecDeque};
 use std::fs;
 use std::path::PathBuf;
 
-use clap::{
-    Args,
-    Subcommand,
-};
-use crossterm::style::{
-    self,
-    Attribute,
-    Color,
-};
-use crossterm::{
-    execute,
-    queue,
-};
-use rmcp::model::{
-    PromptMessage,
-    PromptMessageContent,
-    PromptMessageRole,
-};
+use clap::{Args, Subcommand};
+use crossterm::style::{self, Attribute, Color};
+use crossterm::{execute, queue};
+use rmcp::model::{PromptMessage, PromptMessageContent, PromptMessageRole};
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cli::chat::cli::editor::open_editor_file;
 use crate::cli::chat::tool_manager::PromptBundle;
-use crate::cli::chat::{
-    ChatError,
-    ChatSession,
-    ChatState,
-};
+use crate::cli::chat::{ChatError, ChatSession, ChatState};
 use crate::mcp_client::McpClientError;
 use crate::os::Os;
-use crate::util::directories::{
-    chat_global_prompts_dir,
-    chat_local_prompts_dir,
-};
+use crate::util::directories::{chat_global_prompts_dir, chat_local_prompts_dir};
 
 /// Maximum allowed length for prompt names
 const MAX_PROMPT_NAME_LENGTH: usize = 50;
@@ -191,7 +167,7 @@ impl PromptsArgs {
                 PromptsSubcommand::Get { .. }
                     | PromptsSubcommand::Create { .. }
                     | PromptsSubcommand::Edit { .. }
-                    | PromptsSubcommand::Delete { .. }
+                    | PromptsSubcommand::Remove { .. }
             ) {
                 return subcommand.execute(os, session).await;
             }
@@ -462,11 +438,11 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Delete an existing prompt
-    Delete {
-        /// Name of the prompt to delete
+    /// Remove an existing prompt
+    Remove {
+        /// Name of the prompt to remove
         name: String,
-        /// Delete global prompt instead of local
+        /// Remove global prompt instead of local
         #[arg(long)]
         global: bool,
     },
@@ -484,7 +460,7 @@ impl PromptsSubcommand {
                 Self::execute_create(os, session, name, content, global).await
             },
             PromptsSubcommand::Edit { name, global } => Self::execute_edit(os, session, name, global).await,
-            PromptsSubcommand::Delete { name, global } => Self::execute_delete(os, session, name, global).await,
+            PromptsSubcommand::Remove { name, global } => Self::execute_remove(os, session, name, global).await,
             PromptsSubcommand::List { .. } => {
                 unreachable!("List has already been parsed out at this point");
             },
@@ -969,7 +945,7 @@ impl PromptsSubcommand {
         })
     }
 
-    async fn execute_delete(
+    async fn execute_remove(
         os: &Os,
         session: &mut ChatSession,
         name: String,
@@ -1025,11 +1001,11 @@ impl PromptsSubcommand {
                         style::Print(" not found, but global version exists.\n"),
                         style::Print("Use "),
                         style::SetForegroundColor(Color::Cyan),
-                        style::Print("/prompts delete "),
+                        style::Print("/prompts remove "),
                         style::Print(&name),
                         style::Print(" --global"),
                         style::SetForegroundColor(Color::Yellow),
-                        style::Print(" to delete the global version.\n"),
+                        style::Print(" to remove the global version.\n"),
                         style::SetForegroundColor(Color::Reset),
                     )?;
                 } else {
@@ -1058,7 +1034,7 @@ impl PromptsSubcommand {
             session.stderr,
             style::Print("\n"),
             style::SetForegroundColor(Color::Yellow),
-            style::Print("⚠ Warning: This will permanently delete the "),
+            style::Print("⚠ Warning: This will permanently remove the "),
             style::Print(location),
             style::Print(" prompt '"),
             style::SetForegroundColor(Color::Cyan),
@@ -1076,14 +1052,14 @@ impl PromptsSubcommand {
         execute!(session.stderr)?;
 
         // Ask for user confirmation
-        let user_input = match session.read_user_input("Are you sure you want to delete this prompt? (y/n): ", false) {
+        let user_input = match session.read_user_input("Are you sure you want to remove this prompt? (y/n): ", false) {
             Some(input) => input.trim().to_lowercase(),
             None => {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
                     style::SetForegroundColor(Color::Green),
-                    style::Print("✓ Deletion cancelled.\n"),
+                    style::Print("✓ Removal cancelled.\n"),
                     style::SetForegroundColor(Color::Reset),
                 )?;
                 return Ok(ChatState::PromptUser {
@@ -1097,7 +1073,7 @@ impl PromptsSubcommand {
                 session.stderr,
                 style::Print("\n"),
                 style::SetForegroundColor(Color::Green),
-                style::Print("✓ Deletion cancelled.\n"),
+                style::Print("✓ Removal cancelled.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -1105,14 +1081,14 @@ impl PromptsSubcommand {
             });
         }
 
-        // Delete the file
+        // Remove the file
         match fs::remove_file(&file_path) {
             Ok(()) => {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
                     style::SetForegroundColor(Color::Green),
-                    style::Print("✓ Deleted "),
+                    style::Print("✓ Removed "),
                     style::Print(location),
                     style::Print(" prompt "),
                     style::SetForegroundColor(Color::Cyan),
@@ -1146,7 +1122,7 @@ impl PromptsSubcommand {
             PromptsSubcommand::Get { .. } => "get",
             PromptsSubcommand::Create { .. } => "create",
             PromptsSubcommand::Edit { .. } => "edit",
-            PromptsSubcommand::Delete { .. } => "delete",
+            PromptsSubcommand::Remove { .. } => "remove",
         }
     }
 }

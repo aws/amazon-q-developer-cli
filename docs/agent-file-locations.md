@@ -47,7 +47,7 @@ These agents are available from any directory when using Q CLI.
 
 When Q CLI looks for an agent, it follows this precedence order:
 
-1. **Local first**: Checks `.aws/amazonq/cli-agents/` in the current working directory
+1. **Local first**: Checks `.amazonq/cli-agents/` in the current working directory
 2. **Global fallback**: If not found locally, checks `~/.aws/amazonq/cli-agents/` in the home directory
 
 ## Naming Conflicts

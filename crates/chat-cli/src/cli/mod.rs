@@ -2,7 +2,7 @@ mod agent;
 pub mod chat;
 mod debug;
 mod diagnostics;
-mod feed;
+pub mod feed;
 mod issue;
 mod mcp;
 mod settings;
@@ -142,6 +142,11 @@ impl RootSubcommand {
                 "You are not logged in, please log in with {}",
                 format!("{CLI_BINARY_NAME} login").bold()
             );
+        }
+
+        // Daily heartbeat check
+        if os.database.should_send_heartbeat() && os.telemetry.send_daily_heartbeat().is_ok() {
+            os.database.record_heartbeat_sent().ok();
         }
 
         // Send executed telemetry.
@@ -331,6 +336,12 @@ impl Cli {
 
 #[cfg(test)]
 mod test {
+    use chat::WrapMode::{
+        Always,
+        Auto,
+        Never,
+    };
+
     use super::*;
     use crate::util::CHAT_BINARY_NAME;
     use crate::util::test::assert_parse;
@@ -370,6 +381,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })),
             verbose: 2,
             help_all: false,
@@ -409,6 +421,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -425,6 +438,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -441,6 +455,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -457,6 +472,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                wrap: None,
             })
         );
         assert_parse!(
@@ -469,6 +485,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: None,
                 no_interactive: true,
+                wrap: None,
             })
         );
     }
@@ -485,6 +502,7 @@ mod test {
                 trust_all_tools: true,
                 trust_tools: None,
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -501,6 +519,7 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
+                wrap: None,
             })
         );
     }
@@ -517,6 +536,50 @@ mod test {
                 trust_all_tools: false,
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
+                wrap: None,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_different_wrap_modes() {
+        assert_parse!(
+            ["chat", "-w", "never"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Never),
+            })
+        );
+        assert_parse!(
+            ["chat", "--wrap", "always"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Always),
+            })
+        );
+        assert_parse!(
+            ["chat", "--wrap", "auto"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: Some(Auto),
             })
         );
     }

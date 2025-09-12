@@ -161,6 +161,9 @@ pub struct Agent {
     /// you configure in the mcpServers field in this config
     #[serde(default)]
     pub use_legacy_mcp_json: bool,
+    /// The model ID to use for this agent. If not specified, uses the default model.
+    #[serde(default)]
+    pub model: Option<String>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -181,13 +184,19 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: vec!["file://AmazonQ.md", "file://README.md", "file://.amazonq/rules/**/*.md"]
-                .into_iter()
-                .map(Into::into)
-                .collect::<Vec<_>>(),
+            resources: vec![
+                "file://AmazonQ.md",
+                "file://AGENTS.md",
+                "file://README.md",
+                "file://.amazonq/rules/**/*.md",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
             hooks: Default::default(),
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
+            model: None,
             path: None,
         }
     }
@@ -1215,6 +1224,7 @@ mod tests {
             resources: Vec::new(),
             hooks: Default::default(),
             use_legacy_mcp_json: false,
+            model: None,
             path: None,
         };
 
@@ -1284,5 +1294,63 @@ mod tests {
             "Unknown server should not be trusted, instead found: {}",
             label
         );
+    }
+
+    #[test]
+    fn test_agent_model_field() {
+        // Test deserialization with model field
+        let agent_json = r#"{
+            "name": "test-agent",
+            "model": "claude-sonnet-4"
+        }"#;
+
+        let agent: Agent = serde_json::from_str(agent_json).expect("Failed to deserialize agent with model");
+        assert_eq!(agent.model, Some("claude-sonnet-4".to_string()));
+
+        // Test default agent has no model
+        let default_agent = Agent::default();
+        assert_eq!(default_agent.model, None);
+
+        // Test serialization includes model field
+        let agent_with_model = Agent {
+            model: Some("test-model".to_string()),
+            ..Default::default()
+        };
+        let serialized = serde_json::to_string(&agent_with_model).expect("Failed to serialize");
+        assert!(serialized.contains("\"model\":\"test-model\""));
+    }
+
+    #[test]
+    fn test_agent_model_fallback_priority() {
+        // Test that agent model is checked and falls back correctly
+        let mut agents = Agents::default();
+
+        // Create agent with unavailable model
+        let agent_with_invalid_model = Agent {
+            name: "test-agent".to_string(),
+            model: Some("unavailable-model".to_string()),
+            ..Default::default()
+        };
+
+        agents.agents.insert("test-agent".to_string(), agent_with_invalid_model);
+        agents.active_idx = "test-agent".to_string();
+
+        // Verify the agent has the model set
+        assert_eq!(
+            agents.get_active().and_then(|a| a.model.as_ref()),
+            Some(&"unavailable-model".to_string())
+        );
+
+        // Test agent without model
+        let agent_without_model = Agent {
+            name: "no-model-agent".to_string(),
+            model: None,
+            ..Default::default()
+        };
+
+        agents.agents.insert("no-model-agent".to_string(), agent_without_model);
+        agents.active_idx = "no-model-agent".to_string();
+
+        assert_eq!(agents.get_active().and_then(|a| a.model.as_ref()), None);
     }
 }
