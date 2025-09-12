@@ -109,12 +109,8 @@ impl FsRead {
             allowed_paths: Vec<String>,
             #[serde(default)]
             denied_paths: Vec<String>,
-            #[serde(default = "default_allow_read_only")]
+            #[serde(default)]
             allow_read_only: bool,
-        }
-
-        fn default_allow_read_only() -> bool {
-            false
         }
 
         let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_read");
