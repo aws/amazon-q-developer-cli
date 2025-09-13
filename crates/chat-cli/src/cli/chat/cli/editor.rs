@@ -84,13 +84,8 @@ impl EditorArgs {
     }
 }
 
-/// Opens the user's preferred editor to compose a prompt
-pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
-    // Create a temporary file with a unique name
-    let temp_dir = std::env::temp_dir();
-    let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
-    let temp_file_path = temp_dir.join(file_name);
-
+/// Launch the user's preferred editor with the given file path
+fn launch_editor(file_path: &std::path::Path) -> Result<(), ChatError> {
     // Get the editor from environment variable or use a default
     let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
@@ -104,11 +99,6 @@ pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
 
     let editor_bin = parts.remove(0);
 
-    // Write initial content to the file if provided
-    let initial_content = initial_text.unwrap_or_default();
-    std::fs::write(&temp_file_path, &initial_content)
-        .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
-
     // Open the editor with the parsed command and arguments
     let mut cmd = std::process::Command::new(editor_bin);
     // Add any arguments that were part of the EDITOR variable
@@ -117,13 +107,36 @@ pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
     }
     // Add the file path as the last argument
     let status = cmd
-        .arg(&temp_file_path)
+        .arg(file_path)
         .status()
         .map_err(|e| ChatError::Custom(format!("Failed to open editor: {}", e).into()))?;
 
     if !status.success() {
         return Err(ChatError::Custom("Editor exited with non-zero status".into()));
     }
+
+    Ok(())
+}
+
+/// Opens the user's preferred editor to edit an existing file
+pub fn open_editor_file(file_path: &std::path::Path) -> Result<(), ChatError> {
+    launch_editor(file_path)
+}
+
+/// Opens the user's preferred editor to compose a prompt
+pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
+    // Create a temporary file with a unique name
+    let temp_dir = std::env::temp_dir();
+    let file_name = format!("q_prompt_{}.md", Uuid::new_v4());
+    let temp_file_path = temp_dir.join(file_name);
+
+    // Write initial content to the file if provided
+    let initial_content = initial_text.unwrap_or_default();
+    std::fs::write(&temp_file_path, &initial_content)
+        .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
+
+    // Launch the editor
+    launch_editor(&temp_file_path)?;
 
     // Read the content back
     let content = std::fs::read_to_string(&temp_file_path)
