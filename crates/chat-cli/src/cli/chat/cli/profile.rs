@@ -102,7 +102,6 @@ pub enum AgentSubcommand {
     /// Define a default agent to use when q chat launches
     SetDefault {
         /// Name of the agent to set as default
-        #[arg(long, short)]
         name: String,
     },
     /// Swap to a new agent at runtime
