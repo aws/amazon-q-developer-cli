@@ -73,6 +73,7 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::capture::CaptureManager;
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -137,6 +138,8 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+
+    pub capture_manager: Option<CaptureManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
@@ -202,6 +205,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            capture_manager: None,
             mcp_enabled,
             tangent_state: None,
         }
@@ -874,6 +878,11 @@ Return only the JSON configuration, no additional text.",
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
+    }
+
+    pub fn pop_from_history(&mut self) -> Option<()> {
+        self.history.pop_back()?;
+        Some(())
     }
 
     /// Swapping agent involves the following:

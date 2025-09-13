@@ -1,3 +1,4 @@
+pub mod capture;
 pub mod changelog;
 pub mod clear;
 pub mod compact;
@@ -35,6 +36,7 @@ use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
+use crate::cli::chat::cli::capture::CaptureSubcommand;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
@@ -102,6 +104,8 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    #[command(subcommand)]
+    Capture(CaptureSubcommand),
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
@@ -169,6 +173,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Capture(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
@@ -198,6 +203,7 @@ impl SlashCommand {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Capture(_) => "capture",
             Self::Todos(_) => "todos",
         }
     }
