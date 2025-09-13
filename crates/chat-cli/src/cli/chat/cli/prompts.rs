@@ -1,23 +1,52 @@
-use std::collections::{HashMap, VecDeque};
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 
-use clap::{Args, Subcommand};
-use crossterm::style::{self, Attribute, Color};
-use crossterm::{execute, queue};
-use rmcp::model::{PromptMessage, PromptMessageContent, PromptMessageRole};
+use clap::{
+    Args,
+    Subcommand,
+};
+use crossterm::style::{
+    self,
+    Attribute,
+    Color,
+};
+use crossterm::{
+    execute,
+    queue,
+};
+use regex::Regex;
+use rmcp::model::{
+    PromptMessage,
+    PromptMessageContent,
+    PromptMessageRole,
+};
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
 use crate::cli::chat::cli::editor::open_editor_file;
 use crate::cli::chat::tool_manager::PromptBundle;
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 use crate::mcp_client::McpClientError;
 use crate::os::Os;
-use crate::util::directories::{chat_global_prompts_dir, chat_local_prompts_dir};
+use crate::util::directories::{
+    chat_global_prompts_dir,
+    chat_local_prompts_dir,
+};
 
 /// Maximum allowed length for prompt names
 const MAX_PROMPT_NAME_LENGTH: usize = 50;
+
+/// Regex for validating prompt names (alphanumeric, hyphens, underscores only)
+static PROMPT_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
@@ -106,9 +135,9 @@ fn validate_prompt_name(name: &str) -> Result<(), String> {
         );
     }
 
-    // Check for valid characters (alphanumeric, hyphens, underscores only)
-    if !name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
-        return Err("Prompt name can only contain letters, numbers, hyphens (-), and underscores (_). Special characters and spaces are not allowed.".to_string());
+    // Check for valid characters using regex (alphanumeric, hyphens, underscores only)
+    if !PROMPT_NAME_REGEX.is_match(name) {
+        return Err("Prompt name can only contain letters, numbers, hyphens (-), and underscores (_). Special characters, spaces, and path separators are not allowed.".to_string());
     }
 
     Ok(())
@@ -643,9 +672,9 @@ impl PromptsSubcommand {
                 execute!(session.stderr)?;
 
                 // Ask for user confirmation
-                let user_input = match session.read_user_input("Do you want to continue? (y/n): ", false) {
-                    Some(input) => input.trim().to_lowercase(),
-                    None => {
+                let user_input = match crate::util::input("Do you want to continue? (y/n): ", None) {
+                    Ok(input) => input.trim().to_lowercase(),
+                    Err(_) => {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
@@ -699,9 +728,9 @@ impl PromptsSubcommand {
                 execute!(session.stderr)?;
 
                 // Ask for user confirmation
-                let user_input = match session.read_user_input("Do you want to continue? (y/n): ", false) {
-                    Some(input) => input.trim().to_lowercase(),
-                    None => {
+                let user_input = match crate::util::input("Do you want to continue? (y/n): ", None) {
+                    Ok(input) => input.trim().to_lowercase(),
+                    Err(_) => {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
@@ -1052,9 +1081,9 @@ impl PromptsSubcommand {
         execute!(session.stderr)?;
 
         // Ask for user confirmation
-        let user_input = match session.read_user_input("Are you sure you want to remove this prompt? (y/n): ", false) {
-            Some(input) => input.trim().to_lowercase(),
-            None => {
+        let user_input = match crate::util::input("Are you sure you want to remove this prompt? (y/n): ", None) {
+            Ok(input) => input.trim().to_lowercase(),
+            Err(_) => {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
