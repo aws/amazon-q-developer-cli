@@ -45,6 +45,7 @@ use cli::compact::CompactStrategy;
 use cli::model::{
     find_model,
     get_available_models,
+    get_model_info,
     select_model,
 };
 pub use conversation::ConversationState;
@@ -2324,6 +2325,39 @@ impl ChatSession {
                     match result.output {
                         OutputKind::Text(ref text) => {
                             debug!("Output is Text: {}", text);
+                            
+                            // Check for model switching suggestion from todo_list tool
+                            if tool.name == "todo_list" && text.contains("SUGGEST_MODEL_SWITCH:") {
+                                if let Some(model_line) = text.lines().find(|line| line.contains("SUGGEST_MODEL_SWITCH:")) {
+                                    if let Some(model_id) = model_line.strip_prefix("SUGGEST_MODEL_SWITCH:").map(|s| s.trim()) {
+                                        match get_model_info(model_id, os).await {
+                                            Ok(model_info) => {
+                                                let old_model = self.conversation.model_info
+                                                    .as_ref()
+                                                    .map(|m| m.display_name().to_string())
+                                                    .unwrap_or("default".to_string());
+                                                
+                                                let new_model = model_info.display_name().to_string();
+                                                self.conversation.model_info = Some(model_info);
+                                                
+                                                // Show model switch notification
+                                                queue!(
+                                                    self.stderr,
+                                                    style::SetForegroundColor(Color::Magenta),
+                                                    style::Print(format!("🔄 Switched from {} to {} for next task\n", 
+                                                        old_model, new_model)),
+                                                    style::ResetColor
+                                                )?;
+                                                self.stderr.flush()?;
+                                            }
+                                            Err(e) => {
+                                                // Log error but don't fail the tool
+                                                tracing::warn!("Failed to switch to model {}: {}", model_id, e);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         },
                         OutputKind::Json(ref json) => {
                             debug!("Output is JSON: {}", json);

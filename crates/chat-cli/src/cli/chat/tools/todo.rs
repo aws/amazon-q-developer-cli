@@ -31,6 +31,7 @@ use crate::os::Os;
 pub struct Task {
     pub task_description: String,
     pub completed: bool,
+    pub model: Option<String>,
 }
 
 /// Contains all state to be serialized and deserialized into a todo list
@@ -169,6 +170,12 @@ pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
     Ok(cwd.join(".amazonq").join("cli-todo-lists"))
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskWithModel {
+    pub task_description: String,
+    pub model: Option<String>,
+}
+
 /// Contains the command definitions that allow the model to create,
 /// modify, and mark todo list tasks as complete
 #[derive(Debug, Clone, Deserialize)]
@@ -176,7 +183,8 @@ pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
 pub enum TodoList {
     // Creates a todo list
     Create {
-        tasks: Vec<String>,
+        tasks_with_models: Option<Vec<TaskWithModel>>,
+        tasks: Option<Vec<String>>,
         todo_list_description: String,
     },
 
@@ -242,16 +250,36 @@ impl TodoList {
         }
         let (state, id) = match self {
             TodoList::Create {
+                tasks_with_models,
                 tasks,
                 todo_list_description: task_description,
             } => {
                 let new_id = generate_new_todo_id();
                 let mut todo_tasks = Vec::new();
-                for task_description in tasks {
-                    todo_tasks.push(Task {
-                        task_description: task_description.clone(),
-                        completed: false,
-                    });
+                
+                // Handle new format with model routing
+                if let Some(tasks_with_models) = tasks_with_models {
+                    println!("We are in the new mode with model routing");
+                    for task_with_model in tasks_with_models {
+                        todo_tasks.push(Task {
+                            task_description: task_with_model.task_description.clone(),
+                            completed: false,
+                            model: task_with_model.model.clone(),
+                        });
+                        println!("the description is {}", task_with_model.task_description.clone());
+                        println!("the model is, {:?}", task_with_model.model.clone());
+                    }
+                }
+                // Handle legacy format without models
+                else if let Some(tasks) = tasks {
+                    println!("We are in the legacy mode");
+                    for task_description in tasks {
+                        todo_tasks.push(Task {
+                            task_description: task_description.clone(),
+                            completed: false,
+                            model: None,
+                        });
+                    }
                 }
 
                 // Create a new todo list with the given tasks and save state
@@ -320,6 +348,7 @@ impl TodoList {
                     let new_task = Task {
                         task_description: task_description.clone(),
                         completed: false,
+                        model: None,
                     };
                     state.tasks.insert(*i, new_task);
                 }
@@ -373,7 +402,25 @@ impl TodoList {
             },
         };
 
-        let invoke_output = format!("TODO LIST STATE: {}\n\n ID: {id}", serde_json::to_string(&state)?);
+        // Check if we should suggest a model switch (for Complete and Create commands)
+        let next_model_suggestion = match self {
+            TodoList::Complete { .. } | TodoList::Create { .. } => {
+                // Find the next uncompleted task's model
+                state.tasks
+                    .iter()
+                    .find(|t| !t.completed)
+                    .and_then(|t| t.model.as_ref())
+                    .map(|model| format!("\n\nSUGGEST_MODEL_SWITCH: {}", model))
+                    .unwrap_or_default()
+            },
+            _ => String::new(),
+        };
+
+        let invoke_output = format!(
+            "TODO LIST STATE: {}\n\n ID: {id}{}",
+            serde_json::to_string(&state)?,
+            next_model_suggestion
+        );
         Ok(InvokeOutput {
             output: super::OutputKind::Text(invoke_output),
         })
@@ -388,15 +435,31 @@ impl TodoList {
         }
         match self {
             TodoList::Create {
+                tasks_with_models,
                 tasks,
                 todo_list_description: task_description,
             } => {
-                if tasks.is_empty() {
+                let has_tasks_with_models = tasks_with_models.as_ref().map_or(false, |t| !t.is_empty());
+                let has_tasks = tasks.as_ref().map_or(false, |t| !t.is_empty());
+                
+                if !has_tasks_with_models && !has_tasks {
                     bail!("No tasks were provided");
-                } else if tasks.iter().any(|task| task.trim().is_empty()) {
-                    bail!("Tasks cannot be empty");
                 } else if task_description.is_empty() {
                     bail!("No task description was provided");
+                }
+                
+                // Validate tasks_with_models if present
+                if let Some(tasks_with_models) = tasks_with_models {
+                    if tasks_with_models.iter().any(|task| task.task_description.trim().is_empty()) {
+                        bail!("Tasks cannot be empty");
+                    }
+                }
+                
+                // Validate tasks if present
+                if let Some(tasks) = tasks {
+                    if tasks.iter().any(|task| task.trim().is_empty()) {
+                        bail!("Tasks cannot be empty");
+                    }
                 }
             },
             TodoList::Complete {
