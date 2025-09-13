@@ -4,13 +4,13 @@ use std::path::{
     PathBuf,
 };
 
+use chrono::Utc;
 use clap::Args;
 use crossterm::execute;
 use crossterm::style::{
     self,
     Color,
 };
-use time::OffsetDateTime;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
 
@@ -34,16 +34,13 @@ impl LogdumpArgs {
             style::ResetColor,
         )?;
 
-        let timestamp = OffsetDateTime::now_local()
-            .unwrap_or_else(|_| OffsetDateTime::now_utc())
-            .format(&time::format_description::well_known::Iso8601::DEFAULT)
-            .unwrap_or_else(|_| "unknown".to_string())
-            .replace(':', "-"); // Replace colons for Windows compatibility
-
+        let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%SZ").to_string();
         let zip_filename = format!("q-logs-{}.zip", timestamp);
-        let zip_path = PathBuf::from(&zip_filename);
+        let zip_path: PathBuf = PathBuf::from(&zip_filename);
+        let logs_directory =
+            logs_dir().map_err(|e| ChatError::Custom(format!("Failed to get logs directory: {}", e).into()))?;
 
-        match self.create_log_dump(&zip_path).await {
+        match self.create_log_dump(&zip_path, logs_directory).await {
             Ok(log_count) => {
                 execute!(
                     session.stderr,
@@ -71,25 +68,26 @@ impl LogdumpArgs {
         })
     }
 
-    async fn create_log_dump(&self, zip_path: &Path) -> Result<usize, Box<dyn std::error::Error>> {
+    async fn create_log_dump(&self, zip_path: &Path, logs_dir: PathBuf) -> Result<usize, Box<dyn std::error::Error>> {
         let file = std::fs::File::create(zip_path)?;
         let mut zip = ZipWriter::new(file);
         let mut log_count = 0;
 
         // Only collect qchat.log (keeping current implementation logic)
-        log_count += self.collect_qchat_log(&mut zip)?;
+        log_count += self.collect_qchat_log(&mut zip, &logs_dir)?;
 
         zip.finish()?;
         Ok(log_count)
     }
 
-    fn collect_qchat_log(&self, zip: &mut ZipWriter<std::fs::File>) -> Result<usize, Box<dyn std::error::Error>> {
-        // Use the unified logs_dir function to get the correct log directory
-        if let Ok(log_dir) = logs_dir() {
-            let qchat_log_path = log_dir.join("qchat.log");
-            if qchat_log_path.exists() {
-                return self.add_log_file_to_zip(&qchat_log_path, zip, "logs");
-            }
+    fn collect_qchat_log(
+        &self,
+        zip: &mut ZipWriter<std::fs::File>,
+        logs_dir: &Path,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let qchat_log_path = logs_dir.join("qchat.log");
+        if qchat_log_path.exists() {
+            return self.add_log_file_to_zip(&qchat_log_path, zip, "logs");
         }
         Ok(0)
     }
@@ -127,11 +125,13 @@ mod tests {
     async fn test_logdump_creates_zip_file() {
         let temp_dir = TempDir::new().unwrap();
         let zip_path = temp_dir.path().join("test-logs.zip");
+        let logs_dir = temp_dir.path().join("logs");
+        fs::create_dir_all(&logs_dir).unwrap();
 
         let logdump = LogdumpArgs;
 
         // Create the zip file (even if no logs are found, it should create an empty zip)
-        let result = logdump.create_log_dump(&zip_path).await;
+        let result = logdump.create_log_dump(&zip_path, logs_dir).await;
 
         // The function should succeed and create a zip file
         assert!(result.is_ok());
@@ -159,7 +159,6 @@ mod tests {
 
         let logdump = LogdumpArgs;
 
-        // Mock the logs_dir to return our test directory
         let result = logdump.add_log_file_to_zip(&qchat_log_path, &mut zip, "logs");
 
         assert!(result.is_ok());

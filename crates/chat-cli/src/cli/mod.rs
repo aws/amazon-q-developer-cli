@@ -59,9 +59,6 @@ use crate::util::{
     GOV_REGIONS,
 };
 
-mod logdump;
-use logdump::LogdumpArgs;
-
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     /// Outputs the results as markdown
@@ -113,8 +110,6 @@ pub enum RootSubcommand {
     Diagnostic(diagnostics::DiagnosticArgs),
     /// Create a new Github issue
     Issue(issue::IssueArgs),
-    /// Create a zip file with logs for investigation
-    Logdump(LogdumpArgs),
     /// Version
     #[command(hide = true)]
     Version {
@@ -171,7 +166,6 @@ impl RootSubcommand {
             Self::Profile => user::profile(os).await,
             Self::Settings(settings_args) => settings_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
-            Self::Logdump(args) => args.execute().await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
@@ -197,7 +191,6 @@ impl Display for RootSubcommand {
             Self::Settings(_) => "settings",
             Self::Diagnostic(_) => "diagnostic",
             Self::Issue(_) => "issue",
-            Self::Logdump(_) => "logdump",
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
         };
