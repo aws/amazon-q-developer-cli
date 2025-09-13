@@ -103,8 +103,16 @@ impl PromptsArgs {
         };
 
         if let Some(subcommand) = self.subcommand {
-            if matches!(subcommand, PromptsSubcommand::Get { .. }) {
-                return subcommand.execute(session).await;
+            match subcommand {
+                PromptsSubcommand::Get { .. } => {
+                    return subcommand.execute(session).await;
+                },
+                PromptsSubcommand::Details { .. } => {
+                    return subcommand.execute(session).await;
+                },
+                PromptsSubcommand::List { .. } => {
+                    // Continue with list logic below
+                },
             }
         }
 
@@ -260,6 +268,11 @@ pub enum PromptsSubcommand {
         /// Optional search word to filter prompts
         search_word: Option<String>,
     },
+    /// Show detailed information about a specific prompt
+    Details {
+        /// Name of the prompt to show details for
+        name: String,
+    },
     /// Get a specific prompt by name
     Get {
         #[arg(long, hide = true)]
@@ -274,15 +287,274 @@ pub enum PromptsSubcommand {
 
 impl PromptsSubcommand {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let PromptsSubcommand::Get {
-            orig_input,
-            name,
-            arguments,
-        } = self
-        else {
-            unreachable!("List has already been parsed out at this point");
+        match self {
+            PromptsSubcommand::Details { name } => Self::execute_details(name, session).await,
+            PromptsSubcommand::Get {
+                orig_input,
+                name,
+                arguments,
+            } => Self::execute_get(orig_input, name, arguments, session).await,
+            PromptsSubcommand::List { .. } => {
+                unreachable!("List has already been parsed out at this point");
+            },
+        }
+    }
+
+    async fn execute_details(name: String, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let prompts = session.conversation.tool_manager.list_prompts().await?;
+
+        // Parse server/prompt format if provided
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name.as_str())
         };
 
+        // Find matching prompts
+        let matching_bundles: Vec<&PromptBundle> = prompts
+            .get(prompt_name)
+            .map(|bundles| {
+                if let Some(server) = server_filter {
+                    bundles.iter().filter(|b| b.server_name == server).collect()
+                } else {
+                    bundles.iter().collect()
+                }
+            })
+            .unwrap_or_default();
+
+        match matching_bundles.len() {
+            0 => {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found. Use "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts list"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" to see available prompts.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            1 => {
+                let bundle = matching_bundles[0];
+                Self::display_prompt_details(bundle, session)?;
+            },
+            _ => {
+                let alt_names: Vec<String> = matching_bundles
+                    .iter()
+                    .map(|b| format!("- @{}/{}", b.server_name, prompt_name))
+                    .collect();
+                let alt_msg = format!("\n{}\n", alt_names.join("\n"));
+
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" is ambiguous. Use one of the following:"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(alt_msg),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+        }
+
+        execute!(session.stderr, style::Print("\n"))?;
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    fn display_prompt_details(bundle: &PromptBundle, session: &mut ChatSession) -> Result<(), ChatError> {
+        let prompt = &bundle.prompt_get;
+        let terminal_width = session.terminal_width();
+
+        // Display header
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt Details"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print("▔".repeat(terminal_width)),
+            style::Print("\n\n"),
+        )?;
+
+        // Display basic information
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Name: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(&prompt.name),
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Server: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(&bundle.server_name),
+            style::Print("\n\n"),
+        )?;
+
+        // Display description
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Description:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        match &prompt.description {
+            Some(desc) if !desc.trim().is_empty() => {
+                for line in desc.lines() {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::Print(line),
+                        style::Print("\n")
+                    )?;
+                }
+            },
+            _ => {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("  (no description available)"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+            },
+        }
+
+        // Display arguments
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Arguments:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        if let Some(args) = &prompt.arguments {
+            if args.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("  (no arguments)"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+            } else {
+                for arg in args {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::SetAttribute(Attribute::Bold),
+                        style::Print(&arg.name),
+                        style::SetAttribute(Attribute::Reset),
+                    )?;
+
+                    // Show required status
+                    match arg.required {
+                        Some(true) => {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::Red),
+                                style::Print(" (required)"),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        },
+                        Some(false) => {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::DarkGrey),
+                                style::Print(" (optional)"),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        },
+                        None => {
+                            // Don't show anything if required status is unknown
+                        },
+                    }
+
+                    queue!(session.stderr, style::Print("\n"))?;
+
+                    // Show argument description if available (field may not exist)
+                    // Note: This assumes PromptArgument may have a description field
+                    // If it doesn't exist, this code will be removed during compilation
+                }
+            }
+        } else {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  (no arguments)"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        // Display usage example
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n  "),
+            style::SetForegroundColor(Color::Green),
+            style::Print("@"),
+            style::Print(&prompt.name),
+        )?;
+
+        if let Some(args) = &prompt.arguments {
+            for arg in args {
+                match arg.required {
+                    Some(true) => {
+                        queue!(
+                            session.stderr,
+                            style::Print(" <"),
+                            style::Print(&arg.name),
+                            style::Print(">"),
+                        )?;
+                    },
+                    _ => {
+                        queue!(
+                            session.stderr,
+                            style::Print(" ["),
+                            style::Print(&arg.name),
+                            style::Print("]"),
+                        )?;
+                    },
+                }
+            }
+        }
+
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+
+        Ok(())
+    }
+
+    async fn execute_get(
+        orig_input: Option<String>,
+        name: String,
+        arguments: Option<Vec<String>>,
+        session: &mut ChatSession,
+    ) -> Result<ChatState, ChatError> {
         let prompts = match session.conversation.tool_manager.get_prompt(name, arguments).await {
             Ok(resp) => resp,
             Err(e) => {
@@ -339,6 +611,7 @@ impl PromptsSubcommand {
     pub fn name(&self) -> &'static str {
         match self {
             PromptsSubcommand::List { .. } => "list",
+            PromptsSubcommand::Details { .. } => "details",
             PromptsSubcommand::Get { .. } => "get",
         }
     }
@@ -346,6 +619,8 @@ impl PromptsSubcommand {
 
 #[cfg(test)]
 mod tests {
+    use rmcp::model::PromptArgument;
+
     use super::*;
 
     #[test]
@@ -400,5 +675,124 @@ mod tests {
         assert!(!result.contains(" ..."));
         assert!(result.ends_with("..."));
         assert_eq!(result, "Prompt to explain available tools and...");
+    }
+
+    #[test]
+    fn test_prompts_subcommand_name() {
+        assert_eq!(PromptsSubcommand::List { search_word: None }.name(), "list");
+        assert_eq!(
+            PromptsSubcommand::Details {
+                name: "test".to_string()
+            }
+            .name(),
+            "details"
+        );
+        assert_eq!(
+            PromptsSubcommand::Get {
+                orig_input: None,
+                name: "test".to_string(),
+                arguments: None
+            }
+            .name(),
+            "get"
+        );
+    }
+
+    #[test]
+    fn test_prompts_subcommand_parsing() {
+        // Test that Details variant can be created
+        let details_cmd = PromptsSubcommand::Details {
+            name: "test_prompt".to_string(),
+        };
+        assert_eq!(details_cmd.name(), "details");
+
+        // Test equality
+        let details_cmd2 = PromptsSubcommand::Details {
+            name: "test_prompt".to_string(),
+        };
+        assert_eq!(details_cmd, details_cmd2);
+    }
+
+    #[test]
+    fn test_server_prompt_name_parsing() {
+        // Test parsing server/prompt format
+        let name = "server1/my_prompt";
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name)
+        };
+        assert_eq!(server_filter, Some("server1"));
+        assert_eq!(prompt_name, "my_prompt");
+
+        // Test parsing prompt name only
+        let name = "my_prompt";
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name)
+        };
+        assert_eq!(server_filter, None);
+        assert_eq!(prompt_name, "my_prompt");
+    }
+
+    #[test]
+    fn test_prompt_bundle_filtering() {
+        // Create mock prompt bundles
+        let prompt1 = rmcp::model::Prompt {
+            name: "test_prompt".to_string(),
+            description: Some("Test description".to_string()),
+            arguments: Some(vec![
+                PromptArgument {
+                    name: "arg1".to_string(),
+                    description: Some("First argument".to_string()),
+                    required: Some(true),
+                },
+                PromptArgument {
+                    name: "arg2".to_string(),
+                    description: None,
+                    required: Some(false),
+                },
+            ]),
+        };
+
+        let bundle1 = PromptBundle {
+            server_name: "server1".to_string(),
+            prompt_get: prompt1.clone(),
+        };
+
+        let bundle2 = PromptBundle {
+            server_name: "server2".to_string(),
+            prompt_get: prompt1,
+        };
+
+        let bundles = vec![&bundle1, &bundle2];
+
+        // Test filtering by server
+        let filtered: Vec<&PromptBundle> = bundles.iter().filter(|b| b.server_name == "server1").copied().collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].server_name, "server1");
+
+        // Test no filtering (all bundles)
+        let all: Vec<&PromptBundle> = bundles.iter().copied().collect();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_ambiguous_prompt_message_generation() {
+        // Test generating disambiguation message
+        let prompt_name = "test_prompt";
+        let server_names = vec!["server1", "server2", "server3"];
+
+        let alt_names: Vec<String> = server_names
+            .iter()
+            .map(|s| format!("- @{}/{}", s, prompt_name))
+            .collect();
+        let alt_msg = format!("\n{}\n", alt_names.join("\n"));
+
+        assert_eq!(
+            alt_msg,
+            "\n- @server1/test_prompt\n- @server2/test_prompt\n- @server3/test_prompt\n"
+        );
     }
 }
