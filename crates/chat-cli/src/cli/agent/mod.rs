@@ -10,10 +10,7 @@ use std::collections::{
     HashSet,
 };
 use std::ffi::OsStr;
-use std::io::{
-    self,
-    Write,
-};
+use std::io::Write;
 use std::path::{
     Path,
     PathBuf,
@@ -37,12 +34,12 @@ use serde::{
     Serialize,
 };
 use thiserror::Error;
-use tokio::fs::ReadDir;
 use tracing::{
     error,
     info,
     warn,
 };
+use walkdir;
 use wrapper_types::ResourcePath;
 pub use wrapper_types::{
     OriginalToolName,
@@ -212,6 +209,38 @@ impl Default for Agent {
 }
 
 impl Agent {
+    /// Calculate the path-based identifier for this agent
+    /// Returns the relative path from agent directory to file (without .json extension)
+    /// Example: "team/assistant" for file at agents/team/assistant.json
+    pub fn path_identifier(&self, os: &Os) -> Option<String> {
+        let full_path = self.path.as_ref()?;
+
+        // Extract just the filename without extension for fallback
+        let file_stem = full_path.file_stem()?.to_str()?;
+
+        // Try to get the actual directory paths using the proper functions
+        // Check local workspace directory first
+        if let Ok(local_dir) = directories::chat_local_agent_dir(os) {
+            if let Ok(rel_path) = full_path.strip_prefix(&local_dir) {
+                if let Some(path_str) = rel_path.with_extension("").to_str() {
+                    return Some(path_str.to_string());
+                }
+            }
+        }
+
+        // Check global directory
+        if let Ok(global_dir) = directories::chat_global_agent_path(os) {
+            if let Ok(rel_path) = full_path.strip_prefix(&global_dir) {
+                if let Some(path_str) = rel_path.with_extension("").to_str() {
+                    return Some(path_str.to_string());
+                }
+            }
+        }
+
+        // Fallback to just filename
+        Some(file_stem.to_string())
+    }
+
     /// This function mutates the agent to a state that is writable.
     /// Practically this means reverting some fields back to their original values as they were
     /// written in the config.
@@ -339,39 +368,23 @@ impl Agent {
         }
     }
 
-    /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
-    /// and falling back to global dir if it does not exist in local.
+    /// Retrieves an agent by name or path identifier. It does so via first seeking the given agent
+    /// under local dir, and falling back to global dir if it does not exist in local.
+    /// Supports both JSON name field lookup and path-based lookup (e.g., "team/assistant").
+    /// Load all agents first and filter by both JSON name and path identifier
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
-        let config_path: Result<PathBuf, PathBuf> = 'config: {
-            // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
-            if os.fs.exists(&local_config_dir) {
-                break 'config Ok(local_config_dir);
+        let mut stderr = std::io::stderr();
+        let (agents, _) = Agents::load(&mut os.clone(), None, true, &mut stderr, true).await;
+
+        for (_, agent) in agents.agents {
+            if agent.name == agent_name || agent.path_identifier(os).as_deref() == Some(agent_name) {
+                if let Some(path) = agent.path.clone() {
+                    return Ok((agent, path));
+                }
             }
-
-            let global_config_dir = directories::chat_global_agent_path(os)?.join(format!("{agent_name}.json"));
-            if os.fs.exists(&global_config_dir) {
-                break 'config Ok(global_config_dir);
-            }
-
-            Err(global_config_dir)
-        };
-
-        match config_path {
-            Ok(config_path) => {
-                let content = os.fs.read(&config_path).await?;
-                let mut agent = serde_json::from_slice::<Agent>(&content)?;
-                let legacy_mcp_config = if agent.use_legacy_mcp_json {
-                    load_legacy_mcp_config(os).await.unwrap_or(None)
-                } else {
-                    None
-                };
-                let mut stderr = std::io::stderr();
-                agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
-                Ok((agent, config_path))
-            },
-            _ => bail!("Agent {agent_name} does not exist"),
         }
+
+        bail!("Agent {agent_name} does not exist")
     }
 
     pub async fn load(
@@ -476,14 +489,22 @@ impl Agents {
         self.agents.get_mut(&self.active_idx)
     }
 
-    pub fn switch(&mut self, name: &str) -> eyre::Result<&Agent> {
-        if !self.agents.contains_key(name) {
+    pub fn switch(&mut self, name: &str, os: &Os) -> eyre::Result<&Agent> {
+        // Find agent by either JSON name or path identifier
+        let matching_key = self
+            .agents
+            .iter()
+            .find(|(_, agent)| agent.name.as_str() == name || agent.path_identifier(os).as_deref() == Some(name))
+            .map(|(key, _)| key.clone());
+
+        if let Some(key) = matching_key {
+            self.active_idx = key;
+            self.agents
+                .get(&self.active_idx)
+                .ok_or(eyre::eyre!("No agent with name {name} found"))
+        } else {
             eyre::bail!("No agent with name {name} found");
         }
-        self.active_idx = name.to_string();
-        self.agents
-            .get(name)
-            .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
     /// This function does a number of things in the following order:
@@ -558,12 +579,9 @@ impl Agents {
             let Ok(path) = directories::chat_local_agent_dir(os) else {
                 break 'local Vec::<Agent>::new();
             };
-            let Ok(files) = os.fs.read_dir(path).await else {
-                break 'local Vec::<Agent>::new();
-            };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
+            let results = load_agents_from_directory(&path, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -588,20 +606,9 @@ impl Agents {
             let Ok(path) = directories::chat_global_agent_path(os) else {
                 break 'global Vec::<Agent>::new();
             };
-            let files = match os.fs.read_dir(&path).await {
-                Ok(files) => files,
-                Err(e) => {
-                    if matches!(e.kind(), io::ErrorKind::NotFound) {
-                        if let Err(e) = os.fs.create_dir_all(&path).await {
-                            error!("Error creating global agent dir: {:?}", e);
-                        }
-                    }
-                    break 'global Vec::<Agent>::new();
-                },
-            };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
+            let results = load_agents_from_directory(&path, os, &mut global_mcp_config, mcp_enabled, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -704,8 +711,14 @@ impl Agents {
         // 3. If the above is missing or invalid, assume the in-memory default
         let active_idx = 'active_idx: {
             if let Some(name) = agent_name {
-                if all_agents.iter().any(|a| a.name.as_str() == name) {
-                    break 'active_idx name.to_string();
+                // Dual lookup: try both JSON name field and path identifier
+                if let Some(matching_agent) = all_agents.iter().find(|agent| {
+                    // Current behavior: match against JSON name field
+                    agent.name.as_str() == name ||
+                    // New behavior: match against file path identifier
+                    agent.path_identifier(os).as_deref() == Some(name)
+                }) {
+                    break 'active_idx matching_agent.name.clone();
                 }
                 let _ = queue!(
                     output,
@@ -880,8 +893,8 @@ pub struct AgentsLoadMetadata {
     pub launched_agent: String,
 }
 
-async fn load_agents_from_entries(
-    mut files: ReadDir,
+async fn load_agents_from_directory(
+    dir_path: &Path,
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
@@ -889,15 +902,32 @@ async fn load_agents_from_entries(
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
 
-    while let Ok(Some(file)) = files.next_entry().await {
-        let file_path = &file.path();
-        if file_path
-            .extension()
-            .and_then(OsStr::to_str)
-            .is_some_and(|s| s == "json")
-        {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await);
-        }
+    // Check if directory exists before trying to walk it
+    if !os.fs.exists(dir_path) {
+        // Directory doesn't exist - return empty list (this is normal)
+        return res;
+    }
+
+    // Collect file paths in a blocking task to avoid blocking the async runtime
+    let dir_path = dir_path.to_path_buf();
+    let file_paths = tokio::task::spawn_blocking(move || {
+        walkdir::WalkDir::new(&dir_path)
+            .follow_links(false)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|entry| {
+                let path = entry.path();
+                path.is_file() && path.extension().and_then(OsStr::to_str).is_some_and(|s| s == "json")
+            })
+            .map(|entry| entry.path().to_path_buf())
+            .collect::<Vec<_>>()
+    })
+    .await
+    .unwrap_or_default();
+
+    // Load agents asynchronously
+    for file_path in file_paths {
+        res.push(Agent::load(os, &file_path, global_mcp_config, mcp_enabled, output).await);
     }
 
     res
@@ -1070,9 +1100,10 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_switch() {
+    #[tokio::test]
+    async fn test_switch() {
         let mut collection = Agents::default();
+        let os = crate::os::Os::new().await.unwrap();
 
         let default_agent = Agent::default();
         let dev_agent = Agent {
@@ -1086,12 +1117,12 @@ mod tests {
         collection.active_idx = "default".to_string();
 
         // Test successful switch
-        let result = collection.switch("dev");
+        let result = collection.switch("dev", &os);
         assert!(result.is_ok());
         assert_eq!(result.unwrap().name, "dev");
 
         // Test switch to non-existent agent
-        let result = collection.switch("nonexistent");
+        let result = collection.switch("nonexistent", &os);
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
     }
@@ -1578,5 +1609,95 @@ mod tests {
         // Test resolve_prompt should fail gracefully
         let result = agent.resolve_prompt();
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_path_identifier() {
+        use std::path::PathBuf;
+
+        // Create a mock Os for testing
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Get the actual OS paths for testing
+        let local_dir = directories::chat_local_agent_dir(&os).unwrap();
+        let global_dir = directories::chat_global_agent_path(&os).unwrap();
+
+        // Test workspace agent path using actual OS paths
+        let mut agent = Agent::default();
+        agent.path = Some(local_dir.join("team/assistant.json"));
+        assert_eq!(agent.path_identifier(&os), Some("team/assistant".to_string()));
+
+        // Test global agent path using actual OS paths
+        agent.path = Some(global_dir.join("org/specialist.json"));
+        assert_eq!(agent.path_identifier(&os), Some("org/specialist".to_string()));
+
+        // Test nested path using actual OS paths
+        agent.path = Some(global_dir.join("company/team/expert.json"));
+        assert_eq!(agent.path_identifier(&os), Some("company/team/expert".to_string()));
+
+        // Test simple filename (fallback) - path that doesn't match agent directories
+        agent.path = Some(PathBuf::from("/some/other/path/simple.json"));
+        assert_eq!(agent.path_identifier(&os), Some("simple".to_string()));
+
+        // Test no path
+        agent.path = None;
+        assert_eq!(agent.path_identifier(&os), None);
+
+        // Test cross-platform path normalization using actual OS paths
+        agent.path = Some(global_dir.join("dev").join("helper.json"));
+        assert_eq!(agent.path_identifier(&os), Some("dev/helper".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_switch_with_path_identifier() {
+        let mut collection = Agents::default();
+        let os = crate::os::Os::new().await.unwrap();
+
+        // Get the actual OS paths for testing
+        let global_dir = directories::chat_global_agent_path(&os).unwrap();
+
+        // Create agents with different paths using actual OS paths
+        let mut agent1 = Agent {
+            name: "helper".to_string(),
+            ..Default::default()
+        };
+        agent1.path = Some(global_dir.join("dev/helper.json"));
+
+        let mut agent2 = Agent {
+            name: "assistant".to_string(),
+            ..Default::default()
+        };
+        agent2.path = Some(global_dir.join("team/assistant.json"));
+
+        collection.agents.insert("helper".to_string(), agent1);
+        collection.agents.insert("assistant".to_string(), agent2);
+        collection.active_idx = "helper".to_string();
+
+        // Test switch by JSON name (existing behavior)
+        let result = collection.switch("assistant", &os);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "assistant");
+
+        // Test switch by path identifier (new behavior)
+        let result = collection.switch("dev/helper", &os);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "helper");
+
+        // Test switch by nested path identifier
+        let result = collection.switch("team/assistant", &os);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().name, "assistant");
+
+        // Test switch to non-existent agent (both name and path)
+        let result = collection.switch("nonexistent", &os);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
+
+        let result = collection.switch("nonexistent/path", &os);
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "No agent with name nonexistent/path found"
+        );
     }
 }
