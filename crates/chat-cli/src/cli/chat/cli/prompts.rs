@@ -51,6 +51,33 @@ pub enum GetPromptError {
     Service(#[from] rmcp::ServiceError),
 }
 
+/// Formats a prompt description for display in the prompts list.
+///
+/// Handles None and empty descriptions by returning a placeholder.
+/// For multi-line descriptions, only the first line is returned.
+fn format_description(description: Option<&String>) -> String {
+    match description {
+        Some(desc) if !desc.trim().is_empty() => {
+            // Take only the first line for multi-line descriptions
+            desc.lines().next().unwrap_or("").to_string()
+        },
+        _ => "(no description)".to_string(),
+    }
+}
+
+/// Truncates a description string to the specified maximum length.
+///
+/// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
+/// to ensure clean formatting.
+fn truncate_description(text: &str, max_length: usize) -> String {
+    if text.len() <= max_length {
+        text.to_string()
+    } else {
+        let truncated = &text[..max_length.saturating_sub(3)];
+        format!("{}...", truncated.trim_end())
+    }
+}
+
 /// Command-line arguments for prompt operations
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -83,47 +110,9 @@ impl PromptsArgs {
 
         let terminal_width = session.terminal_width();
         let prompts = session.conversation.tool_manager.list_prompts().await?;
+
+        // First pass: find longest name and collect filtered prompts
         let mut longest_name = "";
-        let arg_pos = {
-            let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
-            if optimal_case > terminal_width {
-                terminal_width / 3
-            } else {
-                optimal_case
-            }
-        };
-        // Add usage guidance at the top
-        queue!(
-            session.stderr,
-            style::Print("\n"),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Usage: "),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("You can use a prompt by typing "),
-            style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Green),
-            style::Print("'@<prompt name> [...args]'"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("\n\n"),
-        )?;
-        queue!(
-            session.stderr,
-            style::Print("\n"),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Prompt"),
-            style::SetAttribute(Attribute::Reset),
-            style::Print({
-                let name_width = UnicodeWidthStr::width("Prompt");
-                let padding = arg_pos.saturating_sub(name_width);
-                " ".repeat(padding)
-            }),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Arguments (* = required)"),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("\n"),
-            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-        )?;
         let mut prompts_by_server: Vec<_> = prompts
             .iter()
             .fold(
@@ -146,6 +135,53 @@ impl PromptsArgs {
             .collect();
         prompts_by_server.sort_by_key(|(server_name, _)| server_name.as_str());
 
+        // Calculate positions for three-column layout: Prompt | Description | Arguments
+        let prompt_col_width = (UnicodeWidthStr::width(longest_name) + 4).max(20); // Min 20 chars for "Prompt"
+        let description_col_width = 40; // Fixed width for descriptions
+        let description_pos = prompt_col_width;
+        let arguments_pos = description_pos + description_col_width;
+
+        // Add usage guidance at the top
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("You can use a prompt by typing "),
+            style::SetAttribute(Attribute::Bold),
+            style::SetForegroundColor(Color::Green),
+            style::Print("'@<prompt name> [...args]'"),
+            style::SetForegroundColor(Color::Reset),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Print header with three columns
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print({
+                let padding = description_pos.saturating_sub(UnicodeWidthStr::width("Prompt"));
+                " ".repeat(padding)
+            }),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Description"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print({
+                let padding = arguments_pos.saturating_sub(description_pos + UnicodeWidthStr::width("Description"));
+                " ".repeat(padding)
+            }),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Arguments (* = required)"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+        )?;
+
         for (i, (server_name, bundles)) in prompts_by_server.iter_mut().enumerate() {
             bundles.sort_by_key(|bundle| &bundle.prompt_get.name);
 
@@ -160,42 +196,48 @@ impl PromptsArgs {
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n"),
             )?;
+
             for bundle in bundles {
+                let prompt_name = &bundle.prompt_get.name;
+                let description = format_description(bundle.prompt_get.description.as_ref());
+                let truncated_desc = truncate_description(&description, 40);
+
+                // Print prompt name
+                queue!(session.stderr, style::Print("- "), style::Print(prompt_name),)?;
+
+                // Print description with proper alignment
+                let name_width = UnicodeWidthStr::width(prompt_name.as_str()) + 2; // +2 for "- "
+                let description_padding = description_pos.saturating_sub(name_width);
                 queue!(
                     session.stderr,
-                    style::Print("- "),
-                    style::Print(&bundle.prompt_get.name),
-                    style::Print({
-                        if bundle
-                            .prompt_get
-                            .arguments
-                            .as_ref()
-                            .is_some_and(|args| !args.is_empty())
-                        {
-                            let name_width = UnicodeWidthStr::width(bundle.prompt_get.name.as_str());
-                            let padding = arg_pos
-                                .saturating_sub(name_width)
-                                .saturating_sub(UnicodeWidthStr::width("- "));
-                            " ".repeat(padding.max(1))
-                        } else {
-                            "\n".to_owned()
-                        }
-                    })
+                    style::Print(" ".repeat(description_padding)),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(&truncated_desc),
+                    style::SetForegroundColor(Color::Reset),
                 )?;
+
+                // Print arguments if they exist
                 if let Some(args) = bundle.prompt_get.arguments.as_ref() {
-                    for (i, arg) in args.iter().enumerate() {
-                        queue!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(match arg.required {
-                                Some(true) => format!("{}*", arg.name),
-                                _ => arg.name.clone(),
-                            }),
-                            style::SetForegroundColor(Color::Reset),
-                            style::Print(if i < args.len() - 1 { ", " } else { "\n" }),
-                        )?;
+                    if !args.is_empty() {
+                        let current_pos = description_pos + UnicodeWidthStr::width(truncated_desc.as_str());
+                        let arguments_padding = arguments_pos.saturating_sub(current_pos);
+                        queue!(session.stderr, style::Print(" ".repeat(arguments_padding)))?;
+
+                        for (i, arg) in args.iter().enumerate() {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::DarkGrey),
+                                style::Print(match arg.required {
+                                    Some(true) => format!("{}*", arg.name),
+                                    _ => arg.name.clone(),
+                                }),
+                                style::SetForegroundColor(Color::Reset),
+                                style::Print(if i < args.len() - 1 { ", " } else { "" }),
+                            )?;
+                        }
                     }
                 }
+                queue!(session.stderr, style::Print("\n"))?;
             }
         }
 
@@ -299,5 +341,64 @@ impl PromptsSubcommand {
             PromptsSubcommand::List { .. } => "list",
             PromptsSubcommand::Get { .. } => "get",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_description() {
+        // Test normal description
+        let desc = Some("This is a test description".to_string());
+        assert_eq!(format_description(desc.as_ref()), "This is a test description");
+
+        // Test None description
+        assert_eq!(format_description(None), "(no description)");
+
+        // Test empty description
+        let empty_desc = Some("".to_string());
+        assert_eq!(format_description(empty_desc.as_ref()), "(no description)");
+
+        // Test whitespace-only description
+        let whitespace_desc = Some("   \n\t  ".to_string());
+        assert_eq!(format_description(whitespace_desc.as_ref()), "(no description)");
+
+        // Test multi-line description (should take first line)
+        let multiline_desc = Some("First line\nSecond line\nThird line".to_string());
+        assert_eq!(format_description(multiline_desc.as_ref()), "First line");
+    }
+
+    #[test]
+    fn test_truncate_description() {
+        // Test normal length
+        let short = "Short description";
+        assert_eq!(truncate_description(short, 40), "Short description");
+
+        // Test truncation
+        let long =
+            "This is a very long description that should be truncated because it exceeds the maximum length limit";
+        let result = truncate_description(long, 40);
+        assert!(result.len() <= 40);
+        assert!(result.ends_with("..."));
+        // Length may be less than 40 due to trim_end() removing trailing spaces
+        assert!(result.len() >= 37); // At least max_length - 3 chars
+
+        // Test exact length
+        let exact = "A".repeat(40);
+        assert_eq!(truncate_description(&exact, 40), exact);
+
+        // Test very short max length
+        let result = truncate_description("Hello world", 5);
+        assert_eq!(result, "He...");
+        assert_eq!(result.len(), 5);
+
+        // Test space trimming before ellipsis
+        let with_space = "Prompt to explain available tools and how";
+        let result = truncate_description(with_space, 40);
+        assert!(!result.contains(" ..."));
+        assert!(result.ends_with("..."));
+        assert_eq!(result, "Prompt to explain available tools and...");
     }
 }
