@@ -50,6 +50,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Custom Commands",
+        description: "Enables user-defined custom commands (/commands, /project:name, /user:name)",
+        setting_key: Setting::EnabledCommands,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]

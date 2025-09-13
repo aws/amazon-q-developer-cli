@@ -19,6 +19,8 @@ package-lock.json
 *.asc
 coverage/
 .turbo
+.amazonq/*
+!.amazonq/commands/
 
 # Python
 __pycache__

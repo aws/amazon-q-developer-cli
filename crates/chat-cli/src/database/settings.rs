@@ -25,6 +25,8 @@ pub enum Setting {
     ShareCodeWhispererContent,
     #[strum(message = "Enable thinking tool for complex reasoning (boolean)")]
     EnabledThinking,
+    #[strum(message = "Enable custom commands functionality (boolean)")]
+    EnabledCommands, // NEW: Add custom commands setting
     #[strum(message = "Enable knowledge base functionality (boolean)")]
     EnabledKnowledge,
     #[strum(message = "Default file patterns to include in knowledge base (array)")]
@@ -86,6 +88,7 @@ impl AsRef<str> for Setting {
             Self::OldClientId => "telemetryClientId",
             Self::ShareCodeWhispererContent => "codeWhisperer.shareCodeWhispererContentWithAWS",
             Self::EnabledThinking => "chat.enableThinking",
+            Self::EnabledCommands => "chat.enableCommands", // NEW: Add commands setting key
             Self::EnabledKnowledge => "chat.enableKnowledge",
             Self::KnowledgeDefaultIncludePatterns => "knowledge.defaultIncludePatterns",
             Self::KnowledgeDefaultExcludePatterns => "knowledge.defaultExcludePatterns",
@@ -131,6 +134,7 @@ impl TryFrom<&str> for Setting {
             "telemetryClientId" => Ok(Self::OldClientId),
             "codeWhisperer.shareCodeWhispererContentWithAWS" => Ok(Self::ShareCodeWhispererContent),
             "chat.enableThinking" => Ok(Self::EnabledThinking),
+            "chat.enableCommands" => Ok(Self::EnabledCommands), // NEW: Add commands setting parsing
             "chat.enableKnowledge" => Ok(Self::EnabledKnowledge),
             "knowledge.defaultIncludePatterns" => Ok(Self::KnowledgeDefaultIncludePatterns),
             "knowledge.defaultExcludePatterns" => Ok(Self::KnowledgeDefaultExcludePatterns),

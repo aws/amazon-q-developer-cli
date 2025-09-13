@@ -1,3 +1,8 @@
+pub mod bash_preprocessor; // NEW: Add bash preprocessor module
+pub mod command_crud; // NEW: Add command CRUD operations module
+pub mod command_frontmatter; // NEW: Add command frontmatter module
+pub mod command_manager; // NEW: Add command manager module
+pub mod command_types; // NEW: Add command types module
 pub mod consts;
 pub mod directories;
 pub mod knowledge_store;

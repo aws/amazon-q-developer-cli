@@ -8,13 +8,16 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
+- [`commands`](#commands-tool) — Manage custom commands within the chat session.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
 - [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
 
-Execute the specified bash command.
+Execute the specified bash command on Unix-like systems (Linux, macOS).
+
+> **Note**: On Windows systems, the `execute_cmd` tool is used instead for executing command prompt commands.
 
 ### Configuration
 
@@ -116,6 +119,34 @@ Store and retrieve information in a knowledge base across chat sessions. Provide
 
 This tool has no configuration options.
 
+## Commands Tool (experimental)
+
+Manage custom commands within the chat session. This tool provides the underlying functionality for the `/commands` command system, allowing creation, modification, and execution of custom command templates.
+
+### Configuration
+
+The Commands tool itself has no direct configuration options, but its availability is controlled by a global setting:
+
+```bash
+q settings chat.enableCommands true
+```
+
+### Usage
+
+The Commands tool is used internally by the `/commands` command system:
+
+- `/commands add <name>` - Create new custom commands
+- `/commands show` - List available commands  
+- `/commands remove <name>` - Delete commands
+- `/commands update <name>` - Edit existing commands
+- `/commands clear` - Remove multiple commands
+
+Custom commands can then be executed using:
+- `/project:<name>` - Execute project-scoped commands
+- `/user:<name>` - Execute user-scoped commands
+
+See the [Custom Commands documentation](./custom-commands.md) for detailed usage information.
+
 ## Thinking Tool (experimental)
 
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
@@ -192,3 +223,25 @@ If a tool is not in the `allowedTools` list, the user will be prompted for permi
 Some tools have default permission behaviors:
 - `fs_read` and `report_issue` are trusted by default
 - `execute_bash`, `fs_write`, and `use_aws` prompt for permission by default, but can be configured to allow specific commands/paths/services
+
+## Default Tool Permissions
+
+Built-in tools have different default permission levels:
+
+### Always Trusted (No Prompt Required)
+- **`fs_read`** - Reading files and directories is considered safe
+- **`report_issue`** - Opening GitHub issue templates is considered safe  
+- **`thinking`** - Internal reasoning mechanism (prerelease feature)
+
+### Configurable Trust
+These tools prompt for permission by default but can be configured to allow specific operations without prompting:
+
+- **`execute_bash`/`execute_cmd`** - Can be configured to allow specific commands or read-only operations
+- **`fs_write`** - Can be configured to allow writing to specific paths
+- **`use_aws`** - Can be configured to allow specific AWS services
+
+### Session-Based Trust
+- **`knowledge`** - Prompts for permission but can be trusted for the session
+- **`commands`** - Prompts for permission but can be trusted for the session
+
+Use the `/tools trust <tool_name>` command to trust tools for the current session, or configure them in your agent file for persistent trust.
