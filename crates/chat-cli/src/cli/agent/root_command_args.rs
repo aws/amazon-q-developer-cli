@@ -287,7 +287,7 @@ impl AgentArgs {
             },
             Some(AgentSubcommands::SetDefault { name }) => {
                 let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
-                match agents.switch(&name) {
+                match agents.switch(os, &name) {
                     Ok(agent) => {
                         os.database
                             .settings
@@ -353,7 +353,7 @@ pub async fn create_agent(
     }
 
     let prepopulated_content = if let Some(from) = from {
-        let mut agent_to_copy = agents.switch(from.as_str())?.clone();
+        let mut agent_to_copy = agents.switch(os, from.as_str())?.clone();
         agent_to_copy.name = name.clone();
         agent_to_copy
     } else {
