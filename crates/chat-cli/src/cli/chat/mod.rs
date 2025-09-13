@@ -132,6 +132,7 @@ use super::agent::{
     DEFAULT_AGENT_NAME,
     PermissionEvalResult,
 };
+use super::agent::hook::HookTrigger;
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
     self,
@@ -2232,6 +2233,33 @@ impl ChatSession {
                 });
             }
 
+            // Execute attention hook for tool approval
+            if !allowed {
+                if let Some(context_manager) = &mut self.conversation.context_manager {
+                    // Get tool information before mutable borrow
+                    let tool_name = tool.name.clone();
+                    let tool_command_raw = format!("{:?}", tool.tool);
+                    let tool_command = crate::cli::chat::util::truncate_safe(&tool_command_raw, 1024).to_string();
+
+                    let mut env_vars = std::collections::HashMap::new();
+                    env_vars.insert("ATTENTION_REASON".to_string(), "tool_approval".to_string());
+                    env_vars.insert("TOOL_NAME".to_string(), tool_name);
+                    env_vars.insert("TOOL_COMMAND".to_string(), tool_command);
+
+                    if let Err(e) = context_manager
+                        .run_hooks(
+                            HookTrigger::AgentNeedsAttention,
+                            &mut self.stderr,
+                            None,
+                            Some(&env_vars),
+                        )
+                        .await
+                    {
+                        error!("Failed to execute agent attention hooks: {}", e);
+                    }
+                }
+            }
+
             if os
                 .database
                 .settings
@@ -2754,6 +2782,23 @@ impl ChatSession {
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
+
+            // Trigger attention hook for final response completion (no tools suggested)
+            if let Some(context_manager) = &mut self.conversation.context_manager {
+                let mut env_vars = std::collections::HashMap::new();
+                env_vars.insert("ATTENTION_REASON".to_string(), "agent_done".to_string());
+                if let Err(e) = context_manager
+                    .run_hooks(
+                        HookTrigger::AgentNeedsAttention,
+                        &mut self.stderr,
+                        None,
+                        Some(&env_vars),
+                    )
+                    .await
+                {
+                    error!("Failed to execute agent attention hooks (agent_done): {}", e);
+                }
+            }
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,

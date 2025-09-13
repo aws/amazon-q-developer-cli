@@ -248,10 +248,11 @@ impl ContextManager {
         trigger: HookTrigger,
         output: &mut impl Write,
         prompt: Option<&str>,
+        additional_env: Option<&HashMap<String, String>>,
     ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
-        self.hook_executor.run_hooks(hooks, output, prompt).await
+        self.hook_executor.run_hooks(hooks, output, prompt, additional_env).await
     }
 }
 
