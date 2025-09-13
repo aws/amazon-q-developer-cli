@@ -57,7 +57,7 @@ use crate::cli::agent::{
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
-pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
+pub const DEFAULT_APPROVE: [&str; 0] = [];
 pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",

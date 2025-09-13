@@ -109,28 +109,32 @@ impl FsRead {
             allowed_paths: Vec<String>,
             #[serde(default)]
             denied_paths: Vec<String>,
-            #[serde(default = "default_allow_read_only")]
+            #[serde(default)]
             allow_read_only: bool,
         }
 
-        fn default_allow_read_only() -> bool {
-            true
-        }
-
         let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_read");
-        match agent.tools_settings.get("fs_read") {
-            Some(settings) => {
+        let settings = agent.tools_settings.get("fs_read").cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
+        
+        {
                 let Settings {
-                    allowed_paths,
+                    mut allowed_paths,
                     denied_paths,
                     allow_read_only,
-                } = match serde_json::from_value::<Settings>(settings.clone()) {
+                } = match serde_json::from_value::<Settings>(settings) {
                     Ok(settings) => settings,
                     Err(e) => {
                         error!("Failed to deserialize tool settings for fs_read: {:?}", e);
                         return PermissionEvalResult::Ask;
                     },
                 };
+                
+                // Always add current working directory to allowed paths
+                if let Ok(cwd) = os.env.current_dir() {
+                    allowed_paths.push(cwd.to_string_lossy().to_string());
+                }
+                
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
@@ -259,10 +263,7 @@ impl FsRead {
                         PermissionEvalResult::Ask
                     },
                 }
-            },
-            None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => PermissionEvalResult::Ask,
-        }
+            }
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
@@ -862,6 +863,7 @@ fn format_mode(mode: u32) -> [char; 9] {
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
+    use std::path::PathBuf;
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
@@ -1397,7 +1399,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm() {
+    async fn test_eval_perm_denied_path() {
         const DENIED_PATH_OR_FILE: &str = "/some/denied/path";
         const DENIED_PATH_OR_FILE_GLOB: &str = "/denied/glob/**/path";
 
@@ -1446,5 +1448,89 @@ mod tests {
                 if deny_list.iter().filter(|p| *p == DENIED_PATH_OR_FILE_GLOB).collect::<Vec<_>>().len() == 2
                 && deny_list.iter().filter(|p| *p == DENIED_PATH_OR_FILE).collect::<Vec<_>>().len() == 2
         ));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_allowed_path_and_cwd() {
+        
+        // by default the fake env uses "/" as the CWD.
+        // change it to a sub folder so we can test fs_read reading files outside CWD
+        let os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(PathBuf::from("/home/user"));
+        
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::new();
+                map.insert(
+                    ToolSettingTarget("fs_read".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": ["/explicitly/allowed/path"]
+                    }),
+                );
+                map
+            },
+            ..Default::default() // Not in allowed_tools, allow_read_only = false
+        };
+
+        // Test 1: Explicitly allowed path should work
+        let allowed_tool = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/explicitly/allowed/path", "mode": "Directory" },
+                { "path": "/explicitly/allowed/path/file.txt", "mode": "Line" },
+            ]
+        })).unwrap();
+        let res = allowed_tool.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test 2: CWD should always be allowed
+        let cwd_tool = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/home/user/", "mode": "Directory" },
+                { "path": "/home/user/file.txt", "mode": "Line" },
+            ]
+        })).unwrap();
+        let res = cwd_tool.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test 3: Outside CWD and not explicitly allowed should ask
+        let outside_tool = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/tmp/not/allowed/file.txt", "mode": "Line" }
+            ]
+        })).unwrap();
+        let res = outside_tool.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_no_settings_cwd_behavior() {
+        let os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(PathBuf::from("/home/user"));
+        
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: HashMap::new(), // No fs_read settings
+            ..Default::default()
+        };
+
+        // Test 1: CWD should be allowed even with no settings
+        let cwd_tool = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/home/user/", "mode": "Directory" },
+                { "path": "/home/user/file.txt", "mode": "Line" },
+            ]
+        })).unwrap();
+        let res = cwd_tool.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test 2: Outside CWD should ask for permission
+        let outside_tool = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "/tmp/not/allowed/file.txt", "mode": "Line" }
+            ]
+        })).unwrap();
+        let res = outside_tool.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
     }
 }
