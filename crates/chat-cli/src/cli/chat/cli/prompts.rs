@@ -16,6 +16,10 @@ use crossterm::{
     execute,
     queue,
 };
+use rmcp::model::{
+    PromptMessage,
+    PromptMessageContent,
+};
 use serde_json::Value;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
@@ -903,7 +907,11 @@ impl PromptsSubcommand {
             .get_prompt(name.clone(), arguments)
             .await
         {
-            Ok(resp) => resp,
+            Ok(resp) => {
+                // Display the fetched prompt content to the user
+                display_prompt_content(&name, &resp.messages, session)?;
+                resp
+            },
             Err(e) => {
                 match e {
                     GetPromptError::AmbiguousPrompt(prompt_name, alt_msg) => {
@@ -1316,4 +1324,61 @@ mod tests {
             "\n- @server1/test_prompt\n- @server2/test_prompt\n- @server3/test_prompt\n"
         );
     }
+}
+
+/// Display fetched prompt content to the user before AI processing
+fn display_prompt_content(
+    prompt_name: &str,
+    messages: &[PromptMessage],
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
+    fn stringify_prompt_message_content(content: &PromptMessageContent) -> String {
+        match content {
+            PromptMessageContent::Text { text } => text.clone(),
+            PromptMessageContent::Image { image } => image.raw.data.clone(),
+            PromptMessageContent::Resource { resource } => match &resource.raw.resource {
+                rmcp::model::ResourceContents::TextResourceContents {
+                    uri, mime_type, text, ..
+                } => {
+                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                    format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+                },
+                rmcp::model::ResourceContents::BlobResourceContents { uri, mime_type, .. } => {
+                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                    format!("Blob resource of uri: {uri}, mime_type: {mime_type}")
+                },
+            },
+            PromptMessageContent::ResourceLink { link } => {
+                format!("Resource link with uri: {}, name: {}", link.raw.uri, link.raw.name)
+            },
+        }
+    }
+
+    queue!(
+        session.stderr,
+        style::Print("\n"),
+        style::SetForegroundColor(Color::Yellow),
+        style::Print("Fetched prompt: "),
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(prompt_name),
+        style::SetForegroundColor(Color::Reset),
+        style::Print("\n\n"),
+    )?;
+
+    for message in messages {
+        let content = stringify_prompt_message_content(&message.content);
+        if !content.trim().is_empty() {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(content),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+    }
+
+    queue!(session.stderr, style::Print("\n"))?;
+    execute!(session.stderr)?;
+    Ok(())
 }
