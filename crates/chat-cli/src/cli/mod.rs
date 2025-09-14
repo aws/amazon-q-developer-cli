@@ -1,3 +1,4 @@
+mod acp;
 mod agent;
 pub mod chat;
 mod debug;
@@ -15,6 +16,7 @@ use std::io::{
 };
 use std::process::ExitCode;
 
+use acp::AcpArgs;
 use agent::AgentArgs;
 pub use agent::{
     Agent,
@@ -90,6 +92,8 @@ impl OutputFormat {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum RootSubcommand {
+    /// Agent Client Protocol server
+    Acp(AcpArgs),
     /// Manage agents
     Agent(AgentArgs),
     /// AI assistant in your terminal
@@ -158,6 +162,7 @@ impl RootSubcommand {
         }
 
         match self {
+            Self::Acp(args) => args.run(os).await,
             Self::Agent(args) => args.execute(os).await,
             Self::Diagnostic(args) => args.execute(os).await,
             Self::Login(args) => args.execute(os).await,
@@ -182,6 +187,7 @@ impl Default for RootSubcommand {
 impl Display for RootSubcommand {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let name = match self {
+            Self::Acp(_) => "acp",
             Self::Agent(_) => "agent",
             Self::Chat(_) => "chat",
             Self::Login(_) => "login",

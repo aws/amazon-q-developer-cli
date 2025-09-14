@@ -16,6 +16,7 @@ default = []
 wayland = ["arboard/wayland-data-control"]
 
 [dependencies]
+agent-client-protocol.workspace = true
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true

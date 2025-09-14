@@ -79,6 +79,8 @@ pub enum Setting {
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
+    #[strum(message = "Enable Agent Client Protocol server (boolean)")]
+    EnabledAcp,
 }
 
 impl AsRef<str> for Setting {
@@ -115,6 +117,7 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
+            Self::EnabledAcp => "acp.enabled",
         }
     }
 }
@@ -161,6 +164,7 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
+            "acp.enabled" => Ok(Self::EnabledAcp),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
