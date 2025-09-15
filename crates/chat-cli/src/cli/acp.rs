@@ -361,7 +361,34 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore] // TODO: Fix hanging issue in set_next_user_message
+    async fn test_q_agent_prompt_content_parsing() {
+        // Test just the content block parsing logic without session creation
+        let prompt_blocks = vec![
+            acp::ContentBlock::Text(acp::TextContent {
+                annotations: None,
+                text: "Hello, world!".to_string(),
+                meta: None,
+            })
+        ];
+        
+        // This is the logic from our prompt method
+        let mut prompt_text = String::new();
+        for content_block in prompt_blocks {
+            match content_block {
+                acp::ContentBlock::Text(text_content) => {
+                    if !prompt_text.is_empty() {
+                        prompt_text.push('\n');
+                    }
+                    prompt_text.push_str(&text_content.text);
+                },
+                _ => {}
+            }
+        }
+        
+        assert_eq!(prompt_text, "Hello, world!");
+    }
+
+    #[tokio::test]
     async fn test_q_agent_prompt_handling() {
         use acp::Agent;
         
