@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -5,8 +6,12 @@ use agent_client_protocol as acp;
 use clap::Parser;
 use eyre::Result;
 use serde_json::value::RawValue;
+use tokio::sync::RwLock;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
+use crate::cli::agent::Agents;
+use crate::cli::ConversationState;
+use crate::cli::chat::tool_manager::ToolManager;
 use crate::database::settings::Setting;
 use crate::os::Os;
 
@@ -19,11 +24,17 @@ pub struct AcpArgs {
 
 struct QAgent {
     _agent_name: String,
+    os: Arc<RwLock<Os>>,
+    sessions: Arc<RwLock<HashMap<String, ConversationState>>>,
 }
 
 impl QAgent {
-    fn new(agent_name: String) -> Self {
-        Self { _agent_name: agent_name }
+    fn new(agent_name: String, os: Os) -> Self {
+        Self { 
+            _agent_name: agent_name,
+            os: Arc::new(RwLock::new(os)),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+        }
     }
 }
 
@@ -35,7 +46,12 @@ impl acp::Agent for QAgent {
         tracing::info!("ACP initialize request: {arguments:?}");
         Ok(acp::InitializeResponse {
             protocol_version: acp::V1,
-            agent_capabilities: acp::AgentCapabilities::default(),
+            agent_capabilities: acp::AgentCapabilities {
+                load_session: true,
+                prompt_capabilities: acp::PromptCapabilities::default(),
+                mcp_capabilities: acp::McpCapabilities::default(),
+                meta: None,
+            },
             auth_methods: Vec::new(),
             meta: None,
         })
@@ -51,18 +67,71 @@ impl acp::Agent for QAgent {
 
     async fn new_session(
         &self,
-        _arguments: acp::NewSessionRequest,
+        arguments: acp::NewSessionRequest,
     ) -> Result<acp::NewSessionResponse, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
+        tracing::info!("ACP new_session request: {arguments:?}");
+        
+        // Generate a new session ID
+        let session_id = uuid::Uuid::new_v4().to_string();
+        
+        // Get OS reference
+        let mut os = self.os.write().await;
+        
+        // Create agents (using default for now)
+        let agents = Agents::default();
+        
+        // Create tool manager
+        let mut tool_manager = ToolManager::default();
+        let tool_config = tool_manager.load_tools(&mut *os, &mut vec![]).await
+            .map_err(|e| {
+                tracing::error!("Failed to load tools: {}", e);
+                acp::Error::internal_error()
+            })?;
+        
+        // Create new conversation state
+        let conversation = ConversationState::new(
+            &session_id,
+            agents,
+            tool_config,
+            tool_manager,
+            None, // model_id
+            &*os,
+            false, // mcp_enabled for now
+        ).await;
+        
+        // Store the session
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(session_id.clone(), conversation);
+        
+        tracing::info!("Created new ACP session: {}", session_id);
+        
+        Ok(acp::NewSessionResponse {
+            session_id: acp::SessionId(session_id.into()),
+            modes: None,
+            meta: None,
+        })
     }
 
     async fn load_session(
         &self,
-        _arguments: acp::LoadSessionRequest,
+        arguments: acp::LoadSessionRequest,
     ) -> Result<acp::LoadSessionResponse, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
+        tracing::info!("ACP load_session request: {arguments:?}");
+        
+        let session_id = arguments.session_id.0.as_ref();
+        
+        // Check if session exists
+        let sessions = self.sessions.read().await;
+        if sessions.contains_key(session_id) {
+            tracing::info!("Loaded existing ACP session: {}", session_id);
+            Ok(acp::LoadSessionResponse {
+                modes: None,
+                meta: None,
+            })
+        } else {
+            tracing::warn!("Session not found: {}", session_id);
+            Err(acp::Error::invalid_params())
+        }
     }
 
     async fn prompt(
@@ -117,8 +186,8 @@ impl AcpArgs {
         
         tracing::info!("Starting ACP server with agent: {}", agent_name);
         
-        // Create the Q Agent implementation
-        let agent = QAgent::new(agent_name);
+        // Create the Q Agent implementation (move os into the agent)
+        let agent = QAgent::new(agent_name, os.clone());
         
         // Set up stdio transport
         let stdin = tokio::io::stdin().compat();
@@ -169,7 +238,8 @@ mod tests {
     async fn test_q_agent_initialize() {
         use acp::Agent;
         
-        let agent = QAgent::new("test-agent".to_string());
+        let os = Os::new().await.unwrap();
+        let agent = QAgent::new("test-agent".to_string(), os);
         
         let request = acp::InitializeRequest {
             protocol_version: acp::V1,
@@ -182,29 +252,45 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_q_agent_unimplemented_methods() {
+    async fn test_q_agent_session_lifecycle() {
         use acp::Agent;
         
-        let agent = QAgent::new("test-agent".to_string());
+        let os = Os::new().await.unwrap();
+        let agent = QAgent::new("test-agent".to_string(), os);
         
-        // Test that unimplemented methods return method_not_found
+        // Test new session
         let new_session_req = acp::NewSessionRequest {
             cwd: PathBuf::from("/tmp"),
             mcp_servers: Vec::new(),
             meta: None,
         };
         
-        let result = agent.new_session(new_session_req).await;
-        assert!(result.is_err());
+        let new_session_resp = agent.new_session(new_session_req).await.unwrap();
+        let session_id = new_session_resp.session_id.clone();
         
+        // Verify session was created
+        assert!(!session_id.0.is_empty());
+        
+        // Test load session with existing session
         let load_session_req = acp::LoadSessionRequest {
-            session_id: acp::SessionId("test".into()),
+            session_id: session_id.clone(),
             cwd: PathBuf::from("/tmp"),
             mcp_servers: Vec::new(),
             meta: None,
         };
         
-        let result = agent.load_session(load_session_req).await;
+        let load_session_resp = agent.load_session(load_session_req).await;
+        assert!(load_session_resp.is_ok());
+        
+        // Test load session with non-existent session
+        let load_nonexistent_req = acp::LoadSessionRequest {
+            session_id: acp::SessionId("nonexistent".into()),
+            cwd: PathBuf::from("/tmp"),
+            mcp_servers: Vec::new(),
+            meta: None,
+        };
+        
+        let result = agent.load_session(load_nonexistent_req).await;
         assert!(result.is_err());
     }
 }
