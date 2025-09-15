@@ -1833,6 +1833,16 @@ impl ChatSession {
 
         let show_tool_use_confirmation_dialog = !skip_printing_tools && self.pending_tool_index.is_some();
         if show_tool_use_confirmation_dialog {
+            // Send notification when showing confirmation prompt
+            if os
+                .database
+                .settings
+                .get_bool(Setting::ChatEnableNotifications)
+                .unwrap_or(false)
+            {
+                play_notification_bell(true);
+            }
+
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::DarkGrey),
@@ -2194,15 +2204,6 @@ impl ChatSession {
                         tool.name
                     ),
                 });
-            }
-
-            if os
-                .database
-                .settings
-                .get_bool(Setting::ChatEnableNotifications)
-                .unwrap_or(false)
-            {
-                play_notification_bell(!allowed);
             }
 
             // TODO: Control flow is hacky here because of borrow rules
@@ -2686,8 +2687,8 @@ impl ChatSession {
                     .get_bool(Setting::ChatEnableNotifications)
                     .unwrap_or(false)
                 {
-                    // For final responses (no tools suggested), always play the bell
-                    play_notification_bell(tool_uses.is_empty());
+                    // For final responses (no tools suggested), notify completion
+                    play_notification_bell(!tool_uses.is_empty());
                 }
 
                 queue!(self.stderr, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
