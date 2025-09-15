@@ -528,8 +528,8 @@ fn test_compact_messages_to_exclude_show_sumary_command() -> Result<(), Box<dyn 
     let session = get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/clear")?;
-    let response = chat.execute_command("y")?;
+    chat.execute_command("/clear")?;
+    chat.execute_command("y")?;
     let response = chat.execute_command("What is AWS?")?;
     
     println!("📝 AI response: {} bytes", response.len());

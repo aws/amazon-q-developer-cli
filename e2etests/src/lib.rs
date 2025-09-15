@@ -130,7 +130,7 @@ pub mod q_chat_helper {
         }
     }
 
-    /// Execute Q CLI subcommand in normal terminal and return response
+     /// Execute Q CLI subcommand in normal terminal and return response
     pub fn execute_q_subcommand(binary: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
         execute_q_subcommand_with_stdin(binary, args, None)
     }
@@ -160,6 +160,62 @@ pub mod q_chat_helper {
         let stderr = String::from_utf8_lossy(&output.stderr);
         
         Ok(format!("{}{}{}", prompt, stderr, stdout))
+    }
+
+    /// Execute interactive menu selection with binary and args
+    pub fn execute_interactive_menu_selection(binary: &str, args: &[&str], down_arrows: usize) -> Result<String, Error> {
+        let q_binary = std::env::var("Q_CLI_PATH").unwrap_or_else(|_| binary.to_string());
+        let command = format!("{} {}", q_binary, args.join(" "));
+        execute_interactive_menu_selection_with_command(&command, down_arrows)
+    }
+
+    /// Execute interactive menu selection with full command string
+    pub fn execute_interactive_menu_selection_with_command(command: &str, down_arrows: usize) -> Result<String, Error> {
+        let mut session = expectrl::spawn(command)?;
+        session.set_expect_timeout(Some(Duration::from_secs(30)));
+        
+        // Wait for menu to appear and read initial output
+        thread::sleep(Duration::from_secs(3));
+        
+        let mut response = String::new();
+        let mut buffer = [0u8; 1024];
+        
+        // Read initial menu display
+        for _ in 0..5 {
+            if let Ok(bytes_read) = session.try_read(&mut buffer) {
+                if bytes_read > 0 {
+                    response.push_str(&String::from_utf8_lossy(&buffer[..bytes_read]));
+                }
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        
+        // Navigate and select
+        for _ in 0..down_arrows {
+            session.write_all(b"\x1b[B")?;
+            session.flush()?;
+            thread::sleep(Duration::from_millis(300));
+        }
+        
+        session.write_all(b"\r")?;
+        session.flush()?;
+        thread::sleep(Duration::from_secs(2));
+        
+        // Read final response
+        for _ in 0..10 {
+            if let Ok(bytes_read) = session.try_read(&mut buffer) {
+                if bytes_read > 0 {
+                    response.push_str(&String::from_utf8_lossy(&buffer[..bytes_read]));
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        
+        Ok(response)
     }
 
 }

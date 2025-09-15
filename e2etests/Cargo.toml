@@ -35,5 +35,7 @@ ai_prompts = [] # AI Prompts ("What is AWS?", "Hello")
 
 q_subcommand = [] # Q SubCommand (q chat, q doctor, q translate)
 
+todos = []  # todos command
+
 regression = [] # Regression Tests
 sanity = [] # Sanity Tests - Quick smoke tests for basic functionality
