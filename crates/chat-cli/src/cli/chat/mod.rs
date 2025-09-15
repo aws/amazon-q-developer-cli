@@ -5,10 +5,7 @@ mod conversation;
 mod input_source;
 mod message;
 mod parse;
-use std::path::{
-    MAIN_SEPARATOR,
-    PathBuf,
-};
+use std::path::MAIN_SEPARATOR;
 pub mod capture;
 mod line_tracker;
 mod parser;
@@ -149,7 +146,6 @@ use crate::cli::agent::Agents;
 use crate::cli::chat::capture::{
     CAPTURE_MESSAGE_MAX_LENGTH,
     CaptureManager,
-    SHADOW_REPO_DIR,
     truncate_message,
 };
 use crate::cli::chat::cli::SlashCommand;
@@ -175,6 +171,7 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
+use crate::util::directories::get_shadow_repo_dir;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     directories,
@@ -1333,9 +1330,9 @@ impl ChatSession {
         }
 
         // Initialize checkpointing if possible
-        let path = PathBuf::from(SHADOW_REPO_DIR).join(self.conversation.conversation_id());
+        let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
         let start = std::time::Instant::now();
-        let capture_manager = match CaptureManager::auto_init(os, path).await {
+        let capture_manager = match CaptureManager::auto_init(os, &path).await {
             Ok(manager) => {
                 execute!(
                     self.stderr,

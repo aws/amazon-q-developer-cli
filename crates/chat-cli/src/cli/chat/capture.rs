@@ -38,7 +38,7 @@ pub struct CaptureManager {
     pub tag_to_index: HashMap<String, usize>,
     pub num_turns: usize,
     pub num_tools_this_turn: usize,
-
+    // test
     pub last_user_message: Option<String>,
     pub user_message_lock: bool,
 }
