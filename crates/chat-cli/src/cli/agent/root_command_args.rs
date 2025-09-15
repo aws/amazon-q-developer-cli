@@ -46,6 +46,12 @@ pub enum AgentSubcommands {
         #[arg(long, short)]
         from: Option<String>,
     },
+    /// Edit an existing agent config
+    Edit {
+        /// Name of the agent to edit
+        #[arg(long, short)]
+        name: String,
+    },
     /// Validate a config with the given path
     Validate {
         #[arg(long, short)]
@@ -134,6 +140,38 @@ impl AgentArgs {
                 writeln!(
                     stderr,
                     "\n📁 Created agent {} '{}'\n",
+                    name,
+                    path_with_file_name.display()
+                )?;
+            },
+            Some(AgentSubcommands::Edit { name }) => {
+                let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+                let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name).await?;
+
+                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+                let mut cmd = std::process::Command::new(editor_cmd);
+
+                let status = cmd.arg(&path_with_file_name).status()?;
+                if !status.success() {
+                    bail!("Editor process did not exit with success");
+                }
+
+                let Ok(content) = os.fs.read(&path_with_file_name).await else {
+                    bail!(
+                        "Post edit validation failed. Error opening {}. Aborting",
+                        path_with_file_name.display()
+                    );
+                };
+                if let Err(e) = serde_json::from_slice::<Agent>(&content) {
+                    bail!(
+                        "Post edit validation failed for agent '{name}' at path: {}. Malformed config detected: {e}",
+                        path_with_file_name.display()
+                    );
+                }
+
+                writeln!(
+                    stderr,
+                    "\n✏️  Edited agent {} '{}'\n",
                     name,
                     path_with_file_name.display()
                 )?;
@@ -382,6 +420,26 @@ mod tests {
                     name: "some_agent".to_string(),
                     directory: None,
                     from: Some("some_old_agent".to_string())
+                })
+            })
+        );
+    }
+
+    #[test]
+    fn test_agent_subcommand_edit() {
+        assert_parse!(
+            ["agent", "edit", "--name", "existing_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Edit {
+                    name: "existing_agent".to_string(),
+                })
+            })
+        );
+        assert_parse!(
+            ["agent", "edit", "-n", "existing_agent"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Edit {
+                    name: "existing_agent".to_string(),
                 })
             })
         );

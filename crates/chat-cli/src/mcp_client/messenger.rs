@@ -53,6 +53,10 @@ pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
         peer: Option<Peer<RoleClient>>,
     ) -> MessengerResult;
 
+    /// Sends an OAuth authorization link to the consumer
+    /// This function is used to deliver OAuth links that users need to visit for authentication
+    async fn send_oauth_link(&self, link: String) -> MessengerResult;
+
     /// Signals to the orchestrator that a server has started initializing
     async fn send_init_msg(&self) -> MessengerResult;
 
@@ -104,6 +108,10 @@ impl Messenger for NullMessenger {
         _result: Result<ListResourceTemplatesResult>,
         _peer: Option<Peer<RoleClient>>,
     ) -> MessengerResult {
+        Ok(())
+    }
+
+    async fn send_oauth_link(&self, _link: String) -> MessengerResult {
         Ok(())
     }
 

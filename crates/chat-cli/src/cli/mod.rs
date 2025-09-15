@@ -2,7 +2,7 @@ mod agent;
 pub mod chat;
 mod debug;
 mod diagnostics;
-mod feed;
+pub mod feed;
 mod issue;
 mod mcp;
 mod settings;
@@ -142,6 +142,11 @@ impl RootSubcommand {
                 "You are not logged in, please log in with {}",
                 format!("{CLI_BINARY_NAME} login").bold()
             );
+        }
+
+        // Daily heartbeat check
+        if os.database.should_send_heartbeat() && os.telemetry.send_daily_heartbeat().is_ok() {
+            os.database.record_heartbeat_sent().ok();
         }
 
         // Send executed telemetry.

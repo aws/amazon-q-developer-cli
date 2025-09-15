@@ -19,6 +19,7 @@ use crate::telemetry::definitions::metrics::{
     AmazonqMessageResponseError,
     AmazonqProfileState,
     AmazonqStartChat,
+    AmazonqcliDailyHeartbeat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
     CodewhispererterminalAgentContribution,
@@ -499,6 +500,14 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::DailyHeartbeat {} => Some(
+                AmazonqcliDailyHeartbeat {
+                    create_time: self.created_time,
+                    value: None,
+                    source: None,
+                }
+                .into_metric_datum(),
+            ),
         }
     }
 }
@@ -689,6 +698,7 @@ pub enum EventType {
         message_id: Option<String>,
         context_file_length: Option<usize>,
     },
+    DailyHeartbeat {},
 }
 
 #[derive(Debug)]

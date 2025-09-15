@@ -32,6 +32,13 @@ Use `/tangent` or Ctrl+T again:
 Restored conversation from checkpoint (↯). - Returned to main conversation.
 ```
 
+### Exit Tangent Mode with Tail
+Use `/tangent tail` to preserve the last conversation entry (question + answer):
+```
+↯ > /tangent tail
+Restored conversation from checkpoint (↯) with last conversation entry preserved.
+```
+
 ## Usage Examples
 
 ### Example 1: Exploring Alternatives
@@ -93,6 +100,29 @@ Restored conversation from checkpoint (↯).
 > Here's my query: SELECT * FROM orders...
 ```
 
+### Example 4: Keeping Useful Information
+```
+> Help me debug this Python error
+
+I can help you debug that. Could you share the error message?
+
+> /tangent
+Created a conversation checkpoint (↯).
+
+↯ > What are the most common Python debugging techniques?
+
+Here are the most effective Python debugging techniques:
+1. Use print statements strategically
+2. Leverage the Python debugger (pdb)...
+
+↯ > /tangent tail
+Restored conversation from checkpoint (↯) with last conversation entry preserved.
+
+> Here's my error: TypeError: unsupported operand type(s)...
+
+# The preserved entry (question + answer about debugging techniques) is now part of main conversation
+```
+
 ## Configuration
 
 ### Keyboard Shortcut
@@ -131,6 +161,7 @@ q settings introspect.tangentMode true
 2. **Return promptly** - Don't forget you're in tangent mode
 3. **Use for clarification** - Perfect for "wait, what does X mean?" questions
 4. **Experiment safely** - Test ideas without affecting main conversation
+5. **Use `/tangent tail`** - When both the tangent question and answer are useful for main conversation
 
 ## Limitations
 

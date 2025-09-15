@@ -530,6 +530,14 @@
           { "type": "statusCode", "required": false },
           { "type": "codewhispererterminal_clientApplication" }
       ]
+    },
+    {
+      "name": "amazonqcli_dailyHeartbeat",
+      "description": "Daily heartbeat to track active CLI usage",
+      "unit": "None",
+      "metadata": [
+        { "type": "source", "required": false }
+      ]
     }
   ]
 }

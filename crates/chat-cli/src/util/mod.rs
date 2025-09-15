@@ -7,6 +7,7 @@ pub mod spinner;
 pub mod system_info;
 #[cfg(test)]
 pub mod test;
+pub mod ui;
 
 use std::fmt::Display;
 use std::io;

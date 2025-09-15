@@ -58,6 +58,28 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 
 **When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
 
+### TODO Lists
+**Tool name**: `todo_list`
+**Command:** `/todos`  
+**Description:** Enables Q to create and modify TODO lists using the `todo_list` tool and the user to view and manage existing TODO lists using `/todos`.
+
+**Features:**
+- Q will automatically make TODO lists when appropriate or when asked
+- View, manage, and delete TODOs using `/todos`
+- Resume existing TODO lists stored in `.amazonq/cli-todo-lists`
+
+**Usage:**
+```
+/todos clear-finished       # Delete completed TODOs in your working directory
+/todos resume               # Select and resume an existing TODO list
+/todos view                 # Select and view and existing TODO list
+/todos delete               # Select and delete an existing TODO list
+```
+
+**Settings:**
+- `chat.enableTodoList` - Enable/disable TODO list functionality (boolean)
+
+
 ## Managing Experiments
 
 Use the `/experiment` command to toggle experimental features:
@@ -84,11 +106,13 @@ These features are provided to gather feedback and test new capabilities. Please
 All experimental commands are available in the fuzzy search (Ctrl+S):
 - `/experiment` - Manage experimental features
 - `/knowledge` - Knowledge base commands (when enabled)
+- `/todos` - User-controlled TODO list commands (when enabled)
 
 ## Settings Integration
 
 Experiments are stored as settings and persist across sessions:
 - `EnabledKnowledge` - Knowledge experiment state
 - `EnabledThinking` - Thinking experiment state
+- `EnabledTodoList` - TODO list experiment state
 
 You can also manage these through the settings system if needed.
