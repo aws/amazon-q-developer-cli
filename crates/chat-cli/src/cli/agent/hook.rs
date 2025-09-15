@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use schemars::JsonSchema;
@@ -11,9 +10,6 @@ const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_SIZE: usize = 1024 * 10;
 const DEFAULT_CACHE_TTL_SECONDS: u64 = 0;
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
-pub struct Hooks(HashMap<HookTrigger, Hook>);
-
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Eq, PartialEq, JsonSchema, Hash)]
 #[serde(rename_all = "camelCase")]
 pub enum HookTrigger {
@@ -21,6 +17,10 @@ pub enum HookTrigger {
     AgentSpawn,
     /// Triggered per user message submission
     UserPromptSubmit,
+    /// Triggered before tool execution
+    PreToolUse,
+    /// Triggered after tool execution
+    PostToolUse,
 }
 
 impl Display for HookTrigger {
@@ -28,6 +28,8 @@ impl Display for HookTrigger {
         match self {
             HookTrigger::AgentSpawn => write!(f, "agentSpawn"),
             HookTrigger::UserPromptSubmit => write!(f, "userPromptSubmit"),
+            HookTrigger::PreToolUse => write!(f, "preToolUse"),
+            HookTrigger::PostToolUse => write!(f, "postToolUse"),
         }
     }
 }
@@ -61,6 +63,11 @@ pub struct Hook {
     #[serde(default = "Hook::default_cache_ttl_seconds")]
     pub cache_ttl_seconds: u64,
 
+    /// Optional regex matcher for hook
+    /// Currently used for matching tool name of PreToolUse and PostToolUse hook
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matcher: Option<String>,
+
     #[schemars(skip)]
     #[serde(default, skip_serializing)]
     pub source: Source,
@@ -73,6 +80,7 @@ impl Hook {
             timeout_ms: Self::default_timeout_ms(),
             max_output_size: Self::default_max_output_size(),
             cache_ttl_seconds: Self::default_cache_ttl_seconds(),
+            matcher: None,
             source,
         }
     }

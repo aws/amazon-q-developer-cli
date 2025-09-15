@@ -263,12 +263,12 @@ The `hooks` field defines commands to run at specific trigger points. The output
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
+        "command": "ls -la"
       }
     ]
   }

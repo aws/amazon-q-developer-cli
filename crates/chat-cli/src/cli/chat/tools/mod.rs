@@ -271,6 +271,7 @@ pub struct QueuedTool {
     pub name: String,
     pub accepted: bool,
     pub tool: Tool,
+    pub tool_input: serde_json::Value,
 }
 
 /// The schema specification describing a tool's fields.
