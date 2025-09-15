@@ -815,7 +815,7 @@ impl Agents {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "trusted".dark_green().bold(),
+            "fs_read" => "trust working directory".dark_grey(),
             "fs_write" => "not trusted".dark_grey(),
             #[cfg(not(windows))]
             "execute_bash" => "trust read-only commands".dark_grey(),
@@ -1142,9 +1142,9 @@ mod tests {
 
         let label = agents.display_label("fs_read", &ToolOrigin::Native);
         // With no active agent, it should fall back to default permissions
-        // fs_read has a default of "trusted"
+        // fs_read has a default of "trust working directory"
         assert!(
-            label.contains("trusted"),
+            label.contains("trust working directory"),
             "fs_read should show default trusted permission, instead found: {}",
             label
         );
@@ -1173,7 +1173,7 @@ mod tests {
         // Test default permissions for known tools
         let fs_read_label = agents.display_label("fs_read", &ToolOrigin::Native);
         assert!(
-            fs_read_label.contains("trusted"),
+            fs_read_label.contains("trust working directory"),
             "fs_read should be trusted by default, instead found: {}",
             fs_read_label
         );
