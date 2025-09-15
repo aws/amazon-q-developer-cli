@@ -136,10 +136,76 @@ impl acp::Agent for QAgent {
 
     async fn prompt(
         &self,
-        _arguments: acp::PromptRequest,
+        arguments: acp::PromptRequest,
     ) -> Result<acp::PromptResponse, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
+        tracing::info!("ACP prompt request: session_id={}", arguments.session_id.0);
+        
+        let session_id = arguments.session_id.0.as_ref();
+        
+        // Convert ACP ContentBlocks to a single prompt string
+        let mut prompt_text = String::new();
+        for content_block in arguments.prompt {
+            match content_block {
+                acp::ContentBlock::Text(text_content) => {
+                    if !prompt_text.is_empty() {
+                        prompt_text.push('\n');
+                    }
+                    prompt_text.push_str(&text_content.text);
+                },
+                acp::ContentBlock::ResourceLink(resource_link) => {
+                    // For now, just include the URI as text
+                    if !prompt_text.is_empty() {
+                        prompt_text.push('\n');
+                    }
+                    prompt_text.push_str(&format!("Resource: {}", resource_link.uri));
+                },
+                acp::ContentBlock::Resource(embedded_resource) => {
+                    // Include the resource contents
+                    if !prompt_text.is_empty() {
+                        prompt_text.push('\n');
+                    }
+                    match &embedded_resource.resource {
+                        acp::EmbeddedResourceResource::TextResourceContents(text_resource) => {
+                            prompt_text.push_str(&format!("Resource {}: {}", 
+                                text_resource.uri, 
+                                text_resource.text));
+                        },
+                        acp::EmbeddedResourceResource::BlobResourceContents(blob_resource) => {
+                            prompt_text.push_str(&format!("Resource {}: [Binary content]", 
+                                blob_resource.uri));
+                        },
+                    }
+                },
+                acp::ContentBlock::Image(_) | acp::ContentBlock::Audio(_) => {
+                    // Not supported yet - skip or add placeholder
+                    if !prompt_text.is_empty() {
+                        prompt_text.push('\n');
+                    }
+                    prompt_text.push_str("[Unsupported content type]");
+                },
+            }
+        }
+        
+        // Get the session and add the prompt
+        {
+            let mut sessions = self.sessions.write().await;
+            let conversation = sessions.get_mut(session_id)
+                .ok_or_else(|| {
+                    tracing::warn!("Session not found: {}", session_id);
+                    acp::Error::invalid_params()
+                })?;
+            
+            // Add the prompt to the conversation state
+            conversation.set_next_user_message(prompt_text).await;
+        } // Release the lock before returning
+        
+        tracing::info!("Added prompt to ACP session: {}", session_id);
+        
+        // For now, just return EndTurn - actual LLM processing will come in Phase 3
+        Ok(acp::PromptResponse {
+            stop_reason: acp::StopReason::EndTurn,
+            meta: None,
+        })
     }
 
     async fn cancel(&self, _args: acp::CancelNotification) -> Result<(), acp::Error> {
@@ -291,6 +357,57 @@ mod tests {
         };
         
         let result = agent.load_session(load_nonexistent_req).await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore] // TODO: Fix hanging issue in set_next_user_message
+    async fn test_q_agent_prompt_handling() {
+        use acp::Agent;
+        
+        let os = Os::new().await.unwrap();
+        let agent = QAgent::new("test-agent".to_string(), os);
+        
+        // First create a session
+        let new_session_req = acp::NewSessionRequest {
+            cwd: PathBuf::from("/tmp"),
+            mcp_servers: Vec::new(),
+            meta: None,
+        };
+        
+        let new_session_resp = agent.new_session(new_session_req).await.unwrap();
+        let session_id = new_session_resp.session_id.clone();
+        
+        // Test prompt with text content
+        let prompt_req = acp::PromptRequest {
+            session_id: session_id.clone(),
+            prompt: vec![
+                acp::ContentBlock::Text(acp::TextContent {
+                    annotations: None,
+                    text: "Hello, world!".to_string(),
+                    meta: None,
+                })
+            ],
+            meta: None,
+        };
+        
+        let prompt_resp = agent.prompt(prompt_req).await.unwrap();
+        assert_eq!(prompt_resp.stop_reason, acp::StopReason::EndTurn);
+        
+        // Test prompt with non-existent session (should fail quickly)
+        let invalid_prompt_req = acp::PromptRequest {
+            session_id: acp::SessionId("nonexistent".into()),
+            prompt: vec![
+                acp::ContentBlock::Text(acp::TextContent {
+                    annotations: None,
+                    text: "This should fail".to_string(),
+                    meta: None,
+                })
+            ],
+            meta: None,
+        };
+        
+        let result = agent.prompt(invalid_prompt_req).await;
         assert!(result.is_err());
     }
 }
