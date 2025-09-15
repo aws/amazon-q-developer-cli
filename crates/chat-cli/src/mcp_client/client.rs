@@ -346,7 +346,7 @@ impl McpClientService {
                                         );
 
                                         let new_transport =
-                                            get_http_transport(&os_clone, true, &url, Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
+                                            get_http_transport(&os_clone, &url, Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
 
                                         match new_transport {
                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -363,7 +363,7 @@ impl McpClientService {
                                                         // case we would need to have user go through the auth flow
                                                         // again
                                                         let new_transport  =
-                                                            get_http_transport(&os_clone, true, &url, None, &*messenger_dup).await?;
+                                                            get_http_transport(&os_clone, &url, None, &*messenger_dup).await?;
 
                                                         match new_transport {
                                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -519,7 +519,7 @@ impl McpClientService {
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
             TransportType::Http => {
-                let http_transport = get_http_transport(os, false, url, None, messenger).await?;
+                let http_transport = get_http_transport(os, url, None, messenger).await?;
 
                 Ok(Transport::Http(http_transport))
             },
