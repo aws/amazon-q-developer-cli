@@ -256,7 +256,9 @@ Resources can include:
 
 ## Hooks Field
 
-The `hooks` field defines commands to run at specific trigger points. The output of these commands is added to the agent's context.
+The `hooks` field defines commands to run at specific trigger points during agent lifecycle and tool execution.
+
+For detailed information about hook behavior, input/output formats, and examples, see the [Hooks documentation](hooks.md).
 
 ```json
 {
@@ -270,6 +272,22 @@ The `hooks` field defines commands to run at specific trigger points. The output
       {
         "command": "ls -la"
       }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "{ echo \"$(date) - Bash command:\"; cat; echo; } >> /tmp/bash_audit_log"
+      },
+      {
+        "matcher": "use_aws",
+        "command": "{ echo \"$(date) - AWS CLI call:\"; cat; echo; } >> /tmp/aws_audit_log"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "cargo fmt --all"
+      }
     ]
   }
 }
@@ -277,10 +295,13 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
+- `matcher` (optional): Pattern to match tool names for `preToolUse` and `postToolUse` hooks. See [built-in tools documentation](./built-in-tools.md) for available tool names.
 
 Available hook triggers:
-- `agentSpawn`: Triggered when the agent is initialized
-- `userPromptSubmit`: Triggered when the user submits a message
+- `agentSpawn`: Triggered when the agent is initialized.
+- `userPromptSubmit`: Triggered when the user submits a message.
+- `preToolUse`: Triggered before a tool is executed. Can block the tool use.
+- `postToolUse`: Triggered after a tool is executed.
 
 ## UseLegacyMcpJson Field
 
