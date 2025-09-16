@@ -44,7 +44,8 @@ impl Default for TransportType {
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 pub struct CustomToolConfig {
-    /// The type of transport the mcp server is expecting
+    /// The type of transport the mcp server is expecting. For http transport, only url (for now)
+    /// is taken into account.
     #[serde(default)]
     pub r#type: TransportType,
     /// The URL endpoint for HTTP-based MCP servers
