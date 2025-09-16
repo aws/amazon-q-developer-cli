@@ -46,7 +46,11 @@ pub enum CaptureSubcommand {
     },
 
     /// Delete shadow repository
-    Clean,
+    Clean {
+        /// Delete the entire captures root (all sessions)
+        #[arg(long)]
+        all: bool,
+    },
 
     /// Display more information about a turn-level checkpoint
     Expand { tag: String },
@@ -150,15 +154,32 @@ impl CaptureSubcommand {
                     return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
                 },
             },
-            Self::Clean => {
-                match manager.clean(os).await {
+            Self::Clean { all } => {
+                let res = if all {
+                    manager.clean_all_sessions(os).await
+                } else {
+                    manager.clean(os).await
+                };
+                match res {
                     Ok(()) => execute!(
                         session.stderr,
-                        style::Print("Deleted shadow repository.\n".blue().bold())
+                        style::Print(
+                            if all {
+                                "Deleted all session captures under the captures root.\n"
+                            } else {
+                                "Deleted shadow repository for this session.\n"
+                            }
+                            .blue()
+                            .bold()
+                        )
                     )?,
                     Err(e) => {
                         session.conversation.capture_manager = None;
-                        return Err(ChatError::Custom(format!("Could not delete shadow repo: {e}").into()));
+                        return Err(ChatError::Custom(if all {
+                            format!("Could not delete captures root: {e}").into()
+                        } else {
+                            format!("Could not delete shadow repo: {e}").into()
+                        }));
                     },
                 }
                 session.conversation.capture_manager = None;

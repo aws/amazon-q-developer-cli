@@ -169,6 +169,30 @@ impl CaptureManager {
         Ok(())
     }
 
+    /// Delete the entire captures root (i.e., remove all session captures).
+    /// This re-creates the empty root directory after deletion.
+    pub async fn clean_all_sessions(&self, os: &Os) -> Result<()> {
+        let root = self
+            .shadow_repo_path
+            .parent()
+            .ok_or_else(|| eyre!("Could not determine captures root"))?;
+
+        // Safety guard: ensure last component looks like "cli-captures"
+        if root
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.contains("captures"))
+            != Some(true)
+        {
+            bail!("Refusing to delete unexpected parent directory: {}", root.display());
+        }
+
+        println!("Deleting captures root: {}", root.display());
+        os.fs.remove_dir_all(root).await?;
+        os.fs.create_dir_all(root).await?; // recreate empty root
+        Ok(())
+    }
+
     pub fn diff(&self, tag1: &str, tag2: &str) -> Result<String> {
         let _ = self.get_capture(tag1)?;
         let _ = self.get_capture(tag2)?;
