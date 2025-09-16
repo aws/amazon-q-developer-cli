@@ -114,156 +114,156 @@ impl FsRead {
         }
 
         let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_read");
-        let settings = agent.tools_settings.get("fs_read").cloned()
+        let settings = agent
+            .tools_settings
+            .get("fs_read")
+            .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
-        
+
         {
-                let Settings {
-                    mut allowed_paths,
-                    denied_paths,
-                    allow_read_only,
-                } = match serde_json::from_value::<Settings>(settings) {
-                    Ok(settings) => settings,
-                    Err(e) => {
-                        error!("Failed to deserialize tool settings for fs_read: {:?}", e);
-                        return PermissionEvalResult::Ask;
-                    },
-                };
-                
-                // Always add current working directory to allowed paths
-                if let Ok(cwd) = os.env.current_dir() {
-                    allowed_paths.push(cwd.to_string_lossy().to_string());
-                }
-                
-                let allow_set = {
-                    let mut builder = GlobSetBuilder::new();
-                    for path in &allowed_paths {
-                        let Ok(path) = directories::canonicalizes_path(os, path) else {
-                            continue;
-                        };
-                        if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
-                            warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
-                        }
-                    }
-                    builder.build()
-                };
+            let Settings {
+                mut allowed_paths,
+                denied_paths,
+                allow_read_only,
+            } = match serde_json::from_value::<Settings>(settings) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for fs_read: {:?}", e);
+                    return PermissionEvalResult::Ask;
+                },
+            };
 
-                let mut sanitized_deny_list = Vec::<&String>::new();
-                let deny_set = {
-                    let mut builder = GlobSetBuilder::new();
-                    for path in &denied_paths {
-                        let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
-                            continue;
-                        };
-                        match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
-                            Ok(_) => {
-                                // Note that we need to push twice here because for each rule we
-                                // are creating two globs (one for file and one for directory)
-                                sanitized_deny_list.push(path);
-                                sanitized_deny_list.push(path);
-                            },
-                            Err(e) => warn!("Failed to create glob from path given: {path}: {e}. Ignoring."),
-                        }
-                    }
-                    builder.build()
-                };
-
-                match (allow_set, deny_set) {
-                    (Ok(allow_set), Ok(deny_set)) => {
-                        let mut deny_list = Vec::<PermissionEvalResult>::new();
-                        let mut ask = false;
-
-                        for op in &self.operations {
-                            match op {
-                                FsReadOperation::Line(FsLine { path, .. })
-                                | FsReadOperation::Directory(FsDirectory { path, .. })
-                                | FsReadOperation::Search(FsSearch { path, .. }) => {
-                                    let Ok(path) = directories::canonicalizes_path(os, path) else {
-                                        ask = true;
-                                        continue;
-                                    };
-                                    let denied_match_set = deny_set.matches(path.as_ref() as &str);
-                                    if !denied_match_set.is_empty() {
-                                        let deny_res = PermissionEvalResult::Deny({
-                                            denied_match_set
-                                                .iter()
-                                                .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
-                                                .collect::<Vec<_>>()
-                                        });
-                                        deny_list.push(deny_res);
-                                        continue;
-                                    }
-
-                                    // We only want to ask if we are not allowing read only
-                                    // operation
-                                    if !is_in_allowlist
-                                        && !allow_read_only
-                                        && !allow_set.is_match(path.as_ref() as &str)
-                                    {
-                                        ask = true;
-                                    }
-                                },
-                                FsReadOperation::Image(fs_image) => {
-                                    let paths = &fs_image.image_paths;
-                                    let denied_match_set = paths
-                                        .iter()
-                                        .flat_map(|path| {
-                                            let Ok(path) = directories::canonicalizes_path(os, path) else {
-                                                return vec![];
-                                            };
-                                            deny_set.matches(path.as_ref() as &str)
-                                        })
-                                        .collect::<Vec<_>>();
-                                    if !denied_match_set.is_empty() {
-                                        let deny_res = PermissionEvalResult::Deny({
-                                            denied_match_set
-                                                .iter()
-                                                .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
-                                                .collect::<Vec<_>>()
-                                        });
-                                        deny_list.push(deny_res);
-                                        continue;
-                                    }
-
-                                    // We only want to ask if we are not allowing read only
-                                    // operation
-                                    if !is_in_allowlist
-                                        && !allow_read_only
-                                        && !paths.iter().any(|path| allow_set.is_match(path))
-                                    {
-                                        ask = true;
-                                    }
-                                },
-                            }
-                        }
-
-                        if !deny_list.is_empty() {
-                            PermissionEvalResult::Deny({
-                                deny_list.into_iter().fold(Vec::<String>::new(), |mut acc, res| {
-                                    if let PermissionEvalResult::Deny(mut rules) = res {
-                                        acc.append(&mut rules);
-                                    }
-                                    acc
-                                })
-                            })
-                        } else if ask {
-                            PermissionEvalResult::Ask
-                        } else {
-                            PermissionEvalResult::Allow
-                        }
-                    },
-                    (allow_res, deny_res) => {
-                        if let Err(e) = allow_res {
-                            warn!("fs_read failed to build allow set: {:?}", e);
-                        }
-                        if let Err(e) = deny_res {
-                            warn!("fs_read failed to build deny set: {:?}", e);
-                        }
-                        warn!("One or more detailed args failed to parse, falling back to ask");
-                        PermissionEvalResult::Ask
-                    },
-                }
+            // Always add current working directory to allowed paths
+            if let Ok(cwd) = os.env.current_dir() {
+                allowed_paths.push(cwd.to_string_lossy().to_string());
             }
+
+            let allow_set = {
+                let mut builder = GlobSetBuilder::new();
+                for path in &allowed_paths {
+                    let Ok(path) = directories::canonicalizes_path(os, path) else {
+                        continue;
+                    };
+                    if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
+                        warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
+                    }
+                }
+                builder.build()
+            };
+
+            let mut sanitized_deny_list = Vec::<&String>::new();
+            let deny_set = {
+                let mut builder = GlobSetBuilder::new();
+                for path in &denied_paths {
+                    let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
+                        continue;
+                    };
+                    match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
+                        Ok(_) => {
+                            // Note that we need to push twice here because for each rule we
+                            // are creating two globs (one for file and one for directory)
+                            sanitized_deny_list.push(path);
+                            sanitized_deny_list.push(path);
+                        },
+                        Err(e) => warn!("Failed to create glob from path given: {path}: {e}. Ignoring."),
+                    }
+                }
+                builder.build()
+            };
+
+            match (allow_set, deny_set) {
+                (Ok(allow_set), Ok(deny_set)) => {
+                    let mut deny_list = Vec::<PermissionEvalResult>::new();
+                    let mut ask = false;
+
+                    for op in &self.operations {
+                        match op {
+                            FsReadOperation::Line(FsLine { path, .. })
+                            | FsReadOperation::Directory(FsDirectory { path, .. })
+                            | FsReadOperation::Search(FsSearch { path, .. }) => {
+                                let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                    ask = true;
+                                    continue;
+                                };
+                                let denied_match_set = deny_set.matches(path.as_ref() as &str);
+                                if !denied_match_set.is_empty() {
+                                    let deny_res = PermissionEvalResult::Deny({
+                                        denied_match_set
+                                            .iter()
+                                            .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
+                                            .collect::<Vec<_>>()
+                                    });
+                                    deny_list.push(deny_res);
+                                    continue;
+                                }
+
+                                // We only want to ask if we are not allowing read only
+                                // operation
+                                if !is_in_allowlist && !allow_read_only && !allow_set.is_match(path.as_ref() as &str) {
+                                    ask = true;
+                                }
+                            },
+                            FsReadOperation::Image(fs_image) => {
+                                let paths = &fs_image.image_paths;
+                                let denied_match_set = paths
+                                    .iter()
+                                    .flat_map(|path| {
+                                        let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                            return vec![];
+                                        };
+                                        deny_set.matches(path.as_ref() as &str)
+                                    })
+                                    .collect::<Vec<_>>();
+                                if !denied_match_set.is_empty() {
+                                    let deny_res = PermissionEvalResult::Deny({
+                                        denied_match_set
+                                            .iter()
+                                            .filter_map(|i| sanitized_deny_list.get(*i).map(|s| (*s).clone()))
+                                            .collect::<Vec<_>>()
+                                    });
+                                    deny_list.push(deny_res);
+                                    continue;
+                                }
+
+                                // We only want to ask if we are not allowing read only
+                                // operation
+                                if !is_in_allowlist
+                                    && !allow_read_only
+                                    && !paths.iter().any(|path| allow_set.is_match(path))
+                                {
+                                    ask = true;
+                                }
+                            },
+                        }
+                    }
+
+                    if !deny_list.is_empty() {
+                        PermissionEvalResult::Deny({
+                            deny_list.into_iter().fold(Vec::<String>::new(), |mut acc, res| {
+                                if let PermissionEvalResult::Deny(mut rules) = res {
+                                    acc.append(&mut rules);
+                                }
+                                acc
+                            })
+                        })
+                    } else if ask {
+                        PermissionEvalResult::Ask
+                    } else {
+                        PermissionEvalResult::Allow
+                    }
+                },
+                (allow_res, deny_res) => {
+                    if let Err(e) = allow_res {
+                        warn!("fs_read failed to build allow set: {:?}", e);
+                    }
+                    if let Err(e) = deny_res {
+                        warn!("fs_read failed to build deny set: {:?}", e);
+                    }
+                    warn!("One or more detailed args failed to parse, falling back to ask");
+                    PermissionEvalResult::Ask
+                },
+            }
+        }
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
@@ -1452,12 +1452,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allowed_path_and_cwd() {
-        
         // by default the fake env uses "/" as the CWD.
         // change it to a sub folder so we can test fs_read reading files outside CWD
         let os = Os::new().await.unwrap();
         os.env.set_current_dir_for_test(PathBuf::from("/home/user"));
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -1479,7 +1478,8 @@ mod tests {
                 { "path": "/explicitly/allowed/path", "mode": "Directory" },
                 { "path": "/explicitly/allowed/path/file.txt", "mode": "Line" },
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         let res = allowed_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
@@ -1489,7 +1489,8 @@ mod tests {
                 { "path": "/home/user/", "mode": "Directory" },
                 { "path": "/home/user/file.txt", "mode": "Line" },
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         let res = cwd_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
@@ -1498,7 +1499,8 @@ mod tests {
             "operations": [
                 { "path": "/tmp/not/allowed/file.txt", "mode": "Line" }
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
     }
@@ -1507,7 +1509,7 @@ mod tests {
     async fn test_eval_perm_no_settings_cwd_behavior() {
         let os = Os::new().await.unwrap();
         os.env.set_current_dir_for_test(PathBuf::from("/home/user"));
-        
+
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: HashMap::new(), // No fs_read settings
@@ -1520,7 +1522,8 @@ mod tests {
                 { "path": "/home/user/", "mode": "Directory" },
                 { "path": "/home/user/file.txt", "mode": "Line" },
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         let res = cwd_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Allow));
 
@@ -1529,7 +1532,8 @@ mod tests {
             "operations": [
                 { "path": "/tmp/not/allowed/file.txt", "mode": "Line" }
             ]
-        })).unwrap();
+        }))
+        .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
     }
