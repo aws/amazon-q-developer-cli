@@ -12,6 +12,74 @@
     },
     {
       "type": "release",
+      "date": "2025-09-16",
+      "version": "1.16.0",
+      "title": "Version 1.16.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Support for remote MCP connections - [#2836](https://github.com/aws/amazon-q-developer-cli/pull/2836)"
+        },
+        {
+          "type": "added",
+          "description": "A new `/tangent tail` command to preserve the last tangent conversation - [#2838](https://github.com/aws/amazon-q-developer-cli/pull/2838)"
+        },
+        {
+          "type": "added",
+          "description": "A new edit subcommand to `/agent` slash command for modifying existing agents - [#2854](https://github.com/aws/amazon-q-developer-cli/pull/2854)"
+        },
+        {
+          "type": "added",
+          "description": "A new auto-announcement feature with `/changelog` command - [#2833](https://github.com/aws/amazon-q-developer-cli/pull/2833)"
+        },
+        {
+          "type": "added",
+          "description": "A new CLI history persistence feature with file storage - [#2769](https://github.com/aws/amazon-q-developer-cli/pull/2769)"
+        },
+        {
+          "type": "added",
+          "description": "Support for comma-containing arguments in MCP --args parameter - [#2754](https://github.com/aws/amazon-q-developer-cli/pull/2754)"
+        },
+        {
+          "type": "added",
+          "description": "Support for configurable autoAllowReadonly setting in use_aws tool - [#2828](https://github.com/aws/amazon-q-developer-cli/pull/2828)"
+        },
+        {
+          "type": "added",
+          "description": "Support for configurable line wrapping in chat interface - [#2816](https://github.com/aws/amazon-q-developer-cli/pull/2816)"
+        },
+        {
+          "type": "added",
+          "description": "Support for model field in agent configuration format - [#2815](https://github.com/aws/amazon-q-developer-cli/pull/2815)"
+        },
+        {
+          "type": "added",
+          "description": "AGENTS.md documentation to default agent resources - [#2812](https://github.com/aws/amazon-q-developer-cli/pull/2812)"
+        },
+        {
+          "type": "security",
+          "description": "Reduced default fs_read trust permission to current working directory only - [#2824](https://github.com/aws/amazon-q-developer-cli/pull/2824)"
+        },
+        {
+          "type": "security",
+          "description": "Changed autoAllowReadonly default to false for security in execute_bash - [#2846](https://github.com/aws/amazon-q-developer-cli/pull/2846)"
+        },
+        {
+          "type": "security",
+          "description": "Updated dangerous patterns for execute_bash to include $ character - [#2811](https://github.com/aws/amazon-q-developer-cli/pull/2811)"
+        },
+        {
+          "type": "fixed",
+          "description": "Path with trailing slash not being handled in file matching - [#2817](https://github.com/aws/amazon-q-developer-cli/pull/2817)"
+        },
+        {
+          "type": "fixed",
+          "description": "Summary being erroneously preserved when conversation is cleared - [#2793](https://github.com/aws/amazon-q-developer-cli/pull/2793)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-09-02",
       "version": "1.15.0",
       "title": "Version 1.15.0",
