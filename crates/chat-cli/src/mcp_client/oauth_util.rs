@@ -14,6 +14,7 @@ use reqwest::Client;
 use rmcp::serde_json;
 use rmcp::transport::auth::{
     AuthClient,
+    OAuthClientConfig,
     OAuthState,
     OAuthTokenResponse,
 };
@@ -25,6 +26,10 @@ use rmcp::transport::{
     AuthorizationManager,
     StreamableHttpClientTransport,
     WorkerTransport,
+};
+use serde::{
+    Deserialize,
+    Serialize,
 };
 use sha2::{
     Digest,
@@ -64,6 +69,10 @@ pub enum OauthUtilError {
     Directory(#[from] DirectoryError),
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+    #[error("Malformed directory")]
+    MalformDirectory,
+    #[error("Missing credential")]
+    MissingCredentials,
 }
 
 /// A guard that automatically cancels the cancellation token when dropped.
@@ -79,68 +88,57 @@ impl Drop for LoopBackDropGuard {
     }
 }
 
-/// A guard that manages the lifecycle of an authenticated MCP client and automatically
-/// persists OAuth credentials when dropped.
-///
-/// This struct wraps an `AuthClient` and ensures that OAuth tokens are written to disk
-/// when the guard goes out of scope, unless explicitly disabled via `should_write`.
-/// This provides automatic credential caching for MCP server connections that require
-/// OAuth authentication.
-#[derive(Clone, Debug)]
-pub struct AuthClientDropGuard {
-    pub should_write: bool,
-    pub cred_full_path: PathBuf,
-    pub auth_client: AuthClient<Client>,
+/// This is modeled after [OAuthClientConfig]
+/// It's only here because [OAuthClientConfig] does not implement Serialize and Deserialize
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct Registration {
+    pub client_id: String,
+    pub client_secret: Option<String>,
+    pub scopes: Vec<String>,
+    pub redirect_uri: String,
 }
 
-impl AuthClientDropGuard {
-    pub fn new(cred_full_path: PathBuf, auth_client: AuthClient<Client>) -> Self {
+impl From<OAuthClientConfig> for Registration {
+    fn from(value: OAuthClientConfig) -> Self {
         Self {
-            should_write: true,
-            cred_full_path,
-            auth_client,
+            client_id: value.client_id,
+            client_secret: value.client_secret,
+            scopes: value.scopes,
+            redirect_uri: value.redirect_uri,
         }
     }
 }
 
-impl Drop for AuthClientDropGuard {
-    fn drop(&mut self) {
-        if !self.should_write {
-            return;
+/// A wrapper that manages an authenticated MCP client.
+///
+/// This struct wraps an `AuthClient` and provides access to OAuth credentials
+/// for MCP server connections that require authentication. The credentials
+/// are managed separately from this wrapper's lifecycle.
+#[derive(Clone, Debug)]
+pub struct AuthClientWrapper {
+    pub cred_full_path: PathBuf,
+    pub auth_client: AuthClient<Client>,
+}
+
+impl AuthClientWrapper {
+    pub fn new(cred_full_path: PathBuf, auth_client: AuthClient<Client>) -> Self {
+        Self {
+            cred_full_path,
+            auth_client,
         }
+    }
 
-        let auth_client_clone = self.auth_client.clone();
-        let path = self.cred_full_path.clone();
+    /// Refreshes token in memory using the registration read from when the auth client was
+    /// spawned. This also persists the retrieved token
+    pub async fn refresh_token(&self) -> Result<(), OauthUtilError> {
+        let cred = self.auth_client.auth_manager.lock().await.refresh_token().await?;
+        let parent_path = self.cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+        tokio::fs::create_dir_all(parent_path).await?;
 
-        tokio::spawn(async move {
-            let Ok((client_id, cred)) = auth_client_clone.auth_manager.lock().await.get_credentials().await else {
-                error!("Failed to retrieve credentials in drop routine");
-                return;
-            };
-            let Some(cred) = cred else {
-                error!("Failed to retrieve credentials in drop routine from {client_id}");
-                return;
-            };
-            let Some(parent_path) = path.parent() else {
-                error!("Failed to retrieve parent path for token in drop routine for {client_id}");
-                return;
-            };
-            if let Err(e) = tokio::fs::create_dir_all(parent_path).await {
-                error!("Error making parent directory for token cache in drop routine for {client_id}: {e}");
-                return;
-            }
+        let cred_as_bytes = serde_json::to_string_pretty(&cred)?;
+        tokio::fs::write(&self.cred_full_path, &cred_as_bytes).await?;
 
-            let serialized_cred = match serde_json::to_string_pretty(&cred) {
-                Ok(cred) => cred,
-                Err(e) => {
-                    error!("Failed to serialize credentials for {client_id}: {e}");
-                    return;
-                },
-            };
-            if let Err(e) = tokio::fs::write(path, &serialized_cred).await {
-                error!("Error making writing token cache in drop routine: {e}");
-            }
-        });
+        Ok(())
     }
 }
 
@@ -158,15 +156,18 @@ pub enum HttpTransport {
     WithAuth(
         (
             WorkerTransport<StreamableHttpClientWorker<AuthClient<Client>>>,
-            AuthClientDropGuard,
+            AuthClientWrapper,
         ),
     ),
     WithoutAuth(WorkerTransport<StreamableHttpClientWorker<Client>>),
 }
 
+fn get_scopes() -> &'static [&'static str] {
+    &["openid", "mcp", "email", "profile"]
+}
+
 pub async fn get_http_transport(
     os: &Os,
-    delete_cache: bool,
     url: &str,
     auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
@@ -175,10 +176,7 @@ pub async fn get_http_transport(
     let url = Url::from_str(url)?;
     let key = compute_key(&url);
     let cred_full_path = cred_dir.join(format!("{key}.token.json"));
-
-    if delete_cache && cred_full_path.is_file() {
-        tokio::fs::remove_file(&cred_full_path).await?;
-    }
+    let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
 
     let reqwest_client = reqwest::Client::default();
     let probe_resp = reqwest_client.get(url.clone()).send().await?;
@@ -188,7 +186,8 @@ pub async fn get_http_transport(
             let auth_client = match auth_client {
                 Some(auth_client) => auth_client,
                 None => {
-                    let am = get_auth_manager(url.clone(), cred_full_path.clone(), messenger).await?;
+                    let am =
+                        get_auth_manager(url.clone(), cred_full_path.clone(), reg_full_path.clone(), messenger).await?;
                     AuthClient::new(reqwest_client, am)
                 },
             };
@@ -199,7 +198,7 @@ pub async fn get_http_transport(
                     ..Default::default()
                 });
 
-            let auth_dg = AuthClientDropGuard::new(cred_full_path, auth_client);
+            let auth_dg = AuthClientWrapper::new(cred_full_path, auth_client);
             debug!("## mcp: transport obtained");
 
             Ok(HttpTransport::WithAuth((transport, auth_dg)))
@@ -215,16 +214,19 @@ pub async fn get_http_transport(
 async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
+    reg_full_path: PathBuf,
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
-    let content_as_bytes = tokio::fs::read(&cred_full_path).await;
+    let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
+    let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
     let mut oauth_state = OAuthState::new(url, None).await?;
 
-    match content_as_bytes {
-        Ok(bytes) => {
-            let token = serde_json::from_slice::<OAuthTokenResponse>(&bytes)?;
+    match (cred_as_bytes, reg_as_bytes) {
+        (Ok(cred_as_bytes), Ok(reg_as_bytes)) => {
+            let token = serde_json::from_slice::<OAuthTokenResponse>(&cred_as_bytes)?;
+            let reg = serde_json::from_slice::<Registration>(&reg_as_bytes)?;
 
-            oauth_state.set_credentials("id", token).await?;
+            oauth_state.set_credentials(&reg.client_id, token).await?;
 
             debug!("## mcp: credentials set with cache");
 
@@ -232,10 +234,34 @@ async fn get_auth_manager(
                 .into_authorization_manager()
                 .ok_or(OauthUtilError::MissingAuthorizationManager)?)
         },
-        Err(e) => {
-            info!("Error reading cached credentials: {e}");
+        _ => {
+            info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            get_auth_manager_impl(oauth_state, messenger).await
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, messenger).await?;
+
+            // Client registration is done in [start_authorization]
+            // If we have gotten past that point that means we have the info to persist the
+            // registration on disk.
+            let (client_id, credentials) = am.get_credentials().await?;
+            let reg = Registration {
+                client_id,
+                client_secret: None,
+                scopes: get_scopes().iter().map(|s| (*s).to_string()).collect::<Vec<_>>(),
+                redirect_uri,
+            };
+            let reg_as_str = serde_json::to_string_pretty(&reg)?;
+            let reg_parent_path = reg_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+            tokio::fs::create_dir_all(reg_parent_path).await?;
+            tokio::fs::write(reg_full_path, &reg_as_str).await?;
+
+            let credentials = credentials.ok_or(OauthUtilError::MissingCredentials)?;
+
+            let cred_parent_path = cred_full_path.parent().ok_or(OauthUtilError::MalformDirectory)?;
+            tokio::fs::create_dir_all(cred_parent_path).await?;
+            let reg_as_str = serde_json::to_string_pretty(&credentials)?;
+            tokio::fs::write(cred_full_path, &reg_as_str).await?;
+
+            Ok(am)
         },
     }
 }
@@ -243,7 +269,7 @@ async fn get_auth_manager(
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     messenger: &dyn Messenger,
-) -> Result<AuthorizationManager, OauthUtilError> {
+) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<String>();
@@ -251,9 +277,8 @@ async fn get_auth_manager_impl(
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
-    oauth_state
-        .start_authorization(&["mcp", "profile", "email"], &format!("http://{}", actual_addr))
-        .await?;
+    let redirect_uri = format!("http://{}", actual_addr);
+    oauth_state.start_authorization(get_scopes(), &redirect_uri).await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
@@ -264,7 +289,7 @@ async fn get_auth_manager_impl(
         .into_authorization_manager()
         .ok_or(OauthUtilError::MissingAuthorizationManager)?;
 
-    Ok(am)
+    Ok((am, redirect_uri))
 }
 
 pub fn compute_key(rs: &Url) -> String {
@@ -320,7 +345,7 @@ async fn make_svc(
                 {
                     sender.send(code).map_err(LoopBackError::Send)?;
                 }
-                mk_response("Auth code sent".to_string())
+                mk_response("You can close this page now".to_string())
             })
         }
     }

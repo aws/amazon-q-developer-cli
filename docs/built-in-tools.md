@@ -24,7 +24,7 @@ Execute the specified bash command.
     "execute_bash": {
       "allowedCommands": ["git status", "git fetch"],
       "deniedCommands": ["git commit .*", "git push .*"],
-      "allowReadOnly": true
+      "autoAllowReadonly": true
     }
   }
 }
@@ -36,7 +36,7 @@ Execute the specified bash command.
 |--------|------|---------|------------------------------------------------------------------------------------------|
 | `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z |
 | `deniedCommands` | array of strings | `[]` | List of specific commands that are denied. Supports regex formatting. Note that regex entered are anchored with \A and \z. Deny rules are evaluated before allow rules |
-| `allowReadOnly` | boolean | `true` | Whether to allow read-only commands without prompting                                    |
+| `autoAllowReadonly` | boolean | `false` | Whether to allow read-only commands without prompting                                    |
 
 ## Fs_read Tool
 
@@ -110,19 +110,19 @@ Opens the browser to a pre-filled GitHub issue template to report chat issues, b
 
 This tool has no configuration options.
 
-## Knowledge Tool
+## Knowledge Tool (experimental)
 
 Store and retrieve information in a knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.
 
 This tool has no configuration options.
 
-## Thinking Tool
+## Thinking Tool (experimental)
 
 An internal reasoning mechanism that improves the quality of complex tasks by breaking them down into atomic actions.
 
 This tool has no configuration options.
 
-## Todo_list Tool
+## TODO List Tool (experimental)
 
 Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.amazonq/cli-todo-lists/`.
 

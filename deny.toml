@@ -27,6 +27,8 @@ ignore = [
   "RUSTSEC-2024-0429",
   # paste is used in core deps
   "RUSTSEC-2024-0436",
+  # fxhash is unmaintained but used by bm25, waiting for bm25 to migrate
+  "RUSTSEC-2025-0057",
 ]
 
 [licenses]

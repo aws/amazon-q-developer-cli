@@ -77,6 +77,12 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         from: Option<String>,
     },
+    /// Edit an existing agent configuration
+    Edit {
+        /// Name of the agent to edit
+        #[arg(long, short)]
+        name: String,
+    },
     /// Generate an agent configuration using AI
     Generate {},
     /// Delete the specified agent
@@ -234,6 +240,64 @@ impl AgentSubcommand {
                     style::Print(name),
                     style::SetForegroundColor(Color::Green),
                     style::Print(" has been created successfully"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Changes take effect on next launch"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            },
+
+            Self::Edit { name } => {
+                let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name)
+                    .await
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+                let mut cmd = std::process::Command::new(editor_cmd);
+
+                let status = cmd.arg(&path_with_file_name).status()?;
+                if !status.success() {
+                    return Err(ChatError::Custom("Editor process did not exit with success".into()));
+                }
+
+                let updated_agent = Agent::load(
+                    os,
+                    &path_with_file_name,
+                    &mut None,
+                    session.conversation.mcp_enabled,
+                    &mut session.stderr,
+                )
+                .await;
+                match updated_agent {
+                    Ok(agent) => {
+                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
+                    },
+                    Err(e) => {
+                        execute!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(&e),
+                            style::Print("\n"),
+                        )?;
+
+                        return Err(ChatError::Custom(
+                            format!("Post edit validation failed for agent '{name}'. Malformed config detected: {e}")
+                                .into(),
+                        ));
+                    },
+                }
+
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("Agent "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(name),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" has been edited successfully"),
                     style::SetForegroundColor(Color::Reset),
                     style::Print("\n"),
                     style::SetForegroundColor(Color::Yellow),
@@ -440,6 +504,7 @@ impl AgentSubcommand {
         match self {
             Self::List => "list",
             Self::Create { .. } => "create",
+            Self::Edit { .. } => "edit",
             Self::Generate { .. } => "generate",
             Self::Delete { .. } => "delete",
             Self::Set { .. } => "set",
