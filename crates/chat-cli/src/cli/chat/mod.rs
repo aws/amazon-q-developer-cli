@@ -2841,7 +2841,7 @@ impl ChatSession {
 
             if let Some(mut manager) = self.conversation.capture_manager.take() {
                 manager.user_message_lock = false;
-                let user_message = match manager.last_user_message {
+                let user_message = match &manager.last_user_message {
                     Some(message) => {
                         let message = message.clone();
                         manager.last_user_message = None;

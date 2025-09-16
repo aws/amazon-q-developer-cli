@@ -38,9 +38,11 @@ pub struct CaptureManager {
     pub tag_to_index: HashMap<String, usize>,
     pub num_turns: usize,
     pub num_tools_this_turn: usize,
-    // test
     pub last_user_message: Option<String>,
     pub user_message_lock: bool,
+    /// If true, delete the current session's shadow repo directory when dropped.
+    #[serde(default)]
+    pub clean_on_drop: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +67,10 @@ impl CaptureManager {
             );
         }
         // Reuse bare repo init to keep storage model consistent.
-        Self::manual_init(os, shadow_path).await
+        let mut s = Self::manual_init(os, shadow_path).await?;
+        // Auto-initialized captures are considered ephemeral: clean when session ends.
+        s.clean_on_drop = true;
+        Ok(s)
     }
 
     pub async fn manual_init(os: &Os, path: impl AsRef<Path>) -> Result<Self> {
@@ -103,6 +108,7 @@ impl CaptureManager {
             num_tools_this_turn: 0,
             last_user_message: None,
             user_message_lock: false,
+            clean_on_drop: false,
         })
     }
 
@@ -226,6 +232,31 @@ impl CaptureManager {
             bail!("git status failed: {}", String::from_utf8_lossy(&output.stderr));
         }
         Ok(!output.stdout.is_empty())
+    }
+}
+
+impl Drop for CaptureManager {
+    fn drop(&mut self) {
+        // Only clean if this session was auto-initialized (ephemeral).
+        if !self.clean_on_drop {
+            return;
+        }
+        let path = self.shadow_repo_path.clone();
+        // Prefer spawning on an active Tokio runtime if available.
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                // Best-effort: swallow errors; we don't want to block Drop or panic here.
+                let _ = tokio::fs::remove_dir_all(path).await;
+            });
+            return;
+        }
+
+        // Fallback: spawn a detached background thread. Still non-blocking.
+        let _ = std::thread::Builder::new()
+            .name("q-capture-cleaner".into())
+            .spawn(move || {
+                let _ = std::fs::remove_dir_all(&path);
+            });
     }
 }
 
