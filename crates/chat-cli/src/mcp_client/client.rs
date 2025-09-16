@@ -361,7 +361,9 @@ impl McpClientService {
                                                         info!("Retry for http transport failed {e}. Possible reauth needed");
                                                         // This could be because the refresh token is expired, in which
                                                         // case we would need to have user go through the auth flow
-                                                        // again
+                                                        // again. We do this by deleting the cred
+                                                        // and discarding the client to trigger a full auth flow
+                                                        tokio::fs::remove_file(&auth_client.cred_full_path).await?;
                                                         let new_transport  =
                                                             get_http_transport(&os_clone, &url, None, &*messenger_dup).await?;
 
