@@ -168,7 +168,6 @@ fn get_scopes() -> &'static [&'static str] {
 
 pub async fn get_http_transport(
     os: &Os,
-    delete_cache: bool,
     url: &str,
     auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
@@ -178,10 +177,6 @@ pub async fn get_http_transport(
     let key = compute_key(&url);
     let cred_full_path = cred_dir.join(format!("{key}.token.json"));
     let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
-
-    if delete_cache && cred_full_path.is_file() {
-        tokio::fs::remove_file(&cred_full_path).await?;
-    }
 
     let reqwest_client = reqwest::Client::default();
     let probe_resp = reqwest_client.get(url.clone()).send().await?;
