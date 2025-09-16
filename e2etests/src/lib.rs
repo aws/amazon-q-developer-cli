@@ -1,37 +1,3 @@
-// Q CLI E2E Test Framework
-// This library provides end-to-end testing utilities for Amazon Q CLI
-
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-
-static INIT: Once = Once::new();
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        CHAT_SESSION.as_ref().unwrap()
-    }
-}
-
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = &CHAT_SESSION {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-    Ok(count)
-}
-
 pub mod q_chat_helper {
     //! Helper module for Q CLI testing with hybrid approach
     //! - expectrl for commands (/help, /tools)
@@ -138,12 +104,12 @@ pub mod q_chat_helper {
                     },
                     Ok(_) => {
                         // No more data, but wait a bit more in case there's more coming
-                        std::thread::sleep(Duration::from_millis(2500));
+                        std::thread::sleep(Duration::from_millis(5000));
                         if total_content.len() > 0 { break; }
                     },
                     Err(_) => break,
                 }
-                std::thread::sleep(Duration::from_millis(2500));
+                std::thread::sleep(Duration::from_millis(5000));
             }
             
             Ok(total_content)
@@ -163,4 +129,93 @@ pub mod q_chat_helper {
             Ok(())
         }
     }
+
+     /// Execute Q CLI subcommand in normal terminal and return response
+    pub fn execute_q_subcommand(binary: &str, args: &[&str]) -> Result<String, Box<dyn std::error::Error>> {
+        execute_q_subcommand_with_stdin(binary, args, None)
+    }
+
+    /// Execute Q CLI subcommand with optional stdin input and return response
+    pub fn execute_q_subcommand_with_stdin(binary: &str, args: &[&str], input: Option<&str>) -> Result<String, Box<dyn std::error::Error>> {
+        let q_binary = std::env::var("Q_CLI_PATH").unwrap_or_else(|_| binary.to_string());
+        
+        let full_command = format!("{} {}", q_binary, args.join(" "));
+        let prompt = format!("(base) user@host ~ % {}\n", full_command);
+        
+        let mut child = Command::new(&q_binary)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        
+        if let Some(stdin_input) = input {
+            if let Some(stdin) = child.stdin.as_mut() {
+                stdin.write_all(stdin_input.as_bytes())?;
+            }
+        }
+        
+        let output = child.wait_with_output()?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        
+        Ok(format!("{}{}{}", prompt, stderr, stdout))
+    }
+
+    /// Execute interactive menu selection with binary and args
+    pub fn execute_interactive_menu_selection(binary: &str, args: &[&str], down_arrows: usize) -> Result<String, Error> {
+        let q_binary = std::env::var("Q_CLI_PATH").unwrap_or_else(|_| binary.to_string());
+        let command = format!("{} {}", q_binary, args.join(" "));
+        execute_interactive_menu_selection_with_command(&command, down_arrows)
+    }
+
+    /// Execute interactive menu selection with full command string
+    pub fn execute_interactive_menu_selection_with_command(command: &str, down_arrows: usize) -> Result<String, Error> {
+        let mut session = expectrl::spawn(command)?;
+        session.set_expect_timeout(Some(Duration::from_secs(30)));
+        
+        // Wait for menu to appear and read initial output
+        thread::sleep(Duration::from_secs(3));
+        
+        let mut response = String::new();
+        let mut buffer = [0u8; 1024];
+        
+        // Read initial menu display
+        for _ in 0..5 {
+            if let Ok(bytes_read) = session.try_read(&mut buffer) {
+                if bytes_read > 0 {
+                    response.push_str(&String::from_utf8_lossy(&buffer[..bytes_read]));
+                }
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        
+        // Navigate and select
+        for _ in 0..down_arrows {
+            session.write_all(b"\x1b[B")?;
+            session.flush()?;
+            thread::sleep(Duration::from_millis(300));
+        }
+        
+        session.write_all(b"\r")?;
+        session.flush()?;
+        thread::sleep(Duration::from_secs(2));
+        
+        // Read final response
+        for _ in 0..10 {
+            if let Ok(bytes_read) = session.try_read(&mut buffer) {
+                if bytes_read > 0 {
+                    response.push_str(&String::from_utf8_lossy(&buffer[..bytes_read]));
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+            thread::sleep(Duration::from_millis(200));
+        }
+        
+        Ok(response)
+    }
+
 }

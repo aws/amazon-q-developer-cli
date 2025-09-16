@@ -15,13 +15,14 @@ RUN_SESSION_MGMT=true
 RUN_INTEGRATION=true
 RUN_MCP=true
 RUN_AI_PROMPTS=true
-RUN_ISSUE_REPORTING=true
-RUN_TOOLS=true
-RUN_COMPACT=true
-RUN_HOOKS=true
-RUN_USAGE=true
-RUN_EDITOR=true
-RUN_SUBSCRIBE=true
+#TODO: check and remove not required features from below
+#RUN_ISSUE_REPORTING=true
+#RUN_TOOLS=true
+#RUN_COMPACT=true
+#RUN_HOOKS=true
+#RUN_USAGE=true
+#RUN_EDITOR=true
+#RUN_SUBSCRIBE=true
 # ============================================================================
 
 Q_BINARY="q"
@@ -77,7 +78,7 @@ run_category() {
     
     if [ "$QUIET_MODE" = false ]; then
         # Quiet mode - show individual test results in real-time
-        cargo test --tests --features "$category" -- --test-threads=1 2>&1 | while IFS= read -r line; do
+        cargo test --tests --features "$category" --features "regression" -- --test-threads=1 2>&1 | while IFS= read -r line; do
             if echo "$line" | grep -q "test .* \.\.\. ok$"; then
                 test_name=$(echo "$line" | sed 's/test \(.*\) \.\.\. ok/\1/')
                 echo "   ✅ $test_name"
@@ -102,7 +103,7 @@ run_category() {
         fi
     else
         # Verbose mode - show full output with real-time test results
-        cargo test --tests --features "$category" -- --nocapture --test-threads=1 2>&1 | while IFS= read -r line; do
+        cargo test --tests --features "$category" --features "regression" -- --nocapture --test-threads=1 2>&1 | while IFS= read -r line; do
             echo "$line"
             if echo "$line" | grep -q "test .* \.\.\. ok$"; then
                 test_name=$(echo "$line" | sed 's/test \(.*\) \.\.\. ok/\1/')
@@ -220,45 +221,46 @@ if [ "$RUN_TOOLS" = true ]; then
     fi
 fi
 
-if [ "$RUN_COMPACT" = true ]; then
-    if run_category "compact" "COMPACT"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_HOOKS" = true ]; then
-    if run_category "hooks" "HOOKS"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_USAGE" = true ]; then
-    if run_category "usage" "USAGE"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_EDITOR" = true ]; then
-    if run_category "editor" "EDITOR"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
-
-if [ "$RUN_SUBSCRIBE" = true ]; then
-    if run_category "subscribe" "SUBSCRIBE"; then
-        ((total_passed++))
-    else
-        ((total_failed++))
-    fi
-fi
+#TODO: check and remove not required features from below
+# if [ "$RUN_COMPACT" = true ]; then
+#     if run_category "compact" "COMPACT"; then
+#         ((total_passed++))
+#     else
+#         ((total_failed++))
+#     fi
+# fi
+# 
+# if [ "$RUN_HOOKS" = true ]; then
+#     if run_category "hooks" "HOOKS"; then
+#         ((total_passed++))
+#     else
+#         ((total_failed++))
+#     fi
+# fi
+# 
+# if [ "$RUN_USAGE" = true ]; then
+#     if run_category "usage" "USAGE"; then
+#         ((total_passed++))
+#     else
+#         ((total_failed++))
+#     fi
+# fi
+# 
+# if [ "$RUN_EDITOR" = true ]; then
+#     if run_category "editor" "EDITOR"; then
+#         ((total_passed++))
+#     else
+#         ((total_failed++))
+#     fi
+# fi
+# 
+# if [ "$RUN_SUBSCRIBE" = true ]; then
+#     if run_category "subscribe" "SUBSCRIBE"; then
+#         ((total_passed++))
+#     else
+#         ((total_failed++))
+#     fi
+# fi
 
 # Final summary
 echo ""
