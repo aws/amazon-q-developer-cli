@@ -108,17 +108,22 @@ impl LoginArgs {
                 let (start_url, region) = match login_method {
                     AuthMethod::BuilderId => (None, None),
                     AuthMethod::IdentityCenter => {
-                        let default_start_url = match self.identity_provider {
-                            Some(start_url) => Some(start_url),
-                            None => os.database.get_start_url()?,
+                        let start_url = match self.identity_provider {
+                            Some(url) => url,  // CLI arg provided - use directly
+                            None => {
+                                // No CLI arg - prompt with database default
+                                let default = os.database.get_start_url()?;
+                                input("Enter Start URL", default.as_deref())?
+                            }
                         };
-                        let default_region = match self.region {
-                            Some(region) => Some(region),
-                            None => os.database.get_idc_region()?,
+                        let region = match self.region {
+                            Some(r) => r,  // CLI arg provided - use directly
+                            None => {
+                                // No CLI arg - prompt with database default
+                                let default = os.database.get_idc_region()?;
+                                input("Enter Region", default.as_deref())?
+                            }
                         };
-
-                        let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                        let region = input("Enter Region", default_region.as_deref())?;
 
                         let _ = os.database.set_start_url(start_url.clone());
                         let _ = os.database.set_idc_region(region.clone());
