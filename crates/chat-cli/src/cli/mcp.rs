@@ -96,8 +96,11 @@ pub struct AddArgs {
     /// The command used to launch the server
     #[arg(long)]
     pub command: String,
-    /// Arguments to pass to the command
-    #[arg(long, action = ArgAction::Append, allow_hyphen_values = true, value_delimiter = ',')]
+    /// Arguments to pass to the command. Can be provided as:
+    /// 1. Multiple --args flags: --args arg1 --args arg2 --args "arg,with,commas"
+    /// 2. Comma-separated with escaping: --args "arg1,arg2,arg\,with\,commas"
+    /// 3. JSON array format: --args '["arg1", "arg2", "arg,with,commas"]'
+    #[arg(long, action = ArgAction::Append, allow_hyphen_values = true)]
     pub args: Vec<String>,
     /// Where to add the server to. If an agent name is not supplied, the changes shall be made to
     /// the global mcp.json
@@ -119,6 +122,9 @@ pub struct AddArgs {
 
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        // Process args to handle comma-separated values, escaping, and JSON arrays
+        let processed_args = self.process_args()?;
+
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
@@ -136,7 +142,7 @@ impl AddArgs {
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
                     "command": self.command,
-                    "args": self.args,
+                    "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
@@ -169,7 +175,7 @@ impl AddArgs {
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
                     "command": self.command,
-                    "args": self.args,
+                    "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
@@ -187,6 +193,17 @@ impl AddArgs {
         };
 
         Ok(())
+    }
+
+    fn process_args(&self) -> Result<Vec<String>> {
+        let mut processed_args = Vec::new();
+
+        for arg in &self.args {
+            let parsed = parse_args(arg)?;
+            processed_args.extend(parsed);
+        }
+
+        Ok(processed_args)
     }
 }
 
@@ -416,7 +433,14 @@ impl StatusArgs {
 async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let agents = Agents::load(os, None, true, &mut stderr).await.0;
+    let mcp_enabled = match os.client.is_mcp_enabled().await {
+        Ok(enabled) => enabled,
+        Err(err) => {
+            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+            true
+        },
+    };
+    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
     let global_path = directories::chat_global_agent_path(os)?;
     for (_, agent) in agents.agents {
         let scope = if agent
@@ -498,6 +522,65 @@ fn parse_env_vars(arg: &str) -> Result<HashMap<String, String>> {
     }
 
     Ok(vars)
+}
+
+fn parse_args(arg: &str) -> Result<Vec<String>> {
+    // Try to parse as JSON array first
+    if arg.trim_start().starts_with('[') {
+        match serde_json::from_str::<Vec<String>>(arg) {
+            Ok(args) => return Ok(args),
+            Err(_) => {
+                bail!(
+                    "Failed to parse arguments as JSON array. Expected format: '[\"arg1\", \"arg2\", \"arg,with,commas\"]'"
+                );
+            },
+        }
+    }
+
+    // Check if the string contains escaped commas
+    let has_escaped_commas = arg.contains("\\,");
+
+    if has_escaped_commas {
+        // Parse with escape support
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut chars = arg.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\\' => {
+                    // Handle escape sequences
+                    if let Some(&next_ch) = chars.peek() {
+                        if next_ch == ',' || next_ch == '\\' {
+                            current_arg.push(chars.next().unwrap());
+                        } else {
+                            current_arg.push(ch);
+                        }
+                    } else {
+                        current_arg.push(ch);
+                    }
+                },
+                ',' => {
+                    // Split on unescaped comma
+                    args.push(current_arg.trim().to_string());
+                    current_arg.clear();
+                },
+                _ => {
+                    current_arg.push(ch);
+                },
+            }
+        }
+
+        // Add the last argument
+        if !current_arg.is_empty() || !args.is_empty() {
+            args.push(current_arg.trim().to_string());
+        }
+
+        Ok(args)
+    } else {
+        // Default behavior: split on commas (backward compatibility)
+        Ok(arg.split(',').map(|s| s.trim().to_string()).collect())
+    }
 }
 
 async fn load_cfg(os: &Os, p: &PathBuf) -> Result<McpServerConfig> {
@@ -611,11 +694,7 @@ mod tests {
                 name: "test_server".to_string(),
                 scope: None,
                 command: "test_command".to_string(),
-                args: vec![
-                    "awslabs.eks-mcp-server".to_string(),
-                    "--allow-write".to_string(),
-                    "--allow-sensitive-data-access".to_string(),
-                ],
+                args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
                     [
@@ -672,5 +751,47 @@ mod tests {
                 scope: Some(Scope::Global),
             }))
         );
+    }
+
+    #[test]
+    fn test_parse_args_comma_separated() {
+        let result = parse_args("arg1,arg2,arg3").unwrap();
+        assert_eq!(result, vec!["arg1", "arg2", "arg3"]);
+    }
+
+    #[test]
+    fn test_parse_args_with_escaped_commas() {
+        let result = parse_args("arg1,arg2\\,with\\,commas,arg3").unwrap();
+        assert_eq!(result, vec!["arg1", "arg2,with,commas", "arg3"]);
+    }
+
+    #[test]
+    fn test_parse_args_json_array() {
+        let result = parse_args(r#"["arg1", "arg2", "arg,with,commas"]"#).unwrap();
+        assert_eq!(result, vec!["arg1", "arg2", "arg,with,commas"]);
+    }
+
+    #[test]
+    fn test_parse_args_single_arg_with_commas() {
+        let result = parse_args("--config=key1=val1\\,key2=val2").unwrap();
+        assert_eq!(result, vec!["--config=key1=val1,key2=val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_backward_compatibility() {
+        let result = parse_args("--config=key1=val1,key2=val2").unwrap();
+        assert_eq!(result, vec!["--config=key1=val1", "key2=val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_mixed_escaping() {
+        let result = parse_args("normal,escaped\\,comma,--flag=val1\\,val2").unwrap();
+        assert_eq!(result, vec!["normal", "escaped,comma", "--flag=val1,val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_json_array_invalid() {
+        let result = parse_args(r#"["invalid json"#);
+        assert!(result.is_err());
     }
 }

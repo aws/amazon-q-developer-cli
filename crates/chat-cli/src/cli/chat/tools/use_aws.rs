@@ -29,6 +29,7 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::os::Os;
+use crate::util::pattern_matching::matches_any_pattern;
 
 const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
 
@@ -136,8 +137,6 @@ impl UseAws {
 
         if let Some(ref profile_name) = self.profile_name {
             queue!(output, style::Print(format!("Profile name: {}\n", profile_name)))?;
-        } else {
-            queue!(output, style::Print("Profile name: default\n".to_string()))?;
         }
 
         queue!(output, style::Print(format!("Region: {}", self.region)))?;
@@ -175,7 +174,7 @@ impl UseAws {
         }
     }
 
-    pub fn eval_perm(&self, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
@@ -183,12 +182,14 @@ impl UseAws {
             allowed_services: Vec<String>,
             #[serde(default)]
             denied_services: Vec<String>,
+            #[serde(default)]
+            auto_allow_readonly: bool,
         }
 
         let Self { service_name, .. } = self;
-        let is_in_allowlist = agent.allowed_tools.contains("use_aws");
+        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "use_aws");
         match agent.tools_settings.get("use_aws") {
-            Some(settings) if is_in_allowlist => {
+            Some(settings) => {
                 let settings = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
@@ -199,18 +200,19 @@ impl UseAws {
                 if settings.denied_services.contains(service_name) {
                     return PermissionEvalResult::Deny(vec![service_name.clone()]);
                 }
-                if settings.allowed_services.contains(service_name) {
+                if is_in_allowlist || settings.allowed_services.contains(service_name) {
+                    return PermissionEvalResult::Allow;
+                }
+                // Check auto_allow_readonly setting for read-only operations
+                if settings.auto_allow_readonly && !self.requires_acceptance() {
                     return PermissionEvalResult::Allow;
                 }
                 PermissionEvalResult::Ask
             },
             None if is_in_allowlist => PermissionEvalResult::Allow,
             _ => {
-                if self.requires_acceptance() {
-                    PermissionEvalResult::Ask
-                } else {
-                    PermissionEvalResult::Allow
-                }
+                // Default behavior: always ask for confirmation (no auto-approval for read-only)
+                PermissionEvalResult::Ask
             },
         }
     }
@@ -218,8 +220,6 @@ impl UseAws {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
 
@@ -343,9 +343,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_eval_perm() {
-        let cmd = use_aws! {{
+    #[tokio::test]
+    async fn test_eval_perm() {
+        let cmd_one = use_aws! {{
             "service_name": "s3",
             "operation_name": "put-object",
             "region": "us-west-2",
@@ -353,13 +353,8 @@ mod tests {
             "label": ""
         }};
 
-        let agent = Agent {
+        let mut agent = Agent {
             name: "test_agent".to_string(),
-            allowed_tools: {
-                let mut allowed_tools = HashSet::<String>::new();
-                allowed_tools.insert("use_aws".to_string());
-                allowed_tools
-            },
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
@@ -373,10 +368,12 @@ mod tests {
             ..Default::default()
         };
 
-        let res = cmd.eval_perm(&agent);
+        let os = Os::new().await.unwrap();
+
+        let res = cmd_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
 
-        let cmd = use_aws! {{
+        let cmd_two = use_aws! {{
             "service_name": "api_gateway",
             "operation_name": "request",
             "region": "us-west-2",
@@ -384,7 +381,128 @@ mod tests {
             "label": ""
         }};
 
-        let res = cmd.eval_perm(&agent);
+        let res = cmd_two.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
+
+        agent.allowed_tools.insert("use_aws".to_string());
+
+        let res = cmd_two.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Denied services should still be denied after trusting tool
+        let res = cmd_one.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_auto_allow_readonly_default() {
+        let os = Os::new().await.unwrap();
+
+        // Test read-only operation with default settings (auto_allow_readonly = false)
+        let readonly_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "list-objects",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let agent = Agent::default();
+        let res = readonly_cmd.eval_perm(&os, &agent);
+        // Should ask for confirmation even for read-only operations by default
+        assert!(matches!(res, PermissionEvalResult::Ask));
+
+        // Test write operation with default settings
+        let write_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "put-object",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let res = write_cmd.eval_perm(&os, &agent);
+        // Should ask for confirmation for write operations
+        assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_auto_allow_readonly_enabled() {
+        let os = Os::new().await.unwrap();
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("use_aws".to_string()),
+                    serde_json::json!({
+                        "autoAllowReadonly": true
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test read-only operation with auto_allow_readonly = true
+        let readonly_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "list-objects",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let res = readonly_cmd.eval_perm(&os, &agent);
+        // Should allow read-only operations without confirmation
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test write operation with auto_allow_readonly = true
+        let write_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "put-object",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let res = write_cmd.eval_perm(&os, &agent);
+        // Should still ask for confirmation for write operations
+        assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_auto_allow_readonly_with_denied_services() {
+        let os = Os::new().await.unwrap();
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("use_aws".to_string()),
+                    serde_json::json!({
+                        "autoAllowReadonly": true,
+                        "deniedServices": ["s3"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test read-only operation on denied service
+        let readonly_cmd = use_aws! {{
+            "service_name": "s3",
+            "operation_name": "list-objects",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+
+        let res = readonly_cmd.eval_perm(&os, &agent);
+        // Should deny even read-only operations on denied services
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
     }
 }

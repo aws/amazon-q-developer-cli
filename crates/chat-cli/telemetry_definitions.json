@@ -146,6 +146,16 @@
       "description": "Name of the MCP server"
     },
     {
+      "name": "codewhispererterminal_mcpServerAllToolNames",
+      "type": "string",
+      "description": "All the tool names available in the MCP server. If there are multiple tools, then the tool names are comma-delimited."
+    },
+    {
+      "name": "codewhispererterminal_mcpServerLoadedToolNames",
+      "type": "string",
+      "description": "All the tool names loaded from MCP server as part of agent definition. If there are multiple tools, then the tool names are comma-delimited."
+    },
+    {
       "name": "codewhispererterminal_mcpServerInitFailureReason",
       "type": "string",
       "description": "Reason for which a mcp server has failed to be initialized"
@@ -153,7 +163,12 @@
     {
       "name": "codewhispererterminal_toolsPerMcpServer",
       "type": "int",
-      "description": "The number of tools provided by a mcp server"
+      "description": "The number of tools loaded into the conversation by the mcp server"
+    },
+    {
+      "name": "codewhispererterminal_mcpServerAllToolsCount",
+      "type": "int",
+      "description": "The number of tools available in the MCP server."
     },
     {
       "name": "codewhispererterminal_isCustomTool",
@@ -454,7 +469,10 @@
           "required": false
         },
         { "type": "codewhispererterminal_toolsPerMcpServer" },
-        { "type": "codewhispererterminal_clientApplication" }
+        { "type": "codewhispererterminal_clientApplication" },
+        { "type": "codewhispererterminal_mcpServerAllToolNames" },
+        { "type": "codewhispererterminal_mcpServerLoadedToolNames" },
+        { "type": "codewhispererterminal_mcpServerAllToolsCount" }
       ]
     },
     {
@@ -511,6 +529,14 @@
           { "type": "reasonDesc", "required": false },
           { "type": "statusCode", "required": false },
           { "type": "codewhispererterminal_clientApplication" }
+      ]
+    },
+    {
+      "name": "amazonqcli_dailyHeartbeat",
+      "description": "Daily heartbeat to track active CLI usage",
+      "unit": "None",
+      "metadata": [
+        { "type": "source", "required": false }
       ]
     }
   ]

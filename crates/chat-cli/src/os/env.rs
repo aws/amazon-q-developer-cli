@@ -132,6 +132,13 @@ impl Env {
         }
     }
 
+    pub fn set_current_dir_for_test(&self, path: PathBuf) {
+        use inner::Inner;
+        if let Inner::Fake(fake) = &self.0 {
+            fake.lock().unwrap().cwd = path;
+        }
+    }
+
     pub fn current_exe(&self) -> Result<PathBuf, io::Error> {
         use inner::Inner;
         match &self.0 {

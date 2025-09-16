@@ -8,12 +8,15 @@ use core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
     RecordUserTurnCompletionArgs,
+    TangentModeSessionArgs,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
 
 use amzn_codewhisperer_client::types::{
     ChatAddMessageEvent,
+    ChatInteractWithMessageEvent,
+    ChatMessageInteractionType,
     IdeCategory,
     OperatingSystem,
     TelemetryEvent,
@@ -232,6 +235,10 @@ impl TelemetryThread {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
     }
 
+    pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::DailyHeartbeat {}))?)
+    }
+
     pub async fn send_cli_subcommand_executed(
         &self,
         database: &Database,
@@ -322,6 +329,22 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    pub async fn send_tangent_mode_session(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::TangentModeSession {
+            conversation_id,
+            result,
+            args,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
     pub async fn send_tool_use_suggested(
         &self,
         database: &Database,
@@ -353,6 +376,7 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_mcp_server_init(
         &self,
         database: &Database,
@@ -360,12 +384,18 @@ impl TelemetryThread {
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
             init_failure_reason,
             number_of_tools,
+            all_tool_names,
+            loaded_tool_names,
+            all_tools_count,
         });
         set_event_metadata(database, &mut telemetry_event).await;
 
@@ -550,50 +580,95 @@ impl TelemetryClient {
             return;
         };
 
-        if let EventType::ChatAddedMessage {
-            conversation_id,
-            data:
-                ChatAddedMessageParams {
-                    message_id,
-                    model,
-                    time_to_first_chunk_ms,
-                    time_between_chunks_ms,
-                    assistant_response_length,
-                    ..
-                },
-            ..
-        } = &event.ty
-        {
-            let user_context = self.user_context().unwrap();
+        match &event.ty {
+            EventType::ChatAddedMessage {
+                conversation_id,
+                data:
+                    ChatAddedMessageParams {
+                        message_id,
+                        model,
+                        time_to_first_chunk_ms,
+                        time_between_chunks_ms,
+                        assistant_response_length,
+                        ..
+                    },
+                ..
+            } => {
+                let user_context = self.user_context().unwrap();
+                // Short-Term fix for Validation errors -
+                // chatAddMessageEvent.timeBetweenChunks' : Member must have length less than or equal to 100
+                let time_between_chunks_truncated = time_between_chunks_ms
+                    .as_ref()
+                    .map(|chunks| chunks.iter().take(100).cloned().collect());
 
-            let chat_add_message_event = match ChatAddMessageEvent::builder()
-                .conversation_id(conversation_id)
-                .message_id(message_id.clone().unwrap_or("not_set".to_string()))
-                .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
-                .set_time_between_chunks(time_between_chunks_ms.clone())
-                .set_response_length(*assistant_response_length)
-                .build()
-            {
-                Ok(event) => event,
-                Err(err) => {
+                let chat_add_message_event = match ChatAddMessageEvent::builder()
+                    .conversation_id(conversation_id)
+                    .message_id(message_id.clone().unwrap_or("not_set".to_string()))
+                    .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
+                    .set_time_between_chunks(time_between_chunks_truncated)
+                    .set_response_length(*assistant_response_length)
+                    .build()
+                {
+                    Ok(event) => event,
+                    Err(err) => {
+                        error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
+                        return;
+                    },
+                };
+
+                let event = TelemetryEvent::ChatAddMessageEvent(chat_add_message_event);
+                debug!(
+                    ?event,
+                    ?user_context,
+                    telemetry_enabled = self.telemetry_enabled,
+                    "Sending cw telemetry event"
+                );
+                if let Err(err) = codewhisperer_client
+                    .send_telemetry_event(event, user_context, self.telemetry_enabled, model.to_owned())
+                    .await
+                {
                     error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
-                    return;
-                },
-            };
+                }
+            },
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                lines_by_agent,
+                ..
+            } => {
+                let user_context = self.user_context().unwrap();
 
-            let event = TelemetryEvent::ChatAddMessageEvent(chat_add_message_event);
-            debug!(
-                ?event,
-                ?user_context,
-                telemetry_enabled = self.telemetry_enabled,
-                "Sending cw telemetry event"
-            );
-            if let Err(err) = codewhisperer_client
-                .send_telemetry_event(event, user_context, self.telemetry_enabled, model.to_owned())
-                .await
-            {
-                error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
-            }
+                let builder = ChatInteractWithMessageEvent::builder()
+                    .conversation_id(conversation_id)
+                    .message_id(utterance_id.clone().unwrap_or("not_set".to_string()))
+                    .accepted_line_count(lines_by_agent.map_or(0, |lines| lines as i32))
+                    .interaction_type(ChatMessageInteractionType::AgenticCodeAccepted);
+
+                let chat_interact_event = match builder.build() {
+                    Ok(event) => event,
+                    Err(err) => {
+                        error!(err =% DisplayErrorContext(err), "Failed to build ChatInteractWithMessageEvent");
+                        return;
+                    },
+                };
+
+                let event = TelemetryEvent::ChatInteractWithMessageEvent(chat_interact_event);
+                debug!(
+                    ?event,
+                    ?user_context,
+                    telemetry_enabled = self.telemetry_enabled,
+                    "Sending cw telemetry event"
+                );
+                if let Err(err) = codewhisperer_client
+                    .send_telemetry_event(event, user_context, self.telemetry_enabled, None)
+                    .await
+                {
+                    error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
+                }
+            },
+            _ => {
+                // No CW telemetry event for other event types
+            },
         }
     }
 

@@ -6,11 +6,14 @@ pub fn ser_get_usage_limits_input_input(
     if let Some(var_1) = &input.profile_arn {
         object.key("profileArn").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.resource_type {
-        object.key("resourceType").string(var_2.as_str());
+    if let Some(var_2) = &input.origin {
+        object.key("origin").string(var_2.as_str());
     }
-    if let Some(var_3) = &input.is_email_required {
-        object.key("isEmailRequired").boolean(*var_3);
+    if let Some(var_3) = &input.resource_type {
+        object.key("resourceType").string(var_3.as_str());
+    }
+    if let Some(var_4) = &input.is_email_required {
+        object.key("isEmailRequired").boolean(*var_4);
     }
     Ok(())
 }

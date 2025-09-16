@@ -15,7 +15,9 @@ use crate::cli::chat::{
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
+/// Command-line arguments for the editor functionality
 pub struct EditorArgs {
+    /// Initial text to populate in the editor
     pub initial_text: Vec<String>,
 }
 
@@ -83,7 +85,7 @@ impl EditorArgs {
 }
 
 /// Opens the user's preferred editor to compose a prompt
-fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
+pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
     // Create a temporary file with a unique name
     let temp_dir = std::env::temp_dir();
     let file_name = format!("q_prompt_{}.md", Uuid::new_v4());

@@ -3,7 +3,8 @@ use std::env;
 
 use chrono::{
     DateTime,
-    Utc,
+    Datelike,
+    FixedOffset,
 };
 use serde::{
     Deserialize,
@@ -54,7 +55,7 @@ pub struct UserMessage {
     pub additional_context: String,
     pub env_context: UserEnvContext,
     pub content: UserMessageContent,
-    pub timestamp: Option<DateTime<Utc>>,
+    pub timestamp: Option<DateTime<FixedOffset>>,
     pub images: Option<Vec<ImageBlock>>,
 }
 
@@ -107,7 +108,7 @@ impl UserMessageContent {
 impl UserMessage {
     /// Creates a new [UserMessage::Prompt], automatically detecting and adding the user's
     /// environment [UserEnvContext].
-    pub fn new_prompt(prompt: String, timestamp: Option<DateTime<Utc>>) -> Self {
+    pub fn new_prompt(prompt: String, timestamp: Option<DateTime<FixedOffset>>) -> Self {
         Self {
             images: None,
             timestamp,
@@ -120,7 +121,7 @@ impl UserMessage {
     pub fn new_cancelled_tool_uses<'a>(
         prompt: Option<String>,
         tool_use_ids: impl Iterator<Item = &'a str>,
-        timestamp: Option<DateTime<Utc>>,
+        timestamp: Option<DateTime<FixedOffset>>,
     ) -> Self {
         Self {
             images: None,
@@ -157,7 +158,7 @@ impl UserMessage {
     pub fn new_tool_use_results_with_images(
         results: Vec<ToolUseResult>,
         images: Vec<ImageBlock>,
-        timestamp: Option<DateTime<Utc>>,
+        timestamp: Option<DateTime<FixedOffset>>,
     ) -> Self {
         Self {
             additional_context: String::new(),
@@ -292,12 +293,20 @@ impl UserMessage {
         let mut content = String::new();
 
         if let Some(ts) = self.timestamp {
+            let weekday = match ts.weekday() {
+                chrono::Weekday::Mon => "Monday",
+                chrono::Weekday::Tue => "Tuesday",
+                chrono::Weekday::Wed => "Wednesday",
+                chrono::Weekday::Thu => "Thursday",
+                chrono::Weekday::Fri => "Friday",
+                chrono::Weekday::Sat => "Saturday",
+                chrono::Weekday::Sun => "Sunday",
+            };
+            // Format the time with iso8601 format using a timezone offset.
+            let timestamp = ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
             content.push_str(&format!(
-                "{}Current UTC time: {}{}\n",
-                CONTEXT_ENTRY_START_HEADER,
-                // Format the time with iso8601 format using Z, e.g. 2025-08-08T17:43:28.672Z
-                ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, true),
-                CONTEXT_ENTRY_END_HEADER,
+                "{}Current time: {}, {}\n{}",
+                CONTEXT_ENTRY_START_HEADER, weekday, timestamp, CONTEXT_ENTRY_END_HEADER,
             ));
         }
 
@@ -565,21 +574,35 @@ mod tests {
     fn test_user_input_message_timestamp_formatting() {
         const USER_PROMPT: &str = "hello world";
 
-        let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), Some(Utc::now()));
+        // Friday, Jan 26, 2018
+        let timestamp = DateTime::parse_from_rfc3339("2018-01-26T12:30:09.453-07:00").unwrap();
 
-        let msgs = [
-            msg.clone().into_user_input_message(None, &HashMap::new()),
-            msg.clone().into_history_entry(),
+        let msgs = {
+            let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), Some(timestamp));
+            [
+                msg.clone().into_user_input_message(None, &HashMap::new()),
+                msg.clone().into_history_entry(),
+            ]
+        };
+        let expected = [
+            CONTEXT_ENTRY_START_HEADER,
+            "Current time",
+            "Friday",
+            CONTEXT_ENTRY_END_HEADER,
+            USER_ENTRY_START_HEADER,
+            USER_PROMPT,
+            USER_ENTRY_END_HEADER.trim(), /* user message content is trimmed, so remove any
+                                           * trailing newlines for the end header. */
         ];
-
         for m in msgs {
-            println!("checking {:?}", m);
-            assert!(m.content.contains(CONTEXT_ENTRY_START_HEADER));
-            assert!(m.content.contains("Current UTC time"));
-            assert!(m.content.contains(CONTEXT_ENTRY_END_HEADER));
-            assert!(m.content.contains(USER_ENTRY_START_HEADER));
-            assert!(m.content.contains(USER_PROMPT));
-            assert!(m.content.contains(USER_ENTRY_END_HEADER.trim()));
+            for assertion in expected {
+                assert!(
+                    m.content.contains(assertion),
+                    "expected message: {} to contain: {}",
+                    m.content,
+                    assertion
+                );
+            }
         }
     }
 

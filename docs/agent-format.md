@@ -2,6 +2,9 @@
 
 The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
 
+> [!TIP]
+> We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
+
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
@@ -15,6 +18,7 @@ Every agent configuration file can include the following sections:
 - [`resources`](#resources-field) — Resources available to the agent.
 - [`hooks`](#hooks-field) — Commands run at specific trigger points.
 - [`useLegacyMcpJson`](#uselegacymcpjson-field) — Whether to include legacy MCP configuration.
+- [`model`](#model-field) — The model ID to use for this agent.
 
 ## Name Field
 
@@ -144,22 +148,77 @@ The `allowedTools` field specifies which tools can be used without prompting the
 {
   "allowedTools": [
     "fs_read",
+    "fs_*",
     "@git/git_status",
+    "@server/read_*",
     "@fetch"
   ]
 }
 ```
 
-You can allow:
-- Specific built-in tools by name (e.g., `"fs_read"`)
-- Specific MCP tools using `@server_name/tool_name` (e.g., `"@git/git_status"`)
-- All tools from an MCP server using `@server_name` (e.g., `"@fetch"`)
+You can allow tools using several patterns:
 
-Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wildcard for allowing all tools. To allow specific tools, you must list them individually or use server-level wildcards with the `@server_name` syntax.
+### Exact Matches
+- **Built-in tools**: `"fs_read"`, `"execute_bash"`, `"knowledge"`
+- **Specific MCP tools**: `"@server_name/tool_name"` (e.g., `"@git/git_status"`)
+- **All tools from MCP server**: `"@server_name"` (e.g., `"@fetch"`)
+
+### Wildcard Patterns
+The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`:
+
+#### Native Tool Patterns
+- **Prefix wildcard**: `"fs_*"` → matches `fs_read`, `fs_write`, `fs_anything`
+- **Suffix wildcard**: `"*_bash"` → matches `execute_bash`, `run_bash`
+- **Middle wildcard**: `"fs_*_tool"` → matches `fs_read_tool`, `fs_write_tool`
+- **Single character**: `"fs_?ead"` → matches `fs_read`, `fs_head` (but not `fs_write`)
+
+#### MCP Tool Patterns
+- **Tool prefix**: `"@server/read_*"` → matches `@server/read_file`, `@server/read_config`
+- **Tool suffix**: `"@server/*_get"` → matches `@server/issue_get`, `@server/data_get`
+- **Server pattern**: `"@*-mcp/read_*"` → matches `@git-mcp/read_file`, `@db-mcp/read_data`
+- **Any tool from pattern servers**: `"@git-*/*"` → matches any tool from servers matching `git-*`
+
+### Examples
+
+```json
+{
+  "allowedTools": [
+    // Exact matches
+    "fs_read",
+    "knowledge",
+    "@server/specific_tool",
+    
+    // Native tool wildcards
+    "fs_*",                    // All filesystem tools
+    "execute_*",               // All execute tools
+    "*_test",                  // Any tool ending in _test
+    
+    // MCP tool wildcards
+    "@server/api_*",           // All API tools from server
+    "@server/read_*",          // All read tools from server
+    "@git-server/get_*_info",  // Tools like get_user_info, get_repo_info
+    "@*/status",               // Status tool from any server
+    
+    // Server-level permissions
+    "@fetch",                  // All tools from fetch server
+    "@git-*"                   // All tools from any git-* server
+  ]
+}
+```
+
+### Pattern Matching Rules
+- **`*`** matches any sequence of characters (including none)
+- **`?`** matches exactly one character
+- **Exact matches** take precedence over patterns
+- **Server-level permissions** (`@server_name`) allow all tools from that server
+- **Case-sensitive** matching
+
+Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wildcard for allowing all tools. To allow tools, you must use specific patterns or server-level permissions.
 
 ## ToolsSettings Field
 
 The `toolsSettings` field provides configuration for specific tools. Each tool can have its own unique configuration options.
+Note that specifications that configure allowable patterns will be overridden if the tool is also included in `allowedTools`.
 
 ```json
 {
@@ -233,7 +292,21 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 }
 ```
 
-When set to `true`, the agent will have access to all MCP servers defined in the global configuration in addition to those defined in the agent's `mcpServers` field.
+When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
+
+## Model Field
+
+The `model` field specifies the model ID to use for this agent. If not specified, the agent will use the default model.
+
+```json
+{
+  "model": "claude-sonnet-4"
+}
+```
+
+The model ID must match one of the available models returned by the Q CLI's model service. You can see available models by using the `/model` command in an active chat session.
+
+If the specified model is not available, the agent will fall back to the default model and display a warning.
 
 ## Complete Example
 
@@ -293,6 +366,7 @@ Here's a complete example of an agent configuration file:
       }
     ]
   },
-  "useLegacyMcpJson": true
+  "useLegacyMcpJson": true,
+  "model": "claude-sonnet-4"
 }
 ```

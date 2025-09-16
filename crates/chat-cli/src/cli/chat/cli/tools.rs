@@ -35,6 +35,7 @@ use crate::cli::chat::{
 };
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
+/// Command-line arguments for managing tools in the chat session
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ToolsArgs {
@@ -170,6 +171,17 @@ impl ToolsArgs {
             )?;
         }
 
+        if !session.conversation.mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            )?;
+        }
+
         Ok(ChatState::default())
     }
 
@@ -186,17 +198,20 @@ trust so that no confirmation is required.
 
 Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field"
 )]
+/// Subcommands for managing tool permissions and configurations
 pub enum ToolsSubcommand {
     /// Show the input schema for all available tools
     Schema,
     /// Trust a specific tool or tools for the session
     Trust {
         #[arg(required = true)]
+        /// Names of tools to trust
         tool_names: Vec<String>,
     },
     /// Revert a tool or tools to per-request confirmation
     Untrust {
         #[arg(required = true)]
+        /// Names of tools to untrust
         tool_names: Vec<String>,
     },
     /// Trust all tools (equivalent to deprecated /acceptall)

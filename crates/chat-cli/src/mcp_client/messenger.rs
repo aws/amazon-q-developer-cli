@@ -1,11 +1,18 @@
+use rmcp::model::{
+    ListPromptsResult,
+    ListResourceTemplatesResult,
+    ListResourcesResult,
+    ListToolsResult,
+};
+use rmcp::{
+    Peer,
+    RoleClient,
+    ServiceError,
+};
 use thiserror::Error;
 
-use super::{
-    PromptsListResult,
-    ResourceTemplatesListResult,
-    ResourcesListResult,
-    ToolsListResult,
-};
+pub type Result<V> = core::result::Result<V, ServiceError>;
+pub type MessengerResult = core::result::Result<(), MessengerError>;
 
 /// An interface that abstracts the implementation for information delivery from client and its
 /// consumer. It is through this interface secondary information (i.e. information that are needed
@@ -16,26 +23,45 @@ use super::{
 pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
     /// Sends the result of a tools list operation to the consumer
     /// This function is used to deliver information about available tools
-    async fn send_tools_list_result(&self, result: eyre::Result<ToolsListResult>) -> Result<(), MessengerError>;
+    async fn send_tools_list_result(
+        &self,
+        result: Result<ListToolsResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult;
 
     /// Sends the result of a prompts list operation to the consumer
     /// This function is used to deliver information about available prompts
-    async fn send_prompts_list_result(&self, result: eyre::Result<PromptsListResult>) -> Result<(), MessengerError>;
+    async fn send_prompts_list_result(
+        &self,
+        result: Result<ListPromptsResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult;
 
     /// Sends the result of a resources list operation to the consumer
     /// This function is used to deliver information about available resources
-    async fn send_resources_list_result(&self, result: eyre::Result<ResourcesListResult>)
-    -> Result<(), MessengerError>;
+    async fn send_resources_list_result(
+        &self,
+        result: Result<ListResourcesResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult;
 
     /// Sends the result of a resource templates list operation to the consumer
     /// This function is used to deliver information about available resource templates
     async fn send_resource_templates_list_result(
         &self,
-        result: eyre::Result<ResourceTemplatesListResult>,
-    ) -> Result<(), MessengerError>;
+        result: Result<ListResourceTemplatesResult>,
+        peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult;
+
+    /// Sends an OAuth authorization link to the consumer
+    /// This function is used to deliver OAuth links that users need to visit for authentication
+    async fn send_oauth_link(&self, link: String) -> MessengerResult;
 
     /// Signals to the orchestrator that a server has started initializing
-    async fn send_init_msg(&self) -> Result<(), MessengerError>;
+    async fn send_init_msg(&self) -> MessengerResult;
+
+    /// Signals to the orchestrator that a server has deinitialized
+    fn send_deinit_msg(&self);
 
     /// Creates a duplicate of the messenger object
     /// This function is used to create a new instance of the messenger with the same configuration
@@ -53,31 +79,47 @@ pub struct NullMessenger;
 
 #[async_trait::async_trait]
 impl Messenger for NullMessenger {
-    async fn send_tools_list_result(&self, _result: eyre::Result<ToolsListResult>) -> Result<(), MessengerError> {
+    async fn send_tools_list_result(
+        &self,
+        _result: Result<ListToolsResult>,
+        _peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(())
     }
 
-    async fn send_prompts_list_result(&self, _result: eyre::Result<PromptsListResult>) -> Result<(), MessengerError> {
+    async fn send_prompts_list_result(
+        &self,
+        _result: Result<ListPromptsResult>,
+        _peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(())
     }
 
     async fn send_resources_list_result(
         &self,
-        _result: eyre::Result<ResourcesListResult>,
-    ) -> Result<(), MessengerError> {
+        _result: Result<ListResourcesResult>,
+        _peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(())
     }
 
     async fn send_resource_templates_list_result(
         &self,
-        _result: eyre::Result<ResourceTemplatesListResult>,
-    ) -> Result<(), MessengerError> {
+        _result: Result<ListResourceTemplatesResult>,
+        _peer: Option<Peer<RoleClient>>,
+    ) -> MessengerResult {
         Ok(())
     }
 
-    async fn send_init_msg(&self) -> Result<(), MessengerError> {
+    async fn send_oauth_link(&self, _link: String) -> MessengerResult {
         Ok(())
     }
+
+    async fn send_init_msg(&self) -> MessengerResult {
+        Ok(())
+    }
+
+    fn send_deinit_msg(&self) {}
 
     fn duplicate(&self) -> Box<dyn Messenger> {
         Box::new(NullMessenger)

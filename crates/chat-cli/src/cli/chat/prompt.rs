@@ -1,4 +1,6 @@
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::path::PathBuf;
 
 use eyre::Result;
 use rustyline::completion::{
@@ -12,7 +14,10 @@ use rustyline::highlight::{
     Highlighter,
 };
 use rustyline::hint::Hinter as RustylineHinter;
-use rustyline::history::DefaultHistory;
+use rustyline::history::{
+    FileHistory,
+    SearchDirection,
+};
 use rustyline::validate::{
     ValidationContext,
     ValidationResult,
@@ -37,8 +42,13 @@ use winnow::stream::AsChar;
 
 pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
+use super::tool_manager::{
+    PromptQuery,
+    PromptQueryResult,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::util::directories::chat_cli_bash_history_path;
 
 pub const COMMANDS: &[&str] = &[
     "/clear",
@@ -53,6 +63,7 @@ pub const COMMANDS: &[&str] = &[
     "/tools reset",
     "/mcp",
     "/model",
+    "/experiment",
     "/agent",
     "/agent help",
     "/agent list",
@@ -61,6 +72,7 @@ pub const COMMANDS: &[&str] = &[
     "/agent rename",
     "/agent set",
     "/agent schema",
+    "/agent generate",
     "/prompts",
     "/context",
     "/context help",
@@ -80,10 +92,19 @@ pub const COMMANDS: &[&str] = &[
     "/compact",
     "/compact help",
     "/usage",
+    "/changelog",
     "/save",
     "/load",
     "/subscribe",
+    "/todos",
+    "/todos resume",
+    "/todos clear-finished",
+    "/todos view",
+    "/todos delete",
 ];
+
+pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
+pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
 
 /// Complete commands that start with a slash
 fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
@@ -134,29 +155,63 @@ impl PathCompleter {
 }
 
 pub struct PromptCompleter {
-    sender: std::sync::mpsc::Sender<Option<String>>,
-    receiver: std::sync::mpsc::Receiver<Vec<String>>,
+    sender: PromptQuerySender,
+    receiver: RefCell<PromptQueryResponseReceiver>,
 }
 
 impl PromptCompleter {
-    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
-        PromptCompleter { sender, receiver }
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
+        PromptCompleter {
+            sender,
+            receiver: RefCell::new(receiver),
+        }
     }
 
     fn complete_prompt(&self, word: &str) -> Result<Vec<String>, ReadlineError> {
         let sender = &self.sender;
-        let receiver = &self.receiver;
-        sender
-            .send(if !word.is_empty() { Some(word.to_string()) } else { None })
-            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
-        let prompt_info = receiver
-            .recv()
-            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?
-            .iter()
-            .map(|n| format!("@{n}"))
-            .collect::<Vec<_>>();
+        let receiver = self.receiver.borrow_mut();
+        let query = PromptQuery::Search(if !word.is_empty() { Some(word.to_string()) } else { None });
 
-        Ok(prompt_info)
+        sender
+            .send(query)
+            .map_err(|e| ReadlineError::Io(std::io::Error::other(e.to_string())))?;
+        // We only want stuff from the current tail end onward
+        let mut new_receiver = receiver.resubscribe();
+
+        // Here we poll on the receiver for [max_attempts] number of times.
+        // The reason for this is because we are trying to receive something managed by an async
+        // channel from a sync context.
+        // If we ever switch back to a single threaded runtime for whatever reason, this function
+        // will not panic but nothing will be fetched because the thread that is doing
+        // try_recv is also the thread that is supposed to be doing the sending.
+        let mut attempts = 0;
+        let max_attempts = 5;
+        let query_res = loop {
+            match new_receiver.try_recv() {
+                Ok(result) => break result,
+                Err(_e) if attempts < max_attempts - 1 => {
+                    attempts += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                },
+                Err(e) => {
+                    return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                        "Failed to receive prompt info from complete prompt after {} attempts: {:?}",
+                        max_attempts,
+                        e
+                    ))));
+                },
+            }
+        };
+        let matches = match query_res {
+            PromptQueryResult::Search(list) => list.into_iter().map(|n| format!("@{n}")).collect::<Vec<_>>(),
+            PromptQueryResult::List(_) => {
+                return Err(ReadlineError::Io(std::io::Error::other(eyre::eyre!(
+                    "Wrong query response type received",
+                ))));
+            },
+        };
+
+        Ok(matches)
     }
 }
 
@@ -166,7 +221,7 @@ pub struct ChatCompleter {
 }
 
 impl ChatCompleter {
-    fn new(sender: std::sync::mpsc::Sender<Option<String>>, receiver: std::sync::mpsc::Receiver<Vec<String>>) -> Self {
+    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
         Self {
             path_completer: PathCompleter::new(),
             prompt_completer: PromptCompleter::new(sender, receiver),
@@ -213,31 +268,26 @@ impl Completer for ChatCompleter {
 
 /// Custom hinter that provides shadowtext suggestions
 pub struct ChatHinter {
-    /// Command history for providing suggestions based on past commands
-    history: Vec<String>,
     /// Whether history-based hints are enabled
     history_hints_enabled: bool,
+    history_path: PathBuf,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new(history_hints_enabled: bool) -> Self {
+    pub fn new(history_hints_enabled: bool, history_path: PathBuf) -> Self {
         Self {
-            history: Vec::new(),
             history_hints_enabled,
+            history_path,
         }
     }
 
-    /// Updates the history with a new command
-    pub fn update_history(&mut self, command: &str) {
-        let command = command.trim();
-        if !command.is_empty() && !command.contains('\n') && !command.contains('\r') {
-            self.history.push(command.to_string());
-        }
+    pub fn get_history_path(&self) -> PathBuf {
+        self.history_path.clone()
     }
 
-    /// Finds the best hint for the current input
-    fn find_hint(&self, line: &str) -> Option<String> {
+    /// Finds the best hint for the current input using rustyline's history
+    fn find_hint(&self, line: &str, ctx: &Context<'_>) -> Option<String> {
         // If line is empty, no hint
         if line.is_empty() {
             return None;
@@ -251,13 +301,20 @@ impl ChatHinter {
                 .map(|cmd| cmd[line.len()..].to_string());
         }
 
-        // Try to find a hint from history if history hints are enabled
+        // Try to find a hint from rustyline's history if history hints are enabled
         if self.history_hints_enabled {
-            return self.history
-                .iter()
-                .rev() // Start from most recent
-                .find(|cmd| cmd.starts_with(line) && cmd.len() > line.len())
-                .map(|cmd| cmd[line.len()..].to_string());
+            let history = ctx.history();
+            let history_len = history.len();
+            if history_len == 0 {
+                return None;
+            }
+
+            if let Ok(Some(search_result)) = history.starts_with(line, history_len - 1, SearchDirection::Reverse) {
+                let entry = search_result.entry.to_string();
+                if entry.len() > line.len() {
+                    return Some(entry[line.len()..].to_string());
+                }
+            }
         }
 
         None
@@ -267,13 +324,13 @@ impl ChatHinter {
 impl RustylineHinter for ChatHinter {
     type Hint = String;
 
-    fn hint(&self, line: &str, pos: usize, _ctx: &Context<'_>) -> Option<Self::Hint> {
+    fn hint(&self, line: &str, pos: usize, ctx: &Context<'_>) -> Option<Self::Hint> {
         // Only provide hints when cursor is at the end of the line
         if pos < line.len() {
             return None;
         }
 
-        self.find_hint(line)
+        self.find_hint(line, ctx)
     }
 }
 
@@ -314,9 +371,8 @@ pub struct ChatHelper {
 }
 
 impl ChatHelper {
-    /// Updates the history of the ChatHinter with a new command
-    pub fn update_hinter_history(&mut self, command: &str) {
-        self.hinter.update_history(command);
+    pub fn get_history_path(&self) -> PathBuf {
+        self.hinter.get_history_path()
     }
 }
 
@@ -347,17 +403,22 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add profile part if present
+            // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
             }
 
-            // Add warning symbol if present
+            // Add tangent indicator if present (yellow)
+            if components.tangent_mode {
+                result.push_str(&"↯ ".yellow().to_string());
+            }
+
+            // Add warning symbol if present (red)
             if components.warning {
                 result.push_str(&"!".red().to_string());
             }
 
-            // Add the prompt symbol
+            // Add the prompt symbol (magenta)
             result.push_str(&"> ".magenta().to_string());
 
             Cow::Owned(result)
@@ -370,9 +431,9 @@ impl Highlighter for ChatHelper {
 
 pub fn rl(
     os: &Os,
-    sender: std::sync::mpsc::Sender<Option<String>>,
-    receiver: std::sync::mpsc::Receiver<Vec<String>>,
-) -> Result<Editor<ChatHelper, DefaultHistory>> {
+    sender: PromptQuerySender,
+    receiver: PromptQueryResponseReceiver,
+) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
         _ => EditMode::Emacs,
@@ -383,20 +444,29 @@ pub fn rl(
         .edit_mode(edit_mode)
         .build();
 
-    // Default to disabled if setting doesn't exist
     let history_hints_enabled = os
         .database
         .settings
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
+
+    let history_path = chat_cli_bash_history_path(os)?;
+
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(history_hints_enabled),
+        hinter: ChatHinter::new(history_hints_enabled, history_path),
         validator: MultiLineValidator,
     };
 
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
+
+    // Load history from ~/.aws/amazonq/cli_history
+    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
+        if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
+            eprintln!("Warning: Failed to load history: {}", e);
+        }
+    }
 
     // Add custom keybinding for Alt+Enter to insert a newline
     rl.bind_sequence(
@@ -416,6 +486,16 @@ pub fn rl(
         EventHandler::Simple(Cmd::CompleteHint),
     );
 
+    // Add custom keybinding for Ctrl+T to toggle tangent mode (configurable)
+    let tangent_key_char = match os.database.settings.get_string(Setting::TangentModeKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('t'),
+        _ => 't', // Default to 't' if setting is missing or invalid
+    };
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char(tangent_key_char), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
+    );
+
     Ok(rl)
 }
 
@@ -423,13 +503,14 @@ pub fn rl(
 mod tests {
     use crossterm::style::Stylize;
     use rustyline::highlight::Highlighter;
+    use rustyline::history::DefaultHistory;
 
     use super::*;
 
     #[test]
     fn test_chat_completer_command_completion() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
@@ -450,8 +531,8 @@ mod tests {
 
     #[test]
     fn test_chat_completer_no_completion() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
         let line = "Hello, how are you?";
         let pos = line.len();
@@ -469,11 +550,11 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_basic() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -485,11 +566,11 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_warning() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -501,11 +582,11 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -517,11 +598,11 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_with_profile_and_warning() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -536,11 +617,11 @@ mod tests {
 
     #[test]
     fn test_highlight_prompt_invalid_format() {
-        let (prompt_request_sender, _) = std::sync::mpsc::channel::<Option<String>>();
-        let (_, prompt_response_receiver) = std::sync::mpsc::channel::<Vec<String>>();
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let helper = ChatHelper {
             completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true),
+            hinter: ChatHinter::new(true, PathBuf::new()),
             validator: MultiLineValidator,
         };
 
@@ -551,8 +632,56 @@ mod tests {
     }
 
     #[test]
+    fn test_highlight_prompt_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true, PathBuf::new()),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode prompt highlighting - ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("↯ > ", true);
+        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_tangent_mode_with_warning() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true, PathBuf::new()),
+            validator: MultiLineValidator,
+        };
+
+        // Test tangent mode with warning - ↯ yellow, ! red, > magenta
+        let highlighted = helper.highlight_prompt("↯ !> ", true);
+        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+    }
+
+    #[test]
+    fn test_highlight_prompt_profile_with_tangent_mode() {
+        let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+        let helper = ChatHelper {
+            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
+            hinter: ChatHinter::new(true, PathBuf::new()),
+            validator: MultiLineValidator,
+        };
+
+        // Test profile with tangent mode - [dev] cyan, ↯ yellow, > magenta
+        let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
+        assert_eq!(
+            highlighted,
+            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+        );
+    }
+
+    #[test]
     fn test_chat_hinter_command_hint() {
-        let hinter = ChatHinter::new(true);
+        let hinter = ChatHinter::new(true, PathBuf::new());
 
         // Test hint for a command
         let line = "/he";
@@ -582,11 +711,7 @@ mod tests {
 
     #[test]
     fn test_chat_hinter_history_hint_disabled() {
-        let mut hinter = ChatHinter::new(false);
-
-        // Add some history
-        hinter.update_history("Hello, world!");
-        hinter.update_history("How are you?");
+        let hinter = ChatHinter::new(false, PathBuf::new());
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";

@@ -1,1147 +1,737 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::process::Stdio;
-use std::sync::atomic::{
-    AtomicBool,
-    AtomicU64,
-    Ordering,
-};
-use std::sync::{
-    Arc,
-    RwLock as SyncRwLock,
-};
-use std::time::Duration;
 
-use serde::{
-    Deserialize,
-    Serialize,
+use regex::Regex;
+use rmcp::model::{
+    CallToolRequestParam,
+    CallToolResult,
+    ErrorCode,
+    GetPromptRequestParam,
+    GetPromptResult,
+    Implementation,
+    InitializeRequestParam,
+    ListPromptsResult,
+    ListToolsResult,
+    LoggingLevel,
+    LoggingMessageNotificationParam,
+    PaginatedRequestParam,
+    ServerNotification,
+    ServerRequest,
 };
-use thiserror::Error;
-use tokio::time;
-use tokio::time::error::Elapsed;
+use rmcp::service::{
+    ClientInitializeError,
+    DynService,
+    NotificationContext,
+};
+use rmcp::transport::{
+    ConfigureCommandExt,
+    TokioChildProcess,
+};
+use rmcp::{
+    ErrorData,
+    RoleClient,
+    Service,
+    ServiceError,
+    ServiceExt,
+};
+use tokio::io::AsyncReadExt as _;
+use tokio::process::{
+    ChildStderr,
+    Command,
+};
+use tokio::task::JoinHandle;
+use tracing::{
+    debug,
+    error,
+    info,
+};
 
-use super::transport::base_protocol::{
-    JsonRpcMessage,
-    JsonRpcNotification,
-    JsonRpcRequest,
-    JsonRpcVersion,
-};
-use super::transport::stdio::JsonRpcStdioTransport;
-use super::transport::{
-    self,
-    Transport,
-    TransportError,
-};
+use super::messenger::Messenger;
+use super::oauth_util::HttpTransport;
 use super::{
-    JsonRpcResponse,
-    Listener as _,
-    LogListener,
-    Messenger,
-    PaginationSupportedOps,
-    PromptGet,
-    PromptsListResult,
-    ResourceTemplatesListResult,
-    ResourcesListResult,
-    ServerCapabilities,
-    ToolsListResult,
+    AuthClientWrapper,
+    OauthUtilError,
+    get_http_transport,
 };
-use crate::util::process::{
-    Pid,
-    terminate_process,
+use crate::cli::chat::server_messenger::ServerMessenger;
+use crate::cli::chat::tools::custom_tool::{
+    CustomToolConfig,
+    TransportType,
 };
+use crate::os::Os;
+use crate::util::directories::DirectoryError;
 
-pub type ClientInfo = serde_json::Value;
-pub type StdioTransport = JsonRpcStdioTransport;
+/// Fetches all pages of specified resources from a server
+macro_rules! paginated_fetch {
+    (
+        final_result_type: $final_result_type:ty,
+        content_type: $content_type:ty,
+        service_method: $service_method:ident,
+        result_field: $result_field:ident,
+        messenger_method: $messenger_method:ident,
+        service: $service:expr,
+        messenger: $messenger:expr,
+        server_name: $server_name:expr
+    ) => {
+        {
+            let mut cursor = None::<String>;
+            let mut final_result = Ok(<$final_result_type>::with_all_items(Default::default()));
+            let mut content = Vec::<$content_type>::new();
 
-/// Represents the capabilities of a client in the Model Context Protocol.
-/// This structure is sent to the server during initialization to communicate
-/// what features the client supports and provide information about the client.
-/// When features are added to the client, these should be declared in the [From] trait implemented
-/// for the struct.
-#[derive(Default, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ClientCapabilities {
-    protocol_version: JsonRpcVersion,
-    capabilities: HashMap<String, serde_json::Value>,
-    client_info: serde_json::Value,
+            loop {
+                let param = Some(PaginatedRequestParam { cursor: cursor.clone() });
+                match $service.$service_method(param).await {
+                    Ok(mut result) => {
+                        if let Some(s) = result.next_cursor {
+                            cursor.replace(s);
+                        }
+                        content.append(&mut result.$result_field);
+                    },
+                    Err(e) => {
+                        final_result = Err(e);
+                        break;
+                    },
+                }
+                if cursor.is_none() {
+                    break;
+                }
+            }
+
+            if let Ok(final_result) = &mut final_result {
+                final_result.$result_field.append(&mut content);
+            }
+
+            if let Err(e) = $messenger.$messenger_method(final_result, Some($service)).await {
+                error!(target: "mcp", "Initial {} result failed to send for server {}: {}",
+                       stringify!($result_field), $server_name, e);
+            }
+        }
+    };
 }
 
-impl From<ClientInfo> for ClientCapabilities {
-    fn from(client_info: ClientInfo) -> Self {
-        ClientCapabilities {
-            client_info,
-            ..Default::default()
-        }
+/// Substitutes environment variables in the format ${env:VAR_NAME} with their actual values
+fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
+    // Create a regex to match ${env:VAR_NAME} pattern
+    let re = Regex::new(r"\$\{env:([^}]+)\}").unwrap();
+
+    re.replace_all(input, |caps: &regex::Captures<'_>| {
+        let var_name = &caps[1];
+        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
+    })
+    .to_string()
+}
+
+/// Process a HashMap of environment variables, substituting any ${env:VAR_NAME} patterns
+/// with their actual values from the environment
+fn process_env_vars(env_vars: &mut HashMap<String, String>, env: &crate::os::Env) {
+    for (_, value) in env_vars.iter_mut() {
+        *value = substitute_env_vars(value, env);
     }
 }
 
-#[derive(Debug, Deserialize)]
-pub struct ClientConfig {
-    pub server_name: String,
-    pub bin_path: String,
-    pub args: Vec<String>,
-    pub timeout: u64,
-    pub client_info: serde_json::Value,
-    pub env: Option<HashMap<String, String>>,
-}
-
-#[allow(dead_code)]
-#[derive(Debug, Error)]
-pub enum ClientError {
+#[derive(Debug, thiserror::Error)]
+pub enum McpClientError {
     #[error(transparent)]
-    TransportError(#[from] TransportError),
+    ClientInitializeError(#[from] Box<ClientInitializeError>),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Serialization(#[from] serde_json::Error),
-    #[error("Operation timed out: {context}")]
-    RuntimeError {
-        #[source]
-        source: tokio::time::error::Elapsed,
-        context: String,
-    },
-    #[error("Unexpected msg type encountered")]
-    UnexpectedMsgType,
-    #[error("{0}")]
-    NegotiationError(String),
-    #[error("Failed to obtain process id")]
-    MissingProcessId,
-    #[error("Invalid path received")]
-    InvalidPath,
-    #[error("{0}")]
-    ProcessKillError(String),
-    #[error("{0}")]
-    PoisonError(String),
+    JoinError(#[from] tokio::task::JoinError),
+    #[error("Client has not finished initializing")]
+    NotReady,
+    #[error(transparent)]
+    Directory(#[from] DirectoryError),
+    #[error(transparent)]
+    OauthUtil(#[from] OauthUtilError),
+    #[error(transparent)]
+    Parse(#[from] url::ParseError),
+    #[error(transparent)]
+    Auth(#[from] crate::auth::AuthError),
 }
 
-impl From<(tokio::time::error::Elapsed, String)> for ClientError {
-    fn from((error, context): (tokio::time::error::Elapsed, String)) -> Self {
-        ClientError::RuntimeError { source: error, context }
-    }
-}
-
-#[derive(Debug)]
-pub struct Client<T: Transport> {
-    server_name: String,
-    transport: Arc<T>,
-    timeout: u64,
-    server_process_id: Option<Pid>,
-    client_info: serde_json::Value,
-    current_id: Arc<AtomicU64>,
-    pub messenger: Option<Box<dyn Messenger>>,
-    // TODO: move this to tool manager that way all the assets are treated equally
-    pub prompt_gets: Arc<SyncRwLock<HashMap<String, PromptGet>>>,
-    pub is_prompts_out_of_date: Arc<AtomicBool>,
-}
-
-impl<T: Transport> Clone for Client<T> {
-    fn clone(&self) -> Self {
-        Self {
-            server_name: self.server_name.clone(),
-            transport: self.transport.clone(),
-            timeout: self.timeout,
-            // Note that we cannot have an id for the clone because we would kill the original
-            // process when we drop the clone
-            server_process_id: None,
-            client_info: self.client_info.clone(),
-            current_id: self.current_id.clone(),
-            messenger: None,
-            prompt_gets: self.prompt_gets.clone(),
-            is_prompts_out_of_date: self.is_prompts_out_of_date.clone(),
-        }
-    }
-}
-
-impl Client<StdioTransport> {
-    pub fn from_config(config: ClientConfig) -> Result<Self, ClientError> {
-        let ClientConfig {
-            server_name,
-            bin_path,
-            args,
-            timeout,
-            client_info,
-            env,
-        } = config;
-        let child = {
-            let expanded_bin_path = shellexpand::tilde(&bin_path);
-
-            // On Windows, we need to use cmd.exe to run the binary with arguments because Tokio
-            // always assumes that the program has an .exe extension, which is not the case for
-            // helpers like `uvx` or `npx`.
-            let mut command = if cfg!(windows) {
-                let mut cmd = tokio::process::Command::new("cmd.exe");
-                cmd.args(["/C", &Self::build_windows_command(&expanded_bin_path, args)]);
-                cmd
-            } else {
-                let mut cmd = tokio::process::Command::new(expanded_bin_path.to_string());
-                cmd.args(args);
-                cmd
+/// Decorates the method passed in with retry logic, but only if the [RunningService] has an
+/// instance of [AuthClientDropGuard].
+/// The various methods to interact with the mcp server provided by RMCP supposedly does refresh
+/// token once the token expires but that logic would require us to also note down the time at
+/// which a token is obtained since the only time related information in the token is the duration
+/// for which a token is valid. However, if we do solely rely on the internals of these methods to
+/// refresh tokens, we would have no way of knowing when a token is obtained. (Maybe there is a
+/// method that would allow us to configure what extra info to include in the token. If you find it,
+/// feel free to remove this. That would also enable us to simplify the definition of
+/// [RunningService])
+macro_rules! decorate_with_auth_retry {
+    ($param_type:ty, $method_name:ident, $return_type:ty) => {
+        pub async fn $method_name(&self, param: $param_type) -> Result<$return_type, rmcp::ServiceError> {
+            let first_attempt = match &self.inner_service {
+                InnerService::Original(rs) => rs.$method_name(param.clone()).await,
+                InnerService::Peer(peer) => peer.$method_name(param.clone()).await,
             };
 
-            command
-                .stdin(Stdio::piped())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .envs(std::env::vars());
-
-            #[cfg(not(windows))]
-            command.process_group(0);
-
-            if let Some(env) = env {
-                for (env_name, env_value) in env {
-                    command.env(env_name, env_value);
-                }
-            }
-
-            command.spawn()?
-        };
-
-        let server_process_id = child.id().ok_or(ClientError::MissingProcessId)?;
-        let server_process_id = Some(Pid::from_u32(server_process_id));
-
-        let transport = Arc::new(transport::stdio::JsonRpcStdioTransport::client(child)?);
-        Ok(Self {
-            server_name,
-            transport,
-            timeout,
-            server_process_id,
-            client_info,
-            current_id: Arc::new(AtomicU64::new(0)),
-            messenger: None,
-            prompt_gets: Arc::new(SyncRwLock::new(HashMap::new())),
-            is_prompts_out_of_date: Arc::new(AtomicBool::new(false)),
-        })
-    }
-
-    fn build_windows_command(bin_path: &str, args: Vec<String>) -> String {
-        let mut parts = Vec::new();
-
-        // Add the binary path, quoted if necessary
-        parts.push(Self::quote_windows_arg(bin_path));
-
-        // Add all arguments, quoted if necessary
-        for arg in args {
-            parts.push(Self::quote_windows_arg(&arg));
-        }
-
-        parts.join(" ")
-    }
-
-    fn quote_windows_arg(arg: &str) -> String {
-        // If the argument doesn't need quoting, return as-is
-        if !arg.chars().any(|c| " \t\n\r\"".contains(c)) {
-            return arg.to_string();
-        }
-
-        let mut result = String::from("\"");
-        let mut backslashes = 0;
-
-        for c in arg.chars() {
-            match c {
-                '\\' => {
-                    backslashes += 1;
-                    result.push('\\');
-                },
-                '"' => {
-                    // Escape all preceding backslashes and the quote
-                    for _ in 0..backslashes {
-                        result.push('\\');
+            match first_attempt {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    // TODO: discern error type prior to retrying
+                    // Not entirely sure what is thrown when auth is required
+                    if let Some(auth_client) = self.auth_client.as_ref() {
+                        let refresh_result = auth_client.refresh_token().await;
+                        match refresh_result {
+                            Ok(_) => {
+                                info!("Token refreshed");
+                                // Retry the operation after token refresh
+                                match &self.inner_service {
+                                    InnerService::Original(rs) => rs.$method_name(param).await,
+                                    InnerService::Peer(peer) => peer.$method_name(param).await,
+                                }
+                            },
+                            Err(_) => {
+                                // If refresh fails, return the original error
+                                // Currently our event loop just does not allow us easy ways to
+                                // reauth entirely once a session starts since this would mean
+                                // swapping of transport (which also means swapping of client)
+                                Err(e)
+                            },
+                        }
+                    } else {
+                        // No auth client available, return original error
+                        Err(e)
                     }
-                    result.push_str("\\\"");
-                    backslashes = 0;
-                },
-                _ => {
-                    backslashes = 0;
-                    result.push(c);
                 },
             }
         }
-
-        // Escape trailing backslashes before the closing quote
-        for _ in 0..backslashes {
-            result.push('\\');
-        }
-
-        result.push('"');
-        result
-    }
+    };
 }
 
-impl<T> Drop for Client<T>
-where
-    T: Transport,
-{
-    // IF the servers are implemented well, they will shutdown once the pipe closes.
-    // This drop trait is here as a fail safe to ensure we don't leave behind any orphans.
-    fn drop(&mut self) {
-        if let Some(process_id) = self.server_process_id {
-            let _ = terminate_process(process_id);
+/// Wrapper around rmcp service types to enable cloning.
+///
+/// This exists because `rmcp::service::RunningService` is not directly cloneable as it is a
+/// pointer type to `Peer<C>`. This enum allows us to hold either the original service or its
+/// peer representation, enabling cloning by converting the original service to a peer when needed.
+pub enum InnerService {
+    Original(rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>),
+    Peer(rmcp::service::Peer<RoleClient>),
+}
+
+impl std::fmt::Debug for InnerService {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InnerService::Original(_) => f.debug_tuple("Original").field(&"RunningService<..>").finish(),
+            InnerService::Peer(peer) => f.debug_tuple("Peer").field(peer).finish(),
         }
     }
 }
 
-impl<T> Client<T>
-where
-    T: Transport,
-{
-    /// Exchange of information specified as per https://spec.modelcontextprotocol.io/specification/2024-11-05/basic/lifecycle/#initialization
-    ///
-    /// Also done are the following:
-    /// - Spawns task for listening to server driven workflows
-    /// - Spawns tasks to ask for relevant info such as tools and prompts in accordance to server
-    ///   capabilities received
-    pub async fn init(&self) -> Result<ServerCapabilities, ClientError> {
-        let transport_ref = self.transport.clone();
-        let server_name = self.server_name.clone();
+impl Clone for InnerService {
+    fn clone(&self) -> Self {
+        match self {
+            InnerService::Original(rs) => InnerService::Peer((*rs).clone()),
+            InnerService::Peer(peer) => InnerService::Peer(peer.clone()),
+        }
+    }
+}
 
-        // Spawning a task to listen and log stderr output
-        tokio::spawn(async move {
-            let mut log_listener = transport_ref.get_log_listener();
-            loop {
-                match log_listener.recv().await {
-                    Ok(msg) => {
-                        tracing::trace!(target: "mcp", "{server_name} logged {}", msg);
+/// A wrapper around MCP (Model Context Protocol) service instances that manages
+/// authentication and enables cloning functionality.
+///
+/// This struct holds either an original `RunningService` or its peer representation,
+/// along with an optional authentication drop guard for managing OAuth tokens.
+/// The authentication drop guard handles token lifecycle and cleanup when the
+/// service is dropped.
+///
+/// # Fields
+/// * `inner_service` - The underlying MCP service instance (original or peer)
+/// * `auth_dropguard` - Optional authentication manager for OAuth token handling
+#[derive(Debug)]
+pub struct RunningService {
+    pub inner_service: InnerService,
+    auth_client: Option<AuthClientWrapper>,
+}
+
+impl Clone for RunningService {
+    fn clone(&self) -> Self {
+        RunningService {
+            inner_service: self.inner_service.clone(),
+            auth_client: self.auth_client.clone(),
+        }
+    }
+}
+
+impl RunningService {
+    decorate_with_auth_retry!(CallToolRequestParam, call_tool, CallToolResult);
+
+    decorate_with_auth_retry!(GetPromptRequestParam, get_prompt, GetPromptResult);
+}
+
+pub type StdioTransport = (TokioChildProcess, Option<ChildStderr>);
+
+// TODO: add sse support (even though it's deprecated)
+/// Represents the different transport mechanisms available for MCP (Model Context Protocol)
+/// communication.
+///
+/// This enum encapsulates the two primary ways to communicate with MCP servers:
+/// - HTTP-based transport for remote servers
+/// - Standard I/O transport for local process-based servers
+pub enum Transport {
+    /// HTTP transport for communicating with remote MCP servers over network protocols.
+    /// Uses a streamable HTTP client with authentication support.
+    Http(HttpTransport),
+    /// Standard I/O transport for communicating with local MCP servers via child processes.
+    /// Communication happens through stdin/stdout pipes.
+    Stdio(StdioTransport),
+}
+
+impl std::fmt::Debug for Transport {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Transport::Http(_) => f.debug_tuple("Http").field(&"HttpTransport").finish(),
+            Transport::Stdio(_) => f.debug_tuple("Stdio").field(&"TokioChildProcess").finish(),
+        }
+    }
+}
+
+/// This struct implements the [Service] trait from rmcp. It is within this trait the logic of
+/// server driven data flow (i.e. requests and notifications that are sent from the server) are
+/// handled.
+#[derive(Debug)]
+pub struct McpClientService {
+    pub config: CustomToolConfig,
+    server_name: String,
+    messenger: ServerMessenger,
+}
+
+impl McpClientService {
+    pub fn new(server_name: String, config: CustomToolConfig, messenger: ServerMessenger) -> Self {
+        Self {
+            server_name,
+            config,
+            messenger,
+        }
+    }
+
+    pub async fn init(mut self, os: &Os) -> Result<InitializedMcpClient, McpClientError> {
+        let os_clone = os.clone();
+
+        let handle: JoinHandle<Result<RunningService, McpClientError>> = tokio::spawn(async move {
+            let messenger_clone = self.messenger.clone();
+            let server_name = self.server_name.clone();
+            let backup_config = self.config.clone();
+
+            let result: Result<_, McpClientError> = async {
+                let messenger_dup = messenger_clone.duplicate();
+                let (service, stderr, auth_client) = match self.get_transport(&os_clone, &*messenger_dup).await? {
+                    Transport::Stdio((child_process, stderr)) => {
+                        let service = self
+                            .into_dyn()
+                            .serve::<TokioChildProcess, _, _>(child_process)
+                            .await
+                            .map_err(Box::new)?;
+
+                        (service, stderr, None)
                     },
-                    Err(e) => {
-                        tracing::error!(
-                            "Error encountered while reading from stderr for {server_name}: {:?}\nEnding stderr listening task.",
-                            e
-                        );
-                        break;
-                    },
-                }
-            }
-        });
+                    Transport::Http(http_transport) => {
+                        match http_transport {
+                            HttpTransport::WithAuth((transport, mut auth_client)) => {
+                                // The crate does not automatically refresh tokens when they expire. We
+                                // would need to handle that here
+                                let url = self.config.url.clone();
+                                let service = match self.into_dyn().serve(transport).await.map_err(Box::new) {
+                                    Ok(service) => service,
+                                    Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
+                                        debug!("## mcp: first hand shake attempt failed: {:?}", e);
+                                        let refresh_res = auth_client.refresh_token().await;
+                                        let new_self = McpClientService::new(
+                                            server_name.clone(),
+                                            backup_config,
+                                            messenger_clone.clone(),
+                                        );
 
-        let init_params = Some({
-            let client_cap = ClientCapabilities::from(self.client_info.clone());
-            serde_json::json!(client_cap)
-        });
-        let init_resp = self.request("initialize", init_params).await?;
-        if let Err(e) = examine_server_capabilities(&init_resp) {
-            return Err(ClientError::NegotiationError(format!(
-                "Client {} has failed to negotiate server capabilities with server: {:?}",
-                self.server_name, e
-            )));
-        }
-        let cap = {
-            let result = init_resp.result.ok_or(ClientError::NegotiationError(format!(
-                "Server {} init resp is missing result",
-                self.server_name
-            )))?;
-            let cap = result
-                .get("capabilities")
-                .ok_or(ClientError::NegotiationError(format!(
-                    "Server {} init resp result is missing capabilities",
-                    self.server_name
-                )))?
-                .clone();
-            serde_json::from_value::<ServerCapabilities>(cap)?
-        };
-        self.notify("initialized", None).await?;
+                                        let new_transport =
+                                            get_http_transport(&os_clone, &url, Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
 
-        // TODO: group this into examine_server_capabilities
-        // Prefetch prompts in the background. We should only do this after the server has been
-        // initialized
-        if cap.prompts.is_some() {
-            self.is_prompts_out_of_date.store(true, Ordering::Relaxed);
-            let client_ref = (*self).clone();
-            let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
-            tokio::spawn(async move {
-                fetch_prompts_and_notify_with_messenger(&client_ref, messenger_ref.as_ref()).await;
-            });
-        }
-        if cap.tools.is_some() {
-            let client_ref = (*self).clone();
-            let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
-            tokio::spawn(async move {
-                fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref()).await;
-            });
-        }
+                                        match new_transport {
+                                            HttpTransport::WithAuth((new_transport, new_auth_client)) => {
+                                                auth_client = new_auth_client;
 
-        let transport_ref = self.transport.clone();
-        let server_name = self.server_name.clone();
-        let messenger_ref = self.messenger.as_ref().map(|m| m.duplicate());
-        let client_ref = (*self).clone();
+                                                match refresh_res {
+                                                    Ok(_) => {
+                                                        new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                    },
+                                                    Err(e) => {
+                                                        error!("## mcp: token refresh attempt failed: {:?}", e);
+                                                        info!("Retry for http transport failed {e}. Possible reauth needed");
+                                                        // This could be because the refresh token is expired, in which
+                                                        // case we would need to have user go through the auth flow
+                                                        // again. We do this by deleting the cred
+                                                        // and discarding the client to trigger a full auth flow
+                                                        tokio::fs::remove_file(&auth_client.cred_full_path).await?;
+                                                        let new_transport  =
+                                                            get_http_transport(&os_clone, &url, None, &*messenger_dup).await?;
 
-        let prompts_list_changed_supported = cap.prompts.as_ref().is_some_and(|p| p.get("listChanged").is_some());
-        let tools_list_changed_supported = cap.tools.as_ref().is_some_and(|t| t.get("listChanged").is_some());
-        tokio::spawn(async move {
-            let mut listener = transport_ref.get_listener();
-            loop {
-                match listener.recv().await {
-                    Ok(msg) => {
-                        match msg {
-                            JsonRpcMessage::Request(_req) => {},
-                            JsonRpcMessage::Notification(notif) => {
-                                let JsonRpcNotification { method, params, .. } = notif;
-                                match method.as_str() {
-                                    "notifications/message" | "message" => {
-                                        let level = params
-                                            .as_ref()
-                                            .and_then(|p| p.get("level"))
-                                            .and_then(|v| serde_json::to_string(v).ok());
-                                        let data = params
-                                            .as_ref()
-                                            .and_then(|p| p.get("data"))
-                                            .and_then(|v| serde_json::to_string(v).ok());
-                                        if let (Some(level), Some(data)) = (level, data) {
-                                            match level.to_lowercase().as_str() {
-                                                "error" => {
-                                                    tracing::error!(target: "mcp", "{}: {}", server_name, data);
-                                                },
-                                                "warn" => {
-                                                    tracing::warn!(target: "mcp", "{}: {}", server_name, data);
-                                                },
-                                                "info" => {
-                                                    tracing::info!(target: "mcp", "{}: {}", server_name, data);
-                                                },
-                                                "debug" => {
-                                                    tracing::debug!(target: "mcp", "{}: {}", server_name, data);
-                                                },
-                                                "trace" => {
-                                                    tracing::trace!(target: "mcp", "{}: {}", server_name, data);
-                                                },
-                                                _ => {},
-                                            }
+                                                        match new_transport {
+                                                            HttpTransport::WithAuth((new_transport, new_auth_client)) => {
+                                                                auth_client = new_auth_client;
+                                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                            },
+                                                            HttpTransport::WithoutAuth(new_transport) => {
+                                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?
+                                                            },
+                                                        }
+                                                    },
+                                                }
+                                            },
+                                            HttpTransport::WithoutAuth(new_transport) =>
+                                                new_self.into_dyn().serve(new_transport).await.map_err(Box::new)?,
                                         }
                                     },
-                                    "notifications/prompts/list_changed" | "prompts/list_changed"
-                                        if prompts_list_changed_supported =>
-                                    {
-                                        // TODO: after we have moved the prompts to the tool
-                                        // manager we follow the same workflow as the list changed
-                                        // for tools
-                                        fetch_prompts_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
-                                            .await;
-                                        client_ref.is_prompts_out_of_date.store(true, Ordering::Release);
-                                    },
-                                    "notifications/tools/list_changed" | "tools/list_changed"
-                                        if tools_list_changed_supported =>
-                                    {
-                                        fetch_tools_and_notify_with_messenger(&client_ref, messenger_ref.as_ref())
-                                            .await;
-                                    },
-                                    _ => {},
-                                }
+                                    Err(e) => return Err(e.into()),
+                                };
+
+                                (service, None, Some(auth_client))
                             },
-                            JsonRpcMessage::Response(_resp) => { /* noop since direct response is handled inside the request api */
+                            HttpTransport::WithoutAuth(transport) => {
+                                let service = self.into_dyn().serve(transport).await.map_err(Box::new)?;
+
+                                (service, None, None)
                             },
                         }
                     },
-                    Err(e) => {
-                        tracing::error!("Background listening thread for client {}: {:?}", server_name, e);
-                        // If we don't have anything on the other end, we should just end the task
-                        // now
-                        if let TransportError::RecvError(tokio::sync::broadcast::error::RecvError::Closed) = e {
-                            tracing::error!(
-                                "All senders dropped for transport layer for server {}: {:?}. This likely means the mcp server process is no longer running.",
-                                server_name,
-                                e
-                            );
-                            break;
-                        }
-                    },
-                }
+                };
+
+                Ok((service, stderr, auth_client))
             }
-        });
+            .await;
 
-        Ok(cap)
-    }
+            let (service, child_stderr, auth_dropguard) = match result {
+                Ok((service, stderr, auth_dg)) => (service, stderr, auth_dg),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let error_data = ErrorData {
+                        code: ErrorCode::RESOURCE_NOT_FOUND,
+                        message: Cow::from(msg),
+                        data: None,
+                    };
+                    let err = ServiceError::McpError(error_data);
 
-    /// Sends a request to the server associated.
-    /// This call will yield until a response is received.
-    pub async fn request(
-        &self,
-        method: &str,
-        params: Option<serde_json::Value>,
-    ) -> Result<JsonRpcResponse, ClientError> {
-        let send_map_err = |e: Elapsed| (e, method.to_string());
-        let recv_map_err = |e: Elapsed| (e, format!("recv for {method}"));
-        let mut id = self.get_id();
-        let request = JsonRpcRequest {
-            jsonrpc: JsonRpcVersion::default(),
-            id,
-            method: method.to_owned(),
-            params,
-        };
-        tracing::trace!(target: "mcp", "To {}:\n{:#?}", self.server_name, request);
-        let msg = JsonRpcMessage::Request(request);
-        time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
-            .await
-            .map_err(send_map_err)??;
-        let mut listener = self.transport.get_listener();
-        let mut resp = time::timeout(Duration::from_millis(self.timeout), async {
-            // we want to ignore all other messages sent by the server at this point and let the
-            // background loop handle them
-            // We also want to ignore all messages emitted by the server to its stdout that does
-            // not deserialize into a valid JsonRpcMessage (they are not supposed to do this but
-            // too many people complained about this so we are adding this safeguard in)
-            loop {
-                if let Ok(JsonRpcMessage::Response(resp)) = listener.recv().await {
-                    if resp.id == id {
-                        break Ok::<JsonRpcResponse, TransportError>(resp);
+                    if let Err(send_err) = messenger_clone.send_tools_list_result(Err(err), None).await {
+                        error!("Error sending tool result for {server_name}: {send_err}");
                     }
-                }
-            }
-        })
-        .await
-        .map_err(recv_map_err)??;
-        // Pagination support: https://spec.modelcontextprotocol.io/specification/2024-11-05/server/utilities/pagination/#pagination-model
-        let mut next_cursor = resp.result.as_ref().and_then(|v| v.get("nextCursor"));
-        if next_cursor.is_some() {
-            let mut current_resp = resp.clone();
-            let mut results = Vec::<serde_json::Value>::new();
-            let pagination_supported_ops = {
-                let maybe_pagination_supported_op: Result<PaginationSupportedOps, _> = method.try_into();
-                maybe_pagination_supported_op.ok()
+
+                    return Err(e);
+                },
             };
-            if let Some(ops) = pagination_supported_ops {
-                loop {
-                    let result = current_resp.result.as_ref().cloned().unwrap();
-                    let mut list: Vec<serde_json::Value> = match ops {
-                        PaginationSupportedOps::ResourcesList => {
-                            let ResourcesListResult { resources: list, .. } =
-                                serde_json::from_value::<ResourcesListResult>(result)
-                                    .map_err(ClientError::Serialization)?;
-                            list
-                        },
-                        PaginationSupportedOps::ResourceTemplatesList => {
-                            let ResourceTemplatesListResult {
-                                resource_templates: list,
-                                ..
-                            } = serde_json::from_value::<ResourceTemplatesListResult>(result)
-                                .map_err(ClientError::Serialization)?;
-                            list
-                        },
-                        PaginationSupportedOps::PromptsList => {
-                            let PromptsListResult { prompts: list, .. } =
-                                serde_json::from_value::<PromptsListResult>(result)
-                                    .map_err(ClientError::Serialization)?;
-                            list
-                        },
-                        PaginationSupportedOps::ToolsList => {
-                            let ToolsListResult { tools: list, .. } = serde_json::from_value::<ToolsListResult>(result)
-                                .map_err(ClientError::Serialization)?;
-                            list
-                        },
-                    };
-                    results.append(&mut list);
-                    if next_cursor.is_none() {
-                        break;
-                    }
-                    id = self.get_id();
-                    let next_request = JsonRpcRequest {
-                        jsonrpc: JsonRpcVersion::default(),
-                        id,
-                        method: method.to_owned(),
-                        params: Some(serde_json::json!({
-                            "cursor": next_cursor,
-                        })),
-                    };
-                    let msg = JsonRpcMessage::Request(next_request);
-                    time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
-                        .await
-                        .map_err(send_map_err)??;
-                    let resp = time::timeout(Duration::from_millis(self.timeout), async {
-                        loop {
-                            if let Ok(JsonRpcMessage::Response(resp)) = listener.recv().await {
-                                if resp.id == id {
-                                    break Ok::<JsonRpcResponse, TransportError>(resp);
-                                }
-                            }
+
+            if let Some(mut stderr) = child_stderr {
+                let server_name_clone = server_name.clone();
+                tokio::spawn(async move {
+                    let mut buf = [0u8; 1024];
+                    loop {
+                        match stderr.read(&mut buf).await {
+                            Ok(0) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} stderr listening process exited due to EOF");
+                                break;
+                            },
+                            Ok(size) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} logged to its stderr: {}", String::from_utf8_lossy(&buf[0..size]));
+                            },
+                            Err(e) => {
+                                tracing::info!(target: "mcp", "{server_name_clone} stderr listening process exited due to error: {e}");
+                                break; // Error reading
+                            },
                         }
-                    })
-                    .await
-                    .map_err(recv_map_err)??;
-                    current_resp = resp;
-                    next_cursor = current_resp.result.as_ref().and_then(|v| v.get("nextCursor"));
-                }
-                resp.result = Some({
-                    let mut map = serde_json::Map::new();
-                    map.insert(ops.as_key().to_owned(), serde_json::to_value(results)?);
-                    serde_json::to_value(map)?
+                    }
                 });
             }
-        }
-        tracing::trace!(target: "mcp", "From {}:\n{:#?}", self.server_name, resp);
-        Ok(resp)
+
+            let service_clone = service.clone();
+            tokio::spawn(async move {
+                let result: Result<(), Box<dyn std::error::Error + Send + Sync>> = async {
+                    let init_result = service_clone.peer_info();
+                    if let Some(init_result) = init_result {
+                        if init_result.capabilities.tools.is_some() {
+                            paginated_fetch! {
+                                final_result_type: ListToolsResult,
+                                content_type: rmcp::model::Tool,
+                                service_method: list_tools,
+                                result_field: tools,
+                                messenger_method: send_tools_list_result,
+                                service: service_clone.clone(),
+                                messenger: messenger_clone,
+                                server_name: server_name
+                            };
+                        }
+
+                        if init_result.capabilities.prompts.is_some() {
+                            paginated_fetch! {
+                                final_result_type: ListPromptsResult,
+                                content_type: rmcp::model::Prompt,
+                                service_method: list_prompts,
+                                result_field: prompts,
+                                messenger_method: send_prompts_list_result,
+                                service: service_clone,
+                                messenger: messenger_clone,
+                                server_name: server_name
+                            };
+                        }
+                    }
+                    Ok(())
+                }
+                .await;
+
+                if let Err(e) = result {
+                    error!(target: "mcp", "Error in MCP client initialization: {}", e);
+                }
+            });
+
+            Ok(RunningService {
+                inner_service: InnerService::Original(service),
+                auth_client: auth_dropguard,
+            })
+        });
+
+        Ok(InitializedMcpClient::Pending(handle))
     }
 
-    /// Sends a notification to the server associated.
-    /// Notifications are requests that expect no responses.
-    pub async fn notify(&self, method: &str, params: Option<serde_json::Value>) -> Result<(), ClientError> {
-        let send_map_err = |e: Elapsed| (e, method.to_string());
-        let notification = JsonRpcNotification {
-            jsonrpc: JsonRpcVersion::default(),
-            method: format!("notifications/{}", method),
-            params,
-        };
-        let msg = JsonRpcMessage::Notification(notification);
-        Ok(
-            time::timeout(Duration::from_millis(self.timeout), self.transport.send(&msg))
-                .await
-                .map_err(send_map_err)??,
-        )
-    }
+    async fn get_transport(&mut self, os: &Os, messenger: &dyn Messenger) -> Result<Transport, McpClientError> {
+        // TODO: figure out what to do with headers
+        let CustomToolConfig {
+            r#type: transport_type,
+            url,
+            command: command_as_str,
+            args,
+            env: config_envs,
+            ..
+        } = &mut self.config;
 
-    fn get_id(&self) -> u64 {
-        self.current_id.fetch_add(1, Ordering::SeqCst)
-    }
-}
+        match transport_type {
+            TransportType::Stdio => {
+                let command = Command::new(command_as_str).configure(|cmd| {
+                    if let Some(envs) = config_envs {
+                        process_env_vars(envs, &os.env);
+                        cmd.envs(envs);
+                    }
+                    cmd.envs(std::env::vars()).args(args);
 
-fn examine_server_capabilities(ser_cap: &JsonRpcResponse) -> Result<(), ClientError> {
-    // Check the jrpc version.
-    // Currently we are only proceeding if the versions are EXACTLY the same.
-    let jrpc_version = ser_cap.jsonrpc.as_u32_vec();
-    let client_jrpc_version = JsonRpcVersion::default().as_u32_vec();
-    for (sv, cv) in jrpc_version.iter().zip(client_jrpc_version.iter()) {
-        if sv != cv {
-            return Err(ClientError::NegotiationError(
-                "Incompatible jrpc version between server and client".to_owned(),
-            ));
-        }
-    }
-    Ok(())
-}
+                    #[cfg(not(windows))]
+                    cmd.process_group(0);
+                });
 
-// TODO: after we move prompts to tool manager, use the messenger to notify the listener spawned by
-// tool manager to update its own field. Currently this function does not make use of the
-// messesnger.
-#[allow(clippy::borrowed_box)]
-async fn fetch_prompts_and_notify_with_messenger<T>(client: &Client<T>, _messenger: Option<&Box<dyn Messenger>>)
-where
-    T: Transport,
-{
-    let Ok(resp) = client.request("prompts/list", None).await else {
-        tracing::error!("Prompt list query failed for {0}", client.server_name);
-        return;
-    };
-    let Some(result) = resp.result else {
-        tracing::warn!("Prompt list query returned no result for {0}", client.server_name);
-        return;
-    };
-    let Some(prompts) = result.get("prompts") else {
-        tracing::warn!(
-            "Prompt list query result contained no field named prompts for {0}",
-            client.server_name
-        );
-        return;
-    };
-    let Ok(prompts) = serde_json::from_value::<Vec<PromptGet>>(prompts.clone()) else {
-        tracing::error!("Prompt list query deserialization failed for {0}", client.server_name);
-        return;
-    };
-    let Ok(mut lock) = client.prompt_gets.write() else {
-        tracing::error!(
-            "Failed to obtain write lock for prompt list query for {0}",
-            client.server_name
-        );
-        return;
-    };
-    lock.clear();
-    for prompt in prompts {
-        let name = prompt.name.clone();
-        lock.insert(name, prompt);
-    }
-}
+                let (tokio_child_process, child_stderr) =
+                    TokioChildProcess::builder(command).stderr(Stdio::piped()).spawn()?;
 
-#[allow(clippy::borrowed_box)]
-async fn fetch_tools_and_notify_with_messenger<T>(client: &Client<T>, messenger: Option<&Box<dyn Messenger>>)
-where
-    T: Transport,
-{
-    // TODO: decouple pagination logic from request and have page fetching logic here
-    // instead
-    let tool_list_result = 'tool_list_result: {
-        let resp = match client.request("tools/list", None).await {
-            Ok(resp) => resp,
-            Err(e) => break 'tool_list_result Err(e.into()),
-        };
-        if let Some(error) = resp.error {
-            let msg = format!("Failed to retrieve tool list for {}: {:?}", client.server_name, error);
-            break 'tool_list_result Err(eyre::eyre!(msg));
-        }
-        let Some(result) = resp.result else {
-            let msg = format!("Tool list response from {} is missing result", client.server_name);
-            break 'tool_list_result Err(eyre::eyre!(msg));
-        };
-        let tool_list_result = match serde_json::from_value::<ToolsListResult>(result) {
-            Ok(result) => result,
-            Err(e) => {
-                let msg = format!("Failed to deserialize tool result from {}: {:?}", client.server_name, e);
-                break 'tool_list_result Err(eyre::eyre!(msg));
+                Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
+            TransportType::Http => {
+                let http_transport = get_http_transport(os, url, None, messenger).await?;
+
+                Ok(Transport::Http(http_transport))
+            },
+        }
+    }
+
+    async fn on_logging_message(
+        &self,
+        params: LoggingMessageNotificationParam,
+        _context: NotificationContext<RoleClient>,
+    ) {
+        let level = params.level;
+        let data = params.data;
+        let server_name = &self.server_name;
+
+        match level {
+            LoggingLevel::Error | LoggingLevel::Critical | LoggingLevel::Emergency | LoggingLevel::Alert => {
+                tracing::error!(target: "mcp", "{}: {}", server_name, data);
+            },
+            LoggingLevel::Warning => {
+                tracing::warn!(target: "mcp", "{}: {}", server_name, data);
+            },
+            LoggingLevel::Info => {
+                tracing::info!(target: "mcp", "{}: {}", server_name, data);
+            },
+            LoggingLevel::Debug => {
+                tracing::debug!(target: "mcp", "{}: {}", server_name, data);
+            },
+            LoggingLevel::Notice => {
+                tracing::trace!(target: "mcp", "{}: {}", server_name, data);
+            },
+        }
+    }
+
+    async fn on_tool_list_changed(&self, context: NotificationContext<RoleClient>) {
+        let NotificationContext { peer, .. } = context;
+        let _timeout = self.config.timeout;
+
+        paginated_fetch! {
+            final_result_type: ListToolsResult,
+            content_type: rmcp::model::Tool,
+            service_method: list_tools,
+            result_field: tools,
+            messenger_method: send_tools_list_result,
+            service: peer,
+            messenger: self.messenger,
+            server_name: self.server_name
         };
-        Ok::<ToolsListResult, eyre::Report>(tool_list_result)
-    };
-    if let Some(messenger) = messenger {
-        let _ = messenger
-            .send_tools_list_result(tool_list_result)
-            .await
-            .map_err(|e| tracing::error!("Failed to send tool result through messenger {:?}", e));
+    }
+
+    async fn on_prompt_list_changed(&self, context: NotificationContext<RoleClient>) {
+        let NotificationContext { peer, .. } = context;
+        let _timeout = self.config.timeout;
+
+        paginated_fetch! {
+            final_result_type: ListPromptsResult,
+            content_type: rmcp::model::Prompt,
+            service_method: list_prompts,
+            result_field: prompts,
+            messenger_method: send_prompts_list_result,
+            service: peer,
+            messenger: self.messenger,
+            server_name: self.server_name
+        };
+    }
+}
+
+impl Service<RoleClient> for McpClientService {
+    async fn handle_request(
+        &self,
+        request: <RoleClient as rmcp::service::ServiceRole>::PeerReq,
+        _context: rmcp::service::RequestContext<RoleClient>,
+    ) -> Result<<RoleClient as rmcp::service::ServiceRole>::Resp, rmcp::ErrorData> {
+        match request {
+            ServerRequest::PingRequest(_) => Err(rmcp::ErrorData::method_not_found::<rmcp::model::PingRequestMethod>()),
+            ServerRequest::CreateMessageRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+                rmcp::model::CreateMessageRequestMethod,
+            >()),
+            ServerRequest::ListRootsRequest(_) => {
+                Err(rmcp::ErrorData::method_not_found::<rmcp::model::ListRootsRequestMethod>())
+            },
+            ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
+                rmcp::model::ElicitationCreateRequestMethod,
+            >()),
+        }
+    }
+
+    async fn handle_notification(
+        &self,
+        notification: <RoleClient as rmcp::service::ServiceRole>::PeerNot,
+        context: NotificationContext<RoleClient>,
+    ) -> Result<(), rmcp::ErrorData> {
+        match notification {
+            ServerNotification::ToolListChangedNotification(_) => self.on_tool_list_changed(context).await,
+            ServerNotification::LoggingMessageNotification(notification) => {
+                self.on_logging_message(notification.params, context).await;
+            },
+            ServerNotification::PromptListChangedNotification(_) => self.on_prompt_list_changed(context).await,
+            // TODO: support these
+            ServerNotification::CancelledNotification(_) => (),
+            ServerNotification::ResourceUpdatedNotification(_) => (),
+            ServerNotification::ResourceListChangedNotification(_) => (),
+            ServerNotification::ProgressNotification(_) => (),
+        };
+        Ok(())
+    }
+
+    fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
+        InitializeRequestParam {
+            protocol_version: Default::default(),
+            capabilities: Default::default(),
+            client_info: Implementation {
+                name: "Q DEV CLI".to_string(),
+                version: "1.0.0".to_string(),
+            },
+        }
+    }
+}
+
+/// InitializedMcpClient is the return of [McpClientService::init].
+/// This is necessitated by the fact that [Service::serve], the command to spawn the process, is
+/// async and does not resolve immediately. This delay can be significant and causes long perceived
+/// latency during start up. However, our current architecture still requires the main chat loop to
+/// have ownership of [RunningService].  
+/// The solution chosen here is to instead spawn a task and have [Service::serve] called there and
+/// return the handle to said task, stored in the [InitializedMcpClient::Pending] variant. This
+/// enum is then flipped lazily (if applicable) when a [RunningService] is needed.
+pub enum InitializedMcpClient {
+    Pending(JoinHandle<Result<RunningService, McpClientError>>),
+    Ready(RunningService),
+}
+
+impl std::fmt::Debug for InitializedMcpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InitializedMcpClient::Pending(_) => f.debug_tuple("Pending").field(&"JoinHandle<..>").finish(),
+            InitializedMcpClient::Ready(_) => f.debug_tuple("Ready").field(&"RunningService<..>").finish(),
+        }
+    }
+}
+
+impl InitializedMcpClient {
+    pub async fn get_running_service(&mut self) -> Result<&RunningService, McpClientError> {
+        match self {
+            InitializedMcpClient::Pending(handle) if handle.is_finished() => {
+                let running_service = handle.await??;
+                *self = InitializedMcpClient::Ready(running_service);
+                let InitializedMcpClient::Ready(running_service) = self else {
+                    unreachable!()
+                };
+
+                Ok(running_service)
+            },
+            InitializedMcpClient::Ready(running_service) => Ok(running_service),
+            InitializedMcpClient::Pending(_) => Err(McpClientError::NotReady),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
-
-    use serde_json::Value;
-
     use super::*;
-    const TEST_BIN_OUT_DIR: &str = "target/debug";
-    const TEST_SERVER_NAME: &str = "test_mcp_server";
 
-    fn get_workspace_root() -> PathBuf {
-        let output = std::process::Command::new("cargo")
-            .args(["metadata", "--format-version=1", "--no-deps"])
-            .output()
-            .expect("Failed to execute cargo metadata");
+    #[tokio::test]
+    async fn test_substitute_env_vars() {
+        // Set a test environment variable
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
+        }
 
-        let metadata: serde_json::Value =
-            serde_json::from_slice(&output.stdout).expect("Failed to parse cargo metadata");
-
-        let workspace_root = metadata["workspace_root"]
-            .as_str()
-            .expect("Failed to find workspace_root in metadata");
-
-        PathBuf::from(workspace_root)
-    }
-
-    #[tokio::test(flavor = "multi_thread")]
-    // For some reason this test is quite flakey when ran in the CI but not on developer's
-    // machines. As a result it is hard to debug, hence we are ignoring it for now.
-    #[ignore]
-    async fn test_client_stdio() {
-        std::process::Command::new("cargo")
-            .args(["build", "--bin", TEST_SERVER_NAME])
-            .status()
-            .expect("Failed to build binary");
-        let workspace_root = get_workspace_root();
-        let bin_path = workspace_root.join(TEST_BIN_OUT_DIR).join(TEST_SERVER_NAME);
-        println!("bin path: {}", bin_path.to_str().unwrap_or("no path found"));
-
-        // Testing 2 concurrent sessions to make sure transport layer does not overlap.
-        let client_info_one = serde_json::json!({
-          "name": "TestClientOne",
-          "version": "1.0.0"
-        });
-        let client_config_one = ClientConfig {
-            server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
-            args: ["1".to_owned()].to_vec(),
-            timeout: 120 * 1000,
-            client_info: client_info_one.clone(),
-            env: {
-                let mut map = HashMap::<String, String>::new();
-                map.insert("ENV_ONE".to_owned(), "1".to_owned());
-                map.insert("ENV_TWO".to_owned(), "2".to_owned());
-                Some(map)
-            },
-        };
-        let client_info_two = serde_json::json!({
-          "name": "TestClientTwo",
-          "version": "1.0.0"
-        });
-        let client_config_two = ClientConfig {
-            server_name: "test_tool".to_owned(),
-            bin_path: bin_path.to_str().unwrap().to_string(),
-            args: ["2".to_owned()].to_vec(),
-            timeout: 120 * 1000,
-            client_info: client_info_two.clone(),
-            env: {
-                let mut map = HashMap::<String, String>::new();
-                map.insert("ENV_ONE".to_owned(), "1".to_owned());
-                map.insert("ENV_TWO".to_owned(), "2".to_owned());
-                Some(map)
-            },
-        };
-        let mut client_one = Client::<StdioTransport>::from_config(client_config_one).expect("Failed to create client");
-        let mut client_two = Client::<StdioTransport>::from_config(client_config_two).expect("Failed to create client");
-        let client_one_cap = ClientCapabilities::from(client_info_one);
-        let client_two_cap = ClientCapabilities::from(client_info_two);
-
-        let (res_one, res_two) = tokio::join!(
-            time::timeout(
-                time::Duration::from_secs(10),
-                test_client_routine(&mut client_one, serde_json::json!(client_one_cap))
-            ),
-            time::timeout(
-                time::Duration::from_secs(10),
-                test_client_routine(&mut client_two, serde_json::json!(client_two_cap))
-            )
+        // Test basic substitution
+        assert_eq!(
+            substitute_env_vars("Value is ${env:TEST_VAR}", &os.env),
+            "Value is test_value"
         );
-        let res_one = res_one.expect("Client one timed out");
-        let res_two = res_two.expect("Client two timed out");
-        assert!(res_one.is_ok());
-        assert!(res_two.is_ok());
+
+        // Test multiple substitutions
+        assert_eq!(
+            substitute_env_vars("${env:TEST_VAR} and ${env:TEST_VAR}", &os.env),
+            "test_value and test_value"
+        );
+
+        // Test non-existent variable
+        assert_eq!(
+            substitute_env_vars("${env:NON_EXISTENT_VAR}", &os.env),
+            "${NON_EXISTENT_VAR}"
+        );
+
+        // Test mixed content
+        assert_eq!(
+            substitute_env_vars("Prefix ${env:TEST_VAR} suffix", &os.env),
+            "Prefix test_value suffix"
+        );
     }
 
-    #[allow(clippy::await_holding_lock)]
-    async fn test_client_routine<T: Transport>(
-        client: &mut Client<T>,
-        cap_sent: serde_json::Value,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-        // Test init
-        let _ = client.init().await.expect("Client init failed");
-        tokio::time::sleep(time::Duration::from_millis(1500)).await;
-        let client_capabilities_sent = client
-            .request("verify_init_ack_sent", None)
-            .await
-            .expect("Verify init ack mock request failed");
-        let has_server_recvd_init_ack = client_capabilities_sent
-            .result
-            .expect("Failed to retrieve client capabilities sent.");
-        assert_eq!(has_server_recvd_init_ack.to_string(), "true");
-        let cap_recvd = client
-            .request("verify_init_params_sent", None)
-            .await
-            .expect("Verify init params mock request failed");
-        let cap_recvd = cap_recvd
-            .result
-            .expect("Verify init params mock request does not contain required field (result)");
-        assert!(are_json_values_equal(&cap_sent, &cap_recvd));
-
-        // test list tools
-        let fake_tool_names = ["get_weather_one", "get_weather_two", "get_weather_three"];
-        let mock_result_spec = fake_tool_names.map(create_fake_tool_spec);
-        let mock_tool_specs_for_verify = serde_json::json!(mock_result_spec.clone());
-        let mock_tool_specs_prep_param = mock_result_spec
-            .iter()
-            .zip(fake_tool_names.iter())
-            .map(|(v, n)| {
-                serde_json::json!({
-                    "key": (*n).to_string(),
-                    "value": v
-                })
-            })
-            .collect::<Vec<serde_json::Value>>();
-        let mock_tool_specs_prep_param =
-            serde_json::to_value(mock_tool_specs_prep_param).expect("Failed to create mock tool specs prep param");
-        let _ = client
-            .request("store_mock_tool_spec", Some(mock_tool_specs_prep_param))
-            .await
-            .expect("Mock tool spec prep failed");
-        let tool_spec_recvd = client.request("tools/list", None).await.expect("List tools failed");
-        assert!(are_json_values_equal(
-            tool_spec_recvd
-                .result
-                .as_ref()
-                .and_then(|v| v.get("tools"))
-                .expect("Failed to retrieve tool specs from result received"),
-            &mock_tool_specs_for_verify
-        ));
-
-        // Test list prompts directly
-        let fake_prompt_names = ["code_review_one", "code_review_two", "code_review_three"];
-        let mock_result_prompts = fake_prompt_names.map(create_fake_prompts);
-        let mock_prompts_for_verify = serde_json::json!(mock_result_prompts.clone());
-        let mock_prompts_prep_param = mock_result_prompts
-            .iter()
-            .zip(fake_prompt_names.iter())
-            .map(|(v, n)| {
-                serde_json::json!({
-                    "key": (*n).to_string(),
-                    "value": v
-                })
-            })
-            .collect::<Vec<serde_json::Value>>();
-        let mock_prompts_prep_param =
-            serde_json::to_value(mock_prompts_prep_param).expect("Failed to create mock prompts prep param");
-        let _ = client
-            .request("store_mock_prompts", Some(mock_prompts_prep_param))
-            .await
-            .expect("Mock prompt prep failed");
-        let prompts_recvd = client.request("prompts/list", None).await.expect("List prompts failed");
-        client.is_prompts_out_of_date.store(false, Ordering::Release);
-        assert!(are_json_values_equal(
-            prompts_recvd
-                .result
-                .as_ref()
-                .and_then(|v| v.get("prompts"))
-                .expect("Failed to retrieve prompts from results received"),
-            &mock_prompts_for_verify
-        ));
-
-        // Test prompts list changed
-        let fake_prompt_names = ["code_review_four", "code_review_five", "code_review_six"];
-        let mock_result_prompts = fake_prompt_names.map(create_fake_prompts);
-        let mock_prompts_prep_param = mock_result_prompts
-            .iter()
-            .zip(fake_prompt_names.iter())
-            .map(|(v, n)| {
-                serde_json::json!({
-                    "key": (*n).to_string(),
-                    "value": v
-                })
-            })
-            .collect::<Vec<serde_json::Value>>();
-        let mock_prompts_prep_param =
-            serde_json::to_value(mock_prompts_prep_param).expect("Failed to create mock prompts prep param");
-        let _ = client
-            .request("store_mock_prompts", Some(mock_prompts_prep_param))
-            .await
-            .expect("Mock new prompt request failed");
-        // After we send the signal for the server to clear prompts, we should be receiving signal
-        // to fetch for new prompts, after which we should be getting no prompts.
-        let is_prompts_out_of_date = client.is_prompts_out_of_date.clone();
-        let wait_for_new_prompts = async move {
-            while !is_prompts_out_of_date.load(Ordering::Acquire) {
-                tokio::time::sleep(time::Duration::from_millis(100)).await;
-            }
-        };
-        time::timeout(time::Duration::from_secs(5), wait_for_new_prompts)
-            .await
-            .expect("Timed out while waiting for new prompts");
-        let new_prompts = client.prompt_gets.read().expect("Failed to read new prompts");
-        for k in new_prompts.keys() {
-            assert!(fake_prompt_names.contains(&k.as_str()));
+    #[tokio::test]
+    async fn test_process_env_vars() {
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("TEST_VAR", "test_value");
         }
 
-        // Test env var inclusion
-        let env_vars = client.request("get_env_vars", None).await.expect("Get env vars failed");
-        let env_one = env_vars
-            .result
-            .as_ref()
-            .expect("Failed to retrieve results from env var request")
-            .get("ENV_ONE")
-            .expect("Failed to retrieve env one from env var request");
-        let env_two = env_vars
-            .result
-            .as_ref()
-            .expect("Failed to retrieve results from env var request")
-            .get("ENV_TWO")
-            .expect("Failed to retrieve env two from env var request");
-        let env_one_as_str = serde_json::to_string(env_one).expect("Failed to convert env one to string");
-        let env_two_as_str = serde_json::to_string(env_two).expect("Failed to convert env two to string");
-        assert_eq!(env_one_as_str, "\"1\"".to_string());
-        assert_eq!(env_two_as_str, "\"2\"".to_string());
+        let mut env_vars = HashMap::new();
+        env_vars.insert("KEY1".to_string(), "Value is ${env:TEST_VAR}".to_string());
+        env_vars.insert("KEY2".to_string(), "No substitution".to_string());
 
-        Ok(())
-    }
+        process_env_vars(&mut env_vars, &os.env);
 
-    fn are_json_values_equal(a: &Value, b: &Value) -> bool {
-        match (a, b) {
-            (Value::Null, Value::Null) => true,
-            (Value::Bool(a_val), Value::Bool(b_val)) => a_val == b_val,
-            (Value::Number(a_val), Value::Number(b_val)) => a_val == b_val,
-            (Value::String(a_val), Value::String(b_val)) => a_val == b_val,
-            (Value::Array(a_arr), Value::Array(b_arr)) => {
-                if a_arr.len() != b_arr.len() {
-                    return false;
-                }
-                a_arr
-                    .iter()
-                    .zip(b_arr.iter())
-                    .all(|(a_item, b_item)| are_json_values_equal(a_item, b_item))
-            },
-            (Value::Object(a_obj), Value::Object(b_obj)) => {
-                if a_obj.len() != b_obj.len() {
-                    return false;
-                }
-                a_obj.iter().all(|(key, a_value)| match b_obj.get(key) {
-                    Some(b_value) => are_json_values_equal(a_value, b_value),
-                    None => false,
-                })
-            },
-            _ => false,
-        }
-    }
-
-    fn create_fake_tool_spec(name: &str) -> serde_json::Value {
-        serde_json::json!({
-            "name": name,
-            "description": "Get current weather information for a location",
-            "inputSchema": {
-              "type": "object",
-              "properties": {
-                "location": {
-                  "type": "string",
-                  "description": "City name or zip code"
-                }
-              },
-              "required": ["location"]
-            }
-        })
-    }
-
-    fn create_fake_prompts(name: &str) -> serde_json::Value {
-        serde_json::json!({
-            "name": name,
-            "description": "Asks the LLM to analyze code quality and suggest improvements",
-            "arguments": [
-              {
-                "name": "code",
-                "description": "The code to review",
-                "required": true
-              }
-            ]
-        })
-    }
-
-    #[cfg(windows)]
-    mod windows_command_tests {
-        use super::*;
-        use crate::mcp_client::transport::stdio::JsonRpcStdioTransport as StdioTransport;
-
-        #[test]
-        fn test_quote_windows_arg_no_special_chars() {
-            let result = Client::<StdioTransport>::quote_windows_arg("simple");
-            assert_eq!(result, "simple");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_spaces() {
-            let result = Client::<StdioTransport>::quote_windows_arg("with spaces");
-            assert_eq!(result, "\"with spaces\"");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_quotes() {
-            let result = Client::<StdioTransport>::quote_windows_arg("with \"quotes\"");
-            assert_eq!(result, "\"with \\\"quotes\\\"\"");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_backslashes() {
-            let result = Client::<StdioTransport>::quote_windows_arg("path\\to\\file");
-            assert_eq!(result, "path\\to\\file");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_trailing_backslashes() {
-            let result = Client::<StdioTransport>::quote_windows_arg("path\\to\\dir\\");
-            assert_eq!(result, "path\\to\\dir\\");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_backslashes_before_quote() {
-            let result = Client::<StdioTransport>::quote_windows_arg("path\\\\\"quoted\"");
-            assert_eq!(result, "\"path\\\\\\\\\\\"quoted\\\"\"");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_complex_case() {
-            let result = Client::<StdioTransport>::quote_windows_arg("C:\\Program Files\\My App\\bin\\app.exe");
-            assert_eq!(result, "\"C:\\Program Files\\My App\\bin\\app.exe\"");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_with_tabs_and_newlines() {
-            let result = Client::<StdioTransport>::quote_windows_arg("with\ttabs\nand\rnewlines");
-            assert_eq!(result, "\"with\ttabs\nand\rnewlines\"");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_edge_case_only_backslashes() {
-            let result = Client::<StdioTransport>::quote_windows_arg("\\\\\\");
-            assert_eq!(result, "\\\\\\");
-        }
-
-        #[test]
-        fn test_quote_windows_arg_edge_case_only_quotes() {
-            let result = Client::<StdioTransport>::quote_windows_arg("\"\"\"");
-            assert_eq!(result, "\"\\\"\\\"\\\"\"");
-        }
-
-        // Tests for build_windows_command function
-        #[test]
-        fn test_build_windows_command_empty_args() {
-            let bin_path = "myapp";
-            let args = vec![];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "myapp");
-        }
-
-        #[test]
-        fn test_build_windows_command_uvx_example() {
-            let bin_path = "uvx";
-            let args = vec!["mcp-server-fetch".to_string()];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "uvx mcp-server-fetch");
-        }
-
-        #[test]
-        fn test_build_windows_command_npx_example() {
-            let bin_path = "npx";
-            let args = vec!["-y".to_string(), "@modelcontextprotocol/server-memory".to_string()];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "npx -y @modelcontextprotocol/server-memory");
-        }
-
-        #[test]
-        fn test_build_windows_command_docker_example() {
-            let bin_path = "docker";
-            let args = vec![
-                "run".to_string(),
-                "-i".to_string(),
-                "--rm".to_string(),
-                "-e".to_string(),
-                "GITHUB_PERSONAL_ACCESS_TOKEN".to_string(),
-                "ghcr.io/github/github-mcp-server".to_string(),
-            ];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(
-                result,
-                "docker run -i --rm -e GITHUB_PERSONAL_ACCESS_TOKEN ghcr.io/github/github-mcp-server"
-            );
-        }
-
-        #[test]
-        fn test_build_windows_command_with_quotes_in_args() {
-            let bin_path = "myapp";
-            let args = vec!["--config".to_string(), "{\"key\": \"value\"}".to_string()];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "myapp --config \"{\\\"key\\\": \\\"value\\\"}\"");
-        }
-
-        #[test]
-        fn test_build_windows_command_with_spaces_in_path() {
-            let bin_path = "C:\\Program Files\\My App\\bin\\app.exe";
-            let args = vec!["--input".to_string(), "file with spaces.txt".to_string()];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(
-                result,
-                "\"C:\\Program Files\\My App\\bin\\app.exe\" --input \"file with spaces.txt\""
-            );
-        }
-
-        #[test]
-        fn test_build_windows_command_complex_args() {
-            let bin_path = "myapp";
-            let args = vec![
-                "--config".to_string(),
-                "C:\\Users\\test\\config.json".to_string(),
-                "--output".to_string(),
-                "C:\\Output\\result file.txt".to_string(),
-                "--verbose".to_string(),
-            ];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(
-                result,
-                "myapp --config C:\\Users\\test\\config.json --output \"C:\\Output\\result file.txt\" --verbose"
-            );
-        }
-
-        #[test]
-        fn test_build_windows_command_with_environment_variables() {
-            let bin_path = "cmd";
-            let args = vec!["/c".to_string(), "echo %PATH%".to_string()];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "cmd /c \"echo %PATH%\"");
-        }
-
-        #[test]
-        fn test_build_windows_command_real_world_python() {
-            let bin_path = "python";
-            let args = vec![
-                "-m".to_string(),
-                "mcp_server".to_string(),
-                "--config".to_string(),
-                "C:\\configs\\server.json".to_string(),
-            ];
-            let result = Client::<StdioTransport>::build_windows_command(bin_path, args);
-            assert_eq!(result, "python -m mcp_server --config C:\\configs\\server.json");
-        }
+        assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
+        assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
     }
 }

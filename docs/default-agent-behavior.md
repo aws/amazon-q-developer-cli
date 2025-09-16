@@ -96,7 +96,7 @@ q chat --agent specialized-agent
 
 ### Create a Custom Default
 You can create your own "default" agent by placing an agent file with the name `q_cli_default` in either:
-- `.aws/amazonq/cli-agents/` (local)
+- `.amazonq/cli-agents/` (local)
 - `~/.aws/amazonq/cli-agents/` (global)
 
 This will override the built-in default agent configuration.
