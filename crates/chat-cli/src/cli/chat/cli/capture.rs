@@ -162,6 +162,9 @@ impl CaptureSubcommand {
                     },
                 }
                 session.conversation.capture_manager = None;
+                return Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                });
             },
             Self::Expand { tag } => match expand_capture(&manager, &mut session.stderr, tag.clone()) {
                 Ok(_) => (),

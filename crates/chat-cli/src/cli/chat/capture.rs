@@ -23,7 +23,7 @@ use crate::cli::ConversationState;
 use crate::os::Os;
 
 // The shadow repo path that MUST be appended with a session-specific directory
-// pub const SHADOW_REPO_DIR: &str = "/Users/kiranbug/.amazonq/captures/";
+// pub const SHADOW_REPO_DIR: &str = "/Users/aws/.amazonq/cli-captures/";
 
 // CURRENT APPROACH:
 // We only enable automatically enable checkpoints when the user is already in a git repo.
@@ -64,45 +64,8 @@ impl CaptureManager {
                 "Must be in a git repo for automatic capture initialization. Use /capture init to manually enable captures."
             );
         }
-
-        let path = shadow_path.as_ref();
-        os.fs.create_dir_all(path).await?;
-
-        let repo_root = get_git_repo_root()?;
-        let output = Command::new("git")
-            .args(["clone", &repo_root.to_string_lossy(), &path.to_string_lossy()])
-            .output()?;
-
-        if !output.status.success() {
-            bail!("git clone failed: {}", String::from_utf8_lossy(&output.stdout));
-        }
-
-        let cloned_git_dir = path.join(".git");
-
-        config(&cloned_git_dir.to_string_lossy())?;
-        stage_commit_tag(&cloned_git_dir.to_string_lossy(), "Initial capture", "0")?;
-
-        let captures = vec![Capture {
-            tag: "0".to_string(),
-            timestamp: Local::now(),
-            message: "Initial capture".to_string(),
-            history_index: 0,
-            is_turn: true,
-            tool_name: None,
-        }];
-
-        let mut tag_to_index = HashMap::new();
-        tag_to_index.insert("0".to_string(), 0);
-
-        Ok(Self {
-            shadow_repo_path: cloned_git_dir,
-            captures,
-            tag_to_index,
-            num_turns: 0,
-            num_tools_this_turn: 0,
-            last_user_message: None,
-            user_message_lock: false,
-        })
+        // Reuse bare repo init to keep storage model consistent.
+        Self::manual_init(os, shadow_path).await
     }
 
     pub async fn manual_init(os: &Os, path: impl AsRef<Path>) -> Result<Self> {
@@ -192,13 +155,16 @@ impl CaptureManager {
         Ok(())
     }
 
-    pub async fn clean(&self, os: &Os) -> Result<()> {
-        let path = if self.shadow_repo_path.file_name().unwrap() == ".git" {
-            self.shadow_repo_path.parent().unwrap()
-        } else {
-            self.shadow_repo_path.as_path()
-        };
+    pub async fn clean(&self, os: &Os) -> eyre::Result<()> {
+        // In bare mode, shadow_repo_path is the session directory to delete.
+        let path = &self.shadow_repo_path;
+
         println!("Deleting path: {}", path.display());
+
+        if !path.exists() {
+            return Ok(());
+        }
+
         os.fs.remove_dir_all(path).await?;
         Ok(())
     }
@@ -267,20 +233,6 @@ pub fn is_in_git_repo() -> bool {
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
-}
-
-pub fn get_git_repo_root() -> Result<PathBuf> {
-    let output = Command::new("git").args(["rev-parse", "--show-toplevel"]).output()?;
-
-    if !output.status.success() {
-        bail!(
-            "Failed to get git repo root: {}",
-            String::from_utf8_lossy(&output.stdout)
-        );
-    }
-
-    let root = String::from_utf8(output.stdout)?.trim().to_string();
-    Ok(PathBuf::from(root))
 }
 
 pub fn stage_commit_tag(shadow_path: &str, commit_message: &str, tag: &str) -> Result<()> {
