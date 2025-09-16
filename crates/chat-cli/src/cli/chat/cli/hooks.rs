@@ -271,18 +271,20 @@ impl HookExecutor {
 
         let timeout = Duration::from_millis(hook.1.timeout_ms);
 
-        // Set USER_PROMPT environment variable if provided
-        if let Some(prompt) = prompt {
-            // Sanitize the prompt to avoid issues with special characters
-            let sanitized_prompt = sanitize_user_prompt(prompt);
-            cmd.env("USER_PROMPT", sanitized_prompt);
-        }
-
         // Generate hook command input in JSON format
         let mut hook_input = serde_json::json!({
             "hook_event_name": hook.0.to_string(),
             "cwd": cwd
         });
+
+        // Set USER_PROMPT environment variable and add to JSON input if provided
+        if let Some(prompt) = prompt {
+            // Sanitize the prompt to avoid issues with special characters
+            let sanitized_prompt = sanitize_user_prompt(prompt);
+            cmd.env("USER_PROMPT", sanitized_prompt);
+            hook_input["prompt"] = serde_json::Value::String(prompt.to_string());
+        }
+
         // ToolUse specific input
         if let Some(tool_ctx) = tool_context {
             hook_input["tool_name"] = serde_json::Value::String(tool_ctx.tool_name);
