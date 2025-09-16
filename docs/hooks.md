@@ -31,8 +31,9 @@ For tool-related hooks, additional fields are included:
 ## Tool Matching
 
 Use the `matcher` field to specify which tools the hook applies to:
-- `"fs_write"` - Exact match
-- `"fs_*"` - Wildcard pattern
+- `"fs_write"` - Exact match for built-in tools
+- `"fs_*"` - Wildcard pattern for built-in tools
+- `"query"` - Exact match for MCP tools (e.g., query tool from postgres MCP, uses base tool name only)
 - No matcher - Applies to all tools
 
 ## Hook Types
