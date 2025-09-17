@@ -281,6 +281,7 @@ Each hook is defined with:
 Available hook triggers:
 - `agentSpawn`: Triggered when the agent is initialized
 - `userPromptSubmit`: Triggered when the user submits a message
+- `agentNeedsAttention`: Triggered when the agent needs user attention
 
 ## UseLegacyMcpJson Field
 

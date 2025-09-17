@@ -163,6 +163,9 @@
         },
         "agentSpawn": {
           "$ref": "#/definitions/hookCommands"
+        },
+        "agentNeedsAttention": {
+          "$ref": "#/definitions/hookCommands"
         }
       },
       "default": {}

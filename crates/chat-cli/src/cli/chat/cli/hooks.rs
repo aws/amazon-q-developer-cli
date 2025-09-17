@@ -75,6 +75,7 @@ impl HookExecutor {
         hooks: HashMap<HookTrigger, Vec<Hook>>,
         output: &mut impl Write,
         prompt: Option<&str>,
+        additional_env: Option<&HashMap<String, String>>,
     ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
@@ -86,12 +87,13 @@ impl HookExecutor {
                 cached.push((hook.clone(), cache.clone()));
                 continue;
             }
-            futures.push(self.run_hook(hook, prompt));
+            // Pass additional env to all hooks if provided
+            futures.push(self.run_hook_core(hook, prompt, additional_env));
         }
 
         let mut complete = 0;
         let total = futures.len();
-        let mut spinner = None;
+        let mut spinner: Option<Spinner> = None;
         let spinner_text = |complete: usize, total: usize| {
             format!(
                 "{} of {} hooks finished",
@@ -173,6 +175,7 @@ impl HookExecutor {
                 expiry: match trigger {
                     HookTrigger::AgentSpawn => None,
                     HookTrigger::UserPromptSubmit => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                    HookTrigger::AgentNeedsAttention => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                 },
             });
         }
@@ -182,10 +185,11 @@ impl HookExecutor {
         Ok(results)
     }
 
-    async fn run_hook(
+    async fn run_hook_core(
         &self,
         hook: (HookTrigger, Hook),
         prompt: Option<&str>,
+        additional_env: Option<&HashMap<String, String>>,
     ) -> ((HookTrigger, Hook), Result<String>, Duration) {
         let start_time = Instant::now();
 
@@ -220,12 +224,20 @@ impl HookExecutor {
             cmd.env("USER_PROMPT", sanitized_prompt);
         }
 
+        // Set additional environment variables if provided
+        if let Some(env_vars) = additional_env {
+            for (key, value) in env_vars.iter() {
+                cmd.env(key, value);
+            }
+        }
+
         let command_future = cmd.output();
 
         // Run with timeout
         let result = match tokio::time::timeout(timeout, command_future).await {
             Ok(Ok(result)) => {
                 if result.status.success() {
+                    // Use the same conversion and truncation pattern everywhere
                     let stdout = result.stdout.to_str_lossy();
                     let stdout = format!(
                         "{}{}",
@@ -262,6 +274,7 @@ impl HookExecutor {
             }
         })
     }
+
 }
 
 /// Sanitizes a string value to be used as an environment variable

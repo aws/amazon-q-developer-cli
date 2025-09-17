@@ -2,10 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Display;
 
 use schemars::JsonSchema;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
 const DEFAULT_MAX_OUTPUT_SIZE: usize = 1024 * 10;
@@ -21,6 +18,8 @@ pub enum HookTrigger {
     AgentSpawn,
     /// Triggered per user message submission
     UserPromptSubmit,
+    /// Triggered when agent needs user attention (tool approval, confirmation, etc.)
+    AgentNeedsAttention,
 }
 
 impl Display for HookTrigger {
@@ -28,6 +27,7 @@ impl Display for HookTrigger {
         match self {
             HookTrigger::AgentSpawn => write!(f, "agentSpawn"),
             HookTrigger::UserPromptSubmit => write!(f, "userPromptSubmit"),
+            HookTrigger::AgentNeedsAttention => write!(f, "agentNeedsAttention"),
         }
     }
 }
