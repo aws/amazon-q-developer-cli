@@ -686,7 +686,10 @@ impl Agents {
             }
 
             all_agents.push({
-                let mut agent = Agent::default();
+                let mut agent = match Agent::get_agent_by_name(os, DEFAULT_AGENT_NAME).await {
+                    Ok((agent, _)) => agent,
+                    Err(_) => Agent::default(),
+                };
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {
@@ -1352,5 +1355,37 @@ mod tests {
         agents.active_idx = "no-model-agent".to_string();
 
         assert_eq!(agents.get_active().and_then(|a| a.model.as_ref()), None);
+    }
+
+    #[tokio::test]
+    async fn test_q_cli_default_override() {
+        let mut os = Os::new().await.unwrap();
+        
+        // Create a custom q_cli_default agent file
+        let agent_dir = directories::chat_local_agent_dir(&os).unwrap();
+        os.fs.create_dir_all(&agent_dir).await.unwrap();
+        
+        let custom_default_agent = Agent {
+            name: DEFAULT_AGENT_NAME.to_string(),
+            description: Some("Custom default agent".to_string()),
+            resources: vec!["file://custom.md".into()],
+            ..Default::default()
+        };
+        let agent_json = serde_json::to_string_pretty(&custom_default_agent).unwrap();
+        let agent_path = agent_dir.join(format!("{}.json", DEFAULT_AGENT_NAME));
+        os.fs.write(&agent_path, &agent_json).await.unwrap();
+        
+        // Load agents - should pick up our custom q_cli_default
+        let mut output = Vec::new();
+        let (agents, _) = Agents::load(&mut os, None, true, &mut output, true).await;
+        
+        // Verify it loaded our custom agent instead of built-in default
+        let active_agent = agents.get_active().unwrap();
+        assert_eq!(active_agent.description, Some("Custom default agent".to_string()));
+        assert!(active_agent.resources.iter().any(|r| r.to_string().contains("custom.md")));
+        
+        // Verify it's NOT the built-in default
+        let builtin_default = Agent::default();
+        assert_ne!(active_agent.description, builtin_default.description);
     }
 }
