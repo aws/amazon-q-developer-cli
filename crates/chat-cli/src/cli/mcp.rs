@@ -316,8 +316,16 @@ impl ListArgs {
                         let mut servers = cfg.mcp_servers.into_iter().collect::<Vec<_>>();
                         servers.sort_by(|a, b| a.0.cmp(&b.0));
                         for (name, tool_cfg) in &servers {
-                            let status = if tool_cfg.disabled { " (disabled)" } else { "" };
-                            writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
+                            let status = if *tool_cfg.disabled() { " (disabled)" } else { "" };
+                            writeln!(
+                                output,
+                                "    • {name:<12} {}{}",
+                                tool_cfg
+                                    .command()
+                                    .map(String::as_str)
+                                    .unwrap_or("Incorrect config type supplied"),
+                                status
+                            )?;
                         }
                     },
                     _ => {
@@ -401,18 +409,26 @@ impl StatusArgs {
                         style::Print("\n─────────────\n"),
                         style::Print(format!("Scope   : {}\n", scope_display(&sc))),
                         style::Print(format!("Agent   : {}\n", name)),
-                        style::Print(format!("Command : {}\n", cfg.command)),
-                        style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
-                        style::Print(format!("Disabled: {}\n", cfg.disabled)),
+                        style::Print(format!(
+                            "Command : {}\n",
+                            cfg.command()
+                                .map(String::as_str)
+                                .unwrap_or("Incorrect config type supplied")
+                        )),
+                        style::Print(format!("Timeout : {} ms\n", cfg.timeout())),
+                        style::Print(format!("Disabled: {}\n", cfg.disabled())),
                         style::Print(format!(
                             "Env Vars: {}\n",
-                            cfg.env.as_ref().map_or_else(
-                                || "(none)".into(),
-                                |e| e
-                                    .iter()
-                                    .map(|(k, v)| format!("{}={}", k, v))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
+                            cfg.env().map_or_else(
+                                || "Incorrect config type supplied".into(),
+                                |e| e.as_ref().map_or_else(
+                                    || "(none)".into(),
+                                    |e| e
+                                        .iter()
+                                        .map(|(k, v)| format!("{}={}", k, v))
+                                        .collect::<Vec<_>>()
+                                        .join(", ")
+                                )
                             )
                         )),
                     )?;

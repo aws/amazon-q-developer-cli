@@ -211,7 +211,7 @@ impl Agent {
 
         mcp_servers
             .mcp_servers
-            .retain(|_name, config| !config.is_from_legacy_mcp_json);
+            .retain(|_name, config| !config.is_from_legacy_mcp_json());
     }
 
     /// This function mutates the agent to a state that is usable for runtime.
@@ -246,7 +246,7 @@ impl Agent {
                     continue;
                 }
                 let mut server_clone = legacy_server.clone();
-                server_clone.is_from_legacy_mcp_json = true;
+                server_clone.set_is_from_legacy_mcp_json(true);
                 mcp_servers.mcp_servers.insert(name.clone(), server_clone);
             }
         }

@@ -287,7 +287,7 @@ impl ToolManagerBuilder {
         // Separate enabled and disabled servers
         let (enabled_servers, disabled_servers): (Vec<_>, Vec<_>) = mcp_servers
             .into_iter()
-            .partition(|(_, server_config)| !server_config.disabled);
+            .partition(|(_, server_config)| !server_config.disabled());
 
         // Prepare disabled servers for display
         let disabled_servers_display: Vec<String> = disabled_servers

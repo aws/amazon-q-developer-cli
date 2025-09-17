@@ -22,7 +22,10 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::mcp_client::RunningService;
+use crate::mcp_client::{
+    RunningService,
+    oauth_util,
+};
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
@@ -43,35 +46,116 @@ impl Default for TransportType {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
-pub struct CustomToolConfig {
-    /// The type of transport the mcp server is expecting. For http transport, only url (for now)
-    /// is taken into account.
-    #[serde(default)]
-    pub r#type: TransportType,
-    /// The URL endpoint for HTTP-based MCP servers
-    #[serde(default)]
-    pub url: String,
-    /// HTTP headers to include when communicating with HTTP-based MCP servers
-    #[serde(default)]
-    pub headers: HashMap<String, String>,
-    /// The command string used to initialize the mcp server
-    #[serde(default)]
-    pub command: String,
-    /// A list of arguments to be used to run the command with
-    #[serde(default)]
-    pub args: Vec<String>,
-    /// A list of environment variables to run the command with
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub env: Option<HashMap<String, String>>,
-    /// Timeout for each mcp request in ms
-    #[serde(default = "default_timeout")]
-    pub timeout: u64,
-    /// A boolean flag to denote whether or not to load this mcp server
-    #[serde(default)]
-    pub disabled: bool,
-    /// A flag to denote whether this is a server from the legacy mcp.json
-    #[serde(skip)]
-    pub is_from_legacy_mcp_json: bool,
+#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+pub enum CustomToolConfig {
+    Http {
+        url: String,
+        /// HTTP headers to include when communicating with HTTP-based MCP servers
+        #[serde(default)]
+        headers: HashMap<String, String>,
+        /// Scopes with which oauth is done
+        #[serde(default = "get_default_scopes")]
+        oauth_scopes: Vec<String>,
+        /// Timeout for each mcp request in ms
+        #[serde(default = "default_timeout")]
+        timeout: u64,
+        /// A boolean flag to denote whether or not to load this mcp server
+        #[serde(default)]
+        disabled: bool,
+        /// A flag to denote whether this is a server from the legacy mcp.json
+        #[serde(skip)]
+        is_from_legacy_mcp_json: bool,
+    },
+    Stdio {
+        /// The command string used to initialize the mcp server
+        command: String,
+        /// A list of arguments to be used to run the command with
+        #[serde(default)]
+        args: Vec<String>,
+        /// A list of environment variables to run the command with
+        #[serde(skip_serializing_if = "Option::is_none")]
+        env: Option<HashMap<String, String>>,
+        /// Timeout for each mcp request in ms
+        #[serde(default = "default_timeout")]
+        timeout: u64,
+        /// A boolean flag to denote whether or not to load this mcp server
+        #[serde(default)]
+        disabled: bool,
+        /// A flag to denote whether this is a server from the legacy mcp.json
+        #[serde(skip)]
+        is_from_legacy_mcp_json: bool,
+    },
+}
+
+/// Macro to generate getters and setters for fields across CustomToolConfig variants
+macro_rules! impl_field_getter_and_setter {
+    // For common fields across all variants
+    ($field_name:ident, $return_type:ty) => {
+        #[allow(dead_code)]
+        pub fn $field_name(&self) -> &$return_type {
+            match self {
+                CustomToolConfig::Stdio { $field_name, .. } => $field_name,
+                CustomToolConfig::Http { $field_name, .. } => $field_name,
+            }
+        }
+
+        paste::paste! {
+            #[allow(dead_code)]
+            pub fn [<set_ $field_name>](&mut self, value: $return_type) {
+                match self {
+                    CustomToolConfig::Stdio { $field_name, .. } => *$field_name = value,
+                    CustomToolConfig::Http { $field_name, .. } => *$field_name = value,
+                }
+            }
+        }
+    };
+    // For unique fields specific to one variant
+    ($field_name:ident, $return_type:ty, $variant:ident) => {
+        #[allow(dead_code)]
+        pub fn $field_name(&self) -> Option<&$return_type> {
+            match self {
+                CustomToolConfig::$variant { $field_name, .. } => Some($field_name),
+                _ => None,
+            }
+        }
+
+        paste::paste! {
+            #[allow(dead_code)]
+            pub fn [<set_ $field_name>](&mut self, value: $return_type) {
+                match self {
+                    CustomToolConfig::$variant { $field_name, .. } => *$field_name = value,
+                    _ => {},
+                }
+            }
+        }
+    };
+}
+
+impl CustomToolConfig {
+    impl_field_getter_and_setter!(url, String, Http);
+
+    impl_field_getter_and_setter!(headers, HashMap<String, String>, Http);
+
+    impl_field_getter_and_setter!(oauth_scopes, Vec<String>, Http);
+
+    impl_field_getter_and_setter!(command, String, Stdio);
+
+    impl_field_getter_and_setter!(args, Vec<String>, Stdio);
+
+    impl_field_getter_and_setter!(env, Option<HashMap<String, String>>, Stdio);
+
+    impl_field_getter_and_setter!(timeout, u64);
+
+    impl_field_getter_and_setter!(disabled, bool);
+
+    impl_field_getter_and_setter!(is_from_legacy_mcp_json, bool);
+}
+
+pub fn get_default_scopes() -> Vec<String> {
+    oauth_util::get_default_scopes()
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect::<Vec<_>>()
 }
 
 pub fn default_timeout() -> u64 {

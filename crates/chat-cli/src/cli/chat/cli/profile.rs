@@ -116,7 +116,10 @@ pub enum AgentSubcommand {
 fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {
     let items: Vec<String> = servers
         .iter()
-        .map(|server| format!("{} ({})", server.name, server.config.command))
+        .filter_map(|server| {
+            let command = server.config.command()?;
+            Some(format!("{} ({})", server.name, command))
+        })
         .collect();
 
     let selections = match MultiSelect::new()
@@ -544,7 +547,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
 
     for (_, agent) in agents.agents {
         for (server_name, server_config) in agent.mcp_servers.mcp_servers {
-            if !servers.values().any(|s| s.config.command == server_config.command) {
+            if !servers.values().any(|s| s.config.command() == server_config.command()) {
                 servers.insert(server_name.clone(), McpServerInfo {
                     name: server_name,
                     config: server_config,
@@ -557,7 +560,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
         if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
             for (server_name, server_config) in workspace_config.mcp_servers {
-                if !servers.values().any(|s| s.config.command == server_config.command) {
+                if !servers.values().any(|s| s.config.command() == server_config.command()) {
                     servers.insert(server_name.clone(), McpServerInfo {
                         name: server_name,
                         config: server_config,
@@ -571,7 +574,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
         if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
             for (server_name, server_config) in global_config.mcp_servers {
-                if !servers.values().any(|s| s.config.command == server_config.command) {
+                if !servers.values().any(|s| s.config.command() == server_config.command()) {
                     servers.insert(server_name.clone(), McpServerInfo {
                         name: server_name,
                         config: server_config,
@@ -589,6 +592,6 @@ pub async fn get_enabled_mcp_servers(os: &mut Os) -> Result<Vec<McpServerInfo>> 
     let all_servers = get_all_available_mcp_servers(os).await?;
     Ok(all_servers
         .into_iter()
-        .filter(|server| !server.config.disabled)
+        .filter(|server| !server.config.disabled())
         .collect())
 }
