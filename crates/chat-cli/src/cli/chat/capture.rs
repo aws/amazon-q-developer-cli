@@ -9,6 +9,7 @@ use chrono::{
     DateTime,
     Local,
 };
+use crossterm::style::Stylize;
 use eyre::{
     Result,
     bail,
@@ -21,7 +22,6 @@ use serde::{
 
 use crate::cli::ConversationState;
 use crate::os::Os;
-
 // The shadow repo path that MUST be appended with a session-specific directory
 // pub const SHADOW_REPO_DIR: &str = "/Users/aws/.amazonq/cli-captures/";
 
@@ -43,6 +43,16 @@ pub struct CaptureManager {
     /// If true, delete the current session's shadow repo directory when dropped.
     #[serde(default)]
     pub clean_on_drop: bool,
+    /// Track file changes for each capture
+    #[serde(default)]
+    pub file_changes: HashMap<String, FileChangeStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FileChangeStats {
+    pub added: usize,
+    pub modified: usize,
+    pub deleted: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,7 +119,80 @@ impl CaptureManager {
             last_user_message: None,
             user_message_lock: false,
             clean_on_drop: false,
+            file_changes: HashMap::new(),
         })
+    }
+
+    pub fn get_file_changes(&self, tag: &str) -> Result<FileChangeStats> {
+        let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
+
+        // Get diff stats against previous tag
+        let prev_tag = if tag == "0" {
+            return Ok(FileChangeStats::default());
+        } else {
+            self.get_previous_tag(tag)?
+        };
+
+        let output = Command::new("git")
+            .args([&git_dir_arg, "diff", "--name-status", &prev_tag, tag])
+            .output()?;
+
+        if !output.status.success() {
+            bail!("Failed to get diff stats: {}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        let mut stats = FileChangeStats::default();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some(first_char) = line.chars().next() {
+                match first_char {
+                    'A' => stats.added += 1,
+                    'M' => stats.modified += 1,
+                    'D' => stats.deleted += 1,
+                    _ => {},
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    fn get_previous_tag(&self, tag: &str) -> Result<String> {
+        // Parse tag format "X" or "X.Y" to get previous
+        if let Ok(turn) = tag.parse::<usize>() {
+            if turn > 0 {
+                return Ok((turn - 1).to_string());
+            }
+        } else if tag.contains('.') {
+            let parts: Vec<&str> = tag.split('.').collect();
+            if parts.len() == 2 {
+                if let Ok(tool_num) = parts[1].parse::<usize>() {
+                    if tool_num > 1 {
+                        return Ok(format!("{}.{}", parts[0], tool_num - 1));
+                    } else {
+                        return Ok(parts[0].to_string());
+                    }
+                }
+            }
+        }
+        Ok("0".to_string())
+    }
+
+    pub fn create_capture_with_stats(
+        &mut self,
+        tag: &str,
+        commit_message: &str,
+        history_index: usize,
+        is_turn: bool,
+        tool_name: Option<String>,
+    ) -> Result<()> {
+        self.create_capture(tag, commit_message, history_index, is_turn, tool_name)?;
+
+        // Store file change stats
+        if let Ok(stats) = self.get_file_changes(tag) {
+            self.file_changes.insert(tag.to_string(), stats);
+        }
+
+        Ok(())
     }
 
     pub fn create_capture(
@@ -199,20 +282,40 @@ impl CaptureManager {
         Ok(())
     }
 
-    pub fn diff(&self, tag1: &str, tag2: &str) -> Result<String> {
-        let _ = self.get_capture(tag1)?;
-        let _ = self.get_capture(tag2)?;
+    pub fn diff_detailed(&self, tag1: &str, tag2: &str) -> Result<String> {
         let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
+
+        let output = Command::new("git")
+            .args([&git_dir_arg, "diff", "--name-status", tag1, tag2])
+            .output()?;
+
+        if !output.status.success() {
+            bail!("Failed to get diff: {}", String::from_utf8_lossy(&output.stderr));
+        }
+
+        let mut result = String::new();
+
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            if let Some((status, file)) = line.split_once('\t') {
+                match status {
+                    "A" => result.push_str(&format!("  + {} (added)\n", file).green().to_string()),
+                    "M" => result.push_str(&format!("  ~ {} (modified)\n", file).yellow().to_string()),
+                    "D" => result.push_str(&format!("  - {} (deleted)\n", file).red().to_string()),
+                    _ => {},
+                }
+            }
+        }
 
         let output = Command::new("git")
             .args([&git_dir_arg, "diff", tag1, tag2, "--stat", "--color=always"])
             .output()?;
 
         if output.status.success() {
-            Ok(String::from_utf8_lossy(&output.stdout).to_string())
-        } else {
-            bail!("Failed to get diff: {}", String::from_utf8_lossy(&output.stderr));
+            result.push_str("\n");
+            result.push_str(&String::from_utf8_lossy(&output.stdout));
         }
+
+        Ok(result)
     }
 
     fn get_capture(&self, tag: &str) -> Result<&Capture> {

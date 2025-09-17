@@ -15,6 +15,7 @@ use eyre::Result;
 use crate::cli::chat::capture::{
     Capture,
     CaptureManager,
+    FileChangeStats,
 };
 use crate::cli::chat::{
     ChatError,
@@ -56,7 +57,11 @@ pub enum CaptureSubcommand {
     Expand { tag: String },
 
     /// Display a diff between two checkpoints
-    Diff { tag1: String, tag2: String },
+    Diff {
+        tag1: String,
+        #[arg(required = false)]
+        tag2: Option<String>,
+    },
 }
 
 impl CaptureSubcommand {
@@ -196,9 +201,22 @@ impl CaptureSubcommand {
                     ));
                 },
             },
-            Self::Diff { tag1, tag2 } => match manager.diff(&tag1, &tag2) {
-                Ok(diff) => execute!(session.stderr, style::Print(diff))?,
-                Err(e) => return Err(ChatError::Custom(format!("Could not display diff: {e}").into())),
+            Self::Diff { tag1, tag2 } => {
+                // if only provide tag1, compare with current status
+                let to_tag = tag2.unwrap_or_else(|| "HEAD".to_string());
+
+                let comparison_text = if to_tag == "HEAD" {
+                    format!("Comparing current state with checkpoint [{}]:\n", tag1)
+                } else {
+                    format!("Comparing checkpoint [{}] with [{}]:\n", tag1, to_tag)
+                };
+
+                match manager.diff_detailed(&tag1, &to_tag) {
+                    Ok(diff) => {
+                        execute!(session.stderr, style::Print(comparison_text.blue()), style::Print(diff))?;
+                    },
+                    Err(e) => return Err(ChatError::Custom(format!("Could not display diff: {e}").into())),
+                }
             },
         }
 
@@ -242,6 +260,45 @@ impl TryFrom<&Capture> for CaptureDisplayEntry {
     }
 }
 
+impl CaptureDisplayEntry {
+    fn with_file_stats(capture: &Capture, manager: &CaptureManager) -> Result<Self> {
+        let mut entry = Self::try_from(capture)?;
+
+        if let Some(stats) = manager.file_changes.get(&capture.tag) {
+            let stats_str = format_file_stats(stats);
+            if !stats_str.is_empty() {
+                entry.display_parts.push(format!(" ({})", stats_str).dark_grey());
+            }
+        }
+
+        Ok(entry)
+    }
+}
+
+fn format_file_stats(stats: &FileChangeStats) -> String {
+    let mut parts = Vec::new();
+
+    if stats.added > 0 {
+        parts.push(format!(
+            "+{} file{}",
+            stats.added,
+            if stats.added == 1 { "" } else { "s" }
+        ));
+    }
+    if stats.modified > 0 {
+        parts.push(format!("modified {}", stats.modified));
+    }
+    if stats.deleted > 0 {
+        parts.push(format!(
+            "-{} file{}",
+            stats.deleted,
+            if stats.deleted == 1 { "" } else { "s" }
+        ));
+    }
+
+    parts.join(", ")
+}
+
 impl std::fmt::Display for CaptureDisplayEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in self.display_parts.iter() {
@@ -265,7 +322,7 @@ fn gather_all_turn_captures(manager: &CaptureManager) -> Result<Vec<CaptureDispl
         if !capture.is_turn {
             continue;
         }
-        displays.push(CaptureDisplayEntry::try_from(capture).unwrap());
+        displays.push(CaptureDisplayEntry::with_file_stats(capture, manager)?);
     }
     Ok(displays)
 }
@@ -279,7 +336,7 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String
         },
     };
     let capture = &manager.captures[*capture_index];
-    let display_entry = CaptureDisplayEntry::try_from(capture)?;
+    let display_entry = CaptureDisplayEntry::with_file_stats(capture, manager)?;
     execute!(output, style::Print(display_entry), style::Print("\n"))?;
 
     // If the user tries to expand a tool-level checkpoint, return early
@@ -292,7 +349,7 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String
             if capture.is_turn {
                 break;
             }
-            display_vec.push(CaptureDisplayEntry::try_from(&manager.captures[i])?);
+            display_vec.push(CaptureDisplayEntry::with_file_stats(&manager.captures[i], manager)?);
         }
 
         for entry in display_vec.iter().rev() {

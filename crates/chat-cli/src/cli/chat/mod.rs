@@ -2362,7 +2362,7 @@ impl ChatSession {
                             None => tool.tool.display_name(),
                         };
 
-                        match manager.create_capture(
+                        match manager.create_capture_with_stats(
                             &tag,
                             &commit_message,
                             self.conversation.history().len() + 1,
@@ -2853,7 +2853,7 @@ impl ChatSession {
                     manager.num_turns += 1;
                     manager.num_tools_this_turn = 0;
 
-                    match manager.create_capture(
+                    match manager.create_capture_with_stats(
                         &manager.num_turns.to_string(),
                         &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),
                         self.conversation.history().len(),
