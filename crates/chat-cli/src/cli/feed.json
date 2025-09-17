@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-09-17",
+      "version": "1.16.1",
+      "title": "Version 1.16.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Dashboard not updating after logging in - [#688](https://github.com/aws/amazon-q-developer-cli-autocomplete/pull/688)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-09-16",
       "version": "1.16.0",
       "title": "Version 1.16.0",
