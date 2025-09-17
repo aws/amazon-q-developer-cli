@@ -71,6 +71,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
 
+        documentation.push_str("\n\n--- docs/hooks.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/hooks.md"));
+
         documentation.push_str("\n\n--- changelog (from feed.json) ---\n");
         // Include recent changelog entries from feed.json
         let feed = crate::cli::feed::Feed::load();
@@ -120,6 +123,8 @@ impl Introspect {
         );
         documentation
             .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
+        documentation
+            .push_str("• Hooks: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/hooks.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
 

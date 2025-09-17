@@ -6,9 +6,9 @@ Hooks allow you to execute custom commands at specific points during agent lifec
 
 Hooks are defined in the agent configuration file. See the [agent format documentation](agent-format.md#hooks-field) for the complete syntax and examples.
 
-## Hook Input (STDIN)
+## Hook Event
 
-Hooks receive JSON input via STDIN containing context about the hook execution:
+Hooks receive hook event in JSON format via STDIN:
 
 ```json
 {
@@ -31,10 +31,17 @@ For tool-related hooks, additional fields are included:
 ## Tool Matching
 
 Use the `matcher` field to specify which tools the hook applies to:
+
+### Examples
 - `"fs_write"` - Exact match for built-in tools
 - `"fs_*"` - Wildcard pattern for built-in tools
-- `"query"` - Exact match for MCP tools (e.g., query tool from postgres MCP, uses base tool name only)
+- `"@git"` - All tools from git MCP server
+- `"@git/status"` - Specific tool from git MCP server
+- `"*"` - All tools (built-in and MCP)
+- `"@builtin"` - All built-in tools only
 - No matcher - Applies to all tools
+
+For complete tool reference format, see [agent format documentation](agent-format.md#tools-field).
 
 ## Hook Types
 
@@ -42,7 +49,7 @@ Use the `matcher` field to specify which tools the hook applies to:
 
 Runs when agent is activated. No tool context provided.
 
-**Input JSON:**
+**Hook Event**
 ```json
 {
   "hook_event_name": "agentSpawn",
@@ -58,7 +65,7 @@ Runs when agent is activated. No tool context provided.
 
 Runs when user submits a prompt. Output is added to conversation context.
 
-**Input JSON:**
+**Hook Event**
 ```json
 {
   "hook_event_name": "userPromptSubmit",
@@ -75,7 +82,7 @@ Runs when user submits a prompt. Output is added to conversation context.
 
 Runs before tool execution. Can validate and block tool usage.
 
-**Input JSON:**
+**Hook Event**
 ```json
 {
   "hook_event_name": "preToolUse",
@@ -101,7 +108,7 @@ Runs before tool execution. Can validate and block tool usage.
 
 Runs after tool execution with access to tool results.
 
-**Input JSON:**
+**Hook Event**
 ```json
 {
   "hook_event_name": "postToolUse",
@@ -125,6 +132,22 @@ Runs after tool execution with access to tool results.
 **Exit Code Behavior:**
 - **0**: Hook succeeded.
 - **Other**: Show STDERR warning to user. Tool already ran.
+
+### MCP Example
+
+For MCP tools, the tool name includes the full namespaced format including the MCP Server name:
+
+**Hook Event**
+```json
+{
+  "hook_event_name": "preToolUse",
+  "cwd": "/current/working/directory",
+  "tool_name": "@postgres/query",
+  "tool_input": {
+    "sql": "SELECT * FROM orders LIMIT 10;"
+  }
+}
+```
 
 ## Timeout
 

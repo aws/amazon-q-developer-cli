@@ -2445,7 +2445,10 @@ impl ChatSession {
                     };
                     
                     let tool_context = ToolContext {
-                        tool_name: tool.name.clone(),
+                        tool_name: match &tool.tool {
+                            Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP name to the hook
+                            _ => tool.name.clone(),
+                        },
                         tool_input: tool.tool_input.clone(),
                         tool_response: Some(tool_response),
                     };
@@ -2909,7 +2912,10 @@ impl ChatSession {
         if let Some(cm) = self.conversation.context_manager.as_mut() {
             for tool in &queued_tools {
                 let tool_context = ToolContext {
-                    tool_name: tool.name.clone(),
+                    tool_name: match &tool.tool {
+                        Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP name to the hook
+                        _ => tool.name.clone(),
+                    },
                     tool_input: tool.tool_input.clone(),
                     tool_response: None,
                 };

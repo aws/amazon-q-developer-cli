@@ -37,6 +37,8 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::agent::is_mcp_tool_ref;
+use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
@@ -55,10 +57,26 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
     match &hook.matcher {
         None => true, // No matcher means the hook runs for all tools
         Some(pattern) => {
-            // Convert single pattern to HashSet for matches_any_pattern
-            let mut patterns = std::collections::HashSet::new();
-            patterns.insert(pattern.clone());
-            matches_any_pattern(&patterns, tool_name)
+            match pattern.as_str() {
+                "*" => true, // Wildcard matches all tools
+                "@builtin" => !is_mcp_tool_ref(tool_name), // Built-in tools are not MCP tools
+                _ => {
+                    // If tool_name is MCP, check server pattern first
+                    if is_mcp_tool_ref(tool_name) {
+                        if let Some(server_name) = tool_name.strip_prefix('@').and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next()) {
+                            let server_pattern = format!("@{}", server_name);
+                            if pattern == &server_pattern {
+                                return true;
+                            }
+                        }
+                    }
+                    
+                    // Use matches_any_pattern for both MCP and built-in tools
+                    let mut patterns = std::collections::HashSet::new();
+                    patterns.insert(pattern.clone());
+                    matches_any_pattern(&patterns, tool_name)
+                }
+            }
         }
     }
 }
@@ -453,9 +471,46 @@ mod tests {
             source: crate::cli::agent::hook::Source::Session,
         };
         
+        let all_tools_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("*".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+        
+        let builtin_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@builtin".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+        
+        let git_server_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@git".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+        
+        let git_status_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@git/status".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+        
         // No matcher should match all tools
         assert!(hook_matches_tool(&hook_no_matcher, "fs_write"));
         assert!(hook_matches_tool(&hook_no_matcher, "execute_bash"));
+        assert!(hook_matches_tool(&hook_no_matcher, "@git/status"));
         
         // Exact matcher should only match exact tool
         assert!(hook_matches_tool(&fs_write_hook, "fs_write"));
@@ -465,6 +520,26 @@ mod tests {
         assert!(hook_matches_tool(&fs_wildcard_hook, "fs_write"));
         assert!(hook_matches_tool(&fs_wildcard_hook, "fs_read"));
         assert!(!hook_matches_tool(&fs_wildcard_hook, "execute_bash"));
+        
+        // * should match all tools
+        assert!(hook_matches_tool(&all_tools_hook, "fs_write"));
+        assert!(hook_matches_tool(&all_tools_hook, "execute_bash"));
+        assert!(hook_matches_tool(&all_tools_hook, "@git/status"));
+        
+        // @builtin should match built-in tools only
+        assert!(hook_matches_tool(&builtin_hook, "fs_write"));
+        assert!(hook_matches_tool(&builtin_hook, "execute_bash"));
+        assert!(!hook_matches_tool(&builtin_hook, "@git/status"));
+        
+        // @git should match all git server tools
+        assert!(hook_matches_tool(&git_server_hook, "@git/status"));
+        assert!(!hook_matches_tool(&git_server_hook, "@other/tool"));
+        assert!(!hook_matches_tool(&git_server_hook, "fs_write"));
+        
+        // @git/status should match exact MCP tool
+        assert!(hook_matches_tool(&git_status_hook, "@git/status"));
+        assert!(!hook_matches_tool(&git_status_hook, "@git/commit"));
+        assert!(!hook_matches_tool(&git_status_hook, "fs_write"));
     }
 
     #[tokio::test]

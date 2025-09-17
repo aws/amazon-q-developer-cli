@@ -95,6 +95,11 @@ pub struct CustomTool {
 }
 
 impl CustomTool {
+    /// Returns the full tool name with server prefix in the format @server_name/tool_name
+    pub fn namespaced_tool_name(&self) -> String {
+        format!("@{}{}{}", self.server_name, MCP_SERVER_TOOL_DELIMITER, self.name)
+    }
+
     pub async fn invoke(&self, _os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
         let params = CallToolRequestParam {
             name: Cow::from(self.name.clone()),
@@ -156,7 +161,6 @@ impl CustomTool {
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        let Self { name: tool_name, .. } = self;
         let server_name = &self.server_name;
 
         let server_pattern = format!("@{server_name}");
@@ -164,7 +168,7 @@ impl CustomTool {
             return PermissionEvalResult::Allow;
         }
 
-        let tool_pattern = format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}");
+        let tool_pattern = self.namespaced_tool_name();
         if matches_any_pattern(&agent.allowed_tools, &tool_pattern) {
             return PermissionEvalResult::Allow;
         }

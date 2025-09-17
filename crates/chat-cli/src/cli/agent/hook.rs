@@ -63,7 +63,7 @@ pub struct Hook {
     #[serde(default = "Hook::default_cache_ttl_seconds")]
     pub cache_ttl_seconds: u64,
 
-    /// Optional regex matcher for hook
+    /// Optional glob matcher for hook
     /// Currently used for matching tool name of PreToolUse and PostToolUse hook
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
