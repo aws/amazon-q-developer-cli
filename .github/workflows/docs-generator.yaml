@@ -1,0 +1,65 @@
+name: docs-generator
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: 'Number of PR to document'
+        required: true
+        type: string
+
+jobs:
+  generate_docs:
+    runs-on: ubuntu-latest
+    env:
+      AMAZON_Q_SIGV4: 1
+      CHAT_DOWNLOAD_ROLE_ARN: ${{ secrets.CHAT_DOWNLOAD_ROLE_ARN }}
+      CHAT_BUILD_BUCKET_NAME: ${{ secrets.CHAT_BUILD_BUCKET_NAME }}
+      PR_FILE: "pr-contents.txt"
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GIT_HASH: "latest"
+      PR_NUMBER: ${{ inputs.pr_number }}
+      BRANCH_NAME: "docs-update-for-pr-${{ inputs.pr_number }}"
+    permissions:
+      id-token: write
+      contents: write
+      pull-requests: write
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Fetch main branch
+      run: git fetch origin main:main
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ secrets.AWS_TB_ROLE }}
+        aws-region: us-east-1
+        
+    - name: Make scripts executable
+      run: |
+        chmod +x docs-generation/setup_amazon_q.sh
+        chmod +x docs-generation/create-docs-pr.sh
+        chmod +x docs-generation/read-pr.sh
+        chmod +x docs-generation/update-docs.sh
+
+    - name: Run setup script
+      run: bash docs-generation/setup_amazon_q.sh
+
+    - name: Generate PR contents file
+      run: bash docs-generation/read-pr.sh
+
+    - name: Update docs
+      run: bash docs-generation/update-docs.sh
+
+    - name: Create PR
+      if: success()
+      run: bash docs-generation/create-docs-pr.sh
+
+    
+    
+
+
+      
