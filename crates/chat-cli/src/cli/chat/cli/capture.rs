@@ -264,13 +264,19 @@ impl CaptureDisplayEntry {
     fn with_file_stats(capture: &Capture, manager: &CaptureManager) -> Result<Self> {
         let mut entry = Self::try_from(capture)?;
 
-        if let Some(stats) = manager.file_changes.get(&capture.tag) {
+        // Prefer cached stats; if absent, compute on the fly (no mutation of manager needed).
+        let stats_opt = manager
+            .file_changes
+            .get(&capture.tag)
+            .cloned()
+            .or_else(|| manager.get_file_changes(&capture.tag).ok());
+
+        if let Some(stats) = stats_opt.as_ref() {
             let stats_str = format_file_stats(stats);
             if !stats_str.is_empty() {
                 entry.display_parts.push(format!(" ({})", stats_str).dark_grey());
             }
         }
-
         Ok(entry)
     }
 }
@@ -336,29 +342,50 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String
         },
     };
     let capture = &manager.captures[*capture_index];
-    let display_entry = CaptureDisplayEntry::with_file_stats(capture, manager)?;
+    // Turn header: do NOT show file stats here
+    let display_entry = CaptureDisplayEntry::try_from(capture)?;
     execute!(output, style::Print(display_entry), style::Print("\n"))?;
 
     // If the user tries to expand a tool-level checkpoint, return early
     if !capture.is_turn {
         return Ok(());
     } else {
-        let mut display_vec = Vec::new();
+        // Collect tool-level entries with their indices so we can diff against the previous capture.
+        let mut items: Vec<(usize, CaptureDisplayEntry)> = Vec::new();
         for i in (0..*capture_index).rev() {
-            let capture = &manager.captures[i];
-            if capture.is_turn {
+            let c = &manager.captures[i];
+            if c.is_turn {
                 break;
             }
-            display_vec.push(CaptureDisplayEntry::with_file_stats(&manager.captures[i], manager)?);
+            items.push((i, CaptureDisplayEntry::try_from(c)?));
         }
 
-        for entry in display_vec.iter().rev() {
-            execute!(
-                output,
-                style::Print(" └─ ".blue()),
-                style::Print(entry),
-                style::Print("\n")
-            )?;
+        for (idx, entry) in items.iter().rev() {
+            // previous capture in creation order (or itself if 0)
+            let base_idx = idx.saturating_sub(1);
+            let base_tag = &manager.captures[base_idx].tag;
+            let curr_tag = &manager.captures[*idx].tag;
+            // compute stats between previous capture -> this tool capture
+            let badge = manager
+                .get_file_changes_between(base_tag, curr_tag)
+                .map_or_else(|_| String::new(), |s| format_file_stats(&s));
+
+            if badge.is_empty() {
+                execute!(
+                    output,
+                    style::Print(" └─ ".blue()),
+                    style::Print(entry),
+                    style::Print("\n")
+                )?;
+            } else {
+                execute!(
+                    output,
+                    style::Print(" └─ ".blue()),
+                    style::Print(entry),
+                    style::Print(format!(" ({})", badge).dark_grey()),
+                    style::Print("\n")
+                )?;
+            }
         }
     }
 

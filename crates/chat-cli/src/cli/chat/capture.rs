@@ -156,6 +156,29 @@ impl CaptureManager {
         Ok(stats)
     }
 
+    pub fn get_file_changes_between(&self, base: &str, head: &str) -> Result<FileChangeStats> {
+        let git_dir_arg = format!("--git-dir={}", self.shadow_repo_path.display());
+        let output = Command::new("git")
+            .args([&git_dir_arg, "diff", "--name-status", base, head])
+            .output()?;
+        if !output.status.success() {
+            bail!("Failed to get diff stats: {}", String::from_utf8_lossy(&output.stderr));
+        }
+        let mut stats = FileChangeStats::default();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            // Handle A/M/D and R/C as modified
+            let code = line.split('\t').next().unwrap_or("");
+            match code.chars().next().unwrap_or('M') {
+                'A' => stats.added += 1,
+                'M' => stats.modified += 1,
+                'D' => stats.deleted += 1,
+                'R' | 'C' => stats.modified += 1,
+                _ => {},
+            }
+        }
+        Ok(stats)
+    }
+
     fn get_previous_tag(&self, tag: &str) -> Result<String> {
         // Parse tag format "X" or "X.Y" to get previous
         if let Ok(turn) = tag.parse::<usize>() {
