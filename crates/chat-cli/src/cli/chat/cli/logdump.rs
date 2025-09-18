@@ -122,7 +122,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_logdump_creates_zip_file() {
+    async fn test_logdump_creates_empty_zip_when_no_logs() {
         let temp_dir = TempDir::new().unwrap();
         let zip_path = temp_dir.path().join("test-logs.zip");
         let logs_dir = temp_dir.path().join("logs");
@@ -133,35 +133,46 @@ mod tests {
         // Create the zip file (even if no logs are found, it should create an empty zip)
         let result = logdump.create_log_dump(&zip_path, logs_dir).await;
 
-        // The function should succeed and create a zip file
+        // The function should succeed and create a zip file with 0 log files
         assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 0);
         assert!(zip_path.exists());
 
         // Verify it's a valid zip file by trying to read it
         let file = fs::File::open(&zip_path).unwrap();
         let archive = zip::ZipArchive::new(file);
         assert!(archive.is_ok());
+        assert_eq!(archive.unwrap().len(), 0);
     }
 
     #[tokio::test]
-    async fn test_add_log_file_to_zip() {
+    async fn test_logdump_includes_qchat_log_when_present() {
         let temp_dir = TempDir::new().unwrap();
-        let log_dir = temp_dir.path().join("logs");
-        fs::create_dir_all(&log_dir).unwrap();
+        let zip_path = temp_dir.path().join("test-logs.zip");
+        let logs_dir = temp_dir.path().join("logs");
+        fs::create_dir_all(&logs_dir).unwrap();
 
         // Create a test qchat.log file
-        let qchat_log_path = log_dir.join("qchat.log");
+        let qchat_log_path = logs_dir.join("qchat.log");
         fs::write(&qchat_log_path, "test log content").unwrap();
-
-        let zip_path = temp_dir.path().join("test.zip");
-        let file = fs::File::create(&zip_path).unwrap();
-        let mut zip = ZipWriter::new(file);
 
         let logdump = LogdumpArgs;
 
-        let result = logdump.add_log_file_to_zip(&qchat_log_path, &mut zip, "logs");
+        let result = logdump.create_log_dump(&zip_path, logs_dir).await;
 
+        // The function should succeed and include 1 log file
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 1);
+        assert!(zip_path.exists());
+
+        // Verify the zip contains the log file
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert_eq!(archive.len(), 1);
+
+        let mut log_file = archive.by_name("logs/qchat.log").unwrap();
+        let mut contents = String::new();
+        std::io::Read::read_to_string(&mut log_file, &mut contents).unwrap();
+        assert_eq!(contents, "test log content");
     }
 }
