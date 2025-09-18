@@ -185,7 +185,44 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
     let context = |input: &str| Ok(os.env.get(input).ok());
     let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
 
-    Ok(shellexpand::full_with_context(path_as_str, home_dir, context)?.to_string())
+    let expanded = shellexpand::full_with_context(path_as_str, home_dir, context)?;
+
+    // Convert all relative paths to absolute paths (including glob patterns)
+    if !expanded.starts_with("/") && !expanded.starts_with("~") {
+        let current_dir = os.env.current_dir()?;
+        let absolute_path = current_dir.join(expanded.as_ref());
+        // Normalize the path to remove ./ and ../ components
+        match absolute_path.canonicalize() {
+            Ok(canonical) => Ok(canonical.to_string_lossy().to_string()),
+            Err(_) => {
+                // If canonicalize fails (e.g., path doesn't exist), do manual normalization
+                let normalized = normalize_path(&absolute_path);
+                Ok(normalized.to_string_lossy().to_string())
+            },
+        }
+    } else {
+        Ok(expanded.to_string())
+    }
+}
+
+/// Manually normalize a path by resolving . and .. components
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {
+                // Skip current directory components
+            },
+            std::path::Component::ParentDir => {
+                // Pop the last component for parent directory
+                components.pop();
+            },
+            _ => {
+                components.push(component);
+            },
+        }
+    }
+    components.iter().collect()
 }
 
 /// Given a globset builder and a path, build globs for both the file and directory patterns
@@ -449,7 +486,7 @@ mod tests {
 
         // Test environment variable expansion
         let result = canonicalizes_path(&test_os, "$TEST_VAR/path").unwrap();
-        assert_eq!(result, "test_value/path");
+        assert_eq!(result, "/test_value/path");
 
         // Test combined expansion
         let result = canonicalizes_path(&test_os, "~/$TEST_VAR").unwrap();
@@ -459,14 +496,15 @@ mod tests {
         let result = canonicalizes_path(&test_os, "/absolute/path").unwrap();
         assert_eq!(result, "/absolute/path");
 
-        // Test relative path (no expansion needed)
+        // Test relative path (which should be expanded because now all inputs are converted to
+        // absolute)
         let result = canonicalizes_path(&test_os, "relative/path").unwrap();
-        assert_eq!(result, "relative/path");
+        assert_eq!(result, "/relative/path");
 
         // Test glob prefixed paths
         let result = canonicalizes_path(&test_os, "**/path").unwrap();
-        assert_eq!(result, "**/path");
+        assert_eq!(result, "/**/path");
         let result = canonicalizes_path(&test_os, "**/middle/**/path").unwrap();
-        assert_eq!(result, "**/middle/**/path");
+        assert_eq!(result, "/**/middle/**/path");
     }
 }
