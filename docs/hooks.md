@@ -155,7 +155,7 @@ Default timeout is 30 seconds (30,000ms). Configure with `timeout_ms` field.
 
 ## Caching
 
-Successfull hook results are cached based on `cache_ttl_seconds`:
+Successful hook results are cached based on `cache_ttl_seconds`:
 - `0`: No caching (default)
 - `> 0`: Cache successful results for specified seconds
 - AgentSpawn hooks are never cached

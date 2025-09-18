@@ -2432,37 +2432,42 @@ impl ChatSession {
         if let Some(cm) = self.conversation.context_manager.as_mut() {
             for result in &tool_results {
                 if let Some(tool) = self.tool_uses.iter().find(|t| t.id == result.tool_use_id) {
-                    let content: Vec<serde_json::Value> = result.content.iter().map(|block| {
-                        match block {
+                    let content: Vec<serde_json::Value> = result
+                        .content
+                        .iter()
+                        .map(|block| match block {
                             ToolUseResultBlock::Text(text) => serde_json::Value::String(text.clone()),
                             ToolUseResultBlock::Json(json) => json.clone(),
-                        }
-                    }).collect();
-                    
+                        })
+                        .collect();
+
                     let tool_response = match result.status {
                         ToolResultStatus::Success => serde_json::json!({"success": true, "result": content}),
                         ToolResultStatus::Error => serde_json::json!({"success": false, "error": content}),
                     };
-                    
+
                     let tool_context = ToolContext {
                         tool_name: match &tool.tool {
-                            Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP name to the hook
+                            Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), /* for MCP tool, pass MCP name to the hook */
                             _ => tool.name.clone(),
                         },
                         tool_input: tool.tool_input.clone(),
                         tool_response: Some(tool_response),
                     };
-                    
+
                     // Here is how we handle postToolUse output:
-                    // Exit code is 0: nothing. stdout is not shown to user. We don't support processing the PostToolUse hook output yet.
-                    // Exit code is non-zero: display an error to user (already taken care of by the ContextManager.run_hooks)
-                    let _ = cm.run_hooks(
-                        crate::cli::agent::hook::HookTrigger::PostToolUse,
-                        &mut std::io::stderr(),
-                        os,
-                        None,
-                        Some(tool_context)
-                    ).await;
+                    // Exit code is 0: nothing. stdout is not shown to user. We don't support processing the PostToolUse
+                    // hook output yet. Exit code is non-zero: display an error to user (already
+                    // taken care of by the ContextManager.run_hooks)
+                    let _ = cm
+                        .run_hooks(
+                            crate::cli::agent::hook::HookTrigger::PostToolUse,
+                            &mut std::io::stderr(),
+                            os,
+                            None,
+                            Some(tool_context),
+                        )
+                        .await;
                 }
             }
         }
@@ -2802,7 +2807,8 @@ impl ChatSession {
         }
     }
 
-    // Validate the tool use request from LLM, including basic checks like fs_read file should exist, as well as user-defined preToolUse hook check.
+    // Validate the tool use request from LLM, including basic checks like fs_read file should exist, as
+    // well as user-defined preToolUse hook check.
     async fn validate_tools(&mut self, os: &Os, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation.conversation_id().to_owned();
         debug!(?tool_uses, "Validating tool uses");
@@ -2907,38 +2913,44 @@ impl ChatSession {
         }
 
         // Execute PreToolUse hooks for all validated tools
-        // The mental model is preToolHook is like validate tools, but its behavior can be customized by user
-        // Note that after preTookUse hook, user can still reject the took run
+        // The mental model is preToolHook is like validate tools, but its behavior can be customized by
+        // user Note that after preTookUse hook, user can still reject the took run
         if let Some(cm) = self.conversation.context_manager.as_mut() {
             for tool in &queued_tools {
                 let tool_context = ToolContext {
                     tool_name: match &tool.tool {
-                        Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP name to the hook
+                        Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP
+                        // name to the hook
                         _ => tool.name.clone(),
                     },
                     tool_input: tool.tool_input.clone(),
                     tool_response: None,
                 };
-                
-                let hook_results = cm.run_hooks(
-                    crate::cli::agent::hook::HookTrigger::PreToolUse,
-                    &mut std::io::stderr(),
-                    os,
-                    None, /* prompt */
-                    Some(tool_context)
-                ).await?;
+
+                let hook_results = cm
+                    .run_hooks(
+                        crate::cli::agent::hook::HookTrigger::PreToolUse,
+                        &mut std::io::stderr(),
+                        os,
+                        None, // prompt
+                        Some(tool_context),
+                    )
+                    .await?;
 
                 // Here is how we handle the preToolUse hook output:
                 // Exit code is 0: nothing. stdout is not shown to user.
                 // Exit code is 2: block the tool use. return stderr to LLM. show warning to user
                 // Other error: show warning to user.
-                
+
                 // Check for exit code 2 and add to tool_results
                 for (_, (exit_code, output)) in &hook_results {
                     if *exit_code == 2 {
                         tool_results.push(ToolUseResult {
                             tool_use_id: tool.id.clone(),
-                            content: vec![ToolUseResultBlock::Text(format!("PreToolHook blocked the tool execution: {}", output))],
+                            content: vec![ToolUseResultBlock::Text(format!(
+                                "PreToolHook blocked the tool execution: {}",
+                                output
+                            ))],
                             status: ToolResultStatus::Error,
                         });
                     }
@@ -2974,7 +2986,7 @@ impl ChatSession {
         self.tool_uses = queued_tools;
         self.pending_tool_index = Some(0);
         self.tool_turn_start_time = Some(Instant::now());
-        
+
         Ok(ChatState::ExecuteTools)
     }
 
@@ -3897,13 +3909,17 @@ mod tests {
     }
 
     // Integration test for PreToolUse hook functionality.
-    // 
-    // In this integration test we create a preToolUse hook that logs tool info into a file 
+    //
+    // In this integration test we create a preToolUse hook that logs tool info into a file
     // and we run fs_read and verify the log is generated with the correct ToolContext data.
     #[tokio::test]
     async fn test_tool_hook_integration() {
-        use crate::cli::agent::hook::{Hook, HookTrigger};
         use std::collections::HashMap;
+
+        use crate::cli::agent::hook::{
+            Hook,
+            HookTrigger,
+        };
 
         let mut os = Os::new().await.unwrap();
         os.client.set_mock_output(serde_json::json!([
@@ -3935,13 +3951,13 @@ mod tests {
         // Create agent with PreToolUse and PostToolUse hooks
         let mut agents = Agents::default();
         let mut hooks = HashMap::new();
-        
+
         // Get the real path in the temp directory for the hooks to write to
         let pre_hook_log_path = os.fs.chroot_path_str("/pre-hook-test.log");
         let post_hook_log_path = os.fs.chroot_path_str("/post-hook-test.log");
         let pre_hook_command = format!("cat > {}", pre_hook_log_path);
         let post_hook_command = format!("cat > {}", post_hook_log_path);
-        
+
         hooks.insert(HookTrigger::PreToolUse, vec![Hook {
             command: pre_hook_command,
             timeout_ms: 5000,
@@ -4002,16 +4018,16 @@ mod tests {
 
         // Verify the PreToolUse hook was called
         if let Ok(pre_log_content) = os.fs.read_to_string("/pre-hook-test.log").await {
-            let pre_hook_data: serde_json::Value = serde_json::from_str(&pre_log_content)
-                .expect("PreToolUse hook output should be valid JSON");
-            
+            let pre_hook_data: serde_json::Value =
+                serde_json::from_str(&pre_log_content).expect("PreToolUse hook output should be valid JSON");
+
             assert_eq!(pre_hook_data["hook_event_name"], "preToolUse");
             assert_eq!(pre_hook_data["tool_name"], "fs_read");
             assert_eq!(pre_hook_data["tool_response"], serde_json::Value::Null);
-            
+
             let tool_input = &pre_hook_data["tool_input"];
             assert!(tool_input["operations"].is_array());
-            
+
             println!("✓ PreToolUse hook validation passed: {}", pre_log_content);
         } else {
             panic!("PreToolUse hook log file not found - hook may not have been called");
@@ -4019,22 +4035,22 @@ mod tests {
 
         // Verify the PostToolUse hook was called
         if let Ok(post_log_content) = os.fs.read_to_string("/post-hook-test.log").await {
-            let post_hook_data: serde_json::Value = serde_json::from_str(&post_log_content)
-                .expect("PostToolUse hook output should be valid JSON");
-            
+            let post_hook_data: serde_json::Value =
+                serde_json::from_str(&post_log_content).expect("PostToolUse hook output should be valid JSON");
+
             assert_eq!(post_hook_data["hook_event_name"], "postToolUse");
             assert_eq!(post_hook_data["tool_name"], "fs_read");
-            
+
             // Validate tool_response structure for successful execution
             let tool_response = &post_hook_data["tool_response"];
             assert_eq!(tool_response["success"], true);
             assert!(tool_response["result"].is_array());
-            
+
             let result_blocks = tool_response["result"].as_array().unwrap();
             assert!(!result_blocks.is_empty());
             let content = result_blocks[0].as_str().unwrap();
             assert!(content.contains("line1\nline2\nline3"));
-            
+
             println!("✓ PostToolUse hook validation passed: {}", post_log_content);
         } else {
             panic!("PostToolUse hook log file not found - hook may not have been called");
@@ -4043,20 +4059,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_pretool_hook_blocking_integration() {
-        use crate::cli::agent::hook::{Hook, HookTrigger};
         use std::collections::HashMap;
 
+        use crate::cli::agent::hook::{
+            Hook,
+            HookTrigger,
+        };
+
         let mut os = Os::new().await.unwrap();
-        
+
         // Create a test file to read
         os.fs.write("/sensitive.txt", "classified information").await.unwrap();
-        
+
         // Mock LLM responses: first tries fs_read, gets blocked, then responds to error
         os.client.set_mock_output(serde_json::json!([
             [
                 "I'll read that file for you",
                 {
-                    "tool_use_id": "1", 
+                    "tool_use_id": "1",
                     "name": "fs_read",
                     "args": {
                         "operations": [
@@ -4076,13 +4096,13 @@ mod tests {
         // Create agent with blocking PreToolUse hook
         let mut agents = Agents::default();
         let mut hooks = HashMap::new();
-        
+
         // Create a hook that blocks fs_read of sensitive files with exit code 2
         #[cfg(unix)]
         let hook_command = "echo 'Security policy violation: cannot read sensitive files' >&2; exit 2";
         #[cfg(windows)]
         let hook_command = "echo Security policy violation: cannot read sensitive files 1>&2 & exit /b 2";
-        
+
         hooks.insert(HookTrigger::PreToolUse, vec![Hook {
             command: hook_command.to_string(),
             timeout_ms: 5000,
@@ -4112,10 +4132,7 @@ mod tests {
             "test_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec![
-                "read /sensitive.txt".to_string(),
-                "exit".to_string(),
-            ]),
+            InputSource::new_mock(vec!["read /sensitive.txt".to_string(), "exit".to_string()]),
             false,
             || Some(80),
             tool_manager,
@@ -4131,7 +4148,10 @@ mod tests {
         .await;
 
         // The session should complete successfully (hook blocks tool but doesn't crash)
-        assert!(result.is_ok(), "Chat session should complete successfully even when hook blocks tool");
+        assert!(
+            result.is_ok(),
+            "Chat session should complete successfully even when hook blocks tool"
+        );
     }
 
     #[test]
