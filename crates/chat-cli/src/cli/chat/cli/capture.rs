@@ -31,22 +31,20 @@ pub enum CaptureSubcommand {
     Init,
 
     /// Revert to a specified checkpoint or the most recent if none specified
-    // Hard will reset all files and delete files that were created since the
-    // checkpoint
-    // Not specifying hard only restores modifications/deletions of tracked files
+    /// --hard: reset all files and delete any created since the checkpoint
     Restore {
         tag: Option<String>,
         #[arg(long)]
         hard: bool,
     },
 
-    /// View all checkpoints
+    /// View all checkpoints (turn-level only)
     List {
         #[arg(short, long)]
         limit: Option<usize>,
     },
 
-    /// Delete shadow repository
+    /// Delete shadow repository or the whole captures root (--all)
     Clean {
         /// Delete the entire captures root (all sessions)
         #[arg(long)]
@@ -56,7 +54,7 @@ pub enum CaptureSubcommand {
     /// Display more information about a turn-level checkpoint
     Expand { tag: String },
 
-    /// Display a diff between two checkpoints
+    /// Display a diff between two checkpoints (default tag2=HEAD)
     Diff {
         tag1: String,
         #[arg(required = false)]
@@ -205,17 +203,60 @@ impl CaptureSubcommand {
                 // if only provide tag1, compare with current status
                 let to_tag = tag2.unwrap_or_else(|| "HEAD".to_string());
 
+                let tag_missing = |t: &str| t != "HEAD" && !manager.tag_to_index.contains_key(t);
+                if tag_missing(&tag1) {
+                    execute!(
+                        session.stderr,
+                        style::Print(
+                            format!(
+                                "Capture with tag '{}' does not exist! Use /capture list to see available captures\n",
+                                tag1
+                            )
+                            .blue()
+                        )
+                    )?;
+                    session.conversation.capture_manager = Some(manager);
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                }
+                if tag_missing(&to_tag) {
+                    execute!(
+                        session.stderr,
+                        style::Print(
+                            format!(
+                                "Capture with tag '{}' does not exist! Use /capture list to see available captures\n",
+                                to_tag
+                            )
+                            .blue()
+                        )
+                    )?;
+                    session.conversation.capture_manager = Some(manager);
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                }
+
                 let comparison_text = if to_tag == "HEAD" {
                     format!("Comparing current state with checkpoint [{}]:\n", tag1)
                 } else {
                     format!("Comparing checkpoint [{}] with [{}]:\n", tag1, to_tag)
                 };
-
+                execute!(session.stderr, style::Print(comparison_text.blue()))?;
                 match manager.diff_detailed(&tag1, &to_tag) {
                     Ok(diff) => {
-                        execute!(session.stderr, style::Print(comparison_text.blue()), style::Print(diff))?;
+                        if diff.trim().is_empty() {
+                            execute!(session.stderr, style::Print("No differences.\n".dark_grey()))?;
+                        } else {
+                            execute!(session.stderr, style::Print(diff))?;
+                        }
                     },
-                    Err(e) => return Err(ChatError::Custom(format!("Could not display diff: {e}").into())),
+                    Err(e) => {
+                        return {
+                            session.conversation.capture_manager = Some(manager);
+                            Err(ChatError::Custom(format!("Could not display diff: {e}").into()))
+                        };
+                    },
                 }
             },
         }
@@ -227,6 +268,7 @@ impl CaptureSubcommand {
     }
 }
 
+// ------------------------------ formatting helpers ------------------------------
 pub struct CaptureDisplayEntry {
     pub tag: String,
     pub display_parts: Vec<StyledContent<String>>,
@@ -238,11 +280,12 @@ impl TryFrom<&Capture> for CaptureDisplayEntry {
     fn try_from(value: &Capture) -> std::result::Result<Self, Self::Error> {
         let tag = value.tag.clone();
         let mut parts = Vec::new();
+        // Keep exact original UX: turn lines start with "[tag] TIMESTAMP - message"
+        // tool lines start with "[tag] TOOL_NAME: message"
+        parts.push(format!("[{tag}] ",).blue());
         if value.is_turn {
-            parts.push(format!("[{tag}] ",).blue());
             parts.push(format!("{} - {}", value.timestamp.format("%Y-%m-%d %H:%M:%S"), value.message).reset());
         } else {
-            parts.push(format!("[{tag}] ",).blue());
             parts.push(
                 format!(
                     "{}: ",
@@ -261,10 +304,11 @@ impl TryFrom<&Capture> for CaptureDisplayEntry {
 }
 
 impl CaptureDisplayEntry {
+    /// Attach cached or computed file stats to a *turn-level* display line.
+    /// (For `/capture list` we append stats to turn rows only, keeping original UX.)
     fn with_file_stats(capture: &Capture, manager: &CaptureManager) -> Result<Self> {
         let mut entry = Self::try_from(capture)?;
 
-        // Prefer cached stats; if absent, compute on the fly (no mutation of manager needed).
         let stats_opt = manager
             .file_changes
             .get(&capture.tag)
@@ -282,8 +326,9 @@ impl CaptureDisplayEntry {
 }
 
 fn format_file_stats(stats: &FileChangeStats) -> String {
+    // Keep wording to avoid UX drift:
+    // "+N files, modified M, -K files"
     let mut parts = Vec::new();
-
     if stats.added > 0 {
         parts.push(format!(
             "+{} file{}",
@@ -333,11 +378,18 @@ fn gather_all_turn_captures(manager: &CaptureManager) -> Result<Vec<CaptureDispl
     Ok(displays)
 }
 
+/// Expand a turn-level checkpoint:
 fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String) -> Result<()> {
     let capture_index = match manager.tag_to_index.get(&tag) {
         Some(i) => i,
         None => {
-            execute!(output, style::Print(format!("Checkpoint with tag '{tag}' does not exist! Use /checkpoint list to see available checkpoints\n").blue()))?;
+            execute!(
+                output,
+                style::Print(
+                    format!("Capture with tag '{tag}' does not exist! Use /capture list to see available captures\n")
+                        .blue()
+                )
+            )?;
             return Ok(());
         },
     };
