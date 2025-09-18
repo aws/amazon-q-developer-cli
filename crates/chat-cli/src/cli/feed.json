@@ -12,6 +12,38 @@
     },
     {
       "type": "release",
+      "date": "2025-09-19",
+      "version": "1.16.2",
+      "title": "Version 1.16.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Add support for preToolUse and postToolUse hook -  [#2875](https://github.com/aws/amazon-q-developer-cli/pull/2875)"
+        },
+        {
+          "type": "added",
+          "description": "Support for specifying oauth scopes via config - [#2925]( https://github.com/aws/amazon-q-developer-cli/pull/2925)"
+        },
+        {
+          "type": "fixed",
+          "description": "Support for headers ingestion for remote mcp - [#2925]( https://github.com/aws/amazon-q-developer-cli/pull/2925)"
+        },
+        {
+          "type": "added",
+          "description": "Change autocomplete shortcut from ctrl-f to ctrl-g - [#2634](https://github.com/aws/amazon-q-developer-cli/pull/2634)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix file-path expansion in mcp-config - [#2915]( https://github.com/aws/amazon-q-developer-cli/pull/2915)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fix filepath expansion to use absolute paths - [#2933](https://github.com/aws/amazon-q-developer-cli/pull/2933)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-09-17",
       "version": "1.16.1",
       "title": "Version 1.16.1",
