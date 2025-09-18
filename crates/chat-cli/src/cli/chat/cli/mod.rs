@@ -34,6 +34,7 @@ use prompts::PromptsArgs;
 use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
+use color_print::cstr;
 
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
@@ -51,8 +52,8 @@ use crate::os::Os;
 #[derive(Debug, PartialEq, Parser)]
 #[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
 pub enum SlashCommand {
-    /// Quit the application
-    #[command(aliases = ["q", "exit"])]
+    /// Quit the application (alias /exit)
+    #[command(visible_aliases = ["q", "exit"], override_usage = cstr!("<bold>/quit</bold> or <bold>/exit</bold>"))]
     Quit,
     /// Clear the conversation history
     Clear(ClearArgs),

@@ -56,6 +56,7 @@ pub const COMMANDS: &[&str] = &[
     "/editor",
     "/issue",
     "/quit",
+    "/exit",
     "/tools",
     "/tools trust",
     "/tools untrust",
@@ -516,21 +517,23 @@ mod tests {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
         let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
-        let line = "/h";
-        let pos = 2; // Position at the end of "/h"
 
-        // Create a mock context with empty history
-        let empty_history = DefaultHistory::new();
-        let os = Context::new(&empty_history);
+        let test_cases = [
+            ("/h", "/help"),
+            ("/q", "/quit"),
+            ("/e", "/exit"),
+        ];
 
-        // Get completions
-        let (start, completions) = completer.complete(line, pos, &os).unwrap();
+        for (input, expected) in test_cases {
+            let pos = input.len();
+            let empty_history = DefaultHistory::new();
+            let os = Context::new(&empty_history);
 
-        // Verify start position
-        assert_eq!(start, 0);
+            let (start, completions) = completer.complete(input, pos, &os).unwrap();
 
-        // Verify completions contain expected commands
-        assert!(completions.contains(&"/help".to_string()));
+            assert_eq!(start, 0);
+            assert!(completions.contains(&expected.to_string()));
+        }
     }
 
     #[test]
