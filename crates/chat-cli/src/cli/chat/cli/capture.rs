@@ -30,10 +30,28 @@ pub enum CaptureSubcommand {
     /// Manually initialize captures
     Init,
 
-    /// Revert to a specified checkpoint or the most recent if none specified
-    /// --hard: reset all files and delete any created since the checkpoint
+    /// Restore workspace to a checkpoint
+    #[command(
+        about = "Restore workspace to a checkpoint",
+        long_about = r#"Restore files to a checkpoint <tag>. If <tag> is omitted, you'll pick one interactively.
+
+Default:
+  • Revert tracked changes and restore tracked deletions.
+  • Do NOT delete files created after the checkpoint.
+
+--hard:
+  • Make workspace exactly match the checkpoint.
+  • Delete tracked files created after the checkpoint.
+
+Notes:
+  • Also rolls back conversation history to the checkpoint.
+  • Tags: turn (e.g., 3) or tool (e.g., 3.1)."#
+    )]
     Restore {
+        /// Checkpoint tag (e.g., 3 or 3.1). Omit to choose interactively.
         tag: Option<String>,
+
+        /// Match checkpoint exactly; deletes tracked files created after it.
         #[arg(long)]
         hard: bool,
     },
@@ -44,12 +62,8 @@ pub enum CaptureSubcommand {
         limit: Option<usize>,
     },
 
-    /// Delete shadow repository or the whole captures root (--all)
-    Clean {
-        /// Delete the entire captures root (all sessions)
-        #[arg(long)]
-        all: bool,
-    },
+    /// Delete shadow repository
+    Clean,
 
     /// Display more information about a turn-level checkpoint
     Expand { tag: String },
@@ -157,32 +171,15 @@ impl CaptureSubcommand {
                     return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
                 },
             },
-            Self::Clean { all } => {
-                let res = if all {
-                    manager.clean_all_sessions(os).await
-                } else {
-                    manager.clean(os).await
-                };
-                match res {
+            Self::Clean {} => {
+                match manager.clean(os).await {
                     Ok(()) => execute!(
                         session.stderr,
-                        style::Print(
-                            if all {
-                                "Deleted all session captures under the captures root.\n"
-                            } else {
-                                "Deleted shadow repository for this session.\n"
-                            }
-                            .blue()
-                            .bold()
-                        )
+                        style::Print("Deleted shadow repository for this session.\n".bold())
                     )?,
                     Err(e) => {
                         session.conversation.capture_manager = None;
-                        return Err(ChatError::Custom(if all {
-                            format!("Could not delete captures root: {e}").into()
-                        } else {
-                            format!("Could not delete shadow repo: {e}").into()
-                        }));
+                        return Err(ChatError::Custom(format!("Could not delete shadow repo: {e}").into()));
                     },
                 }
                 session.conversation.capture_manager = None;

@@ -227,29 +227,6 @@ impl CaptureManager {
         Ok(())
     }
 
-    /// Delete the captures root (all sessions) and recreate it empty.
-    pub async fn clean_all_sessions(&self, os: &Os) -> Result<()> {
-        let root = self
-            .shadow_repo_path
-            .parent()
-            .ok_or_else(|| eyre!("Could not determine captures root"))?;
-
-        // Safety guard: ensure last component contains "captures"
-        if root
-            .file_name()
-            .and_then(|s| s.to_str())
-            .map(|s| s.contains("captures"))
-            != Some(true)
-        {
-            bail!("Refusing to delete unexpected parent directory: {}", root.display());
-        }
-
-        println!("Deleting captures root: {}", root.display());
-        os.fs.remove_dir_all(root).await?;
-        os.fs.create_dir_all(root).await?;
-        Ok(())
-    }
-
     /// Produce a user-friendly diff between two tags, including `--stat`.
     pub fn diff_detailed(&self, tag1: &str, tag2: &str) -> Result<String> {
         let out = run_git(&self.shadow_repo_path, false, &["diff", "--name-status", tag1, tag2])?;

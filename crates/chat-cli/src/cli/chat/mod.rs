@@ -2357,9 +2357,14 @@ impl ChatSession {
                     };
                     let tag = if has_uncommitted {
                         let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
-                        let commit_message = match tool.tool.get_summary() {
-                            Some(summary) => summary,
-                            None => tool.tool.display_name(),
+                        let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
+                        let commit_message = if is_fs_read {
+                            "External edits detected (likely manual change)".to_string()
+                        } else {
+                            match tool.tool.get_summary() {
+                                Some(summary) => summary,
+                                None => tool.tool.display_name(),
+                            }
                         };
 
                         match manager.create_capture_with_stats(
