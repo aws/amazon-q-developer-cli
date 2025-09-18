@@ -176,7 +176,7 @@ pub async fn get_http_transport(
     os: &Os,
     url: &str,
     timeout: u64,
-    scopes: &Vec<String>,
+    scopes: &[String],
     headers: &HashMap<String, String>,
     auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
@@ -241,7 +241,7 @@ async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
     reg_full_path: PathBuf,
-    scopes: &Vec<String>,
+    scopes: &[String],
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
@@ -298,7 +298,7 @@ async fn get_auth_manager(
 
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
-    scopes: &Vec<String>,
+    scopes: &[String],
     messenger: &dyn Messenger,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));

@@ -60,7 +60,10 @@ use crate::cli::chat::tools::custom_tool::{
     TransportType,
 };
 use crate::os::Os;
-use crate::util::directories::DirectoryError;
+use crate::util::directories::{
+    DirectoryError,
+    canonicalizes_path,
+};
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -524,7 +527,8 @@ impl McpClientService {
 
         match r#type {
             TransportType::Stdio => {
-                let command = Command::new(command_as_str).configure(|cmd| {
+                let expanded_cmd = canonicalizes_path(os, command_as_str)?;
+                let command = Command::new(expanded_cmd).configure(|cmd| {
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);

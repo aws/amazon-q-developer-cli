@@ -46,7 +46,7 @@ impl Default for TransportType {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
-#[serde(tag = "type", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct CustomToolConfig {
     /// The transport type to use for communication with the MCP server
     #[serde(default)]

@@ -745,10 +745,7 @@ mod tests {
             let key_event = KeyEvent(KeyCode::Char(key), Modifiers::CTRL);
 
             // Try to bind and get the previous handler
-            let previous_handler = test_editor.bind_sequence(
-                key_event,
-                EventHandler::Simple(Cmd::Noop)
-            );
+            let previous_handler = test_editor.bind_sequence(key_event, EventHandler::Simple(Cmd::Noop));
 
             // If there was a previous handler, it means the key was already bound
             // (which could be our custom binding overriding Emacs)
