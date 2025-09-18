@@ -66,7 +66,10 @@ pub fn get_file_type(path: &Path) -> FileType {
             Some("Dockerfile" | "Makefile" | "LICENSE" | "CHANGELOG" | "README") => FileType::Text,
             Some(name) if name.starts_with('.') => match name {
                 ".gitignore" | ".env" | ".dockerignore" => FileType::Text,
-                _ => FileType::Unknown,
+                // Treat other dotfiles as text if they appear to be configuration files
+                name if name.ends_with("rc") || name.ends_with("config") => FileType::Text,
+                // Default other dotfiles to text for better indexing
+                _ => FileType::Text,
             },
             _ => FileType::Unknown,
         },
@@ -205,13 +208,18 @@ pub fn process_directory(
     {
         let path = entry.path();
 
-        // Skip hidden files
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|s| s.starts_with('.'))
-        {
-            continue;
+        // Skip hidden files, but allow common configuration files
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            if filename.starts_with('.') {
+                // Allow common configuration files
+                let is_config_file = filename.ends_with("rc") 
+                    || filename.ends_with("config")
+                    || matches!(filename, ".gitignore" | ".env" | ".dockerignore");
+                
+                if !is_config_file {
+                    continue;
+                }
+            }
         }
 
         // Process the file
@@ -256,6 +264,13 @@ mod tests {
             ("Dockerfile", FileType::Text),
             ("LICENSE", FileType::Text),
             (".gitignore", FileType::Text),
+            (".bashrc", FileType::Text),
+            (".vimrc", FileType::Text),
+            (".raprc", FileType::Text),
+            (".testrc", FileType::Text),
+            (".zshconfig", FileType::Text),
+            (".someconfig", FileType::Text),
+            (".randomdotfile", FileType::Text),
             // Case insensitive
             ("Main.RS", FileType::Code),
             ("README.MD", FileType::Markdown),
