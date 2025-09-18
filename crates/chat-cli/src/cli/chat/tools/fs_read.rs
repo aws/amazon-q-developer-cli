@@ -181,7 +181,8 @@ impl FsRead {
                             FsReadOperation::Line(FsLine { path, .. })
                             | FsReadOperation::Directory(FsDirectory { path, .. })
                             | FsReadOperation::Search(FsSearch { path, .. }) => {
-                                let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                // always use absolute file path for permission check
+                                let Ok(path) = directories::canonicalizes_path_absolute(os, path) else {
                                     ask = true;
                                     continue;
                                 };
@@ -208,7 +209,8 @@ impl FsRead {
                                 let denied_match_set = paths
                                     .iter()
                                     .flat_map(|path| {
-                                        let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                        // always use absolute file path for permission check
+                                        let Ok(path) = directories::canonicalizes_path_absolute(os, path) else {
                                             return vec![];
                                         };
                                         deny_set.matches(path.as_ref() as &str)
@@ -1488,6 +1490,8 @@ mod tests {
             "operations": [
                 { "path": "/home/user/", "mode": "Directory" },
                 { "path": "/home/user/file.txt", "mode": "Line" },
+                { "path": "/home/user/folder", "mode": "Directory" },
+                { "path": "/home/user/folder/file.txt", "mode": "Line" },
             ]
         }))
         .unwrap();
@@ -1536,5 +1540,53 @@ mod tests {
         .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_relative_to_cwd() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create test files and directories
+        let test_file = temp_path.join("file.txt");
+        let test_folder = temp_path.join("folder");
+        let test_folder2 = temp_path.join("folder-2");
+        let test_file2 = test_folder2.join("nested.txt");
+        fs::write(&test_file, "test content").unwrap();
+        fs::create_dir(&test_folder).unwrap();
+        fs::create_dir(&test_folder2).unwrap();
+        fs::write(&test_file2, "nested content").unwrap();
+
+        let os = Os::new().await.unwrap();
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: HashMap::new(), // No fs_read settings
+            ..Default::default()
+        };
+        
+        // Save original CWD and change to temp directory
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_path).unwrap();
+
+        // all of these files are under CWD through relative path. reading them should be allowed by default
+        let fs_read = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [
+                { "path": "./file.txt", "mode": "Line" },
+                { "path": "./folder-2/nested.txt", "mode": "Line" },
+                { "path": "./folder/../folder-2/nested.txt", "mode": "Line" },
+                { "path": "./folder", "mode": "Directory" },
+                { "path": "./folder-2/", "mode": "Directory" },
+                { "path": "./folder/../folder-2", "mode": "Directory" },
+            ]
+        })).unwrap();
+
+        let res = fs_read.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Restore original CWD
+        std::env::set_current_dir(original_cwd).unwrap();
     }
 }

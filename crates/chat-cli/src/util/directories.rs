@@ -1,7 +1,6 @@
 use std::env::VarError;
 use std::path::{
-    PathBuf,
-    StripPrefixError,
+    Path, PathBuf, StripPrefixError
 };
 
 use globset::{
@@ -181,11 +180,27 @@ pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
 }
 
 /// Canonicalizes path given by expanding the path given
+/// Works for glob pattern
 pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
     let context = |input: &str| Ok(os.env.get(input).ok());
     let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
 
     Ok(shellexpand::full_with_context(path_as_str, home_dir, context)?.to_string())
+}
+
+/// Canonicalizes path and converts to absolute path.
+/// This method requires that the file exist and doesn't support glob pattern.
+pub fn canonicalizes_path_absolute(os: &Os, path_as_str: &str) -> Result<String> {
+    let expanded = canonicalizes_path(os, path_as_str)?;
+    
+    if Path::new(&expanded).is_relative() {
+        // This handles relative path: "./folder" and "../file" and "./folder-1/../folder-2" and turn them into absolute path
+        // This also resolves symlinks
+        let absolute_path = std::fs::canonicalize(&expanded)?;
+        Ok(absolute_path.to_string_lossy().to_string())
+    } else {
+        Ok(expanded)
+    }
 }
 
 /// Given a globset builder and a path, build globs for both the file and directory patterns
@@ -468,5 +483,55 @@ mod tests {
         assert_eq!(result, "**/path");
         let result = canonicalizes_path(&test_os, "**/middle/**/path").unwrap();
         assert_eq!(result, "**/middle/**/path");
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_absolute() {
+        use std::fs;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        // Create test files and directories
+        let test_file = temp_path.join("file");
+        let test_folder = temp_path.join("folder");
+        let test_folder2 = temp_path.join("folder-2");
+        fs::write(&test_file, "test content").unwrap();
+        fs::create_dir(&test_folder).unwrap();
+        fs::create_dir(&test_folder2).unwrap();
+
+        let test_os = Os::new().await.unwrap();
+        
+        // Save original CWD and change to temp directory
+        let original_cwd = std::env::current_dir().unwrap();
+        std::env::set_current_dir(temp_path).unwrap();
+
+        // absolute path should remain unchanged
+        let result: String = canonicalizes_path_absolute(&test_os, &test_file.to_string_lossy()).unwrap();
+        assert_eq!(result, test_file.to_string_lossy());
+
+        // "./" should resolve to temp directory
+        let result = canonicalizes_path_absolute(&test_os, "./").unwrap();
+        assert_eq!(result, temp_path.canonicalize().unwrap().to_string_lossy().trim_end_matches('/'));
+
+        // "./file" should resolve to file
+        let result = canonicalizes_path_absolute(&test_os, "./file").unwrap();
+        assert_eq!(result, test_file.canonicalize().unwrap().to_string_lossy());
+
+        // "./folder/" should resolve to folder/
+        let result = canonicalizes_path_absolute(&test_os, "./folder/").unwrap();
+        assert_eq!(result, test_folder.canonicalize().unwrap().to_string_lossy());
+
+        // "./folder" should also resolve to folder/
+        let result = canonicalizes_path_absolute(&test_os, "./folder").unwrap();
+        assert_eq!(result, test_folder.canonicalize().unwrap().to_string_lossy());
+
+        // "./folder/../folder-2" should resolve to folder-2/
+        let result = canonicalizes_path_absolute(&test_os, "./folder/../folder-2").unwrap();
+        assert_eq!(result, test_folder2.canonicalize().unwrap().to_string_lossy());
+        
+        // Restore original CWD
+        std::env::set_current_dir(original_cwd).unwrap();
     }
 }
