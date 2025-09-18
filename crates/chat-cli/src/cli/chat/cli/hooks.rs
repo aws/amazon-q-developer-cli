@@ -38,7 +38,6 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::agent::is_mcp_tool_ref;
-use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
@@ -46,6 +45,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
 /// Hook execution result: (exit_code, output)
@@ -58,26 +58,29 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
         None => true, // No matcher means the hook runs for all tools
         Some(pattern) => {
             match pattern.as_str() {
-                "*" => true, // Wildcard matches all tools
+                "*" => true,                               // Wildcard matches all tools
                 "@builtin" => !is_mcp_tool_ref(tool_name), // Built-in tools are not MCP tools
                 _ => {
                     // If tool_name is MCP, check server pattern first
                     if is_mcp_tool_ref(tool_name) {
-                        if let Some(server_name) = tool_name.strip_prefix('@').and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next()) {
+                        if let Some(server_name) = tool_name
+                            .strip_prefix('@')
+                            .and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next())
+                        {
                             let server_pattern = format!("@{}", server_name);
                             if pattern == &server_pattern {
                                 return true;
                             }
                         }
                     }
-                    
+
                     // Use matches_any_pattern for both MCP and built-in tools
                     let mut patterns = std::collections::HashSet::new();
                     patterns.insert(pattern.clone());
                     matches_any_pattern(&patterns, tool_name)
-                }
+                },
             }
-        }
+        },
     }
 }
 
@@ -133,7 +136,7 @@ impl HookExecutor {
                     continue; // Skip this hook - doesn't match tool
                 }
             }
-            
+
             if let Some(cache) = self.get_cache(&hook) {
                 // Note: we only cache successful hook run. hence always using 0 as exit code for cached hook
                 cached.push((hook.clone(), (0, cache)));
@@ -203,7 +206,11 @@ impl HookExecutor {
                         style::Print(&hook.1.command),
                         style::Print("\""),
                         style::SetForegroundColor(style::Color::Red),
-                        style::Print(format!(" failed with exit code: {}, stderr: {})\n", exit_code, hook_output.trim_end())),
+                        style::Print(format!(
+                            " failed with exit code: {}, stderr: {})\n",
+                            exit_code,
+                            hook_output.trim_end()
+                        )),
                         style::ResetColor,
                     )?;
                 } else {
@@ -437,10 +444,15 @@ impl HooksArgs {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::collections::HashMap;
-    use crate::cli::agent::hook::{Hook, HookTrigger};
+
     use tempfile::TempDir;
+
+    use super::*;
+    use crate::cli::agent::hook::{
+        Hook,
+        HookTrigger,
+    };
 
     #[test]
     fn test_hook_matches_tool() {
@@ -452,7 +464,7 @@ mod tests {
             matcher: None,
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let fs_write_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -461,7 +473,7 @@ mod tests {
             matcher: Some("fs_write".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let fs_wildcard_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -470,7 +482,7 @@ mod tests {
             matcher: Some("fs_*".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let all_tools_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -479,7 +491,7 @@ mod tests {
             matcher: Some("*".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let builtin_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -488,7 +500,7 @@ mod tests {
             matcher: Some("@builtin".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let git_server_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -497,7 +509,7 @@ mod tests {
             matcher: Some("@git".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let git_status_hook = Hook {
             command: "echo test".to_string(),
             timeout_ms: 5000,
@@ -506,36 +518,36 @@ mod tests {
             matcher: Some("@git/status".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         // No matcher should match all tools
         assert!(hook_matches_tool(&hook_no_matcher, "fs_write"));
         assert!(hook_matches_tool(&hook_no_matcher, "execute_bash"));
         assert!(hook_matches_tool(&hook_no_matcher, "@git/status"));
-        
+
         // Exact matcher should only match exact tool
         assert!(hook_matches_tool(&fs_write_hook, "fs_write"));
         assert!(!hook_matches_tool(&fs_write_hook, "fs_read"));
-        
+
         // Wildcard matcher should match pattern
         assert!(hook_matches_tool(&fs_wildcard_hook, "fs_write"));
         assert!(hook_matches_tool(&fs_wildcard_hook, "fs_read"));
         assert!(!hook_matches_tool(&fs_wildcard_hook, "execute_bash"));
-        
+
         // * should match all tools
         assert!(hook_matches_tool(&all_tools_hook, "fs_write"));
         assert!(hook_matches_tool(&all_tools_hook, "execute_bash"));
         assert!(hook_matches_tool(&all_tools_hook, "@git/status"));
-        
+
         // @builtin should match built-in tools only
         assert!(hook_matches_tool(&builtin_hook, "fs_write"));
         assert!(hook_matches_tool(&builtin_hook, "execute_bash"));
         assert!(!hook_matches_tool(&builtin_hook, "@git/status"));
-        
+
         // @git should match all git server tools
         assert!(hook_matches_tool(&git_server_hook, "@git/status"));
         assert!(!hook_matches_tool(&git_server_hook, "@other/tool"));
         assert!(!hook_matches_tool(&git_server_hook, "fs_write"));
-        
+
         // @git/status should match exact MCP tool
         assert!(hook_matches_tool(&git_status_hook, "@git/status"));
         assert!(!hook_matches_tool(&git_status_hook, "@git/commit"));
@@ -546,18 +558,18 @@ mod tests {
     async fn test_hook_executor_with_tool_context() {
         let mut executor = HookExecutor::new();
         let mut output = Vec::new();
-        
+
         // Create temp directory and file
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("hook_output.json");
         let test_file_str = test_file.to_string_lossy();
-        
+
         // Create a simple hook that writes JSON input to a file
         #[cfg(unix)]
         let command = format!("cat > {}", test_file_str);
         #[cfg(windows)]
         let command = format!("type > {}", test_file_str);
-        
+
         let hook = Hook {
             command,
             timeout_ms: 5000,
@@ -566,10 +578,10 @@ mod tests {
             matcher: Some("fs_write".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let mut hooks = HashMap::new();
         hooks.insert(HookTrigger::PreToolUse, vec![hook]);
-        
+
         let tool_context = ToolContext {
             tool_name: "fs_write".to_string(),
             tool_input: serde_json::json!({
@@ -578,18 +590,14 @@ mod tests {
             }),
             tool_response: None,
         };
-        
+
         // Run the hook
-        let result = executor.run_hooks(
-            hooks,
-            &mut output,
-            ".",
-            None,
-            Some(tool_context)
-        ).await;
-        
+        let result = executor
+            .run_hooks(hooks, &mut output, ".", None, Some(tool_context))
+            .await;
+
         assert!(result.is_ok());
-        
+
         // Verify the hook wrote the JSON input to the file
         if let Ok(content) = std::fs::read_to_string(&test_file) {
             let json: serde_json::Value = serde_json::from_str(&content).unwrap();
@@ -605,7 +613,7 @@ mod tests {
     async fn test_hook_filtering_no_match() {
         let mut executor = HookExecutor::new();
         let mut output = Vec::new();
-        
+
         // Hook that matches execute_bash (should NOT run for fs_write tool call)
         let execute_bash_hook = Hook {
             command: "echo 'should not run'".to_string(),
@@ -615,31 +623,33 @@ mod tests {
             matcher: Some("execute_bash".to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
-        
+
         let mut hooks = HashMap::new();
         hooks.insert(HookTrigger::PostToolUse, vec![execute_bash_hook]);
-        
+
         let tool_context = ToolContext {
             tool_name: "fs_write".to_string(),
             tool_input: serde_json::json!({"command": "create"}),
             tool_response: Some(serde_json::json!({"success": true})),
         };
-        
+
         // Run the hooks
-        let result = executor.run_hooks(
-            hooks,
-            &mut output,
-            ".", // cwd - using current directory for now
-            None, // prompt - no user prompt for this test
-            Some(tool_context)
-        ).await;
-        
+        let result = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd - using current directory for now
+                None, // prompt - no user prompt for this test
+                Some(tool_context),
+            )
+            .await;
+
         assert!(result.is_ok());
         let hook_results = result.unwrap();
-        
+
         // Should run 0 hooks because matcher doesn't match tool_name
         assert_eq!(hook_results.len(), 0);
-        
+
         // Output should be empty since no hooks ran
         assert!(output.is_empty());
     }
@@ -654,7 +664,7 @@ mod tests {
         let command = "echo 'Tool execution blocked by security policy' >&2; exit 2";
         #[cfg(windows)]
         let command = "echo Tool execution blocked by security policy 1>&2 & exit /b 2";
-        
+
         let hook = Hook {
             command: command.to_string(),
             timeout_ms: 5000,
@@ -664,9 +674,7 @@ mod tests {
             source: crate::cli::agent::hook::Source::Session,
         };
 
-        let hooks = HashMap::from([
-            (HookTrigger::PreToolUse, vec![hook])
-        ]);
+        let hooks = HashMap::from([(HookTrigger::PreToolUse, vec![hook])]);
 
         let tool_context = ToolContext {
             tool_name: "fs_write".to_string(),
@@ -677,17 +685,20 @@ mod tests {
             tool_response: None,
         };
 
-        let results = executor.run_hooks(
-            hooks,
-            &mut output,
-            ".", // cwd
-            None, // prompt
-            Some(tool_context)
-        ).await.unwrap();
+        let results = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd
+                None, // prompt
+                Some(tool_context),
+            )
+            .await
+            .unwrap();
 
         // Should have one result
         assert_eq!(results.len(), 1);
-        
+
         let ((trigger, _hook), (exit_code, hook_output)) = &results[0];
         assert_eq!(*trigger, HookTrigger::PreToolUse);
         assert_eq!(*exit_code, 2);
