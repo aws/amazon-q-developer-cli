@@ -176,8 +176,8 @@ pub async fn get_http_transport(
     os: &Os,
     url: &str,
     timeout: u64,
-    scopes: Option<&Vec<String>>,
-    headers: Option<&HashMap<String, String>>,
+    scopes: &Vec<String>,
+    headers: &HashMap<String, String>,
     auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
 ) -> Result<HttpTransport, OauthUtilError> {
@@ -188,8 +188,7 @@ pub async fn get_http_transport(
     let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
 
     let mut client_builder = reqwest::ClientBuilder::new().timeout(std::time::Duration::from_millis(timeout));
-    if let Some(headers) = headers {
-        error!("## probe: headers: {:#?}", headers);
+    if !headers.is_empty() {
         let headers = HeaderMap::try_from(headers).map_err(|e| OauthUtilError::Http(e.to_string()))?;
         client_builder = client_builder.default_headers(headers);
     };
@@ -242,7 +241,7 @@ async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
     reg_full_path: PathBuf,
-    scopes: Option<&Vec<String>>,
+    scopes: &Vec<String>,
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
@@ -299,7 +298,7 @@ async fn get_auth_manager(
 
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
-    scopes: Option<&Vec<String>>,
+    scopes: &Vec<String>,
     messenger: &dyn Messenger,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -310,15 +309,9 @@ async fn get_auth_manager_impl(
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
     let redirect_uri = format!("http://{}", actual_addr);
-    if let Some(scopes) = scopes {
-        let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
-        let scopes_as_slice = scopes_as_str.as_slice();
-        oauth_state.start_authorization(scopes_as_slice, &redirect_uri).await?;
-    } else {
-        oauth_state
-            .start_authorization(get_default_scopes(), &redirect_uri)
-            .await?;
-    }
+    let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
+    let scopes_as_slice = scopes_as_str.as_slice();
+    oauth_state.start_authorization(scopes_as_slice, &redirect_uri).await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;

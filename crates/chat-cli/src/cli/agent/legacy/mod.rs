@@ -82,7 +82,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             match McpServerConfig::load_from_file(os, config_path).await {
                 Ok(mut config) => {
                     config.mcp_servers.iter_mut().for_each(|(_name, config)| {
-                        config.set_is_from_legacy_mcp_json(true);
+                        config.is_from_legacy_mcp_json = true;
                     });
                     Some(config)
                 },

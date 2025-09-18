@@ -55,12 +55,12 @@ use super::{
     get_http_transport,
 };
 use crate::cli::chat::server_messenger::ServerMessenger;
-use crate::cli::chat::tools::custom_tool::CustomToolConfig;
-use crate::os::Os;
-use crate::util::directories::{
-    DirectoryError,
-    canonicalizes_path,
+use crate::cli::chat::tools::custom_tool::{
+    CustomToolConfig,
+    TransportType,
 };
+use crate::os::Os;
+use crate::util::directories::DirectoryError;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -148,6 +148,8 @@ pub enum McpClientError {
     Parse(#[from] url::ParseError),
     #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
+    #[error("{0}")]
+    MalformedConfig(&'static str),
 }
 
 /// Decorates the method passed in with retry logic, but only if the [RunningService] has an
@@ -333,7 +335,7 @@ impl McpClientService {
                             HttpTransport::WithAuth((transport, mut auth_client)) => {
                                 // The crate does not automatically refresh tokens when they expire. We
                                 // would need to handle that here
-                                let url = self.config.url().map_or("", String::as_str).to_string();
+                                let url = &backup_config.url;
                                 let service = match self.into_dyn().serve(transport).await.map_err(Box::new) {
                                     Ok(service) => service,
                                     Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
@@ -345,11 +347,11 @@ impl McpClientService {
                                             messenger_clone.clone(),
                                         );
 
-                                        let scopes = backup_config.oauth_scopes();
-                                        let timeout = *backup_config.timeout();
-                                        let headers = backup_config.headers();
+                                        let scopes = &backup_config.oauth_scopes;
+                                        let timeout = backup_config.timeout;
+                                        let headers = &backup_config.headers;
                                         let new_transport =
-                                            get_http_transport(&os_clone, &url, timeout, scopes, headers,Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
+                                            get_http_transport(&os_clone, url, timeout, scopes, headers,Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
 
                                         match new_transport {
                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -368,7 +370,7 @@ impl McpClientService {
                                                         // and discarding the client to trigger a full auth flow
                                                         tokio::fs::remove_file(&auth_client.cred_full_path).await?;
                                                         let new_transport =
-                                                            get_http_transport(&os_clone, &url, timeout, scopes,headers,None, &*messenger_dup).await?;
+                                                            get_http_transport(&os_clone, url, timeout, scopes,headers,None, &*messenger_dup).await?;
 
                                                         match new_transport {
                                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -495,15 +497,34 @@ impl McpClientService {
     }
 
     async fn get_transport(&mut self, os: &Os, messenger: &dyn Messenger) -> Result<Transport, McpClientError> {
-        match &mut self.config {
-            CustomToolConfig::Stdio {
-                command: command_as_str,
-                args,
-                env: config_envs,
-                ..
-            } => {
-                let expanded_cmd = canonicalizes_path(os, command_as_str)?;
-                let command = Command::new(expanded_cmd).configure(|cmd| {
+        let CustomToolConfig {
+            r#type,
+            url,
+            headers,
+            oauth_scopes: scopes,
+            command: command_as_str,
+            args,
+            env: config_envs,
+            timeout,
+            ..
+        } = &mut self.config;
+
+        let is_malformed_http = matches!(r#type, TransportType::Http) && url.is_empty();
+        let is_malformed_stdio = matches!(r#type, TransportType::Stdio) && command_as_str.is_empty();
+
+        if is_malformed_http {
+            return Err(McpClientError::MalformedConfig(
+                "MCP config is malformed: transport type is specified to be http but url is empty",
+            ));
+        } else if is_malformed_stdio {
+            return Err(McpClientError::MalformedConfig(
+                "MCP config is malformed: transport type is specified to be stdio but command is empty",
+            ));
+        }
+
+        match r#type {
+            TransportType::Stdio => {
+                let command = Command::new(command_as_str).configure(|cmd| {
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
@@ -519,15 +540,8 @@ impl McpClientService {
 
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
-            CustomToolConfig::Http {
-                url,
-                headers,
-                oauth_scopes: scopes,
-                timeout,
-                ..
-            } => {
-                let http_transport =
-                    get_http_transport(os, url, *timeout, Some(scopes), Some(headers), None, messenger).await?;
+            TransportType::Http => {
+                let http_transport = get_http_transport(os, url, *timeout, scopes, headers, None, messenger).await?;
 
                 Ok(Transport::Http(http_transport))
             },
