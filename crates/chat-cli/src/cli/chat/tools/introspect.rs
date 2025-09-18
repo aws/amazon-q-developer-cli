@@ -123,8 +123,7 @@ impl Introspect {
         );
         documentation
             .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
-        documentation
-            .push_str("• Hooks: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/hooks.md\n");
+        documentation.push_str("• Hooks: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/hooks.md\n");
         documentation
             .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
 

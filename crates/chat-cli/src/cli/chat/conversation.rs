@@ -564,12 +564,26 @@ impl ConversationState {
         let mut agent_spawn_context = None;
         if let Some(cm) = self.context_manager.as_mut() {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, os, user_prompt, None /* tool_context */).await?;
+            let agent_spawn = cm
+                .run_hooks(
+                    HookTrigger::AgentSpawn,
+                    output,
+                    os,
+                    user_prompt,
+                    None, // tool_context
+                )
+                .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
                 let per_prompt = cm
-                    .run_hooks(HookTrigger::UserPromptSubmit, output, os, next_message.prompt(), None /* tool_context */)
+                    .run_hooks(
+                        HookTrigger::UserPromptSubmit,
+                        output,
+                        os,
+                        next_message.prompt(),
+                        None, // tool_context
+                    )
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
                     next_message.additional_context = ctx;
@@ -1033,7 +1047,10 @@ impl From<InputSchema> for ToolInputSchema {
 /// [Option::None]
 fn format_hook_context(hook_results: &[((HookTrigger, Hook), HookOutput)], trigger: HookTrigger) -> Option<String> {
     // Note: only format context when hook command exit code is 0
-    if hook_results.iter().all(|(_, (exit_code, content))| *exit_code != 0 || content.is_empty()) {
+    if hook_results
+        .iter()
+        .all(|(_, (exit_code, content))| *exit_code != 0 || content.is_empty())
+    {
         return None;
     }
 
@@ -1046,7 +1063,10 @@ fn format_hook_context(hook_results: &[((HookTrigger, Hook), HookOutput)], trigg
     }
     context_content.push_str("\n\n");
 
-    for (_, (_, output)) in hook_results.iter().filter(|((h_trigger, _), (exit_code, _))| *h_trigger == trigger && *exit_code == 0) {
+    for (_, (_, output)) in hook_results
+        .iter()
+        .filter(|((h_trigger, _), (exit_code, _))| *h_trigger == trigger && *exit_code == 0)
+    {
         context_content.push_str(&format!("{output}\n\n"));
     }
     context_content.push_str(CONTEXT_ENTRY_END_HEADER);

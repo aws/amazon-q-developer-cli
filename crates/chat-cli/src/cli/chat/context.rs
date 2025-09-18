@@ -14,9 +14,9 @@ use serde::{
     Serializer,
 };
 
+use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
-use super::cli::hooks::HookOutput;
 use crate::cli::agent::Agent;
 use crate::cli::agent::hook::{
     Hook,
@@ -255,7 +255,9 @@ impl ContextManager {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
         let cwd = os.env.current_dir()?.to_string_lossy().to_string();
-        self.hook_executor.run_hooks(hooks, output, &cwd, prompt, tool_context).await
+        self.hook_executor
+            .run_hooks(hooks, output, &cwd, prompt, tool_context)
+            .await
     }
 }
 
