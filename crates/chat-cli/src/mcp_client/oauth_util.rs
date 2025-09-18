@@ -373,7 +373,11 @@ async fn make_svc(
                 let error = params.get("error");
                 let resp = if let Some(err) = error {
                     mk_response(format!(
-                        "Oauth failed. Check url for precise reasons. Possible reasons: {err}.\nIf this is scope related. You can try configuring the server scopes to be an empty array via adding oauth_scopes: []"
+                        "OAuth failed. Check URL for precise reasons. Possible reasons: {}.\n\
+                         If this is scope related, you can try configuring the server scopes \n\
+                         to be an empty array by adding \"oauthScopes\": [] to your server config.\n\
+                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n",
+                        err
                     ))
                 } else {
                     mk_response("You can close this page now".to_string())
