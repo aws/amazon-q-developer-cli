@@ -39,6 +39,15 @@ pub enum TransportType {
     Http,
 }
 
+impl std::fmt::Display for TransportType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportType::Stdio => write!(f, "Stdio"),
+            TransportType::Http => write!(f, "Http"),
+        }
+    }
+}
+
 impl Default for TransportType {
     fn default() -> Self {
         Self::Stdio

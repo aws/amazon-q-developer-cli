@@ -12,6 +12,7 @@ use strum::{
 
 use super::definitions::metrics::CodewhispererterminalRecordUserTurnCompletion;
 use super::definitions::types::CodewhispererterminalChatConversationType;
+use crate::cli::chat::tools::custom_tool::TransportType;
 use crate::telemetry::definitions::IntoMetricDatum;
 use crate::telemetry::definitions::metrics::{
     AmazonqDidSelectProfile,
@@ -385,6 +386,7 @@ impl Event {
             EventType::McpServerInit {
                 conversation_id,
                 server_name,
+                transport_type,
                 init_failure_reason,
                 number_of_tools,
                 all_tool_names,
@@ -397,6 +399,7 @@ impl Event {
                     value: None,
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_mcp_server_name: Some(server_name.into()),
+                    codewhispererterminal_transport_type: Some(transport_type.to_string().into()),
                     codewhispererterminal_mcp_server_init_failure_reason: init_failure_reason
                         .map(CodewhispererterminalMcpServerInitFailureReason),
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
@@ -665,6 +668,7 @@ pub enum EventType {
     McpServerInit {
         conversation_id: String,
         server_name: String,
+        transport_type: TransportType,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
         all_tool_names: Option<String>,

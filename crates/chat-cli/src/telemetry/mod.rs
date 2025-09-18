@@ -59,6 +59,7 @@ use crate::api_client::{
 use crate::auth::builder_id::get_start_url_and_region;
 use crate::aws_common::app_name;
 use crate::cli::RootSubcommand;
+use crate::cli::chat::tools::custom_tool::TransportType;
 use crate::database::settings::Setting;
 use crate::database::{
     Database,
@@ -382,6 +383,7 @@ impl TelemetryThread {
         database: &Database,
         conversation_id: String,
         server_name: String,
+        transport_type: TransportType,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
         all_tool_names: Option<String>,
@@ -391,6 +393,7 @@ impl TelemetryThread {
         let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
+            transport_type,
             init_failure_reason,
             number_of_tools,
             all_tool_names,

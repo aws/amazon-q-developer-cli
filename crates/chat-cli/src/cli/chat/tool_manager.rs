@@ -426,6 +426,7 @@ impl ToolManagerBuilder {
                             &os.database,
                             conversation_id.clone(),
                             name.clone(),
+                            transport_type,
                             Some(e.to_string()),
                             0,
                             Some("".to_string()),
@@ -1385,7 +1386,12 @@ fn spawn_orchestrator_task(
                             let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
                             format!("{:.2}", time_taken)
                         });
-                    pending.write().await.remove(&server_name);
+                    // We will never get a None. But even if we do we should not fatal here.
+                    let transport_type = pending
+                        .write()
+                        .await
+                        .remove(&server_name)
+                        .unwrap_or(TransportType::Stdio);
 
                     let result_tools = match &result {
                         Ok(tools_result) => {
@@ -1472,6 +1478,7 @@ fn spawn_orchestrator_task(
                                 database,
                                 conv_id,
                                 &server_name,
+                                transport_type,
                                 &mut specs,
                                 &mut sanitized_mapping,
                                 &alias_list,
@@ -1736,6 +1743,7 @@ async fn process_tool_specs(
     database: &Database,
     conversation_id: &str,
     server_name: &str,
+    transport_type: TransportType,
     specs: &mut Vec<ToolSpec>,
     tn_map: &mut HashMap<ModelToolName, ToolInfo>,
     alias_list: &HashMap<HostToolName, ModelToolName>,
@@ -1810,6 +1818,7 @@ async fn process_tool_specs(
             database,
             conversation_id,
             server_name.to_string(),
+            transport_type,
             None,
             number_of_tools,
             all_tool_names,
