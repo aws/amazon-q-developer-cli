@@ -18,7 +18,7 @@ amzn-consolas-client = { path = "crates/amzn-consolas-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 amzn-toolkit-telemetry-client = { path = "crates/amzn-toolkit-telemetry-client" }
 anstream = "0.6.13"
-arboard = { version = "3.5.0", default-features = false }
+arboard = { version = "3.6.1", default-features = false }
 assert_cmd = "2.0"
 async-trait = "0.1.87"
 aws-config = "1.0.3"
