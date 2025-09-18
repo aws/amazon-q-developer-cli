@@ -151,6 +151,8 @@ pub enum McpClientError {
     Parse(#[from] url::ParseError),
     #[error(transparent)]
     Auth(#[from] crate::auth::AuthError),
+    #[error("{0}")]
+    MalformedConfig(&'static str),
 }
 
 /// Decorates the method passed in with retry logic, but only if the [RunningService] has an
@@ -336,7 +338,7 @@ impl McpClientService {
                             HttpTransport::WithAuth((transport, mut auth_client)) => {
                                 // The crate does not automatically refresh tokens when they expire. We
                                 // would need to handle that here
-                                let url = self.config.url.clone();
+                                let url = &backup_config.url;
                                 let service = match self.into_dyn().serve(transport).await.map_err(Box::new) {
                                     Ok(service) => service,
                                     Err(e) if matches!(*e, ClientInitializeError::ConnectionClosed(_)) => {
@@ -344,12 +346,15 @@ impl McpClientService {
                                         let refresh_res = auth_client.refresh_token().await;
                                         let new_self = McpClientService::new(
                                             server_name.clone(),
-                                            backup_config,
+                                            backup_config.clone(),
                                             messenger_clone.clone(),
                                         );
 
+                                        let scopes = &backup_config.oauth_scopes;
+                                        let timeout = backup_config.timeout;
+                                        let headers = &backup_config.headers;
                                         let new_transport =
-                                            get_http_transport(&os_clone, &url, Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
+                                            get_http_transport(&os_clone, url, timeout, scopes, headers,Some(auth_client.auth_client.clone()), &*messenger_dup).await?;
 
                                         match new_transport {
                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -367,8 +372,8 @@ impl McpClientService {
                                                         // again. We do this by deleting the cred
                                                         // and discarding the client to trigger a full auth flow
                                                         tokio::fs::remove_file(&auth_client.cred_full_path).await?;
-                                                        let new_transport  =
-                                                            get_http_transport(&os_clone, &url, None, &*messenger_dup).await?;
+                                                        let new_transport =
+                                                            get_http_transport(&os_clone, url, timeout, scopes,headers,None, &*messenger_dup).await?;
 
                                                         match new_transport {
                                                             HttpTransport::WithAuth((new_transport, new_auth_client)) => {
@@ -495,17 +500,32 @@ impl McpClientService {
     }
 
     async fn get_transport(&mut self, os: &Os, messenger: &dyn Messenger) -> Result<Transport, McpClientError> {
-        // TODO: figure out what to do with headers
         let CustomToolConfig {
-            r#type: transport_type,
+            r#type,
             url,
+            headers,
+            oauth_scopes: scopes,
             command: command_as_str,
             args,
             env: config_envs,
+            timeout,
             ..
         } = &mut self.config;
 
-        match transport_type {
+        let is_malformed_http = matches!(r#type, TransportType::Http) && url.is_empty();
+        let is_malformed_stdio = matches!(r#type, TransportType::Stdio) && command_as_str.is_empty();
+
+        if is_malformed_http {
+            return Err(McpClientError::MalformedConfig(
+                "MCP config is malformed: transport type is specified to be http but url is empty",
+            ));
+        } else if is_malformed_stdio {
+            return Err(McpClientError::MalformedConfig(
+                "MCP config is malformed: transport type is specified to be stdio but command is empty",
+            ));
+        }
+
+        match r#type {
             TransportType::Stdio => {
                 let expanded_cmd = canonicalizes_path(os, command_as_str)?;
                 let command = Command::new(expanded_cmd).configure(|cmd| {
@@ -525,7 +545,7 @@ impl McpClientService {
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
             TransportType::Http => {
-                let http_transport = get_http_transport(os, url, None, messenger).await?;
+                let http_transport = get_http_transport(os, url, *timeout, scopes, headers, None, messenger).await?;
 
                 Ok(Transport::Http(http_transport))
             },
@@ -562,7 +582,6 @@ impl McpClientService {
 
     async fn on_tool_list_changed(&self, context: NotificationContext<RoleClient>) {
         let NotificationContext { peer, .. } = context;
-        let _timeout = self.config.timeout;
 
         paginated_fetch! {
             final_result_type: ListToolsResult,
@@ -578,7 +597,6 @@ impl McpClientService {
 
     async fn on_prompt_list_changed(&self, context: NotificationContext<RoleClient>) {
         let NotificationContext { peer, .. } = context;
-        let _timeout = self.config.timeout;
 
         paginated_fetch! {
             final_result_type: ListPromptsResult,
