@@ -5,7 +5,11 @@ mod conversation;
 mod input_source;
 mod message;
 mod parse;
-use std::path::MAIN_SEPARATOR;
+use std::path::{
+    MAIN_SEPARATOR,
+    PathBuf,
+};
+pub mod capture;
 mod line_tracker;
 mod parser;
 mod prompt;
@@ -17,6 +21,7 @@ mod token_counter;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;
+
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -142,6 +147,12 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
+use crate::cli::chat::capture::{
+    CAPTURE_MESSAGE_MAX_LENGTH,
+    CaptureManager,
+    SHADOW_REPO_DIR,
+    truncate_message,
+};
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::prompts::{
@@ -1322,6 +1333,28 @@ impl ChatSession {
             }
         }
 
+        // Initialize checkpointing if possible
+        let path = PathBuf::from(SHADOW_REPO_DIR).join(self.conversation.conversation_id());
+        let start = std::time::Instant::now();
+        let capture_manager = match CaptureManager::auto_init(os, path).await {
+            Ok(manager) => {
+                execute!(
+                    self.stderr,
+                    style::Print(
+                        format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
+                            .blue()
+                            .bold()
+                    )
+                )?;
+                Some(manager)
+            },
+            Err(e) => {
+                execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
+                None
+            },
+        };
+        self.conversation.capture_manager = capture_manager;
+
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
         }
@@ -2083,6 +2116,14 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
+            // Track this as the last user message for checkpointing
+            if let Some(mut manager) = self.conversation.capture_manager.take() {
+                if !manager.user_message_lock {
+                    manager.last_user_message = Some(user_input.clone());
+                    manager.user_message_lock = true;
+                }
+                self.conversation.capture_manager = Some(manager);
+            }
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);
@@ -2306,6 +2347,52 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
+            let tag = if invoke_result.is_ok() {
+                if let Some(mut manager) = self.conversation.capture_manager.take() {
+                    let has_uncommitted = match manager.has_uncommitted_changes() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n").blue())
+                            )?;
+                            execute!(self.stderr, style::Print("Saving anyways...\n".blue()))?;
+                            true
+                        },
+                    };
+                    let tag = if has_uncommitted {
+                        let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
+                        let commit_message = match tool.tool.get_summary() {
+                            Some(summary) => summary,
+                            None => tool.tool.display_name(),
+                        };
+
+                        match manager.create_capture(
+                            &tag,
+                            &commit_message,
+                            self.conversation.history().len() + 1,
+                            false,
+                            Some(tool.name.clone()),
+                        ) {
+                            Ok(_) => manager.num_tools_this_turn += 1,
+                            Err(e) => {
+                                debug!("{e}");
+                                tag = String::new();
+                            },
+                        }
+                        tag
+                    } else {
+                        String::new()
+                    };
+                    self.conversation.capture_manager = Some(manager);
+                    tag
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            };
+
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
             tool_telemetry = tool_telemetry.and_modify(|ev| {
@@ -2348,8 +2435,11 @@ impl ChatSession {
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
-                        style::Print("\n\n"),
                     )?;
+                    if !tag.is_empty() {
+                        execute!(self.stdout, style::Print(format!(" [{tag}]").blue().bold()))?;
+                    }
+                    execute!(self.stdout, style::Print("\n\n"))?;
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
@@ -2797,6 +2887,46 @@ impl ChatSession {
             self.tool_uses.clear();
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
+
+            if let Some(mut manager) = self.conversation.capture_manager.take() {
+                manager.user_message_lock = false;
+                let user_message = match manager.last_user_message {
+                    Some(message) => {
+                        let message = message.clone();
+                        manager.last_user_message = None;
+                        message
+                    },
+                    None => "No description provided".to_string(),
+                };
+                if manager.num_tools_this_turn > 0 {
+                    manager.num_turns += 1;
+                    manager.num_tools_this_turn = 0;
+
+                    match manager.create_capture(
+                        &manager.num_turns.to_string(),
+                        &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),
+                        self.conversation.history().len(),
+                        true,
+                        None,
+                    ) {
+                        Ok(_) => execute!(
+                            self.stderr,
+                            style::Print(style::Print(
+                                format!("Created capture: {}\n\n", manager.num_turns).blue().bold()
+                            ))
+                        )?,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::Print(style::Print(
+                                    format!("Could not create automatic capture: {}\n\n", e).blue()
+                                ))
+                            )?;
+                        },
+                    }
+                }
+                self.conversation.capture_manager = Some(manager);
+            }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
