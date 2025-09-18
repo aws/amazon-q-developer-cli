@@ -1210,6 +1210,7 @@ fn spawn_display_task(
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_oauth_message(&name, &mut output)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             },
                         },
                         Err(_e) => {
