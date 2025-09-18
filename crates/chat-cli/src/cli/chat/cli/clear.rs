@@ -57,7 +57,7 @@ impl ClearArgs {
             session.tool_uses.clear();
             session.pending_tool_index = None;
             session.tool_turn_start_time = None;
-            
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Green),
