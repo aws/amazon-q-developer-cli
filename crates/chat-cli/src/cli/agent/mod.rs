@@ -818,9 +818,9 @@ impl Agents {
             "fs_read" => "trust working directory".dark_grey(),
             "fs_write" => "not trusted".dark_grey(),
             #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
+            "execute_bash" => "not trusted".dark_grey(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
+            "execute_cmd" => "not trusted".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "introspect" => "trusted".dark_green().bold(),
