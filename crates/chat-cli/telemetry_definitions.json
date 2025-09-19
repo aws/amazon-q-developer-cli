@@ -146,6 +146,11 @@
       "description": "Name of the MCP server"
     },
     {
+      "name": "codewhispererterminal_transportType",
+      "type": "string",
+      "description": "Transport type used by the MCP server"
+    },
+    {
       "name": "codewhispererterminal_mcpServerAllToolNames",
       "type": "string",
       "description": "All the tool names available in the MCP server. If there are multiple tools, then the tool names are comma-delimited."
@@ -464,6 +469,7 @@
         { "type": "credentialStartUrl" },
         { "type": "amazonqConversationId" },
         { "type": "codewhispererterminal_mcpServerName" },
+        { "type": "codewhispererterminal_transportType" },
         {
           "type": "codewhispererterminal_mcpServerInitFailureReason",
           "required": false

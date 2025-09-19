@@ -14,6 +14,7 @@ use tokio::sync::mpsc::{
     channel,
 };
 
+use super::tools::custom_tool::TransportType;
 use crate::mcp_client::messenger::{
     Messenger,
     MessengerError,
@@ -50,6 +51,7 @@ pub enum UpdateEventMessage {
     },
     InitStart {
         server_name: String,
+        transport_type: TransportType,
     },
     Deinit {
         server_name: String,
@@ -70,9 +72,10 @@ impl ServerMessengerBuilder {
         (rx, this)
     }
 
-    pub fn build_with_name(&self, server_name: String) -> ServerMessenger {
+    pub fn build(&self, server_name: String, transport_type: TransportType) -> ServerMessenger {
         ServerMessenger {
             server_name,
+            transport_type,
             update_event_sender: self.update_event_sender.clone(),
         }
     }
@@ -81,6 +84,7 @@ impl ServerMessengerBuilder {
 #[derive(Clone, Debug)]
 pub struct ServerMessenger {
     pub server_name: String,
+    pub transport_type: TransportType,
     pub update_event_sender: Sender<UpdateEventMessage>,
 }
 
@@ -166,6 +170,7 @@ impl Messenger for ServerMessenger {
             .update_event_sender
             .send(UpdateEventMessage::InitStart {
                 server_name: self.server_name.clone(),
+                transport_type: self.transport_type,
             })
             .await
             .map_err(|e| MessengerError::Custom(e.to_string()))?)
