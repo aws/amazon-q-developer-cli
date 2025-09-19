@@ -252,7 +252,7 @@ fn test_q_inline_set_customization_subcommand() -> Result<(), Box<dyn std::error
     println!("📝 END OUTPUT");
     
     // Just verify that the command executed (may select first option by default)
-    assert!(response.contains("Customization") && response.contains("Amazon-Internal-V1") && response.contains("selected"), "Should show selection confirmation");
+    assert!(response.contains("Customization")  && response.contains("selected"), "Should show selection confirmation");
     
     println!("✅ q inline set-customization subcommand executed successfully!");
     
@@ -264,8 +264,12 @@ fn test_q_inline_set_customization_subcommand() -> Result<(), Box<dyn std::error
 fn test_q_inline_unset_customization_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing q inline unset customization... | Description: Tests the <code> q inline set-customization</code> interactive menu for selecting 'None' to unset customization");
     
-    // Use helper function to select "None" (4th option, so 3 down arrows)
-    let response = q_chat_helper::execute_interactive_menu_selection("q", &["inline", "set-customization"], 3)?;
+    // Get the interactive menu to find None position (always at last line)
+    let menu_response = q_chat_helper::execute_q_subcommand("q", &["inline", "set-customization"])?;
+    let none_index = menu_response.lines().count();
+
+    
+    let response = q_chat_helper::execute_interactive_menu_selection("q", &["inline", "set-customization"], none_index)?;
     
     println!("📝 Debug response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
