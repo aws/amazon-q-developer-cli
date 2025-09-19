@@ -60,10 +60,7 @@ use crate::cli::chat::tools::custom_tool::{
     TransportType,
 };
 use crate::os::Os;
-use crate::util::directories::{
-    DirectoryError,
-    canonicalizes_path,
-};
+use crate::util::directories::DirectoryError;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -153,6 +150,8 @@ pub enum McpClientError {
     Auth(#[from] crate::auth::AuthError),
     #[error("{0}")]
     MalformedConfig(&'static str),
+    #[error(transparent)]
+    LookUp(#[from] shellexpand::LookupError<std::env::VarError>),
 }
 
 /// Decorates the method passed in with retry logic, but only if the [RunningService] has an
@@ -527,8 +526,11 @@ impl McpClientService {
 
         match r#type {
             TransportType::Stdio => {
-                let expanded_cmd = canonicalizes_path(os, command_as_str)?;
-                let command = Command::new(expanded_cmd).configure(|cmd| {
+                let context = |input: &str| Ok(os.env.get(input).ok());
+                let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
+                let expanded_cmd = shellexpand::full_with_context(command_as_str, home_dir, context)?;
+
+                let command = Command::new(expanded_cmd.as_ref() as &str).configure(|cmd| {
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
