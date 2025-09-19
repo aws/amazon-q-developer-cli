@@ -45,10 +45,19 @@ impl FileProcessor {
                 .filter_map(|e| e.ok())
                 .filter(|e| e.file_type().is_file())
                 .filter(|e| {
-                    !e.path()
-                        .file_name()
-                        .and_then(|n| n.to_str())
-                        .is_some_and(|s| s.starts_with('.'))
+                    // Skip hidden files, but allow common configuration files
+                    if let Some(filename) = e.path().file_name().and_then(|n| n.to_str()) {
+                        if filename.starts_with('.') {
+                            // Allow common configuration files
+                            filename.ends_with("rc") 
+                                || filename.ends_with("config")
+                                || matches!(filename, ".gitignore" | ".env" | ".dockerignore")
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    }
                 })
                 .filter(|e| {
                     pattern_filter
