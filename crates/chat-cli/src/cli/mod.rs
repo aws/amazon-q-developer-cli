@@ -382,6 +382,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })),
             verbose: 2,
             help_all: false,
@@ -422,6 +423,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -439,6 +441,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -456,6 +459,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -473,6 +477,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 wrap: None,
+                no_banner: false,
             })
         );
         assert_parse!(
@@ -486,6 +491,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -503,6 +509,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -520,6 +527,7 @@ mod test {
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -537,6 +545,7 @@ mod test {
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
                 wrap: None,
+                no_banner: false,
             })
         );
     }
@@ -554,6 +563,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Never),
+                no_banner: false,
             })
         );
         assert_parse!(
@@ -567,6 +577,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Always),
+                no_banner: false,
             })
         );
         assert_parse!(
@@ -580,6 +591,25 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Auto),
+                no_banner: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_no_banner() {
+        assert_parse!(
+            ["chat", "--no-banner"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: None,
+                no_banner: true,
             })
         );
     }

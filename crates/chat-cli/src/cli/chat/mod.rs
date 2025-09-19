@@ -228,6 +228,9 @@ pub struct ChatArgs {
     /// Control line wrapping behavior (default: auto-detect)
     #[arg(short = 'w', long, value_enum)]
     pub wrap: Option<WrapMode>,
+    /// Disable the ASCII banner/logo display
+    #[arg(long)]
+    pub no_banner: bool,
 }
 
 impl ChatArgs {
@@ -431,6 +434,7 @@ impl ChatArgs {
             !self.no_interactive,
             mcp_enabled,
             self.wrap,
+            self.no_banner,
         )
         .await?
         .spawn(os)
@@ -645,6 +649,7 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    no_banner: bool,
 }
 
 impl ChatSession {
@@ -665,6 +670,7 @@ impl ChatSession {
         interactive: bool,
         mcp_enabled: bool,
         wrap: Option<WrapMode>,
+        no_banner: bool,
     ) -> Result<Self> {
         // Reload prior conversation
         let mut existing_conversation = false;
@@ -757,6 +763,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            no_banner,
         })
     }
 
@@ -1237,11 +1244,12 @@ impl ChatSession {
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
-        if os
-            .database
-            .settings
-            .get_bool(Setting::ChatGreetingEnabled)
-            .unwrap_or(true)
+        if !self.no_banner
+            && os
+                .database
+                .settings
+                .get_bool(Setting::ChatGreetingEnabled)
+                .unwrap_or(true)
         {
             let welcome_text = match self.existing_conversation {
                 true => RESUME_TEXT,
@@ -3531,6 +3539,7 @@ mod tests {
             true,
             false,
             None,
+            false,
         )
         .await
         .unwrap()
@@ -3674,6 +3683,7 @@ mod tests {
             true,
             false,
             None,
+            false,
         )
         .await
         .unwrap()
@@ -3772,6 +3782,7 @@ mod tests {
             true,
             false,
             None,
+            false,
         )
         .await
         .unwrap()
@@ -3848,6 +3859,7 @@ mod tests {
             true,
             false,
             None,
+            false,
         )
         .await
         .unwrap()
@@ -3900,6 +3912,7 @@ mod tests {
             true,
             false,
             None,
+            false,
         )
         .await
         .unwrap()
