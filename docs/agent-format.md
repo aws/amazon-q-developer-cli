@@ -68,7 +68,15 @@ The `mcpServers` field specifies which Model Context Protocol (MCP) servers the 
         "GIT_CONFIG_GLOBAL": "/dev/null"
       },
       "timeout": 120000
-    }
+    },
+    "notion": {
+      "type": "http",
+      "url": "https://mcp.notion.com/mcp",
+      "headers": {
+        "header_name": "header_value"
+      },
+      "oauthScopes": []
+    },
   }
 }
 ```
@@ -78,6 +86,10 @@ Each MCP server configuration can include:
 - `args` (optional): Arguments to pass to the command
 - `env` (optional): Environment variables to set for the server
 - `timeout` (optional): Timeout for each MCP request in milliseconds (default: 120000)
+- `type` (optional): The transport type that is to be used by the mcp server. Currently this is one of http or stdio
+- `url` (optional): The url to a remote server
+- `headers` (optional): The default headers to be attached to every request to a remote server
+- `oauthScopes` (optional): The scopes with which oauth is done. By default they are `['openid', 'mcp', 'profile', 'offline_access']`
 
 ## Tools Field
 
