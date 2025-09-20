@@ -16,6 +16,12 @@ use crate::database::settings::Setting;
 use crate::os::Os;
 
 
+#[cfg(test)]
+mod tests;
+
+#[cfg(test)]
+mod test_harness;
+
 
 #[derive(Debug, Parser, PartialEq)]
 pub struct AcpArgs {
@@ -284,6 +290,3 @@ impl AcpArgs {
         Ok(ExitCode::SUCCESS)
     }
 }
-
-#[cfg(test)]
-mod tests;

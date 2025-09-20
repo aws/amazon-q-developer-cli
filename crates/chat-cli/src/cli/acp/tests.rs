@@ -1,4 +1,5 @@
 use agent_client_protocol as acp;
+use futures::{AsyncRead, AsyncWrite};
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::{cli::acp::{AcpArgs, QAgent}, database::settings::Setting, os::Os};
@@ -145,4 +146,19 @@ async fn test_q_agent_prompt_handling() {
 
     let result = agent.prompt(invalid_prompt_req).await;
     assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_foo() -> eyre::Result<()> {
+    TestHarness::new().await?
+    .set_mock_llm(async |cx| {
+        panic!()
+    })
+    .connect_via_acp(|acp_client| {
+
+        acp_client.send_user_message()
+    })
+    ;
+
+    Ok(())
 }
