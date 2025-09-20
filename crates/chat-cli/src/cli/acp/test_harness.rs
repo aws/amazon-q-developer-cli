@@ -119,6 +119,7 @@ use agent_client_protocol::{self as acp, Agent, NewSessionRequest, NewSessionRes
 use futures::{AsyncRead, AsyncWrite};
 use parking_lot::Mutex;
 use std::{collections::{BTreeMap, HashMap}, path::PathBuf, process::ExitCode, sync::Arc};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::{cli::acp::{AcpArgs, QAgent}, database::settings::Setting, os::Os};
 
@@ -145,10 +146,29 @@ impl TestHarness {
 
     /// Launch the test and get a handle to the client that you can use to communicate with the agent.
     /// This will communicate via the ACP implementation.
-    pub async fn into_client(mut self, initial_prompt: impl IntoPromptContent) -> AcpTestClient {
-        // XXX start the QAgent
-        // XXX use `spawn_test_client_actor`
-        // create and return AcpTestClient
+    pub async fn into_client(self) -> eyre::Result<AcpTestClient> {
+        // Create duplex streams for communication
+        let (client_write, agent_read) = tokio::io::duplex(1024);
+        let (agent_write, client_read) = tokio::io::duplex(1024);
+        
+        // Start the QAgent (server side) - use spawn_local since LocalSet is not Send
+        let q_agent = QAgent::new("test-agent".to_string(), self.os);
+        tokio::task::spawn_local(async move {
+            let (_agent_conn, agent_handle_io) = acp::AgentSideConnection::new(
+                q_agent,
+                agent_write.compat_write(),
+                agent_read.compat(),
+                |fut| { tokio::task::spawn_local(fut); }
+            );
+            
+            agent_handle_io.await
+        });
+        
+        // Start the client actor
+        spawn_test_client_actor(
+            client_write.compat_write(),
+            client_read.compat(),
+        ).await
     }
 }
 
@@ -161,7 +181,15 @@ impl AcpTestClient {
     pub async fn new_session(&self) -> eyre::Result<AcpTestSession> {
         let (event_tx, event_rx) = tokio::sync::mpsc::channel(128);
         let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-        self.client_tx.send(ToAgent::NewSession { request: NewSessionRequest { cwd: std::env::current_dir()?, mcp_servers: vec![], meta: None }, event_tx, response_tx });
+        self.client_tx.send(ToAgent::NewSession { 
+            request: NewSessionRequest { 
+                cwd: std::env::current_dir()?, 
+                mcp_servers: vec![], 
+                meta: None 
+            }, 
+            event_tx, 
+            response_tx 
+        }).await?;
         let acp::NewSessionResponse { session_id, .. } = response_rx.await??;
         Ok(AcpTestSession { session_id, client_tx: self.client_tx.clone(), event_rx })
     }
@@ -184,7 +212,7 @@ impl AcpTestSession {
             prompt: message.into_prompt_content(),
             meta: None,
         };
-        self.client_tx.send(ToAgent::Prompt { request }).await;
+        self.client_tx.send(ToAgent::Prompt { request }).await?;
         Ok(AcpTestSessionRead { session: self })
     }
 }
@@ -195,8 +223,42 @@ pub struct AcpTestSessionRead<'r> {
 
 impl AcpTestSessionRead<'_> {
     /// Read the next message from the agent, blocking until one arrives (or erroring if agent has terminated).
-    async fn read_from_agent(&mut self) -> eyre::Result<FromAgent> {
+    pub async fn read_from_agent(&mut self) -> eyre::Result<FromAgent> {
         self.session.event_rx.recv().await.ok_or_else(|| eyre::eyre!("agent terminated"))
+    }
+    
+    /// Read session notifications (agent responses) until the turn stops
+    pub async fn read_agent_response(&mut self) -> eyre::Result<String> {
+        let mut response_text = String::new();
+        
+        loop {
+            match self.read_from_agent().await? {
+                FromAgent::SessionNotification(notification, response_tx) => {
+                    // Send acknowledgment
+                    let _ = response_tx.send(());
+                    
+                    // Extract text from session notification
+                    match notification.update {
+                        acp::SessionUpdate::AgentMessageChunk { content } => {
+                            match content {
+                                acp::ContentBlock::Text(text_content) => {
+                                    response_text.push_str(&text_content.text);
+                                }
+                                _ => {} // Ignore non-text content for now
+                            }
+                        }
+                        _ => {} // Ignore other update types for now
+                    }
+                }
+                FromAgent::Stop(result) => {
+                    result?; // Propagate any errors
+                    break;
+                }
+                _ => {} // Ignore other message types for now
+            }
+        }
+        
+        Ok(response_text)
     }
 }
 
@@ -231,8 +293,8 @@ pub enum FromAgent {
     WriteTextFile(acp::WriteTextFileRequest, tokio::sync::oneshot::Sender<acp::WriteTextFileResponse>),
     ReadTextFile(acp::ReadTextFileRequest, tokio::sync::oneshot::Sender<acp::ReadTextFileResponse>),
     CreateTerminal(acp::CreateTerminalRequest, tokio::sync::oneshot::Sender<acp::CreateTerminalResponse>),
-    TerminalOutput(acp::CreateTerminalRequest, tokio::sync::oneshot::Sender<acp::TerminalOutputResponse>),
-    ReleaseTerminal(acp::CreateTerminalRequest, tokio::sync::oneshot::Sender<acp::ReleaseTerminalResponse>),
+    TerminalOutput(acp::TerminalOutputRequest, tokio::sync::oneshot::Sender<acp::TerminalOutputResponse>),
+    ReleaseTerminal(acp::ReleaseTerminalRequest, tokio::sync::oneshot::Sender<acp::ReleaseTerminalResponse>),
     WaitForTerminalExit(acp::WaitForTerminalExitRequest, tokio::sync::oneshot::Sender<acp::WaitForTerminalExitResponse>),
     KillTerminalCommand(acp::KillTerminalCommandRequest, tokio::sync::oneshot::Sender<acp::KillTerminalCommandResponse>),
     SessionNotification(acp::SessionNotification, tokio::sync::oneshot::Sender<()>),
@@ -243,10 +305,9 @@ pub enum FromAgent {
 type SessionsMap = Arc<Mutex<HashMap<acp::SessionId, tokio::sync::mpsc::Sender<FromAgent>>>>;
 
 async fn spawn_test_client_actor(
-    tx: tokio::sync::mpsc::Sender<Result<ToAgent, acp::Error>>,
-    outgoing_bytes: impl Unpin + AsyncWrite + std::marker::Send,
-    incoming_bytes: impl Unpin + AsyncRead,
-) -> eyre::Result<AcpTestClientHandle> {
+    outgoing_bytes: impl Unpin + AsyncWrite + Send + 'static,
+    incoming_bytes: impl Unpin + AsyncRead + Send + 'static,
+) -> eyre::Result<AcpTestClient> {
     let sessions: SessionsMap = Default::default();
 
     let (client_conn, client_handle_io) = acp::ClientSideConnection::new(
@@ -256,11 +317,25 @@ async fn spawn_test_client_actor(
         |fut| { tokio::task::spawn_local(fut); }
     );
 
-    tokio::task::spawn_local(client_handle_io);
+    // Start I/O handler in LocalSet
+    tokio::task::spawn(async move {
+        let local_set = tokio::task::LocalSet::new();
+        local_set.run_until(client_handle_io).await
+    });
 
-    let (client_tx, client_rx) = tokio::sync::mpsc::channel(128);
+    let (client_tx, mut client_rx) = tokio::sync::mpsc::channel(128);
         
     tokio::spawn(async move {
+        // Initialize the connection first
+        if let Err(e) = client_conn.initialize(acp::InitializeRequest {
+            protocol_version: acp::V1,
+            client_capabilities: acp::ClientCapabilities::default(),
+            meta: None,
+        }).await {
+            eprintln!("Failed to initialize ACP connection: {}", e);
+            return;
+        }
+
         while let Some(message) = client_rx.recv().await {
             match message {
                 ToAgent::NewSession { request, event_tx, response_tx } => {
@@ -269,15 +344,20 @@ async fn spawn_test_client_actor(
                         sessions.lock().insert(response.session_id.clone(), event_tx);
                         Ok(response)
                     };
-                    response_tx.send(closure().await);
+                    let _ = response_tx.send(closure().await);
                 }
-
 
                 ToAgent::Prompt { request } => {
                     let session_tx = sessions.lock().get(&request.session_id).cloned();
                     if let Some(session_tx) = session_tx {
-                        let result = client_conn.prompt(request).await?;
-                        let _ = session_tx.send(result).await;
+                        match client_conn.prompt(request).await {
+                            Ok(result) => {
+                                let _ = session_tx.send(FromAgent::Stop(Ok(result))).await;
+                            }
+                            Err(e) => {
+                                let _ = session_tx.send(FromAgent::Stop(Err(e))).await;
+                            }
+                        }
                     }
                 }
             }
@@ -303,10 +383,14 @@ impl AcpTestClientActorCallbacks {
         }
     }
 
-    async fn send_and_await_reply<M, R>(&self, session_id: acp::SessionId, message: impl Fn(M, tokio::oneshot::Sender<R>), args: M) -> Result<R, acp::Error> {
-        let session_tx = self.session_tx(&args.session_id)?;
+    async fn send_and_await_reply<M, R>(&self, session_id: &acp::SessionId, message: impl FnOnce(M, tokio::sync::oneshot::Sender<R>) -> FromAgent, args: M) -> Result<R, acp::Error> {
+        let session_tx = self.session_tx(session_id)?;
         let (tx, rx) = tokio::sync::oneshot::channel();
-        session_tx.send(message(args, tx)).await;
+        session_tx.send(message(args, tx)).await.map_err(|e| acp::Error {
+            code: 22,
+            message: e.to_string(),
+            data: None,
+        })?;
         let response = rx.await.map_err(|e| acp::Error {
             code: 22,
             message: e.to_string(),
@@ -321,81 +405,81 @@ impl acp::Client for AcpTestClientActorCallbacks {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, acp::Error> {
-        Ok(self.send_and_await_reply(args.session_id.clone(), FromAgent::RequestPermission, args).await?)
+        self.send_and_await_reply(&args.session_id, FromAgent::RequestPermission, args).await
     }
         
     // Claude: fill in the rest of these methods in a similar pattern to the one above
 
-    fn write_text_file(
+    async fn write_text_file(
         &self,
-        args: agent_client_protocol::WriteTextFileRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::WriteTextFileResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::WriteTextFileRequest,
+    ) -> Result<acp::WriteTextFileResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::WriteTextFile, args).await
     }
     
-    fn read_text_file(
+    async fn read_text_file(
         &self,
-        args: agent_client_protocol::ReadTextFileRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::ReadTextFileResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::ReadTextFileRequest,
+    ) -> Result<acp::ReadTextFileResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::ReadTextFile, args).await
     }
     
-    fn session_notification(
+    async fn session_notification(
         &self,
-        args: agent_client_protocol::SessionNotification,
-    ) -> impl Future<Output = Result<(), agent_client_protocol::Error>> {
-        todo!()
+        args: acp::SessionNotification,
+    ) -> Result<(), acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::SessionNotification, args).await
     }
     
-    fn create_terminal(
+    async fn create_terminal(
         &self,
-        args: agent_client_protocol::CreateTerminalRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::CreateTerminalResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::CreateTerminalRequest,
+    ) -> Result<acp::CreateTerminalResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::CreateTerminal, args).await
     }
     
-    fn terminal_output(
+    async fn terminal_output(
         &self,
-        args: agent_client_protocol::TerminalOutputRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::TerminalOutputResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::TerminalOutputRequest,
+    ) -> Result<acp::TerminalOutputResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::TerminalOutput, args).await
     }
     
-    fn release_terminal(
+    async fn release_terminal(
         &self,
-        args: agent_client_protocol::ReleaseTerminalRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::ReleaseTerminalResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::ReleaseTerminalRequest,
+    ) -> Result<acp::ReleaseTerminalResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::ReleaseTerminal, args).await
     }
     
-    fn wait_for_terminal_exit(
+    async fn wait_for_terminal_exit(
         &self,
-        args: agent_client_protocol::WaitForTerminalExitRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::WaitForTerminalExitResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::WaitForTerminalExitRequest,
+    ) -> Result<acp::WaitForTerminalExitResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::WaitForTerminalExit, args).await
     }
     
-    fn kill_terminal_command(
+    async fn kill_terminal_command(
         &self,
-        args: agent_client_protocol::KillTerminalCommandRequest,
-    ) -> impl Future<Output = Result<agent_client_protocol::KillTerminalCommandResponse, agent_client_protocol::Error>> {
-        todo!()
+        args: acp::KillTerminalCommandRequest,
+    ) -> Result<acp::KillTerminalCommandResponse, acp::Error> {
+        self.send_and_await_reply(&args.session_id, FromAgent::KillTerminalCommand, args).await
     }
     
-    fn ext_method(
+    async fn ext_method(
         &self,
-        method: std::sync::Arc<str>,
-        params: std::sync::Arc<serde_json::value::RawValue>,
-    ) -> impl Future<Output = Result<std::sync::Arc<serde_json::value::RawValue>, agent_client_protocol::Error>> {
-        todo!()
+        _method: std::sync::Arc<str>,
+        _params: std::sync::Arc<serde_json::value::RawValue>,
+    ) -> Result<std::sync::Arc<serde_json::value::RawValue>, acp::Error> {
+        Err(acp::Error::method_not_found())
     }
     
-    fn ext_notification(
+    async fn ext_notification(
         &self,
-        method: std::sync::Arc<str>,
-        params: std::sync::Arc<serde_json::value::RawValue>,
-    ) -> impl Future<Output = Result<(), agent_client_protocol::Error>> {
-        todo!()
+        _method: std::sync::Arc<str>,
+        _params: std::sync::Arc<serde_json::value::RawValue>,
+    ) -> Result<(), acp::Error> {
+        Err(acp::Error::method_not_found())
     }
 }
 
@@ -414,5 +498,45 @@ impl IntoPromptContent for String {
 impl IntoPromptContent for &str {
     fn into_prompt_content(self) -> Vec<acp::ContentBlock> {
         self.to_string().into_prompt_content()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mock_llm::{spawn_mock_llm, MockLLMContext};
+
+    #[tokio::test]
+    async fn test_hello_world_conversation() -> eyre::Result<()> {
+        let harness = TestHarness::new().await?
+            .set_mock_llm(|mut ctx: MockLLMContext| async move {
+                // First exchange
+                if let Some(msg) = ctx.read_user_message().await {
+                    if msg.contains("Hi, Claude") {
+                        ctx.respond_to_user("Hi, you! What's your name?".to_string()).await.unwrap();
+                    }
+                }
+                // Second exchange  
+                if let Some(msg) = ctx.read_user_message().await {
+                    if msg.contains("Ferris") {
+                        ctx.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap();
+                    }
+                }
+            });
+
+        let client = harness.into_client().await?;
+        let mut session = client.new_session().await?;
+        
+        // First turn: User says "Hi, Claude"
+        let mut read = session.say_to_agent("Hi, Claude").await?;
+        let response = read.read_agent_response().await?;
+        assert_eq!(response, "Hi, you! What's your name?");
+        
+        // Second turn: User says "Ferris"  
+        let mut read = session.say_to_agent("Ferris").await?;
+        let response = read.read_agent_response().await?;
+        assert_eq!(response, "Hi Ferris, I'm Q!");
+        
+        Ok(())
     }
 }
