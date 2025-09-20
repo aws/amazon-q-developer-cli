@@ -21,7 +21,8 @@ async fn test_q_agent_initialize() {
     use acp::Agent;
 
     let os = Os::new().await.unwrap();
-    let agent = QAgent::new("test-agent".to_string(), os);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let agent = QAgent::new("test-agent".to_string(), os, tx);
 
     let request = acp::InitializeRequest {
         protocol_version: acp::V1,
@@ -38,7 +39,8 @@ async fn test_q_agent_session_lifecycle() {
     use acp::Agent;
 
     let os = Os::new().await.unwrap();
-    let agent = QAgent::new("test-agent".to_string(), os);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let agent = QAgent::new("test-agent".to_string(), os, tx);
 
     // Test new session
     let new_session_req = acp::NewSessionRequest {
@@ -107,7 +109,8 @@ async fn test_q_agent_prompt_handling() {
     use acp::Agent;
 
     let os = Os::new().await.unwrap();
-    let agent = QAgent::new("test-agent".to_string(), os);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let agent = QAgent::new("test-agent".to_string(), os, tx);
 
     // First create a session
     let new_session_req = acp::NewSessionRequest {

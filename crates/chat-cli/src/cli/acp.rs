@@ -3,10 +3,11 @@ use std::process::ExitCode;
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
+use acp::Client;
 use clap::Parser;
 use eyre::Result;
 use serde_json::value::RawValue;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::cli::agent::Agents;
@@ -34,14 +35,20 @@ struct QAgent {
     _agent_name: String,
     os: Arc<RwLock<Os>>,
     sessions: Arc<RwLock<HashMap<String, ConversationState>>>,
+    session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
 }
 
 impl QAgent {
-    fn new(agent_name: String, os: Os) -> Self {
+    fn new(
+        agent_name: String, 
+        os: Os,
+        session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    ) -> Self {
         Self { 
             _agent_name: agent_name,
             os: Arc::new(RwLock::new(os)),
             sessions: Arc::new(RwLock::new(HashMap::new())),
+            session_update_tx,
         }
     }
 }
@@ -194,7 +201,7 @@ impl acp::Agent for QAgent {
             }
         }
         
-        // Get the session and add the prompt
+        // Store the message in the session
         {
             let mut sessions = self.sessions.write().await;
             let conversation = sessions.get_mut(session_id)
@@ -204,12 +211,48 @@ impl acp::Agent for QAgent {
                 })?;
             
             // Add the prompt to the conversation state
-            conversation.set_next_user_message(prompt_text).await;
-        } // Release the lock before returning
+            conversation.set_next_user_message(prompt_text.clone()).await;
+        }
         
-        tracing::info!("Added prompt to ACP session: {}", session_id);
+        // For now, send a simple echo response to test streaming
+        let response_text = format!("Echo: {}", prompt_text);
         
-        // For now, just return EndTurn - actual LLM processing will come in Phase 3
+        // Send the response as chunks to test streaming
+        for chunk in response_text.chars().collect::<Vec<_>>().chunks(10) {
+            let chunk_text: String = chunk.iter().collect();
+            
+            let (tx, rx) = oneshot::channel();
+            let notification = acp::SessionNotification {
+                session_id: arguments.session_id.clone(),
+                update: acp::SessionUpdate::AgentMessageChunk {
+                    content: acp::ContentBlock::Text(acp::TextContent {
+                        text: chunk_text,
+                        annotations: None,
+                        meta: None,
+                    }),
+                },
+                meta: None,
+            };
+            
+            // Send notification via channel
+            self.session_update_tx
+                .send((notification, tx))
+                .map_err(|_| {
+                    tracing::error!("Failed to send session notification");
+                    acp::Error::internal_error()
+                })?;
+            
+            // Wait for acknowledgment
+            rx.await.map_err(|_| {
+                tracing::error!("Failed to receive notification acknowledgment");
+                acp::Error::internal_error()
+            })?;
+            
+            // Small delay to simulate streaming
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+        
+        tracing::info!("ACP prompt completed for session: {}", session_id);
         Ok(acp::PromptResponse {
             stop_reason: acp::StopReason::EndTurn,
             meta: None,
@@ -261,7 +304,8 @@ impl AcpArgs {
         tracing::info!("Starting ACP server with agent: {}", agent_name);
         
         // Create the Q Agent implementation (move os into the agent)
-        let agent = QAgent::new(agent_name, os.clone());
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let agent = QAgent::new(agent_name, os.clone(), tx);
         
         // Set up stdio transport
         let stdin = tokio::io::stdin().compat();
@@ -270,7 +314,7 @@ impl AcpArgs {
         // Create ACP connection with LocalSet for non-Send futures
         let local_set = tokio::task::LocalSet::new();
         local_set.run_until(async move {
-            let (_connection, handle_io) = acp::AgentSideConnection::new(
+            let (connection, handle_io) = acp::AgentSideConnection::new(
                 agent, 
                 stdout, 
                 stdin, 
@@ -278,6 +322,18 @@ impl AcpArgs {
                     tokio::task::spawn_local(fut);
                 }
             );
+            
+            // Spawn background task to handle session notifications
+            tokio::task::spawn_local(async move {
+                while let Some((session_notification, tx)) = rx.recv().await {
+                    let result = connection.session_notification(session_notification).await;
+                    if let Err(e) = result {
+                        tracing::error!("Failed to send session notification: {}", e);
+                        break;
+                    }
+                    tx.send(()).ok();
+                }
+            });
             
             tracing::info!("ACP server started, waiting for client connections...");
             
