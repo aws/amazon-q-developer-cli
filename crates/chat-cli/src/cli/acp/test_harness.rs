@@ -405,7 +405,7 @@ impl acp::Client for AcpTestClientActorCallbacks {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::RequestPermission, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::RequestPermission, args).await
     }
         
     // Claude: fill in the rest of these methods in a similar pattern to the one above
@@ -414,56 +414,56 @@ impl acp::Client for AcpTestClientActorCallbacks {
         &self,
         args: acp::WriteTextFileRequest,
     ) -> Result<acp::WriteTextFileResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::WriteTextFile, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::WriteTextFile, args).await
     }
     
     async fn read_text_file(
         &self,
         args: acp::ReadTextFileRequest,
     ) -> Result<acp::ReadTextFileResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::ReadTextFile, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::ReadTextFile, args).await
     }
     
     async fn session_notification(
         &self,
         args: acp::SessionNotification,
     ) -> Result<(), acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::SessionNotification, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::SessionNotification, args).await
     }
     
     async fn create_terminal(
         &self,
         args: acp::CreateTerminalRequest,
     ) -> Result<acp::CreateTerminalResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::CreateTerminal, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::CreateTerminal, args).await
     }
     
     async fn terminal_output(
         &self,
         args: acp::TerminalOutputRequest,
     ) -> Result<acp::TerminalOutputResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::TerminalOutput, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::TerminalOutput, args).await
     }
     
     async fn release_terminal(
         &self,
         args: acp::ReleaseTerminalRequest,
     ) -> Result<acp::ReleaseTerminalResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::ReleaseTerminal, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::ReleaseTerminal, args).await
     }
     
     async fn wait_for_terminal_exit(
         &self,
         args: acp::WaitForTerminalExitRequest,
     ) -> Result<acp::WaitForTerminalExitResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::WaitForTerminalExit, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::WaitForTerminalExit, args).await
     }
     
     async fn kill_terminal_command(
         &self,
         args: acp::KillTerminalCommandRequest,
     ) -> Result<acp::KillTerminalCommandResponse, acp::Error> {
-        self.send_and_await_reply(&args.session_id, FromAgent::KillTerminalCommand, args).await
+        self.send_and_await_reply(&args.session_id.clone(), FromAgent::KillTerminalCommand, args).await
     }
     
     async fn ext_method(
@@ -504,7 +504,7 @@ impl IntoPromptContent for &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::mock_llm::{spawn_mock_llm, MockLLMContext};
+    use crate::mock_llm::MockLLMContext;
 
     #[tokio::test]
     async fn test_hello_world_conversation() -> eyre::Result<()> {
