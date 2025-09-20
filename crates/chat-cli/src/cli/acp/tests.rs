@@ -106,49 +106,54 @@ async fn test_q_agent_prompt_content_parsing() {
 
 #[tokio::test]
 async fn test_q_agent_prompt_handling() {
-    use acp::Agent;
+    let local_set = tokio::task::LocalSet::new();
+    local_set.run_until(async {
+        let os = Os::new().await.unwrap();
+        
+        // Use the test harness to get a proper ACP client
+        let client = super::test_harness::AcpTestHarness::new(os)
+            .into_client()
+            .await
+            .unwrap();
 
-    let os = Os::new().await.unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
-    let agent = QAgent::new("test-agent".to_string(), os, tx);
-
-    // First create a session
-    let new_session_req = acp::NewSessionRequest {
-        cwd: PathBuf::from("/tmp"),
-        mcp_servers: Vec::new(),
-        meta: None,
-    };
-
-    let new_session_resp = agent.new_session(new_session_req).await.unwrap();
-    let session_id = new_session_resp.session_id.clone();
-
-    // Test prompt with text content
-    let prompt_req = acp::PromptRequest {
-        session_id: session_id.clone(),
-        prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-            annotations: None,
-            text: "Hello, world!".to_string(),
+        // First create a session
+        let new_session_req = acp::NewSessionRequest {
+            cwd: PathBuf::from("/tmp"),
+            mcp_servers: Vec::new(),
             meta: None,
-        })],
-        meta: None,
-    };
+        };
 
-    let prompt_resp = agent.prompt(prompt_req).await.unwrap();
-    assert_eq!(prompt_resp.stop_reason, acp::StopReason::EndTurn);
+        let new_session_resp = client.new_session(new_session_req).await.unwrap();
+        let session_id = new_session_resp.session_id.clone();
 
-    // Test prompt with non-existent session (should fail quickly)
-    let invalid_prompt_req = acp::PromptRequest {
-        session_id: acp::SessionId("nonexistent".into()),
-        prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-            annotations: None,
-            text: "This should fail".to_string(),
+        // Test prompt with text content
+        let prompt_req = acp::PromptRequest {
+            session_id: session_id.clone(),
+            prompt: vec![acp::ContentBlock::Text(acp::TextContent {
+                annotations: None,
+                text: "Hello, world!".to_string(),
+                meta: None,
+            })],
             meta: None,
-        })],
-        meta: None,
-    };
+        };
 
-    let result = agent.prompt(invalid_prompt_req).await;
-    assert!(result.is_err());
+        let prompt_resp = client.prompt(prompt_req).await.unwrap();
+        assert_eq!(prompt_resp.stop_reason, acp::StopReason::EndTurn);
+
+        // Test prompt with non-existent session (should fail quickly)
+        let invalid_prompt_req = acp::PromptRequest {
+            session_id: acp::SessionId("nonexistent".into()),
+            prompt: vec![acp::ContentBlock::Text(acp::TextContent {
+                annotations: None,
+                text: "This should fail".to_string(),
+                meta: None,
+            })],
+            meta: None,
+        };
+
+        let result = client.prompt(invalid_prompt_req).await;
+        assert!(result.is_err());
+    }).await;
 }
 
 #[tokio::test]
