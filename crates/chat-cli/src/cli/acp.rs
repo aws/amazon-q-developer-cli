@@ -69,7 +69,7 @@ where
     
     // Spawn the ACP server in a LocalSet since ACP futures are !Send
     tokio::task::spawn_local(async move {
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(32); // Bounded channel with capacity 32
         let agent = QAgent::new(agent_name, os, tx);
         
         let (connection, handle_io) = acp::AgentSideConnection::new(
@@ -86,13 +86,12 @@ where
         tokio::task::spawn_local(async move {
             loop {
                 tokio::select! {
-                    Some((session_notification, tx)) = rx.recv() => {
+                    Some(session_notification) = rx.recv() => {
                         let result = connection.session_notification(session_notification).await;
                         if let Err(e) = result {
                             tracing::error!("Failed to send session notification: {}", e);
                             break;
                         }
-                        tx.send(()).ok();
                     }
                     _ = &mut shutdown_rx_clone => {
                         tracing::info!("ACP server shutdown requested");
@@ -121,14 +120,14 @@ struct QAgent {
     _agent_name: String,
     os: Arc<RwLock<Os>>,
     sessions: Arc<RwLock<HashMap<String, ConversationState>>>,
-    session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    session_update_tx: mpsc::Sender<acp::SessionNotification>,
 }
 
 impl QAgent {
     fn new(
         agent_name: String, 
         os: Os,
-        session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        session_update_tx: mpsc::Sender<acp::SessionNotification>,
     ) -> Self {
         Self { 
             _agent_name: agent_name,
@@ -307,7 +306,6 @@ impl acp::Agent for QAgent {
         for chunk in response_text.chars().collect::<Vec<_>>().chunks(10) {
             let chunk_text: String = chunk.iter().collect();
             
-            let (tx, rx) = oneshot::channel();
             let notification = acp::SessionNotification {
                 session_id: arguments.session_id.clone(),
                 update: acp::SessionUpdate::AgentMessageChunk {
@@ -320,26 +318,10 @@ impl acp::Agent for QAgent {
                 meta: None,
             };
             
-            // Send notification via channel
-            if let Err(_) = self.session_update_tx.send((notification, tx)) {
-                // Channel closed - likely in test mode without receiver
-                tracing::debug!("Notification channel closed, skipping notification");
-                continue;
-            }
-            
-            // Wait for acknowledgment with timeout for testing
-            match tokio::time::timeout(tokio::time::Duration::from_millis(100), rx).await {
-                Ok(Ok(())) => {
-                    // Normal case - acknowledgment received
-                }
-                Ok(Err(_)) => {
-                    tracing::debug!("Notification acknowledgment channel closed");
-                    break;
-                }
-                Err(_) => {
-                    // Timeout - likely in test mode, continue anyway
-                    tracing::debug!("Notification acknowledgment timeout, continuing");
-                }
+            // Send notification via bounded channel (provides natural backpressure)
+            if let Err(_) = self.session_update_tx.send(notification).await {
+                tracing::debug!("Notification channel closed, stopping notifications");
+                break;
             }
             
             // Small delay to simulate streaming
