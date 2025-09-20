@@ -317,15 +317,14 @@ async fn spawn_test_client_actor(
         |fut| { tokio::task::spawn_local(fut); }
     );
 
-    // Start I/O handler in LocalSet
-    tokio::task::spawn(async move {
-        let local_set = tokio::task::LocalSet::new();
-        local_set.run_until(client_handle_io).await
+    // Start I/O handler in LocalSet - use spawn_local instead of spawn
+    tokio::task::spawn_local(async move {
+        client_handle_io.await
     });
 
     let (client_tx, mut client_rx) = tokio::sync::mpsc::channel(128);
         
-    tokio::spawn(async move {
+    tokio::task::spawn_local(async move {
         // Initialize the connection first
         if let Err(e) = client_conn.initialize(acp::InitializeRequest {
             protocol_version: acp::V1,
@@ -508,35 +507,38 @@ mod tests {
 
     #[tokio::test]
     async fn test_hello_world_conversation() -> eyre::Result<()> {
-        let harness = TestHarness::new().await?
-            .set_mock_llm(|mut ctx: MockLLMContext| async move {
-                // First exchange
-                if let Some(msg) = ctx.read_user_message().await {
-                    if msg.contains("Hi, Claude") {
-                        ctx.respond_to_user("Hi, you! What's your name?".to_string()).await.unwrap();
+        let local_set = tokio::task::LocalSet::new();
+        local_set.run_until(async {
+            let harness = TestHarness::new().await?
+                .set_mock_llm(|mut ctx: MockLLMContext| async move {
+                    // First exchange
+                    if let Some(msg) = ctx.read_user_message().await {
+                        if msg.contains("Hi, Claude") {
+                            ctx.respond_to_user("Hi, you! What's your name?".to_string()).await.unwrap();
+                        }
                     }
-                }
-                // Second exchange  
-                if let Some(msg) = ctx.read_user_message().await {
-                    if msg.contains("Ferris") {
-                        ctx.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap();
+                    // Second exchange  
+                    if let Some(msg) = ctx.read_user_message().await {
+                        if msg.contains("Ferris") {
+                            ctx.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap();
+                        }
                     }
-                }
-            });
+                });
 
-        let client = harness.into_client().await?;
-        let mut session = client.new_session().await?;
-        
-        // First turn: User says "Hi, Claude"
-        let mut read = session.say_to_agent("Hi, Claude").await?;
-        let response = read.read_agent_response().await?;
-        assert_eq!(response, "Hi, you! What's your name?");
-        
-        // Second turn: User says "Ferris"  
-        let mut read = session.say_to_agent("Ferris").await?;
-        let response = read.read_agent_response().await?;
-        assert_eq!(response, "Hi Ferris, I'm Q!");
-        
-        Ok(())
+            let client = harness.into_client().await?;
+            let mut session = client.new_session().await?;
+            
+            // First turn: User says "Hi, Claude"
+            let mut read = session.say_to_agent("Hi, Claude").await?;
+            let response = read.read_agent_response().await?;
+            assert_eq!(response, "Hi, you! What's your name?");
+            
+            // Second turn: User says "Ferris"  
+            let mut read = session.say_to_agent("Ferris").await?;
+            let response = read.read_agent_response().await?;
+            assert_eq!(response, "Hi Ferris, I'm Q!");
+            
+            Ok::<(), eyre::Error>(())
+        }).await
     }
 }
