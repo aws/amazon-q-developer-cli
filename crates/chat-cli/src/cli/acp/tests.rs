@@ -128,7 +128,10 @@ async fn test_q_agent_prompt_handling() {
         // Should get some kind of response (exact format depends on implementation)
         match response {
             super::test_harness::FromAgent::SessionNotification(..) => {
-                // Expected - got a notification
+                // Expected - got a notification chunk
+            }
+            super::test_harness::FromAgent::Stop(Ok(_)) => {
+                // Also expected - got end of response
             }
             _ => panic!("Unexpected response type"),
         }
