@@ -31,6 +31,79 @@ pub struct AcpArgs {
     pub agent: Option<String>,
 }
 
+pub struct AcpServerHandle {
+    _shutdown_tx: oneshot::Sender<()>,
+}
+
+impl AcpServerHandle {
+    pub async fn shutdown(self) {
+        // Send shutdown signal (receiver will handle graceful shutdown)
+        let _ = self._shutdown_tx.send(());
+    }
+}
+
+/// Spawn an ACP server that communicates over stdio
+/// Returns a handle that can be used to shut down the server
+pub async fn spawn_acp_server(
+    agent_name: String,
+    os: Os,
+) -> Result<AcpServerHandle> {
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    
+    // Spawn the ACP server in a LocalSet since ACP futures are !Send
+    tokio::task::spawn_local(async move {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let agent = QAgent::new(agent_name, os, tx);
+        
+        // Set up stdio transport
+        let stdin = tokio::io::stdin().compat();
+        let stdout = tokio::io::stdout().compat_write();
+        
+        let (connection, handle_io) = acp::AgentSideConnection::new(
+            agent, 
+            stdout, 
+            stdin, 
+            |fut| {
+                tokio::task::spawn_local(fut);
+            }
+        );
+        
+        // Spawn background task to handle session notifications
+        let mut shutdown_rx_clone = shutdown_rx;
+        tokio::task::spawn_local(async move {
+            loop {
+                tokio::select! {
+                    Some((session_notification, tx)) = rx.recv() => {
+                        let result = connection.session_notification(session_notification).await;
+                        if let Err(e) = result {
+                            tracing::error!("Failed to send session notification: {}", e);
+                            break;
+                        }
+                        tx.send(()).ok();
+                    }
+                    _ = &mut shutdown_rx_clone => {
+                        tracing::info!("ACP server shutdown requested");
+                        break;
+                    }
+                }
+            }
+        });
+        
+        tracing::info!("ACP server started, waiting for client connections...");
+        
+        // Run the connection (this will block until the client disconnects)
+        if let Err(e) = handle_io.await {
+            tracing::error!("ACP connection error: {}", e);
+        }
+        
+        tracing::info!("ACP server shutting down gracefully");
+    });
+    
+    Ok(AcpServerHandle {
+        _shutdown_tx: shutdown_tx,
+    })
+}
+
 struct QAgent {
     _agent_name: String,
     os: Arc<RwLock<Os>>,
@@ -303,46 +376,19 @@ impl AcpArgs {
         
         tracing::info!("Starting ACP server with agent: {}", agent_name);
         
-        // Create the Q Agent implementation (move os into the agent)
-        let (tx, mut rx) = mpsc::unbounded_channel();
-        let agent = QAgent::new(agent_name, os.clone(), tx);
-        
-        // Set up stdio transport
-        let stdin = tokio::io::stdin().compat();
-        let stdout = tokio::io::stdout().compat_write();
-        
-        // Create ACP connection with LocalSet for non-Send futures
+        // Create ACP server with LocalSet for non-Send futures
         let local_set = tokio::task::LocalSet::new();
         local_set.run_until(async move {
-            let (connection, handle_io) = acp::AgentSideConnection::new(
-                agent, 
-                stdout, 
-                stdin, 
-                |fut| {
-                    tokio::task::spawn_local(fut);
-                }
-            );
+            let _handle = spawn_acp_server(agent_name, os.clone()).await?;
             
-            // Spawn background task to handle session notifications
-            tokio::task::spawn_local(async move {
-                while let Some((session_notification, tx)) = rx.recv().await {
-                    let result = connection.session_notification(session_notification).await;
-                    if let Err(e) = result {
-                        tracing::error!("Failed to send session notification: {}", e);
-                        break;
-                    }
-                    tx.send(()).ok();
-                }
-            });
+            // Wait indefinitely (until Ctrl+C or client disconnects)
+            // The handle will automatically shut down when dropped
+            tokio::signal::ctrl_c().await.map_err(|e| eyre::eyre!("Failed to listen for ctrl+c: {}", e))?;
             
-            tracing::info!("ACP server started, waiting for client connections...");
-            
-            // Run the connection (this will block until the client disconnects)
-            handle_io.await
-                .map_err(|e| eyre::eyre!("ACP connection error: {}", e))
+            tracing::info!("ACP server shutting down");
+            Ok::<(), eyre::Error>(())
         }).await?;
         
-        tracing::info!("ACP server shutting down");
         Ok(ExitCode::SUCCESS)
     }
 }
