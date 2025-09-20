@@ -156,13 +156,21 @@ The implementation will proceed in commit-sized units, leveraging the existing `
 6. **Response streaming foundation** - Wire up basic text response streaming using ACP's `session/update` notifications
    - *Test*: Prompts return actual AI responses, streaming works in ACP client
 
+### Phase 2.5: Test Infrastructure
+7. **ACP test harness** - Create actor-based test infrastructure for in-process ACP testing with mock LLMs
+   - *Test*: Can create test harness, configure mock LLM scripts, run conversational tests
+   - *Note*: Actor-based design with `TestHarness`, `AcpTestClient`, `AcpTestSession` APIs; uses duplex streams and LocalSet for non-Send ACP futures; enables scripted conversation testing without subprocess overhead
+8. **Mock LLM integration** - Wire test harness to existing mock LLM infrastructure for deterministic testing
+   - *Test*: Mock LLM scripts can read user messages and send responses through ACP protocol
+   - *Note*: Leverages existing `MockLLMContext` and `set_mock_llm()` patterns; test harness handles ACP protocol complexity while providing clean conversational API
+
 ### Phase 3: Advanced Features  
-7. **Tool system integration** - Implement ACP permission requests and tool execution reporting
+9. **Tool system integration** - Implement ACP permission requests and tool execution reporting
    - *Test*: Tools require permission, execution reported correctly, trusted tools bypass permission
    - *Note*: Q's trusted tools skip `session/request_permission` entirely; only untrusted tools trigger permission flow; permissions are per-tool-call with options like "allow once", "reject"
-8. **File operation routing** - Replace builtin file tools with ACP versions that route through the protocol
-   - *Test*: `fs_read`/`fs_write` work through editor, see unsaved changes, respect editor's file system view
-   - *Note*: ACP file operations use absolute paths (e.g., `/home/user/project/src/main.py`); completely replace Q's builtin `fs_read`/`fs_write` tools with ACP versions that call client's `read_text_file`/`write_text_file` methods instead of direct filesystem access
+10. **File operation routing** - Replace builtin file tools with ACP versions that route through the protocol
+    - *Test*: `fs_read`/`fs_write` work through editor, see unsaved changes, respect editor's file system view
+    - *Note*: ACP file operations use absolute paths (e.g., `/home/user/project/src/main.py`); completely replace Q's builtin `fs_read`/`fs_write` tools with ACP versions that call client's `read_text_file`/`write_text_file` methods instead of direct filesystem access
 
 Each phase builds on the previous, with concrete testability at every step using the ACP library's example client or compatible editors.
 

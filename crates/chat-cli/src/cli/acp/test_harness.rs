@@ -70,20 +70,25 @@
 //! ```text
 //! Test Thread                    ClientActor Task              AgentActor Task
 //!     │                               │                            │
-//!     │ say_to_agent("Hi")           │                            │
-//!     ├─────ToAgent::Prompt────────→│                            │
+//!     │ say_to_agent("Hi")            │                            │
+//!     ├─────ToAgent::Prompt──────────→│                            │
 //!     │                               │                            │
 //!     │                               │ acp.prompt() ──ACP/JSON──→ │
-//!     │                               │   (blocks)    duplex       │ QAgent.process()
-//!     │                               │               stream       │ MockLLM.script()
-//!     │                               │                            │
-//!     │                               │ ←──ACP notifications───────│
-//!     │                               │ ACP Library manages bytes  │
-//!     │                               │ calls callbacks ↓          │
-//!     │                               │ AcpTestClientActorCallbacks │
-//!     │                               │ converts to FromAgent msgs │
-//!     │ read_from_agent()            │                            │
-//!     │←────FromAgent::Response──────│                            │
+//!     │                               :   (blocks)    duplex       │ QAgent.process()
+//!     │                               :      │        stream       │ MockLLM.script()
+//!     │                               :      │                     │
+//!     │                               :      │                     │
+//!     │                               :      │ ←───ACP/JSON────────│ notifications
+//!     │ read_from_agent()             :      │                     │ are sent back
+//!     │ ←────FromAgent::Response──────:──────│ callbacks           │ with streaming
+//!     │                               :      │ push events a       │ text from agent
+//!     |                               :      │ tokio channel       │
+//!     |                               :      │                     │ 
+//!     │ read_from_agent()             :      │ ←───ACP/JSON────────│
+//!     │ ←────FromAgent::Response──────:──────│
+//!     │                               │
+//!     │ read_from_agent()             │
+//!     │ ←────FromAgent::Response──────│ final "stop" is sent when all done
 //! ```
 //!
 //! The key insight is that while `client_conn.prompt()` is blocked waiting for the turn to
