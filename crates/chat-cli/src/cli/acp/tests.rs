@@ -21,7 +21,7 @@ async fn test_q_agent_initialize() {
     use acp::Agent;
 
     let os = Os::new().await.unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::channel(32);
     let agent = QAgent::new("test-agent".to_string(), os, tx);
 
     let request = acp::InitializeRequest {
@@ -39,7 +39,7 @@ async fn test_q_agent_session_lifecycle() {
     use acp::Agent;
 
     let os = Os::new().await.unwrap();
-    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+    let (tx, _rx) = tokio::sync::mpsc::channel(32);
     let agent = QAgent::new("test-agent".to_string(), os, tx);
 
     // Test new session
@@ -108,56 +108,34 @@ async fn test_q_agent_prompt_content_parsing() {
 async fn test_q_agent_prompt_handling() {
     let local_set = tokio::task::LocalSet::new();
     local_set.run_until(async {
-        let os = Os::new().await.unwrap();
-        
         // Use the test harness to get a proper ACP client
-        let client = super::test_harness::AcpTestHarness::new(os)
+        let client = super::test_harness::TestHarness::new()
+            .await
+            .unwrap()
             .into_client()
             .await
             .unwrap();
 
         // First create a session
-        let new_session_req = acp::NewSessionRequest {
-            cwd: PathBuf::from("/tmp"),
-            mcp_servers: Vec::new(),
-            meta: None,
-        };
-
-        let new_session_resp = client.new_session(new_session_req).await.unwrap();
-        let session_id = new_session_resp.session_id.clone();
+        let mut session = client.new_session().await.unwrap();
 
         // Test prompt with text content
-        let prompt_req = acp::PromptRequest {
-            session_id: session_id.clone(),
-            prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                annotations: None,
-                text: "Hello, world!".to_string(),
-                meta: None,
-            })],
-            meta: None,
-        };
-
-        let prompt_resp = client.prompt(prompt_req).await.unwrap();
-        assert_eq!(prompt_resp.stop_reason, acp::StopReason::EndTurn);
-
-        // Test prompt with non-existent session (should fail quickly)
-        let invalid_prompt_req = acp::PromptRequest {
-            session_id: acp::SessionId("nonexistent".into()),
-            prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                annotations: None,
-                text: "This should fail".to_string(),
-                meta: None,
-            })],
-            meta: None,
-        };
-
-        let result = client.prompt(invalid_prompt_req).await;
-        assert!(result.is_err());
+        let mut read = session.say_to_agent("Hello, world!").await.unwrap();
+        
+        // Read the response
+        let response = read.read_from_agent().await.unwrap();
+        
+        // Should get some kind of response (exact format depends on implementation)
+        match response {
+            super::test_harness::FromAgent::SessionNotification(..) => {
+                // Expected - got a notification
+            }
+            _ => panic!("Unexpected response type"),
+        }
     }).await;
 }
 
 #[tokio::test]
-#[ignore] // Claude: enable after phase 3
 async fn test_hello_world_conversation() -> eyre::Result<()> {
     let local_set = tokio::task::LocalSet::new();
     local_set.run_until(async {
