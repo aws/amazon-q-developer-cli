@@ -2,7 +2,7 @@ use agent_client_protocol as acp;
 use futures::{AsyncRead, AsyncWrite};
 use std::{path::PathBuf, process::ExitCode};
 
-use crate::{cli::acp::{AcpArgs, QAgent}, database::settings::Setting, os::Os};
+use crate::{cli::acp::{test_harness::TestHarness, AcpArgs, QAgent}, database::settings::Setting, mock_llm::MockLLMContext, os::Os};
 
 #[tokio::test]
 async fn test_acp_command_disabled() {
@@ -149,16 +149,39 @@ async fn test_q_agent_prompt_handling() {
 }
 
 #[tokio::test]
-async fn test_foo() -> eyre::Result<()> {
-    TestHarness::new().await?
-    .set_mock_llm(async |cx| {
-        panic!()
-    })
-    .connect_via_acp(|acp_client| {
+#[ignore] // Claude: enable after phase 3
+async fn test_hello_world_conversation() -> eyre::Result<()> {
+    let local_set = tokio::task::LocalSet::new();
+    local_set.run_until(async {
+        let harness = TestHarness::new().await?
+            .set_mock_llm(|mut ctx: MockLLMContext| async move {
+                // First exchange
+                if let Some(msg) = ctx.read_user_message().await {
+                    if msg.contains("Hi, Claude") {
+                        ctx.respond_to_user("Hi, you! What's your name?".to_string()).await.unwrap();
+                    }
+                }
+                // Second exchange  
+                if let Some(msg) = ctx.read_user_message().await {
+                    if msg.contains("Ferris") {
+                        ctx.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap();
+                    }
+                }
+            });
 
-        acp_client.send_user_message()
-    })
-    ;
-
-    Ok(())
+        let client = harness.into_client().await?;
+        let mut session = client.new_session().await?;
+        
+        // First turn: User says "Hi, Claude"
+        let mut read = session.say_to_agent("Hi, Claude").await?;
+        let response = read.read_agent_response().await?;
+        assert_eq!(response, "Hi, you! What's your name?");
+        
+        // Second turn: User says "Ferris"  
+        let mut read = session.say_to_agent("Ferris").await?;
+        let response = read.read_agent_response().await?;
+        assert_eq!(response, "Hi Ferris, I'm Q!");
+        
+        Ok::<(), eyre::Error>(())
+    }).await
 }
