@@ -156,33 +156,13 @@ impl TestHarness {
         let (client_write, agent_read) = tokio::io::duplex(1024);
         let (agent_write, client_read) = tokio::io::duplex(1024);
         
-        // Create notification channel
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        
-        // Start the QAgent (server side) - use spawn_local since LocalSet is not Send
-        let q_agent = QAgent::new("test-agent".to_string(), self.os, tx);
-        tokio::task::spawn_local(async move {
-            let (agent_conn, agent_handle_io) = acp::AgentSideConnection::new(
-                q_agent,
-                agent_write.compat_write(),
-                agent_read.compat(),
-                |fut| { tokio::task::spawn_local(fut); }
-            );
-            
-            // Spawn background task to handle session notifications
-            tokio::task::spawn_local(async move {
-                while let Some((session_notification, tx)) = rx.recv().await {
-                    let result = agent_conn.session_notification(session_notification).await;
-                    if let Err(e) = result {
-                        tracing::error!("Failed to send session notification: {}", e);
-                        break;
-                    }
-                    tx.send(()).ok();
-                }
-            });
-            
-            agent_handle_io.await
-        });
+        // Use the spawnable server with custom streams
+        let _handle = super::spawn_acp_server_with_streams(
+            "test-agent".to_string(),
+            self.os,
+            agent_write.compat_write(),
+            agent_read.compat(),
+        ).await?;
         
         // Start the client actor
         spawn_test_client_actor(

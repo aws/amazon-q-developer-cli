@@ -48,6 +48,23 @@ pub async fn spawn_acp_server(
     agent_name: String,
     os: Os,
 ) -> Result<AcpServerHandle> {
+    let stdin = tokio::io::stdin().compat();
+    let stdout = tokio::io::stdout().compat_write();
+    spawn_acp_server_with_streams(agent_name, os, stdout, stdin).await
+}
+
+/// Spawn an ACP server with custom input/output streams
+/// Useful for testing with in-memory streams
+pub async fn spawn_acp_server_with_streams<W, R>(
+    agent_name: String,
+    os: Os,
+    writer: W,
+    reader: R,
+) -> Result<AcpServerHandle> 
+where
+    W: futures::AsyncWrite + Unpin + Send + 'static,
+    R: futures::AsyncRead + Unpin + Send + 'static,
+{
     let (shutdown_tx, shutdown_rx) = oneshot::channel();
     
     // Spawn the ACP server in a LocalSet since ACP futures are !Send
@@ -55,14 +72,10 @@ pub async fn spawn_acp_server(
         let (tx, mut rx) = mpsc::unbounded_channel();
         let agent = QAgent::new(agent_name, os, tx);
         
-        // Set up stdio transport
-        let stdin = tokio::io::stdin().compat();
-        let stdout = tokio::io::stdout().compat_write();
-        
         let (connection, handle_io) = acp::AgentSideConnection::new(
             agent, 
-            stdout, 
-            stdin, 
+            writer, 
+            reader, 
             |fut| {
                 tokio::task::spawn_local(fut);
             }
