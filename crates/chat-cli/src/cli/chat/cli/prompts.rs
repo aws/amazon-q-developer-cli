@@ -89,43 +89,57 @@ struct McpErrorDetails {
     code: String,
     message: String,
     path: Vec<String>,
-    expected: Option<String>,
-    received: Option<String>,
 }
 
-/// Parses MCP error JSON to extract specific error information for user-friendly messages.
+/// Parses MCP error JSON to extract all validation errors for user-friendly messages.
 ///
 /// Attempts to extract JSON error details from MCP server error strings to provide
-/// more specific and user-friendly error messages.
+/// more specific and user-friendly error messages for all validation failures.
 ///
 /// # Arguments
 /// * `error_str` - The raw error string from the MCP server
 ///
 /// # Returns
-/// * `Some(McpErrorDetails)` if parsing succeeds
-/// * `None` if the error string doesn't contain parseable JSON
-fn parse_mcp_error_details(error_str: &str) -> Option<McpErrorDetails> {
+/// * `Vec<McpErrorDetails>` containing all parsed errors, empty if parsing fails
+fn parse_all_mcp_error_details(error_str: &str) -> Vec<McpErrorDetails> {
     // Try to extract JSON from error string - MCP errors often contain JSON in the message
-    let json_start = error_str.find('[')?;
-    let json_end = error_str.rfind(']')? + 1;
+    let json_start = match error_str.find('[') {
+        Some(pos) => pos,
+        None => return Vec::new(),
+    };
+    let json_end = match error_str.rfind(']') {
+        Some(pos) => pos + 1,
+        None => return Vec::new(),
+    };
     let json_str = &error_str[json_start..json_end];
 
-    let error_array: Vec<Value> = serde_json::from_str(json_str).ok()?;
-    let error_obj = error_array.first()?.as_object()?;
+    let error_array: Vec<Value> = match serde_json::from_str(json_str) {
+        Ok(array) => array,
+        Err(_) => return Vec::new(),
+    };
 
-    let code = error_obj.get("code")?.as_str()?;
-    let message = error_obj.get("message")?.as_str().unwrap_or("");
-    let path = error_obj.get("path")?.as_array()?;
-    let expected = error_obj.get("expected")?.as_str();
-    let received = error_obj.get("received")?.as_str();
+    error_array
+        .iter()
+        .filter_map(|error_val| {
+            let error_obj = error_val.as_object()?;
+            let code = error_obj.get("code")?.as_str()?;
+            let message = error_obj.get("message")?.as_str().unwrap_or("");
+            let path = match error_obj.get("path").and_then(|p| p.as_array()) {
+                Some(path_array) => path_array
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect(),
+                None => Vec::new(),
+            };
 
-    Some(McpErrorDetails {
-        code: code.to_string(),
-        message: message.to_string(),
-        path: path.iter().filter_map(|v| v.as_str()).map(|s| s.to_string()).collect(),
-        expected: expected.map(|s| s.to_string()),
-        received: received.map(|s| s.to_string()),
-    })
+            Some(McpErrorDetails {
+                code: code.to_string(),
+                message: message.to_string(),
+                path,
+            })
+        })
+        .collect()
 }
 
 /// Handles MCP -32602 (Invalid params) errors with user-friendly messages.
@@ -138,27 +152,69 @@ fn handle_mcp_invalid_params_error(
     prompts: &HashMap<String, Vec<PromptBundle>>,
     session: &mut ChatSession,
 ) -> Result<(), ChatError> {
-    if let Some(details) = parse_mcp_error_details(error_str) {
-        if details.code == "invalid_type" && details.message == "Required" && details.path.is_empty() {
-            // Missing required arguments - show detailed usage
+    let all_errors = parse_all_mcp_error_details(error_str);
+
+    if !all_errors.is_empty() {
+        // Check if this is a missing required arguments error
+        if all_errors.len() == 1
+            && all_errors[0].code == "invalid_type"
+            && all_errors[0].message == "Required"
+            && all_errors[0].path.is_empty()
+        {
             display_missing_args_error(name, prompts, session)?;
-        } else if details.code == "invalid_type" {
-            // Invalid argument values - show specific error
-            display_invalid_value_error(name, &details, session)?;
-        } else {
-            // Other invalid params errors
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("Error: Invalid arguments for prompt "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(name),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("\n"),
-            )?;
-            execute!(session.stderr)?;
+            return Ok(());
         }
+
+        // Display validation errors
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("Error: Invalid arguments for prompt '"),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(name),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("':\n"),
+            style::SetForegroundColor(Color::Reset),
+        )?;
+
+        for error in &all_errors {
+            if !error.path.is_empty() {
+                let param_name = error.path.join(".");
+                queue!(
+                    session.stderr,
+                    style::Print("  - "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&param_name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(": "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(&error.message),
+                    style::Print("\n"),
+                )?;
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("  - "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(&error.message),
+                    style::Print("\n"),
+                )?;
+            }
+        }
+
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("Use '/prompts details "),
+            style::Print(name),
+            style::Print("' for usage information."),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+
+        execute!(session.stderr)?;
     } else {
         // Fallback for unparsable -32602 errors
         queue!(
@@ -232,80 +288,10 @@ fn handle_mcp_internal_error(name: &str, error_str: &str, session: &mut ChatSess
         style::SetForegroundColor(Color::Cyan),
         style::Print(name),
         style::SetForegroundColor(Color::Red),
-        style::Print("'. Please try again or contact support if the issue persists."),
+        style::Print("'."),
         style::SetForegroundColor(Color::Reset),
         style::Print("\n"),
     )?;
-    execute!(session.stderr)?;
-    Ok(())
-}
-
-/// Displays a user-friendly error message for invalid argument values.
-///
-/// Shows specific information about what was expected vs what was received
-/// for invalid argument values, with proper terminal formatting.
-fn display_invalid_value_error(
-    prompt_name: &str,
-    details: &McpErrorDetails,
-    session: &mut ChatSession,
-) -> Result<(), ChatError> {
-    if let (Some(expected), Some(received)) = (&details.expected, &details.received) {
-        if details.path.is_empty() {
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("Error: Invalid arguments for prompt "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(prompt_name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(". Expected: "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(expected),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(", but received: "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(received),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("\n"),
-            )?;
-        } else {
-            let arg_name = details.path.first().map_or("unknown", |s| s.as_str());
-            queue!(
-                session.stderr,
-                style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("Error: Invalid value for argument "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(arg_name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(" in prompt "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(prompt_name),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(". Expected: "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(expected),
-                style::SetForegroundColor(Color::Yellow),
-                style::Print(", but received: "),
-                style::SetForegroundColor(Color::Cyan),
-                style::Print(received),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("\n"),
-            )?;
-        }
-    } else {
-        queue!(
-            session.stderr,
-            style::Print("\n"),
-            style::SetForegroundColor(Color::Yellow),
-            style::Print("Error: Invalid argument values for prompt "),
-            style::SetForegroundColor(Color::Cyan),
-            style::Print(prompt_name),
-            style::SetForegroundColor(Color::Reset),
-            style::Print("\n"),
-        )?;
-    }
     execute!(session.stderr)?;
     Ok(())
 }
@@ -1079,12 +1065,11 @@ mod tests {
             }
           ]"#;
 
-        let details = parse_mcp_error_details(error_str).unwrap();
-        assert_eq!(details.code, "invalid_type");
-        assert_eq!(details.message, "Required");
-        assert!(details.path.is_empty());
-        assert_eq!(details.expected.as_deref(), Some("object"));
-        assert_eq!(details.received.as_deref(), Some("undefined"));
+        let details = parse_all_mcp_error_details(error_str);
+        assert_eq!(details.len(), 1);
+        assert_eq!(details[0].code, "invalid_type");
+        assert_eq!(details[0].message, "Required");
+        assert!(details[0].path.is_empty());
 
         // Test parsing invalid argument value error
         let error_str2 = r#"MCP error -32602: Invalid arguments for prompt test_prompt: [
@@ -1097,15 +1082,61 @@ mod tests {
             }
           ]"#;
 
-        let details2 = parse_mcp_error_details(error_str2).unwrap();
-        assert_eq!(details2.code, "invalid_type");
-        assert_eq!(details2.path, vec!["filename"]);
-        assert_eq!(details2.expected.as_deref(), Some("string"));
-        assert_eq!(details2.received.as_deref(), Some("number"));
+        let details2 = parse_all_mcp_error_details(error_str2);
+        assert_eq!(details2.len(), 1);
+        assert_eq!(details2[0].code, "invalid_type");
+        assert_eq!(details2[0].path, vec!["filename"]);
 
         // Test invalid JSON
         let invalid_error = "Not a valid MCP error";
-        assert!(parse_mcp_error_details(invalid_error).is_none());
+        let invalid_details = parse_all_mcp_error_details(invalid_error);
+        assert!(invalid_details.is_empty());
+    }
+
+    #[test]
+    fn test_parse_all_mcp_error_details() {
+        // Test parsing multiple validation errors
+        let error_str = r#"MCP error -32602: Invalid arguments for prompt validation-test: [
+  {
+    "validation": "regex",
+    "code": "invalid_string",
+    "message": "Must be a valid email ending in .com",
+    "path": [
+      "email"
+    ]
+  },
+  {
+    "validation": "regex",
+    "code": "invalid_string",
+    "message": "Must be a positive number",
+    "path": [
+      "count"
+    ]
+  }
+]"#;
+
+        let errors = parse_all_mcp_error_details(error_str);
+        assert_eq!(errors.len(), 2);
+
+        // First error
+        assert_eq!(errors[0].code, "invalid_string");
+        assert_eq!(errors[0].message, "Must be a valid email ending in .com");
+        assert_eq!(errors[0].path, vec!["email"]);
+
+        // Second error
+        assert_eq!(errors[1].code, "invalid_string");
+        assert_eq!(errors[1].message, "Must be a positive number");
+        assert_eq!(errors[1].path, vec!["count"]);
+
+        // Test empty array
+        let empty_error = "MCP error -32602: Invalid arguments for prompt test: []";
+        let empty_errors = parse_all_mcp_error_details(empty_error);
+        assert_eq!(empty_errors.len(), 0);
+
+        // Test invalid JSON
+        let invalid_error = "Not a valid MCP error";
+        let invalid_errors = parse_all_mcp_error_details(invalid_error);
+        assert_eq!(invalid_errors.len(), 0);
     }
 
     #[test]
