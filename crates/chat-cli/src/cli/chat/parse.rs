@@ -81,6 +81,7 @@ impl<'a> ParserError<Partial<&'a str>> for Error<'a> {
 
 #[derive(Debug)]
 pub struct ParseState {
+    pub is_first_line: bool,
     pub terminal_width: Option<usize>,
     pub markdown_disabled: Option<bool>,
     pub column: usize,
@@ -96,6 +97,7 @@ pub struct ParseState {
 impl ParseState {
     pub fn new(terminal_width: Option<usize>, markdown_disabled: Option<bool>) -> Self {
         Self {
+            is_first_line: true,
             terminal_width,
             markdown_disabled,
             column: 0,
@@ -198,8 +200,17 @@ fn text<'a, 'b>(
 ) -> impl FnMut(&mut Partial<&'a str>) -> PResult<(), Error<'a>> + 'b {
     move |i| {
         let content = take_while(1.., |t| AsChar::is_alphanum(t) || "+,.!?\"".contains(t)).parse_next(i)?;
-        queue_newline_or_advance(&mut o, state, content.width())?;
+        if state.is_first_line {
+            state.is_first_line = false;
+            // The extra space here is reserved for the prompt pointer ("> ").
+            // Essentially we want the input to wrap as if the prompt pointer is a part of it
+            // but only display what is received.
+            queue_newline_or_advance(&mut o, state, content.width() + 2)?;
+        } else {
+            queue_newline_or_advance(&mut o, state, content.width())?;
+        }
         queue(&mut o, style::Print(content))?;
+
         Ok(())
     }
 }

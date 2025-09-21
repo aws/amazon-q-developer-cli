@@ -14,6 +14,10 @@ use crate::cli::chat::{
     ChatState,
 };
 
+/// Arguments for the MCP (Model Context Protocol) command.
+///
+/// This struct handles MCP-related functionality, allowing users to view
+/// the status of MCP servers and their loading progress.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct McpArgs;
@@ -50,9 +54,9 @@ impl McpArgs {
             let msg = msg
                 .iter()
                 .map(|record| match record {
-                    LoadingRecord::Err(content) | LoadingRecord::Warn(content) | LoadingRecord::Success(content) => {
-                        content.clone()
-                    },
+                    LoadingRecord::Err(timestamp, content)
+                    | LoadingRecord::Warn(timestamp, content)
+                    | LoadingRecord::Success(timestamp, content) => format!("[{timestamp}]: {content}"),
                 })
                 .collect::<Vec<_>>()
                 .join("\n--- tools refreshed ---\n");

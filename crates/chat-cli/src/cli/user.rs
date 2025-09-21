@@ -118,7 +118,7 @@ impl LoginArgs {
                         };
 
                         let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                        let region = input("Enter Region", default_region.as_deref())?;
+                        let region = input("Enter Region", default_region.as_deref())?.trim().to_string();
 
                         let _ = os.database.set_start_url(start_url.clone());
                         let _ = os.database.set_idc_region(region.clone());

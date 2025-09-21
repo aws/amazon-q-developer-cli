@@ -235,6 +235,10 @@ impl TelemetryThread {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
     }
 
+    pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::DailyHeartbeat {}))?)
+    }
+
     pub async fn send_cli_subcommand_executed(
         &self,
         database: &Database,

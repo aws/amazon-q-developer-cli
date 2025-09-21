@@ -55,11 +55,12 @@ use crate::util::{
 
 Notes
 • Launch q chat with a specific agent with --agent
-• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.aws/amazonq/cli-agents (accessible in workspace)
+• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.amazonq/cli-agents (accessible in workspace)
 • See example config under global directory
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
 )]
+/// Subcommands for managing agents in the chat CLI
 pub enum AgentSubcommand {
     /// List all available agents
     List,
@@ -76,40 +77,67 @@ pub enum AgentSubcommand {
         #[arg(long, short)]
         from: Option<String>,
     },
+    /// Edit an existing agent configuration
+    Edit {
+        /// Name of the agent to edit
+        #[arg(long, short)]
+        name: String,
+    },
     /// Generate an agent configuration using AI
     Generate {},
     /// Delete the specified agent
     #[command(hide = true)]
-    Delete { name: String },
+    Delete {
+        /// Name of the agent to delete
+        name: String,
+    },
     /// Switch to the specified agent
     #[command(hide = true)]
-    Set { name: String },
+    Set {
+        /// Name of the agent to switch to
+        name: String,
+    },
     /// Show agent config schema
     Schema,
     /// Define a default agent to use when q chat launches
     SetDefault {
+        /// Name of the agent to set as default
         #[arg(long, short)]
         name: String,
     },
     /// Swap to a new agent at runtime
     #[command(alias = "switch")]
-    Swap { name: Option<String> },
+    Swap {
+        /// Optional name of the agent to swap to. If not provided, a selection dialog will be shown
+        name: Option<String>,
+    },
 }
 
-fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Vec<&McpServerInfo>> {
+fn prompt_mcp_server_selection(servers: &[McpServerInfo]) -> eyre::Result<Option<Vec<&McpServerInfo>>> {
     let items: Vec<String> = servers
         .iter()
         .map(|server| format!("{} ({})", server.name, server.config.command))
         .collect();
 
-    let selections = MultiSelect::new()
+    let selections = match MultiSelect::new()
         .with_prompt("Select MCP servers (use Space to toggle, Enter to confirm)")
         .items(&items)
-        .interact()?;
+        .interact_on_opt(&dialoguer::console::Term::stdout())
+    {
+        Ok(sel) => sel,
+        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+            return Ok(None);
+        },
+        Err(e) => return Err(eyre::eyre!("Failed to get MCP server selection: {e}")),
+    };
 
-    let selected_servers: Vec<&McpServerInfo> = selections.iter().filter_map(|&i| servers.get(i)).collect();
+    let selected_servers: Vec<&McpServerInfo> = selections
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|&i| servers.get(i))
+        .collect();
 
-    Ok(selected_servers)
+    Ok(Some(selected_servers))
 }
 
 impl AgentSubcommand {
@@ -220,6 +248,64 @@ impl AgentSubcommand {
                 )?;
             },
 
+            Self::Edit { name } => {
+                let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name)
+                    .await
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+                let mut cmd = std::process::Command::new(editor_cmd);
+
+                let status = cmd.arg(&path_with_file_name).status()?;
+                if !status.success() {
+                    return Err(ChatError::Custom("Editor process did not exit with success".into()));
+                }
+
+                let updated_agent = Agent::load(
+                    os,
+                    &path_with_file_name,
+                    &mut None,
+                    session.conversation.mcp_enabled,
+                    &mut session.stderr,
+                )
+                .await;
+                match updated_agent {
+                    Ok(agent) => {
+                        session.conversation.agents.agents.insert(agent.name.clone(), agent);
+                    },
+                    Err(e) => {
+                        execute!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error: "),
+                            style::ResetColor,
+                            style::Print(&e),
+                            style::Print("\n"),
+                        )?;
+
+                        return Err(ChatError::Custom(
+                            format!("Post edit validation failed for agent '{name}'. Malformed config detected: {e}")
+                                .into(),
+                        ));
+                    },
+                }
+
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print("Agent "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(name),
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" has been edited successfully"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Changes take effect on next launch"),
+                    style::SetForegroundColor(Color::Reset)
+                )?;
+            },
+
             Self::Generate {} => {
                 let agent_name = match crate::util::input("Enter agent name: ", None) {
                     Ok(input) => input.trim().to_string(),
@@ -280,7 +366,12 @@ impl AgentSubcommand {
                 let selected_servers = if mcp_servers.is_empty() {
                     Vec::new()
                 } else {
-                    prompt_mcp_server_selection(&mcp_servers).map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    match prompt_mcp_server_selection(&mcp_servers)
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
+                        Some(servers) => servers,
+                        None => return Ok(ChatState::default()),
+                    }
                 };
 
                 let mcp_servers_json = if !selected_servers.is_empty() {
@@ -413,6 +504,7 @@ impl AgentSubcommand {
         match self {
             Self::List => "list",
             Self::Create { .. } => "create",
+            Self::Edit { .. } => "edit",
             Self::Generate { .. } => "generate",
             Self::Delete { .. } => "delete",
             Self::Set { .. } => "set",

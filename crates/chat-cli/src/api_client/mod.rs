@@ -193,12 +193,19 @@ impl ApiClient {
             },
         }
 
-        let profile = match database.get_auth_profile() {
-            Ok(profile) => profile,
-            Err(err) => {
-                error!("Failed to get auth profile: {err}");
-                None
-            },
+        // Check if using custom endpoint
+        let use_profile = !Self::is_custom_endpoint(database);
+        let profile = if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => profile,
+                Err(err) => {
+                    error!("Failed to get auth profile: {err}");
+                    None
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile ARN");
+            None
         };
 
         Ok(Self {
@@ -597,6 +604,11 @@ impl ApiClient {
         }
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
+    }
+
+    // Add a helper method to check if using non-default endpoint
+    fn is_custom_endpoint(database: &Database) -> bool {
+        database.settings.get(Setting::ApiCodeWhispererService).is_some()
     }
 }
 

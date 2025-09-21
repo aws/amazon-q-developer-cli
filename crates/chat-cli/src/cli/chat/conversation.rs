@@ -13,6 +13,12 @@ use crossterm::{
     style,
 };
 use eyre::Result;
+use rmcp::model::{
+    PromptMessage,
+    PromptMessageContent,
+    PromptMessageRole,
+    ResourceContents,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -23,6 +29,7 @@ use tracing::{
 };
 
 use super::cli::compact::CompactStrategy;
+use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
 use super::consts::{
     DUMMY_TOOL_NAME,
@@ -72,7 +79,6 @@ use crate::cli::chat::cli::model::{
     get_model_info,
 };
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
-use crate::mcp_client::Prompt;
 use crate::os::Os;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
@@ -210,13 +216,11 @@ impl ConversationState {
         &self.history
     }
 
-    /// Clears the conversation history and optionally the summary.
-    pub fn clear(&mut self, preserve_summary: bool) {
+    /// Clears the conversation history and summary.
+    pub fn clear(&mut self) {
         self.next_message = None;
         self.history.clear();
-        if !preserve_summary {
-            self.latest_summary = None;
-        }
+        self.latest_summary = None;
     }
 
     /// Check if currently in tangent mode
@@ -266,25 +270,80 @@ impl ConversationState {
         }
     }
 
+    /// Exit tangent mode and preserve the last conversation entry (user + assistant)
+    pub fn exit_tangent_mode_with_tail(&mut self) {
+        if let Some(checkpoint) = self.tangent_state.take() {
+            // Capture the last history entry from tangent conversation if it exists
+            // and if it's different from what was in the main conversation
+            let last_entry = if self.history.len() > checkpoint.main_history.len() {
+                self.history.back().cloned()
+            } else {
+                None // No new entries in tangent mode
+            };
+
+            // Restore from checkpoint
+            self.restore_from_checkpoint(checkpoint);
+
+            // Add the last entry if it exists
+            if let Some(entry) = last_entry {
+                self.history.push_back(entry);
+            }
+        }
+    }
+
     /// Appends a collection prompts into history and returns the last message in the collection.
     /// It asserts that the collection ends with a prompt that assumes the role of user.
-    pub fn append_prompts(&mut self, mut prompts: VecDeque<Prompt>) -> Option<String> {
+    pub fn append_prompts(&mut self, mut prompts: VecDeque<PromptMessage>) -> Option<String> {
+        fn stringify_prompt_message_content(prompt_msg_content: PromptMessageContent) -> String {
+            match prompt_msg_content {
+                PromptMessageContent::Text { text } => text,
+                PromptMessageContent::Image { image } => image.raw.data,
+                PromptMessageContent::Resource { resource } => {
+                    // TODO: add support for resources for prompt
+                    match resource.raw.resource {
+                        ResourceContents::TextResourceContents {
+                            uri, mime_type, text, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+                        },
+                        ResourceContents::BlobResourceContents {
+                            uri, mime_type, blob, ..
+                        } => {
+                            let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                            format!("Blob resource of uri: {uri}, mime_type: {mime_type}, blob: {blob}")
+                        },
+                    }
+                },
+                PromptMessageContent::ResourceLink { link } => serde_json::to_string(&link.raw).unwrap_or(format!(
+                    "Resource link with uri: {}, name: {}",
+                    link.raw.uri, link.raw.name
+                )),
+            }
+        }
+
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
-        debug_assert!(prompts.back().is_some_and(|p| p.role == crate::mcp_client::Role::User));
+        debug_assert!(prompts.back().is_some_and(|p| p.role == PromptMessageRole::User));
         let last_msg = prompts.pop_back()?;
         let (mut candidate_user, mut candidate_asst) = (None::<UserMessage>, None::<AssistantMessage>);
-        while let Some(prompt) = prompts.pop_front() {
-            let Prompt { role, content } = prompt;
+        while let Some(prompt_msg) = prompts.pop_front() {
+            let PromptMessage {
+                role,
+                content: prompt_msg_content,
+            } = prompt_msg;
+            let content_str = stringify_prompt_message_content(prompt_msg_content);
+
             match role {
-                crate::mcp_client::Role::User => {
-                    let user_msg = UserMessage::new_prompt(content.to_string(), None);
+                PromptMessageRole::User => {
+                    let user_msg = UserMessage::new_prompt(content_str, None);
                     candidate_user.replace(user_msg);
                 },
-                crate::mcp_client::Role::Assistant => {
-                    let assistant_msg = AssistantMessage::new_response(None, content.into());
+                PromptMessageRole::Assistant => {
+                    let assistant_msg = AssistantMessage::new_response(None, content_str);
                     candidate_asst.replace(assistant_msg);
                 },
             }
+
             if candidate_asst.is_some() && candidate_user.is_some() {
                 let assistant = candidate_asst.take().unwrap();
                 let user = candidate_user.take().unwrap();
@@ -296,7 +355,8 @@ impl ConversationState {
                 });
             }
         }
-        Some(last_msg.content.to_string())
+
+        Some(stringify_prompt_message_content(last_msg.content))
     }
 
     pub fn next_user_message(&self) -> Option<&UserMessage> {
@@ -504,12 +564,26 @@ impl ConversationState {
         let mut agent_spawn_context = None;
         if let Some(cm) = self.context_manager.as_mut() {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, user_prompt).await?;
+            let agent_spawn = cm
+                .run_hooks(
+                    HookTrigger::AgentSpawn,
+                    output,
+                    os,
+                    user_prompt,
+                    None, // tool_context
+                )
+                .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
                 let per_prompt = cm
-                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt())
+                    .run_hooks(
+                        HookTrigger::UserPromptSubmit,
+                        output,
+                        os,
+                        next_message.prompt(),
+                        None, // tool_context
+                    )
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
                     next_message.additional_context = ctx;
@@ -665,6 +739,7 @@ IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO 
 Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
 The configuration must conform to this JSON schema:\n{}\n\n\
 We have a prepopulated template: {} \n\n\
+Please change the useLegacyMcpJson field to false. 
 Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
 Return only the JSON configuration, no additional text.",
    agent_name, agent_description, schema, prepopulated_content, selected_servers
@@ -970,8 +1045,12 @@ impl From<InputSchema> for ToolInputSchema {
 /// # Returns
 /// [Option::Some] if `hook_results` is not empty and at least one hook has content. Otherwise,
 /// [Option::None]
-fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: HookTrigger) -> Option<String> {
-    if hook_results.iter().all(|(_, content)| content.is_empty()) {
+fn format_hook_context(hook_results: &[((HookTrigger, Hook), HookOutput)], trigger: HookTrigger) -> Option<String> {
+    // Note: only format context when hook command exit code is 0
+    if hook_results
+        .iter()
+        .all(|(_, (exit_code, content))| *exit_code != 0 || content.is_empty())
+    {
         return None;
     }
 
@@ -984,7 +1063,10 @@ fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: 
     }
     context_content.push_str("\n\n");
 
-    for (_, output) in hook_results.iter().filter(|((h_trigger, _), _)| *h_trigger == trigger) {
+    for (_, (_, output)) in hook_results
+        .iter()
+        .filter(|((h_trigger, _), (exit_code, _))| *h_trigger == trigger && *exit_code == 0)
+    {
         context_content.push_str(&format!("{output}\n\n"));
     }
     context_content.push_str(CONTEXT_ENTRY_END_HEADER);
@@ -1156,6 +1238,7 @@ mod tests {
     use crate::cli::chat::tool_manager::ToolManager;
 
     const AMAZONQ_FILENAME: &str = "AmazonQ.md";
+    const AGENTS_FILENAME: &str = "AGENTS.md";
 
     fn assert_conversation_state_invariants(state: FigConversationState, assertion_iteration: usize) {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
@@ -1368,11 +1451,13 @@ mod tests {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
             agent.resources.push(AMAZONQ_FILENAME.into());
+            agent.resources.push(AGENTS_FILENAME.into());
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent").expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();
+        os.fs.write(AGENTS_FILENAME, "test agents context").await.unwrap();
         let mut output = vec![];
 
         let mut tool_manager = ToolManager::default();
@@ -1525,5 +1610,100 @@ mod tests {
 
         // No duration when not in tangent mode
         assert!(conversation.get_tangent_duration_seconds().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_with_tail() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add main conversation
+        conversation.set_next_user_message("main question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+
+        let main_history_len = conversation.history.len();
+
+        // Enter tangent mode
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Add tangent conversation
+        conversation.set_next_user_message("tangent question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "tangent response".to_string()),
+            None,
+        );
+
+        // Exit tangent mode with tail
+        conversation.exit_tangent_mode_with_tail();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Should have main conversation + last assistant message from tangent
+        assert_eq!(conversation.history.len(), main_history_len + 1);
+
+        // Check that the last message is the tangent response
+        if let Some(entry) = conversation.history.back() {
+            assert_eq!(entry.assistant.content(), "tangent response");
+        } else {
+            panic!("Expected history entry at the end");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tangent_mode_with_tail_edge_cases() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add main conversation
+        conversation.set_next_user_message("main question".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "main response".to_string()),
+            None,
+        );
+
+        let main_history_len = conversation.history.len();
+
+        // Test: Enter tangent mode but don't add any new conversation
+        conversation.enter_tangent_mode();
+        assert!(conversation.is_in_tangent_mode());
+
+        // Exit tangent mode with tail (should not add anything since no new entries)
+        conversation.exit_tangent_mode_with_tail();
+        assert!(!conversation.is_in_tangent_mode());
+
+        // Should have same length as before (no new entries added)
+        assert_eq!(conversation.history.len(), main_history_len);
+
+        // Test: Call exit_tangent_mode_with_tail when not in tangent mode (should do nothing)
+        conversation.exit_tangent_mode_with_tail();
+        assert_eq!(conversation.history.len(), main_history_len);
     }
 }

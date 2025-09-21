@@ -44,6 +44,7 @@ type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
 ///
@@ -158,6 +159,10 @@ pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
 }
 
+pub fn chat_cli_bash_history_path(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(CLI_BASH_HISTORY_PATH))
+}
+
 /// Legacy workspace MCP server config path
 pub fn chat_legacy_workspace_mcp_config(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
@@ -180,7 +185,45 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
     let context = |input: &str| Ok(os.env.get(input).ok());
     let home_dir = || os.env.home().map(|p| p.to_string_lossy().to_string());
 
-    Ok(shellexpand::full_with_context(path_as_str, home_dir, context)?.to_string())
+    let expanded = shellexpand::full_with_context(path_as_str, home_dir, context)?;
+    let path_buf = if !expanded.starts_with("/") {
+        // Convert relative paths to absolute paths
+        let current_dir = os.env.current_dir()?;
+        current_dir.join(expanded.as_ref() as &str)
+    } else {
+        // Already absolute path
+        PathBuf::from(expanded.as_ref() as &str)
+    };
+
+    // Try canonicalize first, fallback to manual normalization if it fails
+    match path_buf.canonicalize() {
+        Ok(normalized) => Ok(normalized.as_path().to_string_lossy().to_string()),
+        Err(_) => {
+            // If canonicalize fails (e.g., path doesn't exist), do manual normalization
+            let normalized = normalize_path(&path_buf);
+            Ok(normalized.to_string_lossy().to_string())
+        },
+    }
+}
+
+/// Manually normalize a path by resolving . and .. components
+fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut components = Vec::new();
+    for component in path.components() {
+        match component {
+            std::path::Component::CurDir => {
+                // Skip current directory components
+            },
+            std::path::Component::ParentDir => {
+                // Pop the last component for parent directory
+                components.pop();
+            },
+            _ => {
+                components.push(component);
+            },
+        }
+    }
+    components.iter().collect()
 }
 
 /// Given a globset builder and a path, build globs for both the file and directory patterns
@@ -188,7 +231,11 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
 /// patterns to exist in a globset.
 pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<()> {
     let glob_for_file = Glob::new(path)?;
-    let glob_for_dir = Glob::new(&format!("{path}/**"))?;
+
+    // remove existing slash in path so we don't end up with double slash
+    // Glob doesn't normalize the path so it doesn't work with double slash
+    let dir_pattern: String = format!("{}/**", path.trim_end_matches('/'));
+    let glob_for_dir = Glob::new(&dir_pattern)?;
 
     builder.add(glob_for_file);
     builder.add(glob_for_dir);
@@ -232,6 +279,14 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
     Ok(knowledge_bases_dir(os)?.join(unique_id))
 }
 
+/// The directory for MCP authentication cache
+///
+/// This is the same directory used by IDE for SSO cache storage.
+/// - All platforms: `$HOME/.aws/sso/cache`
+pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
 /// Generate a unique identifier for an agent based on its path and name
 fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -272,6 +327,40 @@ mod linux_tests {
     fn all_paths() {
         assert!(logs_dir().is_ok());
         assert!(settings_path().is_ok());
+    }
+
+    #[test]
+    fn test_add_gitignore_globs() {
+        let direct_file = "/home/user/a.txt";
+        let nested_file = "/home/user/folder/a.txt";
+        let other_file = "/home/admin/a.txt";
+
+        // Case 1: Path with trailing slash
+        let mut builder1 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder1, "/home/user/").unwrap();
+        let globset1 = builder1.build().unwrap();
+
+        assert!(globset1.is_match(direct_file));
+        assert!(globset1.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 2: Path without trailing slash - should behave same as case 1
+        let mut builder2 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder2, "/home/user").unwrap();
+        let globset2 = builder2.build().unwrap();
+
+        assert!(globset2.is_match(direct_file));
+        assert!(globset2.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
+
+        // Case 3: File path - should only match exact file
+        let mut builder3 = GlobSetBuilder::new();
+        add_gitignore_globs(&mut builder3, "/home/user/a.txt").unwrap();
+        let globset3 = builder3.build().unwrap();
+
+        assert!(globset3.is_match(direct_file));
+        assert!(!globset3.is_match(nested_file));
+        assert!(!globset1.is_match(other_file));
     }
 }
 
@@ -394,28 +483,71 @@ mod tests {
 
         // Test home directory expansion
         let result = canonicalizes_path(&test_os, "~/test").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\home\\testuser\\test");
+        #[cfg(unix)]
         assert_eq!(result, "/home/testuser/test");
 
         // Test environment variable expansion
         let result = canonicalizes_path(&test_os, "$TEST_VAR/path").unwrap();
-        assert_eq!(result, "test_value/path");
+        #[cfg(windows)]
+        assert_eq!(result, "\\test_value\\path");
+        #[cfg(unix)]
+        assert_eq!(result, "/test_value/path");
 
         // Test combined expansion
         let result = canonicalizes_path(&test_os, "~/$TEST_VAR").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\home\\testuser\\test_value");
+        #[cfg(unix)]
         assert_eq!(result, "/home/testuser/test_value");
+
+        // Test ~, . and .. expansion
+        let result = canonicalizes_path(&test_os, "~/./.././testuser").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\home\\testuser");
+        #[cfg(unix)]
+        assert_eq!(result, "/home/testuser");
 
         // Test absolute path (no expansion needed)
         let result = canonicalizes_path(&test_os, "/absolute/path").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\absolute\\path");
+        #[cfg(unix)]
         assert_eq!(result, "/absolute/path");
 
-        // Test relative path (no expansion needed)
+        // Test ~, . and .. expansion for a path that does not exist
+        let result = canonicalizes_path(&test_os, "~/./.././testuser/new/path/../../new").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\home\\testuser\\new");
+        #[cfg(unix)]
+        assert_eq!(result, "/home/testuser/new");
+
+        // Test path with . and ..
+        let result = canonicalizes_path(&test_os, "/absolute/./../path").unwrap();
+        #[cfg(windows)]
+        assert_eq!(result, "\\path");
+        #[cfg(unix)]
+        assert_eq!(result, "/path");
+
+        // Test relative path (which should be expanded because now all inputs are converted to
+        // absolute)
         let result = canonicalizes_path(&test_os, "relative/path").unwrap();
-        assert_eq!(result, "relative/path");
+        #[cfg(windows)]
+        assert_eq!(result, "\\relative\\path");
+        #[cfg(unix)]
+        assert_eq!(result, "/relative/path");
 
         // Test glob prefixed paths
         let result = canonicalizes_path(&test_os, "**/path").unwrap();
-        assert_eq!(result, "**/path");
+        #[cfg(windows)]
+        assert_eq!(result, "\\**\\path");
+        #[cfg(unix)]
+        assert_eq!(result, "/**/path");
         let result = canonicalizes_path(&test_os, "**/middle/**/path").unwrap();
-        assert_eq!(result, "**/middle/**/path");
+        #[cfg(windows)]
+        assert_eq!(result, "\\**\\middle\\**\\path");
+        #[cfg(unix)]
+        assert_eq!(result, "/**/middle/**/path");
     }
 }

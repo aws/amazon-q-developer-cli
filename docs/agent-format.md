@@ -2,6 +2,9 @@
 
 The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
 
+> [!TIP]
+> We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
+
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
@@ -15,6 +18,7 @@ Every agent configuration file can include the following sections:
 - [`resources`](#resources-field) — Resources available to the agent.
 - [`hooks`](#hooks-field) — Commands run at specific trigger points.
 - [`useLegacyMcpJson`](#uselegacymcpjson-field) — Whether to include legacy MCP configuration.
+- [`model`](#model-field) — The model ID to use for this agent.
 
 ## Name Field
 
@@ -252,19 +256,37 @@ Resources can include:
 
 ## Hooks Field
 
-The `hooks` field defines commands to run at specific trigger points. The output of these commands is added to the agent's context.
+The `hooks` field defines commands to run at specific trigger points during agent lifecycle and tool execution.
+
+For detailed information about hook behavior, input/output formats, and examples, see the [Hooks documentation](hooks.md).
 
 ```json
 {
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
+        "command": "ls -la"
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "{ echo \"$(date) - Bash command:\"; cat; echo; } >> /tmp/bash_audit_log"
+      },
+      {
+        "matcher": "use_aws",
+        "command": "{ echo \"$(date) - AWS CLI call:\"; cat; echo; } >> /tmp/aws_audit_log"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "cargo fmt --all"
       }
     ]
   }
@@ -273,10 +295,13 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
+- `matcher` (optional): Pattern to match tool names for `preToolUse` and `postToolUse` hooks. See [built-in tools documentation](./built-in-tools.md) for available tool names.
 
 Available hook triggers:
-- `agentSpawn`: Triggered when the agent is initialized
-- `userPromptSubmit`: Triggered when the user submits a message
+- `agentSpawn`: Triggered when the agent is initialized.
+- `userPromptSubmit`: Triggered when the user submits a message.
+- `preToolUse`: Triggered before a tool is executed. Can block the tool use.
+- `postToolUse`: Triggered after a tool is executed.
 
 ## UseLegacyMcpJson Field
 
@@ -289,6 +314,20 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 ```
 
 When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
+
+## Model Field
+
+The `model` field specifies the model ID to use for this agent. If not specified, the agent will use the default model.
+
+```json
+{
+  "model": "claude-sonnet-4"
+}
+```
+
+The model ID must match one of the available models returned by the Q CLI's model service. You can see available models by using the `/model` command in an active chat session.
+
+If the specified model is not available, the agent will fall back to the default model and display a warning.
 
 ## Complete Example
 
@@ -348,6 +387,7 @@ Here's a complete example of an agent configuration file:
       }
     ]
   },
-  "useLegacyMcpJson": true
+  "useLegacyMcpJson": true,
+  "model": "claude-sonnet-4"
 }
 ```
