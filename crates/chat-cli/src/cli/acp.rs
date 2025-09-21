@@ -84,21 +84,25 @@ where
         // Spawn background task to handle session notifications
         let mut shutdown_rx_clone = shutdown_rx;
         tokio::task::spawn_local(async move {
+            eprintln!("DEBUG: Notification receiver task started");
             loop {
                 tokio::select! {
                     Some(session_notification) = rx.recv() => {
+                        eprintln!("DEBUG: Received notification, sending to ACP connection");
                         let result = connection.session_notification(session_notification).await;
                         if let Err(e) = result {
-                            tracing::error!("Failed to send session notification: {}", e);
+                            eprintln!("DEBUG: Failed to send session notification: {}", e);
                             break;
                         }
+                        eprintln!("DEBUG: Session notification sent successfully");
                     }
                     _ = &mut shutdown_rx_clone => {
-                        tracing::info!("ACP server shutdown requested");
+                        eprintln!("DEBUG: ACP server shutdown requested");
                         break;
                     }
                 }
             }
+            eprintln!("DEBUG: Notification receiver task ended");
         });
         
         tracing::info!("ACP server started, waiting for client connections...");
@@ -310,7 +314,7 @@ impl acp::Agent for QAgent {
                 session_id: arguments.session_id.clone(),
                 update: acp::SessionUpdate::AgentMessageChunk {
                     content: acp::ContentBlock::Text(acp::TextContent {
-                        text: chunk_text,
+                        text: chunk_text.clone(),
                         annotations: None,
                         meta: None,
                     }),
@@ -318,11 +322,13 @@ impl acp::Agent for QAgent {
                 meta: None,
             };
             
+            eprintln!("DEBUG: QAgent sending notification chunk: '{}'", chunk_text);
             // Send notification via bounded channel (provides natural backpressure)
             if let Err(_) = self.session_update_tx.send(notification).await {
-                tracing::debug!("Notification channel closed, stopping notifications");
+                eprintln!("DEBUG: Notification channel closed, stopping notifications");
                 break;
             }
+            eprintln!("DEBUG: Notification sent successfully");
             
             // Small delay to simulate streaming
             tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;

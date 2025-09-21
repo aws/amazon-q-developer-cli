@@ -207,12 +207,15 @@ impl AcpTestSession {
     /// that will allow you to read responses. You cannot use the session again
     /// until you stop using that.
     pub async fn say_to_agent<'s>(&'s mut self, message: impl IntoPromptContent) -> eyre::Result<AcpTestSessionRead<'s>> {
+        eprintln!("DEBUG: say_to_agent called with message");
         let request = acp::PromptRequest {
             session_id: self.session_id.clone(),
             prompt: message.into_prompt_content(),
             meta: None,
         };
+        eprintln!("DEBUG: Sending ToAgent::Prompt");
         self.client_tx.send(ToAgent::Prompt { request }).await?;
+        eprintln!("DEBUG: ToAgent::Prompt sent successfully");
         Ok(AcpTestSessionRead { session: self })
     }
 }
@@ -224,7 +227,19 @@ pub struct AcpTestSessionRead<'r> {
 impl AcpTestSessionRead<'_> {
     /// Read the next message from the agent, blocking until one arrives (or erroring if agent has terminated).
     pub async fn read_from_agent(&mut self) -> eyre::Result<FromAgent> {
-        self.session.event_rx.recv().await.ok_or_else(|| eyre::eyre!("agent terminated"))
+        eprintln!("DEBUG: read_from_agent called, waiting for response");
+        let result = self.session.event_rx.recv().await.ok_or_else(|| eyre::eyre!("agent terminated"));
+        match &result {
+            Ok(msg) => {
+                match msg {
+                    FromAgent::SessionNotification(..) => eprintln!("DEBUG: Received SessionNotification"),
+                    FromAgent::Stop(_) => eprintln!("DEBUG: Received Stop"),
+                    _ => eprintln!("DEBUG: Received other message type"),
+                }
+            }
+            Err(e) => eprintln!("DEBUG: Error receiving from agent: {}", e),
+        }
+        result
     }
     
     /// Read session notifications (agent responses) until the turn stops
@@ -338,25 +353,34 @@ async fn spawn_test_client_actor(
         while let Some(message) = client_rx.recv().await {
             match message {
                 ToAgent::NewSession { request, event_tx, response_tx } => {
+                    eprintln!("DEBUG: ClientActor received ToAgent::NewSession");
                     let closure = async || -> eyre::Result<NewSessionResponse>  {
                         let response = client_conn.new_session(request).await?;
                         sessions.lock().insert(response.session_id.clone(), event_tx);
                         Ok(response)
                     };
-                    let _ = response_tx.send(closure().await);
+                    let result = closure().await;
+                    eprintln!("DEBUG: NewSession result: {:?}", result.is_ok());
+                    let _ = response_tx.send(result);
                 }
 
                 ToAgent::Prompt { request } => {
+                    eprintln!("DEBUG: ClientActor received ToAgent::Prompt for session: {:?}", request.session_id);
                     let session_tx = sessions.lock().get(&request.session_id).cloned();
                     if let Some(session_tx) = session_tx {
+                        eprintln!("DEBUG: Found session, calling client_conn.prompt()");
                         match client_conn.prompt(request).await {
                             Ok(result) => {
+                                eprintln!("DEBUG: client_conn.prompt() succeeded, sending Stop(Ok)");
                                 let _ = session_tx.send(FromAgent::Stop(Ok(result))).await;
                             }
                             Err(e) => {
+                                eprintln!("DEBUG: client_conn.prompt() failed: {:?}", e);
                                 let _ = session_tx.send(FromAgent::Stop(Err(e))).await;
                             }
                         }
+                    } else {
+                        eprintln!("DEBUG: Session not found for ID: {:?}", request.session_id);
                     }
                 }
             }
