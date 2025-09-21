@@ -470,7 +470,7 @@ impl PromptsArgs {
 
         // Calculate positions for three-column layout: Prompt | Description | Arguments
         let prompt_col_width = (UnicodeWidthStr::width(longest_name) + 4).max(20); // Min 20 chars for "Prompt"
-        let description_col_width = 40; // Fixed width for descriptions
+        let description_col_width = 41; // Fixed width for descriptions
         let description_pos = prompt_col_width;
         let arguments_pos = description_pos + description_col_width;
 
