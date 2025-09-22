@@ -1914,6 +1914,11 @@ impl ChatSession {
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
+
+        if let Some(injected_input) = self.inject_at_files(user_input.trim()).await {
+            user_input = injected_input;
+        }
+
         let input = user_input.trim();
 
         // handle image path
@@ -3561,6 +3566,52 @@ impl ChatSession {
                 .into_user_input_message(self.conversation.model.clone(), &self.conversation.tools)
                 .content,
         })
+    }
+
+    async fn inject_at_files(&self, input: &str) -> Option<String> {
+        use regex::Regex;
+
+        // Match @filepath patterns
+        let re = Regex::new(r"@([^\s]+)").ok()?;
+        let mut file_contents = Vec::new();
+
+        for mat in re.find_iter(input) {
+            let file_path = &mat.as_str()[1..]; // Remove the @ prefix
+            let path = std::path::Path::new(file_path);
+
+            if path.exists() && path.is_file() {
+                if let Ok(file_content) = self.format_file_content(path).await {
+                    file_contents.push(file_content);
+                }
+            }
+        }
+
+        if !file_contents.is_empty() {
+            let mut result = input.to_string();
+
+            result.push_str("\n\n--- Content from referenced files ---\n");
+            for content in file_contents {
+                result.push('\n');
+                result.push_str(&content);
+            }
+            result.push_str("\n--- End of content ---");
+
+            Some(result)
+        } else {
+            None
+        }
+    }
+
+    async fn format_file_content(&self, path: &std::path::Path) -> Result<String, std::io::Error> {
+        let content = tokio::fs::read_to_string(path).await?;
+
+        let formatted_content = format!(
+            "Content from @{}:\n{}",
+            path.to_string_lossy(),
+            content.trim()
+        );
+
+        Ok(formatted_content)
     }
 }
 
