@@ -1330,26 +1330,28 @@ impl ChatSession {
         }
 
         // Initialize capturing if possible
-        let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
-        let start = std::time::Instant::now();
-        let capture_manager = match CaptureManager::auto_init(os, &path).await {
-            Ok(manager) => {
-                execute!(
-                    self.stderr,
-                    style::Print(
-                        format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
-                            .blue()
-                            .bold()
-                    )
-                )?;
-                Some(manager)
-            },
-            Err(e) => {
-                execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
-                None
-            },
-        };
-        self.conversation.capture_manager = capture_manager;
+        if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+            let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
+            let start = std::time::Instant::now();
+            let capture_manager = match CaptureManager::auto_init(os, &path).await {
+                Ok(manager) => {
+                    execute!(
+                        self.stderr,
+                        style::Print(
+                            format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
+                                .blue()
+                                .bold()
+                        )
+                    )?;
+                    Some(manager)
+                },
+                Err(e) => {
+                    execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
+                    None
+                },
+            };
+            self.conversation.capture_manager = capture_manager;
+        }
 
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
@@ -2114,12 +2116,15 @@ impl ChatSession {
         } else {
             // Track the message for capture descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if let Some(manager) = self.conversation.capture_manager.as_mut() {
-                if !manager.message_locked && self.pending_tool_index.is_none() {
-                    manager.pending_user_message = Some(user_input.clone());
-                    manager.message_locked = true;
+            if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+                if let Some(manager) = self.conversation.capture_manager.as_mut() {
+                    if !manager.message_locked && self.pending_tool_index.is_none() {
+                        manager.pending_user_message = Some(user_input.clone());
+                        manager.message_locked = true;
+                    }
                 }
             }
+
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);
@@ -2343,18 +2348,24 @@ impl ChatSession {
             execute!(self.stdout, style::Print("\n"))?;
 
             // Handle capture after tool execution - store tag for later display
-            let capture_tag = if invoke_result.is_ok() {
+            let capture_tag = {
+                let enabled = os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false);
+                if invoke_result.is_err() || !enabled {
+                    String::new()
+                }
                 // Take manager out temporarily to avoid borrow conflicts
-                if let Some(mut manager) = self.conversation.capture_manager.take() {
+                else if let Some(mut manager) = self.conversation.capture_manager.take() {
                     // Check if there are uncommitted changes
                     let has_changes = match manager.has_changes() {
                         Ok(b) => b,
                         Err(e) => {
                             execute!(
                                 self.stderr,
-                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n").yellow())
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n")),
+                                style::Print("Saving anyways...\n"),
+                                style::SetForegroundColor(Color::Reset),
                             )?;
-                            execute!(self.stderr, style::Print("Saving anyways...\n".yellow()))?;
                             true
                         },
                     };
@@ -2395,8 +2406,6 @@ impl ChatSession {
                 } else {
                     String::new()
                 }
-            } else {
-                String::new()
             };
 
             let tool_end_time = Instant::now();
@@ -2851,44 +2860,52 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             // Create turn capture if tools were used
-            if let Some(mut manager) = self.conversation.capture_manager.take() {
-                if manager.tools_in_turn > 0 {
-                    // Increment turn counter
-                    manager.current_turn += 1;
+            if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+                if let Some(mut manager) = self.conversation.capture_manager.take() {
+                    if manager.tools_in_turn > 0 {
+                        // Increment turn counter
+                        manager.current_turn += 1;
 
-                    // Get user message for description
-                    let description = manager.pending_user_message.take().map_or_else(
-                        || "Turn completed".to_string(),
-                        |msg| truncate_message(&msg, CAPTURE_MESSAGE_MAX_LENGTH),
-                    );
+                        // Get user message for description
+                        let description = manager.pending_user_message.take().map_or_else(
+                            || "Turn completed".to_string(),
+                            |msg| truncate_message(&msg, CAPTURE_MESSAGE_MAX_LENGTH),
+                        );
 
-                    // Get history length before putting manager back
-                    let history_len = self.conversation.history().len();
+                        // Get history length before putting manager back
+                        let history_len = self.conversation.history().len();
 
-                    // Create turn capture
-                    let tag = manager.current_turn.to_string();
-                    if let Err(e) = manager.create_capture(&tag, &description, history_len, true, None) {
-                        execute!(
-                            self.stderr,
-                            style::Print(format!("⚠ Could not create automatic capture: {}\n\n", e).yellow())
-                        )?;
+                        // Create turn capture
+                        let tag = manager.current_turn.to_string();
+                        if let Err(e) = manager.create_capture(&tag, &description, history_len, true, None) {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("⚠️ Could not create automatic capture: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        } else {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Blue),
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print(format!("✓ Created capture {}\n\n", tag)),
+                                style::SetForegroundColor(Color::Reset),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
+                        }
+
+                        // Reset for next turn
+                        manager.tools_in_turn = 0;
+                        manager.message_locked = false; // Unlock for next turn
                     } else {
-                        execute!(
-                            self.stderr,
-                            style::Print(format!("✓ Created capture {}\n\n", tag).blue().bold())
-                        )?;
+                        // Clear pending message even if no tools were used
+                        manager.pending_user_message = None;
                     }
 
-                    // Reset for next turn
-                    manager.tools_in_turn = 0;
-                    manager.message_locked = false; // Unlock for next turn
-                } else {
-                    // Clear pending message even if no tools were used
-                    manager.pending_user_message = None;
+                    // Put manager back
+                    self.conversation.capture_manager = Some(manager);
                 }
-
-                // Put manager back
-                self.conversation.capture_manager = Some(manager);
             }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)

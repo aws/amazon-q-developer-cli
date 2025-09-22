@@ -50,6 +50,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Capture",
+        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/capture)",
+        setting_key: Setting::EnabledCapture,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]

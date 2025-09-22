@@ -2,6 +2,8 @@ use std::io::Write;
 
 use clap::Subcommand;
 use crossterm::style::{
+    Attribute,
+    Color,
     StyledContent,
     Stylize,
 };
@@ -21,6 +23,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::get_shadow_repo_dir;
 
@@ -80,6 +83,18 @@ With --hard:
 
 impl CaptureSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Check if capture is enabled
+        if !os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Red),
+                style::Print("\nCapture is disabled. Enable it with: q settings chat.enableCapture true\n"),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
         match self {
             Self::Init => self.handle_init(os, session).await,
             Self::Restore { ref tag, hard } => self.handle_restore(session, tag.clone(), hard).await,
@@ -94,10 +109,11 @@ impl CaptureSubcommand {
         if session.conversation.capture_manager.is_some() {
             execute!(
                 session.stderr,
+                style::SetForegroundColor(Color::Blue),
                 style::Print(
                     "✓ Captures are already enabled for this session! Use /capture list to see current captures.\n"
-                        .blue()
-                )
+                ),
+                style::SetForegroundColor(Color::Reset)
             )?;
         } else {
             let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
@@ -112,11 +128,14 @@ impl CaptureSubcommand {
 
             execute!(
                 session.stderr,
-                style::Print(
-                    format!("✓ Captures are enabled! (took {:.2}s)\n", start.elapsed().as_secs_f32())
-                        .blue()
-                        .bold()
-                )
+                style::SetForegroundColor(Color::Blue),
+                style::SetAttribute(Attribute::Bold),
+                style::Print(format!(
+                    "✓ Captures are enabled! (took {:.2}s)\n",
+                    start.elapsed().as_secs_f32()
+                )),
+                style::SetForegroundColor(Color::Reset),
+                style::SetAttribute(Attribute::Reset),
             )?;
         }
 
@@ -135,7 +154,9 @@ impl CaptureSubcommand {
         let Some(manager) = session.conversation.capture_manager.take() else {
             execute!(
                 session.stderr,
-                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -175,7 +196,11 @@ impl CaptureSubcommand {
             Ok(_) => {
                 execute!(
                     session.stderr,
-                    style::Print(format!("✓ Restored to capture {}\n", tag).blue().bold())
+                    style::SetForegroundColor(Color::Blue),
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print(format!("✓ Restored to capture {}\n", tag)),
+                    style::SetForegroundColor(Color::Reset),
+                    style::SetAttribute(Attribute::Reset),
                 )?;
                 session.conversation.capture_manager = Some(manager);
             },
@@ -194,7 +219,9 @@ impl CaptureSubcommand {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -211,7 +238,12 @@ impl CaptureSubcommand {
 
     async fn handle_clean(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let Some(manager) = session.conversation.capture_manager.take() else {
-            execute!(session.stderr, style::Print("⚠ Captures not enabled.\n".yellow()))?;
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️ ️Captures not enabled.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
             });
@@ -227,7 +259,9 @@ impl CaptureSubcommand {
             Ok(()) => {
                 execute!(
                     session.stderr,
-                    style::Print("✓ Deleted shadow repository for this session.\n".bold())
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("✓ Deleted shadow repository for this session.\n"),
+                    style::SetAttribute(Attribute::Reset),
                 )?;
             },
             Err(e) => {
@@ -245,7 +279,9 @@ impl CaptureSubcommand {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️ ️Captures not enabled. Use '/capture init' to enable.\n"),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -269,7 +305,9 @@ impl CaptureSubcommand {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -282,13 +320,12 @@ impl CaptureSubcommand {
         if tag1 != "HEAD" && !manager.tag_index.contains_key(&tag1) {
             execute!(
                 session.stderr,
-                style::Print(
-                    format!(
-                        "⚠ Capture '{}' not found! Use /capture list to see available captures\n",
-                        tag1
-                    )
-                    .yellow()
-                )
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(format!(
+                    "⚠️ Capture '{}' not found! Use /capture list to see available captures\n",
+                    tag1
+                )),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -298,13 +335,12 @@ impl CaptureSubcommand {
         if tag2 != "HEAD" && !manager.tag_index.contains_key(&tag2) {
             execute!(
                 session.stderr,
-                style::Print(
-                    format!(
-                        "⚠ Capture '{}' not found! Use /capture list to see available captures\n",
-                        tag2
-                    )
-                    .yellow()
-                )
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(format!(
+                    "⚠️ Capture '{}' not found! Use /capture list to see available captures\n",
+                    tag2
+                )),
+                style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -317,12 +353,22 @@ impl CaptureSubcommand {
             format!("Changes from {} to {}:\n", tag1, tag2)
         };
 
-        execute!(session.stderr, style::Print(header.blue()))?;
+        execute!(
+            session.stderr,
+            style::SetForegroundColor(Color::Blue),
+            style::Print(header),
+            style::SetForegroundColor(Color::Reset),
+        )?;
 
         match manager.diff(&tag1, &tag2) {
             Ok(diff) => {
                 if diff.trim().is_empty() {
-                    execute!(session.stderr, style::Print("No changes.\n".dark_grey()))?;
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("No changes.\n"),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
                 } else {
                     execute!(session.stderr, style::Print(diff))?;
                 }
@@ -434,7 +480,9 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) 
     let Some(&idx) = manager.tag_index.get(tag) else {
         execute!(
             output,
-            style::Print(format!("⚠ capture '{}' not found\n", tag).yellow())
+            style::SetForegroundColor(Color::Yellow),
+            style::Print(format!("⚠️ capture '{}' not found\n", tag)),
+            style::SetForegroundColor(Color::Reset),
         )?;
         return Ok(());
     };
@@ -473,10 +521,21 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) 
             .map(|s| format_stats(&s))
             .unwrap_or_default();
 
-        execute!(output, style::Print(" └─ ".blue()), style::Print(display))?;
+        execute!(
+            output,
+            style::SetForegroundColor(Color::Blue),
+            style::Print(" └─ "),
+            style::Print(display),
+            style::SetForegroundColor(Color::Reset),
+        )?;
 
         if !stats_str.is_empty() {
-            execute!(output, style::Print(format!(" ({})", stats_str).dark_grey()))?;
+            execute!(
+                output,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(format!(" ({})", stats_str)),
+                style::SetForegroundColor(Color::Reset),
+            )?;
         }
 
         execute!(output, style::Print("\n"))?;

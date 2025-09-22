@@ -47,10 +47,6 @@ pub struct CaptureManager {
     /// Last user message for commit description
     pub pending_user_message: Option<String>,
 
-    /// Whether to clean up on drop (for auto-initialized sessions)
-    #[serde(default)]
-    pub auto_cleanup: bool,
-
     /// Whether the message has been locked for this turn
     pub message_locked: bool,
 
@@ -86,8 +82,7 @@ impl CaptureManager {
             bail!("Not in a git repository. Use '/capture init' to manually enable captures.");
         }
 
-        let mut manager = Self::manual_init(os, shadow_path).await?;
-        manager.auto_cleanup = true;
+        let manager = Self::manual_init(os, shadow_path).await?;
         Ok(manager)
     }
 
@@ -124,7 +119,6 @@ impl CaptureManager {
             current_turn: 0,
             tools_in_turn: 0,
             pending_user_message: None,
-            auto_cleanup: false,
             message_locked: false,
             file_stats_cache: HashMap::new(),
         })
@@ -279,10 +273,6 @@ impl CaptureManager {
 
 impl Drop for CaptureManager {
     fn drop(&mut self) {
-        if !self.auto_cleanup {
-            return;
-        }
-
         let path = self.shadow_repo_path.clone();
         // Try to spawn cleanup task
         if let Ok(handle) = tokio::runtime::Handle::try_current() {
