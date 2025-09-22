@@ -232,6 +232,9 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
+        // Check if user wants to resume existing conversation
+        self.check_and_prompt_resume(os)?;
+        
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
@@ -436,6 +439,38 @@ impl ChatArgs {
         .spawn(os)
         .await
         .map(|_| ExitCode::SUCCESS)
+    }
+
+    /// Check if there's an existing conversation and prompt user to resume
+    fn check_and_prompt_resume(&mut self, os: &mut Os) -> Result<()> {
+        // Skip if resume is already true or in non-interactive mode
+        if self.resume || self.no_interactive {
+            return Ok(());
+        }
+
+        // Skip if the feature is disabled
+        if !os.database.settings.get_bool(crate::database::settings::Setting::ChatPromptToResume).unwrap_or(false) {
+            return Ok(());
+        }
+
+        // Check for existing conversation in current directory
+        let previous_conversation = std::env::current_dir()
+            .ok()
+            .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
+            .flatten();
+
+        // Only prompt if there's a conversation with actual messages
+        if let Some(cs) = previous_conversation {
+            if !cs.history().is_empty() {
+                let response = crate::util::input("Found existing Q chat conversation in this directory. Resume? [Y/n]: ", None)?;
+                let response = response.trim().to_lowercase();
+                if response.is_empty() || response == "y" || response == "yes" {
+                    self.resume = true;
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 

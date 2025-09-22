@@ -79,6 +79,8 @@ pub enum Setting {
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
+    #[strum(message = "Enable the prompt to resume chat feature (boolean)")]
+    ChatPromptToResume,
 }
 
 impl AsRef<str> for Setting {
@@ -115,6 +117,7 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
+            Self::ChatPromptToResume => "chat.promptToResume",
         }
     }
 }
