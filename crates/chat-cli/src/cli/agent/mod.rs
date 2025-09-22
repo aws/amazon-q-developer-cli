@@ -1189,8 +1189,8 @@ mod tests {
         let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
         assert!(
-            execute_bash_label.contains("read-only"),
-            "execute_bash should show read-only by default, instead found: {}",
+            execute_bash_label.contains("not trusted"),
+            "execute_bash should show not trusted by default, instead found: {}",
             execute_bash_label
         );
     }
