@@ -204,7 +204,7 @@ impl CaptureManager {
                     Some('A') => stats.added += 1,
                     Some('M') => stats.modified += 1,
                     Some('D') => stats.deleted += 1,
-                    Some('R') | Some('C') => stats.modified += 1,
+                    Some('R' | 'C') => stats.modified += 1,
                     _ => {},
                 }
             }
@@ -242,7 +242,7 @@ impl CaptureManager {
         ])?;
 
         if stat_output.status.success() {
-            result.push_str("\n");
+            result.push('\n');
             result.push_str(&String::from_utf8_lossy(&stat_output.stdout));
         }
 

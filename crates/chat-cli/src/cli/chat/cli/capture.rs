@@ -98,10 +98,10 @@ impl CaptureSubcommand {
         match self {
             Self::Init => self.handle_init(os, session).await,
             Self::Restore { ref tag, hard } => self.handle_restore(session, tag.clone(), hard).await,
-            Self::List { limit } => self.handle_list(session, limit),
+            Self::List { limit } => Self::handle_list(session, limit),
             Self::Clean => self.handle_clean(os, session).await,
-            Self::Expand { ref tag } => self.handle_expand(session, tag.clone()),
-            Self::Diff { ref tag1, ref tag2 } => self.handle_diff(session, tag1.clone(), tag2.clone()),
+            Self::Expand { ref tag } => Self::handle_expand(session, tag.clone()),
+            Self::Diff { ref tag1, ref tag2 } => Self::handle_diff(session, tag1.clone(), tag2.clone()),
         }
     }
 
@@ -215,7 +215,7 @@ impl CaptureSubcommand {
         })
     }
 
-    fn handle_list(&self, session: &mut ChatSession, limit: Option<usize>) -> Result<ChatState, ChatError> {
+    fn handle_list(session: &mut ChatSession, limit: Option<usize>) -> Result<ChatState, ChatError> {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
@@ -275,7 +275,7 @@ impl CaptureSubcommand {
         })
     }
 
-    fn handle_expand(&self, session: &mut ChatSession, tag: String) -> Result<ChatState, ChatError> {
+    fn handle_expand(session: &mut ChatSession, tag: String) -> Result<ChatState, ChatError> {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
@@ -296,12 +296,7 @@ impl CaptureSubcommand {
         })
     }
 
-    fn handle_diff(
-        &self,
-        session: &mut ChatSession,
-        tag1: String,
-        tag2: Option<String>,
-    ) -> Result<ChatState, ChatError> {
+    fn handle_diff(session: &mut ChatSession, tag1: String, tag2: Option<String>) -> Result<ChatState, ChatError> {
         let Some(manager) = session.conversation.capture_manager.as_ref() else {
             execute!(
                 session.stderr,
