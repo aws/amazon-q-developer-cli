@@ -77,8 +77,8 @@ pub enum Setting {
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
-    #[strum(message = "Enable the capture feature (boolean)")]
-    EnabledCapture,
+    #[strum(message = "Enable the checkpoint feature (boolean)")]
+    EnabledCheckpoint,
 }
 
 impl AsRef<str> for Setting {
@@ -114,7 +114,7 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
-            Self::EnabledCapture => "chat.enableCapture",
+            Self::EnabledCheckpoint => "chat.enableCheckpoint",
         }
     }
 }
@@ -160,7 +160,7 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
-            "chat.enableCapture" => Ok(Self::EnabledCapture),
+            "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -297,7 +297,7 @@ mod test {
             .set(Setting::ChatDisableMarkdownRendering, false)
             .await
             .unwrap();
-        settings.set(Setting::EnabledCapture, true).await.unwrap();
+        settings.set(Setting::EnabledCheckpoint, true).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
@@ -321,7 +321,7 @@ mod test {
             settings.get(Setting::ChatDisableMarkdownRendering),
             Some(&Value::Bool(false))
         );
-        assert_eq!(settings.get(Setting::EnabledCapture), Some(&Value::Bool(true)));
+        assert_eq!(settings.get(Setting::EnabledCheckpoint), Some(&Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
@@ -329,7 +329,7 @@ mod test {
         settings.remove(Setting::KnowledgeIndexType).await.unwrap();
         settings.remove(Setting::McpLoadedBefore).await.unwrap();
         settings.remove(Setting::ChatDisableMarkdownRendering).await.unwrap();
-        settings.remove(Setting::EnabledCapture).await.unwrap();
+        settings.remove(Setting::EnabledCheckpoint).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
@@ -337,6 +337,6 @@ mod test {
         assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
-        assert_eq!(settings.get(Setting::EnabledCapture), None);
+        assert_eq!(settings.get(Setting::EnabledCheckpoint), None);
     }
 }

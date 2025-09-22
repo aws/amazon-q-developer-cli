@@ -43,7 +43,7 @@ pub enum DirectoryError {
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
-const GLOBAL_SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-captures";
+const GLOBAL_SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-checkpoints";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
 const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 

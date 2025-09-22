@@ -51,9 +51,9 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         setting_key: Setting::EnabledTodoList,
     },
     Experiment {
-        name: "Capture",
-        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/capture)",
-        setting_key: Setting::EnabledCapture,
+        name: "Checkpoint",
+        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)",
+        setting_key: Setting::EnabledCheckpoint,
     },
 ];
 

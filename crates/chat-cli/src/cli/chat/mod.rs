@@ -6,13 +6,13 @@ mod input_source;
 mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
-pub mod capture;
+pub mod checkpoint;
 mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
-use crate::cli::chat::capture::CAPTURE_MESSAGE_MAX_LENGTH;
+use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -144,8 +144,8 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
-use crate::cli::chat::capture::{
-    CaptureManager,
+use crate::cli::chat::checkpoint::{
+    CheckpointManager,
     truncate_message,
 };
 use crate::cli::chat::cli::SlashCommand;
@@ -1330,17 +1330,25 @@ impl ChatSession {
         }
 
         // Initialize capturing if possible
-        if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+        if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledCheckpoint)
+            .unwrap_or(false)
+        {
             let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
             let start = std::time::Instant::now();
-            let capture_manager = match CaptureManager::auto_init(os, &path).await {
+            let checkpoint_manager = match CheckpointManager::auto_init(os, &path).await {
                 Ok(manager) => {
                     execute!(
                         self.stderr,
                         style::Print(
-                            format!("Captures are enabled! (took {:.2}s)\n\n", start.elapsed().as_secs_f32())
-                                .blue()
-                                .bold()
+                            format!(
+                                "📷 Checkpoints are enabled! (took {:.2}s)\n\n",
+                                start.elapsed().as_secs_f32()
+                            )
+                            .blue()
+                            .bold()
                         )
                     )?;
                     Some(manager)
@@ -1350,7 +1358,7 @@ impl ChatSession {
                     None
                 },
             };
-            self.conversation.capture_manager = capture_manager;
+            self.conversation.checkpoint_manager = checkpoint_manager;
         }
 
         if let Some(user_input) = self.initial_input.take() {
@@ -2114,10 +2122,15 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
-            // Track the message for capture descriptions, but only if not already set
+            // Track the message for checkpoint descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
-                if let Some(manager) = self.conversation.capture_manager.as_mut() {
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+            {
+                if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
                     if !manager.message_locked && self.pending_tool_index.is_none() {
                         manager.pending_user_message = Some(user_input.clone());
                         manager.message_locked = true;
@@ -2347,14 +2360,18 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
-            // Handle capture after tool execution - store tag for later display
-            let capture_tag = {
-                let enabled = os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false);
+            // Handle checkpoint after tool execution - store tag for later display
+            let checkpoint_tag = {
+                let enabled = os
+                    .database
+                    .settings
+                    .get_bool(Setting::EnabledCheckpoint)
+                    .unwrap_or(false);
                 if invoke_result.is_err() || !enabled {
                     String::new()
                 }
                 // Take manager out temporarily to avoid borrow conflicts
-                else if let Some(mut manager) = self.conversation.capture_manager.take() {
+                else if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     // Check if there are uncommitted changes
                     let has_changes = match manager.has_changes() {
                         Ok(b) => b,
@@ -2386,11 +2403,15 @@ impl ChatSession {
                         // Get history length before putting manager back
                         let history_len = self.conversation.history().len();
 
-                        // Create capture
-                        if let Err(e) =
-                            manager.create_capture(&tag, &description, history_len + 1, false, Some(tool.name.clone()))
-                        {
-                            debug!("Failed to create tool capture: {}", e);
+                        // Create checkpoint
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            history_len + 1,
+                            false,
+                            Some(tool.name.clone()),
+                        ) {
+                            debug!("Failed to create tool checkpoint: {}", e);
                             String::new()
                         } else {
                             manager.tools_in_turn += 1;
@@ -2401,7 +2422,7 @@ impl ChatSession {
                     };
 
                     // Put manager back
-                    self.conversation.capture_manager = Some(manager);
+                    self.conversation.checkpoint_manager = Some(manager);
                     tag
                 } else {
                     String::new()
@@ -2451,8 +2472,8 @@ impl ChatSession {
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    if !capture_tag.is_empty() {
-                        execute!(self.stdout, style::Print(format!(" [{capture_tag}]").blue().bold()))?;
+                    if !checkpoint_tag.is_empty() {
+                        execute!(self.stdout, style::Print(format!(" [{checkpoint_tag}]").blue().bold()))?;
                     }
                     execute!(self.stdout, style::Print("\n\n"))?;
 
@@ -2859,9 +2880,14 @@ impl ChatSession {
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
 
-            // Create turn capture if tools were used
-            if os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
-                if let Some(mut manager) = self.conversation.capture_manager.take() {
+            // Create turn checkpoint if tools were used
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+            {
+                if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     if manager.tools_in_turn > 0 {
                         // Increment turn counter
                         manager.current_turn += 1;
@@ -2869,19 +2895,19 @@ impl ChatSession {
                         // Get user message for description
                         let description = manager.pending_user_message.take().map_or_else(
                             || "Turn completed".to_string(),
-                            |msg| truncate_message(&msg, CAPTURE_MESSAGE_MAX_LENGTH),
+                            |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
                         );
 
                         // Get history length before putting manager back
                         let history_len = self.conversation.history().len();
 
-                        // Create turn capture
+                        // Create turn checkpoint
                         let tag = manager.current_turn.to_string();
-                        if let Err(e) = manager.create_capture(&tag, &description, history_len, true, None) {
+                        if let Err(e) = manager.create_checkpoint(&tag, &description, history_len, true, None) {
                             execute!(
                                 self.stderr,
                                 style::SetForegroundColor(Color::Yellow),
-                                style::Print(format!("⚠️ Could not create automatic capture: {}\n\n", e)),
+                                style::Print(format!("⚠️ Could not create automatic checkpoint: {}\n\n", e)),
                                 style::SetForegroundColor(Color::Reset),
                             )?;
                         } else {
@@ -2889,7 +2915,7 @@ impl ChatSession {
                                 self.stderr,
                                 style::SetForegroundColor(Color::Blue),
                                 style::SetAttribute(Attribute::Bold),
-                                style::Print(format!("✓ Created capture {}\n\n", tag)),
+                                style::Print(format!("✓ Created checkpoint {}\n\n", tag)),
                                 style::SetForegroundColor(Color::Reset),
                                 style::SetAttribute(Attribute::Reset),
                             )?;
@@ -2904,7 +2930,7 @@ impl ChatSession {
                     }
 
                     // Put manager back
-                    self.conversation.capture_manager = Some(manager);
+                    self.conversation.checkpoint_manager = Some(manager);
                 }
             }
 

@@ -13,9 +13,9 @@ use crossterm::{
 };
 use dialoguer::Select;
 
-use crate::cli::chat::capture::{
-    Capture,
-    CaptureManager,
+use crate::cli::chat::checkpoint::{
+    Checkpoint,
+    CheckpointManager,
     FileStats,
 };
 use crate::cli::chat::{
@@ -28,33 +28,33 @@ use crate::os::Os;
 use crate::util::directories::get_shadow_repo_dir;
 
 #[derive(Debug, PartialEq, Subcommand)]
-pub enum CaptureSubcommand {
-    /// Initialize captures manually
+pub enum CheckpointSubcommand {
+    /// Initialize checkpoints manually
     Init,
 
-    /// Restore workspace to a capture
+    /// Restore workspace to a checkpoint
     #[command(
-        about = "Restore workspace to a capture",
-        long_about = r#"Restore files to a capture <tag>. If <tag> is omitted, you'll pick one interactively.
+        about = "Restore workspace to a checkpoint",
+        long_about = r#"Restore files to a checkpoint <tag>. If <tag> is omitted, you'll pick one interactively.
 
 Default mode:
   • Restores tracked file changes
-  • Keeps new files created after the capture
+  • Keeps new files created after the checkpoint
 
 With --hard:
-  • Exactly matches the capture state
-  • Removes files created after the capture"#
+  • Exactly matches the checkpoint state
+  • Removes files created after the checkpoint"#
     )]
     Restore {
-        /// Capture tag (e.g., 3 or 3.1). Leave empty to select interactively.
+        /// Checkpoint tag (e.g., 3 or 3.1). Leave empty to select interactively.
         tag: Option<String>,
 
-        /// Exactly match capture state (removes newer files)
+        /// Exactly match checkpoint state (removes newer files)
         #[arg(long)]
         hard: bool,
     },
 
-    /// List all captures
+    /// List all checkpoints
     List {
         /// Limit number of results shown
         #[arg(short, long)]
@@ -64,31 +64,36 @@ With --hard:
     /// Delete the shadow repository
     Clean,
 
-    /// Show details of a capture
+    /// Show details of a checkpoint
     Expand {
-        /// Capture tag to expand
+        /// Checkpoint tag to expand
         tag: String,
     },
 
-    /// Show differences between captures
+    /// Show differences between checkpoints
     Diff {
-        /// First capture tag
+        /// First checkpoint tag
         tag1: String,
 
-        /// Second capture tag (defaults to current state)
+        /// Second checkpoint tag (defaults to current state)
         #[arg(required = false)]
         tag2: Option<String>,
     },
 }
 
-impl CaptureSubcommand {
+impl CheckpointSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // Check if capture is enabled
-        if !os.database.settings.get_bool(Setting::EnabledCapture).unwrap_or(false) {
+        // Check if checkpoint is enabled
+        if !os
+            .database
+            .settings
+            .get_bool(Setting::EnabledCheckpoint)
+            .unwrap_or(false)
+        {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Red),
-                style::Print("\nCapture is disabled. Enable it with: q settings chat.enableCapture true\n"),
+                style::Print("\nCheckpoint is disabled. Enable it with: q settings chat.enableCheckpoint true\n"),
                 style::SetForegroundColor(Color::Reset)
             )?;
             return Ok(ChatState::PromptUser {
@@ -106,12 +111,12 @@ impl CaptureSubcommand {
     }
 
     async fn handle_init(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        if session.conversation.capture_manager.is_some() {
+        if session.conversation.checkpoint_manager.is_some() {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Blue),
                 style::Print(
-                    "✓ Captures are already enabled for this session! Use /capture list to see current captures.\n"
+                    "✓ Checkpoints are already enabled for this session! Use /checkpoint list to see current checkpoints.\n"
                 ),
                 style::SetForegroundColor(Color::Reset)
             )?;
@@ -120,10 +125,10 @@ impl CaptureSubcommand {
                 .map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
             let start = std::time::Instant::now();
-            session.conversation.capture_manager = Some(
-                CaptureManager::manual_init(os, path)
+            session.conversation.checkpoint_manager = Some(
+                CheckpointManager::manual_init(os, path)
                     .await
-                    .map_err(|e| ChatError::Custom(format!("Captures could not be initialized: {e}").into()))?,
+                    .map_err(|e| ChatError::Custom(format!("Checkpoints could not be initialized: {e}").into()))?,
             );
 
             execute!(
@@ -131,7 +136,7 @@ impl CaptureSubcommand {
                 style::SetForegroundColor(Color::Blue),
                 style::SetAttribute(Attribute::Bold),
                 style::Print(format!(
-                    "✓ Captures are enabled! (took {:.2}s)\n",
+                    "📷  Checkpoints are enabled! (took {:.2}s)\n",
                     start.elapsed().as_secs_f32()
                 )),
                 style::SetForegroundColor(Color::Reset),
@@ -151,11 +156,11 @@ impl CaptureSubcommand {
         hard: bool,
     ) -> Result<ChatState, ChatError> {
         // Take manager out temporarily to avoid borrow issues
-        let Some(manager) = session.conversation.capture_manager.take() else {
+        let Some(manager) = session.conversation.checkpoint_manager.take() else {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -167,17 +172,17 @@ impl CaptureSubcommand {
             Ok(tag)
         } else {
             // Interactive selection
-            match gather_turn_captures(&manager) {
+            match gather_turn_checkpoints(&manager) {
                 Ok(entries) => {
-                    if let Some(idx) = select_capture(&entries, "Select capture to restore:") {
+                    if let Some(idx) = select_checkpoint(&entries, "Select checkpoint to restore:") {
                         Ok(entries[idx].tag.clone())
                     } else {
                         Err(())
                     }
                 },
                 Err(e) => {
-                    session.conversation.capture_manager = Some(manager);
-                    return Err(ChatError::Custom(format!("Failed to gather captures: {}", e).into()));
+                    session.conversation.checkpoint_manager = Some(manager);
+                    return Err(ChatError::Custom(format!("Failed to gather checkpoints: {}", e).into()));
                 },
             }
         };
@@ -185,7 +190,7 @@ impl CaptureSubcommand {
         let tag = match tag_result {
             Ok(tag) => tag,
             Err(_) => {
-                session.conversation.capture_manager = Some(manager);
+                session.conversation.checkpoint_manager = Some(manager);
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
                 });
@@ -198,14 +203,14 @@ impl CaptureSubcommand {
                     session.stderr,
                     style::SetForegroundColor(Color::Blue),
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(format!("✓ Restored to capture {}\n", tag)),
+                    style::Print(format!("✓ Restored to checkpoint {}\n", tag)),
                     style::SetForegroundColor(Color::Reset),
                     style::SetAttribute(Attribute::Reset),
                 )?;
-                session.conversation.capture_manager = Some(manager);
+                session.conversation.checkpoint_manager = Some(manager);
             },
             Err(e) => {
-                session.conversation.capture_manager = Some(manager);
+                session.conversation.checkpoint_manager = Some(manager);
                 return Err(ChatError::Custom(format!("Failed to restore: {}", e).into()));
             },
         }
@@ -216,11 +221,11 @@ impl CaptureSubcommand {
     }
 
     fn handle_list(session: &mut ChatSession, limit: Option<usize>) -> Result<ChatState, ChatError> {
-        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+        let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -228,8 +233,8 @@ impl CaptureSubcommand {
             });
         };
 
-        print_captures(manager, &mut session.stderr, limit)
-            .map_err(|e| ChatError::Custom(format!("Could not display all captures: {}", e).into()))?;
+        print_checkpoints(manager, &mut session.stderr, limit)
+            .map_err(|e| ChatError::Custom(format!("Could not display all checkpoints: {}", e).into()))?;
 
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
@@ -237,11 +242,11 @@ impl CaptureSubcommand {
     }
 
     async fn handle_clean(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let Some(manager) = session.conversation.capture_manager.take() else {
+        let Some(manager) = session.conversation.checkpoint_manager.take() else {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠️ ️Captures not enabled.\n"),
+                style::Print("⚠️ ️Checkpoints not enabled.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -265,7 +270,7 @@ impl CaptureSubcommand {
                 )?;
             },
             Err(e) => {
-                session.conversation.capture_manager = Some(manager);
+                session.conversation.checkpoint_manager = Some(manager);
                 return Err(ChatError::Custom(format!("Failed to clean: {e}").into()));
             },
         }
@@ -276,11 +281,11 @@ impl CaptureSubcommand {
     }
 
     fn handle_expand(session: &mut ChatSession, tag: String) -> Result<ChatState, ChatError> {
-        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+        let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠️ ️Captures not enabled. Use '/capture init' to enable.\n"),
+                style::Print("⚠️ ️Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -288,8 +293,8 @@ impl CaptureSubcommand {
             });
         };
 
-        expand_capture(manager, &mut session.stderr, &tag)
-            .map_err(|e| ChatError::Custom(format!("Failed to expand capture: {}", e).into()))?;
+        expand_checkpoint(manager, &mut session.stderr, &tag)
+            .map_err(|e| ChatError::Custom(format!("Failed to expand checkpoint: {}", e).into()))?;
 
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
@@ -297,11 +302,11 @@ impl CaptureSubcommand {
     }
 
     fn handle_diff(session: &mut ChatSession, tag1: String, tag2: Option<String>) -> Result<ChatState, ChatError> {
-        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+        let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
-                style::Print("⚠️ Captures not enabled. Use '/capture init' to enable.\n"),
+                style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
                 style::SetForegroundColor(Color::Reset),
             )?;
             return Ok(ChatState::PromptUser {
@@ -317,7 +322,7 @@ impl CaptureSubcommand {
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(format!(
-                    "⚠️ Capture '{}' not found! Use /capture list to see available captures\n",
+                    "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
                     tag1
                 )),
                 style::SetForegroundColor(Color::Reset),
@@ -332,7 +337,7 @@ impl CaptureSubcommand {
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(format!(
-                    "⚠️ Capture '{}' not found! Use /capture list to see available captures\n",
+                    "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
                     tag2
                 )),
                 style::SetForegroundColor(Color::Reset),
@@ -343,7 +348,7 @@ impl CaptureSubcommand {
         }
 
         let header = if tag2 == "HEAD" {
-            format!("Changes since capture {}:\n", tag1)
+            format!("Changes since checkpoint {}:\n", tag1)
         } else {
             format!("Changes from {} to {}:\n", tag1, tag2)
         };
@@ -381,52 +386,52 @@ impl CaptureSubcommand {
 
 // Display helpers
 
-struct CaptureDisplay {
+struct CheckpointDisplay {
     tag: String,
     parts: Vec<StyledContent<String>>,
 }
 
-impl CaptureDisplay {
-    fn from_capture(capture: &Capture, manager: &CaptureManager) -> Result<Self, eyre::Report> {
+impl CheckpointDisplay {
+    fn from_checkpoint(checkpoint: &Checkpoint, manager: &CheckpointManager) -> Result<Self, eyre::Report> {
         let mut parts = Vec::new();
 
         // Tag
-        parts.push(format!("[{}] ", capture.tag).blue());
+        parts.push(format!("[{}] ", checkpoint.tag).blue());
 
         // Content
-        if capture.is_turn {
-            // Turn capture: show timestamp and description
+        if checkpoint.is_turn {
+            // Turn checkpoint: show timestamp and description
             parts.push(
                 format!(
                     "{} - {}",
-                    capture.timestamp.format("%Y-%m-%d %H:%M:%S"),
-                    capture.description
+                    checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    checkpoint.description
                 )
                 .reset(),
             );
 
             // Add file stats if available
-            if let Some(stats) = manager.file_stats_cache.get(&capture.tag) {
+            if let Some(stats) = manager.file_stats_cache.get(&checkpoint.tag) {
                 let stats_str = format_stats(stats);
                 if !stats_str.is_empty() {
                     parts.push(format!(" ({})", stats_str).dark_grey());
                 }
             }
         } else {
-            // Tool capture: show tool name and description
-            let tool_name = capture.tool_name.clone().unwrap_or_else(|| "Tool".to_string());
+            // Tool checkpoint: show tool name and description
+            let tool_name = checkpoint.tool_name.clone().unwrap_or_else(|| "Tool".to_string());
             parts.push(format!("{}: ", tool_name).magenta());
-            parts.push(capture.description.clone().reset());
+            parts.push(checkpoint.description.clone().reset());
         }
 
         Ok(Self {
-            tag: capture.tag.clone(),
+            tag: checkpoint.tag.clone(),
             parts,
         })
     }
 }
 
-impl std::fmt::Display for CaptureDisplay {
+impl std::fmt::Display for CheckpointDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in &self.parts {
             write!(f, "{}", part)?;
@@ -451,17 +456,21 @@ fn format_stats(stats: &FileStats) -> String {
     parts.join(" ")
 }
 
-fn gather_turn_captures(manager: &CaptureManager) -> Result<Vec<CaptureDisplay>, eyre::Report> {
+fn gather_turn_checkpoints(manager: &CheckpointManager) -> Result<Vec<CheckpointDisplay>, eyre::Report> {
     manager
-        .captures
+        .checkpoints
         .iter()
         .filter(|c| c.is_turn)
-        .map(|c| CaptureDisplay::from_capture(c, manager))
+        .map(|c| CheckpointDisplay::from_checkpoint(c, manager))
         .collect()
 }
 
-fn print_captures(manager: &CaptureManager, output: &mut impl Write, limit: Option<usize>) -> Result<(), eyre::Report> {
-    let entries = gather_turn_captures(manager)?;
+fn print_checkpoints(
+    manager: &CheckpointManager,
+    output: &mut impl Write,
+    limit: Option<usize>,
+) -> Result<(), eyre::Report> {
+    let entries = gather_turn_checkpoints(manager)?;
     let limit = limit.unwrap_or(entries.len());
 
     for entry in entries.iter().take(limit) {
@@ -471,42 +480,42 @@ fn print_captures(manager: &CaptureManager, output: &mut impl Write, limit: Opti
     Ok(())
 }
 
-fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) -> Result<(), eyre::Report> {
+fn expand_checkpoint(manager: &CheckpointManager, output: &mut impl Write, tag: &str) -> Result<(), eyre::Report> {
     let Some(&idx) = manager.tag_index.get(tag) else {
         execute!(
             output,
             style::SetForegroundColor(Color::Yellow),
-            style::Print(format!("⚠️ capture '{}' not found\n", tag)),
+            style::Print(format!("⚠️ checkpoint '{}' not found\n", tag)),
             style::SetForegroundColor(Color::Reset),
         )?;
         return Ok(());
     };
 
-    let capture = &manager.captures[idx];
+    let checkpoint = &manager.checkpoints[idx];
 
-    // Print main capture
-    let display = CaptureDisplay::from_capture(capture, manager)?;
+    // Print main checkpoint
+    let display = CheckpointDisplay::from_checkpoint(checkpoint, manager)?;
     execute!(output, style::Print(&display), style::Print("\n"))?;
 
-    if !capture.is_turn {
+    if !checkpoint.is_turn {
         return Ok(());
     }
 
-    // Print tool captures for this turn
-    let mut tool_captures = Vec::new();
+    // Print tool checkpoints for this turn
+    let mut tool_checkpoints = Vec::new();
     for i in (0..idx).rev() {
-        let c = &manager.captures[i];
+        let c = &manager.checkpoints[i];
         if c.is_turn {
             break;
         }
-        tool_captures.push((i, CaptureDisplay::from_capture(c, manager)?));
+        tool_checkpoints.push((i, CheckpointDisplay::from_checkpoint(c, manager)?));
     }
 
-    for (capture_idx, display) in tool_captures.iter().rev() {
+    for (checkpoint_idx, display) in tool_checkpoints.iter().rev() {
         // Compute stats for this tool
-        let curr_tag = &manager.captures[*capture_idx].tag;
-        let prev_tag = if *capture_idx > 0 {
-            &manager.captures[capture_idx - 1].tag
+        let curr_tag = &manager.checkpoints[*checkpoint_idx].tag;
+        let prev_tag = if *checkpoint_idx > 0 {
+            &manager.checkpoints[checkpoint_idx - 1].tag
         } else {
             "0"
         };
@@ -539,7 +548,7 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) 
     Ok(())
 }
 
-fn select_capture(entries: &[CaptureDisplay], prompt: &str) -> Option<usize> {
+fn select_checkpoint(entries: &[CheckpointDisplay], prompt: &str) -> Option<usize> {
     Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt(prompt)
         .items(entries)

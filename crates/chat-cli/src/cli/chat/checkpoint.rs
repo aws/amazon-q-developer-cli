@@ -28,14 +28,14 @@ use crate::os::Os;
 
 /// Manages a shadow git repository for tracking and restoring workspace changes
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CaptureManager {
+pub struct CheckpointManager {
     /// Path to the shadow (bare) git repository
     pub shadow_repo_path: PathBuf,
 
-    /// All captures in chronological order
-    pub captures: Vec<Capture>,
+    /// All checkpoints in chronological order
+    pub checkpoints: Vec<Checkpoint>,
 
-    /// Fast lookup: tag -> index in captures vector
+    /// Fast lookup: tag -> index in checkpoints vector
     pub tag_index: HashMap<String, usize>,
 
     /// Track the current turn number
@@ -63,7 +63,7 @@ pub struct FileStats {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Capture {
+pub struct Checkpoint {
     pub tag: String,
     pub timestamp: DateTime<Local>,
     pub description: String,
@@ -72,21 +72,21 @@ pub struct Capture {
     pub tool_name: Option<String>,
 }
 
-impl CaptureManager {
-    /// Initialize capture manager automatically (when in a git repo)
+impl CheckpointManager {
+    /// Initialize checkpoint manager automatically (when in a git repo)
     pub async fn auto_init(os: &Os, shadow_path: impl AsRef<Path>) -> Result<Self> {
         if !is_git_installed() {
-            bail!("Git is not installed. Captures require git to function.");
+            bail!("Git is not installed. Checkpoints require git to function.");
         }
         if !is_in_git_repo() {
-            bail!("Not in a git repository. Use '/capture init' to manually enable captures.");
+            bail!("Not in a git repository. Use '/checkpoint init' to manually enable checkpoints.");
         }
 
         let manager = Self::manual_init(os, shadow_path).await?;
         Ok(manager)
     }
 
-    /// Initialize capture manager manually
+    /// Initialize checkpoint manager manually
     pub async fn manual_init(os: &Os, path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         os.fs.create_dir_all(path).await?;
@@ -97,10 +97,10 @@ impl CaptureManager {
         // Configure git
         configure_git(&path.to_string_lossy())?;
 
-        // Create initial capture
+        // Create initial checkpoint
         stage_commit_tag(&path.to_string_lossy(), "Initial state", "0")?;
 
-        let initial_capture = Capture {
+        let initial_checkpoint = Checkpoint {
             tag: "0".to_string(),
             timestamp: Local::now(),
             description: "Initial state".to_string(),
@@ -114,7 +114,7 @@ impl CaptureManager {
 
         Ok(Self {
             shadow_repo_path: path.to_path_buf(),
-            captures: vec![initial_capture],
+            checkpoints: vec![initial_checkpoint],
             tag_index,
             current_turn: 0,
             tools_in_turn: 0,
@@ -124,8 +124,8 @@ impl CaptureManager {
         })
     }
 
-    /// Create a new capture point
-    pub fn create_capture(
+    /// Create a new checkpoint point
+    pub fn create_checkpoint(
         &mut self,
         tag: &str,
         description: &str,
@@ -136,8 +136,8 @@ impl CaptureManager {
         // Stage, commit and tag
         stage_commit_tag(&self.shadow_repo_path.to_string_lossy(), description, tag)?;
 
-        // Record capture metadata
-        let capture = Capture {
+        // Record checkpoint metadata
+        let checkpoint = Checkpoint {
             tag: tag.to_string(),
             timestamp: Local::now(),
             description: description.to_string(),
@@ -146,10 +146,10 @@ impl CaptureManager {
             tool_name,
         };
 
-        self.captures.push(capture);
-        self.tag_index.insert(tag.to_string(), self.captures.len() - 1);
+        self.checkpoints.push(checkpoint);
+        self.tag_index.insert(tag.to_string(), self.checkpoints.len() - 1);
 
-        // Cache file stats for this capture
+        // Cache file stats for this checkpoint
         if let Ok(stats) = self.compute_file_stats(tag) {
             self.file_stats_cache.insert(tag.to_string(), stats);
         }
@@ -157,9 +157,9 @@ impl CaptureManager {
         Ok(())
     }
 
-    /// Restore workspace to a specific capture
+    /// Restore workspace to a specific checkpoint
     pub fn restore(&self, conversation: &mut ConversationState, tag: &str, hard: bool) -> Result<()> {
-        let capture = self.get_capture(tag)?;
+        let checkpoint = self.get_checkpoint(tag)?;
 
         // Restore files
         let args = if hard {
@@ -174,7 +174,7 @@ impl CaptureManager {
         }
 
         // Restore conversation history
-        while conversation.history().len() > capture.history_index {
+        while conversation.history().len() > checkpoint.history_index {
             conversation
                 .pop_from_history()
                 .ok_or(eyre!("Failed to restore conversation history"))?;
@@ -183,7 +183,7 @@ impl CaptureManager {
         Ok(())
     }
 
-    /// Get file change statistics for a capture
+    /// Get file change statistics for a checkpoint
     pub fn compute_file_stats(&self, tag: &str) -> Result<FileStats> {
         if tag == "0" {
             return Ok(FileStats::default());
@@ -193,7 +193,7 @@ impl CaptureManager {
         self.compute_stats_between(&prev_tag, tag)
     }
 
-    /// Compute file statistics between two captures
+    /// Compute file statistics between two checkpoints
     pub fn compute_stats_between(&self, from: &str, to: &str) -> Result<FileStats> {
         let output = run_git(&self.shadow_repo_path, false, &["diff", "--name-status", from, to])?;
 
@@ -213,7 +213,7 @@ impl CaptureManager {
         Ok(stats)
     }
 
-    /// Generate detailed diff between captures
+    /// Generate detailed diff between checkpoints
     pub fn diff(&self, from: &str, to: &str) -> Result<String> {
         let mut result = String::new();
 
@@ -263,15 +263,15 @@ impl CaptureManager {
         Ok(())
     }
 
-    fn get_capture(&self, tag: &str) -> Result<&Capture> {
+    fn get_checkpoint(&self, tag: &str) -> Result<&Checkpoint> {
         self.tag_index
             .get(tag)
-            .and_then(|&idx| self.captures.get(idx))
-            .ok_or_else(|| eyre!("Capture '{}' not found", tag))
+            .and_then(|&idx| self.checkpoints.get(idx))
+            .ok_or_else(|| eyre!("Checkpoint '{}' not found", tag))
     }
 }
 
-impl Drop for CaptureManager {
+impl Drop for CheckpointManager {
     fn drop(&mut self) {
         let path = self.shadow_repo_path.clone();
         // Try to spawn cleanup task
@@ -304,7 +304,7 @@ pub fn truncate_message(s: &str, max_len: usize) -> String {
     }
 }
 
-pub const CAPTURE_MESSAGE_MAX_LENGTH: usize = 60;
+pub const CHECKPOINT_MESSAGE_MAX_LENGTH: usize = 60;
 
 fn is_git_installed() -> bool {
     Command::new("git")

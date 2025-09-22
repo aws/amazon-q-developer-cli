@@ -73,7 +73,7 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
-use crate::cli::chat::capture::CaptureManager;
+use crate::cli::chat::checkpoint::CheckpointManager;
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -139,7 +139,7 @@ pub struct ConversationState {
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
 
-    pub capture_manager: Option<CaptureManager>,
+    pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
@@ -205,7 +205,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
-            capture_manager: None,
+            checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
         }
@@ -276,7 +276,7 @@ impl ConversationState {
     /// Exit tangent mode and preserve the last conversation entry (user + assistant)
     pub fn exit_tangent_mode_with_tail(&mut self) {
         if let Some(checkpoint) = self.tangent_state.take() {
-            // Capture the last history entry from tangent conversation if it exists
+            // Checkpoint the last history entry from tangent conversation if it exists
             // and if it's different from what was in the main conversation
             let last_entry = if self.history.len() > checkpoint.main_history.len() {
                 self.history.back().cloned()
