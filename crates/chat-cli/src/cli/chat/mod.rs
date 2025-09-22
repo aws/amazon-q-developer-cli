@@ -3605,11 +3605,7 @@ impl ChatSession {
     async fn format_file_content(&self, path: &std::path::Path) -> Result<String, std::io::Error> {
         let content = tokio::fs::read_to_string(path).await?;
 
-        let formatted_content = format!(
-            "Content from @{}:\n{}",
-            path.to_string_lossy(),
-            content.trim()
-        );
+        let formatted_content = format!("Content from @{}:\n{}", path.to_string_lossy(), content.trim());
 
         Ok(formatted_content)
     }
