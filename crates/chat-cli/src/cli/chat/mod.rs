@@ -12,6 +12,7 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+use crate::cli::chat::capture::CAPTURE_MESSAGE_MAX_LENGTH;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -144,7 +145,6 @@ use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
 use crate::cli::chat::capture::{
-    CAPTURE_MESSAGE_MAX_LENGTH,
     CaptureManager,
     truncate_message,
 };
@@ -2112,13 +2112,13 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
-            // Track this as the last user message for checkpointing
-            if let Some(mut manager) = self.conversation.capture_manager.take() {
-                if !manager.user_message_lock {
-                    manager.last_user_message = Some(user_input.clone());
-                    manager.user_message_lock = true;
+            // Track the message for capture descriptions, but only if not already set
+            // This prevents tool approval responses (y/n/t) from overwriting the original message
+            if let Some(manager) = self.conversation.capture_manager.as_mut() {
+                if !manager.message_locked && self.pending_tool_index.is_none() {
+                    manager.pending_user_message = Some(user_input.clone());
+                    manager.message_locked = true;
                 }
-                self.conversation.capture_manager = Some(manager);
             }
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
@@ -2342,23 +2342,20 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
-            let tag = if invoke_result.is_ok() {
+            // Handle capture after tool execution - store tag for later display
+            let capture_tag = if invoke_result.is_ok() {
+                // Take manager out temporarily to avoid borrow conflicts
                 if let Some(mut manager) = self.conversation.capture_manager.take() {
-                    let has_uncommitted = match manager.has_uncommitted_changes() {
-                        Ok(b) => b,
-                        Err(e) => {
-                            execute!(
-                                self.stderr,
-                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n").blue())
-                            )?;
-                            execute!(self.stderr, style::Print("Saving anyways...\n".blue()))?;
-                            true
-                        },
-                    };
-                    let tag = if has_uncommitted {
-                        let mut tag = format!("{}.{}", manager.num_turns + 1, manager.num_tools_this_turn + 1);
+                    // Check if there are uncommitted changes
+                    let has_changes = manager.has_changes().unwrap_or(true);
+
+                    let tag = if has_changes {
+                        // Generate tag for this tool use
+                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+
+                        // Get tool summary for commit message
                         let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
-                        let commit_message = if is_fs_read {
+                        let description = if is_fs_read {
                             "External edits detected (likely manual change)".to_string()
                         } else {
                             match tool.tool.get_summary() {
@@ -2366,24 +2363,24 @@ impl ChatSession {
                                 None => tool.tool.display_name(),
                             }
                         };
+                        // Get history length before putting manager back
+                        let history_len = self.conversation.history().len();
 
-                        match manager.create_capture_with_stats(
-                            &tag,
-                            &commit_message,
-                            self.conversation.history().len() + 1,
-                            false,
-                            Some(tool.name.clone()),
-                        ) {
-                            Ok(_) => manager.num_tools_this_turn += 1,
-                            Err(e) => {
-                                debug!("{e}");
-                                tag = String::new();
-                            },
+                        // Create capture
+                        if let Err(e) =
+                            manager.create_capture(&tag, &description, history_len + 1, false, Some(tool.name.clone()))
+                        {
+                            debug!("Failed to create tool capture: {}", e);
+                            String::new()
+                        } else {
+                            manager.tools_in_turn += 1;
+                            tag
                         }
-                        tag
                     } else {
                         String::new()
                     };
+
+                    // Put manager back
                     self.conversation.capture_manager = Some(manager);
                     tag
                 } else {
@@ -2436,8 +2433,8 @@ impl ChatSession {
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    if !tag.is_empty() {
-                        execute!(self.stdout, style::Print(format!(" [{tag}]").blue().bold()))?;
+                    if !capture_tag.is_empty() {
+                        execute!(self.stdout, style::Print(format!(" [{capture_tag}]").blue().bold()))?;
                     }
                     execute!(self.stdout, style::Print("\n\n"))?;
 
@@ -2844,43 +2841,44 @@ impl ChatSession {
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
 
+            // Create turn capture if tools were used
             if let Some(mut manager) = self.conversation.capture_manager.take() {
-                manager.user_message_lock = false;
-                let user_message = match &manager.last_user_message {
-                    Some(message) => {
-                        let message = message.clone();
-                        manager.last_user_message = None;
-                        message
-                    },
-                    None => "No description provided".to_string(),
-                };
-                if manager.num_tools_this_turn > 0 {
-                    manager.num_turns += 1;
-                    manager.num_tools_this_turn = 0;
+                if manager.tools_in_turn > 0 {
+                    // Increment turn counter
+                    manager.current_turn += 1;
 
-                    match manager.create_capture_with_stats(
-                        &manager.num_turns.to_string(),
-                        &truncate_message(&user_message, CAPTURE_MESSAGE_MAX_LENGTH),
-                        self.conversation.history().len(),
-                        true,
-                        None,
-                    ) {
-                        Ok(_) => execute!(
+                    // Get user message for description
+                    let description = manager.pending_user_message.take().map_or_else(
+                        || "Turn completed".to_string(),
+                        |msg| truncate_message(&msg, CAPTURE_MESSAGE_MAX_LENGTH),
+                    );
+
+                    // Get history length before putting manager back
+                    let history_len = self.conversation.history().len();
+
+                    // Create turn capture
+                    let tag = manager.current_turn.to_string();
+                    if let Err(e) = manager.create_capture(&tag, &description, history_len, true, None) {
+                        execute!(
                             self.stderr,
-                            style::Print(style::Print(
-                                format!("Created capture: {}\n\n", manager.num_turns).blue().bold()
-                            ))
-                        )?,
-                        Err(e) => {
-                            execute!(
-                                self.stderr,
-                                style::Print(style::Print(
-                                    format!("Could not create automatic capture: {}\n\n", e).blue()
-                                ))
-                            )?;
-                        },
+                            style::Print(format!("⚠ Could not create capture: {}\n\n", e).yellow())
+                        )?;
+                    } else {
+                        execute!(
+                            self.stderr,
+                            style::Print(format!("✓ Created checkpoint {}\n\n", tag).blue().bold())
+                        )?;
                     }
+
+                    // Reset for next turn
+                    manager.tools_in_turn = 0;
+                    manager.message_locked = false; // Unlock for next turn
+                } else {
+                    // Clear pending message even if no tools were used
+                    manager.pending_user_message = None;
                 }
+
+                // Put manager back
                 self.conversation.capture_manager = Some(manager);
             }
 

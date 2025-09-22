@@ -10,12 +10,11 @@ use crossterm::{
     style,
 };
 use dialoguer::Select;
-use eyre::Result;
 
 use crate::cli::chat::capture::{
     Capture,
     CaptureManager,
-    FileChangeStats,
+    FileStats,
 };
 use crate::cli::chat::{
     ChatError,
@@ -27,7 +26,7 @@ use crate::util::directories::get_shadow_repo_dir;
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CaptureSubcommand {
-    /// Manually initialize captures
+    /// Initialize captures manually
     Init,
 
     /// Restore workspace to a checkpoint
@@ -35,42 +34,45 @@ pub enum CaptureSubcommand {
         about = "Restore workspace to a checkpoint",
         long_about = r#"Restore files to a checkpoint <tag>. If <tag> is omitted, you'll pick one interactively.
 
-Default:
-  • Revert tracked changes and restore tracked deletions.
-  • Do NOT delete files created after the checkpoint.
+Default mode:
+  • Restores tracked file changes
+  • Keeps new files created after the checkpoint
 
---hard:
-  • Make workspace exactly match the checkpoint.
-  • Delete tracked files created after the checkpoint.
-
-Notes:
-  • Also rolls back conversation history to the checkpoint.
-  • Tags: turn (e.g., 3) or tool (e.g., 3.1)."#
+With --hard:
+  • Exactly matches the checkpoint state
+  • Removes files created after the checkpoint"#
     )]
     Restore {
-        /// Checkpoint tag (e.g., 3 or 3.1). Omit to choose interactively.
+        /// Checkpoint tag (e.g., 3 or 3.1). Leave empty to select interactively.
         tag: Option<String>,
 
-        /// Match checkpoint exactly; deletes tracked files created after it.
+        /// Exactly match checkpoint state (removes newer files)
         #[arg(long)]
         hard: bool,
     },
 
-    /// View all checkpoints (turn-level only)
+    /// List all checkpoints
     List {
+        /// Limit number of results shown
         #[arg(short, long)]
         limit: Option<usize>,
     },
 
-    /// Delete shadow repository
+    /// Delete the shadow repository
     Clean,
 
-    /// Display more information about a turn-level checkpoint
-    Expand { tag: String },
+    /// Show details of a checkpoint
+    Expand {
+        /// Checkpoint tag to expand
+        tag: String,
+    },
 
-    /// Display a diff between two checkpoints (default tag2=HEAD)
+    /// Show differences between checkpoints
     Diff {
+        /// First checkpoint tag
         tag1: String,
+
+        /// Second checkpoint tag (defaults to current state)
         #[arg(required = false)]
         tag2: Option<String>,
     },
@@ -78,372 +80,390 @@ Notes:
 
 impl CaptureSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        if let CaptureSubcommand::Init = self {
-            if session.conversation.capture_manager.is_some() {
-                execute!(
-                    session.stderr,
-                    style::Print(
-                        "Captures are already enabled for this session! Use /capture list to see current captures.\n"
-                            .blue()
-                    )
-                )?;
-            } else {
-                let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
-                    .map_err(|e| ChatError::Custom(e.to_string().into()))?;
-                let start = std::time::Instant::now();
-                session.conversation.capture_manager = Some(
-                    CaptureManager::manual_init(os, path)
-                        .await
-                        .map_err(|e| ChatError::Custom(format!("Captures could not be initialized: {e}").into()))?,
-                );
-                execute!(
-                    session.stderr,
-                    style::Print(
-                        format!("Captures are enabled! (took {:.2}s)\n", start.elapsed().as_secs_f32())
-                            .blue()
-                            .bold()
-                    )
-                )?;
-            }
-            return Ok(ChatState::PromptUser {
-                skip_printing_tools: true,
-            });
+        match self {
+            Self::Init => self.handle_init(os, session).await,
+            Self::Restore { ref tag, hard } => self.handle_restore(session, tag.clone(), hard).await,
+            Self::List { limit } => self.handle_list(session, limit),
+            Self::Clean => self.handle_clean(os, session).await,
+            Self::Expand { ref tag } => self.handle_expand(session, tag.clone()),
+            Self::Diff { ref tag1, ref tag2 } => self.handle_diff(session, tag1.clone(), tag2.clone()),
+        }
+    }
+
+    async fn handle_init(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        if session.conversation.capture_manager.is_some() {
+            execute!(
+                session.stderr,
+                style::Print("✓ Captures are already enabled for this session\n".blue())
+            )?;
+        } else {
+            let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
+                .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+
+            let start = std::time::Instant::now();
+            session.conversation.capture_manager = Some(
+                CaptureManager::manual_init(os, path)
+                    .await
+                    .map_err(|e| ChatError::Custom(format!("Captures could not be initialized: {e}").into()))?,
+            );
+
+            execute!(
+                session.stderr,
+                style::Print(
+                    format!("✓ Captures enabled ({:.2}s)\n", start.elapsed().as_secs_f32())
+                        .blue()
+                        .bold()
+                )
+            )?;
         }
 
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    async fn handle_restore(
+        &self,
+        session: &mut ChatSession,
+        tag: Option<String>,
+        hard: bool,
+    ) -> Result<ChatState, ChatError> {
+        // Take manager out temporarily to avoid borrow issues
         let Some(manager) = session.conversation.capture_manager.take() else {
             execute!(
                 session.stderr,
-                style::Print("Captures are not enabled for this session\n".blue())
+                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
             });
         };
 
-        match self {
-            Self::Init => (),
-            Self::Restore { tag, hard } => {
-                let tag = if let Some(tag) = tag {
-                    tag
-                } else {
-                    // If the user doesn't provide a tag, allow them to fuzzy select a capture
-                    let display_entries = match gather_all_turn_captures(&manager) {
-                        Ok(entries) => entries,
-                        Err(e) => {
-                            session.conversation.capture_manager = Some(manager);
-                            return Err(ChatError::Custom(format!("Error getting captures: {e}\n").into()));
-                        },
-                    };
-                    if let Some(index) = fuzzy_select_captures(&display_entries, "Select a capture to restore:") {
-                        if index < display_entries.len() {
-                            display_entries[index].tag.clone()
-                        } else {
-                            session.conversation.capture_manager = Some(manager);
-                            return Err(ChatError::Custom(
-                                format!("Selecting capture with index {index} failed\n").into(),
-                            ));
-                        }
+        let tag_result = if let Some(tag) = tag {
+            Ok(tag)
+        } else {
+            // Interactive selection
+            match gather_turn_captures(&manager) {
+                Ok(entries) => {
+                    if let Some(idx) = select_capture(&entries, "Select checkpoint to restore:") {
+                        Ok(entries[idx].tag.clone())
                     } else {
-                        session.conversation.capture_manager = Some(manager);
-                        return Ok(ChatState::PromptUser {
-                            skip_printing_tools: true,
-                        });
+                        Err(())
                     }
-                };
-                let result = manager.restore_capture(&mut session.conversation, &tag, hard);
-                match result {
-                    Ok(_) => {
-                        execute!(
-                            session.stderr,
-                            style::Print(format!("Restored capture: {tag}\n").blue().bold())
-                        )?;
-                    },
-                    Err(e) => {
-                        session.conversation.capture_manager = Some(manager);
-                        return Err(ChatError::Custom(format!("Could not restore capture: {}", e).into()));
-                    },
-                }
-            },
-            Self::List { limit } => match print_turn_captures(&manager, &mut session.stderr, limit) {
-                Ok(_) => (),
+                },
                 Err(e) => {
                     session.conversation.capture_manager = Some(manager);
-                    return Err(ChatError::Custom(format!("Could not display all captures: {e}").into()));
+                    return Err(ChatError::Custom(format!("Failed to gather captures: {}", e).into()));
                 },
-            },
-            Self::Clean {} => {
-                match manager.clean(os).await {
-                    Ok(()) => execute!(
-                        session.stderr,
-                        style::Print("Deleted shadow repository for this session.\n".bold())
-                    )?,
-                    Err(e) => {
-                        session.conversation.capture_manager = None;
-                        return Err(ChatError::Custom(format!("Could not delete shadow repo: {e}").into()));
-                    },
-                }
-                session.conversation.capture_manager = None;
+            }
+        };
+
+        let tag = match tag_result {
+            Ok(tag) => tag,
+            Err(_) => {
+                session.conversation.capture_manager = Some(manager);
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
                 });
             },
-            Self::Expand { tag } => match expand_capture(&manager, &mut session.stderr, tag.clone()) {
-                Ok(_) => (),
-                Err(e) => {
-                    session.conversation.capture_manager = Some(manager);
-                    return Err(ChatError::Custom(
-                        format!("Could not expand checkpoint with tag {}: {e}", tag).into(),
-                    ));
-                },
+        };
+
+        match manager.restore(&mut session.conversation, &tag, hard) {
+            Ok(_) => {
+                execute!(
+                    session.stderr,
+                    style::Print(format!("✓ Restored to checkpoint {}\n", tag).blue().bold())
+                )?;
+                session.conversation.capture_manager = Some(manager);
             },
-            Self::Diff { tag1, tag2 } => {
-                // if only provide tag1, compare with current status
-                let to_tag = tag2.unwrap_or_else(|| "HEAD".to_string());
-
-                let tag_missing = |t: &str| t != "HEAD" && !manager.tag_to_index.contains_key(t);
-                if tag_missing(&tag1) {
-                    execute!(
-                        session.stderr,
-                        style::Print(
-                            format!(
-                                "Capture with tag '{}' does not exist! Use /capture list to see available captures\n",
-                                tag1
-                            )
-                            .blue()
-                        )
-                    )?;
-                    session.conversation.capture_manager = Some(manager);
-                    return Ok(ChatState::PromptUser {
-                        skip_printing_tools: true,
-                    });
-                }
-                if tag_missing(&to_tag) {
-                    execute!(
-                        session.stderr,
-                        style::Print(
-                            format!(
-                                "Capture with tag '{}' does not exist! Use /capture list to see available captures\n",
-                                to_tag
-                            )
-                            .blue()
-                        )
-                    )?;
-                    session.conversation.capture_manager = Some(manager);
-                    return Ok(ChatState::PromptUser {
-                        skip_printing_tools: true,
-                    });
-                }
-
-                let comparison_text = if to_tag == "HEAD" {
-                    format!("Comparing current state with checkpoint [{}]:\n", tag1)
-                } else {
-                    format!("Comparing checkpoint [{}] with [{}]:\n", tag1, to_tag)
-                };
-                execute!(session.stderr, style::Print(comparison_text.blue()))?;
-                match manager.diff_detailed(&tag1, &to_tag) {
-                    Ok(diff) => {
-                        if diff.trim().is_empty() {
-                            execute!(session.stderr, style::Print("No differences.\n".dark_grey()))?;
-                        } else {
-                            execute!(session.stderr, style::Print(diff))?;
-                        }
-                    },
-                    Err(e) => {
-                        return {
-                            session.conversation.capture_manager = Some(manager);
-                            Err(ChatError::Custom(format!("Could not display diff: {e}").into()))
-                        };
-                    },
-                }
+            Err(e) => {
+                session.conversation.capture_manager = Some(manager);
+                return Err(ChatError::Custom(format!("Failed to restore: {}", e).into()));
             },
         }
 
-        session.conversation.capture_manager = Some(manager);
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    fn handle_list(&self, session: &mut ChatSession, limit: Option<usize>) -> Result<ChatState, ChatError> {
+        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+            execute!(
+                session.stderr,
+                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        print_captures(manager, &mut session.stderr, limit)
+            .map_err(|e| ChatError::Custom(format!("Could not display all captures: {}", e).into()))?;
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    async fn handle_clean(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let Some(manager) = session.conversation.capture_manager.take() else {
+            execute!(session.stderr, style::Print("⚠ Captures not enabled.\n".yellow()))?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        match manager.cleanup(os).await {
+            Ok(()) => {
+                execute!(session.stderr, style::Print("✓ Shadow repository deleted.\n".bold()))?;
+            },
+            Err(e) => {
+                session.conversation.capture_manager = Some(manager);
+                return Err(ChatError::Custom(format!("Failed to clean: {e}").into()));
+            },
+        }
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    fn handle_expand(&self, session: &mut ChatSession, tag: String) -> Result<ChatState, ChatError> {
+        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+            execute!(
+                session.stderr,
+                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        expand_capture(manager, &mut session.stderr, &tag)
+            .map_err(|e| ChatError::Custom(format!("Failed to expand capture: {}", e).into()))?;
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    fn handle_diff(
+        &self,
+        session: &mut ChatSession,
+        tag1: String,
+        tag2: Option<String>,
+    ) -> Result<ChatState, ChatError> {
+        let Some(manager) = session.conversation.capture_manager.as_ref() else {
+            execute!(
+                session.stderr,
+                style::Print("⚠ Captures not enabled. Use '/capture init' to enable.\n".yellow())
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        let tag2 = tag2.unwrap_or_else(|| "HEAD".to_string());
+
+        // Validate tags exist
+        if tag1 != "HEAD" && !manager.tag_index.contains_key(&tag1) {
+            execute!(
+                session.stderr,
+                style::Print(format!("⚠ Checkpoint '{}' not found\n", tag1).yellow())
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        if tag2 != "HEAD" && !manager.tag_index.contains_key(&tag2) {
+            execute!(
+                session.stderr,
+                style::Print(format!("⚠ Checkpoint '{}' not found\n", tag2).yellow())
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        let header = if tag2 == "HEAD" {
+            format!("Changes since checkpoint {}:\n", tag1)
+        } else {
+            format!("Changes from {} to {}:\n", tag1, tag2)
+        };
+
+        execute!(session.stderr, style::Print(header.blue()))?;
+
+        match manager.diff(&tag1, &tag2) {
+            Ok(diff) => {
+                if diff.trim().is_empty() {
+                    execute!(session.stderr, style::Print("No changes.\n".dark_grey()))?;
+                } else {
+                    execute!(session.stderr, style::Print(diff))?;
+                }
+            },
+            Err(e) => {
+                return Err(ChatError::Custom(format!("Failed to generate diff: {e}").into()));
+            },
+        }
+
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
     }
 }
 
-// ------------------------------ formatting helpers ------------------------------
-pub struct CaptureDisplayEntry {
-    pub tag: String,
-    pub display_parts: Vec<StyledContent<String>>,
+// Display helpers
+
+struct CaptureDisplay {
+    tag: String,
+    parts: Vec<StyledContent<String>>,
 }
 
-impl TryFrom<&Capture> for CaptureDisplayEntry {
-    type Error = eyre::Report;
-
-    fn try_from(value: &Capture) -> std::result::Result<Self, Self::Error> {
-        let tag = value.tag.clone();
+impl CaptureDisplay {
+    fn from_capture(capture: &Capture, manager: &CaptureManager) -> Result<Self, eyre::Report> {
         let mut parts = Vec::new();
-        // Keep exact original UX: turn lines start with "[tag] TIMESTAMP - message"
-        // tool lines start with "[tag] TOOL_NAME: message"
-        parts.push(format!("[{tag}] ",).blue());
-        if value.is_turn {
-            parts.push(format!("{} - {}", value.timestamp.format("%Y-%m-%d %H:%M:%S"), value.message).reset());
-        } else {
+
+        // Tag
+        parts.push(format!("[{}] ", capture.tag).blue());
+
+        // Content
+        if capture.is_turn {
+            // Turn capture: show timestamp and description
             parts.push(
                 format!(
-                    "{}: ",
-                    value.tool_name.clone().unwrap_or("No tool provided".to_string())
+                    "{} - {}",
+                    capture.timestamp.format("%Y-%m-%d %H:%M:%S"),
+                    capture.description
                 )
-                .magenta(),
+                .reset(),
             );
-            parts.push(value.message.clone().reset());
+
+            // Add file stats if available
+            if let Some(stats) = manager.file_stats_cache.get(&capture.tag) {
+                let stats_str = format_stats(stats);
+                if !stats_str.is_empty() {
+                    parts.push(format!(" ({})", stats_str).dark_grey());
+                }
+            }
+        } else {
+            // Tool capture: show tool name and description
+            let tool_name = capture.tool_name.clone().unwrap_or_else(|| "Tool".to_string());
+            parts.push(format!("{}: ", tool_name).magenta());
+            parts.push(capture.description.clone().reset());
         }
 
         Ok(Self {
-            tag,
-            display_parts: parts,
+            tag: capture.tag.clone(),
+            parts,
         })
     }
 }
 
-impl CaptureDisplayEntry {
-    /// Attach cached or computed file stats to a *turn-level* display line.
-    /// (For `/capture list` we append stats to turn rows only, keeping original UX.)
-    fn with_file_stats(capture: &Capture, manager: &CaptureManager) -> Result<Self> {
-        let mut entry = Self::try_from(capture)?;
-
-        let stats_opt = manager
-            .file_changes
-            .get(&capture.tag)
-            .cloned()
-            .or_else(|| manager.get_file_changes(&capture.tag).ok());
-
-        if let Some(stats) = stats_opt.as_ref() {
-            let stats_str = format_file_stats(stats);
-            if !stats_str.is_empty() {
-                entry.display_parts.push(format!(" ({})", stats_str).dark_grey());
-            }
-        }
-        Ok(entry)
-    }
-}
-
-fn format_file_stats(stats: &FileChangeStats) -> String {
-    // Keep wording to avoid UX drift:
-    // "+N files, modified M, -K files"
-    let mut parts = Vec::new();
-    if stats.added > 0 {
-        parts.push(format!(
-            "+{} file{}",
-            stats.added,
-            if stats.added == 1 { "" } else { "s" }
-        ));
-    }
-    if stats.modified > 0 {
-        parts.push(format!("modified {}", stats.modified));
-    }
-    if stats.deleted > 0 {
-        parts.push(format!(
-            "-{} file{}",
-            stats.deleted,
-            if stats.deleted == 1 { "" } else { "s" }
-        ));
-    }
-
-    parts.join(", ")
-}
-
-impl std::fmt::Display for CaptureDisplayEntry {
+impl std::fmt::Display for CaptureDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for part in self.display_parts.iter() {
+        for part in &self.parts {
             write!(f, "{}", part)?;
         }
         Ok(())
     }
 }
 
-fn print_turn_captures(manager: &CaptureManager, output: &mut impl Write, limit: Option<usize>) -> Result<()> {
-    let display_entries = gather_all_turn_captures(manager)?;
-    for entry in display_entries.iter().take(limit.unwrap_or(display_entries.len())) {
-        execute!(output, style::Print(entry), style::Print("\n"))?;
+fn format_stats(stats: &FileStats) -> String {
+    let mut parts = Vec::new();
+
+    if stats.added > 0 {
+        parts.push(format!("+{}", stats.added));
     }
+    if stats.modified > 0 {
+        parts.push(format!("~{}", stats.modified));
+    }
+    if stats.deleted > 0 {
+        parts.push(format!("-{}", stats.deleted));
+    }
+
+    parts.join(" ")
+}
+
+fn gather_turn_captures(manager: &CaptureManager) -> Result<Vec<CaptureDisplay>, eyre::Report> {
+    manager
+        .captures
+        .iter()
+        .filter(|c| c.is_turn)
+        .map(|c| CaptureDisplay::from_capture(c, manager))
+        .collect()
+}
+
+fn print_captures(manager: &CaptureManager, output: &mut impl Write, limit: Option<usize>) -> Result<(), eyre::Report> {
+    let entries = gather_turn_captures(manager)?;
+    let limit = limit.unwrap_or(entries.len());
+
+    for entry in entries.iter().take(limit) {
+        execute!(output, style::Print(&entry), style::Print("\n"))?;
+    }
+
     Ok(())
 }
 
-fn gather_all_turn_captures(manager: &CaptureManager) -> Result<Vec<CaptureDisplayEntry>> {
-    let mut displays = Vec::new();
-    for capture in manager.captures.iter() {
-        if !capture.is_turn {
-            continue;
-        }
-        displays.push(CaptureDisplayEntry::with_file_stats(capture, manager)?);
-    }
-    Ok(displays)
-}
-
-/// Expand a turn-level checkpoint:
-fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: String) -> Result<()> {
-    let capture_index = match manager.tag_to_index.get(&tag) {
-        Some(i) => i,
-        None => {
-            execute!(
-                output,
-                style::Print(
-                    format!("Capture with tag '{tag}' does not exist! Use /capture list to see available captures\n")
-                        .blue()
-                )
-            )?;
-            return Ok(());
-        },
+fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) -> Result<(), eyre::Report> {
+    let Some(&idx) = manager.tag_index.get(tag) else {
+        execute!(
+            output,
+            style::Print(format!("⚠ Checkpoint '{}' not found\n", tag).yellow())
+        )?;
+        return Ok(());
     };
-    let capture = &manager.captures[*capture_index];
-    // Turn header: do NOT show file stats here
-    let display_entry = CaptureDisplayEntry::try_from(capture)?;
-    execute!(output, style::Print(display_entry), style::Print("\n"))?;
 
-    // If the user tries to expand a tool-level checkpoint, return early
+    let capture = &manager.captures[idx];
+
+    // Print main capture
+    let display = CaptureDisplay::from_capture(capture, manager)?;
+    execute!(output, style::Print(&display), style::Print("\n"))?;
+
     if !capture.is_turn {
         return Ok(());
-    } else {
-        // Collect tool-level entries with their indices so we can diff against the previous capture.
-        let mut items: Vec<(usize, CaptureDisplayEntry)> = Vec::new();
-        for i in (0..*capture_index).rev() {
-            let c = &manager.captures[i];
-            if c.is_turn {
-                break;
-            }
-            items.push((i, CaptureDisplayEntry::try_from(c)?));
+    }
+
+    // Print tool captures for this turn
+    let mut tool_captures = Vec::new();
+    for i in (0..idx).rev() {
+        let c = &manager.captures[i];
+        if c.is_turn {
+            break;
+        }
+        tool_captures.push((i, CaptureDisplay::from_capture(c, manager)?));
+    }
+
+    for (capture_idx, display) in tool_captures.iter().rev() {
+        // Compute stats for this tool
+        let curr_tag = &manager.captures[*capture_idx].tag;
+        let prev_tag = if *capture_idx > 0 {
+            &manager.captures[capture_idx - 1].tag
+        } else {
+            "0"
+        };
+
+        let stats_str = manager
+            .compute_stats_between(prev_tag, curr_tag)
+            .map(|s| format_stats(&s))
+            .unwrap_or_default();
+
+        execute!(output, style::Print(" └─ ".blue()), style::Print(display))?;
+
+        if !stats_str.is_empty() {
+            execute!(output, style::Print(format!(" ({})", stats_str).dark_grey()))?;
         }
 
-        for (idx, entry) in items.iter().rev() {
-            // previous capture in creation order (or itself if 0)
-            let base_idx = idx.saturating_sub(1);
-            let base_tag = &manager.captures[base_idx].tag;
-            let curr_tag = &manager.captures[*idx].tag;
-            // compute stats between previous capture -> this tool capture
-            let badge = manager
-                .get_file_changes_between(base_tag, curr_tag)
-                .map_or_else(|_| String::new(), |s| format_file_stats(&s));
-
-            if badge.is_empty() {
-                execute!(
-                    output,
-                    style::Print(" └─ ".blue()),
-                    style::Print(entry),
-                    style::Print("\n")
-                )?;
-            } else {
-                execute!(
-                    output,
-                    style::Print(" └─ ".blue()),
-                    style::Print(entry),
-                    style::Print(format!(" ({})", badge).dark_grey()),
-                    style::Print("\n")
-                )?;
-            }
-        }
+        execute!(output, style::Print("\n"))?;
     }
 
     Ok(())
 }
 
-fn fuzzy_select_captures(entries: &[CaptureDisplayEntry], prompt_str: &str) -> Option<usize> {
+fn select_capture(entries: &[CaptureDisplay], prompt: &str) -> Option<usize> {
     Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt(prompt_str)
+        .with_prompt(prompt)
         .items(entries)
         .report(false)
         .interact_opt()
