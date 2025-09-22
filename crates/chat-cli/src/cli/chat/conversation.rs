@@ -276,7 +276,7 @@ impl ConversationState {
     /// Exit tangent mode and preserve the last conversation entry (user + assistant)
     pub fn exit_tangent_mode_with_tail(&mut self) {
         if let Some(checkpoint) = self.tangent_state.take() {
-            // Checkpoint the last history entry from tangent conversation if it exists
+            // Capture the last history entry from tangent conversation if it exists
             // and if it's different from what was in the main conversation
             let last_entry = if self.history.len() > checkpoint.main_history.len() {
                 self.history.back().cloned()
