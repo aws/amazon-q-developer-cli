@@ -1329,7 +1329,7 @@ impl ChatSession {
             }
         }
 
-        // Initialize checkpointing if possible
+        // Initialize capturing if possible
         let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
         let start = std::time::Instant::now();
         let capture_manager = match CaptureManager::auto_init(os, &path).await {
@@ -2347,8 +2347,17 @@ impl ChatSession {
                 // Take manager out temporarily to avoid borrow conflicts
                 if let Some(mut manager) = self.conversation.capture_manager.take() {
                     // Check if there are uncommitted changes
-                    let has_changes = manager.has_changes().unwrap_or(true);
-
+                    let has_changes = match manager.has_changes() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n").yellow())
+                            )?;
+                            execute!(self.stderr, style::Print("Saving anyways...\n".yellow()))?;
+                            true
+                        },
+                    };
                     let tag = if has_changes {
                         // Generate tag for this tool use
                         let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
@@ -2861,12 +2870,12 @@ impl ChatSession {
                     if let Err(e) = manager.create_capture(&tag, &description, history_len, true, None) {
                         execute!(
                             self.stderr,
-                            style::Print(format!("⚠ Could not create capture: {}\n\n", e).yellow())
+                            style::Print(format!("⚠ Could not create automatic capture: {}\n\n", e).yellow())
                         )?;
                     } else {
                         execute!(
                             self.stderr,
-                            style::Print(format!("✓ Created checkpoint {}\n\n", tag).blue().bold())
+                            style::Print(format!("✓ Created capture {}\n\n", tag).blue().bold())
                         )?;
                     }
 

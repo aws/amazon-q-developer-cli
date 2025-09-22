@@ -29,29 +29,29 @@ pub enum CaptureSubcommand {
     /// Initialize captures manually
     Init,
 
-    /// Restore workspace to a checkpoint
+    /// Restore workspace to a capture
     #[command(
-        about = "Restore workspace to a checkpoint",
-        long_about = r#"Restore files to a checkpoint <tag>. If <tag> is omitted, you'll pick one interactively.
+        about = "Restore workspace to a capture",
+        long_about = r#"Restore files to a capture <tag>. If <tag> is omitted, you'll pick one interactively.
 
 Default mode:
   • Restores tracked file changes
-  • Keeps new files created after the checkpoint
+  • Keeps new files created after the capture
 
 With --hard:
-  • Exactly matches the checkpoint state
-  • Removes files created after the checkpoint"#
+  • Exactly matches the capture state
+  • Removes files created after the capture"#
     )]
     Restore {
-        /// Checkpoint tag (e.g., 3 or 3.1). Leave empty to select interactively.
+        /// Capture tag (e.g., 3 or 3.1). Leave empty to select interactively.
         tag: Option<String>,
 
-        /// Exactly match checkpoint state (removes newer files)
+        /// Exactly match capture state (removes newer files)
         #[arg(long)]
         hard: bool,
     },
 
-    /// List all checkpoints
+    /// List all captures
     List {
         /// Limit number of results shown
         #[arg(short, long)]
@@ -61,18 +61,18 @@ With --hard:
     /// Delete the shadow repository
     Clean,
 
-    /// Show details of a checkpoint
+    /// Show details of a capture
     Expand {
-        /// Checkpoint tag to expand
+        /// Capture tag to expand
         tag: String,
     },
 
-    /// Show differences between checkpoints
+    /// Show differences between captures
     Diff {
-        /// First checkpoint tag
+        /// First capture tag
         tag1: String,
 
-        /// Second checkpoint tag (defaults to current state)
+        /// Second capture tag (defaults to current state)
         #[arg(required = false)]
         tag2: Option<String>,
     },
@@ -94,7 +94,10 @@ impl CaptureSubcommand {
         if session.conversation.capture_manager.is_some() {
             execute!(
                 session.stderr,
-                style::Print("✓ Captures are already enabled for this session\n".blue())
+                style::Print(
+                    "✓ Captures are already enabled for this session! Use /capture list to see current captures.\n"
+                        .blue()
+                )
             )?;
         } else {
             let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
@@ -110,7 +113,7 @@ impl CaptureSubcommand {
             execute!(
                 session.stderr,
                 style::Print(
-                    format!("✓ Captures enabled ({:.2}s)\n", start.elapsed().as_secs_f32())
+                    format!("✓ Captures are enabled! (took {:.2}s)\n", start.elapsed().as_secs_f32())
                         .blue()
                         .bold()
                 )
@@ -145,7 +148,7 @@ impl CaptureSubcommand {
             // Interactive selection
             match gather_turn_captures(&manager) {
                 Ok(entries) => {
-                    if let Some(idx) = select_capture(&entries, "Select checkpoint to restore:") {
+                    if let Some(idx) = select_capture(&entries, "Select capture to restore:") {
                         Ok(entries[idx].tag.clone())
                     } else {
                         Err(())
@@ -172,7 +175,7 @@ impl CaptureSubcommand {
             Ok(_) => {
                 execute!(
                     session.stderr,
-                    style::Print(format!("✓ Restored to checkpoint {}\n", tag).blue().bold())
+                    style::Print(format!("✓ Restored to capture {}\n", tag).blue().bold())
                 )?;
                 session.conversation.capture_manager = Some(manager);
             },
@@ -214,9 +217,18 @@ impl CaptureSubcommand {
             });
         };
 
+        // Print the path that will be deleted
+        execute!(
+            session.stderr,
+            style::Print(format!("Deleting: {}\n", manager.shadow_repo_path.display()))
+        )?;
+
         match manager.cleanup(os).await {
             Ok(()) => {
-                execute!(session.stderr, style::Print("✓ Shadow repository deleted.\n".bold()))?;
+                execute!(
+                    session.stderr,
+                    style::Print("✓ Deleted shadow repository for this session.\n".bold())
+                )?;
             },
             Err(e) => {
                 session.conversation.capture_manager = Some(manager);
@@ -270,7 +282,13 @@ impl CaptureSubcommand {
         if tag1 != "HEAD" && !manager.tag_index.contains_key(&tag1) {
             execute!(
                 session.stderr,
-                style::Print(format!("⚠ Checkpoint '{}' not found\n", tag1).yellow())
+                style::Print(
+                    format!(
+                        "⚠ Capture '{}' not found! Use /capture list to see available captures\n",
+                        tag1
+                    )
+                    .yellow()
+                )
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -280,7 +298,13 @@ impl CaptureSubcommand {
         if tag2 != "HEAD" && !manager.tag_index.contains_key(&tag2) {
             execute!(
                 session.stderr,
-                style::Print(format!("⚠ Checkpoint '{}' not found\n", tag2).yellow())
+                style::Print(
+                    format!(
+                        "⚠ Capture '{}' not found! Use /capture list to see available captures\n",
+                        tag2
+                    )
+                    .yellow()
+                )
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -288,7 +312,7 @@ impl CaptureSubcommand {
         }
 
         let header = if tag2 == "HEAD" {
-            format!("Changes since checkpoint {}:\n", tag1)
+            format!("Changes since capture {}:\n", tag1)
         } else {
             format!("Changes from {} to {}:\n", tag1, tag2)
         };
@@ -410,7 +434,7 @@ fn expand_capture(manager: &CaptureManager, output: &mut impl Write, tag: &str) 
     let Some(&idx) = manager.tag_index.get(tag) else {
         execute!(
             output,
-            style::Print(format!("⚠ Checkpoint '{}' not found\n", tag).yellow())
+            style::Print(format!("⚠ capture '{}' not found\n", tag).yellow())
         )?;
         return Ok(());
     };
