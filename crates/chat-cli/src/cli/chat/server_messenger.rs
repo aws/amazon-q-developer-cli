@@ -1,12 +1,6 @@
-use crossterm::style::Color;
-use crossterm::{
-    execute,
-    style,
-};
 use rmcp::model::{
     CreateElicitationRequestParam,
     CreateElicitationResult,
-    ElicitationAction,
     ListPromptsResult,
     ListResourceTemplatesResult,
     ListResourcesResult,
@@ -21,6 +15,7 @@ use tokio::sync::mpsc::{
     Sender,
     channel,
 };
+use tokio::sync::oneshot;
 
 use crate::mcp_client::messenger::{
     Messenger,
@@ -61,6 +56,11 @@ pub enum UpdateEventMessage {
     },
     Deinit {
         server_name: String,
+    },
+    ElicitationRequest {
+        server_name: String,
+        request: CreateElicitationRequestParam,
+        response_sender: tokio::sync::oneshot::Sender<CreateElicitationResult>,
     },
 }
 
@@ -191,84 +191,18 @@ impl Messenger for ServerMessenger {
         &self,
         request: CreateElicitationRequestParam,
     ) -> core::result::Result<CreateElicitationResult, MessengerError> {
-        use std::io::{
-            self,
-            Write,
-        };
-
-        let _ = execute!(
-            std::io::stdout(),
-            style::Print("\nMCP server "),
-            style::SetForegroundColor(Color::Magenta),
-            style::Print(&self.server_name),
-            style::SetForegroundColor(Color::Reset),
-            style::Print(" is requesting information\n")
-        );
-        println!("{}", request.message);
-        println!();
-
-        let mut content = std::collections::HashMap::new();
-
-        if let Some(properties) = request.requested_schema.get("properties").and_then(|p| p.as_object()) {
-            for (key, _property) in properties {
-                print!("  {}: ", key);
-                if let Err(e) = io::stdout().flush() {
-                    return Err(MessengerError::Custom(e.to_string()));
-                }
-
-                let mut input = String::new();
-                if let Err(e) = io::stdin().read_line(&mut input) {
-                    return Err(MessengerError::Custom(e.to_string()));
-                }
-                let input = input.trim();
-
-                if !input.is_empty() {
-                    content.insert(key.clone(), serde_json::Value::String(input.to_string()));
-                }
-            }
-        }
-
-        let _ = execute!(
-            io::stdout(),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print("\nSubmit this information? ["),
-            style::SetForegroundColor(Color::Green),
-            style::Print("y"),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print("/"),
-            style::SetForegroundColor(Color::Green),
-            style::Print("n"),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print("]: "),
-            style::SetForegroundColor(Color::Reset),
-        );
-
-        if let Err(e) = io::stdout().flush() {
-            return Err(MessengerError::Custom(e.to_string()));
-        }
-
-        let mut confirmation = String::new();
-        if let Err(e) = io::stdin().read_line(&mut confirmation) {
-            return Err(MessengerError::Custom(e.to_string()));
-        }
-
-        let action = match confirmation.trim().to_lowercase().as_str() {
-            "y" | "yes" => ElicitationAction::Accept,
-            "n" | "no" => ElicitationAction::Decline,
-            "" => ElicitationAction::Cancel,
-            _ => ElicitationAction::Cancel,
-        };
-
-        let content_value = if matches!(action, ElicitationAction::Accept) {
-            Some(serde_json::to_value(content).unwrap_or_default())
-        } else {
-            None
-        };
-
-        Ok(CreateElicitationResult {
-            action,
-            content: content_value,
-        })
+        let (response_sender, response_receiver) = oneshot::channel();
+        
+        let sender = self.update_event_sender.clone();
+        let server_name = self.server_name.clone();
+        
+        sender.send(UpdateEventMessage::ElicitationRequest {
+            server_name,
+            request,
+            response_sender,
+        }).await.map_err(|e| MessengerError::Custom(e.to_string()))?;
+        
+        response_receiver.await.map_err(|e| MessengerError::Custom(e.to_string()))
     }
 
     fn duplicate(&self) -> Box<dyn Messenger> {
