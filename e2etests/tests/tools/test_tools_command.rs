@@ -77,7 +77,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools command... | Description: Tests the <code>/tools</code> command to display all available tools with their permission status including built-in and MCP tools");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools")?;
     
@@ -132,7 +132,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools --help command... | Description: Tests the <code> /tools --help</code> command to display comprehensive help information about tools management including available subcommands and options");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools --help")?;
     
@@ -178,7 +178,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust-all command... | Description: Tests the <code> /tools trust-all</code> command to trust all available tools and verify all tools show trusted status, then tests reset functionality");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute trust-all command
     let trust_all_response = chat.execute_command("/tools trust-all")?;
@@ -258,7 +258,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
     println!("\n🔍 Testing /tools trust-all --help command... | Description: Tests the <code> /tools trust-all --help</code>command to display help information for the trust-all subcommand");
   
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools trust-all --help")?;
     
@@ -294,7 +294,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools reset --help command... | Description: Tests the <code> /tools reset --help</code> command to display help information for the reset subcommand");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools reset --help")?;
     
@@ -329,7 +329,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust command... | Description: Tests the <code> /tools</code> trust and untrust commands to manage individual tool permissions and verify trust status changes");
   
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First get list of tools to find one that's not trusted
     let tools_response = chat.execute_command("/tools")?;
@@ -407,7 +407,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust --help command... | Description: Tests the <code>/tools trust --help</code> command to display help information for trusting specific tools");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/tools trust --help")?;
     
@@ -446,7 +446,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools untrust --help command... | Description: Tests the <code>/tools untrust --help</code> command to display help information for untrusting specific tools");
 
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools untrust --help")?;
     
@@ -485,7 +485,7 @@ fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools schema --help command... | Description: Tests the <code>/tools schema --help</code> command to display help information for viewing tool schemas");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools schema --help")?;
     
@@ -520,8 +520,7 @@ fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools schema command...");
   
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
-
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let response = chat.execute_command("/tools schema")?;
     
     println!("📝 Tools schema response: {} bytes", response.len());
@@ -580,7 +579,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     let _cleanup = FileCleanup { path: save_path };
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test fs_write tool by asking to create a file with "Hello World" content
     let response = chat.execute_command(&format!("Create a file at {} with content 'Hello World'", save_path))?;
@@ -651,7 +650,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `execute_bash` tool ... | Description: Tests the <code>execute_bash</code> tool by running the 'pwd' command and verifying proper command execution and output");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test execute_bash tool by asking to run pwd command
     let response = chat.execute_command("Run pwd")?;
@@ -690,7 +689,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `report_issue` tool ... | Description: Tests the <code> report_issue</code> reporting functionality by creating a sample issue and verifying the browser opens GitHub for issue submission");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test report_issue tool by asking to report an issue
     let response = chat.execute_command("Report an issue: 'File creation not working properly'")?;
@@ -725,7 +724,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `use_aws` tool ... | Description: Tests the <code>use_aws</code> tool by executing AWS commands to describe EC2 instances and verifying proper AWS CLI integration");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test use_aws tool by asking to describe EC2 instances in us-west-2
     let response = chat.execute_command("Describe EC2 instances in us-west-2")?;
@@ -760,7 +759,7 @@ fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::err
     println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description: Tests the ability to trust the <code>execute_bash</code> tool so it runs commands without asking for user confirmation each time");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First, trust the execute_bash tool
     let trust_response = chat.execute_command("/tools trust execute_bash")?;
