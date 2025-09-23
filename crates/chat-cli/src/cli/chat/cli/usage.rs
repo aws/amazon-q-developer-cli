@@ -265,6 +265,7 @@ impl UsageArgs {
                 }
             },
             Err(e) => {
+                tracing::error!(error = ?e, "Failed to load usage limits with full error");
                 queue!(
                     session.stderr,
                     style::SetForegroundColor(Color::Red),
