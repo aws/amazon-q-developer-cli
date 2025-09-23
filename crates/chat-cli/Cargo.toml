@@ -116,7 +116,6 @@ webpki-roots.workspace = true
 whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
-chrono.workspace = true
 jsonschema.workspace = true
 rmcp.workspace = true
 
