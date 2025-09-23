@@ -28,7 +28,6 @@ use crate::mcp_client::{
 };
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
-use crate::util::pattern_matching::matches_any_pattern;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -175,18 +174,12 @@ impl CustomTool {
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        let server_name = &self.server_name;
-
-        let server_pattern = format!("@{server_name}");
-        if agent.allowed_tools.contains(&server_pattern) {
-            return PermissionEvalResult::Allow;
+        use crate::util::tool_permission_checker::is_tool_allowed;
+        
+        if is_tool_allowed(&agent.allowed_tools, &self.name, Some(&self.server_name)) {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
         }
-
-        let tool_pattern = self.namespaced_tool_name();
-        if matches_any_pattern(&agent.allowed_tools, &tool_pattern) {
-            return PermissionEvalResult::Allow;
-        }
-
-        PermissionEvalResult::Ask
     }
 }
