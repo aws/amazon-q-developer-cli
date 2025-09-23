@@ -716,7 +716,7 @@ impl Agents {
 
             DEFAULT_AGENT_NAME.to_string()
         };
-
+        
         let _ = output.flush();
 
         // Post parsing validation here
@@ -776,32 +776,14 @@ impl Agents {
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
-        use crate::util::pattern_matching::matches_any_pattern;
+        use crate::util::tool_permission_checker::is_tool_allowed;
 
         let tool_trusted = self.get_active().is_some_and(|a| {
-            if matches!(origin, &ToolOrigin::Native) {
-                return matches_any_pattern(&a.allowed_tools, tool_name);
-            }
-
-            a.allowed_tools.iter().any(|name| {
-                name.strip_prefix("@").is_some_and(|remainder| {
-                    remainder
-                        .split_once(MCP_SERVER_TOOL_DELIMITER)
-                        .is_some_and(|(_left, right)| right == tool_name)
-                        || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
-                }) || {
-                    if let Some(server_name) = name.strip_prefix("@").and_then(|s| s.split('/').next()) {
-                        if server_name == <ToolOrigin as Borrow<str>>::borrow(origin) {
-                            let tool_pattern = format!("@{}/{}", server_name, tool_name);
-                            matches_any_pattern(&a.allowed_tools, &tool_pattern)
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                }
-            })
+            let server_name = match origin {
+                ToolOrigin::Native => None,
+                _ => Some(<ToolOrigin as Borrow<str>>::borrow(origin)),
+            };
+            is_tool_allowed(&a.allowed_tools, tool_name, server_name)
         });
 
         if tool_trusted || self.trust_all_tools {
