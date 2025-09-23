@@ -1,3 +1,4 @@
+use amzn_codewhisperer_client::types::Model;
 use clap::Args;
 use crossterm::style::{
     self,
@@ -8,11 +9,12 @@ use crossterm::{
     queue,
 };
 use dialoguer::Select;
-
-use crate::auth::builder_id::{
-    BuilderIdToken,
-    TokenType,
+use serde::{
+    Deserialize,
+    Serialize,
 };
+
+use crate::api_client::Endpoint;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -20,44 +22,83 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 
-pub struct ModelOption {
-    pub name: &'static str,
-    pub model_id: &'static str,
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelInfo {
+    /// Display name
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub model_name: Option<String>,
+    /// Actual model id to send in the API
+    pub model_id: String,
+    /// Size of the model's context window, in tokens
+    #[serde(default = "default_context_window")]
+    pub context_window_tokens: usize,
 }
 
-pub const MODEL_OPTIONS: [ModelOption; 2] = [
-    ModelOption {
-        name: "claude-4-sonnet",
-        model_id: "CLAUDE_SONNET_4_20250514_V1_0",
-    },
-    ModelOption {
-        name: "claude-3.7-sonnet",
-        model_id: "CLAUDE_3_7_SONNET_20250219_V1_0",
-    },
-];
+impl ModelInfo {
+    pub fn from_api_model(model: &Model) -> Self {
+        let context_window_tokens = model
+            .token_limits()
+            .and_then(|limits| limits.max_input_tokens())
+            .map_or(default_context_window(), |tokens| tokens as usize);
+        Self {
+            model_id: model.model_id().to_string(),
+            model_name: model.model_name().map(|s| s.to_string()),
+            context_window_tokens,
+        }
+    }
 
+    /// create a default model with only valid model_id（be compatoble with old stored model data）
+    pub fn from_id(model_id: String) -> Self {
+        Self {
+            model_id,
+            model_name: None,
+            context_window_tokens: 200_000,
+        }
+    }
+
+    pub fn display_name(&self) -> &str {
+        self.model_name.as_deref().unwrap_or(&self.model_id)
+    }
+}
+
+/// Command-line arguments for model selection operations
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ModelArgs;
-
 impl ModelArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        Ok(select_model(session)?.unwrap_or(ChatState::PromptUser {
+    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
             skip_printing_tools: false,
         }))
     }
 }
 
-pub fn select_model(session: &mut ChatSession) -> Result<Option<ChatState>, ChatError> {
+pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<ChatState>, ChatError> {
     queue!(session.stderr, style::Print("\n"))?;
-    let active_model_id = session.conversation.model.as_deref();
-    let labels: Vec<String> = MODEL_OPTIONS
+
+    // Fetch available models from service
+    let (models, _default_model) = get_available_models(os).await?;
+
+    if models.is_empty() {
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::Red),
+            style::Print("No models available\n"),
+            style::ResetColor
+        )?;
+        return Ok(None);
+    }
+
+    let active_model_id = session.conversation.model_info.as_ref().map(|m| m.model_id.as_str());
+
+    let labels: Vec<String> = models
         .iter()
-        .map(|opt| {
-            if (opt.model_id.is_empty() && active_model_id.is_none()) || Some(opt.model_id) == active_model_id {
-                format!("{} (active)", opt.name)
+        .map(|model| {
+            let display_name = model.display_name();
+            if Some(model.model_id.as_str()) == active_model_id {
+                format!("{} (active)", display_name)
             } else {
-                opt.name.to_owned()
+                display_name.to_owned()
             }
         })
         .collect();
@@ -83,14 +124,14 @@ pub fn select_model(session: &mut ChatSession) -> Result<Option<ChatState>, Chat
     queue!(session.stderr, style::ResetColor)?;
 
     if let Some(index) = selection {
-        let selected = &MODEL_OPTIONS[index];
-        let model_id_str = selected.model_id.to_string();
-        session.conversation.model = Some(model_id_str);
+        let selected = models[index].clone();
+        session.conversation.model_info = Some(selected.clone());
+        let display_name = selected.display_name();
 
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::Print(format!(" Using {}\n\n", selected.name)),
+            style::Print(format!(" Using {}\n\n", display_name)),
             style::ResetColor,
             style::SetForegroundColor(Color::Reset),
             style::SetBackgroundColor(Color::Reset),
@@ -104,23 +145,79 @@ pub fn select_model(session: &mut ChatSession) -> Result<Option<ChatState>, Chat
     }))
 }
 
-/// Returns Claude 3.7 for: Amazon IDC users, FRA region users
-/// Returns Claude 4.0 for: Builder ID users, other regions
-pub async fn default_model_id(os: &Os) -> &'static str {
-    // Check FRA region first
-    if let Ok(Some(profile)) = os.database.get_auth_profile() {
-        if profile.arn.split(':').nth(3) == Some("eu-central-1") {
-            return "CLAUDE_3_7_SONNET_20250219_V1_0";
-        }
-    }
+pub async fn get_model_info(model_id: &str, os: &Os) -> Result<ModelInfo, ChatError> {
+    let (models, _) = get_available_models(os).await?;
 
-    // Check if Amazon IDC user
-    if let Ok(Some(token)) = BuilderIdToken::load(&os.database).await {
-        if matches!(token.token_type(), TokenType::IamIdentityCenter) && token.is_amzn_user() {
-            return "CLAUDE_3_7_SONNET_20250219_V1_0";
-        }
-    }
+    models
+        .into_iter()
+        .find(|m| m.model_id == model_id)
+        .ok_or_else(|| ChatError::Custom(format!("Model '{}' not found", model_id).into()))
+}
 
-    // Default to 4.0
-    "CLAUDE_SONNET_4_20250514_V1_0"
+/// Get available models with caching support
+pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo), ChatError> {
+    let endpoint = Endpoint::configured_value(&os.database);
+    let region = endpoint.region().as_ref();
+
+    match os.client.get_available_models(region).await {
+        Ok(api_res) => {
+            let models: Vec<ModelInfo> = api_res.models.iter().map(ModelInfo::from_api_model).collect();
+            let default_model = ModelInfo::from_api_model(&api_res.default_model);
+
+            tracing::debug!("Successfully fetched {} models from API", models.len());
+            Ok((models, default_model))
+        },
+        // In case of API throttling or other errors, fall back to hardcoded models
+        Err(e) => {
+            tracing::error!("Failed to fetch models from API: {}, using fallback list", e);
+
+            let models = get_fallback_models();
+            let default_model = models[0].clone();
+
+            Ok((models, default_model))
+        },
+    }
+}
+
+/// Returns the context window length in tokens for the given model_id.
+/// Uses cached model data when available
+pub fn context_window_tokens(model_info: Option<&ModelInfo>) -> usize {
+    model_info.map_or_else(default_context_window, |m| m.context_window_tokens)
+}
+
+fn default_context_window() -> usize {
+    200_000
+}
+
+fn get_fallback_models() -> Vec<ModelInfo> {
+    vec![
+        ModelInfo {
+            model_name: Some("claude-sonnet-4".to_string()),
+            model_id: "claude-sonnet-4".to_string(),
+            context_window_tokens: 200_000,
+        },
+        ModelInfo {
+            model_name: Some("claude-3.7-sonnet".to_string()),
+            model_id: "claude-3.7-sonnet".to_string(),
+            context_window_tokens: 200_000,
+        },
+    ]
+}
+
+pub fn normalize_model_name(name: &str) -> &str {
+    match name {
+        "claude-4-sonnet" => "claude-sonnet-4",
+        // can add more mapping for backward compatibility
+        _ => name,
+    }
+}
+
+pub fn find_model<'a>(models: &'a [ModelInfo], name: &str) -> Option<&'a ModelInfo> {
+    let normalized = normalize_model_name(name);
+    models.iter().find(|m| {
+        m.model_name
+            .as_deref()
+            .is_some_and(|n| n.eq_ignore_ascii_case(normalized))
+            || m.model_id.eq_ignore_ascii_case(normalized)
+    })
 }

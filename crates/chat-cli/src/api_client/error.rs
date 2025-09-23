@@ -1,7 +1,9 @@
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenError;
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
+use amzn_codewhisperer_client::operation::get_profile::GetProfileError;
 use amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
+use amzn_codewhisperer_client::operation::list_available_models::ListAvailableModelsError;
 use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
 use amzn_codewhisperer_client::operation::send_telemetry_event::SendTelemetryEventError;
 pub use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError;
@@ -98,6 +100,15 @@ pub enum ApiClientError {
     // Get usgae limits error
     #[error("{}", SdkErrorDisplay(.0))]
     GetUsageLimits(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
+
+    #[error(transparent)]
+    ListAvailableModelsError(#[from] SdkError<ListAvailableModelsError, HttpResponse>),
+
+    #[error("No default model found in the ListAvailableModels API response")]
+    DefaultModelNotFound,
+
+    #[error(transparent)]
+    GetProfileError(#[from] SdkError<GetProfileError, HttpResponse>),
 }
 
 impl ApiClientError {
@@ -122,6 +133,9 @@ impl ApiClientError {
             Self::MonthlyLimitReached { status_code } => *status_code,
             Self::Credentials(_e) => None,
             Self::GetUsageLimits(e) => sdk_status_code(e),
+            Self::ListAvailableModelsError(e) => sdk_status_code(e),
+            Self::DefaultModelNotFound => None,
+            Self::GetProfileError(e) => sdk_status_code(e),
         }
     }
 }
@@ -148,6 +162,9 @@ impl ReasonCode for ApiClientError {
             Self::MonthlyLimitReached { .. } => "MonthlyLimitReached".to_string(),
             Self::Credentials(_) => "CredentialsError".to_string(),
             Self::GetUsageLimits(e) => sdk_error_code(e),
+            Self::ListAvailableModelsError(e) => sdk_error_code(e),
+            Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
+            Self::GetProfileError(e) => sdk_error_code(e),
         }
     }
 }
@@ -193,6 +210,14 @@ mod tests {
             )),
             ApiClientError::ListAvailableCustomizations(SdkError::service_error(
                 ListAvailableCustomizationsError::unhandled("<unhandled>"),
+                response(),
+            )),
+            ApiClientError::GetProfileError(SdkError::service_error(
+                GetProfileError::unhandled("<unhandled>"),
+                response(),
+            )),
+            ApiClientError::ListAvailableModelsError(SdkError::service_error(
+                ListAvailableModelsError::unhandled("<unhandled>"),
                 response(),
             )),
             ApiClientError::ListAvailableServices(SdkError::service_error(

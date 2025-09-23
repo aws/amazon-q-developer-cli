@@ -1,19 +1,23 @@
 mod credentials;
 pub mod customization;
+mod delay_interceptor;
 mod endpoints;
 mod error;
 pub mod model;
 mod opt_out;
 pub mod profile;
+mod retry_classifier;
 pub mod send_message_output;
-
 use std::sync::Arc;
 use std::time::Duration;
 
 use amzn_codewhisperer_client::Client as CodewhispererClient;
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
 use amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput;
+use amzn_codewhisperer_client::types::Origin::Cli;
 use amzn_codewhisperer_client::types::{
+    Model,
+    OptInFeatureToggle,
     OptOutPreference,
     ResourceType,
     SubscriptionStatus,
@@ -37,12 +41,14 @@ pub use error::ApiClientError;
 use parking_lot::Mutex;
 pub use profile::list_available_profiles;
 use serde_json::Map;
+use tokio::sync::RwLock;
 use tracing::{
     debug,
     error,
 };
 
 use crate::api_client::credentials::CredentialsChain;
+use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
@@ -71,6 +77,22 @@ pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-opto
 // TODO(bskiser): confirm timeout is updated to an appropriate value?
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
 
+pub const MAX_RETRY_DELAY_DURATION: Duration = Duration::from_secs(10);
+
+#[derive(Clone, Debug)]
+pub struct ModelListResult {
+    pub models: Vec<Model>,
+    pub default_model: Model,
+}
+
+impl From<ModelListResult> for (Vec<Model>, Model) {
+    fn from(v: ModelListResult) -> Self {
+        (v.models, v.default_model)
+    }
+}
+
+type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
+
 #[derive(Clone, Debug)]
 pub struct ApiClient {
     client: CodewhispererClient,
@@ -78,6 +100,7 @@ pub struct ApiClient {
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
+    model_cache: ModelCache,
 }
 
 impl ApiClient {
@@ -117,6 +140,7 @@ impl ApiClient {
                 sigv4_streaming_client: None,
                 mock_client: None,
                 profile: None,
+                model_cache: Arc::new(RwLock::new(None)),
             };
 
             if let Ok(json) = env.get("Q_MOCK_CHAT_RESPONSE") {
@@ -149,8 +173,10 @@ impl ApiClient {
                     .http_client(crate::aws_common::http_client::client())
                     .interceptor(OptOutInterceptor::new(database))
                     .interceptor(UserAgentOverrideInterceptor::new())
+                    .interceptor(DelayTrackingInterceptor::new())
                     .app_name(app_name())
                     .endpoint_url(endpoint.url())
+                    .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                     .stalled_stream_protection(stalled_stream_protection_config())
                     .build(),
                 ));
@@ -161,21 +187,30 @@ impl ApiClient {
                         .http_client(crate::aws_common::http_client::client())
                         .interceptor(OptOutInterceptor::new(database))
                         .interceptor(UserAgentOverrideInterceptor::new())
+                        .interceptor(DelayTrackingInterceptor::new())
                         .bearer_token_resolver(BearerResolver)
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())
+                        .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                         .stalled_stream_protection(stalled_stream_protection_config())
                         .build(),
                 ));
             },
         }
 
-        let profile = match database.get_auth_profile() {
-            Ok(profile) => profile,
-            Err(err) => {
-                error!("Failed to get auth profile: {err}");
-                None
-            },
+        // Check if using custom endpoint
+        let use_profile = !Self::is_custom_endpoint(database);
+        let profile = if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => profile,
+                Err(err) => {
+                    error!("Failed to get auth profile: {err}");
+                    None
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile ARN");
+            None
         };
 
         Ok(Self {
@@ -184,6 +219,7 @@ impl ApiClient {
             sigv4_streaming_client,
             mock_client: None,
             profile,
+            model_cache: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -235,6 +271,97 @@ impl ApiClient {
         }
 
         Ok(profiles)
+    }
+
+    pub async fn list_available_models(&self) -> Result<ModelListResult, ApiClientError> {
+        if cfg!(test) {
+            let m = Model::builder()
+                .model_id("model-1")
+                .description("Test Model 1")
+                .build()
+                .unwrap();
+
+            return Ok(ModelListResult {
+                models: vec![m.clone()],
+                default_model: m,
+            });
+        }
+
+        let mut models = Vec::new();
+        let mut default_model = None;
+        let request = self
+            .client
+            .list_available_models()
+            .set_origin(Some(Cli))
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+        let mut paginator = request.into_paginator().send();
+
+        while let Some(result) = paginator.next().await {
+            let models_output = result?;
+            models.extend(models_output.models().iter().cloned());
+
+            if default_model.is_none() {
+                default_model = Some(models_output.default_model().clone());
+            }
+        }
+        let default_model = default_model.ok_or_else(|| ApiClientError::DefaultModelNotFound)?;
+        Ok(ModelListResult { models, default_model })
+    }
+
+    pub async fn list_available_models_cached(&self) -> Result<ModelListResult, ApiClientError> {
+        {
+            let cache = self.model_cache.read().await;
+            if let Some(cached) = cache.as_ref() {
+                tracing::debug!("Returning cached model list");
+                return Ok(cached.clone());
+            }
+        }
+
+        tracing::debug!("Cache miss, fetching models from list_available_models API");
+        let result = self.list_available_models().await?;
+        {
+            let mut cache = self.model_cache.write().await;
+            *cache = Some(result.clone());
+        }
+        Ok(result)
+    }
+
+    pub async fn invalidate_model_cache(&self) {
+        let mut cache = self.model_cache.write().await;
+        *cache = None;
+        tracing::info!("Model cache invalidated");
+    }
+
+    pub async fn get_available_models(&self, _region: &str) -> Result<ModelListResult, ApiClientError> {
+        let res = self.list_available_models_cached().await?;
+        // TODO: Once we have access to gpt-oss, add back.
+        // if region == "us-east-1" {
+        //     let gpt_oss = Model::builder()
+        //         .model_id("OPENAI_GPT_OSS_120B_1_0")
+        //         .model_name("openai-gpt-oss-120b-preview")
+        //         .token_limits(TokenLimits::builder().max_input_tokens(128_000).build())
+        //         .build()
+        //         .map_err(ApiClientError::from)?;
+
+        //     models.push(gpt_oss);
+        // }
+
+        Ok(res)
+    }
+
+    pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
+        let request = self
+            .client
+            .get_profile()
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
+
+        let response = request.send().await?;
+        let mcp_enabled = response
+            .profile()
+            .opt_in_features()
+            .and_then(|features| features.mcp_configuration())
+            .is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
+        Ok(mcp_enabled)
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
@@ -290,36 +417,34 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
                 Err(err) => {
-                    use amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError as OperationThrottlingError;
-                    use amzn_codewhisperer_streaming_client::types::ThrottlingExceptionReason;
-                    use amzn_codewhisperer_streaming_client::types::error::ThrottlingError;
-
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
                     let is_quota_breach = status_code.is_some_and(|status| status == 429);
                     let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
                         matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                     });
 
-                    let is_model_unavailable =
-                        // Handling the updated error response
-                        err.as_service_error().is_some_and(|err| {
-                            matches!(
-                                err,
-                                OperationThrottlingError(ThrottlingError {
-                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
-                                    ..
-                                })
-                            )
-                        })
-                        // Legacy error response
+                    let is_model_unavailable = {
+                        // check if ThrottlingException
+                        let is_throttling_exception = err
+                            .as_service_error()
+                            .is_some_and(|service_err| service_err.meta().code() == Some("ThrottlingException"));
+
+                        // check if the response contains INSUFFICIENT_MODEL_CAPACITY
+                        let has_insufficient_capacity = err
+                            .raw_response()
+                            .and_then(|resp| resp.body().bytes())
+                            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                            .is_some_and(|body| body.contains("INSUFFICIENT_MODEL_CAPACITY"));
+
+                        (is_throttling_exception && has_insufficient_capacity)
+                        // Legacy error response fallback
                         || (model_id_opt.is_some()
-                            && status_code.is_some_and(|status| status == 500)
-                            && err.as_service_error().is_some_and(|err| {
-                                err.meta().message()
-                                    == Some(
-                                        "Encountered unexpectedly high load when processing the request, please try again.",
-                                    )
-                            }));
+                        && status_code.is_some_and(|status| status == 500)
+                        && err.as_service_error().is_some_and(|err| {
+                            err.meta().message() == Some(
+                    "Encountered unexpectedly high load when processing the request, please try again.",
+                )}))
+                    };
 
                     let is_monthly_limit_err = err
                         .raw_response()
@@ -330,23 +455,25 @@ impl ApiClient {
                         })
                         .unwrap_or(false);
 
-                    if is_quota_breach {
-                        return Err(ApiClientError::QuotaBreach {
-                            message: "quota has reached its limit",
-                            status_code,
-                        });
-                    }
-
                     if is_context_window_overflow {
                         return Err(ApiClientError::ContextWindowOverflow { status_code });
                     }
 
+                    // Both ModelOverloadedError and QuotaBreach return 429,
+                    // so check is_model_unavailable first.
                     if is_model_unavailable {
                         return Err(ApiClientError::ModelOverloadedError {
                             request_id: err
                                 .as_service_error()
                                 .and_then(|err| err.meta().request_id())
                                 .map(|s| s.to_string()),
+                            status_code,
+                        });
+                    }
+
+                    if is_quota_breach {
+                        return Err(ApiClientError::QuotaBreach {
+                            message: "quota has reached its limit",
                             status_code,
                         });
                     }
@@ -382,36 +509,34 @@ impl ApiClient {
             {
                 Ok(response) => Ok(SendMessageOutput::QDeveloper(response)),
                 Err(err) => {
-                    use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError::ThrottlingError as OperationThrottlingError;
-                    use amzn_qdeveloper_streaming_client::types::ThrottlingExceptionReason;
-                    use amzn_qdeveloper_streaming_client::types::error::ThrottlingError;
-
                     let status_code = err.raw_response().map(|res| res.status().as_u16());
                     let is_quota_breach = status_code.is_some_and(|status| status == 429);
                     let is_context_window_overflow = err.as_service_error().is_some_and(|err| {
                         matches!(err, err if err.meta().code() == Some("ValidationException") && err.meta().message() == Some("Input is too long."))
                     });
 
-                    let is_model_unavailable =
-                        // Handling the updated error response
-                        err.as_service_error().is_some_and(|err| {
-                            matches!(
-                                err,
-                                OperationThrottlingError(ThrottlingError {
-                                    reason: Some(ThrottlingExceptionReason::InsufficientModelCapacity),
-                                    ..
-                                })
-                            )
-                        })
-                        // Legacy error response
+                    let is_model_unavailable = {
+                        // check if ThrottlingException
+                        let is_throttling_exception = err
+                            .as_service_error()
+                            .is_some_and(|service_err| service_err.meta().code() == Some("ThrottlingException"));
+
+                        // check if the response contains INSUFFICIENT_MODEL_CAPACITY
+                        let has_insufficient_capacity = err
+                            .raw_response()
+                            .and_then(|resp| resp.body().bytes())
+                            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok())
+                            .is_some_and(|body| body.contains("INSUFFICIENT_MODEL_CAPACITY"));
+
+                        (is_throttling_exception && has_insufficient_capacity)
+                        // Legacy error response fallback
                         || (model_id_opt.is_some()
-                            && status_code.is_some_and(|status| status == 500)
-                            && err.as_service_error().is_some_and(|err| {
-                                err.meta().message()
-                                    == Some(
-                                        "Encountered unexpectedly high load when processing the request, please try again.",
-                                    )
-                            }));
+                        && status_code.is_some_and(|status| status == 500)
+                        && err.as_service_error().is_some_and(|err| {
+                            err.meta().message() == Some(
+                    "Encountered unexpectedly high load when processing the request, please try again.",
+                )}))
+                    };
 
                     let is_monthly_limit_err = err
                         .raw_response()
@@ -422,6 +547,18 @@ impl ApiClient {
                         })
                         .unwrap_or(false);
 
+                    // Both ModelOverloadedError and QuotaBreach return 429,
+                    // so check is_model_unavailable first.
+                    if is_model_unavailable {
+                        return Err(ApiClientError::ModelOverloadedError {
+                            request_id: err
+                                .as_service_error()
+                                .and_then(|err| err.meta().request_id())
+                                .map(|s| s.to_string()),
+                            status_code,
+                        });
+                    }
+
                     if is_quota_breach {
                         return Err(ApiClientError::QuotaBreach {
                             message: "quota has reached its limit",
@@ -431,16 +568,6 @@ impl ApiClient {
 
                     if is_context_window_overflow {
                         return Err(ApiClientError::ContextWindowOverflow { status_code });
-                    }
-
-                    if is_model_unavailable {
-                        return Err(ApiClientError::ModelOverloadedError {
-                            request_id: err
-                                .as_service_error()
-                                .and_then(|err| err.meta().request_id())
-                                .map(|s| s.to_string()),
-                            status_code,
-                        });
                     }
 
                     if is_monthly_limit_err {
@@ -524,6 +651,11 @@ impl ApiClient {
 
         self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
     }
+
+    // Add a helper method to check if using non-default endpoint
+    fn is_custom_endpoint(database: &Database) -> bool {
+        database.settings.get(Setting::ApiCodeWhispererService).is_some()
+    }
 }
 
 fn timeout_config(database: &Database) -> TimeoutConfig {
@@ -542,7 +674,9 @@ fn timeout_config(database: &Database) -> TimeoutConfig {
 }
 
 fn retry_config() -> RetryConfig {
-    RetryConfig::standard().with_max_attempts(1)
+    RetryConfig::adaptive()
+        .with_max_attempts(3)
+        .with_max_backoff(MAX_RETRY_DELAY_DURATION)
 }
 
 pub fn stalled_stream_protection_config() -> StalledStreamProtectionConfig {

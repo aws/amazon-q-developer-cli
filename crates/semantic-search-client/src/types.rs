@@ -17,7 +17,48 @@ use serde::{
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::client::SemanticContext;
+/// Request for adding a new context to the knowledge base
+#[derive(Debug, Clone)]
+pub struct AddContextRequest {
+    /// Path to the directory or file to index
+    pub path: PathBuf,
+    /// Human-readable name for the context
+    pub name: String,
+    /// Description of the context
+    pub description: String,
+    /// Whether this context should be persistent
+    pub persistent: bool,
+    /// Optional patterns to include during indexing
+    pub include_patterns: Option<Vec<String>>,
+    /// Optional patterns to exclude during indexing
+    pub exclude_patterns: Option<Vec<String>>,
+    /// Optional embedding type override for this context
+    pub embedding_type: Option<EmbeddingType>,
+}
+
+/// Parameters for indexing operations (internal use)
+use crate::embedding::EmbeddingType;
+
+/// Parameters for indexing operations
+#[derive(Debug, Clone)]
+pub struct IndexingParams {
+    /// Path to the directory or file to index
+    pub path: PathBuf,
+    /// Human-readable name for the context
+    pub name: String,
+    /// Description of the context
+    pub description: String,
+    /// Whether this context should be persistent
+    pub persistent: bool,
+    /// Optional patterns to include during indexing
+    pub include_patterns: Option<Vec<String>>,
+    /// Optional patterns to exclude during indexing
+    pub exclude_patterns: Option<Vec<String>>,
+    /// Optional embedding type override (uses client default if None)
+    pub embedding_type: Option<EmbeddingType>,
+}
+
+use crate::client::context::SemanticContext;
 
 /// Type alias for context ID
 pub type ContextId = String;
@@ -52,19 +93,34 @@ pub struct KnowledgeContext {
     /// Original source path if created from a directory
     pub source_path: Option<String>,
 
+    /// Include patterns used during indexing
+    #[serde(default)]
+    pub include_patterns: Vec<String>,
+
+    /// Exclude patterns used during indexing
+    #[serde(default)]
+    pub exclude_patterns: Vec<String>,
+
     /// Number of items in the context
     pub item_count: usize,
+
+    /// Embedding type used for this context
+    #[serde(default)]
+    pub embedding_type: EmbeddingType,
 }
 
 impl KnowledgeContext {
     /// Create a new memory context
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: String,
         name: &str,
         description: &str,
         persistent: bool,
         source_path: Option<String>,
+        patterns: (Vec<String>, Vec<String>),
         item_count: usize,
+        embedding_type: EmbeddingType,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -74,8 +130,11 @@ impl KnowledgeContext {
             created_at: now,
             updated_at: now,
             source_path,
+            include_patterns: patterns.0,
+            exclude_patterns: patterns.1,
             persistent,
             item_count,
+            embedding_type,
         }
     }
 }
@@ -91,6 +150,19 @@ pub struct DataPoint {
 
     /// Vector representation of the data point
     pub vector: Vec<f32>,
+}
+
+/// A data point in the BM25 index
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BM25DataPoint {
+    /// Unique identifier for the data point
+    pub id: usize,
+
+    /// Metadata associated with the data point
+    pub payload: HashMap<String, serde_json::Value>,
+
+    /// Text content for BM25 indexing
+    pub content: String,
 }
 
 /// A search result from the semantic index
@@ -139,6 +211,8 @@ pub enum ProgressStatus {
     StartingIndexing(usize),
     /// Indexing in progress with current file and total count
     Indexing(usize, usize),
+    /// Downloading model files with bytes downloaded and total bytes
+    DownloadingModel(u64, u64),
     /// Creating semantic context (50% progress point)
     CreatingSemanticContext,
     /// Generating embeddings for items (50-80% progress range)
@@ -294,17 +368,34 @@ impl ProgressInfo {
 
 /// Background indexing job (internal implementation detail)
 #[derive(Debug)]
-pub(crate) enum IndexingJob {
+/// Indexing job types for background processing
+pub enum IndexingJob {
+    /// Add directory indexing job
     AddDirectory {
+        /// Operation ID
         id: Uuid,
+        /// Cancellation token
         cancel: CancellationToken,
+        /// Directory path
         path: PathBuf,
+        /// Context name
         name: String,
+        /// Context description
         description: String,
+        /// Whether context is persistent
         persistent: bool,
+        /// Include patterns
+        include_patterns: Option<Vec<String>>,
+        /// Exclude patterns
+        exclude_patterns: Option<Vec<String>>,
+        /// Embedding type
+        embedding_type: Option<EmbeddingType>,
     },
+    /// Clear all contexts job
     Clear {
+        /// Operation ID
         id: Uuid,
+        /// Cancellation token
         cancel: CancellationToken,
     },
 }

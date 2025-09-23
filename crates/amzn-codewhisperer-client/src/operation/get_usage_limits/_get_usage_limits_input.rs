@@ -6,8 +6,12 @@ pub struct GetUsageLimitsInput {
     /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
     /// ID users.
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    /// The origin of the client request to get limits for.
+    pub origin: ::std::option::Option<crate::types::Origin>,
     #[allow(missing_docs)] // documentation missing in model
     pub resource_type: ::std::option::Option<crate::types::ResourceType>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub is_email_required: ::std::option::Option<bool>,
 }
 impl GetUsageLimitsInput {
     /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
@@ -16,9 +20,19 @@ impl GetUsageLimitsInput {
         self.profile_arn.as_deref()
     }
 
+    /// The origin of the client request to get limits for.
+    pub fn origin(&self) -> ::std::option::Option<&crate::types::Origin> {
+        self.origin.as_ref()
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn resource_type(&self) -> ::std::option::Option<&crate::types::ResourceType> {
         self.resource_type.as_ref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_email_required(&self) -> ::std::option::Option<bool> {
+        self.is_email_required
     }
 }
 impl GetUsageLimitsInput {
@@ -34,7 +48,9 @@ impl GetUsageLimitsInput {
 #[non_exhaustive]
 pub struct GetUsageLimitsInputBuilder {
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) origin: ::std::option::Option<crate::types::Origin>,
     pub(crate) resource_type: ::std::option::Option<crate::types::ResourceType>,
+    pub(crate) is_email_required: ::std::option::Option<bool>,
 }
 impl GetUsageLimitsInputBuilder {
     /// The ARN of the Q Developer profile. Required for enterprise customers, optional for Builder
@@ -57,6 +73,23 @@ impl GetUsageLimitsInputBuilder {
         &self.profile_arn
     }
 
+    /// The origin of the client request to get limits for.
+    pub fn origin(mut self, input: crate::types::Origin) -> Self {
+        self.origin = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
+        self.origin = input;
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
+        &self.origin
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn resource_type(mut self, input: crate::types::ResourceType) -> Self {
         self.resource_type = ::std::option::Option::Some(input);
@@ -74,6 +107,23 @@ impl GetUsageLimitsInputBuilder {
         &self.resource_type
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_email_required(mut self, input: bool) -> Self {
+        self.is_email_required = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_is_email_required(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.is_email_required = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_is_email_required(&self) -> &::std::option::Option<bool> {
+        &self.is_email_required
+    }
+
     /// Consumes the builder and constructs a
     /// [`GetUsageLimitsInput`](crate::operation::get_usage_limits::GetUsageLimitsInput).
     pub fn build(
@@ -84,7 +134,9 @@ impl GetUsageLimitsInputBuilder {
     > {
         ::std::result::Result::Ok(crate::operation::get_usage_limits::GetUsageLimitsInput {
             profile_arn: self.profile_arn,
+            origin: self.origin,
             resource_type: self.resource_type,
+            is_email_required: self.is_email_required,
         })
     }
 }

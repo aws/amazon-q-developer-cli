@@ -1,6 +1,11 @@
 use std::collections::HashMap;
 use std::env;
 
+use chrono::{
+    DateTime,
+    Datelike,
+    FixedOffset,
+};
 use serde::{
     Deserialize,
     Serialize,
@@ -13,6 +18,10 @@ use tracing::{
 use super::consts::{
     MAX_CURRENT_WORKING_DIRECTORY_LEN,
     MAX_USER_MESSAGE_SIZE,
+};
+use super::conversation::{
+    CONTEXT_ENTRY_END_HEADER,
+    CONTEXT_ENTRY_START_HEADER,
 };
 use super::tools::{
     InvokeOutput,
@@ -46,6 +55,7 @@ pub struct UserMessage {
     pub additional_context: String,
     pub env_context: UserEnvContext,
     pub content: UserMessageContent,
+    pub timestamp: Option<DateTime<FixedOffset>>,
     pub images: Option<Vec<ImageBlock>>,
 }
 
@@ -98,18 +108,24 @@ impl UserMessageContent {
 impl UserMessage {
     /// Creates a new [UserMessage::Prompt], automatically detecting and adding the user's
     /// environment [UserEnvContext].
-    pub fn new_prompt(prompt: String) -> Self {
+    pub fn new_prompt(prompt: String, timestamp: Option<DateTime<FixedOffset>>) -> Self {
         Self {
             images: None,
+            timestamp,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::Prompt { prompt },
         }
     }
 
-    pub fn new_cancelled_tool_uses<'a>(prompt: Option<String>, tool_use_ids: impl Iterator<Item = &'a str>) -> Self {
+    pub fn new_cancelled_tool_uses<'a>(
+        prompt: Option<String>,
+        tool_use_ids: impl Iterator<Item = &'a str>,
+        timestamp: Option<DateTime<FixedOffset>>,
+    ) -> Self {
         Self {
             images: None,
+            timestamp,
             additional_context: String::new(),
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::CancelledToolUses {
@@ -130,6 +146,7 @@ impl UserMessage {
     pub fn new_tool_use_results(results: Vec<ToolUseResult>) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp: None,
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -138,9 +155,14 @@ impl UserMessage {
         }
     }
 
-    pub fn new_tool_use_results_with_images(results: Vec<ToolUseResult>, images: Vec<ImageBlock>) -> Self {
+    pub fn new_tool_use_results_with_images(
+        results: Vec<ToolUseResult>,
+        images: Vec<ImageBlock>,
+        timestamp: Option<DateTime<FixedOffset>>,
+    ) -> Self {
         Self {
             additional_context: String::new(),
+            timestamp,
             env_context: UserEnvContext::generate_new(),
             content: UserMessageContent::ToolUseResults {
                 tool_use_results: results,
@@ -152,9 +174,10 @@ impl UserMessage {
     /// Converts this message into a [UserInputMessage] to be stored in the history of
     /// [api_client::model::ConversationState].
     pub fn into_history_entry(self) -> UserInputMessage {
+        let content = self.content_with_context();
         UserInputMessage {
             images: self.images.clone(),
-            content: self.prompt().unwrap_or_default().to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -179,17 +202,10 @@ impl UserMessage {
         model_id: Option<String>,
         tools: &HashMap<ToolOrigin, Vec<Tool>>,
     ) -> UserInputMessage {
-        let formatted_prompt = match self.prompt() {
-            Some(prompt) if !prompt.is_empty() => {
-                format!("{}{}{}", USER_ENTRY_START_HEADER, prompt, USER_ENTRY_END_HEADER)
-            },
-            _ => String::new(),
-        };
+        let content = self.content_with_context();
         UserInputMessage {
             images: self.images,
-            content: format!("{} {}", self.additional_context, formatted_prompt)
-                .trim()
-                .to_string(),
+            content,
             user_input_message_context: Some(UserInputMessageContext {
                 env_state: self.env_context.env_state,
                 tool_results: match self.content {
@@ -269,6 +285,47 @@ impl UserMessage {
             let prompt = truncate_safe(&tool_content, MAX_USER_MESSAGE_SIZE).to_string();
             self.content = UserMessageContent::Prompt { prompt };
         }
+    }
+
+    /// Returns a formatted [String] containing [Self::additional_context], [Self::timestamp], and
+    /// [Self::prompt].
+    fn content_with_context(&self) -> String {
+        let mut content = String::new();
+
+        if let Some(ts) = self.timestamp {
+            let weekday = match ts.weekday() {
+                chrono::Weekday::Mon => "Monday",
+                chrono::Weekday::Tue => "Tuesday",
+                chrono::Weekday::Wed => "Wednesday",
+                chrono::Weekday::Thu => "Thursday",
+                chrono::Weekday::Fri => "Friday",
+                chrono::Weekday::Sat => "Saturday",
+                chrono::Weekday::Sun => "Sunday",
+            };
+            // Format the time with iso8601 format using a timezone offset.
+            let timestamp = ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
+            content.push_str(&format!(
+                "{}Current time: {}, {}\n{}",
+                CONTEXT_ENTRY_START_HEADER, weekday, timestamp, CONTEXT_ENTRY_END_HEADER,
+            ));
+        }
+
+        if !self.additional_context.is_empty() {
+            content.push_str(&self.additional_context);
+            content.push('\n');
+        }
+
+        // Only add special delimiters around the user's prompt if there is no timestamp or
+        // additional context to add.
+        match (content.is_empty(), self.prompt()) {
+            (false, Some(p)) => {
+                content.push_str(&format!("{}{}{}", USER_ENTRY_START_HEADER, p, USER_ENTRY_END_HEADER));
+            },
+            (true, Some(p)) => content.push_str(p),
+            _ => (),
+        };
+
+        content.trim().to_string()
     }
 }
 
@@ -511,5 +568,62 @@ mod tests {
         assert!(env_state.current_working_directory.is_some());
         assert!(env_state.operating_system.as_ref().is_some_and(|os| !os.is_empty()));
         println!("{env_state:?}");
+    }
+
+    #[test]
+    fn test_user_input_message_timestamp_formatting() {
+        const USER_PROMPT: &str = "hello world";
+
+        // Friday, Jan 26, 2018
+        let timestamp = DateTime::parse_from_rfc3339("2018-01-26T12:30:09.453-07:00").unwrap();
+
+        let msgs = {
+            let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), Some(timestamp));
+            [
+                msg.clone().into_user_input_message(None, &HashMap::new()),
+                msg.clone().into_history_entry(),
+            ]
+        };
+        let expected = [
+            CONTEXT_ENTRY_START_HEADER,
+            "Current time",
+            "Friday",
+            CONTEXT_ENTRY_END_HEADER,
+            USER_ENTRY_START_HEADER,
+            USER_PROMPT,
+            USER_ENTRY_END_HEADER.trim(), /* user message content is trimmed, so remove any
+                                           * trailing newlines for the end header. */
+        ];
+        for m in msgs {
+            for assertion in expected {
+                assert!(
+                    m.content.contains(assertion),
+                    "expected message: {} to contain: {}",
+                    m.content,
+                    assertion
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_user_input_message_without_context() {
+        const USER_PROMPT: &str = "hello world";
+
+        let msg = UserMessage::new_prompt(USER_PROMPT.to_string(), None);
+
+        let msgs = [
+            msg.clone().into_user_input_message(None, &HashMap::new()),
+            msg.clone().into_history_entry(),
+        ];
+
+        for m in msgs {
+            assert!(!m.content.contains(CONTEXT_ENTRY_START_HEADER));
+            assert!(!m.content.contains("Current UTC time"));
+            assert!(!m.content.contains(CONTEXT_ENTRY_END_HEADER));
+            assert!(!m.content.contains(USER_ENTRY_START_HEADER));
+            assert!(m.content.contains(USER_PROMPT));
+            assert!(!m.content.contains(USER_ENTRY_END_HEADER.trim()));
+        }
     }
 }

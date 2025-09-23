@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    BTreeMap,
+    HashMap,
+};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -8,6 +11,7 @@ use clap::{
     Args,
     ValueEnum,
 };
+use crossterm::style::Stylize;
 use crossterm::{
     execute,
     style,
@@ -20,6 +24,7 @@ use eyre::{
 use super::agent::{
     Agent,
     Agents,
+    DEFAULT_AGENT_NAME,
     McpServerConfig,
 };
 use crate::cli::chat::tool_manager::{
@@ -33,8 +38,9 @@ use crate::cli::chat::tools::custom_tool::{
 use crate::os::Os;
 use crate::util::directories;
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, ValueEnum)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
 pub enum Scope {
+    Default,
     Workspace,
     Global,
 }
@@ -42,6 +48,7 @@ pub enum Scope {
 impl std::fmt::Display for Scope {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Scope::Default => write!(f, "default"),
             Scope::Workspace => write!(f, "workspace"),
             Scope::Global => write!(f, "global"),
         }
@@ -83,11 +90,17 @@ pub struct AddArgs {
     /// Name for the server
     #[arg(long)]
     pub name: String,
+    /// Scope. This parameter is only meaningful in the absence of agent name.
+    #[arg(long)]
+    pub scope: Option<Scope>,
     /// The command used to launch the server
     #[arg(long)]
     pub command: String,
-    /// Arguments to pass to the command
-    #[arg(long, action = ArgAction::Append, allow_hyphen_values = true, value_delimiter = ',')]
+    /// Arguments to pass to the command. Can be provided as:
+    /// 1. Multiple --args flags: --args arg1 --args arg2 --args "arg,with,commas"
+    /// 2. Comma-separated with escaping: --args "arg1,arg2,arg\,with\,commas"
+    /// 3. JSON array format: --args '["arg1", "arg2", "arg,with,commas"]'
+    #[arg(long, action = ArgAction::Append, allow_hyphen_values = true)]
     pub args: Vec<String>,
     /// Where to add the server to. If an agent name is not supplied, the changes shall be made to
     /// the global mcp.json
@@ -109,6 +122,9 @@ pub struct AddArgs {
 
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        // Process args to handle comma-separated values, escaping, and JSON arrays
+        let processed_args = self.process_args()?;
+
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
@@ -126,7 +142,7 @@ impl AddArgs {
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
                     "command": self.command,
-                    "args": self.args,
+                    "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
@@ -138,38 +154,56 @@ impl AddArgs {
                 writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
             },
             None => {
-                let global_config_path = directories::chat_legacy_mcp_config(os)?;
-                let mut mcp_servers = McpServerConfig::load_from_file(os, &global_config_path).await?;
+                let legacy_mcp_config_path = match self.scope {
+                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
+                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                };
+                if !legacy_mcp_config_path.exists() {
+                    // Create an empty config file that won't fail to deserialize.
+                    os.fs.write(&legacy_mcp_config_path, "{ \"mcpServers\": {} }").await?;
+                }
+                let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
                     bail!(
                         "\nMCP server '{}' already exists in global config (path {}). Use --force to overwrite.",
                         self.name,
-                        &global_config_path.display(),
+                        &legacy_mcp_config_path.display(),
                     );
                 }
 
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
                     "command": self.command,
-                    "args": self.args,
+                    "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
                 }))?;
 
                 mcp_servers.mcp_servers.insert(self.name.clone(), tool);
-                mcp_servers.save_to_file(os, &global_config_path).await?;
+                mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
                 writeln!(
                     output,
                     "✓ Added MCP server '{}' to global config in {}\n",
                     self.name,
-                    global_config_path.display()
+                    legacy_mcp_config_path.display()
                 )?;
             },
         };
 
         Ok(())
+    }
+
+    fn process_args(&self) -> Result<Vec<String>> {
+        let mut processed_args = Vec::new();
+
+        for arg in &self.args {
+            let parsed = parse_args(arg)?;
+            processed_args.extend(parsed);
+        }
+
+        Ok(processed_args)
     }
 }
 
@@ -177,6 +211,9 @@ impl AddArgs {
 pub struct RemoveArgs {
     #[arg(long)]
     pub name: String,
+    /// Scope. This parameter is only meaningful in the absence of agent name.
+    #[arg(long)]
+    pub scope: Option<Scope>,
     #[arg(long, value_enum)]
     pub agent: Option<String>,
 }
@@ -214,17 +251,20 @@ impl RemoveArgs {
                 }
             },
             None => {
-                let global_config_path = directories::chat_legacy_mcp_config(os)?;
-                let mut config = McpServerConfig::load_from_file(os, &global_config_path).await?;
+                let legacy_mcp_config_path = match self.scope {
+                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
+                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                };
+                let mut config = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
                 match config.mcp_servers.remove(&self.name) {
                     Some(_) => {
-                        config.save_to_file(os, &global_config_path).await?;
+                        config.save_to_file(os, &legacy_mcp_config_path).await?;
                         writeln!(
                             output,
                             "\n✓ Removed MCP server '{}' from global config (path {})\n",
                             self.name,
-                            &global_config_path.display(),
+                            &legacy_mcp_config_path.display(),
                         )?;
                     },
                     None => {
@@ -232,7 +272,7 @@ impl RemoveArgs {
                             output,
                             "\nNo MCP server named '{}' found in global config (path {})\n",
                             self.name,
-                            &global_config_path.display(),
+                            &legacy_mcp_config_path.display(),
                         )?;
                     },
                 }
@@ -247,31 +287,43 @@ impl RemoveArgs {
 pub struct ListArgs {
     #[arg(value_enum)]
     pub scope: Option<Scope>,
-    #[arg(long, hide = true)]
-    pub profile: Option<String>,
 }
 
 impl ListArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
-        let configs = get_mcp_server_configs(os, self.scope).await?;
+        let mut configs = get_mcp_server_configs(os).await?;
+        configs.retain(|k, _| self.scope.is_none_or(|s| s == *k));
         if configs.is_empty() {
             writeln!(output, "No MCP server configurations found.\n")?;
             return Ok(());
         }
 
-        for (scope, path, cfg_opt) in configs {
+        for (scope, agents) in configs {
+            if let Some(s) = self.scope {
+                if scope != s {
+                    continue;
+                }
+            }
             writeln!(output)?;
-            writeln!(output, "{}:\n  {}", scope_display(&scope), path.display())?;
-            match cfg_opt {
-                Some(cfg) if !cfg.mcp_servers.is_empty() => {
-                    for (name, tool_cfg) in &cfg.mcp_servers {
-                        let status = if tool_cfg.disabled { " (disabled)" } else { "" };
-                        writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
-                    }
-                },
-                _ => {
-                    writeln!(output, "    (empty)")?;
-                },
+            writeln!(output, "{}:\n", scope_display(&scope))?;
+            for (agent_name, cfg_opt, _) in agents {
+                writeln!(output, "  {}", agent_name.bold())?;
+                match cfg_opt {
+                    Some(cfg) if !cfg.mcp_servers.is_empty() => {
+                        // Sorting servers by name since HashMap is unordered, and having a bunch
+                        // of agents with the same global MCP servers included with different
+                        // ordering looks weird.
+                        let mut servers = cfg.mcp_servers.into_iter().collect::<Vec<_>>();
+                        servers.sort_by(|a, b| a.0.cmp(&b.0));
+                        for (name, tool_cfg) in &servers {
+                            let status = if tool_cfg.disabled { " (disabled)" } else { "" };
+                            writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
+                        }
+                    },
+                    _ => {
+                        writeln!(output, "    (empty)")?;
+                    },
+                }
             }
         }
         writeln!(output, "\n")?;
@@ -337,52 +389,58 @@ pub struct StatusArgs {
 
 impl StatusArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
-        let configs = get_mcp_server_configs(os, None).await?;
+        let configs = get_mcp_server_configs(os).await?;
         let mut found = false;
 
-        for (sc, path, cfg_opt) in configs {
-            if let Some(cfg) = cfg_opt.and_then(|c| c.mcp_servers.get(&self.name).cloned()) {
-                found = true;
-                execute!(
-                    output,
-                    style::Print("\n─────────────\n"),
-                    style::Print(format!("Scope   : {}\n", scope_display(&sc))),
-                    style::Print(format!("File    : {}\n", path.display())),
-                    style::Print(format!("Command : {}\n", cfg.command)),
-                    style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
-                    style::Print(format!("Disabled: {}\n", cfg.disabled)),
-                    style::Print(format!(
-                        "Env Vars: {}\n",
-                        cfg.env
-                            .as_ref()
-                            .map_or_else(|| "(none)".into(), |e| e.keys().cloned().collect::<Vec<_>>().join(", "))
-                    )),
-                )?;
+        for (sc, agents) in configs {
+            for (name, cfg_opt, _) in agents {
+                if let Some(cfg) = cfg_opt.and_then(|c| c.mcp_servers.get(&self.name).cloned()) {
+                    found = true;
+                    execute!(
+                        output,
+                        style::Print("\n─────────────\n"),
+                        style::Print(format!("Scope   : {}\n", scope_display(&sc))),
+                        style::Print(format!("Agent   : {}\n", name)),
+                        style::Print(format!("Command : {}\n", cfg.command)),
+                        style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
+                        style::Print(format!("Disabled: {}\n", cfg.disabled)),
+                        style::Print(format!(
+                            "Env Vars: {}\n",
+                            cfg.env.map_or_else(
+                                || "(none)".into(),
+                                |e| e
+                                    .iter()
+                                    .map(|(k, v)| format!("{}={}", k, v))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            )
+                        )),
+                    )?;
+                }
             }
+            writeln!(output, "\n")?;
         }
-        writeln!(output, "\n")?;
 
         if !found {
-            bail!("No MCP server named '{}' found in any scope/profile\n", self.name);
+            bail!("No MCP server named '{}' found in any agent\n", self.name);
         }
 
         Ok(())
     }
 }
 
-async fn get_mcp_server_configs(
-    os: &mut Os,
-    scope: Option<Scope>,
-) -> Result<Vec<(Scope, PathBuf, Option<McpServerConfig>)>> {
-    let mut targets = Vec::new();
-    match scope {
-        Some(scope) => targets.push(scope),
-        None => targets.extend([Scope::Workspace, Scope::Global]),
-    }
-
-    let mut results = Vec::new();
+/// Returns a [BTreeMap] for consistent key iteration.
+async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
+    let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let agents = Agents::load(os, None, true, &mut stderr).await.0;
+    let mcp_enabled = match os.client.is_mcp_enabled().await {
+        Ok(enabled) => enabled,
+        Err(err) => {
+            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+            true
+        },
+    };
+    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
     let global_path = directories::chat_global_agent_path(os)?;
     for (_, agent) in agents.agents {
         let scope = if agent
@@ -391,21 +449,28 @@ async fn get_mcp_server_configs(
             .is_some_and(|p| p.parent().is_some_and(|p| p == global_path))
         {
             Scope::Global
+        } else if agent.name == DEFAULT_AGENT_NAME {
+            Scope::Default
         } else {
             Scope::Workspace
         };
-
-        results.push((
-            scope,
-            agent.path.ok_or(eyre::eyre!("Agent missing path info"))?,
+        results.entry(scope).or_insert(Vec::new()).push((
+            agent.name,
             Some(agent.mcp_servers),
+            agent.use_legacy_mcp_json,
         ));
     }
+
+    for agents in results.values_mut() {
+        agents.sort_by(|a, b| a.0.cmp(&b.0));
+    }
+
     Ok(results)
 }
 
 fn scope_display(scope: &Scope) -> String {
     match scope {
+        Scope::Default => "🤖 default".into(),
         Scope::Workspace => "📄 workspace".into(),
         Scope::Global => "🌍 global".into(),
     }
@@ -459,6 +524,65 @@ fn parse_env_vars(arg: &str) -> Result<HashMap<String, String>> {
     Ok(vars)
 }
 
+fn parse_args(arg: &str) -> Result<Vec<String>> {
+    // Try to parse as JSON array first
+    if arg.trim_start().starts_with('[') {
+        match serde_json::from_str::<Vec<String>>(arg) {
+            Ok(args) => return Ok(args),
+            Err(_) => {
+                bail!(
+                    "Failed to parse arguments as JSON array. Expected format: '[\"arg1\", \"arg2\", \"arg,with,commas\"]'"
+                );
+            },
+        }
+    }
+
+    // Check if the string contains escaped commas
+    let has_escaped_commas = arg.contains("\\,");
+
+    if has_escaped_commas {
+        // Parse with escape support
+        let mut args = Vec::new();
+        let mut current_arg = String::new();
+        let mut chars = arg.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                '\\' => {
+                    // Handle escape sequences
+                    if let Some(&next_ch) = chars.peek() {
+                        if next_ch == ',' || next_ch == '\\' {
+                            current_arg.push(chars.next().unwrap());
+                        } else {
+                            current_arg.push(ch);
+                        }
+                    } else {
+                        current_arg.push(ch);
+                    }
+                },
+                ',' => {
+                    // Split on unescaped comma
+                    args.push(current_arg.trim().to_string());
+                    current_arg.clear();
+                },
+                _ => {
+                    current_arg.push(ch);
+                },
+            }
+        }
+
+        // Add the last argument
+        if !current_arg.is_empty() || !args.is_empty() {
+            args.push(current_arg.trim().to_string());
+        }
+
+        Ok(args)
+    } else {
+        // Default behavior: split on commas (backward compatibility)
+        Ok(arg.split(',').map(|s| s.trim().to_string()).collect())
+    }
+}
+
 async fn load_cfg(os: &Os, p: &PathBuf) -> Result<McpServerConfig> {
     Ok(if os.fs.exists(p) {
         McpServerConfig::load_from_file(os, p).await?
@@ -480,7 +604,7 @@ mod tests {
         assert_eq!(
             path.to_str(),
             workspace_mcp_config_path(&os).unwrap().to_str(),
-            "No scope or profile should default to the workspace path"
+            "No scope should default to the workspace path"
         );
     }
 
@@ -515,6 +639,7 @@ mod tests {
         // 1. add
         AddArgs {
             name: "local".into(),
+            scope: None,
             command: "echo hi".into(),
             args: vec![
                 "awslabs.eks-mcp-server".to_string(),
@@ -539,6 +664,7 @@ mod tests {
         // 2. remove
         RemoveArgs {
             name: "local".into(),
+            scope: None,
             agent: None,
         }
         .execute(&os, &mut vec![])
@@ -550,7 +676,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_subcomman_add() {
+    fn test_mcp_subcommand_add() {
         assert_parse!(
             [
                 "mcp",
@@ -566,12 +692,9 @@ mod tests {
             ],
             RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
                 name: "test_server".to_string(),
+                scope: None,
                 command: "test_command".to_string(),
-                args: vec![
-                    "awslabs.eks-mcp-server".to_string(),
-                    "--allow-write".to_string(),
-                    "--allow-sensitive-data-access".to_string(),
-                ],
+                args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
                     [
@@ -594,6 +717,7 @@ mod tests {
             ["mcp", "remove", "--name", "old"],
             RootSubcommand::Mcp(McpSubcommand::Remove(RemoveArgs {
                 name: "old".into(),
+                scope: None,
                 agent: None,
             }))
         );
@@ -625,8 +749,49 @@ mod tests {
             ["mcp", "list", "global"],
             RootSubcommand::Mcp(McpSubcommand::List(ListArgs {
                 scope: Some(Scope::Global),
-                profile: None
             }))
         );
+    }
+
+    #[test]
+    fn test_parse_args_comma_separated() {
+        let result = parse_args("arg1,arg2,arg3").unwrap();
+        assert_eq!(result, vec!["arg1", "arg2", "arg3"]);
+    }
+
+    #[test]
+    fn test_parse_args_with_escaped_commas() {
+        let result = parse_args("arg1,arg2\\,with\\,commas,arg3").unwrap();
+        assert_eq!(result, vec!["arg1", "arg2,with,commas", "arg3"]);
+    }
+
+    #[test]
+    fn test_parse_args_json_array() {
+        let result = parse_args(r#"["arg1", "arg2", "arg,with,commas"]"#).unwrap();
+        assert_eq!(result, vec!["arg1", "arg2", "arg,with,commas"]);
+    }
+
+    #[test]
+    fn test_parse_args_single_arg_with_commas() {
+        let result = parse_args("--config=key1=val1\\,key2=val2").unwrap();
+        assert_eq!(result, vec!["--config=key1=val1,key2=val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_backward_compatibility() {
+        let result = parse_args("--config=key1=val1,key2=val2").unwrap();
+        assert_eq!(result, vec!["--config=key1=val1", "key2=val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_mixed_escaping() {
+        let result = parse_args("normal,escaped\\,comma,--flag=val1\\,val2").unwrap();
+        assert_eq!(result, vec!["normal", "escaped,comma", "--flag=val1,val2"]);
+    }
+
+    #[test]
+    fn test_parse_args_json_array_invalid() {
+        let result = parse_args(r#"["invalid json"#);
+        assert!(result.is_err());
     }
 }

@@ -19,8 +19,10 @@ use crate::telemetry::definitions::metrics::{
     AmazonqMessageResponseError,
     AmazonqProfileState,
     AmazonqStartChat,
+    AmazonqcliDailyHeartbeat,
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
+    CodewhispererterminalAgentContribution,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -33,6 +35,7 @@ use crate::telemetry::definitions::types::{
     CodewhispererterminalCustomToolLatency,
     CodewhispererterminalCustomToolOutputTokenSize,
     CodewhispererterminalIsToolValid,
+    CodewhispererterminalMcpServerAllToolsCount,
     CodewhispererterminalMcpServerInitFailureReason,
     CodewhispererterminalToolName,
     CodewhispererterminalToolUseId,
@@ -49,6 +52,7 @@ pub struct Event {
     pub created_time: Option<SystemTime>,
     pub credential_start_url: Option<String>,
     pub sso_region: Option<String>,
+    pub client_application: Option<String>,
     #[serde(flatten)]
     pub ty: EventType,
 }
@@ -60,6 +64,7 @@ impl Event {
             created_time: Some(SystemTime::now()),
             credential_start_url: None,
             sso_region: None,
+            client_application: None,
         }
     }
 
@@ -69,6 +74,10 @@ impl Event {
 
     pub fn set_sso_region(&mut self, sso_region: String) {
         self.sso_region = Some(sso_region);
+    }
+
+    pub fn set_client_application(&mut self, client_application: String) {
+        self.client_application = Some(client_application);
     }
 
     pub fn into_metric_datum(self) -> Option<MetricDatum> {
@@ -107,6 +116,7 @@ impl Event {
                     credential_start_url: self.credential_start_url.map(Into::into),
                     codewhispererterminal_subcommand: Some(subcommand.into()),
                     codewhispererterminal_in_cloudshell: None,
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -209,6 +219,7 @@ impl Event {
                             .join(",")
                             .into(),
                     ),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -276,6 +287,25 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::TangentModeSession {
+                conversation_id,
+                result,
+                args: TangentModeSessionArgs { duration_seconds },
+            } => Some(
+                CodewhispererterminalChatSlashCommandExecuted {
+                    create_time: self.created_time,
+                    value: Some(duration_seconds as f64),
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    sso_region: self.sso_region.map(Into::into),
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_chat_slash_command: Some("tangent".to_string().into()),
+                    codewhispererterminal_chat_slash_subcommand: Some("exit".to_string().into()),
+                    result: Some(result.to_string().into()),
+                    reason: None,
+                    codewhispererterminal_in_cloudshell: None,
+                }
+                .into_metric_datum(),
+            ),
             EventType::ToolUseSuggested {
                 conversation_id,
                 utterance_id,
@@ -294,6 +324,8 @@ impl Event {
                 model,
                 execution_duration,
                 turn_duration,
+                aws_service_name,
+                aws_operation_name,
             } => Some(
                 CodewhispererterminalToolUseSuggested {
                     create_time: self.created_time,
@@ -323,6 +355,30 @@ impl Event {
                     codewhispererterminal_tool_turn_duration_ms: turn_duration
                         .map(|d| d.as_millis() as i64)
                         .map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_aws_service_name: aws_service_name.map(Into::into),
+                    codewhispererterminal_aws_operation_name: aws_operation_name.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                tool_use_id,
+                tool_name,
+                lines_by_agent,
+                lines_by_user,
+            } => Some(
+                CodewhispererterminalAgentContribution {
+                    create_time: self.created_time,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    value: None,
+                    amazonq_conversation_id: Some(conversation_id.into()),
+                    codewhispererterminal_utterance_id: utterance_id.map(CodewhispererterminalUtteranceId),
+                    codewhispererterminal_tool_use_id: tool_use_id.map(CodewhispererterminalToolUseId),
+                    codewhispererterminal_tool_name: tool_name.map(CodewhispererterminalToolName),
+                    codewhispererterminal_lines_by_agent: lines_by_agent.map(|count| count as i64).map(Into::into),
+                    codewhispererterminal_lines_by_user: lines_by_user.map(|count| count as i64).map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -331,6 +387,9 @@ impl Event {
                 server_name,
                 init_failure_reason,
                 number_of_tools,
+                all_tool_names,
+                loaded_tool_names,
+                all_tools_count,
             } => Some(
                 CodewhispererterminalMcpServerInit {
                     create_time: self.created_time,
@@ -343,6 +402,12 @@ impl Event {
                     codewhispererterminal_tools_per_mcp_server: Some(CodewhispererterminalToolsPerMcpServer(
                         number_of_tools as i64,
                     )),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tool_names: all_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_loaded_tool_names: loaded_tool_names.map(Into::into),
+                    codewhispererterminal_mcp_server_all_tools_count: Some(
+                        CodewhispererterminalMcpServerAllToolsCount(all_tools_count as i64),
+                    ),
                 }
                 .into_metric_datum(),
             ),
@@ -368,7 +433,7 @@ impl Event {
                         legacy_profile_migration_executed.into(),
                     ),
                     codewhispererterminal_legacy_profile_migrated_count: Some(legacy_profile_migrated_count.into()),
-                    codewhispererterminal_launched_agent: launched_agent.map(Into::into),
+                    codewhispererterminal_launched_agent: Some(launched_agent.into()),
                 }
                 .into_metric_datum(),
             ),
@@ -431,6 +496,15 @@ impl Event {
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     request_id: request_id.map(Into::into),
                     codewhispererterminal_utterance_id: message_id.map(Into::into),
+                    codewhispererterminal_client_application: self.client_application.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
+            EventType::DailyHeartbeat {} => Some(
+                AmazonqcliDailyHeartbeat {
+                    create_time: self.created_time,
+                    value: None,
+                    source: None,
                 }
                 .into_metric_datum(),
             ),
@@ -459,6 +533,9 @@ impl From<ChatConversationType> for CodewhispererterminalChatConversationType {
 pub enum MessageMetaTag {
     /// A /compact request
     Compact,
+    GenerateAgent,
+    /// A /tangent request
+    TangentMode,
 }
 
 /// Optional fields to add for a chatAddedMessage telemetry event.
@@ -478,6 +555,13 @@ pub struct ChatAddedMessageParams {
     pub tool_use_id: Option<String>,
     pub assistant_response_length: Option<i32>,
     pub message_meta_tags: Vec<MessageMetaTag>,
+}
+
+/// Optional fields for tangent mode session telemetry event.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+pub struct TangentModeSessionArgs {
+    /// Duration of tangent mode session in seconds
+    pub duration_seconds: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -502,7 +586,7 @@ pub struct AgentConfigInitArgs {
     pub agents_loaded_failed_count: i64,
     pub legacy_profile_migration_executed: bool,
     pub legacy_profile_migrated_count: i64,
-    pub launched_agent: Option<String>,
+    pub launched_agent: String,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -544,6 +628,11 @@ pub enum EventType {
         result: TelemetryResult,
         args: RecordUserTurnCompletionArgs,
     },
+    TangentModeSession {
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    },
     ToolUseSuggested {
         conversation_id: String,
         utterance_id: Option<String>,
@@ -562,12 +651,25 @@ pub enum EventType {
         model: Option<String>,
         execution_duration: Option<Duration>,
         turn_duration: Option<Duration>,
+        aws_service_name: Option<String>,
+        aws_operation_name: Option<String>,
+    },
+    AgentContribution {
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
     },
     McpServerInit {
         conversation_id: String,
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     },
     AgentConfigInit {
         conversation_id: String,
@@ -596,6 +698,7 @@ pub enum EventType {
         message_id: Option<String>,
         context_file_length: Option<usize>,
     },
+    DailyHeartbeat {},
 }
 
 #[derive(Debug)]
@@ -617,6 +720,8 @@ pub struct ToolUseEventBuilder {
     pub model: Option<String>,
     pub execution_duration: Option<Duration>,
     pub turn_duration: Option<Duration>,
+    pub aws_service_name: Option<String>,
+    pub aws_operation_name: Option<String>,
 }
 
 impl ToolUseEventBuilder {
@@ -639,6 +744,8 @@ impl ToolUseEventBuilder {
             model,
             execution_duration: None,
             turn_duration: None,
+            aws_service_name: None,
+            aws_operation_name: None,
         }
     }
 

@@ -8,7 +8,7 @@ authors = ["Amazon Q CLI Team (q-cli@amazon.com)", "Chay Nabors (nabochay@amazon
 edition = "2024"
 homepage = "https://aws.amazon.com/q/"
 publish = false
-version = "1.12.4"
+version = "1.16.2"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
@@ -81,7 +81,7 @@ r2d2_sqlite = "0.25.0"
 rand = "0.9.0"
 rayon = "1.10.0"
 regex = "1.7.0"
-reqwest = { version = "0.12.14", default-features = false, features = ["http2", "charset", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "socks", "cookies"] }
+reqwest = { version = "0.12.14", default-features = false, features = ["http2", "charset", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "socks", "cookies", "stream"] }
 ring = "0.17.14"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
 rustls = "0.23.23"
@@ -92,7 +92,7 @@ security-framework = "3.2.0"
 semantic_search_client = { path = "crates/semantic-search-client" }
 semver = { version = "1.0.26", features = ["serde"] }
 serde = { version = "1.0.219", features = ["derive", "rc"] }
-serde_json = "1.0.140"
+serde_json = { version = "1.0.140", features = ["preserve_order"] }
 sha2 = "0.10.9"
 shell-color = "1.0.0"
 shell-words = "1.1.0"
@@ -129,6 +129,7 @@ winnow = "=0.6.2"
 winreg = "0.55.0"
 schemars = "1.0.4"
 jsonschema = "0.30.0"
+rmcp = { version = "0.6.3", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 
 [workspace.lints.rust]
 future_incompatible = "warn"

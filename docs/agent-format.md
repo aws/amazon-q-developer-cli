@@ -2,11 +2,14 @@
 
 The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
 
+> [!TIP]
+> We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
+
 Every agent configuration file can include the following sections:
 
 - [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
 - [`description`](#description-field) — A description of the agent.
-- [`prompt`](#prompt-field) — High-level context for the agent (not yet implemented).
+- [`prompt`](#prompt-field) — High-level context for the agent.
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
 - [`tools`](#tools-field) — The tools available to the agent.
 - [`toolAliases`](#toolaliases-field) — Tool name remapping for handling naming collisions.
@@ -15,18 +18,17 @@ Every agent configuration file can include the following sections:
 - [`resources`](#resources-field) — Resources available to the agent.
 - [`hooks`](#hooks-field) — Commands run at specific trigger points.
 - [`useLegacyMcpJson`](#uselegacymcpjson-field) — Whether to include legacy MCP configuration.
+- [`model`](#model-field) — The model ID to use for this agent.
 
 ## Name Field
 
-The `name` field specifies the name of the agent. This is used for identification and display purposes. If not specified, the name is derived from the filename (without the `.json` extension).
+The `name` field specifies the name of the agent. This is used for identification and display purposes. 
 
 ```json
 {
   "name": "aws-expert"
 }
 ```
-
-Note: While this field can be included in the configuration file, it will be overridden by the filename when the agent is loaded.
 
 ## Description Field
 
@@ -40,7 +42,7 @@ The `description` field provides a description of what the agent does. This is p
 
 ## Prompt Field
 
-The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. This feature is not yet implemented.
+The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. 
 
 ```json
 {
@@ -76,7 +78,6 @@ Each MCP server configuration can include:
 - `args` (optional): Arguments to pass to the command
 - `env` (optional): Environment variables to set for the server
 - `timeout` (optional): Timeout for each MCP request in milliseconds (default: 120000)
-- `disabled` (optional): Whether this server should be disabled (default: false)
 
 ## Tools Field
 
@@ -147,22 +148,77 @@ The `allowedTools` field specifies which tools can be used without prompting the
 {
   "allowedTools": [
     "fs_read",
+    "fs_*",
     "@git/git_status",
+    "@server/read_*",
     "@fetch"
   ]
 }
 ```
 
-You can allow:
-- Specific built-in tools by name (e.g., `"fs_read"`)
-- Specific MCP tools using `@server_name/tool_name` (e.g., `"@git/git_status"`)
-- All tools from an MCP server using `@server_name` (e.g., `"@fetch"`)
+You can allow tools using several patterns:
 
-Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wildcard for allowing all tools. To allow specific tools, you must list them individually or use server-level wildcards with the `@server_name` syntax.
+### Exact Matches
+- **Built-in tools**: `"fs_read"`, `"execute_bash"`, `"knowledge"`
+- **Specific MCP tools**: `"@server_name/tool_name"` (e.g., `"@git/git_status"`)
+- **All tools from MCP server**: `"@server_name"` (e.g., `"@fetch"`)
+
+### Wildcard Patterns
+The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`:
+
+#### Native Tool Patterns
+- **Prefix wildcard**: `"fs_*"` → matches `fs_read`, `fs_write`, `fs_anything`
+- **Suffix wildcard**: `"*_bash"` → matches `execute_bash`, `run_bash`
+- **Middle wildcard**: `"fs_*_tool"` → matches `fs_read_tool`, `fs_write_tool`
+- **Single character**: `"fs_?ead"` → matches `fs_read`, `fs_head` (but not `fs_write`)
+
+#### MCP Tool Patterns
+- **Tool prefix**: `"@server/read_*"` → matches `@server/read_file`, `@server/read_config`
+- **Tool suffix**: `"@server/*_get"` → matches `@server/issue_get`, `@server/data_get`
+- **Server pattern**: `"@*-mcp/read_*"` → matches `@git-mcp/read_file`, `@db-mcp/read_data`
+- **Any tool from pattern servers**: `"@git-*/*"` → matches any tool from servers matching `git-*`
+
+### Examples
+
+```json
+{
+  "allowedTools": [
+    // Exact matches
+    "fs_read",
+    "knowledge",
+    "@server/specific_tool",
+    
+    // Native tool wildcards
+    "fs_*",                    // All filesystem tools
+    "execute_*",               // All execute tools
+    "*_test",                  // Any tool ending in _test
+    
+    // MCP tool wildcards
+    "@server/api_*",           // All API tools from server
+    "@server/read_*",          // All read tools from server
+    "@git-server/get_*_info",  // Tools like get_user_info, get_repo_info
+    "@*/status",               // Status tool from any server
+    
+    // Server-level permissions
+    "@fetch",                  // All tools from fetch server
+    "@git-*"                   // All tools from any git-* server
+  ]
+}
+```
+
+### Pattern Matching Rules
+- **`*`** matches any sequence of characters (including none)
+- **`?`** matches exactly one character
+- **Exact matches** take precedence over patterns
+- **Server-level permissions** (`@server_name`) allow all tools from that server
+- **Case-sensitive** matching
+
+Unlike the `tools` field, the `allowedTools` field does not support the `"*"` wildcard for allowing all tools. To allow tools, you must use specific patterns or server-level permissions.
 
 ## ToolsSettings Field
 
 The `toolsSettings` field provides configuration for specific tools. Each tool can have its own unique configuration options.
+Note that specifications that configure allowable patterns will be overridden if the tool is also included in `allowedTools`.
 
 ```json
 {
@@ -200,23 +256,37 @@ Resources can include:
 
 ## Hooks Field
 
-The `hooks` field defines commands to run at specific trigger points. The output of these commands is added to the agent's context.
+The `hooks` field defines commands to run at specific trigger points during agent lifecycle and tool execution.
+
+For detailed information about hook behavior, input/output formats, and examples, see the [Hooks documentation](hooks.md).
 
 ```json
 {
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
-        "timeout_ms": 30000,
-        "max_output_size": 10240,
-        "cache_ttl_seconds": 0
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
-        "timeout_ms": 5000
+        "command": "ls -la"
+      }
+    ],
+    "preToolUse": [
+      {
+        "matcher": "execute_bash",
+        "command": "{ echo \"$(date) - Bash command:\"; cat; echo; } >> /tmp/bash_audit_log"
+      },
+      {
+        "matcher": "use_aws",
+        "command": "{ echo \"$(date) - AWS CLI call:\"; cat; echo; } >> /tmp/aws_audit_log"
+      }
+    ],
+    "postToolUse": [
+      {
+        "matcher": "fs_write",
+        "command": "cargo fmt --all"
       }
     ]
   }
@@ -225,17 +295,17 @@ The `hooks` field defines commands to run at specific trigger points. The output
 
 Each hook is defined with:
 - `command` (required): The command to execute
-- `timeout_ms` (optional): Maximum execution time in milliseconds (default: 30000)
-- `max_output_size` (optional): Maximum output size in bytes (default: 10240)
-- `cache_ttl_seconds` (optional): How long to cache the output (default: 0)
+- `matcher` (optional): Pattern to match tool names for `preToolUse` and `postToolUse` hooks. See [built-in tools documentation](./built-in-tools.md) for available tool names.
 
 Available hook triggers:
-- `agentSpawn`: Triggered when the agent is initialized
-- `userPromptSubmit`: Triggered when the user submits a message
+- `agentSpawn`: Triggered when the agent is initialized.
+- `userPromptSubmit`: Triggered when the user submits a message.
+- `preToolUse`: Triggered before a tool is executed. Can block the tool use.
+- `postToolUse`: Triggered after a tool is executed.
 
 ## UseLegacyMcpJson Field
 
-The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy global MCP configuration file (`~/.aws/amazonq/mcp.json`).
+The `useLegacyMcpJson` field determines whether to include MCP servers defined in the legacy MCP configuration files (`~/.aws/amazonq/mcp.json` for global and `cwd/.amazonq/mcp.json` for workspace).
 
 ```json
 {
@@ -243,7 +313,21 @@ The `useLegacyMcpJson` field determines whether to include MCP servers defined i
 }
 ```
 
-When set to `true`, the agent will have access to all MCP servers defined in the global configuration in addition to those defined in the agent's `mcpServers` field.
+When set to `true`, the agent will have access to all MCP servers defined in the global and local configurations in addition to those defined in the agent's `mcpServers` field.
+
+## Model Field
+
+The `model` field specifies the model ID to use for this agent. If not specified, the agent will use the default model.
+
+```json
+{
+  "model": "claude-sonnet-4"
+}
+```
+
+The model ID must match one of the available models returned by the Q CLI's model service. You can see available models by using the `/model` command in an active chat session.
+
+If the specified model is not available, the agent will fall back to the default model and display a warning.
 
 ## Complete Example
 
@@ -294,17 +378,16 @@ Here's a complete example of an agent configuration file:
   "hooks": {
     "agentSpawn": [
       {
-        "command": "git status",
-        "timeout_ms": 30000
+        "command": "git status"
       }
     ],
     "userPromptSubmit": [
       {
-        "command": "ls -la",
-        "timeout_ms": 5000
+        "command": "ls -la"
       }
     ]
   },
-  "useLegacyMcpJson": true
+  "useLegacyMcpJson": true,
+  "model": "claude-sonnet-4"
 }
 ```

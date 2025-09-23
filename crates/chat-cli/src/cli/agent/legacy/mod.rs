@@ -25,9 +25,9 @@ use crate::util::directories;
 ///
 /// Returns [Some] with the newly migrated agents if the migration was performed, [None] if the
 /// migration was already done previously.
-pub async fn migrate(os: &mut Os) -> eyre::Result<Option<Vec<Agent>>> {
+pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>>> {
     let has_migrated = os.database.get_has_migrated()?;
-    if has_migrated.is_some_and(|has_migrated| has_migrated) {
+    if !force && has_migrated.is_some_and(|has_migrated| has_migrated) {
         return Ok(None);
     }
 
@@ -77,7 +77,7 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Option<Vec<Agent>>> {
     };
 
     let mcp_servers = {
-        let config_path = directories::chat_legacy_mcp_config(os)?;
+        let config_path = directories::chat_legacy_global_mcp_config(os)?;
         if os.fs.exists(&config_path) {
             match McpServerConfig::load_from_file(os, config_path).await {
                 Ok(mut config) => {
@@ -102,22 +102,27 @@ pub async fn migrate(os: &mut Os) -> eyre::Result<Option<Vec<Agent>>> {
     }
 
     let labels = vec!["Yes", "No"];
-    let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt("Legacy profiles detected. Would you like to migrate them?")
-        .items(&labels)
-        .default(1)
-        .interact_on_opt(&dialoguer::console::Term::stdout())
-    {
-        Ok(sel) => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-            );
-            sel
-        },
-        // Ctrl‑C -> Err(Interrupted)
-        Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
-        Err(e) => bail!("Failed to choose an option: {e}"),
+    let selection: Option<_> = if !force {
+        match Select::with_theme(&crate::util::dialoguer_theme())
+            .with_prompt("Legacy profiles detected. Would you like to migrate them?")
+            .items(&labels)
+            .default(1)
+            .interact_on_opt(&dialoguer::console::Term::stdout())
+        {
+            Ok(sel) => {
+                let _ = crossterm::execute!(
+                    std::io::stdout(),
+                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
+                );
+                sel
+            },
+            // Ctrl‑C -> Err(Interrupted)
+            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
+            Err(e) => bail!("Failed to choose an option: {e}"),
+        }
+    } else {
+        // Yes
+        Some(0)
     };
 
     if selection.is_none() || selection == Some(1) {

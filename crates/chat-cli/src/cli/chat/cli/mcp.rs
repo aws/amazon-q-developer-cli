@@ -1,9 +1,10 @@
 use std::io::Write;
 
 use clap::Args;
-use crossterm::{
-    queue,
-    style,
+use crossterm::queue;
+use crossterm::style::{
+    self,
+    Color,
 };
 
 use crate::cli::chat::tool_manager::LoadingRecord;
@@ -13,12 +14,31 @@ use crate::cli::chat::{
     ChatState,
 };
 
+/// Arguments for the MCP (Model Context Protocol) command.
+///
+/// This struct handles MCP-related functionality, allowing users to view
+/// the status of MCP servers and their loading progress.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct McpArgs;
 
 impl McpArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        if !session.conversation.mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         let terminal_width = session.terminal_width();
         let still_loading = session
             .conversation
@@ -34,9 +54,9 @@ impl McpArgs {
             let msg = msg
                 .iter()
                 .map(|record| match record {
-                    LoadingRecord::Err(content) | LoadingRecord::Warn(content) | LoadingRecord::Success(content) => {
-                        content.clone()
-                    },
+                    LoadingRecord::Err(timestamp, content)
+                    | LoadingRecord::Warn(timestamp, content)
+                    | LoadingRecord::Success(timestamp, content) => format!("[{timestamp}]: {content}"),
                 })
                 .collect::<Vec<_>>()
                 .join("\n--- tools refreshed ---\n");

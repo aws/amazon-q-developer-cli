@@ -13,6 +13,10 @@ pub struct UserContext {
     pub client_id: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub ide_version: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub plugin_version: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub lsp_version: ::std::option::Option<::std::string::String>,
 }
 impl UserContext {
     #[allow(missing_docs)] // documentation missing in model
@@ -40,6 +44,16 @@ impl UserContext {
     pub fn ide_version(&self) -> ::std::option::Option<&str> {
         self.ide_version.as_deref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn plugin_version(&self) -> ::std::option::Option<&str> {
+        self.plugin_version.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn lsp_version(&self) -> ::std::option::Option<&str> {
+        self.lsp_version.as_deref()
+    }
 }
 impl UserContext {
     /// Creates a new builder-style object to manufacture
@@ -58,6 +72,8 @@ pub struct UserContextBuilder {
     pub(crate) product: ::std::option::Option<::std::string::String>,
     pub(crate) client_id: ::std::option::Option<::std::string::String>,
     pub(crate) ide_version: ::std::option::Option<::std::string::String>,
+    pub(crate) plugin_version: ::std::option::Option<::std::string::String>,
+    pub(crate) lsp_version: ::std::option::Option<::std::string::String>,
 }
 impl UserContextBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -148,6 +164,40 @@ impl UserContextBuilder {
         &self.ide_version
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn plugin_version(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.plugin_version = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_plugin_version(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.plugin_version = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_plugin_version(&self) -> &::std::option::Option<::std::string::String> {
+        &self.plugin_version
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn lsp_version(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.lsp_version = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_lsp_version(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.lsp_version = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_lsp_version(&self) -> &::std::option::Option<::std::string::String> {
+        &self.lsp_version
+    }
+
     /// Consumes the builder and constructs a [`UserContext`](crate::types::UserContext).
     /// This method will fail if any of the following fields are not set:
     /// - [`ide_category`](crate::types::builders::UserContextBuilder::ide_category)
@@ -177,6 +227,8 @@ impl UserContextBuilder {
             })?,
             client_id: self.client_id,
             ide_version: self.ide_version,
+            plugin_version: self.plugin_version,
+            lsp_version: self.lsp_version,
         })
     }
 }

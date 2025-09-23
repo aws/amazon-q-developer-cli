@@ -8,12 +8,15 @@ use core::{
     AgentConfigInitArgs,
     ChatAddedMessageParams,
     RecordUserTurnCompletionArgs,
+    TangentModeSessionArgs,
     ToolUseEventBuilder,
 };
 use std::str::FromStr;
 
 use amzn_codewhisperer_client::types::{
     ChatAddMessageEvent,
+    ChatInteractWithMessageEvent,
+    ChatMessageInteractionType,
     IdeCategory,
     OperatingSystem,
     TelemetryEvent,
@@ -71,6 +74,7 @@ pub use crate::telemetry::core::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
+use crate::util::env_var::Q_CLI_CLIENT_APPLICATION;
 use crate::util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
@@ -231,10 +235,21 @@ impl TelemetryThread {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
     }
 
-    pub fn send_cli_subcommand_executed(&self, subcommand: &RootSubcommand) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::CliSubcommandExecuted {
+    pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::DailyHeartbeat {}))?)
+    }
+
+    pub async fn send_cli_subcommand_executed(
+        &self,
+        database: &Database,
+        subcommand: &RootSubcommand,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::CliSubcommandExecuted {
             subcommand: subcommand.to_string(),
-        }))?)
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     pub async fn send_chat_slash_command_executed(
@@ -246,15 +261,38 @@ impl TelemetryThread {
         result: TelemetryResult,
         reason: Option<String>,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(EventType::ChatSlashCommandExecuted {
+        let mut telemetry_event = Event::new(EventType::ChatSlashCommandExecuted {
             conversation_id,
             command,
             subcommand,
             result,
             reason,
         });
-        set_start_url_and_region(database, &mut event).await;
-        Ok(self.tx.send(event)?)
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
+    pub async fn send_agent_contribution_metric(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::AgentContribution {
+            conversation_id,
+            utterance_id,
+            tool_use_id,
+            tool_name,
+            lines_by_agent,
+            lines_by_user,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
@@ -265,14 +303,14 @@ impl TelemetryThread {
         result: TelemetryResult,
         data: ChatAddedMessageParams,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(EventType::ChatAddedMessage {
+        let mut telemetry_event = Event::new(EventType::ChatAddedMessage {
             conversation_id,
             result,
             data,
         });
-        set_start_url_and_region(database, &mut event).await;
+        set_event_metadata(database, &mut telemetry_event).await;
 
-        Ok(self.tx.send(event)?)
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     pub async fn send_record_user_turn_completion(
@@ -282,17 +320,37 @@ impl TelemetryThread {
         result: TelemetryResult,
         args: RecordUserTurnCompletionArgs,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(EventType::RecordUserTurnCompletion {
+        let mut telemetry_event = Event::new(EventType::RecordUserTurnCompletion {
             conversation_id,
             result,
             args,
         });
-        set_start_url_and_region(database, &mut event).await;
-        Ok(self.tx.send(event)?)
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
     }
 
-    pub fn send_tool_use_suggested(&self, event: ToolUseEventBuilder) -> Result<(), TelemetryError> {
-        Ok(self.tx.send(Event::new(EventType::ToolUseSuggested {
+    pub async fn send_tangent_mode_session(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: TangentModeSessionArgs,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::TangentModeSession {
+            conversation_id,
+            result,
+            args,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
+    pub async fn send_tool_use_suggested(
+        &self,
+        database: &Database,
+        event: ToolUseEventBuilder,
+    ) -> Result<(), TelemetryError> {
+        let mut telemetry_event = Event::new(EventType::ToolUseSuggested {
             conversation_id: event.conversation_id,
             utterance_id: event.utterance_id,
             user_input_id: event.user_input_id,
@@ -310,9 +368,15 @@ impl TelemetryThread {
             model: event.model,
             execution_duration: event.execution_duration,
             turn_duration: event.turn_duration,
-        }))?)
+            aws_service_name: event.aws_service_name,
+            aws_operation_name: event.aws_operation_name,
+        });
+        set_event_metadata(database, &mut telemetry_event).await;
+
+        Ok(self.tx.send(telemetry_event)?)
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn send_mcp_server_init(
         &self,
         database: &Database,
@@ -320,15 +384,22 @@ impl TelemetryThread {
         server_name: String,
         init_failure_reason: Option<String>,
         number_of_tools: usize,
+        all_tool_names: Option<String>,
+        loaded_tool_names: Option<String>,
+        all_tools_count: usize,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(crate::telemetry::EventType::McpServerInit {
+        let mut telemetry_event = Event::new(crate::telemetry::EventType::McpServerInit {
             conversation_id,
             server_name,
             init_failure_reason,
             number_of_tools,
+            all_tool_names,
+            loaded_tool_names,
+            all_tools_count,
         });
-        set_start_url_and_region(database, &mut event).await;
-        Ok(self.tx.send(event)?)
+        set_event_metadata(database, &mut telemetry_event).await;
+
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     pub async fn send_agent_config_init(
@@ -337,9 +408,9 @@ impl TelemetryThread {
         conversation_id: String,
         args: AgentConfigInitArgs,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(crate::telemetry::EventType::AgentConfigInit { conversation_id, args });
-        set_start_url_and_region(database, &mut event).await;
-        Ok(self.tx.send(event)?)
+        let mut telemetry_event = Event::new(crate::telemetry::EventType::AgentConfigInit { conversation_id, args });
+        set_event_metadata(database, &mut telemetry_event).await;
+        Ok(self.tx.send(telemetry_event)?)
     }
 
     pub fn send_did_select_profile(
@@ -387,7 +458,7 @@ impl TelemetryThread {
         request_id: Option<String>,
         message_id: Option<String>,
     ) -> Result<(), TelemetryError> {
-        let mut event = Event::new(EventType::MessageResponseError {
+        let mut telemetry_event = Event::new(EventType::MessageResponseError {
             result,
             reason,
             reason_desc,
@@ -397,19 +468,24 @@ impl TelemetryThread {
             request_id,
             message_id,
         });
-        set_start_url_and_region(database, &mut event).await;
+        set_event_metadata(database, &mut telemetry_event).await;
 
-        Ok(self.tx.send(event)?)
+        Ok(self.tx.send(telemetry_event)?)
     }
 }
 
-async fn set_start_url_and_region(database: &Database, event: &mut Event) {
+async fn set_event_metadata(database: &Database, event: &mut Event) {
     let (start_url, region) = get_start_url_and_region(database).await;
     if let Some(start_url) = start_url {
         event.set_start_url(start_url);
     }
     if let Some(region) = region {
         event.set_sso_region(region);
+    }
+
+    // Set the client application from environment variable
+    if let Ok(client_app) = std::env::var(Q_CLI_CLIENT_APPLICATION) {
+        event.set_client_application(client_app);
     }
 }
 
@@ -504,50 +580,95 @@ impl TelemetryClient {
             return;
         };
 
-        if let EventType::ChatAddedMessage {
-            conversation_id,
-            data:
-                ChatAddedMessageParams {
-                    message_id,
-                    model,
-                    time_to_first_chunk_ms,
-                    time_between_chunks_ms,
-                    assistant_response_length,
-                    ..
-                },
-            ..
-        } = &event.ty
-        {
-            let user_context = self.user_context().unwrap();
+        match &event.ty {
+            EventType::ChatAddedMessage {
+                conversation_id,
+                data:
+                    ChatAddedMessageParams {
+                        message_id,
+                        model,
+                        time_to_first_chunk_ms,
+                        time_between_chunks_ms,
+                        assistant_response_length,
+                        ..
+                    },
+                ..
+            } => {
+                let user_context = self.user_context().unwrap();
+                // Short-Term fix for Validation errors -
+                // chatAddMessageEvent.timeBetweenChunks' : Member must have length less than or equal to 100
+                let time_between_chunks_truncated = time_between_chunks_ms
+                    .as_ref()
+                    .map(|chunks| chunks.iter().take(100).cloned().collect());
 
-            let chat_add_message_event = match ChatAddMessageEvent::builder()
-                .conversation_id(conversation_id)
-                .message_id(message_id.clone().unwrap_or("not_set".to_string()))
-                .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
-                .set_time_between_chunks(time_between_chunks_ms.clone())
-                .set_response_length(*assistant_response_length)
-                .build()
-            {
-                Ok(event) => event,
-                Err(err) => {
+                let chat_add_message_event = match ChatAddMessageEvent::builder()
+                    .conversation_id(conversation_id)
+                    .message_id(message_id.clone().unwrap_or("not_set".to_string()))
+                    .set_time_to_first_chunk_milliseconds(*time_to_first_chunk_ms)
+                    .set_time_between_chunks(time_between_chunks_truncated)
+                    .set_response_length(*assistant_response_length)
+                    .build()
+                {
+                    Ok(event) => event,
+                    Err(err) => {
+                        error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
+                        return;
+                    },
+                };
+
+                let event = TelemetryEvent::ChatAddMessageEvent(chat_add_message_event);
+                debug!(
+                    ?event,
+                    ?user_context,
+                    telemetry_enabled = self.telemetry_enabled,
+                    "Sending cw telemetry event"
+                );
+                if let Err(err) = codewhisperer_client
+                    .send_telemetry_event(event, user_context, self.telemetry_enabled, model.to_owned())
+                    .await
+                {
                     error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
-                    return;
-                },
-            };
+                }
+            },
+            EventType::AgentContribution {
+                conversation_id,
+                utterance_id,
+                lines_by_agent,
+                ..
+            } => {
+                let user_context = self.user_context().unwrap();
 
-            let event = TelemetryEvent::ChatAddMessageEvent(chat_add_message_event);
-            debug!(
-                ?event,
-                ?user_context,
-                telemetry_enabled = self.telemetry_enabled,
-                "Sending cw telemetry event"
-            );
-            if let Err(err) = codewhisperer_client
-                .send_telemetry_event(event, user_context, self.telemetry_enabled, model.to_owned())
-                .await
-            {
-                error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
-            }
+                let builder = ChatInteractWithMessageEvent::builder()
+                    .conversation_id(conversation_id)
+                    .message_id(utterance_id.clone().unwrap_or("not_set".to_string()))
+                    .accepted_line_count(lines_by_agent.map_or(0, |lines| lines as i32))
+                    .interaction_type(ChatMessageInteractionType::AgenticCodeAccepted);
+
+                let chat_interact_event = match builder.build() {
+                    Ok(event) => event,
+                    Err(err) => {
+                        error!(err =% DisplayErrorContext(err), "Failed to build ChatInteractWithMessageEvent");
+                        return;
+                    },
+                };
+
+                let event = TelemetryEvent::ChatInteractWithMessageEvent(chat_interact_event);
+                debug!(
+                    ?event,
+                    ?user_context,
+                    telemetry_enabled = self.telemetry_enabled,
+                    "Sending cw telemetry event"
+                );
+                if let Err(err) = codewhisperer_client
+                    .send_telemetry_event(event, user_context, self.telemetry_enabled, None)
+                    .await
+                {
+                    error!(err =% DisplayErrorContext(err), "Failed to send cw telemetry event");
+                }
+            },
+            _ => {
+                // No CW telemetry event for other event types
+            },
         }
     }
 
@@ -690,7 +811,8 @@ mod test {
 
         thread.send_user_logged_in().ok();
         thread
-            .send_cli_subcommand_executed(&RootSubcommand::Version { changelog: None })
+            .send_cli_subcommand_executed(&database, &RootSubcommand::Version { changelog: None })
+            .await
             .ok();
         thread
             .send_chat_added_message(

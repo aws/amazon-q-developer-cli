@@ -1,7 +1,6 @@
 use std::path::Path;
 use std::thread::available_parallelism;
 
-use anyhow::Result as AnyhowResult;
 use candle_core::{
     Device,
     Tensor,
@@ -62,12 +61,6 @@ impl CandleTextEmbedder {
     pub fn with_model_type(model_type: ModelType) -> Result<Self> {
         let model_config = model_type.get_config();
         let (model_path, tokenizer_path) = model_config.get_local_paths();
-
-        // Create model directory if it doesn't exist
-        ensure_model_directory_exists(&model_path)?;
-
-        // Download files if they don't exist
-        ensure_model_files(&model_path, &tokenizer_path, &model_config)?;
 
         Self::with_model_config(&model_path, &tokenizer_path, model_config)
     }
@@ -258,69 +251,6 @@ impl CandleTextEmbedder {
             },
         }
     }
-}
-
-/// Ensure model directory exists
-fn ensure_model_directory_exists(model_path: &Path) -> Result<()> {
-    let model_dir = model_path.parent().unwrap_or_else(|| Path::new("."));
-    if let Err(err) = std::fs::create_dir_all(model_dir) {
-        error!("Failed to create model directory: {}", err);
-        return Err(SemanticSearchError::IoError(err));
-    }
-    Ok(())
-}
-
-/// Ensure model files exist, downloading them if necessary
-fn ensure_model_files(model_path: &Path, tokenizer_path: &Path, config: &ModelConfig) -> Result<()> {
-    // Check if files already exist
-    if model_path.exists() && tokenizer_path.exists() {
-        return Ok(());
-    }
-
-    // Create parent directories if they don't exist
-    if let Some(parent) = model_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Err(SemanticSearchError::IoError(e));
-        }
-    }
-    if let Some(parent) = tokenizer_path.parent() {
-        if let Err(e) = std::fs::create_dir_all(parent) {
-            return Err(SemanticSearchError::IoError(e));
-        }
-    }
-
-    info!("Downloading model files for {}...", config.name);
-
-    // Download files using Hugging Face Hub API
-    download_model_files(model_path, tokenizer_path, config).map_err(|e| {
-        error!("Failed to download model files: {}", e);
-        SemanticSearchError::EmbeddingError(e.to_string())
-    })
-}
-
-/// Download model files from Hugging Face Hub
-fn download_model_files(model_path: &Path, tokenizer_path: &Path, config: &ModelConfig) -> AnyhowResult<()> {
-    // Use Hugging Face Hub API to download files
-    let api = hf_hub::api::sync::Api::new()?;
-    let repo = api.repo(hf_hub::Repo::with_revision(
-        config.repo_path.clone(),
-        hf_hub::RepoType::Model,
-        "main".to_string(),
-    ));
-
-    // Download model file if it doesn't exist
-    if !model_path.exists() {
-        let model_file = repo.get(&config.model_file)?;
-        std::fs::copy(model_file, model_path)?;
-    }
-
-    // Download tokenizer file if it doesn't exist
-    if !tokenizer_path.exists() {
-        let tokenizer_file = repo.get(&config.tokenizer_file)?;
-        std::fs::copy(tokenizer_file, tokenizer_path)?;
-    }
-
-    Ok(())
 }
 
 /// Initialize thread pool for parallel processing
@@ -559,7 +489,6 @@ mod tests {
         let _model_path = temp_dir.path().join("model.safetensors");
         let _tokenizer_path = temp_dir.path().join("tokenizer.json");
 
-        // Mock the ensure_model_files function to avoid actual downloads
         // This is a simplified test that checks error handling paths
 
         // Return a mock error to test error handling
@@ -681,7 +610,7 @@ mod tests {
     }
 
     #[test]
-    fn test_ensure_model_files() {
+    fn test_model_files_exist() {
         // Create temporary directory for test
         let temp_dir = tempdir().expect("Failed to create temp directory");
         let model_path = temp_dir.path().join("model.safetensors");
@@ -691,10 +620,9 @@ mod tests {
         fs::write(&model_path, "mock data").expect("Failed to write mock model file");
         fs::write(&tokenizer_path, "mock data").expect("Failed to write mock tokenizer file");
 
-        // Test that ensure_model_files returns Ok when files exist
-        let config = ModelType::default().get_config();
-        let result = ensure_model_files(&model_path, &tokenizer_path, &config);
-        assert!(result.is_ok());
+        // Test that model files exist
+        assert!(model_path.exists(), "Model file should exist");
+        assert!(tokenizer_path.exists(), "Tokenizer file should exist");
     }
 
     /// Performance test for different model types

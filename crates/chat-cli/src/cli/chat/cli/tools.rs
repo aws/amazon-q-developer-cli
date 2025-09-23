@@ -18,8 +18,14 @@ use crossterm::{
 };
 
 use crate::api_client::model::Tool as FigTool;
-use crate::cli::agent::Agent;
-use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::agent::{
+    Agent,
+    DEFAULT_AGENT_NAME,
+};
+use crate::cli::chat::consts::{
+    AGENT_FORMAT_TOOLS_DOC_URL,
+    DUMMY_TOOL_NAME,
+};
 use crate::cli::chat::tools::ToolOrigin;
 use crate::cli::chat::{
     ChatError,
@@ -29,6 +35,7 @@ use crate::cli::chat::{
 };
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
+/// Command-line arguments for managing tools in the chat session
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct ToolsArgs {
@@ -57,7 +64,7 @@ impl ToolsArgs {
                 session
                     .conversation
                     .tools
-                    .get("native")
+                    .get(&ToolOrigin::Native)
                     .and_then(|tools| {
                         tools
                             .iter()
@@ -140,7 +147,11 @@ impl ToolsArgs {
             queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print("Servers still loading"),
+                style::Print("Servers loading (Some of these might need auth. See "),
+                style::SetForegroundColor(Color::Green),
+                style::Print("/mcp"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print(" for details)"),
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n"),
                 style::Print("▔".repeat(terminal_width)),
@@ -150,19 +161,30 @@ impl ToolsArgs {
             }
         }
 
-        queue!(
-            session.stderr,
-            style::Print("\nTrusted tools will run without confirmation."),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(format!("\n{}\n", "* Default settings")),
-            style::Print("\n💡 Use "),
-            style::SetForegroundColor(Color::Green),
-            style::Print("/tools help"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
-            style::Print(" to edit permissions.\n\n"),
-            style::SetForegroundColor(Color::Reset),
-        )?;
+        if origin_tools.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print(
+                    "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
+                ),
+                style::SetForegroundColor(Color::Green),
+                style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+        }
+
+        if !session.conversation.mcp_enabled {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("\n"),
+                style::Print("⚠️  WARNING: "),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+            )?;
+        }
 
         Ok(ChatState::default())
     }
@@ -176,19 +198,24 @@ impl ToolsArgs {
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
     before_long_help = "By default, Amazon Q will ask for your permission to use certain tools. You can control which tools you
-trust so that no confirmation is required. These settings will last only for this session."
+trust so that no confirmation is required.
+
+Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field"
 )]
+/// Subcommands for managing tool permissions and configurations
 pub enum ToolsSubcommand {
     /// Show the input schema for all available tools
     Schema,
     /// Trust a specific tool or tools for the session
     Trust {
         #[arg(required = true)]
+        /// Names of tools to trust
         tool_names: Vec<String>,
     },
     /// Revert a tool or tools to per-request confirmation
     Untrust {
         #[arg(required = true)]
+        /// Names of tools to untrust
         tool_names: Vec<String>,
     },
     /// Trust all tools (equivalent to deprecated /acceptall)
@@ -213,7 +240,7 @@ impl ToolsSubcommand {
         let native_tool_names = session
             .conversation
             .tools
-            .get("native")
+            .get(&ToolOrigin::Native)
             .map(|tools| {
                 tools
                     .iter()
@@ -366,7 +393,7 @@ impl ToolsSubcommand {
                     .conversation
                     .agents
                     .get_active()
-                    .is_some_and(|a| a.name.as_str() == "default")
+                    .is_some_and(|a| a.name.as_str() == DEFAULT_AGENT_NAME)
                 {
                     // We only want to reset the tool permission and nothing else
                     if let Some(active_agent) = session.conversation.agents.get_active_mut() {

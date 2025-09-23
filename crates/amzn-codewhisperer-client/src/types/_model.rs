@@ -5,18 +5,27 @@
 pub struct Model {
     /// Unique identifier for the model
     pub model_id: ::std::string::String,
+    /// User-facing display name
+    pub model_name: ::std::option::Option<::std::string::String>,
     /// Description of the model
     pub description: ::std::option::Option<::std::string::String>,
     /// Limits on token usage for this model
     pub token_limits: ::std::option::Option<crate::types::TokenLimits>,
     /// List of input types supported by this model
     pub supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
+    /// Whether the model supports prompt caching
+    pub supports_prompt_cache: ::std::option::Option<bool>,
 }
 impl Model {
     /// Unique identifier for the model
     pub fn model_id(&self) -> &str {
         use std::ops::Deref;
         self.model_id.deref()
+    }
+
+    /// User-facing display name
+    pub fn model_name(&self) -> ::std::option::Option<&str> {
+        self.model_name.as_deref()
     }
 
     /// Description of the model
@@ -36,6 +45,11 @@ impl Model {
     pub fn supported_input_types(&self) -> &[crate::types::InputType] {
         self.supported_input_types.as_deref().unwrap_or_default()
     }
+
+    /// Whether the model supports prompt caching
+    pub fn supports_prompt_cache(&self) -> ::std::option::Option<bool> {
+        self.supports_prompt_cache
+    }
 }
 impl Model {
     /// Creates a new builder-style object to manufacture [`Model`](crate::types::Model).
@@ -49,9 +63,11 @@ impl Model {
 #[non_exhaustive]
 pub struct ModelBuilder {
     pub(crate) model_id: ::std::option::Option<::std::string::String>,
+    pub(crate) model_name: ::std::option::Option<::std::string::String>,
     pub(crate) description: ::std::option::Option<::std::string::String>,
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
+    pub(crate) supports_prompt_cache: ::std::option::Option<bool>,
 }
 impl ModelBuilder {
     /// Unique identifier for the model
@@ -70,6 +86,23 @@ impl ModelBuilder {
     /// Unique identifier for the model
     pub fn get_model_id(&self) -> &::std::option::Option<::std::string::String> {
         &self.model_id
+    }
+
+    /// User-facing display name
+    pub fn model_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.model_name = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// User-facing display name
+    pub fn set_model_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.model_name = input;
+        self
+    }
+
+    /// User-facing display name
+    pub fn get_model_name(&self) -> &::std::option::Option<::std::string::String> {
+        &self.model_name
     }
 
     /// Description of the model
@@ -133,6 +166,23 @@ impl ModelBuilder {
         &self.supported_input_types
     }
 
+    /// Whether the model supports prompt caching
+    pub fn supports_prompt_cache(mut self, input: bool) -> Self {
+        self.supports_prompt_cache = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Whether the model supports prompt caching
+    pub fn set_supports_prompt_cache(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.supports_prompt_cache = input;
+        self
+    }
+
+    /// Whether the model supports prompt caching
+    pub fn get_supports_prompt_cache(&self) -> &::std::option::Option<bool> {
+        &self.supports_prompt_cache
+    }
+
     /// Consumes the builder and constructs a [`Model`](crate::types::Model).
     /// This method will fail if any of the following fields are not set:
     /// - [`model_id`](crate::types::builders::ModelBuilder::model_id)
@@ -144,9 +194,11 @@ impl ModelBuilder {
                     "model_id was not specified but it is required when building Model",
                 )
             })?,
+            model_name: self.model_name,
             description: self.description,
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,
+            supports_prompt_cache: self.supports_prompt_cache,
         })
     }
 }

@@ -16,6 +16,8 @@ use serde::{
     Serialize,
 };
 
+use crate::embedding::EmbeddingType;
+
 /// Main configuration structure for the semantic search client.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticSearchConfig {
@@ -39,6 +41,12 @@ pub struct SemanticSearchConfig {
 
     /// Maximum number of files allowed for indexing (default: 5000)
     pub max_files: usize,
+
+    /// Base URL for hosted models
+    pub hosted_models_base_url: String,
+
+    /// Embedding engine type to use
+    pub embedding_type: EmbeddingType,
 }
 
 impl SemanticSearchConfig {
@@ -83,6 +91,8 @@ impl Default for SemanticSearchConfig {
             timeout: 30000, // 30 seconds
             base_dir: get_default_base_dir(),
             max_files: 10000, // Default limit of 10000 files
+            hosted_models_base_url: "https://desktop-release.q.us-east-1.amazonaws.com/models".to_string(),
+            embedding_type: EmbeddingType::default(),
         }
     }
 }
@@ -183,13 +193,9 @@ pub fn init_config(base_dir: &Path) -> std::io::Result<()> {
 ///
 /// # Returns
 ///
-/// A reference to the global configuration
-///
-/// # Panics
-///
-/// Panics if the configuration has not been initialized
+/// A reference to the global configuration, or default if not initialized
 pub fn get_config() -> &'static SemanticSearchConfig {
-    CONFIG.get().expect("Semantic search configuration not initialized")
+    CONFIG.get_or_init(SemanticSearchConfig::default)
 }
 
 /// Loads the configuration from a file or creates a new one with default values.
@@ -333,6 +339,8 @@ mod tests {
             timeout: 30000,
             base_dir: temp_dir.path().to_path_buf(),
             max_files: 10000,
+            hosted_models_base_url: "http://test.example.com/models".to_string(),
+            embedding_type: EmbeddingType::default(),
         };
 
         // Update the config

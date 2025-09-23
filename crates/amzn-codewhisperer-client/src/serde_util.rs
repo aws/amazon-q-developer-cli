@@ -227,6 +227,12 @@ pub(crate) fn list_available_models_output_output_correct_errors(
     if builder.models.is_none() {
         builder.models = Some(Default::default())
     }
+    if builder.default_model.is_none() {
+        builder.default_model = {
+            let builder = crate::types::builders::ModelBuilder::default();
+            crate::serde_util::model_correct_errors(builder).build().ok()
+        }
+    }
     builder
 }
 
@@ -456,6 +462,20 @@ pub(crate) fn subscription_info_correct_errors(
 ) -> crate::types::builders::SubscriptionInfoBuilder {
     if builder.r#type.is_none() {
         builder.r#type = "no value was set".parse::<crate::types::SubscriptionType>().ok()
+    }
+    if builder.upgrade_capability.is_none() {
+        builder.upgrade_capability = "no value was set".parse::<crate::types::UpgradeCapability>().ok()
+    }
+    if builder.overage_capability.is_none() {
+        builder.overage_capability = "no value was set".parse::<crate::types::OverageCapability>().ok()
+    }
+    if builder.subscription_management_target.is_none() {
+        builder.subscription_management_target = "no value was set"
+            .parse::<crate::types::SubscriptionManagementTarget>()
+            .ok()
+    }
+    if builder.subscription_title.is_none() {
+        builder.subscription_title = Some(Default::default())
     }
     builder
 }

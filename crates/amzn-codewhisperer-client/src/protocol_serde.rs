@@ -212,6 +212,8 @@ pub(crate) mod shape_conversation_state;
 
 pub(crate) mod shape_customizations;
 
+pub(crate) mod shape_disclaimer_list;
+
 pub(crate) mod shape_editor_state;
 
 pub(crate) mod shape_event_list;
@@ -219,8 +221,6 @@ pub(crate) mod shape_event_list;
 pub(crate) mod shape_feature_evaluations_list;
 
 pub(crate) mod shape_file_context;
-
-pub(crate) mod shape_free_trial_info;
 
 pub(crate) mod shape_intent_context;
 
@@ -339,6 +339,8 @@ pub(crate) mod shape_feature_dev_code_generation_event;
 pub(crate) mod shape_feature_dev_event;
 
 pub(crate) mod shape_feature_evaluation;
+
+pub(crate) mod shape_free_trial_info;
 
 pub(crate) mod shape_inline_chat_event;
 

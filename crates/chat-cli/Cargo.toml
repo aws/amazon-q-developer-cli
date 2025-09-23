@@ -15,12 +15,6 @@ workspace = true
 default = []
 wayland = ["arboard/wayland-data-control"]
 
-[[bin]]
-name = "test_mcp_server"
-path = "test_mcp_server/test_server.rs"
-test = true
-doc = false
-
 [dependencies]
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
@@ -45,6 +39,7 @@ bstr.workspace = true
 bytes.workspace = true
 camino.workspace = true
 cfg-if.workspace = true
+chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_fig.workspace = true
@@ -123,6 +118,7 @@ winnow.workspace = true
 schemars.workspace = true
 chrono.workspace = true
 jsonschema.workspace = true
+rmcp.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

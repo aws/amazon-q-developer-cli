@@ -5,11 +5,40 @@
 pub struct SubscriptionInfo {
     /// Granted subscription type
     pub r#type: crate::types::SubscriptionType,
+    /// Is this subscription upgradeable
+    pub upgrade_capability: crate::types::UpgradeCapability,
+    /// Does this subscription support overages
+    pub overage_capability: crate::types::OverageCapability,
+    /// Where should the user be redirected for subscription management
+    pub subscription_management_target: crate::types::SubscriptionManagementTarget,
+    /// human friendly subscription title
+    pub subscription_title: ::std::string::String,
 }
 impl SubscriptionInfo {
     /// Granted subscription type
     pub fn r#type(&self) -> &crate::types::SubscriptionType {
         &self.r#type
+    }
+
+    /// Is this subscription upgradeable
+    pub fn upgrade_capability(&self) -> &crate::types::UpgradeCapability {
+        &self.upgrade_capability
+    }
+
+    /// Does this subscription support overages
+    pub fn overage_capability(&self) -> &crate::types::OverageCapability {
+        &self.overage_capability
+    }
+
+    /// Where should the user be redirected for subscription management
+    pub fn subscription_management_target(&self) -> &crate::types::SubscriptionManagementTarget {
+        &self.subscription_management_target
+    }
+
+    /// human friendly subscription title
+    pub fn subscription_title(&self) -> &str {
+        use std::ops::Deref;
+        self.subscription_title.deref()
     }
 }
 impl SubscriptionInfo {
@@ -25,6 +54,10 @@ impl SubscriptionInfo {
 #[non_exhaustive]
 pub struct SubscriptionInfoBuilder {
     pub(crate) r#type: ::std::option::Option<crate::types::SubscriptionType>,
+    pub(crate) upgrade_capability: ::std::option::Option<crate::types::UpgradeCapability>,
+    pub(crate) overage_capability: ::std::option::Option<crate::types::OverageCapability>,
+    pub(crate) subscription_management_target: ::std::option::Option<crate::types::SubscriptionManagementTarget>,
+    pub(crate) subscription_title: ::std::option::Option<::std::string::String>,
 }
 impl SubscriptionInfoBuilder {
     /// Granted subscription type
@@ -45,9 +78,90 @@ impl SubscriptionInfoBuilder {
         &self.r#type
     }
 
+    /// Is this subscription upgradeable
+    /// This field is required.
+    pub fn upgrade_capability(mut self, input: crate::types::UpgradeCapability) -> Self {
+        self.upgrade_capability = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Is this subscription upgradeable
+    pub fn set_upgrade_capability(mut self, input: ::std::option::Option<crate::types::UpgradeCapability>) -> Self {
+        self.upgrade_capability = input;
+        self
+    }
+
+    /// Is this subscription upgradeable
+    pub fn get_upgrade_capability(&self) -> &::std::option::Option<crate::types::UpgradeCapability> {
+        &self.upgrade_capability
+    }
+
+    /// Does this subscription support overages
+    /// This field is required.
+    pub fn overage_capability(mut self, input: crate::types::OverageCapability) -> Self {
+        self.overage_capability = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Does this subscription support overages
+    pub fn set_overage_capability(mut self, input: ::std::option::Option<crate::types::OverageCapability>) -> Self {
+        self.overage_capability = input;
+        self
+    }
+
+    /// Does this subscription support overages
+    pub fn get_overage_capability(&self) -> &::std::option::Option<crate::types::OverageCapability> {
+        &self.overage_capability
+    }
+
+    /// Where should the user be redirected for subscription management
+    /// This field is required.
+    pub fn subscription_management_target(mut self, input: crate::types::SubscriptionManagementTarget) -> Self {
+        self.subscription_management_target = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Where should the user be redirected for subscription management
+    pub fn set_subscription_management_target(
+        mut self,
+        input: ::std::option::Option<crate::types::SubscriptionManagementTarget>,
+    ) -> Self {
+        self.subscription_management_target = input;
+        self
+    }
+
+    /// Where should the user be redirected for subscription management
+    pub fn get_subscription_management_target(
+        &self,
+    ) -> &::std::option::Option<crate::types::SubscriptionManagementTarget> {
+        &self.subscription_management_target
+    }
+
+    /// human friendly subscription title
+    /// This field is required.
+    pub fn subscription_title(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.subscription_title = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// human friendly subscription title
+    pub fn set_subscription_title(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.subscription_title = input;
+        self
+    }
+
+    /// human friendly subscription title
+    pub fn get_subscription_title(&self) -> &::std::option::Option<::std::string::String> {
+        &self.subscription_title
+    }
+
     /// Consumes the builder and constructs a [`SubscriptionInfo`](crate::types::SubscriptionInfo).
     /// This method will fail if any of the following fields are not set:
     /// - [`r#type`](crate::types::builders::SubscriptionInfoBuilder::type)
+    /// - [`upgrade_capability`](crate::types::builders::SubscriptionInfoBuilder::upgrade_capability)
+    /// - [`overage_capability`](crate::types::builders::SubscriptionInfoBuilder::overage_capability)
+    /// - [`subscription_management_target`](crate::types::builders::SubscriptionInfoBuilder::subscription_management_target)
+    /// - [`subscription_title`](crate::types::builders::SubscriptionInfoBuilder::subscription_title)
     pub fn build(
         self,
     ) -> ::std::result::Result<crate::types::SubscriptionInfo, ::aws_smithy_types::error::operation::BuildError> {
@@ -56,6 +170,30 @@ impl SubscriptionInfoBuilder {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "r#type",
                     "r#type was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            upgrade_capability: self.upgrade_capability.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "upgrade_capability",
+                    "upgrade_capability was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            overage_capability: self.overage_capability.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "overage_capability",
+                    "overage_capability was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            subscription_management_target: self.subscription_management_target.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "subscription_management_target",
+                    "subscription_management_target was not specified but it is required when building SubscriptionInfo",
+                )
+            })?,
+            subscription_title: self.subscription_title.ok_or_else(|| {
+                ::aws_smithy_types::error::operation::BuildError::missing_field(
+                    "subscription_title",
+                    "subscription_title was not specified but it is required when building SubscriptionInfo",
                 )
             })?,
         })

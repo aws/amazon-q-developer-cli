@@ -17,6 +17,7 @@ use crate::cli::chat::{
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
+/// Arguments for the clear command that erases conversation history and context.
 pub struct ClearArgs;
 
 impl ClearArgs {
@@ -47,10 +48,16 @@ impl ClearArgs {
         };
 
         if ["y", "Y"].contains(&user_input.as_str()) {
-            session.conversation.clear(true);
+            session.conversation.clear();
             if let Some(cm) = session.conversation.context_manager.as_mut() {
                 cm.hook_executor.cache.clear();
             }
+
+            // Reset pending tool state to prevent orphaned tool approval prompts
+            session.tool_uses.clear();
+            session.pending_tool_index = None;
+            session.tool_turn_start_time = None;
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Green),

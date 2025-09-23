@@ -14,6 +14,10 @@ pub mod config;
 pub mod error;
 /// Vector index implementation
 pub mod index;
+/// Model validation for SHA verification
+pub mod model_validator;
+/// Pattern filtering for file selection
+pub mod pattern_filter;
 /// File processing utilities
 pub mod processing;
 /// Data types for semantic search operations
@@ -22,13 +26,18 @@ pub mod types;
 /// Text embedding functionality
 pub mod embedding;
 
-pub use client::SemanticSearchClient;
+pub use client::{
+    AsyncSemanticSearchClient,
+    BM25Context,
+    SemanticSearchClient,
+};
 pub use config::SemanticSearchConfig;
 pub use error::{
     Result,
     SemanticSearchError,
 };
 pub use types::{
+    BM25DataPoint,
     DataPoint,
     FileType,
     KnowledgeContext,

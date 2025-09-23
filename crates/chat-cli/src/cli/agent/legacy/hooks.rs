@@ -80,6 +80,8 @@ impl From<LegacyHook> for Option<Hook> {
             timeout_ms: value.timeout_ms,
             max_output_size: value.max_output_size,
             cache_ttl_seconds: value.cache_ttl_seconds,
+            matcher: None,
+            source: Default::default(),
         })
     }
 }

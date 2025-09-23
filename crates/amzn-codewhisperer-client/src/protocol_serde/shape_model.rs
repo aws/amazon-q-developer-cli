@@ -27,6 +27,13 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "modelName" => {
+                                builder = builder.set_model_name(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             "description" => {
                                 builder = builder.set_description(
                                     ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
@@ -43,6 +50,11 @@ where
                                 builder = builder.set_supported_input_types(
                                 crate::protocol_serde::shape_supported_input_types_list::de_supported_input_types_list(tokens)?,
                             );
+                            },
+                            "supportsPromptCache" => {
+                                builder = builder.set_supports_prompt_cache(
+                                    ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
+                                );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }

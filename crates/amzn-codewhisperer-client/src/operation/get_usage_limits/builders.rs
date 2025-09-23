@@ -138,6 +138,23 @@ impl GetUsageLimitsFluentBuilder {
         self.inner.get_profile_arn()
     }
 
+    /// The origin of the client request to get limits for.
+    pub fn origin(mut self, input: crate::types::Origin) -> Self {
+        self.inner = self.inner.origin(input);
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn set_origin(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
+        self.inner = self.inner.set_origin(input);
+        self
+    }
+
+    /// The origin of the client request to get limits for.
+    pub fn get_origin(&self) -> &::std::option::Option<crate::types::Origin> {
+        self.inner.get_origin()
+    }
+
     #[allow(missing_docs)] // documentation missing in model
     pub fn resource_type(mut self, input: crate::types::ResourceType) -> Self {
         self.inner = self.inner.resource_type(input);
@@ -153,5 +170,22 @@ impl GetUsageLimitsFluentBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_resource_type(&self) -> &::std::option::Option<crate::types::ResourceType> {
         self.inner.get_resource_type()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn is_email_required(mut self, input: bool) -> Self {
+        self.inner = self.inner.is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_is_email_required(mut self, input: ::std::option::Option<bool>) -> Self {
+        self.inner = self.inner.set_is_email_required(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_is_email_required(&self) -> &::std::option::Option<bool> {
+        self.inner.get_is_email_required()
     }
 }
