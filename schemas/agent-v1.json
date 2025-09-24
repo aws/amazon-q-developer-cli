@@ -16,6 +16,20 @@
         },
         "required": ["command"]
       }
+    },
+    "TransportType": {
+      "oneOf": [
+        {
+          "description": "Standard input/output transport (default)",
+          "type": "string",
+          "const": "stdio"
+        },
+        {
+          "description": "HTTP transport for web-based communication",
+          "type": "string",
+          "const": "http"
+        }
+      ]
     }
   },
   "properties": {
@@ -49,9 +63,41 @@
       "additionalProperties": {
         "type": "object",
         "properties": {
+          "type": {
+            "description": "The type of transport the mcp server is expecting. For http transport, only url (for now) is taken into account",
+            "$ref": "#/$definitions/TransportType",
+            "default": "stdio"
+          },
+          "url": {
+            "description": "The URL endpoint for HTTP-based MCP servers",
+            "type": "string",
+            "default": ""
+          },
+          "headers": {
+            "description": "HTTP headers to include when communicating with HTTP-based MCP servers",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "oauthScopes": {
+            "description": "Scopes with which oauth is done",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "openid",
+              "email",
+              "profile",
+              "offline_access"
+            ]
+          },
           "command": {
             "description": "The command string used to initialize the mcp server",
-            "type": "string"
+            "type": "string",
+            "default": ""
           },
           "args": {
             "description": "A list of arguments to be used to run the command with",

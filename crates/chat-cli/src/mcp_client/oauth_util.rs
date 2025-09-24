@@ -1,10 +1,14 @@
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use http::StatusCode;
+use http::{
+    HeaderMap,
+    StatusCode,
+};
 use http_body_util::Full;
 use hyper::Response;
 use hyper::body::Bytes;
@@ -69,6 +73,8 @@ pub enum OauthUtilError {
     Directory(#[from] DirectoryError),
     #[error(transparent)]
     Reqwest(#[from] reqwest::Error),
+    #[error("{0}")]
+    Http(String),
     #[error("Malformed directory")]
     MalformDirectory,
     #[error("Missing credential")]
@@ -162,13 +168,16 @@ pub enum HttpTransport {
     WithoutAuth(WorkerTransport<StreamableHttpClientWorker<Client>>),
 }
 
-fn get_scopes() -> &'static [&'static str] {
-    &["openid", "mcp", "email", "profile"]
+pub fn get_default_scopes() -> &'static [&'static str] {
+    &["openid", "email", "profile", "offline_access"]
 }
 
 pub async fn get_http_transport(
     os: &Os,
     url: &str,
+    timeout: u64,
+    scopes: &[String],
+    headers: &HashMap<String, String>,
     auth_client: Option<AuthClient<Client>>,
     messenger: &dyn Messenger,
 ) -> Result<HttpTransport, OauthUtilError> {
@@ -178,7 +187,13 @@ pub async fn get_http_transport(
     let cred_full_path = cred_dir.join(format!("{key}.token.json"));
     let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
 
-    let reqwest_client = reqwest::Client::default();
+    let mut client_builder = reqwest::ClientBuilder::new().timeout(std::time::Duration::from_millis(timeout));
+    if !headers.is_empty() {
+        let headers = HeaderMap::try_from(headers).map_err(|e| OauthUtilError::Http(e.to_string()))?;
+        client_builder = client_builder.default_headers(headers);
+    };
+    let reqwest_client = client_builder.build()?;
+
     let probe_resp = reqwest_client.get(url.clone()).send().await?;
     match probe_resp.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
@@ -186,8 +201,14 @@ pub async fn get_http_transport(
             let auth_client = match auth_client {
                 Some(auth_client) => auth_client,
                 None => {
-                    let am =
-                        get_auth_manager(url.clone(), cred_full_path.clone(), reg_full_path.clone(), messenger).await?;
+                    let am = get_auth_manager(
+                        url.clone(),
+                        cred_full_path.clone(),
+                        reg_full_path.clone(),
+                        scopes,
+                        messenger,
+                    )
+                    .await?;
                     AuthClient::new(reqwest_client, am)
                 },
             };
@@ -204,7 +225,12 @@ pub async fn get_http_transport(
             Ok(HttpTransport::WithAuth((transport, auth_dg)))
         },
         _ => {
-            let transport = StreamableHttpClientTransport::from_uri(url.as_str());
+            let transport =
+                StreamableHttpClientTransport::with_client(reqwest_client, StreamableHttpClientTransportConfig {
+                    uri: url.as_str().into(),
+                    allow_stateless: false,
+                    ..Default::default()
+                });
 
             Ok(HttpTransport::WithoutAuth(transport))
         },
@@ -215,6 +241,7 @@ async fn get_auth_manager(
     url: Url,
     cred_full_path: PathBuf,
     reg_full_path: PathBuf,
+    scopes: &[String],
     messenger: &dyn Messenger,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
@@ -237,7 +264,7 @@ async fn get_auth_manager(
         _ => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, messenger).await?;
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, messenger).await?;
 
             // Client registration is done in [start_authorization]
             // If we have gotten past that point that means we have the info to persist the
@@ -246,7 +273,10 @@ async fn get_auth_manager(
             let reg = Registration {
                 client_id,
                 client_secret: None,
-                scopes: get_scopes().iter().map(|s| (*s).to_string()).collect::<Vec<_>>(),
+                scopes: get_default_scopes()
+                    .iter()
+                    .map(|s| (*s).to_string())
+                    .collect::<Vec<_>>(),
                 redirect_uri,
             };
             let reg_as_str = serde_json::to_string_pretty(&reg)?;
@@ -268,6 +298,7 @@ async fn get_auth_manager(
 
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
+    scopes: &[String],
     messenger: &dyn Messenger,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
@@ -278,7 +309,9 @@ async fn get_auth_manager_impl(
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
     let redirect_uri = format!("http://{}", actual_addr);
-    oauth_state.start_authorization(get_scopes(), &redirect_uri).await?;
+    let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
+    let scopes_as_slice = scopes_as_str.as_slice();
+    oauth_state.start_authorization(scopes_as_slice, &redirect_uri).await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
@@ -333,9 +366,23 @@ async fn make_svc(
             let query = uri.query().unwrap_or("");
             let params: std::collections::HashMap<String, String> =
                 url::form_urlencoded::parse(query.as_bytes()).into_owned().collect();
+            debug!("## mcp: uri: {}, query: {}, params: {:?}", uri, query, params);
 
             let self_clone = self.clone();
             Box::pin(async move {
+                let error = params.get("error");
+                let resp = if let Some(err) = error {
+                    mk_response(format!(
+                        "OAuth failed. Check URL for precise reasons. Possible reasons: {}.\n\
+                         If this is scope related, you can try configuring the server scopes \n\
+                         to be an empty array by adding \"oauthScopes\": [] to your server config.\n\
+                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n",
+                        err
+                    ))
+                } else {
+                    mk_response("You can close this page now".to_string())
+                };
+
                 let code = params.get("code").cloned().unwrap_or_default();
                 if let Some(sender) = self_clone
                     .one_shot_sender
@@ -345,7 +392,8 @@ async fn make_svc(
                 {
                     sender.send(code).map_err(LoopBackError::Send)?;
                 }
-                mk_response("You can close this page now".to_string())
+
+                resp
             })
         }
     }

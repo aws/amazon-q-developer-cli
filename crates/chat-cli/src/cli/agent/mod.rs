@@ -818,9 +818,9 @@ impl Agents {
             "fs_read" => "trust working directory".dark_grey(),
             "fs_write" => "not trusted".dark_grey(),
             #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
+            "execute_bash" => "not trusted".dark_grey(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
+            "execute_cmd" => "not trusted".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "introspect" => "trusted".dark_green().bold(),
@@ -959,6 +959,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::cli::agent::hook::Source;
     const INPUT: &str = r#"
             {
               "name": "some_agent",
@@ -968,21 +969,21 @@ mod tests {
                 "fetch": { "command": "fetch3.1", "args": [] },
                 "git": { "command": "git-mcp", "args": [] }
               },
-              "tools": [                                    
+              "tools": [
                 "@git"
               ],
               "toolAliases": {
                   "@gits/some_tool": "some_tool2"
               },
-              "allowedTools": [                           
-                "fs_read",                               
+              "allowedTools": [
+                "fs_read",
                 "@fetch",
                 "@gits/git_status"
               ],
-              "resources": [                        
+              "resources": [
                 "file://~/my-genai-prompts/unittest.md"
               ],
-              "toolsSettings": {                     
+              "toolsSettings": {
                 "fs_write": { "allowedPaths": ["~/**"] },
                 "@git/git_status": { "git_user": "$GIT_USER" }
               }
@@ -1188,8 +1189,8 @@ mod tests {
         let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
         assert!(
-            execute_bash_label.contains("read-only"),
-            "execute_bash should show read-only by default, instead found: {}",
+            execute_bash_label.contains("not trusted"),
+            "execute_bash should not be trusted by default, instead found: {}",
             execute_bash_label
         );
     }
@@ -1352,5 +1353,71 @@ mod tests {
         agents.active_idx = "no-model-agent".to_string();
 
         assert_eq!(agents.get_active().and_then(|a| a.model.as_ref()), None);
+    }
+
+    #[test]
+    fn test_agent_with_hooks() {
+        let agent_json = json!({
+            "name": "test-agent",
+            "hooks": {
+                "agentSpawn": [
+                    {
+                        "command": "git status"
+                    }
+                ],
+                "preToolUse": [
+                    {
+                        "matcher": "fs_write",
+                        "command": "validate-tool.sh"
+                    },
+                    {
+                        "matcher": "fs_read",
+                        "command": "enforce-tdd.sh"
+                    }
+                ],
+                "postToolUse": [
+                    {
+                        "matcher": "fs_write",
+                        "command": "format-python.sh"
+                    }
+                ]
+            }
+        });
+
+        let agent: Agent = serde_json::from_value(agent_json).expect("Failed to deserialize agent");
+
+        // Verify agent name
+        assert_eq!(agent.name, "test-agent");
+
+        // Verify agentSpawn hook
+        assert!(agent.hooks.contains_key(&HookTrigger::AgentSpawn));
+        let agent_spawn_hooks = &agent.hooks[&HookTrigger::AgentSpawn];
+        assert_eq!(agent_spawn_hooks.len(), 1);
+        assert_eq!(agent_spawn_hooks[0].command, "git status");
+        assert_eq!(agent_spawn_hooks[0].matcher, None);
+
+        // Verify preToolUse hooks
+        assert!(agent.hooks.contains_key(&HookTrigger::PreToolUse));
+        let pre_tool_hooks = &agent.hooks[&HookTrigger::PreToolUse];
+        assert_eq!(pre_tool_hooks.len(), 2);
+
+        assert_eq!(pre_tool_hooks[0].command, "validate-tool.sh");
+        assert_eq!(pre_tool_hooks[0].matcher, Some("fs_write".to_string()));
+
+        assert_eq!(pre_tool_hooks[1].command, "enforce-tdd.sh");
+        assert_eq!(pre_tool_hooks[1].matcher, Some("fs_read".to_string()));
+
+        // Verify postToolUse hooks
+        assert!(agent.hooks.contains_key(&HookTrigger::PostToolUse));
+
+        // Verify default values are set correctly
+        for hooks in agent.hooks.values() {
+            for hook in hooks {
+                assert_eq!(hook.timeout_ms, 30_000);
+                assert_eq!(hook.max_output_size, 10_240);
+                assert_eq!(hook.cache_ttl_seconds, 0);
+                assert_eq!(hook.source, Source::Agent);
+            }
+        }
     }
 }
