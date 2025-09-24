@@ -83,6 +83,26 @@ With --hard:
 
 impl CheckpointSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Check if in tangent mode - captures are disabled during tangent mode
+        if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledTangentMode)
+            .unwrap_or(false)
+        {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(
+                    "⚠️ Checkpoint is disabled while in tangent mode. Disbale tangent mode with: q settings -d chat.enableTangentMode.\n\n"
+                ),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         // Check if checkpoint is enabled
         if !os
             .database

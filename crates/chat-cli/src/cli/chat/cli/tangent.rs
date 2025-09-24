@@ -63,6 +63,26 @@ impl TangentArgs {
             });
         }
 
+        // Check if checkpoint is enabled
+        if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledCheckpoint)
+            .unwrap_or(false)
+        {
+            execute!(
+                session.stderr,
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(
+                    "⚠️ Tangent mode is disabled while using checkpoint. Disbale checkpoint with: q settings -d chat.enableCheckpoint.\n"
+                ),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
         match self.subcommand {
             Some(TangentSubcommand::Tail) => {
                 if session.conversation.is_in_tangent_mode() {
