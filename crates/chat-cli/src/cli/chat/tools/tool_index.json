@@ -314,11 +314,23 @@
           ],
           "description": "The command to run. Allowed options are `create`, `complete`, `load`, `add`, `remove`, and `lookup`. Call `lookup` without arguments to see a list of all existing TODO list IDs."
         },
-        "tasks": {
-          "description": "Required parameter of `create` command containing the list of DISTINCT tasks to be added to the TODO list.",
+        "tasks_with_models": {
+          "description": "ALWAYS use this parameter for `create` command. Each task MUST specify a model based on difficulty: use 'claude-3.5-haiku' for easy tasks and 'claude-sonnet-4' for hard/complex tasks.",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "task_description": {
+                "type": "string",
+                "description": "The task description"
+              },
+              "model": {
+                "type": "string",
+                "enum": ["claude-3.5-haiku", "claude-sonnet-4"],
+                "description": "The model to use for this task based on difficulty"
+              }
+            },
+            "required": ["task_description", "model"]
           }
         },
         "todo_list_description": {
