@@ -316,15 +316,31 @@ fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
     
     // Execute :wq to save and quit
     let wq_response = chat.execute_command(":wq")?;
-
+    
     println!("📝 Final wq response: {} bytes", wq_response.len());
     println!("📝 WQ RESPONSE:");
     println!("{}", wq_response);
     println!("📝 END WQ RESPONSE");
+
+    if wq_response.contains("Using tool:") && wq_response.contains("Allow this action?"){
+            let allow_response = chat.execute_command("y")?;
+
+            println!("📝 Allow response: {} bytes", allow_response.len());
+            println!("📝 ALLOW RESPONSE:");
+            println!("{}", allow_response);
+            println!("📝 END ALLOW RESPONSE");
+
+            // Verify the file content is loaded in editor
+            assert!(allow_response.contains("Hello from test file"), "File content not loaded in editor");
+            println!("✅ File content loaded successfully in editor");
     
-    // Verify the file content is loaded in editor
-    assert!(wq_response.contains("Hello from test file"), "File content not loaded in editor");
-    println!("✅ File content loaded successfully in editor");
+    }
+    else{
+        // Verify the file content is loaded in editor
+        assert!(wq_response.contains("Hello from test file"), "File content not loaded in editor");
+        println!("✅ File content loaded successfully in editor");
+    }
+    
     
     // Clean up test file
     std::fs::remove_file(test_file_path).ok();

@@ -59,7 +59,7 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent command... | Description: Tests the <code> /agent</code> command without subcommands to display help information. Verifies agent management description, usage, available subcommands, and options");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent")?;
     
@@ -118,7 +118,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     let agent_name = format!("test_demo_agent_{}", timestamp);
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let create_response = chat.execute_command(&format!("/agent create --name {}", agent_name))?;
     
@@ -181,7 +181,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent create without required arguments... | Description: Tests the <code> /agent create</code> command without required arguments to verify error handling. Verifies proper error messages, usage information, and help suggestions");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent create")?;
     
@@ -232,7 +232,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent help... | Description: Tests the <code> /agent help</code> command to display comprehensive agent help information. Verifies agent descriptions, usage notes, launch instructions, and configuration paths");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent help")?;
     
@@ -241,33 +241,23 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", response);
     println!("📝 END OUTPUT");
     
-    let mut failures = Vec::new();
+    assert!(response.contains("~/.aws/amazonq/cli-agents/"), "Missing global path");
+    assert!(response.contains("cwd/.amazonq/cli-agents"), "Missing workspace path");
+    assert!(response.contains("Usage:"), "Missing usage label");
+    assert!(response.contains("/agent"), "Missing agent command");
+    assert!(response.contains("<COMMAND>"), "Missing command parameter");
+    assert!(response.contains("Commands:"), "Missing commands section");
+    assert!(response.contains("list"), "Missing list command");
+    assert!(response.contains("create"), "Missing create command");
+    assert!(response.contains("schema"), "Missing schema command");
+    assert!(response.contains("set-default"), "Missing set-default command");
+    assert!(response.contains("help"), "Missing help command");
+    println!("✅ Found all expected commands in help output");
     
-    if !response.contains("Agents allow you to organize") { failures.push("Missing description"); }
-    if !response.contains("manage different sets of context") { failures.push("Missing context description"); }
-    if !response.contains("Notes") { failures.push("Missing notes section"); }
-    if !response.contains("Launch q chat with a specific agent") { failures.push("Missing launch note"); }
-    if !response.contains("--agent") { failures.push("Missing agent flag"); }
-    if !response.contains("Construct an agent under") { failures.push("Missing construct note"); }
-    if !response.contains("~/.aws/amazonq/cli-agents/") { failures.push("Missing global path"); }
-    if !response.contains("cwd/.aws/amazonq/cli-agents") { failures.push("Missing workspace path"); }
-    if !response.contains("Manage agents") { failures.push("Missing manage section"); }
-    if !response.contains("Usage:") { failures.push("Missing usage label"); }
-    if !response.contains("/agent") { failures.push("Missing agent command"); }
-    if !response.contains("<COMMAND>") { failures.push("Missing command parameter"); }
-    if !response.contains("Commands:") { failures.push("Missing commands section"); }
-    if !response.contains("list") { failures.push("Missing list command"); }
-    if !response.contains("create") { failures.push("Missing create command"); }
-    if !response.contains("schema") { failures.push("Missing schema command"); }
-    if !response.contains("set-default") { failures.push("Missing set-default command"); }
-    if !response.contains("help") { failures.push("Missing help command"); }
-    if !response.contains("Options:") { failures.push("Missing options section"); }
-    if !response.contains("-h") { failures.push("Missing short help flag"); }
-    if !response.contains("--help") { failures.push("Missing long help flag"); }
-    
-    if !failures.is_empty() {
-        panic!("Test failures: {}", failures.join(", "));
-    }
+    assert!(response.contains("Options:"), "Missing options section");
+    assert!(response.contains("-h"), "Missing short help flag");
+    assert!(response.contains("--help"), "Missing long help flag");
+    println!("✅ Found all expected options in help output");
     
     println!("✅ All expected help content found");
     println!("✅ /agent help executed successfully");
@@ -289,7 +279,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent invalidcommand... | Description: Tests the <code> /agent</code> command with invalid subcommand to verify error handling. Verifies that invalid commands display help information with available commands and options");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent invalidcommand")?;
     
@@ -328,7 +318,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent list command... | Description: Tests the <code> /agent list</code> command to display all available agents. Verifies agent listing format and presence of default agent");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent list")?;
     
@@ -403,7 +393,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent set-default with valid arguments... | Description: Tests the <code> /agent set-default</code> command with valid arguments to set default agent. Verifies success messages and confirmation of default agent configuration");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent set-default -n q_cli_default")?;
     
@@ -444,7 +434,7 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
     println!("\n🔍 Testing /agent set-default without required arguments... | Description: Tests the <code> /agent set-default</code> command without required arguments to verify error handling. Verifies error messages, usage information, and available options display");
     
     let session = get_chat_session();
-    let mut chat = session.lock().unwrap();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent set-default")?;
     

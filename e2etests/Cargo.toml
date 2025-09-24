@@ -7,12 +7,14 @@ edition = "2021"
 
 [dependencies]
 expectrl = "0.7"
+regex = "1.0"
 
 [features]
-core_session = ["help", "quit", "clear"] # Core Session Commands (/help, /quit, /clear)
+core_session = ["help", "quit", "clear", "changelog"] # Core Session Commands (/help, /quit, /clear, /changelog)
 help = [] # Help Command (/help)
 quit = [] # Quit Command (/quit)
 clear = [] # Clear Command (/clear)
+changelog = [] # Changelog Command (/changelog)
 
 tools = [] # Tools Command (/tools)
 agent = [] # Agent Commands (/agent list, /agent create, etc.)
@@ -36,6 +38,7 @@ ai_prompts = [] # AI Prompts ("What is AWS?", "Hello")
 q_subcommand = [] # Q SubCommand (q chat, q doctor, q translate)
 
 todos = []  # todos command
+experiment=[] # experiment command
 
 regression = [] # Regression Tests
 sanity = [] # Sanity Tests - Quick smoke tests for basic functionality
