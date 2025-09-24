@@ -70,7 +70,10 @@ use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
-use crate::cli::chat::tools::custom_tool::CustomTool;
+use crate::cli::chat::tools::custom_tool::{
+    CustomTool,
+    TransportType,
+};
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -181,7 +184,7 @@ pub struct ToolManagerBuilder {
     has_new_stuff: Arc<AtomicBool>,
     mcp_load_record: Arc<Mutex<HashMap<String, Vec<LoadingRecord>>>>,
     new_tool_specs: NewToolSpecs,
-    pending_clients: Option<Arc<RwLock<HashSet<String>>>>,
+    pending_clients: Option<Arc<RwLock<HashMap<String, TransportType>>>>,
     is_first_launch: bool,
     agent: Option<Arc<Mutex<Agent>>>,
 }
@@ -322,8 +325,12 @@ impl ToolManagerBuilder {
         let new_tool_specs = self.new_tool_specs;
         let has_new_stuff = self.has_new_stuff;
         let pending = self.pending_clients.unwrap_or(Arc::new(RwLock::new({
-            let mut pending = HashSet::<String>::new();
-            pending.extend(pre_initialized.iter().map(|(name, _)| name.clone()));
+            let mut pending = HashMap::<String, TransportType>::new();
+            pending.extend(
+                pre_initialized
+                    .iter()
+                    .map(|(name, config)| (name.clone(), config.r#type)),
+            );
             pending
         })));
         let notify = Arc::new(Notify::new());
@@ -388,18 +395,20 @@ impl ToolManagerBuilder {
         let pre_initialized = enabled_servers
             .into_iter()
             .map(|(server_name, server_config)| {
+                let transport_type = server_config.r#type;
                 (
                     server_name.clone(),
                     McpClientService::new(
                         server_name.clone(),
                         server_config,
-                        messenger_builder.build_with_name(server_name),
+                        messenger_builder.build(server_name, transport_type),
                     ),
                 )
             })
             .collect::<Vec<_>>();
 
         for (mut name, mcp_client) in pre_initialized {
+            let transport_type = mcp_client.config.r#type;
             let init_res = mcp_client.init(os).await;
             match init_res {
                 Ok(mut running_service) => {
@@ -417,6 +426,7 @@ impl ToolManagerBuilder {
                             &os.database,
                             conversation_id.clone(),
                             name.clone(),
+                            transport_type,
                             Some(e.to_string()),
                             0,
                             Some("".to_string()),
@@ -426,7 +436,7 @@ impl ToolManagerBuilder {
                         .await
                         .ok();
 
-                    let temp_messenger = messenger_builder.build_with_name(name);
+                    let temp_messenger = messenger_builder.build(name, transport_type);
                     let _ = temp_messenger
                         .send_tools_list_result(Err(ServiceError::UnexpectedResponse), None)
                         .await;
@@ -554,7 +564,7 @@ pub struct ToolManager {
     pub clients: HashMap<String, InitializedMcpClient>,
 
     /// A list of client names that are still in the process of being initialized
-    pub pending_clients: Arc<RwLock<HashSet<String>>>,
+    pub pending_clients: Arc<RwLock<HashMap<String, TransportType>>>,
 
     /// Flag indicating whether new tool specifications have been added since the last update.
     /// When set to true, it signals that the tool manager needs to refresh its internal state
@@ -789,7 +799,7 @@ impl ToolManager {
         tokio::select! {
             _ = timeout_fut => {
                 if let Some(tx) = tx {
-                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                    let still_loading = self.pending_clients.read().await.keys().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                     if let Some(task) = loading_display_task {
                         let _ = tokio::time::timeout(
@@ -810,14 +820,14 @@ impl ToolManager {
             },
             _ = server_loading_fut => {
                 if let Some(tx) = tx {
-                    let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                    let still_loading = self.pending_clients.read().await.keys().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                 }
             }
             _ = ctrl_c() => {
                 if self.is_interactive {
                     if let Some(tx) = tx {
-                        let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
+                        let still_loading = self.pending_clients.read().await.keys().cloned().collect::<Vec<_>>();
                         let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;
                     }
                 } else {
@@ -1105,7 +1115,7 @@ impl ToolManager {
     }
 
     pub async fn pending_clients(&self) -> Vec<String> {
-        self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
+        self.pending_clients.read().await.keys().cloned().collect::<Vec<_>>()
     }
 }
 
@@ -1257,7 +1267,7 @@ fn spawn_orchestrator_task(
     mut msg_rx: tokio::sync::mpsc::Receiver<UpdateEventMessage>,
     mut prompt_list_receiver: tokio::sync::broadcast::Receiver<PromptQuery>,
     mut prompt_list_sender: tokio::sync::broadcast::Sender<PromptQueryResult>,
-    pending: Arc<RwLock<HashSet<String>>>,
+    pending: Arc<RwLock<HashMap<String, TransportType>>>,
     agent: Arc<Mutex<Agent>>,
     database: Database,
     regex: Regex,
@@ -1344,7 +1354,7 @@ fn spawn_orchestrator_task(
             msg: UpdateEventMessage,
             loading_servers: &mut HashMap<String, Instant>,
             record_temp_buf: &mut Vec<u8>,
-            pending: &Arc<RwLock<HashSet<String>>>,
+            pending: &Arc<RwLock<HashMap<String, TransportType>>>,
             agent: &Arc<Mutex<Agent>>,
             database: &Database,
             conv_id: &str,
@@ -1376,7 +1386,12 @@ fn spawn_orchestrator_task(
                             let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
                             format!("{:.2}", time_taken)
                         });
-                    pending.write().await.remove(&server_name);
+                    // We will never get a None. But even if we do we should not fatal here.
+                    let transport_type = pending
+                        .write()
+                        .await
+                        .remove(&server_name)
+                        .unwrap_or(TransportType::Stdio);
 
                     let result_tools = match &result {
                         Ok(tools_result) => {
@@ -1463,6 +1478,7 @@ fn spawn_orchestrator_task(
                                 database,
                                 conv_id,
                                 &server_name,
+                                transport_type,
                                 &mut specs,
                                 &mut sanitized_mapping,
                                 &alias_list,
@@ -1666,8 +1682,11 @@ fn spawn_orchestrator_task(
                         }
                     }
                 },
-                UpdateEventMessage::InitStart { server_name, .. } => {
-                    pending.write().await.insert(server_name.clone());
+                UpdateEventMessage::InitStart {
+                    server_name,
+                    transport_type,
+                } => {
+                    pending.write().await.insert(server_name.clone(), transport_type);
                     loading_servers.insert(server_name, std::time::Instant::now());
                 },
                 UpdateEventMessage::Deinit { server_name, .. } => {
@@ -1724,6 +1743,7 @@ async fn process_tool_specs(
     database: &Database,
     conversation_id: &str,
     server_name: &str,
+    transport_type: TransportType,
     specs: &mut Vec<ToolSpec>,
     tn_map: &mut HashMap<ModelToolName, ToolInfo>,
     alias_list: &HashMap<HostToolName, ModelToolName>,
@@ -1798,6 +1818,7 @@ async fn process_tool_specs(
             database,
             conversation_id,
             server_name.to_string(),
+            transport_type,
             None,
             number_of_tools,
             all_tool_names,
