@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
 use std::path::{
     Path,
     PathBuf,
@@ -24,6 +27,7 @@ use serde::{
 };
 
 use crate::cli::ConversationState;
+use crate::cli::chat::conversation::HistoryEntry;
 use crate::os::Os;
 
 /// Manages a shadow git repository for tracking and restoring workspace changes
@@ -67,14 +71,18 @@ pub struct Checkpoint {
     pub tag: String,
     pub timestamp: DateTime<Local>,
     pub description: String,
-    pub history_index: usize,
+    pub history_snapshot: VecDeque<HistoryEntry>,
     pub is_turn: bool,
     pub tool_name: Option<String>,
 }
 
 impl CheckpointManager {
     /// Initialize checkpoint manager automatically (when in a git repo)
-    pub async fn auto_init(os: &Os, shadow_path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn auto_init(
+        os: &Os,
+        shadow_path: impl AsRef<Path>,
+        current_history: &VecDeque<HistoryEntry>,
+    ) -> Result<Self> {
         if !is_git_installed() {
             bail!("Git is not installed. Checkpoints require git to function.");
         }
@@ -82,12 +90,16 @@ impl CheckpointManager {
             bail!("Not in a git repository. Use '/checkpoint init' to manually enable checkpoints.");
         }
 
-        let manager = Self::manual_init(os, shadow_path).await?;
+        let manager = Self::manual_init(os, shadow_path, current_history).await?;
         Ok(manager)
     }
 
     /// Initialize checkpoint manager manually
-    pub async fn manual_init(os: &Os, path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn manual_init(
+        os: &Os,
+        path: impl AsRef<Path>,
+        current_history: &VecDeque<HistoryEntry>,
+    ) -> Result<Self> {
         let path = path.as_ref();
         os.fs.create_dir_all(path).await?;
 
@@ -104,7 +116,7 @@ impl CheckpointManager {
             tag: "0".to_string(),
             timestamp: Local::now(),
             description: "Initial state".to_string(),
-            history_index: 0,
+            history_snapshot: current_history.clone(),
             is_turn: true,
             tool_name: None,
         };
@@ -129,7 +141,7 @@ impl CheckpointManager {
         &mut self,
         tag: &str,
         description: &str,
-        history_index: usize,
+        history: &VecDeque<HistoryEntry>,
         is_turn: bool,
         tool_name: Option<String>,
     ) -> Result<()> {
@@ -141,7 +153,7 @@ impl CheckpointManager {
             tag: tag.to_string(),
             timestamp: Local::now(),
             description: description.to_string(),
-            history_index,
+            history_snapshot: history.clone(),
             is_turn,
             tool_name,
         };
@@ -161,26 +173,42 @@ impl CheckpointManager {
     pub fn restore(&self, conversation: &mut ConversationState, tag: &str, hard: bool) -> Result<()> {
         let checkpoint = self.get_checkpoint(tag)?;
 
-        // Restore files
-        let args = if hard {
-            vec!["reset", "--hard", tag]
+        if hard {
+            // Hard: reset the whole work-tree to the tag
+            let output = run_git(&self.shadow_repo_path, true, &["reset", "--hard", tag])?;
+            if !output.status.success() {
+                bail!("Failed to restore: {}", String::from_utf8_lossy(&output.stderr));
+            }
         } else {
-            vec!["checkout", tag, "--", "."]
-        };
-
-        let output = run_git(&self.shadow_repo_path, true, &args)?;
-        if !output.status.success() {
-            bail!("Failed to restore: {}", String::from_utf8_lossy(&output.stderr));
+            // Soft: only restore tracked files. If the tag is an empty tree, this is a no-op.
+            if !self.tag_has_any_paths(tag)? {
+                // Nothing tracked in this checkpoint -> nothing to restore; treat as success.
+                conversation.restore_to_checkpoint(checkpoint)?;
+                return Ok(());
+            }
+            // Use checkout against work-tree
+            let output = run_git(&self.shadow_repo_path, true, &["checkout", tag, "--", "."])?;
+            if !output.status.success() {
+                bail!("Failed to restore: {}", String::from_utf8_lossy(&output.stderr));
+            }
         }
 
         // Restore conversation history
-        while conversation.history().len() > checkpoint.history_index {
-            conversation
-                .pop_from_history()
-                .ok_or(eyre!("Failed to restore conversation history"))?;
-        }
+        conversation.restore_to_checkpoint(checkpoint)?;
 
         Ok(())
+    }
+
+    /// Return true iff the given tag/tree has any tracked paths.
+    fn tag_has_any_paths(&self, tag: &str) -> eyre::Result<bool> {
+        // Use `git ls-tree -r --name-only <tag>` to check if the tree is empty
+        let out = run_git(
+            &self.shadow_repo_path,
+            // work_tree
+            false,
+            &["ls-tree", "-r", "--name-only", tag],
+        )?;
+        Ok(!out.stdout.is_empty())
     }
 
     /// Get file change statistics for a checkpoint

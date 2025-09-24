@@ -73,7 +73,10 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
-use crate::cli::chat::checkpoint::CheckpointManager;
+use crate::cli::chat::checkpoint::{
+    Checkpoint,
+    CheckpointManager,
+};
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -880,9 +883,18 @@ Return only the JSON configuration, no additional text.",
         self.transcript.push_back(message);
     }
 
-    pub fn pop_from_history(&mut self) -> Option<()> {
-        self.history.pop_back()?;
-        Some(())
+    /// Restore conversation from a capture's history snapshot
+    pub fn restore_to_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), eyre::Report> {
+        // 1. Restore history from snapshot
+        self.history = checkpoint.history_snapshot.clone();
+
+        // 2. Clear any pending next message (uncommitted state)
+        self.next_message = None;
+
+        // 3. Update valid history range
+        self.valid_history_range = (0, self.history.len());
+
+        Ok(())
     }
 
     /// Swapping agent involves the following:

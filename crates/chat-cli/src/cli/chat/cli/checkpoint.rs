@@ -126,7 +126,7 @@ impl CheckpointSubcommand {
 
             let start = std::time::Instant::now();
             session.conversation.checkpoint_manager = Some(
-                CheckpointManager::manual_init(os, path)
+                CheckpointManager::manual_init(os, path, session.conversation.history())
                     .await
                     .map_err(|e| ChatError::Custom(format!("Checkpoints could not be initialized: {e}").into()))?,
             );

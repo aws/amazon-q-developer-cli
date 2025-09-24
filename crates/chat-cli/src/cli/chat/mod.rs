@@ -1338,7 +1338,7 @@ impl ChatSession {
         {
             let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
             let start = std::time::Instant::now();
-            let checkpoint_manager = match CheckpointManager::auto_init(os, &path).await {
+            let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
                 Ok(manager) => {
                     execute!(
                         self.stderr,
@@ -2400,14 +2400,12 @@ impl ChatSession {
                                 None => tool.tool.display_name(),
                             }
                         };
-                        // Get history length before putting manager back
-                        let history_len = self.conversation.history().len();
 
                         // Create checkpoint
                         if let Err(e) = manager.create_checkpoint(
                             &tag,
                             &description,
-                            history_len + 1,
+                            &self.conversation.history().clone(),
                             false,
                             Some(tool.name.clone()),
                         ) {
@@ -2898,12 +2896,15 @@ impl ChatSession {
                             |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
                         );
 
-                        // Get history length before putting manager back
-                        let history_len = self.conversation.history().len();
-
                         // Create turn checkpoint
                         let tag = manager.current_turn.to_string();
-                        if let Err(e) = manager.create_checkpoint(&tag, &description, history_len, true, None) {
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            &self.conversation.history().clone(),
+                            true,
+                            None,
+                        ) {
                             execute!(
                                 self.stderr,
                                 style::SetForegroundColor(Color::Yellow),
