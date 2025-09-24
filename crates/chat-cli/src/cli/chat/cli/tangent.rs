@@ -74,7 +74,7 @@ impl TangentArgs {
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(
-                    "⚠️ Tangent mode is disabled while using checkpoint. Disbale checkpoint with: q settings -d chat.enableCheckpoint.\n"
+                    "⚠️ Tangent mode is disabled while using checkpoint. Disable checkpoint with: q settings -d chat.enableCheckpoint.\n"
                 ),
                 style::SetForegroundColor(Color::Reset),
             )?;

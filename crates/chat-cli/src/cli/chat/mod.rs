@@ -1346,7 +1346,7 @@ impl ChatSession {
                     self.stderr,
                     style::SetForegroundColor(Color::Yellow),
                     style::Print(
-                        "⚠️ Checkpoint is disabled while in tangent mode. Disbale tangent mode with: q settings -d chat.enableTangentMode.\n\n"
+                        "⚠️ Checkpoint is disabled while in tangent mode. Disable tangent mode with: q settings -d chat.enableTangentMode.\n\n"
                     ),
                     style::SetForegroundColor(Color::Reset),
                 )?;
@@ -2388,7 +2388,7 @@ impl ChatSession {
             execute!(self.stdout, style::Print("\n"))?;
 
             // Handle checkpoint after tool execution - store tag for later display
-            let checkpoint_tag = {
+            let checkpoint_tag: Option<String> = {
                 let enabled = os
                     .database
                     .settings
@@ -2400,7 +2400,7 @@ impl ChatSession {
                         .get_bool(Setting::EnabledTangentMode)
                         .unwrap_or(false);
                 if invoke_result.is_err() || !enabled {
-                    String::new()
+                    None
                 }
                 // Take manager out temporarily to avoid borrow conflicts
                 else if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
@@ -2442,20 +2442,20 @@ impl ChatSession {
                             Some(tool.name.clone()),
                         ) {
                             debug!("Failed to create tool checkpoint: {}", e);
-                            String::new()
+                            None
                         } else {
                             manager.tools_in_turn += 1;
-                            tag
+                            Some(tag)
                         }
                     } else {
-                        String::new()
+                        None
                     };
 
                     // Put manager back
                     self.conversation.checkpoint_manager = Some(manager);
                     tag
                 } else {
-                    String::new()
+                    None
                 }
             };
 
@@ -2502,8 +2502,15 @@ impl ChatSession {
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    if !checkpoint_tag.is_empty() {
-                        execute!(self.stdout, style::Print(format!(" [{checkpoint_tag}]").blue().bold()))?;
+                    if let Some(tag) = checkpoint_tag {
+                        execute!(
+                            self.stdout,
+                            style::SetForegroundColor(Color::Blue),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print(format!(" [{tag}]")),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetAttribute(Attribute::Reset),
+                        )?;
                     }
                     execute!(self.stdout, style::Print("\n\n"))?;
 
