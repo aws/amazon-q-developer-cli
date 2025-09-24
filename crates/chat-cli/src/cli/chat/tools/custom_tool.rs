@@ -174,9 +174,9 @@ impl CustomTool {
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        use crate::util::tool_permission_checker::is_tool_allowed;
-        
-        if is_tool_allowed(&agent.allowed_tools, &self.name, Some(&self.server_name)) {
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
+        if is_tool_in_allowlist(&agent.allowed_tools, &self.name, Some(&self.server_name)) {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask

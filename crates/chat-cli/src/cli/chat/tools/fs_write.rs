@@ -45,7 +45,7 @@ use crate::cli::agent::{
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 use crate::util::directories;
-use crate::util::pattern_matching::matches_any_pattern;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
 static THEME_SET: LazyLock<ThemeSet> = LazyLock::new(ThemeSet::load_defaults);
@@ -470,7 +470,7 @@ impl FsWrite {
             denied_paths: Vec<String>,
         }
 
-        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_write");
+        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "fs_write", None);
         match agent.tools_settings.get("fs_write") {
             Some(settings) => {
                 let Settings {

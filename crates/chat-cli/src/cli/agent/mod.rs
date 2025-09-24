@@ -716,7 +716,7 @@ impl Agents {
 
             DEFAULT_AGENT_NAME.to_string()
         };
-        
+
         let _ = output.flush();
 
         // Post parsing validation here
@@ -776,14 +776,14 @@ impl Agents {
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
-        use crate::util::tool_permission_checker::is_tool_allowed;
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
         let tool_trusted = self.get_active().is_some_and(|a| {
             let server_name = match origin {
                 ToolOrigin::Native => None,
                 _ => Some(<ToolOrigin as Borrow<str>>::borrow(origin)),
             };
-            is_tool_allowed(&a.allowed_tools, tool_name, server_name)
+            is_tool_in_allowlist(&a.allowed_tools, tool_name, server_name)
         });
 
         if tool_trusted || self.trust_all_tools {
