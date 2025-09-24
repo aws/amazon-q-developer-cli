@@ -883,7 +883,7 @@ Return only the JSON configuration, no additional text.",
         self.transcript.push_back(message);
     }
 
-    /// Restore conversation from a capture's history snapshot
+    /// Restore conversation from a checkpoint's history snapshot
     pub fn restore_to_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), eyre::Report> {
         // 1. Restore history from snapshot
         self.history = checkpoint.history_snapshot.clone();
