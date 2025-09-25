@@ -128,7 +128,34 @@ use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::{cli::acp::{AcpArgs, QAgent}, database::settings::Setting, os::Os};
 
+/// Entry point for setting up ACP (Agent Client Protocol) tests.
+/// 
+/// The test harness creates a complete client-server test environment:
+/// - Spawns a Q agent server using in-memory duplex streams
+/// - Sets up a client actor to handle ACP protocol communication
+/// - Provides a high-level API for testing agent interactions
+/// 
+/// # Architecture
+/// ```text
+/// Test Code → AcpTestClient → Client Actor → Duplex Stream → Q Agent Server
+/// ```
+/// 
+/// # Usage
+/// ```rust
+/// let client = TestHarness::new()
+///     .await?
+///     .set_mock_llm(|ctx| async move {
+///         // Mock LLM responses for testing
+///     })
+///     .into_client()
+///     .await?;
+/// ```
+/// 
+/// # Mock LLM
+/// Use `set_mock_llm()` to provide scripted responses instead of calling
+/// the real LLM service. This makes tests deterministic and fast.
 pub(crate) struct TestHarness {
+    /// Operating system interface with mock LLM capabilities
     os: Os,
 }
 
@@ -156,8 +183,8 @@ impl TestHarness {
         let (client_write, agent_read) = tokio::io::duplex(1024);
         let (agent_write, client_read) = tokio::io::duplex(1024);
         
-        // Use the spawnable server with custom streams
-        let _handle = super::spawn_acp_server_with_streams(
+        // Use the spawnable server with custom streams - KEEP HANDLE ALIVE
+        let _server_handle = super::spawn_acp_server_with_streams(
             "test-agent".to_string(),
             self.os,
             agent_write.compat_write(),
@@ -165,14 +192,34 @@ impl TestHarness {
         ).await?;
         
         // Start the client actor
-        spawn_test_client_actor(
+        let client = spawn_test_client_actor(
             client_write.compat_write(),
             client_read.compat(),
-        ).await
+        ).await?;
+        
+        // TODO: Store server_handle in client to keep it alive
+        std::mem::forget(_server_handle); // Temporary hack to prevent shutdown
+        
+        Ok(client)
     }
 }
 
+/// Client interface for testing ACP (Agent Client Protocol) communication.
+/// 
+/// This represents the "client side" of the ACP protocol in tests. It communicates
+/// with a spawned Q agent server via in-memory duplex streams instead of stdio.
+/// 
+/// The client sends `ToAgent` messages to a background client actor task, which
+/// handles the actual ACP protocol communication with the server.
+/// 
+/// # Usage
+/// ```rust
+/// let client = TestHarness::new().await?.into_client().await?;
+/// let mut session = client.new_session().await?;
+/// ```
 pub struct AcpTestClient {
+    /// Channel to send messages to the client actor task.
+    /// The client actor handles the actual ACP protocol communication.
     client_tx: tokio::sync::mpsc::Sender<ToAgent>,
 }
 
@@ -196,9 +243,28 @@ impl AcpTestClient {
 
 }
 
+/// Represents an active conversation session with the Q agent in tests.
+/// 
+/// Each session has a unique ID and maintains its own message channel for
+/// receiving responses from the agent. Sessions are created via `AcpTestClient::new_session()`.
+/// 
+/// # Lifecycle
+/// 1. Create session with `client.new_session()`
+/// 2. Send messages with `session.say_to_agent(message)`
+/// 3. Read responses with the returned `AcpTestSessionRead`
+/// 
+/// # Example
+/// ```rust
+/// let mut session = client.new_session().await?;
+/// let mut read = session.say_to_agent("Hello!").await?;
+/// let response = read.read_from_agent().await?;
+/// ```
 pub struct AcpTestSession {
+    /// Unique identifier for this conversation session
     session_id: acp::SessionId,
+    /// Channel to send messages to the client actor
     client_tx: tokio::sync::mpsc::Sender<ToAgent>,
+    /// Channel to receive responses from the agent for this session
     event_rx: tokio::sync::mpsc::Receiver<FromAgent>,
 }
 
@@ -220,7 +286,39 @@ impl AcpTestSession {
     }
 }
 
+/// Handle for reading agent responses after sending a message.
+/// 
+/// This struct borrows the session mutably, preventing you from sending
+/// additional messages until you're done reading the current response.
+/// This enforces a request-response pattern in tests.
+/// 
+/// # Response Types
+/// - `FromAgent::SessionNotification`: Streaming content chunks from the agent
+/// - `FromAgent::Stop`: Final response indicating the agent is done
+/// - Other variants: Tool calls, file operations, etc.
+/// 
+/// # Example
+/// ```rust
+/// let mut read = session.say_to_agent("Hello").await?;
+/// 
+/// // Read streaming responses
+/// loop {
+///     match read.read_from_agent().await? {
+///         FromAgent::SessionNotification(notif, _) => {
+///             // Handle streaming content
+///         }
+///         FromAgent::Stop(result) => {
+///             // Agent finished responding
+///             break;
+///         }
+///         _ => {
+///             // Handle other message types
+///         }
+///     }
+/// }
+/// ```
 pub struct AcpTestSessionRead<'r> {
+    /// Mutable reference to the session, preventing concurrent message sending
     session: &'r mut AcpTestSession,
 }
 
