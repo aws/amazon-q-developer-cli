@@ -137,7 +137,7 @@ impl Tool {
             Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, stdout).await,
-            Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
+            Tool::UseAws(use_aws) => use_aws.invoke(os, stdout, agent).await,
             Tool::Custom(custom_tool) => custom_tool.invoke(os, stdout).await,
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
@@ -148,12 +148,12 @@ impl Tool {
     }
 
     /// Queues up a tool's intention in a human readable format
-    pub async fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(&self, os: &Os, output: &mut impl Write, agent: Option<&crate::cli::agent::Agent>) -> Result<()> {
         match self {
             Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
             Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
             Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
-            Tool::UseAws(use_aws) => use_aws.queue_description(output),
+            Tool::UseAws(use_aws) => use_aws.queue_description(output, agent),
             Tool::Custom(custom_tool) => custom_tool.queue_description(output),
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Introspect(_) => Introspect::queue_description(output),
