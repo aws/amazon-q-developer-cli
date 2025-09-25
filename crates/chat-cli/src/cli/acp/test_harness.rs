@@ -184,7 +184,7 @@ impl TestHarness {
         let (agent_write, client_read) = tokio::io::duplex(1024);
         
         // Use the spawnable server with custom streams - KEEP HANDLE ALIVE
-        let _server_handle = super::spawn_acp_server_with_streams(
+        let server_handle = super::spawn_acp_server_with_streams(
             "test-agent".to_string(),
             self.os,
             agent_write.compat_write(),
@@ -192,15 +192,16 @@ impl TestHarness {
         ).await?;
         
         // Start the client actor
-        let client = spawn_test_client_actor(
+        let client_tx = spawn_test_client_actor(
             client_write.compat_write(),
             client_read.compat(),
         ).await?;
         
-        // TODO: Store server_handle in client to keep it alive
-        std::mem::forget(_server_handle); // Temporary hack to prevent shutdown
-        
-        Ok(client)
+        // Store server handle in client to keep it alive for the test duration
+        Ok(AcpTestClient {
+            client_tx,
+            _server_handle: server_handle,
+        })
     }
 }
 
@@ -221,6 +222,8 @@ pub struct AcpTestClient {
     /// Channel to send messages to the client actor task.
     /// The client actor handles the actual ACP protocol communication.
     client_tx: tokio::sync::mpsc::Sender<ToAgent>,
+    /// Handle to the ACP server. Keeping this alive prevents premature shutdown.
+    _server_handle: super::AcpServerHandle,
 }
 
 impl AcpTestClient {
@@ -420,7 +423,7 @@ type SessionsMap = Arc<Mutex<HashMap<acp::SessionId, tokio::sync::mpsc::Sender<F
 async fn spawn_test_client_actor(
     outgoing_bytes: impl Unpin + AsyncWrite + Send + 'static,
     incoming_bytes: impl Unpin + AsyncRead + Send + 'static,
-) -> eyre::Result<AcpTestClient> {
+) -> eyre::Result<tokio::sync::mpsc::Sender<ToAgent>> {
     let sessions: SessionsMap = Default::default();
 
     let (client_conn, client_handle_io) = acp::ClientSideConnection::new(
@@ -485,7 +488,7 @@ async fn spawn_test_client_actor(
         }
     });
 
-    Ok(AcpTestClient { client_tx })
+    Ok(client_tx)
 }
 
 struct AcpTestClientActorCallbacks {
