@@ -28,6 +28,7 @@ use rmcp::transport::streamable_http_client::{
 };
 use rmcp::transport::{
     AuthorizationManager,
+    AuthorizationSession,
     StreamableHttpClientTransport,
     WorkerTransport,
 };
@@ -194,10 +195,12 @@ pub async fn get_http_transport(
     };
     let reqwest_client = client_builder.build()?;
 
-    let probe_resp = reqwest_client.get(url.clone()).send().await?;
+    // The probe request, like all other request, should adhere to the standards as per https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
+    let mut probe_request = reqwest_client.post(url.clone());
+    probe_request = probe_request.header("Accept", "application/json, text/event-stream");
+    let probe_resp = probe_request.send().await?;
     match probe_resp.status() {
         StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            debug!("## mcp: requires auth, auth client passed in is {:?}", auth_client);
             let auth_client = match auth_client {
                 Some(auth_client) => auth_client,
                 None => {
@@ -215,12 +218,11 @@ pub async fn get_http_transport(
             let transport =
                 StreamableHttpClientTransport::with_client(auth_client.clone(), StreamableHttpClientTransportConfig {
                     uri: url.as_str().into(),
-                    allow_stateless: false,
+                    allow_stateless: true,
                     ..Default::default()
                 });
 
             let auth_dg = AuthClientWrapper::new(cred_full_path, auth_client);
-            debug!("## mcp: transport obtained");
 
             Ok(HttpTransport::WithAuth((transport, auth_dg)))
         },
@@ -228,7 +230,7 @@ pub async fn get_http_transport(
             let transport =
                 StreamableHttpClientTransport::with_client(reqwest_client, StreamableHttpClientTransportConfig {
                     uri: url.as_str().into(),
-                    allow_stateless: false,
+                    allow_stateless: true,
                     ..Default::default()
                 });
 
@@ -311,7 +313,7 @@ async fn get_auth_manager_impl(
     let redirect_uri = format!("http://{}", actual_addr);
     let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
     let scopes_as_slice = scopes_as_str.as_slice();
-    oauth_state.start_authorization(scopes_as_slice, &redirect_uri).await?;
+    start_authorization(&mut oauth_state, scopes_as_slice, &redirect_uri).await?;
 
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
@@ -330,6 +332,79 @@ pub fn compute_key(rs: &Url) -> String {
     let input = format!("{}{}", rs.origin().ascii_serialization(), rs.path());
     hasher.update(input.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+/// This is our own implementation of [OAuthState::start_authorization].
+/// This differs from [OAuthState::start_authorization] by assigning our own client_id for DCR.
+/// We need this because the SDK hardcodes their own client id. And some servers will use client_id
+/// to identify if a client is even allowed to perform the auth handshake.
+async fn start_authorization(
+    oauth_state: &mut OAuthState,
+    scopes: &[&str],
+    redirect_uri: &str,
+) -> Result<(), OauthUtilError> {
+    // DO NOT CHANGE THIS
+    // This string has significance as it is used for remote servers to identify us
+    const CLIENT_ID: &str = "Q DEV CLI";
+
+    let stub_cred = get_stub_credentials()?;
+    oauth_state.set_credentials(CLIENT_ID, stub_cred).await?;
+
+    // The setting of credentials would put the oauth state into authorize.
+    if let OAuthState::Authorized(auth_manager) = oauth_state {
+        // set redirect uri
+        let config = OAuthClientConfig {
+            client_id: CLIENT_ID.to_string(),
+            client_secret: None,
+            scopes: scopes.iter().map(|s| (*s).to_string()).collect(),
+            redirect_uri: redirect_uri.to_string(),
+        };
+
+        // try to dynamic register client
+        let config = match auth_manager.register_client(CLIENT_ID, redirect_uri).await {
+            Ok(config) => config,
+            Err(e) => {
+                eprintln!("Dynamic registration failed: {}", e);
+                // fallback to default config
+                config
+            },
+        };
+        // reset client config
+        auth_manager.configure_client(config)?;
+        let auth_url = auth_manager.get_authorization_url(scopes).await?;
+
+        let mut stub_auth_manager = AuthorizationManager::new("http://localhost").await?;
+        std::mem::swap(auth_manager, &mut stub_auth_manager);
+
+        let session = AuthorizationSession {
+            auth_manager: stub_auth_manager,
+            auth_url,
+            redirect_uri: redirect_uri.to_string(),
+        };
+
+        let mut new_oauth_state = OAuthState::Session(session);
+        std::mem::swap(oauth_state, &mut new_oauth_state);
+    } else {
+        unreachable!()
+    }
+
+    Ok(())
+}
+
+/// This looks silly but [rmcp::transport::auth::OAuthTokenResponse] is private and there is no
+/// other way to create this directly
+fn get_stub_credentials() -> Result<OAuthTokenResponse, serde_json::Error> {
+    const STUB_TOKEN: &str = r#"
+            {
+              "access_token": "stub",
+              "token_type": "bearer",
+              "expires_in": 3600,
+              "refresh_token": "stub",
+              "scope": "stub"
+            }
+        "#;
+
+    serde_json::from_str::<OAuthTokenResponse>(STUB_TOKEN)
 }
 
 async fn make_svc(

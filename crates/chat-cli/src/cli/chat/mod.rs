@@ -2048,7 +2048,7 @@ impl ChatSession {
                 name: prompt_name,
                 arguments,
             };
-            return subcommand.execute(self).await;
+            return subcommand.execute(os, self).await;
         } else if let Some(command) = input.strip_prefix("!") {
             // Use platform-appropriate shell
             let result = if cfg!(target_os = "windows") {
