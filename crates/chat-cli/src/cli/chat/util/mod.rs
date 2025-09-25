@@ -101,18 +101,47 @@ pub fn sanitize_unicode_tags(text: &str) -> String {
     out
 }
 
-/// Play the terminal bell notification sound
+/// Send terminal notification (OSC 9 or bell fallback)
 pub fn play_notification_bell(requires_confirmation: bool) {
-    // Don't play bell for tools that don't require confirmation
-    if !requires_confirmation {
-        return;
-    }
+    let message = if requires_confirmation {
+        "Amazon Q needs your attention"
+    } else {
+        "Amazon Q has completed its work"
+    };
 
-    // Check if we should play the bell based on terminal type
-    if should_play_bell() {
-        print!("\x07"); // ASCII bell character
+    send_terminal_notification(message);
+}
+
+/// Send notification using OSC 9 or bell fallback
+fn send_terminal_notification(message: &str) {
+    if supports_osc_notifications() {
+        // OSC 9 notification (iTerm2, Ghostty, etc.)
+        print!("\x1b]9;{}\x07", message);
+        std::io::stdout().flush().unwrap();
+    } else if should_play_bell() {
+        // Fallback to ASCII bell
+        print!("\x07");
         std::io::stdout().flush().unwrap();
     }
+}
+
+/// Check if terminal supports OSC 9 notifications
+fn supports_osc_notifications() -> bool {
+    if let Ok(term_program) = std::env::var("TERM_PROGRAM") {
+        match term_program.as_str() {
+            "iTerm.app" | "ghostty" => return true,
+            _ => {}
+        }
+    }
+    
+    if let Ok(term) = std::env::var("TERM") {
+        match term.as_str() {
+            "ghostty" => return true,
+            _ => {}
+        }
+    }
+    
+    false
 }
 
 /// Determine if we should play the bell based on terminal type
@@ -135,6 +164,7 @@ fn should_play_bell() -> bool {
             "gnome-256color",
             "alacritty",
             "iterm2",
+            "ghostty",
             "eat-truecolor",
             "eat-256color",
             "eat-color",
