@@ -2694,6 +2694,53 @@ impl ChatSession {
                                     .await?,
                             ));
                         },
+                        RecvErrorKind::ToolValidationError {
+                            tool_use_id,
+                            name,
+                            message,
+                            error_message,
+                        } => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
+                            error!(
+                                recv_error.request_metadata.request_id,
+                                tool_use_id, name, error_message, "Tool validation failed"
+                            );
+                            self.conversation
+                                .push_assistant_message(os, *message, Some(recv_error.request_metadata));
+                            let tool_results = vec![ToolUseResult {
+                                tool_use_id,
+                                content: vec![ToolUseResultBlock::Text(format!(
+                                    "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
+                                    error_message
+                                ))],
+                                status: ToolResultStatus::Error,
+                            }];
+                            // User hint of what happened
+                            let _ = queue!(
+                                self.stdout,
+                                style::Print("\n\n"),
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("Tool validation failed: {}", error_message)),
+                                style::ResetColor,
+                                style::Print("\n"),
+                            );
+                            self.conversation.add_tool_results(tool_results);
+                            self.send_tool_use_telemetry(os).await;
+                            return Ok(ChatState::HandleResponseStream(
+                                self.conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?,
+                            ));
+                        },
                         _ => {
                             self.send_chat_telemetry(
                                 os,

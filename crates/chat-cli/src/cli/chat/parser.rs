@@ -25,7 +25,6 @@ use tracing::{
     warn,
 };
 
-use super::consts::INVALID_TOOL_ARGS_MARKER;
 use super::message::{
     AssistantMessage,
     AssistantToolUse,
@@ -92,6 +91,7 @@ impl RecvError {
             RecvErrorKind::StreamTimeout { .. } => None,
             RecvErrorKind::UnexpectedToolUseEos { .. } => None,
             RecvErrorKind::Cancelled => None,
+            RecvErrorKind::ToolValidationError { .. } => None,
         }
     }
 }
@@ -104,6 +104,7 @@ impl ReasonCode for RecvError {
             RecvErrorKind::StreamTimeout { .. } => "RecvErrorStreamTimeout".to_string(),
             RecvErrorKind::UnexpectedToolUseEos { .. } => "RecvErrorUnexpectedToolUseEos".to_string(),
             RecvErrorKind::Cancelled => "Interrupted".to_string(),
+            RecvErrorKind::ToolValidationError { .. } => "RecvErrorToolValidation".to_string(),
         }
     }
 }
@@ -152,6 +153,14 @@ pub enum RecvErrorKind {
     /// The stream processing task was cancelled
     #[error("Stream handling was cancelled")]
     Cancelled,
+    /// Tool validation failed due to invalid arguments
+    #[error("Tool validation failed for tool: {} with id: {}", .name, .tool_use_id)]
+    ToolValidationError {
+        tool_use_id: String,
+        name: String,
+        message: Box<AssistantMessage>,
+        error_message: String,
+    },
 }
 
 /// Represents a response stream from a call to the SendMessage API.
@@ -479,9 +488,34 @@ impl ResponseParser {
                     serde_json::Value::Object(_) => args,
                     _ => {
                         error!("Received non-object JSON for tool arguments: {:?}", args);
-                        serde_json::json!({
-                            INVALID_TOOL_ARGS_MARKER: format!("Expected JSON object, got: {:?}", args)
-                        })
+                        let warning_args = serde_json::Value::Object(
+                            [(
+                                "key".to_string(),
+                                serde_json::Value::String(
+                                    "WARNING: the actual tool use arguments were not a valid JSON object".to_string(),
+                                ),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        );
+                        self.tool_uses.push(AssistantToolUse {
+                            id: id.clone(),
+                            name: name.clone(),
+                            orig_name: name.clone(),
+                            args: warning_args.clone(),
+                            orig_args: warning_args.clone(),
+                        });
+                        let message = Box::new(AssistantMessage::new_tool_use(
+                            Some(self.message_id.clone()),
+                            std::mem::take(&mut self.assistant_text),
+                            self.tool_uses.clone().into_iter().collect(),
+                        ));
+                        return Err(self.error(RecvErrorKind::ToolValidationError {
+                            tool_use_id: id,
+                            name,
+                            message,
+                            error_message: format!("Expected JSON object, got: {:?}", args),
+                        }));
                     },
                 }
             },
@@ -812,16 +846,18 @@ mod tests {
         );
 
         let mut output = String::new();
-        let mut found_invalid_marker = false;
+        let mut found_validation_error = false;
         for _ in 0..5 {
-            let event = parser.recv().await.unwrap();
-            output.push_str(&format!("{:?}", event));
-
-            // Check for invalid args marker in ToolUse events
-            if let ResponseEvent::ToolUse(tool_use) = event {
-                if tool_use.args.get(INVALID_TOOL_ARGS_MARKER).is_some() {
-                    found_invalid_marker = true;
-                }
+            match parser.recv().await {
+                Ok(event) => {
+                    output.push_str(&format!("{:?}", event));
+                },
+                Err(recv_error) => {
+                    if matches!(recv_error.source, RecvErrorKind::ToolValidationError { .. }) {
+                        found_validation_error = true;
+                    }
+                    break;
+                },
             }
         }
 
@@ -830,8 +866,8 @@ mod tests {
             "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
         );
         assert!(
-            found_invalid_marker,
-            "Expected to find invalid args marker for non-object JSON"
+            found_validation_error,
+            "Expected to find tool validation error for non-object JSON"
         );
     }
 }

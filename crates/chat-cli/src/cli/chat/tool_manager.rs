@@ -64,10 +64,7 @@ use crate::cli::agent::{
     McpServerConfig,
 };
 use crate::cli::chat::cli::prompts::GetPromptError;
-use crate::cli::chat::consts::{
-    DUMMY_TOOL_NAME,
-    INVALID_TOOL_ARGS_MARKER,
-};
+use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
@@ -849,54 +846,7 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
-    /// Validates that the tool arguments are a valid JSON object and checks for invalid args
-    /// marker.
-    ///
-    /// # Arguments
-    /// * `args` - The JSON value containing tool arguments
-    /// * `tool_name` - Name of the tool for error reporting
-    /// * `tool_use_id` - ID of the tool use for error reporting
-    ///
-    /// # Returns
-    /// * `Ok(())` if validation passes
-    /// * `Err(ToolResult)` if validation fails with appropriate error message
-    fn validate_tool_args(
-        args: &serde_json::Value,
-        tool_name: &str,
-        tool_use_id: &str,
-    ) -> Result<(), ToolResult> {
-        // Ensure args is an object for safe access
-        if !args.is_object() {
-            return Err(ToolResult {
-                tool_use_id: tool_use_id.to_string(),
-                content: vec![ToolResultContentBlock::Text(format!(
-                    "The tool \"{}\" requires arguments to be a JSON object, but received: {}",
-                    tool_name,
-                    args
-                ))],
-                status: ToolResultStatus::Error,
-            });
-        }
-
-        // Now safely check for invalid args marker (args is guaranteed to be an object)
-        if let Some(error_msg) = args.get(INVALID_TOOL_ARGS_MARKER).and_then(|v| v.as_str()) {
-            return Err(ToolResult {
-                tool_use_id: tool_use_id.to_string(),
-                content: vec![ToolResultContentBlock::Text(format!(
-                    "The tool \"{}\" is supplied with invalid input format. {}",
-                    tool_name, error_msg
-                ))],
-                status: ToolResultStatus::Error,
-            });
-        }
-
-        Ok(())
-    }
-
     pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
-        // Validate tool arguments
-        Self::validate_tool_args(&value.args, &value.name, &value.id)?;
-
         let map_err = |parse_error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
