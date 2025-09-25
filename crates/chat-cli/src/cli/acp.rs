@@ -31,15 +31,10 @@ pub struct AcpArgs {
     pub agent: Option<String>,
 }
 
+/// Handle to the running ACP server.
+/// When this handle is droppted, the server will shutdown.
 pub struct AcpServerHandle {
     _shutdown_tx: oneshot::Sender<()>,
-}
-
-impl AcpServerHandle {
-    pub async fn shutdown(self) {
-        // Send shutdown signal (receiver will handle graceful shutdown)
-        let _ = self._shutdown_tx.send(());
-    }
 }
 
 /// Spawn an ACP server that communicates over stdio
