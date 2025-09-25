@@ -2729,7 +2729,7 @@ impl ChatSession {
                                 self.stdout,
                                 style::Print("\n\n"),
                                 style::SetForegroundColor(Color::Yellow),
-                                style::Print(format!("Tool validation failed: {}", error_message)),
+                                style::Print(format!("Tool validation failed: {}\n Retrying the request...", error_message)),
                                 style::ResetColor,
                                 style::Print("\n"),
                             );
