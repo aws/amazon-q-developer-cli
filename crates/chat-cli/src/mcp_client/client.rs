@@ -547,6 +547,10 @@ impl McpClientService {
                 Ok(Transport::Stdio((tokio_child_process, child_stderr)))
             },
             TransportType::Http => {
+                if !headers.is_empty() {
+                    process_env_vars(headers, &os.env);
+                }
+
                 let http_transport = get_http_transport(os, url, *timeout, scopes, headers, None, messenger).await?;
 
                 Ok(Transport::Http(http_transport))
