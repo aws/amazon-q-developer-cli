@@ -19,7 +19,6 @@ mod token_counter;
 pub mod tool_manager;
 pub mod tools;
 pub mod util;
-
 use std::borrow::Cow;
 use std::collections::{
     HashMap,
@@ -2865,7 +2864,10 @@ impl ChatSession {
                                 self.stdout,
                                 style::Print("\n\n"),
                                 style::SetForegroundColor(Color::Yellow),
-                                style::Print(format!("Tool validation failed: {}\n Retrying the request...", error_message)),
+                                style::Print(format!(
+                                    "Tool validation failed: {}\n Retrying the request...",
+                                    error_message
+                                )),
                                 style::ResetColor,
                                 style::Print("\n"),
                             );
