@@ -849,20 +849,53 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
-    pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
-        // Check for invalid args marker
-        // in case parser, identified some
-        // fundamental error in the inputs.
-        if let Some(error_msg) = value.args.get(INVALID_TOOL_ARGS_MARKER).and_then(|v| v.as_str()) {
+    /// Validates that the tool arguments are a valid JSON object and checks for invalid args
+    /// marker.
+    ///
+    /// # Arguments
+    /// * `args` - The JSON value containing tool arguments
+    /// * `tool_name` - Name of the tool for error reporting
+    /// * `tool_use_id` - ID of the tool use for error reporting
+    ///
+    /// # Returns
+    /// * `Ok(())` if validation passes
+    /// * `Err(ToolResult)` if validation fails with appropriate error message
+    fn validate_tool_args(
+        args: &serde_json::Value,
+        tool_name: &str,
+        tool_use_id: &str,
+    ) -> Result<(), ToolResult> {
+        // Ensure args is an object for safe access
+        if !args.is_object() {
             return Err(ToolResult {
-                tool_use_id: value.id.clone(),
+                tool_use_id: tool_use_id.to_string(),
                 content: vec![ToolResultContentBlock::Text(format!(
-                    "The tool \"{}\" is supplied with invalid input format. {}",
-                    value.name, error_msg
+                    "The tool \"{}\" requires arguments to be a JSON object, but received: {}",
+                    tool_name,
+                    args
                 ))],
                 status: ToolResultStatus::Error,
             });
         }
+
+        // Now safely check for invalid args marker (args is guaranteed to be an object)
+        if let Some(error_msg) = args.get(INVALID_TOOL_ARGS_MARKER).and_then(|v| v.as_str()) {
+            return Err(ToolResult {
+                tool_use_id: tool_use_id.to_string(),
+                content: vec![ToolResultContentBlock::Text(format!(
+                    "The tool \"{}\" is supplied with invalid input format. {}",
+                    tool_name, error_msg
+                ))],
+                status: ToolResultStatus::Error,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
+        // Validate tool arguments
+        Self::validate_tool_args(&value.args, &value.name, &value.id)?;
 
         let map_err = |parse_error| ToolResult {
             tool_use_id: value.id.clone(),
