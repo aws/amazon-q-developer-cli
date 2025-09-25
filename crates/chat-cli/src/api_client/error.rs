@@ -1,6 +1,7 @@
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenError;
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
 use amzn_codewhisperer_client::operation::get_profile::GetProfileError;
+use amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
 use amzn_codewhisperer_client::operation::list_available_models::ListAvailableModelsError;
 use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
@@ -96,6 +97,10 @@ pub enum ApiClientError {
     #[error("failed to load credentials: {}", .0)]
     Credentials(CredentialsError),
 
+    // Get usgae limits error
+    #[error("{}", SdkErrorDisplay(.0))]
+    GetUsageLimits(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
+
     #[error(transparent)]
     ListAvailableModelsError(#[from] SdkError<ListAvailableModelsError, HttpResponse>),
 
@@ -127,6 +132,7 @@ impl ApiClientError {
             Self::ModelOverloadedError { status_code, .. } => *status_code,
             Self::MonthlyLimitReached { status_code } => *status_code,
             Self::Credentials(_e) => None,
+            Self::GetUsageLimits(e) => sdk_status_code(e),
             Self::ListAvailableModelsError(e) => sdk_status_code(e),
             Self::DefaultModelNotFound => None,
             Self::GetProfileError(e) => sdk_status_code(e),
@@ -155,6 +161,7 @@ impl ReasonCode for ApiClientError {
             Self::ModelOverloadedError { .. } => "ModelOverloadedError".to_string(),
             Self::MonthlyLimitReached { .. } => "MonthlyLimitReached".to_string(),
             Self::Credentials(_) => "CredentialsError".to_string(),
+            Self::GetUsageLimits(e) => sdk_error_code(e),
             Self::ListAvailableModelsError(e) => sdk_error_code(e),
             Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
             Self::GetProfileError(e) => sdk_error_code(e),

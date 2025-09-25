@@ -1,3 +1,12 @@
+use std::convert::TryFrom;
+use std::time::SystemTime;
+
+use amzn_codewhisperer_client::types::{
+    OverageStatus,
+    ResourceType,
+    SubscriptionType,
+    UsageBreakdown,
+};
 use clap::Args;
 use crossterm::style::{
     Attribute,
@@ -229,6 +238,82 @@ impl UsageArgs {
                 calculate_usage_percentage(usage_data.user_tokens, usage_data.context_window_size)
             )),
         )?;
+
+        match os.client.get_usage_limits(None).await {
+            Ok(resp) => {
+                tracing::debug!(?resp, "Raw get_usage_limits response");
+                // Subscription tier
+                if let Some(sub) = resp.subscription_info() {
+                    let tier_str = match sub.r#type() {
+                        SubscriptionType::QDeveloperStandaloneFree => "Free tier",
+                        SubscriptionType::QDeveloperStandalone => "Pro tier",
+                        SubscriptionType::QDeveloperStandaloneProPlus => "Pro Plus tier",
+                        _ => "",
+                    };
+                    queue!(
+                        session.stderr,
+                        style::Print("\n"),
+                        style::SetAttribute(Attribute::Bold),
+                        style::Print(format!("📊 {} Usage limits\n", tier_str)),
+                        style::SetAttribute(Attribute::Reset),
+                    )?;
+                }
+
+                // Usage breakdown
+                let list: &[UsageBreakdown] = resp.usage_breakdown_list();
+                if list.is_empty() {
+                    queue!(session.stderr, style::Print("\nUsage information unavailable\n\n"),)?;
+                } else {
+                    let ub = list
+                        .iter()
+                        .find(|b| matches!(b.resource_type(), Some(ResourceType::AgenticRequest)))
+                        .unwrap_or_else(|| list.first().expect("UsageBreakdown list is not null"));
+
+                    let current = ub.current_usage();
+                    let limit = ub.usage_limit();
+                    let overage_charges = ub.overage_charges();
+                    let reset_local = match ub.next_date_reset() {
+                        Some(dt) => {
+                            //  DateTime → SystemTime
+                            match SystemTime::try_from(*dt) {
+                                Ok(st) => {
+                                    let local: chrono::DateTime<chrono::Local> = st.into();
+                                    local.format("%m/%d/%Y at %H:%M:%S").to_string()
+                                },
+                                Err(_) => "1st of next month 12:00:00 GMT".to_string(),
+                            }
+                        },
+                        None => "1st of next month 12:00:00 GMT".to_string(),
+                    };
+
+                    // Overage status
+                    let overage_msg = match resp.overage_configuration().map(|c| c.overage_status()) {
+                        Some(OverageStatus::Enabled) => format!("${:.2} incurred in overages", overage_charges),
+                        Some(OverageStatus::Disabled) => "Overage disabled by admin".to_string(),
+                        _ => String::new(),
+                    };
+
+                    queue!(
+                        session.stderr,
+                        // Line 1: queries used
+                        style::Print(format!("• {} of {} queries used\n", current, limit)),
+                        // Line 2: overage info
+                        style::Print(format!("• {}\n", overage_msg)),
+                        // Line 3: reset time
+                        style::Print(format!("• Limits reset on {}\n\n", reset_local)),
+                    )?;
+                }
+            },
+            Err(e) => {
+                tracing::error!(error = ?e, "Failed to load usage limits with full error");
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print(format!("\nFailed to load usage limits: {}\n\n", e)),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+        }
 
         queue!(
             session.stderr,

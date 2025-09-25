@@ -171,9 +171,10 @@ use crate::util::{
     ui,
 };
 
-const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
-2. Wait until next month when your limit automatically resets." };
+const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have three options:
+1. Upgrade your subscription tier for increased limits. See our Pricing page for what's included in each tier> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
+2. Enable overages in the Q Developer console so that you can continue to work beyond your monthly limit. Learn more: <blue!>https://docs.aws.amazon.com/console/amazonq/subscription</blue!>
+3. Wait until next month when your limit automatically resets." };
 
 pub const EXTRA_HELP: &str = color_print::cstr! {"
 <cyan,em>MCP:</cyan,em>
@@ -1030,7 +1031,7 @@ impl ChatSession {
                     execute!(
                         self.stderr,
                         style::SetForegroundColor(Color::Yellow),
-                        style::Print("Monthly request limit reached"),
+                        style::Print("Monthly request limit reached\n"),
                         style::SetForegroundColor(Color::Reset),
                     )?;
 
@@ -1056,12 +1057,18 @@ impl ChatSession {
                     } else {
                         execute!(
                             self.stderr,
-                            style::SetForegroundColor(Color::Yellow),
-                            style::Print(format!(" - {limits_text}\n\n")),
+                            style::Print("\n"),
+                            style::Print(
+                                "To increase your capacity, ask your account administrator to upgrade your subscription tier or enable overages.\n"
+                            ),
+                            style::Print("Learn more: "),
+                            style::SetForegroundColor(Color::Blue),
+                            style::Print("https://docs.aws.amazon.com/console/amazonq/subscription\n\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     }
 
+                    self.conversation.reset_next_user_message();
                     self.inner = Some(ChatState::PromptUser {
                         skip_printing_tools: false,
                     });
