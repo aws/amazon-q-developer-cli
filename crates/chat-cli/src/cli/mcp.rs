@@ -406,7 +406,7 @@ impl StatusArgs {
                         style::Print(format!("Disabled: {}\n", cfg.disabled)),
                         style::Print(format!(
                             "Env Vars: {}\n",
-                            cfg.env.as_ref().map_or_else(
+                            cfg.env.map_or_else(
                                 || "(none)".into(),
                                 |e| e
                                     .iter()

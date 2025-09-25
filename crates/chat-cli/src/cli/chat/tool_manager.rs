@@ -99,8 +99,7 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
-// This applies for both mcp server and tool name since in the end the tool name as seen by the
-// model is just {server_name}{NAMESPACE_DELIMITER}{tool_name}
+// This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -873,7 +872,7 @@ impl ToolManager {
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
-            // Note that this name is namespaced with server_name{DELIMITER}tool_name
+            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
@@ -1211,6 +1210,7 @@ fn spawn_display_task(
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_oauth_message(&name, &mut output)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             },
                         },
                         Err(_e) => {

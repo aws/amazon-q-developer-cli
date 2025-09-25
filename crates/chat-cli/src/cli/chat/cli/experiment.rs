@@ -59,6 +59,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         ),
         setting_key: Setting::EnabledCheckpoint,
     },
+    Experiment {
+        name: "Context Usage Indicator",
+        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
+        setting_key: Setting::EnabledContextUsageIndicator,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]

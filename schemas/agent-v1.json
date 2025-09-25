@@ -73,6 +73,27 @@
             "type": "string",
             "default": ""
           },
+          "headers": {
+            "description": "HTTP headers to include when communicating with HTTP-based MCP servers",
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": {}
+          },
+          "oauthScopes": {
+            "description": "Scopes with which oauth is done",
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "default": [
+              "openid",
+              "email",
+              "profile",
+              "offline_access"
+            ]
+          },
           "command": {
             "description": "The command string used to initialize the mcp server",
             "type": "string",

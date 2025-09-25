@@ -41,6 +41,8 @@ pub enum Setting {
     KnowledgeIndexType,
     #[strum(message = "Key binding for fuzzy search command (single character)")]
     SkimCommandKey,
+    #[strum(message = "Key binding for autocompletion hint acceptance (single character)")]
+    AutocompletionKey,
     #[strum(message = "Enable tangent mode feature (boolean)")]
     EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
@@ -65,6 +67,8 @@ pub enum Setting {
     McpNoInteractiveTimeout,
     #[strum(message = "Track previously loaded MCP servers (boolean)")]
     McpLoadedBefore,
+    #[strum(message = "Show context usage percentage in prompt (boolean)")]
+    EnabledContextUsageIndicator,
     #[strum(message = "Default AI model for conversations (string)")]
     ChatDefaultModel,
     #[strum(message = "Disable markdown formatting in chat (boolean)")]
@@ -96,6 +100,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
             Self::IntrospectTangentMode => "introspect.tangentMode",
@@ -115,6 +120,7 @@ impl AsRef<str> for Setting {
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
+            Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
         }
     }
 }
@@ -142,6 +148,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
@@ -161,6 +168,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
+            "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
