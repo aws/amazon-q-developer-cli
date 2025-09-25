@@ -52,7 +52,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     },
     Experiment {
         name: "Checkpoint",
-        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)",
+        description: concat!(
+            "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\n",
+            "                             ",
+            "Cannot be used in tangent mode (to avoid mixing up conversation history)"
+        ),
         setting_key: Setting::EnabledCheckpoint,
     },
 ];

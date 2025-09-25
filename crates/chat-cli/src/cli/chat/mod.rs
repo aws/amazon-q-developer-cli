@@ -462,7 +462,7 @@ const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off.
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 19] = [
+const ROTATING_TIPS: [&str; 20] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -497,6 +497,7 @@ const ROTATING_TIPS: [&str; 19] = [
     color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
     color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
     color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
+    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -1336,46 +1337,29 @@ impl ChatSession {
             .get_bool(Setting::EnabledCheckpoint)
             .unwrap_or(false)
         {
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledTangentMode)
-                .unwrap_or(false)
-            {
-                execute!(
-                    self.stderr,
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(
-                        "⚠️ Checkpoint is disabled while in tangent mode. Disable tangent mode with: q settings -d chat.enableTangentMode.\n\n"
-                    ),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-            } else {
-                let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
-                let start = std::time::Instant::now();
-                let checkpoint_manager =
-                    match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
-                        Ok(manager) => {
-                            execute!(
-                                self.stderr,
-                                style::Print(
-                                    format!(
-                                        "📷 Checkpoints are enabled! (took {:.2}s)\n\n",
-                                        start.elapsed().as_secs_f32()
-                                    )
-                                    .blue()
-                                    .bold()
-                                )
-                            )?;
-                            Some(manager)
-                        },
-                        Err(e) => {
-                            execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
-                            None
-                        },
-                    };
-                self.conversation.checkpoint_manager = checkpoint_manager;
-            }
+            let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
+            let start = std::time::Instant::now();
+            let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
+                Ok(manager) => {
+                    execute!(
+                        self.stderr,
+                        style::Print(
+                            format!(
+                                "📷 Checkpoints are enabled! (took {:.2}s)\n\n",
+                                start.elapsed().as_secs_f32()
+                            )
+                            .blue()
+                            .bold()
+                        )
+                    )?;
+                    Some(manager)
+                },
+                Err(e) => {
+                    execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
+                    None
+                },
+            };
+            self.conversation.checkpoint_manager = checkpoint_manager;
         }
 
         if let Some(user_input) = self.initial_input.take() {
@@ -2146,11 +2130,7 @@ impl ChatSession {
                 .settings
                 .get_bool(Setting::EnabledCheckpoint)
                 .unwrap_or(false)
-                && !os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledTangentMode)
-                    .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
                     if !manager.message_locked && self.pending_tool_index.is_none() {
@@ -2249,11 +2229,6 @@ impl ChatSession {
                 .database
                 .settings
                 .get_bool(Setting::IntrospectTangentMode)
-                .unwrap_or(false)
-            && !os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
                 .unwrap_or(false)
             && !self.conversation.is_in_tangent_mode()
             && self
@@ -2394,11 +2369,7 @@ impl ChatSession {
                     .settings
                     .get_bool(Setting::EnabledCheckpoint)
                     .unwrap_or(false)
-                    && !os
-                        .database
-                        .settings
-                        .get_bool(Setting::EnabledTangentMode)
-                        .unwrap_or(false);
+                    && !self.conversation.is_in_tangent_mode();
                 if invoke_result.is_err() || !enabled {
                     None
                 }
@@ -2923,11 +2894,7 @@ impl ChatSession {
                 .settings
                 .get_bool(Setting::EnabledCheckpoint)
                 .unwrap_or(false)
-                && !os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledTangentMode)
-                    .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     if manager.tools_in_turn > 0 {
