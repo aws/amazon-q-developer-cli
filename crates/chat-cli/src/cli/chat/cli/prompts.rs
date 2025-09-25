@@ -265,10 +265,8 @@ impl PromptsArgs {
 
         // Update longest_name to include local prompts
         for name in &prompt_names {
-            if name.contains(search_word.as_deref().unwrap_or("")) {
-                if name.len() > longest_name.len() {
-                    longest_name = name;
-                }
+            if name.contains(search_word.as_deref().unwrap_or("")) && name.len() > longest_name.len() {
+                longest_name = name;
             }
         }
 
@@ -901,54 +899,52 @@ impl PromptsSubcommand {
                 });
             }
             &prompts.global
+        } else if local_exists {
+            &prompts.local
+        } else if global_exists {
+            // Found global prompt, but user wants to edit local
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("Local prompt "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print(&name),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" not found, but global version exists.\n"),
+                style::Print("Use "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print("/prompts edit "),
+                style::Print(&name),
+                style::Print(" --global"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" to edit the global version, or\n"),
+                style::Print("use "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print("/prompts create "),
+                style::Print(&name),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" to create a local override.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
         } else {
-            if local_exists {
-                &prompts.local
-            } else if global_exists {
-                // Found global prompt, but user wants to edit local
-                queue!(
-                    session.stderr,
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("Local prompt "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" not found, but global version exists.\n"),
-                    style::Print("Use "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print("/prompts edit "),
-                    style::Print(&name),
-                    style::Print(" --global"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" to edit the global version, or\n"),
-                    style::Print("use "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print("/prompts create "),
-                    style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" to create a local override.\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-                return Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                });
-            } else {
-                queue!(
-                    session.stderr,
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("Prompt "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" not found.\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-                return Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                });
-            }
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("Prompt "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print(&name),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" not found.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
         };
 
         let location = if global { "global" } else { "local" };
@@ -1030,47 +1026,45 @@ impl PromptsSubcommand {
                 });
             }
             &prompts.global
+        } else if local_exists {
+            &prompts.local
+        } else if global_exists {
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("Local prompt "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print(&name),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" not found, but global version exists.\n"),
+                style::Print("Use "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print("/prompts remove "),
+                style::Print(&name),
+                style::Print(" --global"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" to remove the global version.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
         } else {
-            if local_exists {
-                &prompts.local
-            } else if global_exists {
-                queue!(
-                    session.stderr,
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("Local prompt "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" not found, but global version exists.\n"),
-                    style::Print("Use "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print("/prompts remove "),
-                    style::Print(&name),
-                    style::Print(" --global"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" to remove the global version.\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-                return Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                });
-            } else {
-                queue!(
-                    session.stderr,
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("Prompt "),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(" not found.\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-                return Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                });
-            }
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print("Prompt "),
+                style::SetForegroundColor(Color::Cyan),
+                style::Print(&name),
+                style::SetForegroundColor(Color::Yellow),
+                style::Print(" not found.\n"),
+                style::SetForegroundColor(Color::Reset),
+            )?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
         };
 
         let location = if global { "global" } else { "local" };
