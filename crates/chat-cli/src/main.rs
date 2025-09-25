@@ -10,6 +10,9 @@ mod request;
 mod telemetry;
 mod util;
 
+#[cfg(target_os = "macos")]
+embed_plist::embed_info_plist!("Info.plist");
+
 use std::process::ExitCode;
 
 use anstream::eprintln;

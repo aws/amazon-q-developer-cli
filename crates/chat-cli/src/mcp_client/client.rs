@@ -660,6 +660,10 @@ impl Service<RoleClient> for McpClientService {
             client_info: Implementation {
                 name: "Q DEV CLI".to_string(),
                 version: "1.0.0".to_string(),
+                title: Some("Q DEV CLI".to_string()),
+                icons: None,
+                website_url: None
+
             },
         }
     }

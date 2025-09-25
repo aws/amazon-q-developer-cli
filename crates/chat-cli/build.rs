@@ -90,6 +90,7 @@ fn main() {
 
     #[cfg(target_os = "macos")]
     write_plist();
+    
 
     let outdir = std::env::var("OUT_DIR").unwrap();
 

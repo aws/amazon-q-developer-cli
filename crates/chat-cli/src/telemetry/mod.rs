@@ -508,7 +508,7 @@ impl TelemetryClient {
             Some(ToolkitTelemetryClient::from_conf(
                 Config::builder()
                     .http_client(crate::aws_common::http_client::client())
-                    .behavior_version(BehaviorVersion::v2025_01_17())
+                    .behavior_version(BehaviorVersion::v2025_08_07())
                     .endpoint_resolver(StaticEndpoint(TelemetryStage::EXTERNAL_PROD.endpoint))
                     .app_name(app_name())
                     .region(TelemetryStage::EXTERNAL_PROD.region.clone())
