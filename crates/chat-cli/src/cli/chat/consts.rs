@@ -13,6 +13,9 @@ pub const MAX_USER_MESSAGE_SIZE: usize = 400_000;
 
 pub const DUMMY_TOOL_NAME: &str = "dummy";
 
+/// Marker key used to identify invalid tool arguments (non-JSON objects)
+pub const INVALID_TOOL_ARGS_MARKER: &str = "__error__invalid_args_json__";
+
 pub const MAX_NUMBER_OF_IMAGES_PER_REQUEST: usize = 10;
 
 /// In bytes - 10 MB

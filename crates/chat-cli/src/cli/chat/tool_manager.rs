@@ -64,7 +64,10 @@ use crate::cli::agent::{
     McpServerConfig,
 };
 use crate::cli::chat::cli::prompts::GetPromptError;
-use crate::cli::chat::consts::DUMMY_TOOL_NAME;
+use crate::cli::chat::consts::{
+    DUMMY_TOOL_NAME,
+    INVALID_TOOL_ARGS_MARKER,
+};
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
@@ -847,6 +850,20 @@ impl ToolManager {
     }
 
     pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
+        // Check for invalid args marker
+        // in case parser, identified some
+        // fundamental error in the inputs.
+        if let Some(error_msg) = value.args.get(INVALID_TOOL_ARGS_MARKER).and_then(|v| v.as_str()) {
+            return Err(ToolResult {
+                tool_use_id: value.id.clone(),
+                content: vec![ToolResultContentBlock::Text(format!(
+                    "The tool \"{}\" is supplied with invalid input format. {}",
+                    value.name, error_msg
+                ))],
+                status: ToolResultStatus::Error,
+            });
+        }
+
         let map_err = |parse_error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(

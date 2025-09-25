@@ -25,6 +25,7 @@ use tracing::{
     warn,
 };
 
+use super::consts::INVALID_TOOL_ARGS_MARKER;
 use super::message::{
     AssistantMessage,
     AssistantToolUse,
@@ -472,7 +473,18 @@ impl ResponseParser {
         }
 
         let args = match serde_json::from_str(&tool_string) {
-            Ok(args) => args,
+            Ok(args) => {
+                // Ensure we have a valid JSON object
+                match args {
+                    serde_json::Value::Object(_) => args,
+                    _ => {
+                        error!("Received non-object JSON for tool arguments: {:?}", args);
+                        serde_json::json!({
+                            INVALID_TOOL_ARGS_MARKER: format!("Expected JSON object, got: {:?}", args)
+                        })
+                    },
+                }
+            },
             Err(err) if !tool_string.is_empty() => {
                 // If we failed deserializing after waiting for a long time, then this is most
                 // likely bedrock responding with a stop event for some reason without actually
@@ -751,6 +763,75 @@ mod tests {
         assert!(
             !output.contains(content_to_ignore),
             "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_parser_avoid_invalid_json() {
+        let content_to_ignore = "IGNORE ME PLEASE";
+        let tool_use_id = "TEST_ID".to_string();
+        let tool_name = "execute_bash".to_string();
+        let tool_args = serde_json::json!("invalid json").to_string();
+        let mut events = vec![
+            ChatResponseStream::AssistantResponseEvent {
+                content: "hi".to_string(),
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: " there".to_string(),
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: content_to_ignore.to_string(),
+            },
+            ChatResponseStream::CodeReferenceEvent(()),
+            ChatResponseStream::ToolUseEvent {
+                tool_use_id: tool_use_id.clone(),
+                name: tool_name.clone(),
+                input: None,
+                stop: None,
+            },
+            ChatResponseStream::ToolUseEvent {
+                tool_use_id: tool_use_id.clone(),
+                name: tool_name.clone(),
+                input: Some(tool_args),
+                stop: None,
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        let mut output = String::new();
+        let mut found_invalid_marker = false;
+        for _ in 0..5 {
+            let event = parser.recv().await.unwrap();
+            output.push_str(&format!("{:?}", event));
+
+            // Check for invalid args marker in ToolUse events
+            if let ResponseEvent::ToolUse(tool_use) = event {
+                if tool_use.args.get(INVALID_TOOL_ARGS_MARKER).is_some() {
+                    found_invalid_marker = true;
+                }
+            }
+        }
+
+        assert!(
+            !output.contains(content_to_ignore),
+            "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
+        );
+        assert!(
+            found_invalid_marker,
+            "Expected to find invalid args marker for non-object JSON"
         );
     }
 }
