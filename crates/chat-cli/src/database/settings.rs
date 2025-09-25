@@ -67,6 +67,8 @@ pub enum Setting {
     McpNoInteractiveTimeout,
     #[strum(message = "Track previously loaded MCP servers (boolean)")]
     McpLoadedBefore,
+    #[strum(message = "Show context usage percentage in prompt (boolean)")]
+    EnabledContextUsageIndicator,
     #[strum(message = "Default AI model for conversations (string)")]
     ChatDefaultModel,
     #[strum(message = "Disable markdown formatting in chat (boolean)")]
@@ -115,6 +117,7 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
+            Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
         }
     }
 }
@@ -161,6 +164,7 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
+            "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

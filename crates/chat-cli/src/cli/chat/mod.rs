@@ -1920,7 +1920,7 @@ impl ChatSession {
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset)
         )?;
-        let prompt = self.generate_tool_trust_prompt();
+        let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -3115,11 +3115,25 @@ impl ChatSession {
     }
 
     /// Helper function to generate a prompt based on the current context
-    fn generate_tool_trust_prompt(&mut self) -> String {
+    async fn generate_tool_trust_prompt(&mut self, os: &Os) -> String {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
+
+        // Check if context usage indicator is enabled
+        let usage_percentage = if os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
+            .unwrap_or(false)
+        {
+            use crate::cli::chat::cli::usage::get_total_usage_percentage;
+            get_total_usage_percentage(self, os).await.ok()
+        } else {
+            None
+        };
+
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
