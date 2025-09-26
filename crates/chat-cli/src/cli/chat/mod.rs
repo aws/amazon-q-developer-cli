@@ -670,8 +670,15 @@ impl ChatSession {
         let mut existing_conversation = false;
         let previous_conversation = std::env::current_dir()
             .ok()
-            .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
-            .flatten();
+            .and_then(|cwd| {
+                match os.database.get_conversation_by_path(cwd) {
+                    Ok(conv) => conv,
+                    Err(e) => {
+                        tracing::warn!("Failed to load conversation from database: {}", e);
+                        None
+                    }
+                }
+            });
 
         // Only restore conversations where there were actual messages.
         // Prevents edge case where user clears conversation then exits without chatting.
