@@ -378,10 +378,6 @@ impl AcpTestSessionRead<'_> {
     }
 }
 
-pub enum AcpTestClientRequest {
-    PromptWithText(String),
-}
-
 /// Messages that can be sent to the (mock'd) agent
 pub enum ToAgent {
     /// Initiate a new session.
