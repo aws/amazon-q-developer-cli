@@ -328,17 +328,17 @@ pub struct AcpTestSessionRead<'r> {
 impl AcpTestSessionRead<'_> {
     /// Read the next message from the agent, blocking until one arrives (or erroring if agent has terminated).
     pub async fn read_from_agent(&mut self) -> eyre::Result<FromAgent> {
-        eprintln!("DEBUG: read_from_agent called, waiting for response");
+        eprintln!("AcpTestSessionRead::read_from_agent(): read_from_agent called, waiting for response");
         let result = self.session.event_rx.recv().await.ok_or_else(|| eyre::eyre!("agent terminated"));
         match &result {
             Ok(msg) => {
                 match msg {
-                    FromAgent::SessionNotification(..) => eprintln!("DEBUG: Received SessionNotification"),
-                    FromAgent::Stop(_) => eprintln!("DEBUG: Received Stop"),
-                    _ => eprintln!("DEBUG: Received other message type"),
+                    FromAgent::SessionNotification(..) => eprintln!("AcpTestSessionRead::read_from_agent(): Received SessionNotification"),
+                    FromAgent::Stop(_) => eprintln!("AcpTestSessionRead::read_from_agent(): Received Stop"),
+                    _ => eprintln!("AcpTestSessionRead::read_from_agent(): Received other message type"),
                 }
             }
-            Err(e) => eprintln!("DEBUG: Error receiving from agent: {}", e),
+            Err(e) => eprintln!("AcpTestSessionRead::read_from_agent(): Error receiving from agent: {}", e),
         }
         result
     }
@@ -348,8 +348,12 @@ impl AcpTestSessionRead<'_> {
         let mut response_text = String::new();
         
         loop {
-            match self.read_from_agent().await? {
+            let result = self.read_from_agent().await;
+            eprintln!("read_agent_response() = (is_ok={:?}, is_err={:?})", result.is_ok(), result.is_err());
+            match result? {
                 FromAgent::SessionNotification(notification, response_tx) => {
+                    eprintln!("notification = {notification:?}");
+
                     // Send acknowledgment
                     let _ = response_tx.send(());
                     
@@ -367,10 +371,13 @@ impl AcpTestSessionRead<'_> {
                     }
                 }
                 FromAgent::Stop(result) => {
+                    eprintln!("stop");
                     result?; // Propagate any errors
                     break;
                 }
-                _ => {} // Ignore other message types for now
+                _ => {
+                    eprintln!("ignoring other message type");
+                } // Ignore other message types for now
             }
         }
         
@@ -485,7 +492,7 @@ async fn spawn_test_client_actor(
                         eprintln!("DEBUG: Found session, calling client_conn.prompt()");
                         match client_conn.prompt(request).await {
                             Ok(result) => {
-                                eprintln!("DEBUG: client_conn.prompt() succeeded, sending Stop(Ok)");
+                                eprintln!("DEBUG: client_conn.prompt() succeeded {result:?}, sending Stop(Ok)");
                                 let _ = session_tx.send(FromAgent::Stop(Ok(result))).await;
                             }
                             Err(e) => {
@@ -520,7 +527,8 @@ impl AcpTestClientActorCallbacks {
         }
     }
 
-    async fn send_and_await_reply<M, R>(&self, session_id: &acp::SessionId, message: impl FnOnce(M, tokio::sync::oneshot::Sender<R>) -> FromAgent, args: M) -> Result<R, acp::Error> {
+    async fn send_and_await_reply<M: std::fmt::Debug, R: std::fmt::Debug>(&self, session_id: &acp::SessionId, message: impl FnOnce(M, tokio::sync::oneshot::Sender<R>) -> FromAgent, args: M) -> Result<R, acp::Error> {
+        eprintln!("send_and_await_reply(session_id={session_id:?}, args={args:?})");
         let session_tx = self.session_tx(session_id)?;
         let (tx, rx) = tokio::sync::oneshot::channel();
         session_tx.send(message(args, tx)).await.map_err(|e| acp::Error {
@@ -528,11 +536,13 @@ impl AcpTestClientActorCallbacks {
             message: e.to_string(),
             data: None,
         })?;
+        eprintln!("send_and_await_reply: awaiting response");
         let response = rx.await.map_err(|e| acp::Error {
             code: 22,
             message: e.to_string(),
             data: None,
         })?;
+        eprintln!("send_and_await_reply: response={response:?}");
         Ok(response)
     }
 }
@@ -565,7 +575,7 @@ impl acp::Client for AcpTestClientActorCallbacks {
         &self,
         args: acp::SessionNotification,
     ) -> Result<(), acp::Error> {
-        self.send_and_await_reply(&args.session_id.clone(), FromAgent::SessionNotification, args).await
+        dbg!(self.send_and_await_reply(&args.session_id.clone(), FromAgent::SessionNotification, args).await)
     }
     
     async fn create_terminal(
