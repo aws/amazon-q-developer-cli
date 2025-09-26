@@ -1,0 +1,353 @@
+name: Release Kiro CLI (All Platforms)
+on:
+  workflow_dispatch:
+    inputs:
+      version_increment:
+        description: "Release Version Increment"
+        default: "patch"
+        required: true
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+          - none
+      release_quality:
+        description: "Specify the release quality"
+        type: choice
+        required: true
+        default: "insider"
+        options:
+          - stable
+          - nightly
+          - insider
+      publish_release_artifact:
+        description: 'Releases the build to the public S3 bucket and updates the auto-updater manifest. Only applies to insider builds. Stable builds must use publish-kiro-cli-stable workflow to publish.'
+        type: boolean
+        required: false
+        default: false
+      create_release_branch:
+        description: 'Create a release branch (only for stable releases)'
+        type: boolean
+        required: false
+        default: false
+  # Nightly builds - runs daily at 5:21 AM UTC
+  schedule:
+    - cron: "21 5 * * *"
+  # Insider builds - triggered on beta branch pushes
+  push:
+    branches:
+      - beta
+
+env:
+  AWS_REGION: "us-west-2"
+  VERSION_INCREMENT: ${{ github.event.inputs.version_increment || (github.event_name == 'schedule' && 'patch') || 'none' }}
+  RELEASE_QUALITY: ${{ github.event.inputs.release_quality || (github.event_name == 'schedule' && 'nightly') || (github.ref_name == 'beta' && 'insider') || 'insider' }}
+  PUBLISH_RELEASE_ARTIFACT: ${{ github.event.inputs.publish_release_artifact || (github.event_name == 'schedule' && 'true') || (github.ref_name == 'beta' && 'false') || 'false' }}
+  CREATE_RELEASE_BRANCH: ${{ github.event.inputs.create_release_branch || 'false' }}
+
+permissions:
+  id-token: write
+  contents: write
+  actions: write
+
+jobs:
+  # Validation job to ensure proper trigger conditions
+  ValidateReleaseTrigger:
+    name: Validate Release Trigger
+    runs-on: ubuntu-latest
+    outputs:
+      should_proceed: ${{ steps.validate.outputs.should_proceed }}
+      release_type: ${{ steps.validate.outputs.release_type }}
+    steps:
+      - name: Validate Release Conditions
+        id: validate
+        run: |
+          echo "=== VALIDATING RELEASE TRIGGER ==="
+          echo "Event: ${{ github.event_name }}"
+          echo "Branch: ${{ github.ref_name }}"
+          echo "Release Quality: ${{ env.RELEASE_QUALITY }}"
+          
+          SHOULD_PROCEED="true"
+          RELEASE_TYPE=""
+          
+          # Determine release type and validate conditions
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            if [[ "${{ env.RELEASE_QUALITY }}" == "stable" ]]; then
+              RELEASE_TYPE="stable-manual"
+              echo "✓ Manual stable release trigger - requires manual approval"
+            elif [[ "${{ env.RELEASE_QUALITY }}" == "insider" ]]; then
+              RELEASE_TYPE="insider-manual"
+              echo "✓ Manual insider release trigger"
+            elif [[ "${{ env.RELEASE_QUALITY }}" == "nightly" ]]; then
+              RELEASE_TYPE="nightly-manual"
+              echo "✓ Manual nightly release trigger"
+            fi
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            RELEASE_TYPE="nightly-scheduled"
+            echo "✓ Scheduled nightly build trigger"
+          elif [[ "${{ github.event_name }}" == "push" && "${{ github.ref_name }}" == "beta" ]]; then
+            RELEASE_TYPE="insider-auto"
+            echo "✓ Automatic insider build from beta branch"
+          else
+            SHOULD_PROCEED="false"
+            echo "❌ Invalid trigger condition"
+            echo "Event: ${{ github.event_name }}, Branch: ${{ github.ref_name }}, Quality: ${{ env.RELEASE_QUALITY }}"
+          fi
+          
+          echo "should_proceed=$SHOULD_PROCEED" >> $GITHUB_OUTPUT
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+          echo "Final decision: should_proceed=$SHOULD_PROCEED, release_type=$RELEASE_TYPE"
+
+  UpdateVersionNumber:
+    name: Update Version Number
+    runs-on: ubuntu-latest
+    needs: ValidateReleaseTrigger
+    if: needs.ValidateReleaseTrigger.outputs.should_proceed == 'true'
+    outputs:
+      branch_name: ${{ steps.determine-branch.outputs.BRANCH_NAME }}
+      build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
+      version: ${{ steps.get-version.outputs.VERSION }}
+      release_type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Log Workflow Inputs
+        run: |
+          echo "=== KIRO CLI RELEASE WORKFLOW STARTED ==="
+          echo "Workflow: ${{ github.workflow }}"
+          echo "Branch/Ref: ${{ github.ref_name }}"
+          echo "Event: ${{ github.event_name }}"
+          echo "Release Type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}"
+          echo "Version Increment: ${{ env.VERSION_INCREMENT }}"
+          echo "Release Quality: ${{ env.RELEASE_QUALITY }}"
+          echo "Publish Release Artifact: ${{ env.PUBLISH_RELEASE_ARTIFACT }}"
+          echo "Create Release Branch: ${{ env.CREATE_RELEASE_BRANCH }}"
+          echo "Inputs: ${{ toJson(github.event.inputs) }}"
+          echo "======================================"
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Generate Build Timestamp
+        id: generate-timestamp
+        run: |
+          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
+          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Generated centralized build timestamp: $BUILD_TIMESTAMP"
+
+      - name: Update Version Number (In-Place for Nightly/Beta)
+        if: env.VERSION_INCREMENT != 'none' && env.CREATE_RELEASE_BRANCH == 'false'
+        run: |
+          # Read current version from Cargo.toml
+          CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Parse version components
+          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+          
+          # Increment based on input
+          case "${{ env.VERSION_INCREMENT }}" in
+            "major")
+              major=$((major + 1))
+              minor=0
+              patch=0
+              ;;
+            "minor")
+              minor=$((minor + 1))
+              patch=0
+              ;;
+            "patch")
+              patch=$((patch + 1))
+              ;;
+          esac
+          
+          NEW_VERSION="$major.$minor.$patch"
+          echo "New version: $NEW_VERSION"
+          
+          # Update Cargo.toml workspace version
+          sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
+          
+          # Commit version update to current branch
+          git add Cargo.toml
+          git commit -m "Release: Bump version to $NEW_VERSION (${{ env.RELEASE_QUALITY }})"
+          git push origin HEAD
+
+      - name: Get Current Version
+        id: get-version
+        run: |
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Final version: $VERSION"
+
+      - name: Create Release Branch (Stable Release Only)
+        id: create-release-branch
+        if: env.CREATE_RELEASE_BRANCH == 'true' && env.RELEASE_QUALITY == 'stable'
+        run: |
+          echo "Creating Release Branch for Stable Release..."
+          RELEASE_VERSION="${{ steps.get-version.outputs.VERSION }}"
+          
+          # Update version if needed for release branch
+          if [[ "${{ env.VERSION_INCREMENT }}" != "none" ]]; then
+            # Read current version from Cargo.toml
+            CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+            echo "Current version: $CURRENT_VERSION"
+            
+            # Parse version components
+            IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
+            
+            # Increment based on input
+            case "${{ env.VERSION_INCREMENT }}" in
+              "major")
+                major=$((major + 1))
+                minor=0
+                patch=0
+                ;;
+              "minor")
+                minor=$((minor + 1))
+                patch=0
+                ;;
+              "patch")
+                patch=$((patch + 1))
+                ;;
+            esac
+            
+            NEW_VERSION="$major.$minor.$patch"
+            echo "New version for release branch: $NEW_VERSION"
+            
+            # Update Cargo.toml workspace version
+            sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
+            RELEASE_VERSION="$NEW_VERSION"
+          fi
+          
+          branch="release/v$RELEASE_VERSION"
+          git checkout -b $branch
+          
+          # Commit version update if we made changes
+          if [[ "${{ env.VERSION_INCREMENT }}" != "none" ]]; then
+            git add Cargo.toml
+            git commit -m "Release: Bump version to $RELEASE_VERSION (stable)"
+          fi
+          
+          git push --set-upstream origin $branch
+          echo "RELEASE_BRANCH=$branch" >> $GITHUB_OUTPUT
+
+      - name: Determine Build Branch
+        id: determine-branch
+        run: |
+          if [[ "${{ env.CREATE_RELEASE_BRANCH }}" == "true" && "${{ env.RELEASE_QUALITY }}" == "stable" ]]; then
+            echo "BRANCH_NAME=${{ steps.create-release-branch.outputs.RELEASE_BRANCH }}" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Log Final Build Information
+        run: |
+          echo "=== READY TO BUILD ==="
+          COMMIT_HASH=$(git rev-parse HEAD)
+          echo "Build Commit Hash: $COMMIT_HASH"
+          echo "Build Timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}"
+          echo "Build Branch: ${{ steps.determine-branch.outputs.BRANCH_NAME }}"
+          echo "Final Version: ${{ steps.get-version.outputs.VERSION }}"
+          echo "Release Quality: ${{ env.RELEASE_QUALITY }}"
+          echo "Release Type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}"
+          echo "Create Release Branch: ${{ env.CREATE_RELEASE_BRANCH }}"
+
+  TriggerDarwinArm64Build:
+    needs: UpdateVersionNumber
+    name: Trigger Darwin ARM64 Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Darwin ARM64 Build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "build-darwin-arm64.yml",
+              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
+              inputs: {
+                "create_release_artifact": "true",
+                "channel": "${{ env.RELEASE_QUALITY }}",
+                "publish_release_artifact": "${{ env.PUBLISH_RELEASE_ARTIFACT }}",
+                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
+                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+              }
+            })
+
+  TriggerDarwinX64Build:
+    needs: UpdateVersionNumber
+    name: Trigger Darwin X64 Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Darwin X64 Build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "build-darwin-x64.yml",
+              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
+              inputs: {
+                "create_release_artifact": "true",
+                "channel": "${{ env.RELEASE_QUALITY }}",
+                "publish_release_artifact": "${{ env.PUBLISH_RELEASE_ARTIFACT }}",
+                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
+                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+              }
+            })
+
+  TriggerLinuxX64Build:
+    needs: UpdateVersionNumber
+    name: Trigger Linux X64 Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Linux X64 Build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "build-linux-x64.yml",
+              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
+              inputs: {
+                "channel": "${{ env.RELEASE_QUALITY }}",
+                "publish_release_artifact": "${{ env.PUBLISH_RELEASE_ARTIFACT }}",
+                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
+                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+              }
+            })
+
+  TriggerWindowsX64Build:
+    needs: UpdateVersionNumber
+    name: Trigger Windows X64 Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Windows X64 Build
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: "build-windows-x64.yml",
+              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
+              inputs: {
+                "create_release_artifact": "true",
+                "channel": "${{ env.RELEASE_QUALITY }}",
+                "publish_release_artifact": "${{ env.PUBLISH_RELEASE_ARTIFACT }}",
+                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
+                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+              }
+            })
