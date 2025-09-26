@@ -36,7 +36,10 @@ Execute the specified bash command.
 |--------|------|---------|------------------------------------------------------------------------------------------|
 | `allowedCommands` | array of strings | `[]` | List of specific commands that are allowed without prompting. Supports regex formatting. Note that regex entered are anchored with \A and \z |
 | `deniedCommands` | array of strings | `[]` | List of specific commands that are denied. Supports regex formatting. Note that regex entered are anchored with \A and \z. Deny rules are evaluated before allow rules |
+| `denyByDefault` | boolean | `false` | When true, deny all commands not in allowedCommands instead of asking for approval |
 | `autoAllowReadonly` | boolean | `false` | Whether to allow read-only commands without prompting                                    |
+
+Note: regex does NOT support look-around, including look-ahead and look-behind.
 
 ## Fs_read Tool
 
