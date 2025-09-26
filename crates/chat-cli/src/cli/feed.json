@@ -39,6 +39,10 @@
         {
           "type": "fixed",
           "description": "Improve error messages for dispatch failures - [#2969](https://github.com/aws/amazon-q-developer-cli/pull/2969)"
+        },
+        {
+          "type": "added",
+          "description": "Enhanced MCP prompt management with improved UX - [#2953](https://github.com/aws/amazon-q-developer-cli/pull/2953)"
         }
       ]
     },
