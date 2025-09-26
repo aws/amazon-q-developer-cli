@@ -1,4 +1,5 @@
 pub mod custom_tool;
+pub mod delegate;
 pub mod execute;
 pub mod fs_read;
 pub mod fs_write;
@@ -26,6 +27,7 @@ use crossterm::style::{
     Color,
 };
 use custom_tool::CustomTool;
+use delegate::Delegate;
 use execute::ExecuteCommand;
 use eyre::Result;
 use fs_read::FsRead;
@@ -58,7 +60,7 @@ use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
 pub const DEFAULT_APPROVE: [&str; 0] = [];
-pub const NATIVE_TOOLS: [&str; 8] = [
+pub const NATIVE_TOOLS: [&str; 9] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -70,6 +72,7 @@ pub const NATIVE_TOOLS: [&str; 8] = [
     "knowledge",
     "thinking",
     "todo_list",
+    "delegate",
 ];
 
 /// Represents an executable tool use.
@@ -86,6 +89,7 @@ pub enum Tool {
     Knowledge(Knowledge),
     Thinking(Thinking),
     Todo(TodoList),
+    Delegate(Delegate),
 }
 
 impl Tool {
@@ -105,6 +109,7 @@ impl Tool {
             Tool::Knowledge(_) => "knowledge",
             Tool::Thinking(_) => "thinking (prerelease)",
             Tool::Todo(_) => "todo_list",
+            Tool::Delegate(_) => "delegate",
         }
         .to_owned()
     }
@@ -122,6 +127,7 @@ impl Tool {
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
+            Tool::Delegate(_) => PermissionEvalResult::Allow, // Allow delegate tool
         }
     }
 
@@ -144,6 +150,7 @@ impl Tool {
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, agent).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
+            Tool::Delegate(delegate) => delegate.invoke(os, stdout).await,
         }
     }
 
@@ -160,6 +167,7 @@ impl Tool {
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
             Tool::Thinking(thinking) => thinking.queue_description(output),
             Tool::Todo(_) => Ok(()),
+            Tool::Delegate(delegate) => delegate.queue_description(output),
         }
     }
 
@@ -176,6 +184,7 @@ impl Tool {
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
+            Tool::Delegate(_) => Ok(()), // No validation needed for delegate tool
         }
     }
 

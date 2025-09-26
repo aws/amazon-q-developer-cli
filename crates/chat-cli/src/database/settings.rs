@@ -45,6 +45,7 @@ pub enum Setting {
     EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
     TangentModeKey,
+
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
     #[strum(message = "Show greeting message on chat start (boolean)")]
@@ -77,6 +78,8 @@ pub enum Setting {
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
     EnabledTodoList,
+    #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
+    EnabledDelegate,
 }
 
 impl AsRef<str> for Setting {
@@ -96,6 +99,7 @@ impl AsRef<str> for Setting {
             Self::SkimCommandKey => "chat.skimCommandKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
+
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
@@ -112,6 +116,7 @@ impl AsRef<str> for Setting {
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
+            Self::EnabledDelegate => "chat.enableDelegate",
         }
     }
 }
@@ -141,6 +146,7 @@ impl TryFrom<&str> for Setting {
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
+
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),

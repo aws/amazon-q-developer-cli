@@ -50,6 +50,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Delegate",
+        description: "Enables launching and managing asynchronous subagent processes",
+        setting_key: Setting::EnabledDelegate,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]

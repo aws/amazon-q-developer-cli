@@ -379,5 +379,28 @@
       },
       "required": ["command"]
     }
+  },
+  "delegate": {
+    "name": "delegate",
+    "description": "Launch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents that run independently in the background.\n\nOperations:\n- launch: Start a new task with an agent (requires task parameter, agent is optional)\n- status: Check agent status and get full output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are stored in ~/.aws/amazonq/.subagents/\n\nIMPORTANT: If a specific agent is requested but not found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\": \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents: {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand): {\"operation\": \"status\"}",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "description": "Operation to perform: launch or status",
+          "enum": ["launch", "status"]
+        },
+        "agent": {
+          "type": "string",
+          "description": "Agent name to use (optional - uses 'default_agent' if not specified)"
+        },
+        "task": {
+          "type": "string",
+          "description": "Task description (required for launch operation)"
+        }
+      },
+      "required": ["operation"]
+    }
   }
 }
