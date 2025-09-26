@@ -54,13 +54,39 @@ q acp --agent my-profile
 ### Architecture Overview
 
 ```
-┌─────────────┐    JSON-RPC      ┌─────────────┐    Internal APIs    ┌───────────────┐
-│   Editor    │ ◄──────────────► │ ACP Adapter │ ◄─────────────────► │  Q Chat       │
-│ (Zed, etc.) │     (stdio)      │             │                     │ Infrastructure│
+┌─────────────┐    JSON-RPC      ┌─────────────┐    Actor Messages   ┌───────────────┐
+│   Editor    │ ◄──────────────► │AcpAgentForward│ ◄─────────────────► │ AcpServerActor│
+│ (Zed, etc.) │     (stdio)      │             │                     │               │
 └─────────────┘                  └─────────────┘                     └───────────────┘
+                                                                             │
+                                                                    Actor Messages
+                                                                             │
+                                                                             ▼
+                                                                   ┌───────────────┐
+                                                                   │AcpSessionActor│
+                                                                   │ (per session) │
+                                                                   └───────────────┘
 ```
 
-The ACP adapter acts as a protocol translator, mapping between ACP concepts and Q's internal chat system.
+The ACP implementation uses Alice Ryhl's actor pattern for clean separation of concerns:
+
+- **AcpAgentForward**: Thin forwarding layer implementing `acp::Agent` trait
+- **AcpServerActor**: Top-level coordinator managing sessions and routing messages  
+- **AcpSessionActor**: Per-session actors that own `ConversationState` and process prompts
+
+**Key Benefits:**
+- **No shared state**: Each actor owns its data (eliminates RwLocks and contention)
+- **Natural backpressure**: Bounded channels prevent unbounded message queuing
+- **Clean separation**: Protocol handling, session management, and conversation processing are separate
+- **Easy testing**: Each actor can be tested independently with message injection
+
+**Message Flow:**
+When an ACP client sends a prompt:
+1. `AcpAgentForward` receives JSON-RPC request
+2. Forwards as `ServerMethod::Prompt` message to server actor via channel
+3. Server actor routes as `SessionMethod::Prompt` to appropriate session actor
+4. Session actor processes with `ConversationState` and streams responses back
+5. Response flows back through the same channel hierarchy to ACP client
 
 ### Mapping ACP to Q CLI
 
@@ -135,42 +161,46 @@ This allows:
 
 ## Implementation Plan
 
-The implementation will proceed in commit-sized units, leveraging the existing `agent-client-protocol` Rust crate:
+The implementation uses Alice Ryhl's actor pattern for clean message passing instead of shared state with RwLocks. Implementation proceeds in commit-sized units:
 
-### Phase 1: Foundation
-1. **Add ACP dependency** - Include `agent-client-protocol` crate in Q CLI's Cargo.toml
-   - *Test*: Verify crate compiles and imports work
-2. **Basic command structure** - Add `q acp` subcommand with feature gating and argument parsing (initially just prints status and exits)
-   - *Test*: `q acp` command exists, respects feature flag, shows help text
-   - *Note*: Use same pattern as `q chat --agent` for agent selection; add tests for both enabled/disabled feature flag states using `os.database.settings.set(Setting::EnabledAcp, bool)`
-3. **Minimal Agent implementation** - Create stub `Agent` trait implementation that handles `initialize` only
-   - *Test*: ACP client can connect, send `initialize`, get valid response
-   - *Note*: Use ACP library's `AgentSideConnection::new` with stdio transport; test with library's example client or `ClientSideConnection::new`
+### Phase 1: Actor Foundation
+1. **Actor pattern foundation** - Implement `AcpAgentForward`, `AcpServerHandle`, and `AcpSessionHandle` with message types
+   - *Test*: Actor handles can be created, messages can be sent (stub responses)
+   - *Note*: Uses `mpsc::channel(32)` for bounded message passing, `oneshot::channel()` for responses
+2. **Basic command structure** - Add `q acp` subcommand with feature gating and actor system integration
+   - *Test*: `q acp` command spawns actor system, handles `initialize` requests
+   - *Note*: Uses `LocalSet` for !Send ACP futures, stdio transport with `AgentSideConnection`
+3. **Server actor implementation** - Implement server actor loop with session management
+   - *Test*: Can handle multiple ACP method calls, routes to appropriate handlers
+   - *Note*: Server actor maintains `HashMap<SessionId, AcpSessionHandle>` for session routing
 
-### Phase 2: Session Management
-4. **Session lifecycle foundation** - Implement `new_session` and `load_session` methods with Q's conversation state integration
-   - *Test*: Can create sessions, session IDs stored in database, can reload existing sessions
-   - *Note*: Each ACP session gets its own `ToolManager` instance (following existing pattern where each `ConversationState` has its own `ToolManager`); session-specific MCP servers are additive to agent's base configuration
-5. **Basic prompt handling** - Implement `prompt` method to create UserMessages and add to conversation state (returns empty responses)
-   - *Test*: Can send prompts to sessions, messages stored in conversation history
-6. **Response streaming foundation** - Wire up basic text response streaming using ACP's `session/update` notifications
-   - *Test*: Prompts return actual AI responses, streaming works in ACP client
+### Phase 2: Session Management  
+4. **Session lifecycle** - Implement `new_session` and `load_session` with session actor spawning
+   - *Test*: Can create sessions, spawn session actors, store session IDs
+   - *Note*: Each session actor owns its `ConversationState` and `ToolManager` instance
+5. **Basic prompt handling** - Implement session actor prompt processing (stub LLM responses)
+   - *Test*: Can send prompts to sessions, session actors receive and respond
+6. **Response streaming** - Wire up real LLM integration with ACP streaming notifications
+   - *Test*: Prompts return actual AI responses, streaming works through actor system
 
 ### Phase 2.5: Test Infrastructure
-7. **ACP test harness** - Create actor-based test infrastructure for in-process ACP testing with mock LLMs
-   - *Test*: Can create test harness, configure mock LLM scripts, run conversational tests
-   - *Note*: Actor-based design with `TestHarness`, `AcpTestClient`, `AcpTestSession` APIs; uses duplex streams and LocalSet for non-Send ACP futures; enables scripted conversation testing without subprocess overhead
-8. **Mock LLM integration** - Wire test harness to existing mock LLM infrastructure for deterministic testing
-   - *Test*: Mock LLM scripts can read user messages and send responses through ACP protocol
-   - *Note*: Leverages existing `MockLLMContext` and `set_mock_llm()` patterns; test harness handles ACP protocol complexity while providing clean conversational API
+7. **Actor test harness** - Adapt existing test harness to work with new actor system
+   - *Test*: Can test actor system with mock LLMs, conversational test scripts work
+   - *Note*: Test harness creates actors in-process, injects mock LLM responses
+8. **Mock LLM integration** - Ensure mock LLM system works with session actors
+   - *Test*: Mock LLM scripts can control session actor responses deterministically
 
-### Phase 3: Advanced Features  
-9. **Tool system integration** - Implement ACP permission requests and tool execution reporting
-   - *Test*: Tools require permission, execution reported correctly, trusted tools bypass permission
-   - *Note*: Q's trusted tools skip `session/request_permission` entirely; only untrusted tools trigger permission flow; permissions are per-tool-call with options like "allow once", "reject"
-10. **File operation routing** - Replace builtin file tools with ACP versions that route through the protocol
-    - *Test*: `fs_read`/`fs_write` work through editor, see unsaved changes, respect editor's file system view
-    - *Note*: ACP file operations use absolute paths (e.g., `/home/user/project/src/main.py`); completely replace Q's builtin `fs_read`/`fs_write` tools with ACP versions that call client's `read_text_file`/`write_text_file` methods instead of direct filesystem access
+### Phase 3: Advanced Features
+9. **Tool system integration** - Implement ACP tool permissions and execution through actors
+   - *Test*: Tools work through session actors, permission requests flow correctly
+   - *Note*: Session actors handle tool execution, report via ACP `ToolCall` messages
+10. **File operation routing** - Replace builtin file tools with ACP versions in session actors
+    - *Test*: `fs_read`/`fs_write` work through editor, session actors route file operations
+    - *Note*: Session actors use ACP file operations instead of direct filesystem access
 
-Each phase builds on the previous, with concrete testability at every step using the ACP library's example client or compatible editors.
+**Architecture Benefits:**
+- **Eliminates RwLocks**: No shared mutable state, each actor owns its data
+- **Natural backpressure**: Bounded channels prevent memory issues under load  
+- **Clean testing**: Each actor can be tested in isolation with message injection
+- **Incremental development**: Can implement and test each actor independently
 

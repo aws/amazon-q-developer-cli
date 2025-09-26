@@ -1,434 +1,63 @@
-use std::collections::HashMap;
+//! Agent Client Protocol (ACP) implementation using actor pattern
+//!
+//! This module implements ACP server functionality using Alice Ryhl's actor pattern
+//! for clean separation of concerns and message passing instead of shared state.
+//!
+//! ## Architecture Flow
+//!
+//! When an ACP client sends a prompt request:
+//!
+//! ```text
+//! ACP Client                 AcpAgentForward           AcpServerActor           AcpSessionActor
+//!     │                           │                         │                        │
+//!     │ acp.prompt("Hi")          │                         │                        │
+//!     ├──────JSON-RPC────────────→│                         │                        │
+//!     │                           │ ServerMethod::Prompt    │                        │
+//!     │                           ├────────channel─────────→│                        │
+//!     │                           │                         │ SessionMethod::Prompt │
+//!     │                           │                         ├───────channel────────→│
+//!     │                           │                         │                        │ ConversationState
+//!     │                           │                         │                        │ processes prompt
+//!     │                           │                         │                        │ with LLM
+//!     │                           │                         │                        │
+//!     │                           │                         │ ←──────response───────│
+//!     │                           │ ←──────response─────────│                        │
+//!     │ ←────JSON-RPC─────────────│                         │                        │
+//! ```
+//!
+//! ## Key Benefits
+//!
+//! - **No shared state**: Each actor owns its data (no RwLocks)
+//! - **Natural backpressure**: Bounded channels prevent unbounded queuing
+//! - **Clean separation**: Protocol handling, session management, and conversation processing are separate
+//! - **Easy testing**: Each actor can be tested independently
+
 use std::process::ExitCode;
 use std::sync::Arc;
 
 use agent_client_protocol as acp;
-use acp::Client;
 use clap::Parser;
 use eyre::Result;
 use serde_json::value::RawValue;
-use tokio::sync::{RwLock, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::cli::agent::Agents;
-use crate::cli::ConversationState;
-use crate::cli::chat::tool_manager::ToolManager;
 use crate::database::settings::Setting;
 use crate::os::Os;
-
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(test)]
-mod test_harness;
-
+/// Convert channel errors to ACP errors
+fn channel_to_acp_error<E>(_err: E) -> acp::Error {
+    acp::Error::internal_error()
+}
 
 #[derive(Debug, Parser, PartialEq)]
 pub struct AcpArgs {
     /// Agent to use for ACP sessions
     #[arg(long)]
     pub agent: Option<String>,
-}
-
-/// Handle to the running ACP server.
-/// When this handle is droppted, the server will shutdown.
-pub struct AcpServerHandle {
-    _shutdown_tx: oneshot::Sender<()>,
-}
-
-/// Spawn an ACP server that communicates over stdio
-/// Returns a handle that can be used to shut down the server
-pub async fn spawn_acp_server(
-    agent_name: String,
-    os: Os,
-) -> Result<AcpServerHandle> {
-    let stdin = tokio::io::stdin().compat();
-    let stdout = tokio::io::stdout().compat_write();
-    spawn_acp_server_with_streams(agent_name, os, stdout, stdin).await
-}
-
-/// Spawn an ACP server with custom input/output streams
-/// Useful for testing with in-memory streams
-pub async fn spawn_acp_server_with_streams<W, R>(
-    agent_name: String,
-    os: Os,
-    writer: W,
-    reader: R,
-) -> Result<AcpServerHandle> 
-where
-    W: futures::AsyncWrite + Unpin + Send + 'static,
-    R: futures::AsyncRead + Unpin + Send + 'static,
-{
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    
-    // Spawn the ACP server in a LocalSet since ACP futures are !Send
-    tokio::task::spawn_local(async move {
-        let (tx, mut rx) = mpsc::channel(32); // Bounded channel with capacity 32
-        let agent = QAgent::new(agent_name, os, tx);
-        
-        let (connection, handle_io) = acp::AgentSideConnection::new(
-            agent, 
-            writer, 
-            reader, 
-            |fut| {
-                tokio::task::spawn_local(fut);
-            }
-        );
-        
-        // Spawn background task to handle session notifications
-        let mut shutdown_rx_clone = shutdown_rx;
-        tokio::task::spawn_local(async move {
-            eprintln!("DEBUG: Notification receiver task started");
-            loop {
-                tokio::select! {
-                    Some(QAgentUpdateToAgentConnection { notification, tx }) = rx.recv() => {
-                        eprintln!("DEBUG: Received notification {notification:?}, sending to ACP connection");
-
-                        // Send the notification over the channel.
-                        let result = connection.session_notification(notification).await;
-                        if let Err(e) = result {
-                            eprintln!("DEBUG: Failed to send session notification: {}", e);
-                            break;
-                        }
-
-                        // Notify the QAgent that the notification was processed
-                        let _ = tx.send(());
-
-                        eprintln!("DEBUG: Session notification sent successfully");
-                    }
-                    _ = &mut shutdown_rx_clone => {
-                        eprintln!("DEBUG: ACP server shutdown requested");
-                        break;
-                    }
-                }
-            }
-            eprintln!("DEBUG: Notification receiver task ended");
-        });
-        
-        tracing::info!("ACP server started, waiting for client connections...");
-        
-        // Run the connection (this will block until the client disconnects)
-        if let Err(e) = handle_io.await {
-            tracing::error!("ACP connection error: {}", e);
-        }
-        
-        tracing::info!("ACP server shutting down gracefully");
-    });
-    
-    Ok(AcpServerHandle {
-        _shutdown_tx: shutdown_tx,
-    })
-}
-
-/// `QAgent` Receives callbacks from the agent connection and forwards them to Q CLI.
-struct QAgent {
-    _agent_name: String,
-    os: Arc<RwLock<Os>>,
-    sessions: Arc<RwLock<HashMap<String, ConversationState>>>,
-    session_update_tx: mpsc::Sender<QAgentUpdateToAgentConnection>,
-}
-
-/// Messages from the QAgent to the owner of the `acp::AgentConnection`.
-///
-/// The notification needs to be sent over the connection and then,
-/// once sent, a message needs to be sent to `tx`.
-struct QAgentUpdateToAgentConnection {
-    notification: acp::SessionNotification,
-    tx: tokio::sync::oneshot::Sender<()>,
-}
-
-impl QAgent {
-    fn new(
-        agent_name: String, 
-        os: Os,
-        session_update_tx: mpsc::Sender<QAgentUpdateToAgentConnection>,
-    ) -> Self {
-        Self { 
-            _agent_name: agent_name,
-            os: Arc::new(RwLock::new(os)),
-            sessions: Arc::new(RwLock::new(HashMap::new())),
-            session_update_tx,
-        }
-    }
-}
-
-impl acp::Agent for QAgent {
-    async fn initialize(
-        &self,
-        arguments: acp::InitializeRequest,
-    ) -> Result<acp::InitializeResponse, acp::Error> {
-        tracing::info!("ACP initialize request: {arguments:?}");
-        Ok(acp::InitializeResponse {
-            protocol_version: acp::V1,
-            agent_capabilities: acp::AgentCapabilities {
-                load_session: true,
-                prompt_capabilities: acp::PromptCapabilities::default(),
-                mcp_capabilities: acp::McpCapabilities::default(),
-                meta: None,
-            },
-            auth_methods: Vec::new(),
-            meta: None,
-        })
-    }
-
-    async fn authenticate(
-        &self,
-        _arguments: acp::AuthenticateRequest,
-    ) -> Result<acp::AuthenticateResponse, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn new_session(
-        &self,
-        arguments: acp::NewSessionRequest,
-    ) -> Result<acp::NewSessionResponse, acp::Error> {
-        tracing::info!("ACP new_session request: {arguments:?}");
-        
-        // Generate a new session ID
-        let session_id = uuid::Uuid::new_v4().to_string();
-        
-        // Get OS reference
-        let mut os = self.os.write().await;
-        
-        // Create agents (using default for now)
-        let agents = Agents::default();
-        
-        // Create tool manager
-        let mut tool_manager = ToolManager::default();
-        let tool_config = tool_manager.load_tools(&mut *os, &mut vec![]).await
-            .map_err(|e| {
-                tracing::error!("Failed to load tools: {}", e);
-                acp::Error::internal_error()
-            })?;
-        
-        // Create new conversation state
-        let conversation = ConversationState::new(
-            &session_id,
-            agents,
-            tool_config,
-            tool_manager,
-            None, // model_id
-            &*os,
-            false, // mcp_enabled for now
-        ).await;
-        
-        // Store the session
-        let mut sessions = self.sessions.write().await;
-        sessions.insert(session_id.clone(), conversation);
-        
-        tracing::info!("Created new ACP session: {}", session_id);
-        
-        Ok(acp::NewSessionResponse {
-            session_id: acp::SessionId(session_id.into()),
-            modes: None,
-            meta: None,
-        })
-    }
-
-    async fn load_session(
-        &self,
-        arguments: acp::LoadSessionRequest,
-    ) -> Result<acp::LoadSessionResponse, acp::Error> {
-        tracing::info!("ACP load_session request: {arguments:?}");
-        
-        let session_id = arguments.session_id.0.as_ref();
-        
-        // Check if session exists
-        let sessions = self.sessions.read().await;
-        if sessions.contains_key(session_id) {
-            tracing::info!("Loaded existing ACP session: {}", session_id);
-            Ok(acp::LoadSessionResponse {
-                modes: None,
-                meta: None,
-            })
-        } else {
-            tracing::warn!("Session not found: {}", session_id);
-            Err(acp::Error::invalid_params())
-        }
-    }
-
-    async fn prompt(
-        &self,
-        arguments: acp::PromptRequest,
-    ) -> Result<acp::PromptResponse, acp::Error> {
-        tracing::info!("ACP prompt request: session_id={}", arguments.session_id.0);
-        
-        let session_id = arguments.session_id.0.as_ref();
-        
-        // Convert ACP ContentBlocks to a single prompt string
-        let mut prompt_text = String::new();
-        for content_block in arguments.prompt {
-            match content_block {
-                acp::ContentBlock::Text(text_content) => {
-                    if !prompt_text.is_empty() {
-                        prompt_text.push('\n');
-                    }
-                    prompt_text.push_str(&text_content.text);
-                },
-                acp::ContentBlock::ResourceLink(resource_link) => {
-                    // For now, just include the URI as text
-                    if !prompt_text.is_empty() {
-                        prompt_text.push('\n');
-                    }
-                    prompt_text.push_str(&format!("Resource: {}", resource_link.uri));
-                },
-                acp::ContentBlock::Resource(embedded_resource) => {
-                    // Include the resource contents
-                    if !prompt_text.is_empty() {
-                        prompt_text.push('\n');
-                    }
-                    match &embedded_resource.resource {
-                        acp::EmbeddedResourceResource::TextResourceContents(text_resource) => {
-                            prompt_text.push_str(&format!("Resource {}: {}", 
-                                text_resource.uri, 
-                                text_resource.text));
-                        },
-                        acp::EmbeddedResourceResource::BlobResourceContents(blob_resource) => {
-                            prompt_text.push_str(&format!("Resource {}: [Binary content]", 
-                                blob_resource.uri));
-                        },
-                    }
-                },
-                acp::ContentBlock::Image(_) | acp::ContentBlock::Audio(_) => {
-                    // Not supported yet - skip or add placeholder
-                    if !prompt_text.is_empty() {
-                        prompt_text.push('\n');
-                    }
-                    prompt_text.push_str("[Unsupported content type]");
-                },
-            }
-        }
-        
-        // Process the message through the real chat pipeline
-        let mut conversation_state = {
-            let mut sessions = self.sessions.write().await;
-            let conversation = sessions.get_mut(session_id)
-                .ok_or_else(|| {
-                    tracing::warn!("Session not found: {}", session_id);
-                    acp::Error::invalid_params()
-                })?;
-            
-            // Add the prompt to the conversation state
-            conversation.set_next_user_message(prompt_text.clone()).await;
-            
-            // Clone the conversation state for processing
-            conversation.clone()
-        };
-
-        // Get OS reference for API client
-        let os = self.os.read().await;
-        
-        // Send message through the real chat pipeline
-        use crate::cli::chat::{SendMessageStream, RequestMetadata, ResponseEvent};
-        use std::sync::Arc;
-        use tokio::sync::Mutex;
-        
-        let request_metadata_lock = Arc::new(Mutex::new(None::<RequestMetadata>));
-        
-        // Convert chat::ConversationState to api_client::model::ConversationState
-        let mut stderr = Vec::new();
-        let api_conversation_state = conversation_state
-            .as_sendable_conversation_state(&*os, &mut stderr, false)
-            .await
-            .map_err(|e| {
-                tracing::error!("Failed to convert conversation state: {}", e);
-                acp::Error::internal_error()
-            })?;
-        
-        match SendMessageStream::send_message(&os.client, api_conversation_state, request_metadata_lock, None).await {
-            Ok(mut stream) => {
-                // Stream the real LLM responses
-                while let Some(event_result) = stream.recv().await {
-                    match event_result {
-                        Ok(event) => {
-                            match event {
-                                ResponseEvent::AssistantText(content) => {
-                                    let notification = acp::SessionNotification {
-                                        session_id: arguments.session_id.clone(),
-                                        update: acp::SessionUpdate::AgentMessageChunk {
-                                            content: acp::ContentBlock::Text(acp::TextContent {
-                                                text: content,
-                                                annotations: None,
-                                                meta: None,
-                                            }),
-                                        },
-                                        meta: None,
-                                    };
-
-                                    // Send notification via bounded channel (provides natural backpressure)
-                                    let (tx, rx) = tokio::sync::oneshot::channel();
-                                    if let Err(_) = self.session_update_tx.send(QAgentUpdateToAgentConnection { notification, tx }).await {
-                                        tracing::warn!("Notification channel closed, stopping stream");
-                                        break;
-                                    }
-                                    rx.await.expect("session-update actor to acknowledge session-notification");
-                                }
-                                ResponseEvent::ToolUseStart { .. } => {
-                                    // TODO: Handle tool use events in Phase 3
-                                    tracing::debug!("Tool use start event received (not yet implemented in ACP)");
-                                }
-                                ResponseEvent::ToolUse(_) => {
-                                    // TODO: Handle tool use events in Phase 3
-                                    tracing::debug!("Tool use event received (not yet implemented in ACP)");
-                                }
-                                ResponseEvent::EndStream { .. } => {
-                                    tracing::debug!("End stream event received");
-                                    break;
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            tracing::error!("Error receiving stream event: {}", e);
-                            break;
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                tracing::error!("Failed to send message: {}", e);
-                return Err(acp::Error::internal_error());
-            }
-        }
-        
-        tracing::info!("ACP prompt completed for session: {}", session_id);
-        Ok(acp::PromptResponse {
-            stop_reason: acp::StopReason::EndTurn,
-            meta: None,
-        })
-    }
-
-    async fn cancel(&self, _args: acp::CancelNotification) -> Result<(), acp::Error> {
-        // Not implemented yet
-        Ok(())
-    }
-
-    async fn set_session_mode(
-        &self,
-        _args: acp::SetSessionModeRequest,
-    ) -> Result<acp::SetSessionModeResponse, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn ext_method(
-        &self,
-        _method: Arc<str>,
-        _params: Arc<RawValue>,
-    ) -> Result<Arc<RawValue>, acp::Error> {
-        // Not implemented yet
-        Err(acp::Error::method_not_found())
-    }
-
-    async fn ext_notification(
-        &self,
-        _method: Arc<str>,
-        _params: Arc<RawValue>,
-    ) -> Result<(), acp::Error> {
-        // Not implemented yet
-        Ok(())
-    }
 }
 
 impl AcpArgs {
@@ -446,16 +75,382 @@ impl AcpArgs {
         // Create ACP server with LocalSet for non-Send futures
         let local_set = tokio::task::LocalSet::new();
         local_set.run_until(async move {
-            let _handle = spawn_acp_server(agent_name, os.clone()).await?;
+            // Spawn the server actor
+            let server_handle = AcpServerHandle::spawn(agent_name, os.clone());
             
-            // Wait indefinitely (until Ctrl+C or client disconnects)
-            // The handle will automatically shut down when dropped
-            tokio::signal::ctrl_c().await.map_err(|e| eyre::eyre!("Failed to listen for ctrl+c: {}", e))?;
+            // Create forwarding agent
+            let agent = AcpAgentForward::new(server_handle);
             
-            tracing::info!("ACP server shutting down");
+            // Set up ACP connection with stdio
+            let stdin = tokio::io::stdin().compat();
+            let stdout = tokio::io::stdout().compat_write();
+            
+            let (connection, handle_io) = acp::AgentSideConnection::new(
+                agent,
+                stdout,
+                stdin,
+                |fut| {
+                    tokio::task::spawn_local(fut);
+                }
+            );
+            
+            tracing::info!("ACP server started, waiting for client connections...");
+            
+            // Run the connection (this will block until the client disconnects)
+            if let Err(e) = handle_io.await {
+                tracing::error!("ACP connection error: {}", e);
+            }
+            
+            tracing::info!("ACP server shutting down gracefully");
             Ok::<(), eyre::Error>(())
         }).await?;
         
         Ok(ExitCode::SUCCESS)
     }
+}
+
+// ============================================================================
+// Server Actor - Top-level coordinator that manages sessions
+// ============================================================================
+
+/// Handle to the ACP server actor
+#[derive(Clone)]
+pub struct AcpServerHandle {
+    server_tx: mpsc::Sender<ServerMethod>,
+}
+
+/// Messages sent to the server actor
+/// 
+/// Each variant contains:
+/// - Request parameters (the input)
+/// - oneshot::Sender (the "return address" where the actor sends the response back)
+enum ServerMethod {
+    Initialize(acp::InitializeRequest, oneshot::Sender<Result<acp::InitializeResponse, acp::Error>>),
+    Authenticate(acp::AuthenticateRequest, oneshot::Sender<Result<acp::AuthenticateResponse, acp::Error>>),
+    NewSession(acp::NewSessionRequest, oneshot::Sender<Result<acp::NewSessionResponse, acp::Error>>),
+    LoadSession(acp::LoadSessionRequest, oneshot::Sender<Result<acp::LoadSessionResponse, acp::Error>>),
+    SetSessionMode(acp::SetSessionModeRequest, oneshot::Sender<Result<acp::SetSessionModeResponse, acp::Error>>),
+    Prompt(acp::PromptRequest, oneshot::Sender<Result<acp::PromptResponse, acp::Error>>),
+    Cancel(acp::CancelNotification, oneshot::Sender<Result<(), acp::Error>>),
+    ExtMethod(Arc<str>, Arc<RawValue>, oneshot::Sender<Result<Arc<RawValue>, acp::Error>>),
+    ExtNotification(Arc<str>, Arc<RawValue>, oneshot::Sender<Result<(), acp::Error>>),
+}
+
+impl AcpServerHandle {
+    pub fn spawn(agent_name: String, os: Os) -> Self {
+        let (server_tx, server_rx) = mpsc::channel(32);
+        
+        tokio::task::spawn_local(async move {
+            acp_server_actor(agent_name, os, server_rx).await;
+        });
+        
+        Self { server_tx }
+    }
+
+    pub async fn initialize(&self, args: acp::InitializeRequest) -> Result<acp::InitializeResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::Initialize(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn authenticate(&self, args: acp::AuthenticateRequest) -> Result<acp::AuthenticateResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::Authenticate(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn new_session(&self, args: acp::NewSessionRequest) -> Result<acp::NewSessionResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::NewSession(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn load_session(&self, args: acp::LoadSessionRequest) -> Result<acp::LoadSessionResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::LoadSession(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn set_session_mode(&self, args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::SetSessionMode(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::Prompt(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::Cancel(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn ext_method(&self, method: Arc<str>, params: Arc<RawValue>) -> Result<Arc<RawValue>, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::ExtMethod(method, params, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn ext_notification(&self, method: Arc<str>, params: Arc<RawValue>) -> Result<(), acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.server_tx.send(ServerMethod::ExtNotification(method, params, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+}
+
+// ============================================================================
+// Session Actor - Per-session actor that owns conversation state
+// ============================================================================
+
+/// Handle to a session actor
+#[derive(Clone)]
+pub struct AcpSessionHandle {
+    session_tx: mpsc::Sender<SessionMethod>,
+}
+
+/// Messages sent to session actors
+enum SessionMethod {
+    Prompt(acp::PromptRequest, oneshot::Sender<Result<acp::PromptResponse, acp::Error>>),
+    Cancel(acp::CancelNotification, oneshot::Sender<Result<(), acp::Error>>),
+    SetMode(acp::SetSessionModeRequest, oneshot::Sender<Result<acp::SetSessionModeResponse, acp::Error>>),
+}
+
+impl AcpSessionHandle {
+    pub fn spawn(session_id: acp::SessionId, os: Os) -> Self {
+        let (session_tx, session_rx) = mpsc::channel(32);
+        
+        tokio::task::spawn_local(async move {
+            acp_session_actor(session_id, os, session_rx).await;
+        });
+        
+        Self { session_tx }
+    }
+
+    pub async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.session_tx.send(SessionMethod::Prompt(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.session_tx.send(SessionMethod::Cancel(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+
+    pub async fn set_mode(&self, args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
+        let (tx, rx) = oneshot::channel();
+        self.session_tx.send(SessionMethod::SetMode(args, tx)).await
+            .map_err(channel_to_acp_error)?;
+        rx.await.map_err(channel_to_acp_error)?
+    }
+}
+
+// ============================================================================
+// Forwarding Agent - Thin layer implementing acp::Agent
+// ============================================================================
+
+/// Forwarding implementation of acp::Agent that sends all calls to server actor
+pub struct AcpAgentForward {
+    server_handle: AcpServerHandle,
+}
+
+impl AcpAgentForward {
+    pub fn new(server_handle: AcpServerHandle) -> Self {
+        Self { server_handle }
+    }
+}
+
+impl acp::Agent for AcpAgentForward {
+    async fn initialize(&self, arguments: acp::InitializeRequest) -> Result<acp::InitializeResponse, acp::Error> {
+        self.server_handle.initialize(arguments).await
+    }
+
+    async fn authenticate(&self, arguments: acp::AuthenticateRequest) -> Result<acp::AuthenticateResponse, acp::Error> {
+        self.server_handle.authenticate(arguments).await
+    }
+
+    async fn new_session(&self, arguments: acp::NewSessionRequest) -> Result<acp::NewSessionResponse, acp::Error> {
+        self.server_handle.new_session(arguments).await
+    }
+
+    async fn load_session(&self, arguments: acp::LoadSessionRequest) -> Result<acp::LoadSessionResponse, acp::Error> {
+        self.server_handle.load_session(arguments).await
+    }
+
+    async fn prompt(&self, arguments: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+        self.server_handle.prompt(arguments).await
+    }
+
+    async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
+        self.server_handle.cancel(args).await
+    }
+
+    async fn set_session_mode(&self, args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
+        self.server_handle.set_session_mode(args).await
+    }
+
+    async fn ext_method(&self, method: Arc<str>, params: Arc<RawValue>) -> Result<Arc<RawValue>, acp::Error> {
+        self.server_handle.ext_method(method, params).await
+    }
+
+    async fn ext_notification(&self, method: Arc<str>, params: Arc<RawValue>) -> Result<(), acp::Error> {
+        self.server_handle.ext_notification(method, params).await
+    }
+}
+
+// ============================================================================
+// Actor Implementations
+// ============================================================================
+
+/// Server actor that manages sessions and routes messages
+async fn acp_server_actor(
+    _agent_name: String,
+    _os: Os,
+    mut server_rx: mpsc::Receiver<ServerMethod>,
+) {
+    // TODO: Implement session management
+    while let Some(method) = server_rx.recv().await {
+        match method {
+            ServerMethod::Initialize(args, tx) => {
+                let response = handle_initialize(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::Authenticate(args, tx) => {
+                let response = handle_authenticate(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::NewSession(args, tx) => {
+                let response = handle_new_session(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::LoadSession(args, tx) => {
+                let response = handle_load_session(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::SetSessionMode(args, tx) => {
+                let response = handle_set_session_mode(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::Prompt(args, tx) => {
+                let response = handle_prompt(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::Cancel(args, tx) => {
+                let response = handle_cancel(args).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::ExtMethod(method, params, tx) => {
+                let response = handle_ext_method(method, params).await;
+                let _ = tx.send(response);
+            }
+            ServerMethod::ExtNotification(method, params, tx) => {
+                let response = handle_ext_notification(method, params).await;
+                let _ = tx.send(response);
+            }
+        }
+    }
+}
+
+/// Session actor that owns conversation state
+async fn acp_session_actor(
+    _session_id: acp::SessionId,
+    _os: Os,
+    mut session_rx: mpsc::Receiver<SessionMethod>,
+) {
+    // TODO: Implement conversation state management
+    while let Some(method) = session_rx.recv().await {
+        match method {
+            SessionMethod::Prompt(args, tx) => {
+                let response = handle_session_prompt(args).await;
+                let _ = tx.send(response);
+            }
+            SessionMethod::Cancel(args, tx) => {
+                let response = handle_session_cancel(args).await;
+                let _ = tx.send(response);
+            }
+            SessionMethod::SetMode(args, tx) => {
+                let response = handle_session_set_mode(args).await;
+                let _ = tx.send(response);
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Handler Functions (TODO: Implement)
+// ============================================================================
+
+async fn handle_initialize(_args: acp::InitializeRequest) -> Result<acp::InitializeResponse, acp::Error> {
+    Ok(acp::InitializeResponse {
+        protocol_version: acp::ProtocolVersion::V1,
+        agent_capabilities: acp::AgentCapabilities::default(),
+        auth_methods: Vec::new(),
+        meta: None,
+    })
+}
+
+async fn handle_authenticate(_args: acp::AuthenticateRequest) -> Result<acp::AuthenticateResponse, acp::Error> {
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_new_session(_args: acp::NewSessionRequest) -> Result<acp::NewSessionResponse, acp::Error> {
+    // TODO: Create session actor and return session ID
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_load_session(_args: acp::LoadSessionRequest) -> Result<acp::LoadSessionResponse, acp::Error> {
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_set_session_mode(_args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_prompt(_args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+    // TODO: Route to appropriate session actor
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_cancel(_args: acp::CancelNotification) -> Result<(), acp::Error> {
+    // TODO: Route to appropriate session actor
+    Ok(())
+}
+
+async fn handle_ext_method(_method: Arc<str>, _params: Arc<RawValue>) -> Result<Arc<RawValue>, acp::Error> {
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_ext_notification(_method: Arc<str>, _params: Arc<RawValue>) -> Result<(), acp::Error> {
+    Ok(())
+}
+
+async fn handle_session_prompt(_args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
+    // TODO: Process prompt with conversation state
+    Err(acp::Error::method_not_found())
+}
+
+async fn handle_session_cancel(_args: acp::CancelNotification) -> Result<(), acp::Error> {
+    // TODO: Cancel ongoing operations
+    Ok(())
+}
+
+async fn handle_session_set_mode(_args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
+    // TODO: Set session mode
+    Err(acp::Error::method_not_found())
 }
