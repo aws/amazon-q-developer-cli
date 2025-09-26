@@ -92,21 +92,31 @@ impl AcpSessionHandle {
 
     async fn handle_prompt(
         args: acp::PromptRequest, 
-        transport: &AcpTransportHandle,
-        os: &Os,
-        conversation_state: &mut Option<ConversationState>,
+        _transport: &AcpTransportHandle,
+        _os: &Os,
+        _conversation_state: &mut Option<ConversationState>,
     ) -> Result<acp::PromptResponse, acp::Error> {
-        // TODO: 
-        // 1. Create ConversationState if this is the first prompt
-        // 2. Convert ACP prompt to Q CLI UserMessage
-        // 3. Call SendMessageStream::send_message
-        // 4. Stream responses via transport.session_notification
-        // 5. Return final PromptResponse
-        
         tracing::info!("Processing ACP prompt with {} content blocks", args.prompt.len());
         
-        // For now, return a stub response
-        Err(acp::Error::method_not_found())
+        // TODO: Implement full conversation processing
+        // For now, return a simple response to test the actor system
+        
+        // Extract text from prompt
+        let mut prompt_text = String::new();
+        for block in args.prompt {
+            if let acp::ContentBlock::Text(text_content) = block {
+                prompt_text.push_str(&text_content.text);
+                prompt_text.push(' ');
+            }
+        }
+        
+        tracing::info!("Received prompt: {}", prompt_text.trim());
+        
+        // Return a simple response
+        Ok(acp::PromptResponse {
+            stop_reason: acp::StopReason::EndTurn,
+            meta: None,
+        })
     }
 
     async fn handle_cancel(_args: acp::CancelNotification) -> Result<(), acp::Error> {
