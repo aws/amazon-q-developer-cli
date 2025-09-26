@@ -12,6 +12,38 @@
     },
     {
       "type": "release",
+      "date": "2025-09-26",
+      "version": "1.16.3",
+      "title": "Version 1.16.3",
+      "changes": [
+        {
+          "type": "added",
+          "description": "[Experimental] Adds checkpointing functionality using Git CLI commands - [#2896](https://github.com/aws/amazon-q-developer-cli/pull/2896)"
+        },
+        {
+          "type": "fixed",
+          "description": "Validation issues with MCP tool arguments - [#2986](https://github.com/aws/amazon-q-developer-cli/pull/2986)"
+        },
+        {
+          "type": "added",
+          "description": "[Experimental] Add context usage percentage indicator to prompt - [#2994](https://github.com/aws/amazon-q-developer-cli/pull/2994)"
+        },
+        {
+          "type": "added",
+          "description": "Support for custom prompts, see `/prompts` - [#2799](https://github.com/aws/amazon-q-developer-cli/pull/2799)"
+        },
+        {
+          "type": "fixed",
+          "description": "Various issues with MCP OAuth - [#2976](https://github.com/aws/amazon-q-developer-cli/pull/2976)"
+        },
+        {
+          "type": "fixed",
+          "description": "Improve error messages for dispatch failures - [#2969](https://github.com/aws/amazon-q-developer-cli/pull/2969)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-09-19",
       "version": "1.16.2",
       "title": "Version 1.16.2",

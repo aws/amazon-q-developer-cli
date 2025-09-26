@@ -7,6 +7,7 @@ pub mod spinner;
 pub mod system_info;
 #[cfg(test)]
 pub mod test;
+pub mod tool_permission_checker;
 pub mod ui;
 
 use std::fmt::Display;

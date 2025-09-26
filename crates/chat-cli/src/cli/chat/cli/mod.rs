@@ -1,4 +1,5 @@
 pub mod changelog;
+pub mod checkpoint;
 pub mod clear;
 pub mod compact;
 pub mod context;
@@ -35,6 +36,7 @@ use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
+use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
@@ -102,6 +104,8 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    #[command(subcommand)]
+    Checkpoint(CheckpointSubcommand),
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
@@ -151,7 +155,7 @@ impl SlashCommand {
                 })
             },
             Self::Changelog(args) => args.execute(session).await,
-            Self::Prompts(args) => args.execute(session).await,
+            Self::Prompts(args) => args.execute(os, session).await,
             Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
@@ -169,6 +173,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
@@ -198,6 +203,7 @@ impl SlashCommand {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
         }
     }

@@ -43,7 +43,10 @@ pub enum DirectoryError {
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
 const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
+const GLOBAL_SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-checkpoints";
 const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const WORKSPACE_PROMPTS_DIR_RELATIVE: &str = ".amazonq/prompts";
+const GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/prompts";
 const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
@@ -180,6 +183,17 @@ pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
     Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
+/// The directory containing global prompts
+pub fn chat_global_prompts_dir(os: &Os) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME))
+}
+
+/// The directory containing local prompts
+pub fn chat_local_prompts_dir(os: &Os) -> Result<PathBuf> {
+    let cwd = os.env.current_dir()?;
+    Ok(cwd.join(WORKSPACE_PROMPTS_DIR_RELATIVE))
+}
+
 /// Canonicalizes path given by expanding the path given
 pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
     let context = |input: &str| Ok(os.env.get(input).ok());
@@ -285,6 +299,10 @@ pub fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result
 /// - All platforms: `$HOME/.aws/sso/cache`
 pub fn get_mcp_auth_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".aws").join("sso").join("cache"))
+}
+
+pub fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf> {
+    Ok(home_dir(os)?.join(GLOBAL_SHADOW_REPO_DIR).join(conversation_id))
 }
 
 /// Generate a unique identifier for an agent based on its path and name

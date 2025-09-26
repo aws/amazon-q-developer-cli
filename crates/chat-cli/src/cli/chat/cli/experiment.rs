@@ -50,6 +50,20 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Checkpoint",
+        description: concat!(
+            "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\n",
+            "                             ",
+            "Cannot be used in tangent mode (to avoid mixing up conversation history)"
+        ),
+        setting_key: Setting::EnabledCheckpoint,
+    },
+    Experiment {
+        name: "Context Usage Indicator",
+        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
+        setting_key: Setting::EnabledContextUsageIndicator,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]

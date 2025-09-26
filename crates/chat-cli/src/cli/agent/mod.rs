@@ -776,32 +776,14 @@ impl Agents {
 
     /// Returns a label to describe the permission status for a given tool.
     pub fn display_label(&self, tool_name: &str, origin: &ToolOrigin) -> String {
-        use crate::util::pattern_matching::matches_any_pattern;
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
         let tool_trusted = self.get_active().is_some_and(|a| {
-            if matches!(origin, &ToolOrigin::Native) {
-                return matches_any_pattern(&a.allowed_tools, tool_name);
-            }
-
-            a.allowed_tools.iter().any(|name| {
-                name.strip_prefix("@").is_some_and(|remainder| {
-                    remainder
-                        .split_once(MCP_SERVER_TOOL_DELIMITER)
-                        .is_some_and(|(_left, right)| right == tool_name)
-                        || remainder == <ToolOrigin as Borrow<str>>::borrow(origin)
-                }) || {
-                    if let Some(server_name) = name.strip_prefix("@").and_then(|s| s.split('/').next()) {
-                        if server_name == <ToolOrigin as Borrow<str>>::borrow(origin) {
-                            let tool_pattern = format!("@{}/{}", server_name, tool_name);
-                            matches_any_pattern(&a.allowed_tools, &tool_pattern)
-                        } else {
-                            false
-                        }
-                    } else {
-                        false
-                    }
-                }
-            })
+            let server_name = match origin {
+                ToolOrigin::Native => None,
+                ToolOrigin::McpServer(_) => Some(<ToolOrigin as Borrow<str>>::borrow(origin)),
+            };
+            is_tool_in_allowlist(&a.allowed_tools, tool_name, server_name)
         });
 
         if tool_trusted || self.trust_all_tools {
@@ -818,9 +800,9 @@ impl Agents {
             "fs_read" => "trust working directory".dark_grey(),
             "fs_write" => "not trusted".dark_grey(),
             #[cfg(not(windows))]
-            "execute_bash" => "trust read-only commands".dark_grey(),
+            "execute_bash" => "not trusted".dark_grey(),
             #[cfg(windows)]
-            "execute_cmd" => "trust read-only commands".dark_grey(),
+            "execute_cmd" => "not trusted".dark_grey(),
             "use_aws" => "trust read-only commands".dark_grey(),
             "report_issue" => "trusted".dark_green().bold(),
             "introspect" => "trusted".dark_green().bold(),
@@ -1189,8 +1171,8 @@ mod tests {
         let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
         assert!(
-            execute_bash_label.contains("read-only"),
-            "execute_bash should show read-only by default, instead found: {}",
+            execute_bash_label.contains("not trusted"),
+            "execute_bash should not be trusted by default, instead found: {}",
             execute_bash_label
         );
     }
