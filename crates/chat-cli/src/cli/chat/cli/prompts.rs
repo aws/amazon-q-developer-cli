@@ -1896,6 +1896,138 @@ mod tests {
         fs::write(dir.join(format!("{}.md", name)), content).unwrap();
     }
 
+    #[tokio::test]
+    async fn test_prompt_file_operations() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create test prompts in temp directory structure
+        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
+
+        create_prompt_file(&global_dir, "global_only", "Global content");
+        create_prompt_file(&global_dir, "shared", "Global shared");
+        create_prompt_file(&local_dir, "local_only", "Local content");
+        create_prompt_file(&local_dir, "shared", "Local shared");
+
+        // Test that we can read the files directly
+        assert_eq!(
+            fs::read_to_string(global_dir.join("global_only.md")).unwrap(),
+            "Global content"
+        );
+        assert_eq!(fs::read_to_string(local_dir.join("shared.md")).unwrap(), "Local shared");
+    }
+
+    #[test]
+    fn test_local_prompts_override_global() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create global and local directories
+        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
+
+        // Create prompts: one with same name in both directories, one unique to each
+        create_prompt_file(&global_dir, "shared", "Global version");
+        create_prompt_file(&global_dir, "global_only", "Global only");
+        create_prompt_file(&local_dir, "shared", "Local version");
+        create_prompt_file(&local_dir, "local_only", "Local only");
+
+        // Simulate the priority logic from get_available_prompt_names()
+        let mut names = Vec::new();
+
+        // Add global prompts first
+        for entry in fs::read_dir(&global_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let prompt = Prompt::new(file_stem, global_dir.clone());
+                    names.push(prompt.name);
+                }
+            }
+        }
+
+        // Add local prompts (with override logic)
+        for entry in fs::read_dir(&local_dir).unwrap() {
+            let entry = entry.unwrap();
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    let prompt = Prompt::new(file_stem, local_dir.clone());
+                    let name = prompt.name;
+                    // Remove duplicate if it exists (local overrides global)
+                    names.retain(|n| n != &name);
+                    names.push(name);
+                }
+            }
+        }
+
+        // Verify: should have 3 unique prompts (shared, global_only, local_only)
+        assert_eq!(names.len(), 3);
+        assert!(names.contains(&"shared".to_string()));
+        assert!(names.contains(&"global_only".to_string()));
+        assert!(names.contains(&"local_only".to_string()));
+
+        // Verify only one "shared" exists (local overrode global)
+        let shared_count = names.iter().filter(|&name| name == "shared").count();
+        assert_eq!(shared_count, 1);
+
+        // Simulate load_prompt_by_name() priority: local first, then global
+        let shared_content = if local_dir.join("shared.md").exists() {
+            fs::read_to_string(local_dir.join("shared.md")).unwrap()
+        } else {
+            fs::read_to_string(global_dir.join("shared.md")).unwrap()
+        };
+
+        // Verify local version was loaded
+        assert_eq!(shared_content, "Local version");
+    }
+
+    #[test]
+    fn test_validate_prompt_name() {
+        // Empty name
+        assert!(validate_prompt_name("").is_err());
+        assert!(validate_prompt_name("   ").is_err());
+
+        // Too long name (over 50 characters)
+        let long_name = "a".repeat(51);
+        assert!(validate_prompt_name(&long_name).is_err());
+
+        // Exactly 50 characters should be valid
+        let max_name = "a".repeat(50);
+        assert!(validate_prompt_name(&max_name).is_ok());
+
+        // Valid names with allowed characters
+        assert!(validate_prompt_name("valid_name").is_ok());
+        assert!(validate_prompt_name("valid-name-v2").is_ok());
+
+        // Invalid characters (spaces, special chars, path separators)
+        assert!(validate_prompt_name("invalid name").is_err()); // space
+        assert!(validate_prompt_name("path/name").is_err()); // forward slash
+        assert!(validate_prompt_name("path\\name").is_err()); // backslash
+        assert!(validate_prompt_name("name.ext").is_err()); // dot
+        assert!(validate_prompt_name("name@host").is_err()); // at symbol
+        assert!(validate_prompt_name("name#tag").is_err()); // hash
+        assert!(validate_prompt_name("name$var").is_err()); // dollar sign
+        assert!(validate_prompt_name("name%percent").is_err()); // percent
+        assert!(validate_prompt_name("name&and").is_err()); // ampersand
+        assert!(validate_prompt_name("name*star").is_err()); // asterisk
+        assert!(validate_prompt_name("name+plus").is_err()); // plus
+        assert!(validate_prompt_name("name=equals").is_err()); // equals
+        assert!(validate_prompt_name("name?question").is_err()); // question mark
+        assert!(validate_prompt_name("name[bracket]").is_err()); // brackets
+        assert!(validate_prompt_name("name{brace}").is_err()); // braces
+        assert!(validate_prompt_name("name(paren)").is_err()); // parentheses
+        assert!(validate_prompt_name("name<angle>").is_err()); // angle brackets
+        assert!(validate_prompt_name("name|pipe").is_err()); // pipe
+        assert!(validate_prompt_name("name;semicolon").is_err()); // semicolon
+        assert!(validate_prompt_name("name:colon").is_err()); // colon
+        assert!(validate_prompt_name("name\"quote").is_err()); // double quote
+        assert!(validate_prompt_name("name'apostrophe").is_err()); // single quote
+        assert!(validate_prompt_name("name`backtick").is_err()); // backtick
+        assert!(validate_prompt_name("name~tilde").is_err()); // tilde
+        assert!(validate_prompt_name("name!exclamation").is_err()); // exclamation
+    }
+
     #[test]
     fn test_format_description() {
         // Test normal description
