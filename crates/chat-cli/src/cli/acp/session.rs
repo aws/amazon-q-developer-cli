@@ -3,9 +3,10 @@
 use agent_client_protocol as acp;
 use tokio::sync::{mpsc, oneshot};
 use eyre::Result;
+use std::collections::HashMap;
 
 use crate::os::Os;
-use crate::cli::chat::ConversationState;
+use crate::cli::chat::{ConversationState, SendMessageStream, ResponseEvent};
 use super::transport::AcpTransportHandle;
 
 /// Convert channel errors to ACP errors
@@ -92,29 +93,149 @@ impl AcpSessionHandle {
 
     async fn handle_prompt(
         args: acp::PromptRequest, 
-        _transport: &AcpTransportHandle,
-        _os: &Os,
-        _conversation_state: &mut Option<ConversationState>,
+        transport: &AcpTransportHandle,
+        os: &Os,
+        conversation_state: &mut Option<ConversationState>,
     ) -> Result<acp::PromptResponse, acp::Error> {
         tracing::info!("Processing ACP prompt with {} content blocks", args.prompt.len());
         
-        // TODO: Implement full conversation processing
-        // For now, return a simple response to test the actor system
+        // Create ConversationState if this is the first prompt
+        if conversation_state.is_none() {
+            tracing::debug!("Creating new ConversationState for session");
+            
+            // Use simplified creation for now - TODO: get proper config from ACP session
+            let conv_state = ConversationState::new(
+                &args.session_id.0,
+                Default::default(), // agents
+                HashMap::new(),     // tool_config
+                Default::default(), // tool_manager
+                None,               // current_model_id
+                os,
+                false,              // mcp_enabled
+            ).await;
+            
+            *conversation_state = Some(conv_state);
+        }
         
-        // Extract text from prompt
-        let mut prompt_text = String::new();
-        for block in args.prompt {
-            if let acp::ContentBlock::Text(text_content) = block {
-                prompt_text.push_str(&text_content.text);
-                prompt_text.push(' ');
+        let conv_state = conversation_state.as_mut().unwrap();
+        
+        // Convert ACP prompt to string and set it
+        let prompt_text = Self::convert_acp_prompt_to_string(args.prompt)?;
+        conv_state.set_next_user_message(prompt_text).await;
+        
+        // Convert to API format
+        let mut stderr = std::io::stderr();
+        let api_conversation_state = conv_state.as_sendable_conversation_state(
+            os,
+            &mut stderr,
+            false,
+        ).await.map_err(|e| {
+            tracing::error!("Failed to create sendable conversation state: {}", e);
+            acp::Error::internal_error()
+        })?;
+        
+        // Send to LLM and stream responses
+        let mut stream = SendMessageStream::send_message(
+            &os.client,
+            api_conversation_state,
+            std::sync::Arc::new(tokio::sync::Mutex::new(None)),
+            None,
+        ).await.map_err(|e| {
+            tracing::error!("Failed to send message: {}", e);
+            acp::Error::internal_error()
+        })?;
+        
+        // Stream responses via transport
+        loop {
+            match stream.recv().await {
+                Some(Ok(event)) => {
+                    match &event {
+                        ResponseEvent::EndStream { .. } => {
+                            // Stream is complete
+                            break;
+                        }
+                        _ => {
+                            // Convert and send notification
+                            let notification = Self::convert_response_to_acp_notification(&args.session_id, event)?;
+                            if let Err(e) = transport.session_notification(notification).await {
+                                tracing::error!("Failed to send notification: {}", e);
+                                return Err(acp::Error::internal_error());
+                            }
+                        }
+                    }
+                }
+                Some(Err(e)) => {
+                    tracing::error!("Stream error: {:?}", e);
+                    return Err(acp::Error::internal_error());
+                }
+                None => {
+                    // Stream ended unexpectedly
+                    tracing::warn!("Stream ended without EndStream event");
+                    break;
+                }
             }
         }
         
-        tracing::info!("Received prompt: {}", prompt_text.trim());
-        
-        // Return a simple response
         Ok(acp::PromptResponse {
             stop_reason: acp::StopReason::EndTurn,
+            meta: None,
+        })
+    }
+    
+    fn convert_acp_prompt_to_string(prompt: Vec<acp::ContentBlock>) -> Result<String, acp::Error> {
+        let mut content = String::new();
+        
+        for block in prompt {
+            match block {
+                acp::ContentBlock::Text(text_content) => {
+                    content.push_str(&text_content.text);
+                    content.push('\n');
+                }
+                _ => {
+                    tracing::warn!("Unsupported ACP content block type, skipping");
+                }
+            }
+        }
+        
+        Ok(content.trim().to_string())
+    }
+    
+    fn convert_response_to_acp_notification(
+        session_id: &acp::SessionId, 
+        event: ResponseEvent
+    ) -> Result<acp::SessionNotification, acp::Error> {
+        let content = match event {
+            ResponseEvent::AssistantText(text) => {
+                acp::ContentBlock::Text(acp::TextContent {
+                    text,
+                    annotations: None,
+                    meta: None,
+                })
+            }
+            ResponseEvent::ToolUseStart { name } => {
+                acp::ContentBlock::Text(acp::TextContent {
+                    text: format!("[Tool: {}]", name),
+                    annotations: None,
+                    meta: None,
+                })
+            }
+            ResponseEvent::ToolUse(_tool_use) => {
+                // TODO: Convert tool use to proper ACP format
+                acp::ContentBlock::Text(acp::TextContent {
+                    text: "[Tool execution]".to_string(),
+                    annotations: None,
+                    meta: None,
+                })
+            }
+            ResponseEvent::EndStream { .. } => {
+                // This shouldn't be called for EndStream
+                return Err(acp::Error::internal_error());
+            }
+        };
+        
+        Ok(acp::SessionNotification {
+            session_id: session_id.clone(),
+            update: acp::SessionUpdate::AgentMessageChunk { content },
             meta: None,
         })
     }
