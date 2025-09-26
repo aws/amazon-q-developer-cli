@@ -920,6 +920,29 @@ impl PromptsSubcommand {
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
         {
+            // Check if there's also an MCP prompt with the same name (conflict)
+            let mcp_prompts = session.conversation.tool_manager.list_prompts().await?;
+            if mcp_prompts.contains_key(&name) {
+                // Show conflict warning
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' exist. Showing file-based prompt.\n"),
+                    style::Print("To see MCP prompt, specify server: "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts details <server>/"),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+                execute!(session.stderr)?;
+            }
+
             // Display file-based prompt details
             Self::display_file_prompt_details(&name, &content, &source, session)?;
             execute!(session.stderr, style::Print("\n"))?;
