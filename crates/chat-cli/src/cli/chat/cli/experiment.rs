@@ -12,7 +12,6 @@ use crossterm::{
 };
 use dialoguer::Select;
 
-use crate::cli::chat::conversation::format_tool_spec;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -163,15 +162,12 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update experiment setting: {e}").into()))?;
 
-        // Reload tools to reflect the experiment change
-        let tools = session
+        // Reload built-in tools to reflect the experiment change while preserving MCP tools
+        session
             .conversation
-            .tool_manager
-            .load_tools(os, &mut session.stderr)
+            .reload_builtin_tools(os, &mut session.stderr)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))?;
-
-        session.conversation.tools = format_tool_spec(tools);
 
         let status_text = if new_state { "enabled" } else { "disabled" };
 
