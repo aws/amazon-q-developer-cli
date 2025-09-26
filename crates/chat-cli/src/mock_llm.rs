@@ -1,3 +1,5 @@
+#![cfg_attr(not(test), allow(dead_code))] // outside of test code, parts of Mock LLM are unused
+
 use serde_json::Value;
 use std::future::Future;
 use tokio::sync::mpsc;
@@ -36,7 +38,7 @@ where
     F: Future<Output = ()> + Send + 'static,
 {
     let (user_input_tx, user_input_rx) = mpsc::channel(1);
-    let (llm_response_tx, llm_response_rx) = mpsc::channel(1);
+    let (llm_response_tx, llm_response_rx) = mpsc::unbounded_channel();
 
     let context = MockLLMContext {
         user_input_rx,
@@ -75,7 +77,12 @@ where
 #[derive(Debug)]
 pub struct MockLLM {
     user_input_tx: mpsc::Sender<String>,
-    llm_response_rx: mpsc::Receiver<ChatResponseStream>,
+    llm_response_rx: mpsc::UnboundedReceiver<ChatResponseStreamOrEndTurn>,
+}
+
+enum ChatResponseStreamOrEndTurn {
+    Message(ChatResponseStream),
+    EndTurn,
 }
 
 impl MockLLM {
@@ -85,8 +92,18 @@ impl MockLLM {
     }
 
     /// Read the response from the LLM (could be text or tool call).
+    /// If `None` is returned, that indicates that the end of the turn has been reached.
     pub async fn read_llm_response(&mut self) -> Option<ChatResponseStream> {
-        self.llm_response_rx.recv().await
+        match self.llm_response_rx.recv().await {
+            // The closure has fully terminated, dropping the tx side, so that implies the turn is over
+            None => None,
+
+            // Closure ended the turn.
+            Some(ChatResponseStreamOrEndTurn::EndTurn) => None,
+
+            // Closure generates a concrete message.
+            Some(ChatResponseStreamOrEndTurn::Message(m)) => Some(m),
+        }
     }
 }
 
@@ -122,33 +139,64 @@ impl MockLLM {
 /// responsive communication.
 pub struct MockLLMContext {
     user_input_rx: mpsc::Receiver<String>,
-    llm_response_tx: mpsc::Sender<ChatResponseStream>,
+    llm_response_tx: mpsc::UnboundedSender<ChatResponseStreamOrEndTurn>,
 }
 
 impl MockLLMContext {
-    /// Read the next user message from the channel
-    pub async fn read_user_message(&mut self) -> Option<String> {
-        self.user_input_rx.recv().await
+    /// Read the next user message from the channel.
+    pub async fn read_user_message(&mut self) -> Option<MockLLMContextTurn<'_>> {
+        let user_message = self.user_input_rx.recv().await?;
+        eprintln!("MockLLMContext: turn begins with {user_message:?}");
+        Some(MockLLMContextTurn { user_message, cx: self })
+    }
+}
+
+/// Indicates a "turn" of the conversation. A turn begins with a message from the user.
+/// The LLM can send some number of messages back during the turn.
+/// The turn ends when this struct is dropped. At that point, the user should response.
+pub struct MockLLMContextTurn<'c> {
+    user_message: String,
+    cx: &'c mut MockLLMContext,
+}
+
+impl MockLLMContextTurn<'_> {
+    /// The message the user wrote
+    pub fn user_message(&self) -> &str {
+        &self.user_message
     }
 
     /// Send a text response back to the user via channel
-    pub async fn respond_to_user(&mut self, text: String) -> Result<(), mpsc::error::SendError<ChatResponseStream>> {
-        self.llm_response_tx.send(ChatResponseStream::AssistantResponseEvent {
+    pub async fn respond_to_user(&mut self, text: impl ToString) -> eyre::Result<()> {
+        let text = text.to_string();
+        eprintln!("MockLLMContextTurn::respond_to_user(text={text:?})");
+        Ok(self.cx.llm_response_tx.send(ChatResponseStream::AssistantResponseEvent {
             content: text,
-        }).await
+        }.into())?)
     }
 
     /// Send a tool call via channel
-    pub async fn call_tool(&mut self, tool_use_id: String, name: String, args: Option<Value>, stop: Option<bool>) -> Result<(), mpsc::error::SendError<ChatResponseStream>> {
+    pub async fn call_tool(&mut self, tool_use_id: String, name: String, args: Option<Value>, stop: Option<bool>) -> eyre::Result<()> {
+        eprintln!("MockLLMContextTurn::call_tool(tool_use_id={tool_use_id:?}, name={name:?}, args={args:?}, stop={stop:?})");
         let input = args.map(|v| v.to_string());
         
-        self.llm_response_tx.send(ChatResponseStream::ToolUseEvent {
+        Ok(self.cx.llm_response_tx.send(ChatResponseStream::ToolUseEvent {
             tool_use_id,
             name,
             input,
             stop,
-        }).await
+        }.into())?)
     }
+}
 
+impl Drop for MockLLMContextTurn<'_> {
+    fn drop(&mut self) {
+        eprintln!("MockLLMContextTurn::EndTurn");
+        let _ = self.cx.llm_response_tx.send(ChatResponseStreamOrEndTurn::EndTurn);
+    }
+}
 
+impl From<ChatResponseStream> for ChatResponseStreamOrEndTurn {
+    fn from(value: ChatResponseStream) -> Self {
+        ChatResponseStreamOrEndTurn::Message(value)
+    }
 }

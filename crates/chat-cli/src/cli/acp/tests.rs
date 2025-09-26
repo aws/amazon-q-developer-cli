@@ -145,15 +145,22 @@ async fn test_hello_world_conversation() -> eyre::Result<()> {
         let harness = TestHarness::new().await?
             .set_mock_llm(|mut ctx: MockLLMContext| async move {
                 // First exchange
-                if let Some(msg) = ctx.read_user_message().await {
-                    if msg.contains("Hi, Claude") {
-                        ctx.respond_to_user("Hi, you! What's your name?".to_string()).await.unwrap();
+                if let Some(mut turn) = ctx.read_user_message().await {
+                    eprintln!("LLM 1: got {:?}", turn.user_message());
+                    if turn.user_message().contains("Hi, Claude") {
+                        turn.respond_to_user("Hi, you! What's your name?").await.unwrap();
+                    } else {
+                        panic!("I expected you to say hi! What gives!");
                     }
                 }
+
                 // Second exchange  
-                if let Some(msg) = ctx.read_user_message().await {
-                    if msg.contains("Ferris") {
-                        ctx.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap();
+                if let Some(mut turn) = ctx.read_user_message().await {
+                    eprintln!("LLM 2: got {:?}", turn.user_message());
+                    if turn.user_message().contains("Ferris") {
+                        turn.respond_to_user("Hi Ferris, I'm Q!".to_string()).await.unwrap()
+                    } else {
+                        panic!("I expected Ferris!");
                     }
                 }
             });

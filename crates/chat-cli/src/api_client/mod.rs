@@ -653,13 +653,13 @@ impl ApiClient {
             let response_index = 0;
             
             // Wait for user message
-            if let Some(_) = ctx.read_user_message().await {
+            if let Some(mut turn) = ctx.read_user_message().await {
                 // Send the corresponding response group
                 if response_index < response_groups.len() {
                     for event in &response_groups[response_index] {
                         match event {
                             ChatResponseStream::AssistantResponseEvent { content } => {
-                                let _ = ctx.respond_to_user(content.clone()).await;
+                                let _ = turn.respond_to_user(content.clone()).await;
                             },
                             ChatResponseStream::ToolUseEvent { tool_use_id, name, input, .. } => {
                                 let args = input.as_ref().unwrap_or(&String::new()).clone();
@@ -667,9 +667,9 @@ impl ApiClient {
                                 
                                 // Send streaming tool use events to match parser expectations
                                 // 1. Start event: input=None, stop=None
-                                let _ = ctx.call_tool(tool_use_id.clone(), name.clone(), None, None).await;
+                                let _ = turn.call_tool(tool_use_id.clone(), name.clone(), None, None).await;
                                 // 2. Final event: input=Some(args), stop=Some(true)  
-                                let _ = ctx.call_tool(tool_use_id.clone(), name.clone(), Some(args_value), Some(true)).await;
+                                let _ = turn.call_tool(tool_use_id.clone(), name.clone(), Some(args_value), Some(true)).await;
                             },
                             _ => {}, // Ignore other event types
                         }

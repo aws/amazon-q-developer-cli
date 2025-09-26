@@ -4168,16 +4168,16 @@ mod tests {
         use serde_json::json;
         
         let mut mock_llm = spawn_mock_llm(|mut ctx: MockLLMContext| async move {
-            if let Some(user_msg) = ctx.read_user_message().await {
-                if user_msg.contains("Greece") {
-                    ctx.respond_to_user("I'll look up Greece's capital.".to_string()).await.unwrap();
+            if let Some(mut turn) = ctx.read_user_message().await {
+                if turn.user_message().contains("Greece") {
+                    turn.respond_to_user("I'll look up Greece's capital.".to_string()).await.unwrap();
                     // Send streaming tool call events
-                    ctx.call_tool("1".to_string(), "countryCapital".to_string(), None, None).await.unwrap();
-                    ctx.call_tool("1".to_string(), "countryCapital".to_string(), Some(json!({"country": "Greece"})), Some(true)).await.unwrap();
+                    turn.call_tool("1".to_string(), "countryCapital".to_string(), None, None).await.unwrap();
+                    turn.call_tool("1".to_string(), "countryCapital".to_string(), Some(json!({"country": "Greece"})), Some(true)).await.unwrap();
                     // In a real scenario, we'd wait for tool result and then respond
-                    ctx.respond_to_user("The capital of Greece is Athens.".to_string()).await.unwrap();
+                    turn.respond_to_user("The capital of Greece is Athens.".to_string()).await.unwrap();
                 } else {
-                    ctx.respond_to_user("I don't know about that.".to_string()).await.unwrap();
+                    turn.respond_to_user("I don't know about that.".to_string()).await.unwrap();
                 }
             }
         });
@@ -4236,8 +4236,8 @@ mod tests {
         
         // Set up ApiClient with mock LLM script
         os.client.set_mock_llm(|mut ctx: MockLLMContext| async move {
-            if let Some(_user_msg) = ctx.read_user_message().await {
-                ctx.respond_to_user("Hello from mock LLM!".to_string()).await.unwrap();
+            if let Some(mut turn) = ctx.read_user_message().await {
+                turn.respond_to_user("Hello from mock LLM!".to_string()).await.unwrap();
             }
         });
         
