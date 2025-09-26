@@ -95,11 +95,27 @@ q chat --agent specialized-agent
 ```
 
 ### Create a Custom Default
-You can create your own "default" agent by placing an agent file with the name `q_cli_default` in either:
-- `.amazonq/cli-agents/` (local)
+You can create your own "default" agent by placing an agent file with the name `q_cli_default.json` in either:
+- `.amazonq/cli-agents/` (local workspace)
 - `~/.aws/amazonq/cli-agents/` (global)
 
-This will override the built-in default agent configuration.
+This will completely override the built-in default agent configuration, including custom resources, tools, and settings.
+
+**Example:**
+```json
+{
+  "name": "q_cli_default",
+  "description": "My workspace default agent",
+  "resources": [
+    "file://README.md",
+    "file://.project-rules.md"
+  ],
+  "tools": ["*"],
+  "allowedTools": ["fs_read"]
+}
+```
+
+Local workspace configurations take precedence over global ones. This is useful for teams that want to automatically load project-specific context and rules when anyone runs `q chat` in their workspace.
 
 ## Best Practices
 
