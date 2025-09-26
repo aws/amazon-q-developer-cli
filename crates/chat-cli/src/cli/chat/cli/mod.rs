@@ -7,6 +7,7 @@ pub mod editor;
 pub mod experiment;
 pub mod hooks;
 pub mod knowledge;
+pub mod logdump;
 pub mod mcp;
 pub mod model;
 pub mod persist;
@@ -27,6 +28,7 @@ use editor::EditorArgs;
 use experiment::ExperimentArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
+use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
 use persist::PersistSubcommand;
@@ -79,6 +81,8 @@ pub enum SlashCommand {
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
     Issue(issue::IssueArgs),
+    /// Create a zip file with logs for support investigation
+    Logdump(LogdumpArgs),
     /// View changelog for Amazon Q CLI
     #[command(name = "changelog")]
     Changelog(ChangelogArgs),
@@ -100,6 +104,7 @@ pub enum SlashCommand {
     /// chat.enableTangentMode true"
     #[command(hide = true)]
     Tangent(TangentArgs),
+    /// Make conversations persistent
     #[command(flatten)]
     Persist(PersistSubcommand),
     // #[command(flatten)]
@@ -154,6 +159,7 @@ impl SlashCommand {
                     skip_printing_tools: true,
                 })
             },
+            Self::Logdump(args) => args.execute(session).await,
             Self::Changelog(args) => args.execute(session).await,
             Self::Prompts(args) => args.execute(os, session).await,
             Self::Hooks(args) => args.execute(session).await,
@@ -190,6 +196,7 @@ impl SlashCommand {
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
+            Self::Logdump(_) => "logdump",
             Self::Changelog(_) => "changelog",
             Self::Prompts(_) => "prompts",
             Self::Hooks(_) => "hooks",
