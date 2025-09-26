@@ -82,13 +82,19 @@ where
             eprintln!("DEBUG: Notification receiver task started");
             loop {
                 tokio::select! {
-                    Some(session_notification) = rx.recv() => {
-                        eprintln!("DEBUG: Received notification, sending to ACP connection");
-                        let result = connection.session_notification(session_notification).await;
+                    Some(QAgentUpdateToAgentConnection { notification, tx }) = rx.recv() => {
+                        eprintln!("DEBUG: Received notification {notification:?}, sending to ACP connection");
+
+                        // Send the notification over the channel.
+                        let result = connection.session_notification(notification).await;
                         if let Err(e) = result {
                             eprintln!("DEBUG: Failed to send session notification: {}", e);
                             break;
                         }
+
+                        // Notify the QAgent that the notification was processed
+                        let _ = tx.send(());
+
                         eprintln!("DEBUG: Session notification sent successfully");
                     }
                     _ = &mut shutdown_rx_clone => {
@@ -115,18 +121,28 @@ where
     })
 }
 
+/// `QAgent` Receives callbacks from the agent connection and forwards them to Q CLI.
 struct QAgent {
     _agent_name: String,
     os: Arc<RwLock<Os>>,
     sessions: Arc<RwLock<HashMap<String, ConversationState>>>,
-    session_update_tx: mpsc::Sender<acp::SessionNotification>,
+    session_update_tx: mpsc::Sender<QAgentUpdateToAgentConnection>,
+}
+
+/// Messages from the QAgent to the owner of the `acp::AgentConnection`.
+///
+/// The notification needs to be sent over the connection and then,
+/// once sent, a message needs to be sent to `tx`.
+struct QAgentUpdateToAgentConnection {
+    notification: acp::SessionNotification,
+    tx: tokio::sync::oneshot::Sender<()>,
 }
 
 impl QAgent {
     fn new(
         agent_name: String, 
         os: Os,
-        session_update_tx: mpsc::Sender<acp::SessionNotification>,
+        session_update_tx: mpsc::Sender<QAgentUpdateToAgentConnection>,
     ) -> Self {
         Self { 
             _agent_name: agent_name,
@@ -317,16 +333,13 @@ impl acp::Agent for QAgent {
                 meta: None,
             };
             
-            eprintln!("DEBUG: QAgent sending notification chunk: '{}'", chunk_text);
             // Send notification via bounded channel (provides natural backpressure)
-            if let Err(_) = self.session_update_tx.send(notification).await {
+            let (tx, rx) = tokio::sync::oneshot::channel();
+            if let Err(_) = self.session_update_tx.send(QAgentUpdateToAgentConnection { notification, tx }).await {
                 eprintln!("DEBUG: Notification channel closed, stopping notifications");
                 break;
             }
-            eprintln!("DEBUG: Notification sent successfully");
-            
-            // Small delay to simulate streaming
-            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            rx.await.expect("session-update actor to acknowledge session-notification");
         }
         
         tracing::info!("ACP prompt completed for session: {}", session_id);
