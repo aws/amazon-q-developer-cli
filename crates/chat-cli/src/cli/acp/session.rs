@@ -34,8 +34,7 @@ impl AcpSessionHandle {
         tokio::task::spawn_local(async move {
             tracing::debug!("Session actor started for session: {}", session_id.0);
             
-            // TODO: Create ConversationState for this session
-            // For now, we'll create it when we get the first prompt
+            // ConversationState is created on first prompt
             let mut conversation_state: Option<ConversationState> = None;
             
             while let Some(method) = session_rx.recv().await {

@@ -204,3 +204,48 @@ The implementation uses Alice Ryhl's actor pattern for clean message passing ins
 - **Clean testing**: Each actor can be tested in isolation with message injection
 - **Incremental development**: Can implement and test each actor independently
 
+## Current Implementation Status
+
+**✅ COMPLETED - Phase 1: Actor Foundation**
+1. ✅ **Actor pattern foundation** - Complete actor system with message types
+   - `AcpAgentForward`, `AcpServerHandle`, `AcpSessionHandle` implemented
+   - Bounded channels (`mpsc::channel(32)`) with `oneshot` responses
+   - Proper error propagation (`eyre::Result` internal, `acp::Error` protocol)
+2. ✅ **Basic command structure** - `q acp` subcommand with actor integration  
+   - Feature gating, `LocalSet` for !Send futures, stdio transport
+   - `AgentSideConnection` integration working
+3. ✅ **Server actor implementation** - Complete server actor with session routing
+   - Session management with `HashMap<SessionId, AcpSessionHandle>`
+   - Method routing for `initialize`, `new_session`, `load_session`, etc.
+
+**✅ COMPLETED - Phase 2: Session Management**
+4. ✅ **Session lifecycle** - Session creation and actor spawning working
+   - `new_session` creates session actors with unique IDs
+   - Each session actor owns its `ConversationState` and `ToolManager`
+5. ✅ **Basic prompt handling** - Session actors process prompts correctly
+   - Convert ACP prompts to Q CLI format, set in conversation state
+6. ✅ **Response streaming** - Full LLM integration with streaming notifications
+   - Real `SendMessageStream` integration, `ResponseEvent` → ACP conversion
+   - Streaming `AssistantText`, `ToolUseStart`, `ToolUse` events via transport
+
+**🚧 REMAINING WORK**
+
+**Phase 2.5: Test Infrastructure**
+7. ⚠️ **Actor test harness** - Need to adapt existing test infrastructure
+8. ⚠️ **Mock LLM integration** - Ensure mock LLM works with session actors
+
+**Phase 3: Advanced Features**  
+9. ⚠️ **Tool system integration** - Basic tool execution works, need ACP permissions
+   - Current: Tool use shows as `[Tool execution]` placeholder
+   - Missing: ACP `session/request_permission` flow, proper `ToolCall` messages
+10. ⚠️ **File operation routing** - Need ACP file operations instead of direct filesystem
+    - Current: Uses direct filesystem access
+    - Missing: Route `fs_read`/`fs_write` through ACP protocol
+
+**Minor TODOs:**
+- Session configuration from ACP (currently uses defaults)
+- Cancel operations implementation (currently no-op)
+- Set session mode implementation (currently returns method not found)
+
+**Current State:** The ACP server is **functionally complete** for basic chat functionality. Users can connect editors, create sessions, send prompts, and receive streaming AI responses. The actor architecture is solid and ready for the remaining advanced features.
+
