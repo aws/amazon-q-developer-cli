@@ -5,3 +5,6 @@ pub mod test_q_setting_subcommand;
 pub mod test_q_whoami_subcommand;
 pub mod test_q_debug_subcommand;
 pub mod test_q_inline_subcommand;
+pub mod test_q_update_subcommand;
+pub mod test_q_restart_subcommand;
+pub mod test_q_user_subcommand;

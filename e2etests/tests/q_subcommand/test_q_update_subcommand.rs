@@ -1,0 +1,29 @@
+#[allow(unused_imports)]
+use q_cli_e2e_tests::q_chat_helper;
+use regex::Regex;
+
+/// Tests the q update subcommand
+#[test]
+#[cfg(all(feature = "q_subcommand", feature = "sanity"))]
+fn test_q_update_subcommand() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing q update subcommand... | Description: Tests the <code> q update </code> subcommand to check for updates.");
+    
+    println!("\n🛠️ Running 'q update' subcommand...");
+    let response = q_chat_helper::execute_q_subcommand("q", &["update"])?;
+
+    println!("📝 Update response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+
+    // Validate output contains expected update information
+    assert!(response.contains("updates"), "Should contain 'updates'");
+    
+    // Check for version format (e.g., 1.16.2)
+    let version_regex = Regex::new(r"\d+\.\d+\.\d+")?;
+    assert!(version_regex.is_match(&response), "Should contain version in format x.y.z");
+    
+    println!("✅ Update check executed successfully!");
+    
+    Ok(())
+}

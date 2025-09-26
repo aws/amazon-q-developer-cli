@@ -197,7 +197,7 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END EDITOR RESPONSE");
     
     // Press 'i' to enter insert mode
-    let insert_response = chat.execute_command("i")?;
+    let insert_response = chat.send_key_input("i")?;
     println!("📝 Insert mode response: {} bytes", insert_response.len());
     
     // Type "what is aws?"
@@ -205,11 +205,11 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 Type response: {} bytes", type_response.len());
     
     // Press Esc to exit insert mode
-    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    let esc_response = chat.send_key_input("\x1b")?; // ESC key
     println!("📝 Esc response: {} bytes", esc_response.len());
     
     // Execute :wq to save and quit
-    let wq_response = chat.execute_command(":wq")?;
+    let wq_response = chat.send_key_input(":wq\r")?;
     
     println!("📝 Final wq response: {} bytes", wq_response.len());
     println!("📝 WQ RESPONSE:");
@@ -248,21 +248,22 @@ fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END EDITOR RESPONSE");
     
     // Press 'i' to enter insert mode
-    let insert_response = chat.execute_command("i")?;
+    let insert_response = chat.send_key_input("i")?;
     println!("📝 Insert mode response: {} bytes", insert_response.len());
     
     
     // Press Esc to exit insert mode
-    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    let esc_response = chat.send_key_input("\x1b")?; // ESC key
     println!("📝 Esc response: {} bytes", esc_response.len());
     
     // Execute :wq to save and quit
-    let wq_response = chat.execute_command(":wq")?;
+    let wq_response = chat.send_key_input(":wq\r")?;
     
     println!("📝 Final wq response: {} bytes", wq_response.len());
     println!("📝 WQ RESPONSE:");
     println!("{}", wq_response);
     println!("📝 END WQ RESPONSE");
+
     
     // Verify expected output
     assert!(wq_response.contains("Content loaded from editor. Submitting prompt..."), "Missing expected editor output message");
@@ -306,21 +307,22 @@ fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
     
      // Press 'i' to enter insert mode
-    let insert_response = chat.execute_command("i")?;
+    let insert_response = chat.send_key_input("i")?;
     println!("📝 Insert mode response: {} bytes", insert_response.len());
     
     
     // Press Esc to exit insert mode
-    let esc_response = chat.execute_command("\x1b")?; // ESC key
+    let esc_response = chat.send_key_input("\x1b")?; // ESC key
     println!("📝 Esc response: {} bytes", esc_response.len());
     
     // Execute :wq to save and quit
-    let wq_response = chat.execute_command(":wq")?;
+    let wq_response = chat.send_key_input(":wq\r")?;
     
     println!("📝 Final wq response: {} bytes", wq_response.len());
     println!("📝 WQ RESPONSE:");
     println!("{}", wq_response);
     println!("📝 END WQ RESPONSE");
+
 
     if wq_response.contains("Using tool:") && wq_response.contains("Allow this action?"){
             let allow_response = chat.execute_command("y")?;
