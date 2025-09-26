@@ -27,6 +27,19 @@ use crate::cli::chat::cli::hooks::HookExecutor;
 use crate::cli::chat::cli::model::ModelInfo;
 use crate::os::Os;
 
+/// Custom serializer that filters out Session paths (which do not support serialization) and only
+/// serializes Agent paths.
+fn serialize_agent_paths_only<S>(paths: &Vec<ContextFilePath>, serializer: S) -> Result<S::Ok, S::Error>
+where
+    S: Serializer,
+{
+    let agent_paths: Vec<&ContextFilePath> = paths
+        .iter()
+        .filter(|path| matches!(path, ContextFilePath::Agent(_)))
+        .collect();
+    agent_paths.serialize(serializer)
+}
+
 #[derive(Debug, Clone)]
 pub enum ContextFilePath {
     /// Signifies that the path is brought in from the agent config
@@ -97,6 +110,8 @@ pub struct ContextManager {
     /// Name of the current active profile.
     pub current_profile: String,
     /// List of file paths or glob patterns to include in the context.
+    /// Session paths are filtered out during serialization to prevent database persistence issues.
+    #[serde(serialize_with = "serialize_agent_paths_only")]
     pub paths: Vec<ContextFilePath>,
     /// Map of Hook Name to [`Hook`]. The hook name serves as the hook's ID.
     pub hooks: HashMap<HookTrigger, Vec<Hook>>,
@@ -456,5 +471,29 @@ mod tests {
             })),
             96_000
         );
+    }
+
+    #[test]
+    fn test_context_manager_serialization_excludes_session_paths() -> Result<()> {
+        let mut manager = create_test_context_manager(None)?;
+
+        // Add mixed agent and session paths to test filtering
+        manager.paths = vec![
+            ContextFilePath::Agent("config_file.md".to_string()),
+            ContextFilePath::Session("temp_file.md".to_string()),
+        ];
+
+        // Serialization should succeed (no "Session paths are not serialized" error)
+        let serialized = serde_json::to_string(&manager)?;
+
+        // Deserialize to verify structure
+        let deserialized: serde_json::Value = serde_json::from_str(&serialized)?;
+
+        // Check that paths array only contains agent paths
+        let paths_array = deserialized["paths"].as_array().unwrap();
+        assert_eq!(paths_array.len(), 1, "Should serialize only agent paths");
+        assert_eq!(paths_array[0].as_str().unwrap(), "config_file.md");
+
+        Ok(())
     }
 }
