@@ -1107,10 +1107,7 @@ impl ChatSession {
             )?;
         }
 
-        self.conversation.enforce_conversation_invariants();
-        self.conversation.reset_next_user_message();
-        self.pending_tool_index = None;
-        self.tool_turn_start_time = None;
+        self.reset_user_message_and_pending_tool_use();
         self.reset_user_turn();
 
         self.inner = Some(ChatState::PromptUser {
@@ -1118,6 +1115,15 @@ impl ChatSession {
         });
 
         Ok(())
+    }
+
+    /// Clear our the state associated with the user message, including
+    /// pending tool user and so forth. Used when resetting back to a "ground" state (e.g., PromptUser).
+    fn reset_user_message_and_pending_tool_use(&mut self) {
+        self.conversation.enforce_conversation_invariants();
+        self.conversation.reset_next_user_message();
+        self.pending_tool_index = None;
+        self.tool_turn_start_time = None;
     }
 
     async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
@@ -3000,10 +3006,7 @@ impl ChatSession {
             Ok(Some(_)) => (),
             Ok(None) => {
                 // User did not select a model, so reset the current request state.
-                self.conversation.enforce_conversation_invariants();
-                self.conversation.reset_next_user_message();
-                self.pending_tool_index = None;
-                self.tool_turn_start_time = None;
+                self.reset_user_message_and_pending_tool_use();
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
                 });
