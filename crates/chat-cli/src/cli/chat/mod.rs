@@ -4245,6 +4245,7 @@ mod tests {
         // In the future, we'd create a proper ConversationState and test the full flow
         println!("ApiClient MockLLM integration test - mock LLM set successfully!");
     }
+
     #[test]
     fn test_does_input_reference_file() {
         let tests = &[
