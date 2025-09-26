@@ -3,7 +3,10 @@ use std::collections::{
     VecDeque,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::sync::LazyLock;
 
 use clap::{
@@ -1210,7 +1213,7 @@ impl PromptsSubcommand {
     fn display_file_prompt_details(
         name: &str,
         content: &str,
-        source: &PathBuf,
+        source: &Path,
         session: &mut ChatSession,
     ) -> Result<(), ChatError> {
         let terminal_width = session.terminal_width();
