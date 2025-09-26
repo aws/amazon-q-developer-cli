@@ -401,15 +401,32 @@ pub enum ToAgent {
 
 /// Messages that can be received from the (mock'd) agent
 pub enum FromAgent {
+    #[expect(dead_code)] // <-- fields not currently used
     RequestPermission(acp::RequestPermissionRequest, tokio::sync::oneshot::Sender<acp::RequestPermissionResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     WriteTextFile(acp::WriteTextFileRequest, tokio::sync::oneshot::Sender<acp::WriteTextFileResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     ReadTextFile(acp::ReadTextFileRequest, tokio::sync::oneshot::Sender<acp::ReadTextFileResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     CreateTerminal(acp::CreateTerminalRequest, tokio::sync::oneshot::Sender<acp::CreateTerminalResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     TerminalOutput(acp::TerminalOutputRequest, tokio::sync::oneshot::Sender<acp::TerminalOutputResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     ReleaseTerminal(acp::ReleaseTerminalRequest, tokio::sync::oneshot::Sender<acp::ReleaseTerminalResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     WaitForTerminalExit(acp::WaitForTerminalExitRequest, tokio::sync::oneshot::Sender<acp::WaitForTerminalExitResponse>),
+
+    #[expect(dead_code)] // <-- fields not currently used
     KillTerminalCommand(acp::KillTerminalCommandRequest, tokio::sync::oneshot::Sender<acp::KillTerminalCommandResponse>),
+
     SessionNotification(acp::SessionNotification, tokio::sync::oneshot::Sender<()>),
+
     Stop(Result<acp::PromptResponse, acp::Error>),
 }
 
