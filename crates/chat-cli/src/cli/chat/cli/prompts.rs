@@ -480,7 +480,14 @@ fn display_missing_args_error(
         style::Print("\n\n"),
     )?;
 
-    if let Some(bundles) = prompts.get(prompt_name) {
+    // Extract the actual prompt name from server/prompt format if needed
+    let actual_prompt_name = if let Some((_, name)) = prompt_name.split_once('/') {
+        name
+    } else {
+        prompt_name
+    };
+
+    if let Some(bundles) = prompts.get(actual_prompt_name) {
         if let Some(bundle) = bundles.first() {
             if let Some(args) = &bundle.prompt_get.arguments {
                 let required_args: Vec<_> = args.iter().filter(|arg| arg.required == Some(true)).collect();
@@ -889,7 +896,7 @@ pub enum PromptsSubcommand {
 impl PromptsSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
-            PromptsSubcommand::Details { name } => Self::execute_details(name, session).await,
+            PromptsSubcommand::Details { name } => Self::execute_details(name, os, session).await,
             PromptsSubcommand::Get {
                 orig_input,
                 name,
@@ -906,7 +913,22 @@ impl PromptsSubcommand {
         }
     }
 
-    async fn execute_details(name: String, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    async fn execute_details(name: String, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // First try to find file-based prompt (global or local)
+        let file_prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        if let Some((content, source)) = file_prompts
+            .load_existing()
+            .map_err(|e| ChatError::Custom(e.to_string().into()))?
+        {
+            // Display file-based prompt details
+            Self::display_file_prompt_details(&name, &content, &source, session)?;
+            execute!(session.stderr, style::Print("\n"))?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // If not found as file-based prompt, try MCP prompts
         let prompts = session.conversation.tool_manager.list_prompts().await?;
 
         // Parse server/prompt format if provided
@@ -1162,6 +1184,93 @@ impl PromptsSubcommand {
         Ok(())
     }
 
+    fn display_file_prompt_details(
+        name: &str,
+        content: &str,
+        source: &PathBuf,
+        session: &mut ChatSession,
+    ) -> Result<(), ChatError> {
+        let terminal_width = session.terminal_width();
+
+        // Display header
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt Details"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print("▔".repeat(terminal_width)),
+            style::Print("\n\n"),
+        )?;
+
+        // Display basic information
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Name: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(name),
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Source: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print(source.display().to_string()),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Display usage example
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::Green),
+            style::Print("@"),
+            style::Print(name),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Display content preview (first few lines)
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Content Preview:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        let lines: Vec<&str> = content.lines().collect();
+        let preview_lines = lines.iter().take(5);
+        for line in preview_lines {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  "),
+                style::Print(line),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        if lines.len() > 5 {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  ... ("),
+                style::Print((lines.len() - 5).to_string()),
+                style::Print(" more lines)"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        Ok(())
+    }
+
     async fn execute_get(
         os: &Os,
         session: &mut ChatSession,
@@ -1175,6 +1284,32 @@ impl PromptsSubcommand {
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
         {
+            // Check if there's also an MCP prompt with the same name (conflict)
+            let mcp_prompts = session.conversation.tool_manager.list_prompts().await?;
+            if mcp_prompts.contains_key(&name) {
+                // Show conflict warning
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' exist. Using file-based prompt.\n"),
+                    style::Print("To use MCP prompt, specify server: "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("@<server>/"),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+                execute!(session.stderr)?;
+            }
+
+            // Display the file-based prompt content to the user
+            display_file_prompt_content(&name, &content, session)?;
+
             // Handle local prompt
             session.pending_prompts.clear();
 
@@ -1827,7 +1962,7 @@ impl PromptsSubcommand {
 
 /// Display fetched prompt content to the user before AI processing
 fn display_prompt_content(
-    prompt_name: &str,
+    _prompt_name: &str,
     messages: &[PromptMessage],
     session: &mut ChatSession,
 ) -> Result<(), ChatError> {
@@ -1853,16 +1988,7 @@ fn display_prompt_content(
         }
     }
 
-    queue!(
-        session.stderr,
-        style::Print("\n"),
-        style::SetForegroundColor(Color::Yellow),
-        style::Print("Fetched prompt: "),
-        style::SetForegroundColor(Color::Cyan),
-        style::Print(prompt_name),
-        style::SetForegroundColor(Color::Reset),
-        style::Print("\n\n"),
-    )?;
+    queue!(session.stderr, style::Print("\n"),)?;
 
     for message in messages {
         let content = stringify_prompt_message_content(&message.content);
@@ -1875,6 +2001,25 @@ fn display_prompt_content(
                 style::Print("\n"),
             )?;
         }
+    }
+
+    queue!(session.stderr, style::Print("\n"))?;
+    execute!(session.stderr)?;
+    Ok(())
+}
+
+/// Display file-based prompt content to the user before AI processing
+fn display_file_prompt_content(_prompt_name: &str, content: &str, session: &mut ChatSession) -> Result<(), ChatError> {
+    queue!(session.stderr, style::Print("\n"),)?;
+
+    if !content.trim().is_empty() {
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print(content),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
     }
 
     queue!(session.stderr, style::Print("\n"))?;
@@ -2128,6 +2273,7 @@ mod tests {
         assert_eq!(invalid_errors.len(), 0);
     }
 
+    #[test]
     fn test_parse_32603_error_with_data() {
         // Test parsing -32603 error with data object
         let error_str = r#"MCP error -32603: {
@@ -2342,5 +2488,26 @@ mod tests {
             alt_msg,
             "\n- @server1/test_prompt\n- @server2/test_prompt\n- @server3/test_prompt\n"
         );
+    }
+
+    #[test]
+    fn test_extract_prompt_name_from_qualified_name() {
+        // Test extracting prompt name from server/prompt format
+        let qualified_name = "server1/my_prompt";
+        let actual_prompt_name = if let Some((_, name)) = qualified_name.split_once('/') {
+            name
+        } else {
+            qualified_name
+        };
+        assert_eq!(actual_prompt_name, "my_prompt");
+
+        // Test with unqualified name
+        let unqualified_name = "my_prompt";
+        let actual_prompt_name = if let Some((_, name)) = unqualified_name.split_once('/') {
+            name
+        } else {
+            unqualified_name
+        };
+        assert_eq!(actual_prompt_name, "my_prompt");
     }
 }
