@@ -32,6 +32,7 @@
 //! - **Clean separation**: Protocol handling, session management, and conversation processing are separate
 //! - **Easy testing**: Each actor can be tested independently
 
+use std::collections::HashMap;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -320,11 +321,12 @@ impl acp::Agent for AcpAgentForward {
 
 /// Server actor that manages sessions and routes messages
 async fn acp_server_actor(
-    _agent_name: String,
-    _os: Os,
+    agent_name: String,
+    os: Os,
     mut server_rx: mpsc::Receiver<ServerMethod>,
 ) {
-    // TODO: Implement session management
+    let mut sessions: HashMap<String, AcpSessionHandle> = HashMap::new();
+    
     while let Some(method) = server_rx.recv().await {
         match method {
             ServerMethod::Initialize(args, tx) => {
@@ -336,23 +338,23 @@ async fn acp_server_actor(
                 let _ = tx.send(response);
             }
             ServerMethod::NewSession(args, tx) => {
-                let response = handle_new_session(args).await;
+                let response = handle_new_session(args, &agent_name, &os, &mut sessions).await;
                 let _ = tx.send(response);
             }
             ServerMethod::LoadSession(args, tx) => {
-                let response = handle_load_session(args).await;
+                let response = handle_load_session(args, &sessions).await;
                 let _ = tx.send(response);
             }
             ServerMethod::SetSessionMode(args, tx) => {
-                let response = handle_set_session_mode(args).await;
+                let response = handle_set_session_mode(args, &sessions).await;
                 let _ = tx.send(response);
             }
             ServerMethod::Prompt(args, tx) => {
-                let response = handle_prompt(args).await;
+                let response = handle_prompt(args, &sessions).await;
                 let _ = tx.send(response);
             }
             ServerMethod::Cancel(args, tx) => {
-                let response = handle_cancel(args).await;
+                let response = handle_cancel(args, &sessions).await;
                 let _ = tx.send(response);
             }
             ServerMethod::ExtMethod(method, params, tx) => {
@@ -409,27 +411,99 @@ async fn handle_authenticate(_args: acp::AuthenticateRequest) -> Result<acp::Aut
     Err(acp::Error::method_not_found())
 }
 
-async fn handle_new_session(_args: acp::NewSessionRequest) -> Result<acp::NewSessionResponse, acp::Error> {
-    // TODO: Create session actor and return session ID
-    Err(acp::Error::method_not_found())
+async fn handle_new_session(
+    args: acp::NewSessionRequest,
+    _agent_name: &str,
+    os: &Os,
+    sessions: &mut HashMap<String, AcpSessionHandle>,
+) -> Result<acp::NewSessionResponse, acp::Error> {
+    // Generate a new session ID
+    let session_id = uuid::Uuid::new_v4().to_string();
+    let acp_session_id = acp::SessionId(session_id.clone().into());
+    
+    tracing::info!("Creating new ACP session: {}", session_id);
+    
+    // Spawn session actor
+    let session_handle = AcpSessionHandle::spawn(acp_session_id.clone(), os.clone());
+    
+    // Store session handle
+    sessions.insert(session_id.clone(), session_handle);
+    
+    tracing::info!("Created new ACP session: {}", session_id);
+    
+    Ok(acp::NewSessionResponse {
+        session_id: acp_session_id,
+        modes: None,
+        meta: None,
+    })
 }
 
-async fn handle_load_session(_args: acp::LoadSessionRequest) -> Result<acp::LoadSessionResponse, acp::Error> {
-    Err(acp::Error::method_not_found())
+async fn handle_load_session(
+    args: acp::LoadSessionRequest,
+    sessions: &HashMap<String, AcpSessionHandle>,
+) -> Result<acp::LoadSessionResponse, acp::Error> {
+    let session_id = args.session_id.0.as_ref();
+    
+    // Check if session exists
+    if sessions.contains_key(session_id) {
+        tracing::info!("Loaded existing ACP session: {}", session_id);
+        Ok(acp::LoadSessionResponse {
+            modes: None,
+            meta: None,
+        })
+    } else {
+        tracing::warn!("Session not found: {}", session_id);
+        Err(acp::Error::invalid_params())
+    }
 }
 
-async fn handle_set_session_mode(_args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
-    Err(acp::Error::method_not_found())
+async fn handle_set_session_mode(
+    args: acp::SetSessionModeRequest,
+    sessions: &HashMap<String, AcpSessionHandle>,
+) -> Result<acp::SetSessionModeResponse, acp::Error> {
+    let session_id = args.session_id.0.as_ref();
+    
+    // Find the session actor
+    if let Some(session_handle) = sessions.get(session_id) {
+        // Forward to session actor
+        session_handle.set_mode(args).await
+    } else {
+        tracing::warn!("Session not found for set_mode: {}", session_id);
+        Err(acp::Error::invalid_params())
+    }
 }
 
-async fn handle_prompt(_args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
-    // TODO: Route to appropriate session actor
-    Err(acp::Error::method_not_found())
+async fn handle_prompt(
+    args: acp::PromptRequest,
+    sessions: &HashMap<String, AcpSessionHandle>,
+) -> Result<acp::PromptResponse, acp::Error> {
+    let session_id = args.session_id.0.as_ref();
+    
+    // Find the session actor
+    if let Some(session_handle) = sessions.get(session_id) {
+        // Forward to session actor
+        session_handle.prompt(args).await
+    } else {
+        tracing::warn!("Session not found for prompt: {}", session_id);
+        Err(acp::Error::invalid_params())
+    }
 }
 
-async fn handle_cancel(_args: acp::CancelNotification) -> Result<(), acp::Error> {
-    // TODO: Route to appropriate session actor
-    Ok(())
+async fn handle_cancel(
+    args: acp::CancelNotification,
+    sessions: &HashMap<String, AcpSessionHandle>,
+) -> Result<(), acp::Error> {
+    let session_id = args.session_id.0.as_ref();
+    
+    // Find the session actor
+    if let Some(session_handle) = sessions.get(session_id) {
+        // Forward to session actor
+        session_handle.cancel(args).await
+    } else {
+        tracing::warn!("Session not found for cancel: {}", session_id);
+        // Cancel is a notification, so we don't return an error
+        Ok(())
+    }
 }
 
 async fn handle_ext_method(_method: Arc<str>, _params: Arc<RawValue>) -> Result<Arc<RawValue>, acp::Error> {
