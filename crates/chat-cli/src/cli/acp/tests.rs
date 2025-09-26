@@ -1,5 +1,4 @@
 use agent_client_protocol as acp;
-use futures::{AsyncRead, AsyncWrite};
 use std::{path::PathBuf, process::ExitCode};
 
 use crate::{cli::acp::{test_harness::TestHarness, AcpArgs, QAgent}, database::settings::Setting, mock_llm::MockLLMContext, os::Os};
