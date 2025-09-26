@@ -2,8 +2,10 @@
 
 use agent_client_protocol as acp;
 use tokio::sync::{mpsc, oneshot};
+use eyre::Result;
 
 use crate::os::Os;
+use crate::cli::chat::ConversationState;
 use super::transport::AcpTransportHandle;
 
 /// Convert channel errors to ACP errors
@@ -25,16 +27,20 @@ enum SessionMethod {
 }
 
 impl AcpSessionHandle {
-    pub fn spawn(session_id: acp::SessionId, _os: Os, transport: AcpTransportHandle) -> Self {
+    pub fn spawn(session_id: acp::SessionId, os: Os, transport: AcpTransportHandle) -> Self {
         let (session_tx, mut session_rx) = mpsc::channel(32);
         
         tokio::task::spawn_local(async move {
             tracing::debug!("Session actor started for session: {}", session_id.0);
             
+            // TODO: Create ConversationState for this session
+            // For now, we'll create it when we get the first prompt
+            let mut conversation_state: Option<ConversationState> = None;
+            
             while let Some(method) = session_rx.recv().await {
                 match method {
                     SessionMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args, &transport).await;
+                        let response = Self::handle_prompt(args, &transport, &os, &mut conversation_state).await;
                         if tx.send(response).is_err() {
                             tracing::debug!("Prompt response receiver dropped, exiting session actor: {}", session_id.0);
                             break;
@@ -84,8 +90,22 @@ impl AcpSessionHandle {
         rx.await.map_err(channel_to_acp_error)?
     }
 
-    async fn handle_prompt(_args: acp::PromptRequest, _transport: &AcpTransportHandle) -> Result<acp::PromptResponse, acp::Error> {
-        // TODO: Process prompt with conversation state and stream responses via transport
+    async fn handle_prompt(
+        args: acp::PromptRequest, 
+        transport: &AcpTransportHandle,
+        os: &Os,
+        conversation_state: &mut Option<ConversationState>,
+    ) -> Result<acp::PromptResponse, acp::Error> {
+        // TODO: 
+        // 1. Create ConversationState if this is the first prompt
+        // 2. Convert ACP prompt to Q CLI UserMessage
+        // 3. Call SendMessageStream::send_message
+        // 4. Stream responses via transport.session_notification
+        // 5. Return final PromptResponse
+        
+        tracing::info!("Processing ACP prompt with {} content blocks", args.prompt.len());
+        
+        // For now, return a stub response
         Err(acp::Error::method_not_found())
     }
 
