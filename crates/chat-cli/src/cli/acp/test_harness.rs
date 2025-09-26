@@ -120,13 +120,13 @@
 //! - **AgentActor**: Manages `QAgent` and handles ACP server protocol
 //! - **SessionsMap**: Routes messages to correct session event channels
 
-use agent_client_protocol::{self as acp, Agent, NewSessionRequest, NewSessionResponse, PromptRequest, Client};
+use agent_client_protocol::{self as acp, Agent, NewSessionRequest, NewSessionResponse, PromptRequest};
 use futures::{AsyncRead, AsyncWrite};
 use parking_lot::Mutex;
-use std::{collections::{BTreeMap, HashMap}, path::PathBuf, process::ExitCode, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-use crate::{cli::acp::{AcpArgs, QAgent}, database::settings::Setting, os::Os};
+use crate::os::Os;
 
 /// Entry point for setting up ACP (Agent Client Protocol) tests.
 /// 
