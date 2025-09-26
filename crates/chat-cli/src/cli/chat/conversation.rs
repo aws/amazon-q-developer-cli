@@ -912,6 +912,21 @@ Return only the JSON configuration, no additional text.",
         Ok(())
     }
 
+    /// Reloads only built-in tools while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os, stderr: &mut impl Write) -> Result<(), ChatError> {
+        let builtin_tools = self
+            .tool_manager
+            .load_tools(os, stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to reload built-in tools: {e}").into()))?;
+
+        // Remove existing built-in tools and add updated ones, preserving MCP tools
+        self.tools.retain(|origin, _| *origin != ToolOrigin::Native);
+        self.tools.extend(format_tool_spec(builtin_tools));
+
+        Ok(())
+    }
+
     /// Swapping agent involves the following:
     /// - Reinstantiate the context manager
     /// - Swap agent on tool manager
