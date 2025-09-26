@@ -2,6 +2,7 @@
 
 use agent_client_protocol::{self as acp, Client};
 use tokio::sync::{mpsc, oneshot};
+use eyre::Result;
 
 /// Handle to the transport actor
 #[derive(Clone)]
@@ -51,17 +52,20 @@ impl AcpTransportHandle {
         Self { transport_tx }
     }
 
-    pub async fn set_connection(&self, connection: acp::AgentSideConnection) {
+    pub async fn set_connection(&self, connection: acp::AgentSideConnection) -> Result<()> {
         let (tx, rx) = oneshot::channel();
-        if self.transport_tx.send(TransportMethod::SetConnection(connection, tx)).await.is_ok() {
-            let _ = rx.await;
-        }
+        self.transport_tx.send(TransportMethod::SetConnection(connection, tx)).await
+            .map_err(|_| eyre::eyre!("Transport actor has shut down"))?;
+        rx.await.map_err(|_| eyre::eyre!("Transport actor dropped response"))?;
+        Ok(())
     }
 
-    pub async fn session_notification(&self, notification: acp::SessionNotification) -> Result<(), acp::Error> {
+    pub async fn session_notification(&self, notification: acp::SessionNotification) -> Result<()> {
         let (tx, rx) = oneshot::channel();
         self.transport_tx.send(TransportMethod::SessionNotification(notification, tx)).await
-            .map_err(|_| acp::Error::internal_error())?;
-        rx.await.map_err(|_| acp::Error::internal_error())?
+            .map_err(|_| eyre::eyre!("Transport actor has shut down"))?;
+        let acp_result = rx.await.map_err(|_| eyre::eyre!("Transport actor dropped response"))?;
+        acp_result.map_err(|e| eyre::eyre!("ACP error: {:?}", e))?;
+        Ok(())
     }
 }

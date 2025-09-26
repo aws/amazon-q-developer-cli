@@ -99,7 +99,7 @@ impl AcpArgs {
             );
             
             // Give the connection to the transport actor
-            transport_handle.set_connection(connection).await;
+            transport_handle.set_connection(connection).await?;
             
             tracing::info!("ACP server started, waiting for client connections...");
             
