@@ -22,7 +22,7 @@
         },
         {
           "type": "fixed",
-          "description": "Fixes issues with Tool Input parsing - [#2986](https://github.com/aws/amazon-q-developer-cli/pull/2986)"
+          "description": "Validation issues with MCP tool arguments - [#2986](https://github.com/aws/amazon-q-developer-cli/pull/2986)"
         },
         {
           "type": "added",
@@ -30,18 +30,14 @@
         },
         {
           "type": "added",
-          "description": "Expand support for /prompts command - [#2799](https://github.com/aws/amazon-q-developer-cli/pull/2799)"
+          "description": "Support for custom prompts, see `/prompts` - [#2799](https://github.com/aws/amazon-q-developer-cli/pull/2799)"
         },
         {
           "type": "fixed",
-          "description": "Consolidate tool permission logic for consistent display and execution - [#2975](https://github.com/aws/amazon-q-developer-cli/pull/2975)"
+          "description": "Various issues with MCP OAuth - [#2976](https://github.com/aws/amazon-q-developer-cli/pull/2976)"
         },
         {
           "type": "fixed",
-          "description": "Hardcode client id for oauth in MCP - [#2976](https://github.com/aws/amazon-q-developer-cli/pull/2976)"
-        },
-        {
-          "type": "improved",
           "description": "Improve error messages for dispatch failures - [#2969](https://github.com/aws/amazon-q-developer-cli/pull/2969)"
         }
       ]
