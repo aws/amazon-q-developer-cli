@@ -301,8 +301,8 @@ impl acp::Agent for QAgent {
             }
         }
         
-        // Store the message in the session
-        {
+        // Process the message through the real chat pipeline
+        let mut conversation_state = {
             let mut sessions = self.sessions.write().await;
             let conversation = sessions.get_mut(session_id)
                 .ok_or_else(|| {
@@ -312,34 +312,84 @@ impl acp::Agent for QAgent {
             
             // Add the prompt to the conversation state
             conversation.set_next_user_message(prompt_text.clone()).await;
-        }
-        
-        // For now, send a simple echo response to test streaming
-        let response_text = format!("Echo: {}", prompt_text);
-        
-        // Send the response as chunks to test streaming
-        for chunk in response_text.chars().collect::<Vec<_>>().chunks(10) {
-            let chunk_text: String = chunk.iter().collect();
             
-            let notification = acp::SessionNotification {
-                session_id: arguments.session_id.clone(),
-                update: acp::SessionUpdate::AgentMessageChunk {
-                    content: acp::ContentBlock::Text(acp::TextContent {
-                        text: chunk_text.clone(),
-                        annotations: None,
-                        meta: None,
-                    }),
-                },
-                meta: None,
-            };
-            
-            // Send notification via bounded channel (provides natural backpressure)
-            let (tx, rx) = tokio::sync::oneshot::channel();
-            if let Err(_) = self.session_update_tx.send(QAgentUpdateToAgentConnection { notification, tx }).await {
-                eprintln!("DEBUG: Notification channel closed, stopping notifications");
-                break;
+            // Clone the conversation state for processing
+            conversation.clone()
+        };
+
+        // Get OS reference for API client
+        let os = self.os.read().await;
+        
+        // Send message through the real chat pipeline
+        use crate::cli::chat::{SendMessageStream, RequestMetadata, ResponseEvent};
+        use std::sync::Arc;
+        use tokio::sync::Mutex;
+        
+        let request_metadata_lock = Arc::new(Mutex::new(None::<RequestMetadata>));
+        
+        // Convert chat::ConversationState to api_client::model::ConversationState
+        let mut stderr = Vec::new();
+        let api_conversation_state = conversation_state
+            .as_sendable_conversation_state(&*os, &mut stderr, false)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to convert conversation state: {}", e);
+                acp::Error::internal_error()
+            })?;
+        
+        match SendMessageStream::send_message(&os.client, api_conversation_state, request_metadata_lock, None).await {
+            Ok(mut stream) => {
+                // Stream the real LLM responses
+                while let Some(event_result) = stream.recv().await {
+                    match event_result {
+                        Ok(event) => {
+                            match event {
+                                ResponseEvent::AssistantText(content) => {
+                                    let notification = acp::SessionNotification {
+                                        session_id: arguments.session_id.clone(),
+                                        update: acp::SessionUpdate::AgentMessageChunk {
+                                            content: acp::ContentBlock::Text(acp::TextContent {
+                                                text: content,
+                                                annotations: None,
+                                                meta: None,
+                                            }),
+                                        },
+                                        meta: None,
+                                    };
+
+                                    // Send notification via bounded channel (provides natural backpressure)
+                                    let (tx, rx) = tokio::sync::oneshot::channel();
+                                    if let Err(_) = self.session_update_tx.send(QAgentUpdateToAgentConnection { notification, tx }).await {
+                                        tracing::warn!("Notification channel closed, stopping stream");
+                                        break;
+                                    }
+                                    rx.await.expect("session-update actor to acknowledge session-notification");
+                                }
+                                ResponseEvent::ToolUseStart { .. } => {
+                                    // TODO: Handle tool use events in Phase 3
+                                    tracing::debug!("Tool use start event received (not yet implemented in ACP)");
+                                }
+                                ResponseEvent::ToolUse(_) => {
+                                    // TODO: Handle tool use events in Phase 3
+                                    tracing::debug!("Tool use event received (not yet implemented in ACP)");
+                                }
+                                ResponseEvent::EndStream { .. } => {
+                                    tracing::debug!("End stream event received");
+                                    break;
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::error!("Error receiving stream event: {}", e);
+                            break;
+                        }
+                    }
+                }
             }
-            rx.await.expect("session-update actor to acknowledge session-notification");
+            Err(e) => {
+                tracing::error!("Failed to send message: {}", e);
+                return Err(acp::Error::internal_error());
+            }
         }
         
         tracing::info!("ACP prompt completed for session: {}", session_id);

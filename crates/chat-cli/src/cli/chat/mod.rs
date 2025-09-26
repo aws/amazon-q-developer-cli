@@ -49,6 +49,7 @@ use cli::model::{
     select_model,
 };
 pub use conversation::ConversationState;
+pub use parser::{SendMessageStream, RequestMetadata, ResponseEvent};
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
@@ -81,8 +82,6 @@ use parse::{
 };
 use parser::{
     RecvErrorKind,
-    RequestMetadata,
-    SendMessageStream,
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
