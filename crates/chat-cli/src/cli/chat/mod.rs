@@ -616,9 +616,11 @@ pub struct ChatSession {
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
+    /// Where to read input from; could be the terminal, could be a mock.
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
+    /// Spinner state, if we are displaying a spinner.
     spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
@@ -641,8 +643,10 @@ pub struct ChatSession {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<PromptMessage>,
+    /// Are we accepting user input?
     interactive: bool,
     inner: Option<ChatState>,
+    /// Receives a message when user hits C-c.
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
 }
