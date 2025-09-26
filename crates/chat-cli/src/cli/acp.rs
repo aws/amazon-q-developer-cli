@@ -44,10 +44,12 @@ use crate::os::Os;
 mod server;
 mod session;
 mod forward;
+mod transport;
 
 pub use server::AcpServerHandle;
 pub use session::AcpSessionHandle;
 pub use forward::AcpAgentForward;
+pub use transport::AcpTransportHandle;
 
 #[cfg(test)]
 mod tests;
@@ -74,8 +76,11 @@ impl AcpArgs {
         // Create ACP server with LocalSet for non-Send futures
         let local_set = tokio::task::LocalSet::new();
         local_set.run_until(async move {
-            // Spawn the server actor
-            let server_handle = AcpServerHandle::spawn(agent_name, os.clone());
+            // Create transport actor (will receive connection later)
+            let transport_handle = AcpTransportHandle::new();
+            
+            // Spawn the server actor with transport handle
+            let server_handle = AcpServerHandle::spawn(agent_name, os.clone(), transport_handle.clone());
             
             // Create forwarding agent
             let agent = AcpAgentForward::new(server_handle);
@@ -92,6 +97,9 @@ impl AcpArgs {
                     tokio::task::spawn_local(fut);
                 }
             );
+            
+            // Give the connection to the transport actor
+            transport_handle.set_connection(connection).await;
             
             tracing::info!("ACP server started, waiting for client connections...");
             

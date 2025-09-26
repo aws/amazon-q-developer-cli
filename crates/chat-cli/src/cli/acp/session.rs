@@ -4,6 +4,7 @@ use agent_client_protocol as acp;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::os::Os;
+use super::transport::AcpTransportHandle;
 
 /// Convert channel errors to ACP errors
 fn channel_to_acp_error<E>(_err: E) -> acp::Error {
@@ -24,7 +25,7 @@ enum SessionMethod {
 }
 
 impl AcpSessionHandle {
-    pub fn spawn(session_id: acp::SessionId, os: Os) -> Self {
+    pub fn spawn(session_id: acp::SessionId, _os: Os, transport: AcpTransportHandle) -> Self {
         let (session_tx, mut session_rx) = mpsc::channel(32);
         
         tokio::task::spawn_local(async move {
@@ -33,7 +34,7 @@ impl AcpSessionHandle {
             while let Some(method) = session_rx.recv().await {
                 match method {
                     SessionMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args).await;
+                        let response = Self::handle_prompt(args, &transport).await;
                         if tx.send(response).is_err() {
                             tracing::debug!("Prompt response receiver dropped, exiting session actor: {}", session_id.0);
                             break;
@@ -83,8 +84,8 @@ impl AcpSessionHandle {
         rx.await.map_err(channel_to_acp_error)?
     }
 
-    async fn handle_prompt(_args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
-        // TODO: Process prompt with conversation state
+    async fn handle_prompt(_args: acp::PromptRequest, _transport: &AcpTransportHandle) -> Result<acp::PromptResponse, acp::Error> {
+        // TODO: Process prompt with conversation state and stream responses via transport
         Err(acp::Error::method_not_found())
     }
 

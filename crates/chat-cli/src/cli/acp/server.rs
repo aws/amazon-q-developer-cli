@@ -8,7 +8,7 @@ use serde_json::value::RawValue;
 use tokio::sync::{mpsc, oneshot};
 
 use crate::os::Os;
-use super::session::AcpSessionHandle;
+use super::{session::AcpSessionHandle, transport::AcpTransportHandle};
 
 /// Convert channel errors to ACP errors
 fn channel_to_acp_error<E>(_err: E) -> acp::Error {
@@ -39,7 +39,7 @@ enum ServerMethod {
 }
 
 impl AcpServerHandle {
-    pub fn spawn(agent_name: String, os: Os) -> Self {
+    pub fn spawn(agent_name: String, os: Os, transport: AcpTransportHandle) -> Self {
         let (server_tx, mut server_rx) = mpsc::channel(32);
         
         tokio::task::spawn_local(async move {
@@ -62,7 +62,7 @@ impl AcpServerHandle {
                         }
                     }
                     ServerMethod::NewSession(args, tx) => {
-                        let response = Self::handle_new_session(args, &agent_name, &os, &mut sessions).await;
+                        let response = Self::handle_new_session(args, &agent_name, &os, &mut sessions, &transport).await;
                         if tx.send(response).is_err() {
                             tracing::debug!("NewSession response receiver dropped, exiting server actor");
                             break;
@@ -184,7 +184,7 @@ impl AcpServerHandle {
 
     async fn handle_initialize(_args: acp::InitializeRequest) -> Result<acp::InitializeResponse, acp::Error> {
         Ok(acp::InitializeResponse {
-            protocol_version: acp::ProtocolVersion::V1,
+            protocol_version: acp::V1,
             agent_capabilities: acp::AgentCapabilities::default(),
             auth_methods: Vec::new(),
             meta: None,
@@ -196,10 +196,11 @@ impl AcpServerHandle {
     }
 
     async fn handle_new_session(
-        args: acp::NewSessionRequest,
+        _args: acp::NewSessionRequest,
         _agent_name: &str,
         os: &Os,
         sessions: &mut HashMap<String, AcpSessionHandle>,
+        transport: &AcpTransportHandle,
     ) -> Result<acp::NewSessionResponse, acp::Error> {
         // Generate a new session ID
         let session_id = uuid::Uuid::new_v4().to_string();
@@ -207,8 +208,8 @@ impl AcpServerHandle {
         
         tracing::info!("Creating new ACP session: {}", session_id);
         
-        // Spawn session actor
-        let session_handle = AcpSessionHandle::spawn(acp_session_id.clone(), os.clone());
+        // Spawn session actor with transport handle
+        let session_handle = AcpSessionHandle::spawn(acp_session_id.clone(), os.clone(), transport.clone());
         
         // Store session handle
         sessions.insert(session_id.clone(), session_handle);
