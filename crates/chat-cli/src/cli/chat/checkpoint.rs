@@ -394,8 +394,15 @@ fn run_git(dir: &Path, with_work_tree: bool, args: &[&str]) -> Result<Output> {
     cmd.args(args);
 
     let output = cmd.output()?;
-    if !output.status.success() && !output.stderr.is_empty() {
-        bail!(String::from_utf8_lossy(&output.stderr).to_string());
+    if !output.status.success() {
+        if !output.stderr.is_empty() {
+            bail!("Git command failed: {}", String::from_utf8_lossy(&output.stderr));
+        } else {
+            bail!(
+                "Git command failed with no error output. Command: git {}",
+                args.join(" ")
+            );
+        }
     }
 
     Ok(output)
