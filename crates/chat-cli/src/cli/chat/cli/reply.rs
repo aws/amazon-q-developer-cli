@@ -1,9 +1,16 @@
 use clap::Args;
 use crossterm::execute;
-use crossterm::style::{self, Color};
+use crossterm::style::{
+    self,
+    Color,
+};
 
 use super::editor::open_editor;
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 
 /// Arguments to the `/reply` command.
 #[deny(missing_docs)]
