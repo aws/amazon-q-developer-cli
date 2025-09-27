@@ -242,10 +242,10 @@ fn format_description(description: Option<&String>) -> String {
 /// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
 /// to ensure clean formatting.
 fn truncate_description(text: &str, max_length: usize) -> String {
-    if text.len() <= max_length {
+    if text.chars().count() <= max_length {
         text.to_string()
     } else {
-        let truncated = &text[..max_length.saturating_sub(3)];
+        let truncated: String = text.chars().take(max_length.saturating_sub(3)).collect();
         format!("{}...", truncated.trim_end())
     }
 }
@@ -2254,6 +2254,44 @@ mod tests {
     }
 
     #[test]
+    fn test_truncate_description_utf8_boundaries() {
+        // Test Korean text that would cause byte boundary issues
+        let korean_text = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때 사용할 수 있는 프롬프트로, 원본의 어투와 어조를 유지하면서 자연스러운 표현으로 개선해줍니다";
+        
+        // Test truncation at various lengths
+        let result_40 = truncate_description(korean_text, 40);
+        assert!(result_40.len() <= 40 * 3); // Korean chars are up to 3 bytes each
+        assert!(result_40.ends_with("..."));
+        
+        let result_50 = truncate_description(korean_text, 50);
+        assert!(result_50.len() <= 50 * 3);
+        assert!(result_50.ends_with("..."));
+        
+        // Test with mixed ASCII and Korean
+        let mixed_text = "Hello 안녕하세요 World 세계";
+        let result_mixed = truncate_description(mixed_text, 15);
+        assert!(result_mixed.ends_with("..."));
+        
+        // Test with text shorter than limit
+        let short_korean = "안녕하세요";
+        let result_short = truncate_description(short_korean, 20);
+        assert_eq!(result_short, "안녕하세요");
+        assert!(!result_short.ends_with("..."));
+        
+        // Test edge case: exactly at limit
+        let exact_text = "정확히";  // 3 characters
+        let result_exact = truncate_description(exact_text, 3);
+        assert_eq!(result_exact, "정확히");
+        assert!(!result_exact.ends_with("..."));
+        
+        // Test edge case: one character over limit
+        let over_text = "정확히다";  // 4 characters
+        let result_over = truncate_description(over_text, 3);
+        assert!(result_over.ends_with("..."));
+        assert_eq!(result_over.chars().count(), 3); // Should be exactly 3 chars including "..."
+    }
+
+    #[test]
     fn test_parse_all_mcp_error_details() {
         // Test parsing multiple validation errors
         let error_str = r#"MCP error -32602: Invalid arguments for prompt validation-test: [
@@ -2461,15 +2499,19 @@ mod tests {
         // Create mock prompt bundles
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
+                    title: Some("Argument 1".to_string()),
                     description: Some("First argument".to_string()),
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
+                    title: None,
                     description: None,
                     required: Some(false),
                 },
