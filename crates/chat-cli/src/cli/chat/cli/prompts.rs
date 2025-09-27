@@ -58,6 +58,11 @@ pub enum GetPromptError {
     PromptNotFound(String),
     #[error("Prompt {0} is offered by more than one server. Use one of the following {1}")]
     AmbiguousPrompt(String, String),
+    #[error("Missing required arguments for prompt {prompt_name}: {required_args:?}")]
+    MissingRequiredArguments {
+        prompt_name: String,
+        required_args: Vec<String>,
+    },
     #[error("Missing client")]
     MissingClient,
     #[error("Missing prompt name")]
@@ -1380,6 +1385,19 @@ impl PromptsSubcommand {
                             style::SetForegroundColor(Color::Reset),
                         )?;
                     },
+                    GetPromptError::MissingRequiredArguments {
+                        prompt_name,
+                        required_args: _,
+                    } => {
+                        // Use the existing detailed error display function
+                        let prompts_list = session
+                            .conversation
+                            .tool_manager
+                            .list_prompts()
+                            .await
+                            .unwrap_or_default();
+                        display_missing_args_error(&prompt_name, &prompts_list, session)?;
+                    },
                     GetPromptError::PromptNotFound(prompt_name) => {
                         queue!(
                             session.stderr,
@@ -2461,15 +2479,19 @@ mod tests {
         // Create mock prompt bundles
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
+                    title: Some("Argument 1".to_string()),
                     description: Some("First argument".to_string()),
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
+                    title: Some("Argument 2".to_string()),
                     description: None,
                     required: Some(false),
                 },
