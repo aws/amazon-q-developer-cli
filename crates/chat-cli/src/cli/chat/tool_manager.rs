@@ -2112,7 +2112,9 @@ mod tests {
         // Create mock prompt bundles
         let prompt = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            icons: None,
             arguments: None,
         };
 
