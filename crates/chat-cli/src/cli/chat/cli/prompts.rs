@@ -1389,7 +1389,6 @@ impl PromptsSubcommand {
                         prompt_name,
                         required_args: _,
                     } => {
-                        // Use the existing detailed error display function
                         let prompts_list = session
                             .conversation
                             .tool_manager
