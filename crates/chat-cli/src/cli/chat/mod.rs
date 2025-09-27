@@ -3,6 +3,7 @@ mod consts;
 pub mod context;
 mod conversation;
 mod input_source;
+pub mod mcp_error;
 mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
