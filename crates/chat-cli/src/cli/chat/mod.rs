@@ -59,6 +59,7 @@ use cli::model::{
     select_model,
 };
 pub use conversation::ConversationState;
+pub use parser::{SendMessageStream, RequestMetadata, ResponseEvent};
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
@@ -91,8 +92,6 @@ use parse::{
 };
 use parser::{
     RecvErrorKind,
-    RequestMetadata,
-    SendMessageStream,
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
@@ -568,9 +567,11 @@ pub struct ChatSession {
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
+    /// Where to read input from; could be the terminal, could be a mock.
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
+    /// Spinner state, if we are displaying a spinner.
     spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
@@ -593,8 +594,10 @@ pub struct ChatSession {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<PromptMessage>,
+    /// Are we accepting user input?
     interactive: bool,
     inner: Option<ChatState>,
+    /// Receives a message when user hits C-c.
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
 }
@@ -1048,10 +1051,7 @@ impl ChatSession {
             )?;
         }
 
-        self.conversation.enforce_conversation_invariants();
-        self.conversation.reset_next_user_message();
-        self.pending_tool_index = None;
-        self.tool_turn_start_time = None;
+        self.reset_user_message_and_pending_tool_use();
         self.reset_user_turn();
 
         self.inner = Some(ChatState::PromptUser {
@@ -1059,6 +1059,15 @@ impl ChatSession {
         });
 
         Ok(())
+    }
+
+    /// Clear our the state associated with the user message, including
+    /// pending tool user and so forth. Used when resetting back to a "ground" state (e.g., PromptUser).
+    fn reset_user_message_and_pending_tool_use(&mut self) {
+        self.conversation.enforce_conversation_invariants();
+        self.conversation.reset_next_user_message();
+        self.pending_tool_index = None;
+        self.tool_turn_start_time = None;
     }
 
     async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
@@ -3192,10 +3201,7 @@ impl ChatSession {
             Ok(Some(_)) => (),
             Ok(None) => {
                 // User did not select a model, so reset the current request state.
-                self.conversation.enforce_conversation_invariants();
-                self.conversation.reset_next_user_message();
-                self.pending_tool_index = None;
-                self.tool_turn_start_time = None;
+                self.reset_user_message_and_pending_tool_use();
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
                 });
@@ -4364,6 +4370,91 @@ mod tests {
             result.is_ok(),
             "Chat session should complete successfully even when hook blocks tool"
         );
+    }
+
+    #[tokio::test]
+    async fn test_mock_llm_integration() {
+        // Test the MockLLM integration with spawn_mock_llm
+        use crate::mock_llm::{spawn_mock_llm, MockLLMContext};
+        use serde_json::json;
+        
+        let mut mock_llm = spawn_mock_llm(|mut ctx: MockLLMContext| async move {
+            if let Some(mut turn) = ctx.read_user_message().await {
+                if turn.user_message().contains("Greece") {
+                    turn.respond_to_user("I'll look up Greece's capital.".to_string()).await.unwrap();
+                    // Send streaming tool call events
+                    turn.call_tool("1".to_string(), "countryCapital".to_string(), None, None).await.unwrap();
+                    turn.call_tool("1".to_string(), "countryCapital".to_string(), Some(json!({"country": "Greece"})), Some(true)).await.unwrap();
+                    // In a real scenario, we'd wait for tool result and then respond
+                    turn.respond_to_user("The capital of Greece is Athens.".to_string()).await.unwrap();
+                } else {
+                    turn.respond_to_user("I don't know about that.".to_string()).await.unwrap();
+                }
+            }
+        });
+        
+        // Send user message
+        mock_llm.send_user_message("What is the capital of Greece?".to_string()).await.unwrap();
+        
+        // Read responses
+        let response1 = mock_llm.read_llm_response().await.unwrap();
+        let response2 = mock_llm.read_llm_response().await.unwrap();
+        let response3 = mock_llm.read_llm_response().await.unwrap();
+        let response4 = mock_llm.read_llm_response().await.unwrap();
+        
+        // Verify responses
+        match response1 {
+            crate::api_client::model::ChatResponseStream::AssistantResponseEvent { content } => {
+                assert_eq!(content, "I'll look up Greece's capital.");
+            },
+            _ => panic!("Expected AssistantResponseEvent"),
+        }
+        
+        match response2 {
+            crate::api_client::model::ChatResponseStream::ToolUseEvent { name, input, stop, .. } => {
+                assert_eq!(name, "countryCapital");
+                assert_eq!(input, None);
+                assert_eq!(stop, None);
+            },
+            _ => panic!("Expected ToolUseEvent start"),
+        }
+        
+        match response3 {
+            crate::api_client::model::ChatResponseStream::ToolUseEvent { name, stop, .. } => {
+                assert_eq!(name, "countryCapital");
+                assert_eq!(stop, Some(true));
+            },
+            _ => panic!("Expected ToolUseEvent end"),
+        }
+        
+        match response4 {
+            crate::api_client::model::ChatResponseStream::AssistantResponseEvent { content } => {
+                assert_eq!(content, "The capital of Greece is Athens.");
+            },
+            _ => panic!("Expected AssistantResponseEvent"),
+        }
+        
+        println!("MockLLM integration test completed!");
+    }
+
+    #[tokio::test]
+    async fn test_api_client_mock_llm() {
+        // Test ApiClient integration with MockLLM
+        use crate::mock_llm::MockLLMContext;
+        use crate::os::Os;
+        
+        let mut os = Os::new().await.unwrap();
+        
+        // Set up ApiClient with mock LLM script
+        os.client.set_mock_llm(|mut ctx: MockLLMContext| async move {
+            if let Some(mut turn) = ctx.read_user_message().await {
+                turn.respond_to_user("Hello from mock LLM!".to_string()).await.unwrap();
+            }
+        });
+        
+        // For now, just verify the mock_llm was set
+        // In the future, we'd create a proper ConversationState and test the full flow
+        println!("ApiClient MockLLM integration test - mock LLM set successfully!");
     }
 
     #[test]

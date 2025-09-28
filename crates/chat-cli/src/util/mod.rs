@@ -42,20 +42,7 @@ pub enum UtilError {
     Json(#[from] serde_json::Error),
 }
 
-#[derive(Debug, Clone)]
-pub struct UnknownDesktopErrContext {
-    xdg_current_desktop: String,
-    xdg_session_desktop: String,
-    gdm_session: String,
-}
 
-impl std::fmt::Display for UnknownDesktopErrContext {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "XDG_CURRENT_DESKTOP: `{}`, ", self.xdg_current_desktop)?;
-        write!(f, "XDG_SESSION_DESKTOP: `{}`, ", self.xdg_session_desktop)?;
-        write!(f, "GDMSESSION: `{}`", self.gdm_session)
-    }
-}
 
 pub fn choose(prompt: impl Display, options: &[impl ToString]) -> Result<Option<usize>> {
     if options.is_empty() {

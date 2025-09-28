@@ -88,6 +88,8 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Enable Agent Client Protocol server (boolean)")]
+    EnabledAcp,
 }
 
 impl AsRef<str> for Setting {
@@ -129,6 +131,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::EnabledAcp => "acp.enabled",
         }
     }
 }
@@ -178,6 +181,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "acp.enabled" => Ok(Self::EnabledAcp),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
