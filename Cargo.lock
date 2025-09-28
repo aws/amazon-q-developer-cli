@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "acp-client-test"
-version = "1.16.2"
+version = "1.16.3"
 dependencies = [
  "agent-client-protocol",
  "anyhow",
@@ -1245,17 +1245,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "chat-script"
-version = "1.16.2"
-dependencies = [
- "eyre",
- "regex",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "chat_cli"
 version = "1.16.3"
 dependencies = [
@@ -1284,7 +1273,6 @@ dependencies = [
  "bytes",
  "camino",
  "cfg-if",
- "chat-script",
  "chrono",
  "clap",
  "clap_complete",
