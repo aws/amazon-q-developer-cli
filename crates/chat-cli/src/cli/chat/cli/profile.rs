@@ -55,7 +55,7 @@ use crate::util::{
 
 Notes
 • Launch q chat with a specific agent with --agent
-• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.amazonq/cli-agents (accessible in workspace)
+• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or .amazonq/cli-agents in the cwd or any parent directory
 • See example config under global directory
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
@@ -64,6 +64,8 @@ Notes
 pub enum AgentSubcommand {
     /// List all available agents
     List,
+    /// Show information about the currently active agent
+    Info,
     /// Create a new agent with the specified name
     Create {
         /// Name of the agent to be created
@@ -178,6 +180,31 @@ impl AgentSubcommand {
                     }
                 }
                 execute!(session.stderr, style::Print("\n"))?;
+            },
+            Self::Info => {
+                if let Some(active_agent) = agents.get_active() {
+                    execute!(
+                        session.stderr,
+                        style::SetForegroundColor(Color::Green),
+                        style::Print("Active agent: "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&active_agent.name),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print("\n")
+                    )?;
+                    if let Some(path) = &active_agent.path {
+                        execute!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::Green),
+                            style::Print("• Path: "),
+                            style::SetForegroundColor(Color::Reset),
+                            style::Print(path.display().to_string()),
+                            style::Print("\n")
+                        )?;
+                    }
+                } else {
+                    execute!(session.stderr, style::Print("No active agent found\n"))?;
+                }
             },
             Self::Schema => {
                 use schemars::schema_for;
@@ -503,6 +530,7 @@ impl AgentSubcommand {
     pub fn name(&self) -> &'static str {
         match self {
             Self::List => "list",
+            Self::Info => "info",
             Self::Create { .. } => "create",
             Self::Edit { .. } => "edit",
             Self::Generate { .. } => "generate",
