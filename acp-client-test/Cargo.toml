@@ -1,0 +1,18 @@
+[package]
+name = "acp-client-test"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+agent-client-protocol = { workspace = true }
+tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
+anyhow = "1.0"
+serde_json = "1.0"
+
+[lints]
+workspace = true
