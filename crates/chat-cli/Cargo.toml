@@ -16,6 +16,7 @@ default = []
 wayland = ["arboard/wayland-data-control"]
 
 [dependencies]
+agent-client-protocol.workspace = true
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true
@@ -39,6 +40,7 @@ bstr.workspace = true
 bytes.workspace = true
 camino.workspace = true
 cfg-if.workspace = true
+chat-script = { path = "../chat-script" }
 chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
