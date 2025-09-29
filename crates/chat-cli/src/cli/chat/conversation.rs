@@ -74,10 +74,6 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
-use crate::cli::chat::checkpoint::{
-    Checkpoint,
-    CheckpointManager,
-};
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -142,8 +138,6 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
-
-    pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
@@ -209,7 +203,6 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
-            checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
         }
@@ -896,20 +889,6 @@ Return only the JSON configuration, no additional text.",
             self.transcript.pop_front();
         }
         self.transcript.push_back(message);
-    }
-
-    /// Restore conversation from a checkpoint's history snapshot
-    pub fn restore_to_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), eyre::Report> {
-        // 1. Restore history from snapshot
-        self.history = checkpoint.history_snapshot.clone();
-
-        // 2. Clear any pending next message (uncommitted state)
-        self.next_message = None;
-
-        // 3. Update valid history range
-        self.valid_history_range = (0, self.history.len());
-
-        Ok(())
     }
 
     /// Reloads only built-in tools while preserving MCP tools

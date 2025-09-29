@@ -187,16 +187,6 @@ impl Tool {
             _ => None,
         }
     }
-
-    /// Returns the tool's summary if available
-    pub fn get_summary(&self) -> Option<String> {
-        match self {
-            Tool::FsWrite(fs_write) => fs_write.get_summary().cloned(),
-            Tool::ExecuteCommand(execute_cmd) => execute_cmd.summary.clone(),
-            Tool::FsRead(fs_read) => fs_read.summary.clone(),
-            _ => None,
-        }
-    }
 }
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
