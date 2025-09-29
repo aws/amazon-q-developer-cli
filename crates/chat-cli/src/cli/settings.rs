@@ -6,6 +6,7 @@ use clap::{
     Args,
     Subcommand,
 };
+use crossterm::style::Stylize;
 use eyre::{
     Result,
     WrapErr,
@@ -13,7 +14,6 @@ use eyre::{
 };
 use globset::Glob;
 use serde_json::json;
-use crossterm::style::Stylize;
 
 use super::OutputFormat;
 use crate::database::settings::Setting;
@@ -93,12 +93,12 @@ impl SettingsArgs {
 
                 let key = Setting::try_from(key.as_str())?;
                 match (&self.value, self.delete) {
-                    (Some(_), true) => {
-                        Err(eyre::eyre!("the argument {} cannot be used with {}\n Usage: q settings {} {key}",
+                    (Some(_), true) => Err(eyre::eyre!(
+                        "the argument {} cannot be used with {}\n Usage: q settings {} {key}",
                         "'--delete'".yellow(),
                         "'[VALUE]'".yellow(),
-                        "--delete".yellow()))
-                    },
+                        "--delete".yellow()
+                    )),
                     (None, false) => match os.database.settings.get(key) {
                         Some(value) => {
                             match self.format {
@@ -153,7 +153,7 @@ impl SettingsArgs {
                         }
 
                         Ok(ExitCode::SUCCESS)
-                    }
+                    },
                 }
             },
         }
@@ -167,7 +167,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_with_value_error() {
         let mut os = Os::new().await.unwrap();
-        
+
         let settings_args = SettingsArgs {
             cmd: None,
             key: Some("chat.defaultAgent".to_string()),
@@ -177,7 +177,7 @@ mod tests {
         };
 
         let result = settings_args.execute(&mut os).await;
-        
+
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("the argument"));
