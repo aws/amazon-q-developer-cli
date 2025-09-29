@@ -462,6 +462,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: None,
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -471,6 +472,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -480,6 +482,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("fs_*".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -489,6 +492,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("*".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -498,6 +502,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("@builtin".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -507,6 +512,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("@git".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -516,6 +522,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("@git/status".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -576,6 +583,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -621,6 +629,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("execute_bash".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 
@@ -655,6 +664,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_only_when_turn_complete_timing() {
+        use crate::cli::agent::Agent;
+        use crate::cli::chat::context::ContextManager;
+        use crate::os::Os;
+
+        let os = Os::new().await.unwrap();
+        let temp_dir = TempDir::new().unwrap();
+        let immediate_log = temp_dir.path().join("immediate.log");
+        let deferred_log = temp_dir.path().join("deferred.log");
+
+        // Create hooks that write to different files
+        let immediate_hook = Hook {
+            command: format!("echo 'immediate' > {}", immediate_log.display()),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: false, // Runs immediately
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let deferred_hook = Hook {
+            command: format!("echo 'deferred' > {}", deferred_log.display()),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: true, // Deferred until turn complete
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        // Create agent with both hooks
+        let mut agent = Agent::default();
+        agent
+            .hooks
+            .insert(HookTrigger::PostToolUse, vec![immediate_hook, deferred_hook]);
+
+        // Create context manager from agent
+        let mut context_manager = ContextManager::from_agent(&agent, 1000).unwrap();
+
+        let tool_context = ToolContext {
+            tool_name: "fs_write".to_string(),
+            tool_input: serde_json::json!({"command": "create"}),
+            tool_response: Some(serde_json::json!({"success": true})),
+        };
+
+        // Run post tool hooks - should only run immediate ones and return deferred ones
+        let result = context_manager
+            .run_post_tool_hooks(&mut std::io::stderr(), &os, tool_context)
+            .await;
+
+        assert!(result.is_ok());
+        let (immediate_results, deferred_hooks) = result.unwrap();
+
+        // Should have 1 immediate result and 1 deferred hook
+        assert_eq!(immediate_results.len(), 1, "Should have 1 immediate hook result");
+        assert_eq!(deferred_hooks.len(), 1, "Should have 1 deferred hook");
+
+        // Verify immediate hook ran
+        assert!(immediate_log.exists(), "Immediate hook should have run");
+
+        // Verify deferred hook did NOT run yet
+        assert!(!deferred_log.exists(), "Deferred hook should not have run yet");
+    }
+
+    #[tokio::test]
     async fn test_hook_exit_code_2() {
         let mut executor = HookExecutor::new();
         let mut output = Vec::new();
@@ -671,6 +746,7 @@ mod tests {
             cache_ttl_seconds: 0,
             max_output_size: 1000,
             matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Session,
         };
 

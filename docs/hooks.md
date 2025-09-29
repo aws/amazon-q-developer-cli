@@ -133,6 +133,23 @@ Runs after tool execution with access to tool results.
 - **0**: Hook succeeded.
 - **Other**: Show STDERR warning to user. Tool already ran.
 
+**Deferred Execution:**
+PostToolUse hooks can be deferred until turn completion by setting `only_when_turn_complete: true`. 
+This is useful for formatting, cleanup tasks or for running tests that should run only once after all tools complete, 
+rather than after each individual tool.
+
+```json
+{
+  "postToolUse": [
+    {
+      "matcher": "fs_write",
+      "command": "cargo fmt --all",
+      "only_when_turn_complete": true
+    }
+  ]
+}
+```
+
 ### MCP Example
 
 For MCP tools, the tool name includes the full namespaced format including the MCP Server name:

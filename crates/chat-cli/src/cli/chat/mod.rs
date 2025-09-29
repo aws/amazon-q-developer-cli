@@ -653,6 +653,8 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    /// Deferred PostToolUse hooks to run at turn completion
+    deferred_post_tool_hooks: Vec<(crate::cli::agent::hook::Hook, ToolContext)>,
 }
 
 impl ChatSession {
@@ -765,6 +767,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            deferred_post_tool_hooks: Vec::new(),
         })
     }
 
@@ -2594,15 +2597,11 @@ impl ChatSession {
                     // Exit code is 0: nothing. stdout is not shown to user. We don't support processing the PostToolUse
                     // hook output yet. Exit code is non-zero: display an error to user (already
                     // taken care of by the ContextManager.run_hooks)
-                    let _ = cm
-                        .run_hooks(
-                            crate::cli::agent::hook::HookTrigger::PostToolUse,
-                            &mut std::io::stderr(),
-                            os,
-                            None,
-                            Some(tool_context),
-                        )
-                        .await;
+                    // We run all immediate PostToolUse hooks
+                    let (_, deferred) = cm.run_post_tool_hooks(&mut std::io::stderr(), os, tool_context).await?;
+
+                    // We then keep the deferred ones for later
+                    self.deferred_post_tool_hooks.extend(deferred);
                 }
             }
         }
@@ -3043,6 +3042,20 @@ impl ChatSession {
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
+
+            // Run deferred PostToolUse hooks at turn completion
+            if let Some(cm) = self.conversation.context_manager.as_mut() {
+                for (hook, tool_context) in &self.deferred_post_tool_hooks {
+                    let mut hooks = HashMap::new();
+                    hooks.insert(crate::cli::agent::hook::HookTrigger::PostToolUse, vec![hook.clone()]);
+                    let cwd = os.env.current_dir()?.to_string_lossy().to_string();
+                    let _ = cm
+                        .hook_executor
+                        .run_hooks(hooks, &mut std::io::stderr(), &cwd, None, Some(tool_context.clone()))
+                        .await;
+                }
+                self.deferred_post_tool_hooks.clear();
+            }
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -4221,6 +4234,7 @@ mod tests {
             max_output_size: 1024,
             cache_ttl_seconds: 0,
             matcher: Some("fs_*".to_string()), // Match fs_read, fs_write, etc.
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Agent,
         }]);
 
@@ -4230,6 +4244,7 @@ mod tests {
             max_output_size: 1024,
             cache_ttl_seconds: 0,
             matcher: Some("fs_*".to_string()), // Match fs_read, fs_write, etc.
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Agent,
         }]);
 
@@ -4366,6 +4381,7 @@ mod tests {
             max_output_size: 1024,
             cache_ttl_seconds: 0,
             matcher: Some("fs_read".to_string()),
+            only_when_turn_complete: false,
             source: crate::cli::agent::hook::Source::Agent,
         }]);
 
@@ -4409,6 +4425,101 @@ mod tests {
             result.is_ok(),
             "Chat session should complete successfully even when hook blocks tool"
         );
+    }
+
+    #[tokio::test]
+    async fn test_deferred_post_tool_hook() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::hook::{
+            Hook,
+            HookTrigger,
+        };
+
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "I'll create a file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_write",
+                    "args": {
+                        "command": "create",
+                        "path": "/test.txt",
+                        "file_text": "test content"
+                    }
+                }
+            ],
+            [
+                "File created successfully!",
+            ],
+        ]));
+
+        // Create agent with deferred PostToolUse hook
+        let mut agents = Agents::default();
+        let mut hooks = HashMap::new();
+
+        let deferred_hook_log_path = os.fs.chroot_path_str("/deferred-hook-test.log");
+        let deferred_hook_command = format!("echo 'Deferred hook executed' > {}", deferred_hook_log_path);
+
+        hooks.insert(HookTrigger::PostToolUse, vec![Hook {
+            command: deferred_hook_command,
+            timeout_ms: 5000,
+            max_output_size: 1024,
+            cache_ttl_seconds: 0,
+            matcher: Some("fs_write".to_string()),
+            only_when_turn_complete: true,
+            source: crate::cli::agent::hook::Source::Agent,
+        }]);
+
+        let agent = Agent {
+            name: "DeferredAgent".to_string(),
+            hooks,
+            ..Default::default()
+        };
+        agents.agents.insert("DeferredAgent".to_string(), agent);
+        agents.switch("DeferredAgent").expect("Failed to switch agent");
+
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "deferred_test_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![
+                "create /test.txt with content".to_string(),
+                "y".to_string(), // Accept tool execution
+                "exit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap()
+        .spawn(&mut os)
+        .await
+        .unwrap();
+
+        // Verify the deferred hook was executed at turn completion
+        if let Ok(log_content) = os.fs.read_to_string("/deferred-hook-test.log").await {
+            assert!(
+                log_content.contains("Deferred hook executed"),
+                "Deferred hook should have executed at turn completion"
+            );
+        } else {
+            panic!("Deferred hook log file not found - hook may not have been executed");
+        }
     }
 
     #[test]

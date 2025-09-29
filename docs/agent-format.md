@@ -286,7 +286,8 @@ For detailed information about hook behavior, input/output formats, and examples
     "postToolUse": [
       {
         "matcher": "fs_write",
-        "command": "cargo fmt --all"
+        "command": "cargo fmt --all",
+        "only_when_turn_complete": true
       }
     ]
   }
@@ -296,6 +297,7 @@ For detailed information about hook behavior, input/output formats, and examples
 Each hook is defined with:
 - `command` (required): The command to execute
 - `matcher` (optional): Pattern to match tool names for `preToolUse` and `postToolUse` hooks. See [built-in tools documentation](./built-in-tools.md) for available tool names.
+- `only_when_turn_complete` (optional): For `postToolUse` hooks only. If true, defers execution until all tools in the turn complete. Defaults to false.
 
 Available hook triggers:
 - `agentSpawn`: Triggered when the agent is initialized.

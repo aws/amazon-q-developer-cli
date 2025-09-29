@@ -68,6 +68,10 @@ pub struct Hook {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
 
+    /// If true, PostToolUse hooks are deferred until turn completion
+    #[serde(default = "Hook::default_only_when_turn_complete")]
+    pub only_when_turn_complete: bool,
+
     #[schemars(skip)]
     #[serde(default, skip_serializing)]
     pub source: Source,
@@ -81,6 +85,7 @@ impl Hook {
             max_output_size: Self::default_max_output_size(),
             cache_ttl_seconds: Self::default_cache_ttl_seconds(),
             matcher: None,
+            only_when_turn_complete: Self::default_only_when_turn_complete(),
             source,
         }
     }
@@ -95,5 +100,43 @@ impl Hook {
 
     fn default_cache_ttl_seconds() -> u64 {
         DEFAULT_CACHE_TTL_SECONDS
+    }
+
+    fn default_only_when_turn_complete() -> bool {
+        false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_hook_only_when_turn_complete_default() {
+        let hook = Hook::new("echo test".to_string(), Source::Agent);
+        assert_eq!(hook.only_when_turn_complete, false);
+    }
+
+    #[test]
+    fn test_hook_serde_with_only_when_turn_complete() {
+        let json = r#"{
+            "command": "cargo fmt",
+            "only_when_turn_complete": true
+        }"#;
+
+        let hook: Hook = serde_json::from_str(json).unwrap();
+        assert_eq!(hook.command, "cargo fmt");
+        assert_eq!(hook.only_when_turn_complete, true);
+    }
+
+    #[test]
+    fn test_hook_serde_without_only_when_turn_complete() {
+        let json = r#"{
+            "command": "cargo fmt"
+        }"#;
+
+        let hook: Hook = serde_json::from_str(json).unwrap();
+        assert_eq!(hook.command, "cargo fmt");
+        assert_eq!(hook.only_when_turn_complete, false); // Should default to false
     }
 }
