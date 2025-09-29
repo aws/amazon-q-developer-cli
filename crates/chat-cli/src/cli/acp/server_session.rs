@@ -47,7 +47,7 @@ impl AcpServerSessionHandle {
             while let Some(method) = session_rx.recv().await {
                 match method {
                     ServerSessionMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args, &transport, &os, &mut conversation_state).await;
+                        let response = Self::handle_prompt(args, &transport, &os, &mut conversation_state, &mut session_rx).await;
                         if tx.send(response).is_err() {
                             tracing::debug!(actor="session", event="response receiver dropped", method="prompt", session_id=%session_id.0);
                             break;
@@ -102,6 +102,7 @@ impl AcpServerSessionHandle {
         transport: &AcpServerConnectionHandle,
         os: &Os,
         conversation_state: &mut ConversationState,
+        session_rx: &mut mpsc::Receiver<ServerSessionMethod>,
     ) -> Result<acp::PromptResponse, acp::Error> {
         tracing::info!("Processing ACP prompt with {} content blocks", args.prompt.len());
         
@@ -131,33 +132,62 @@ impl AcpServerSessionHandle {
             acp::Error::internal_error()
         })?;
         
-        // Stream responses via transport
+        // Stream responses via transport with cancellation support
         loop {
-            match stream.recv().await {
-                Some(Ok(event)) => {
-                    match &event {
-                        ResponseEvent::EndStream { .. } => {
-                            // Stream is complete
-                            break;
-                        }
-                        _ => {
-                            // Convert and send notification
-                            let notification = Self::convert_response_to_acp_notification(&args.session_id, event)?;
-                            if let Err(e) = transport.session_notification(notification).await {
-                                tracing::error!("Failed to send notification: {}", e);
-                                return Err(acp::Error::internal_error());
+            tokio::select! {
+                stream_result = stream.recv() => {
+                    match stream_result {
+                        Some(Ok(event)) => {
+                            match &event {
+                                ResponseEvent::EndStream { .. } => {
+                                    // Stream is complete
+                                    break;
+                                }
+                                _ => {
+                                    // Convert and send notification
+                                    let notification = Self::convert_response_to_acp_notification(&args.session_id, event)?;
+                                    if let Err(e) = transport.session_notification(notification).await {
+                                        tracing::error!("Failed to send notification: {}", e);
+                                        return Err(acp::Error::internal_error());
+                                    }
+                                }
                             }
+                        }
+                        Some(Err(e)) => {
+                            tracing::error!("Stream error: {:?}", e);
+                            return Err(acp::Error::internal_error());
+                        }
+                        None => {
+                            // Stream ended unexpectedly
+                            tracing::warn!("Stream ended without EndStream event");
+                            break;
                         }
                     }
                 }
-                Some(Err(e)) => {
-                    tracing::error!("Stream error: {:?}", e);
-                    return Err(acp::Error::internal_error());
-                }
-                None => {
-                    // Stream ended unexpectedly
-                    tracing::warn!("Stream ended without EndStream event");
-                    break;
+                msg = session_rx.recv() => {
+                    match msg {
+                        Some(ServerSessionMethod::Cancel(_args, _tx)) => {
+                            tracing::info!("Prompt cancelled for session: {}", args.session_id.0);
+                            // Drop stream to trigger cancellation
+                            drop(stream);
+                            // Reset conversation state
+                            conversation_state.reset_next_user_message();
+                            // Send cancelled response
+                            return Ok(acp::PromptResponse {
+                                stop_reason: acp::StopReason::Cancelled,
+                                meta: None,
+                            });
+                        }
+                        Some(_other) => {
+                            // Other messages during prompt processing - could queue them
+                            tracing::warn!("Received non-cancel message during prompt processing");
+                        }
+                        None => {
+                            // Session is shutting down
+                            tracing::warn!("Session shutting down during prompt processing");
+                            return Err(acp::Error::internal_error());
+                        }
+                    }
                 }
             }
         }
