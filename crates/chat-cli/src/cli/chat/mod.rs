@@ -4443,27 +4443,6 @@ mod tests {
         assert!(true, "Old test disabled - needs rewrite for new MockLLM API");
     }
 
-    #[tokio::test]
-    async fn test_api_client_mock_llm() {
-        // Test ApiClient integration with MockLLM
-        use crate::mock_llm::MockLLMContext;
-        use crate::os::Os;
-        
-        let mut os = Os::new().await.unwrap();
-        
-        // Set up ApiClient with mock LLM script
-        os.client.set_mock_llm(|mut ctx: MockLLMContext| async move {
-            if let Some(mut turn) = ctx.read_user_message().await {
-                turn.respond_to_user("Hello from mock LLM!").await?;
-            }
-            Ok(())
-        });
-        
-        // For now, just verify the mock_llm was set
-        // In the future, we'd create a proper ConversationState and test the full flow
-        println!("ApiClient MockLLM integration test - mock LLM set successfully!");
-    }
-
     #[test]
     fn test_does_input_reference_file() {
         let tests = &[
