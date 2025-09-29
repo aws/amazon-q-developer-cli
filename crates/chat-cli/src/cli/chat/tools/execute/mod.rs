@@ -113,6 +113,7 @@ impl ExecuteCommand {
                                 || arg.contains("-delete")
                                 || arg.contains("-ok") // includes -okdir
                                 || arg.contains("-fprint") // includes -fprint0 and -fprintf
+                                || arg.contains("-fls")
                         }) =>
                 {
                     return true;
@@ -320,6 +321,7 @@ mod tests {
             ("find important-dir/ -exec rm {} \\;", true),
             ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
             ("find important-dir/ -delete", true),
+            ("find important-dir/ -fls /etc/passwd", true),
             (
                 "echo y | find . -type f -maxdepth 1 -okdir open -a Calculator {} +",
                 true,
