@@ -61,7 +61,7 @@ use crate::database::{
     AuthProfile,
     Database,
 };
-use crate::mock_llm::{spawn_mock_llm, MockLLM};
+use crate::mock_llm::{MockLLM, MockLLMInstance};
 use crate::os::{
     Env,
     Fs,
@@ -94,7 +94,7 @@ pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
-    mock_llm: Option<Arc<Mutex<MockLLM>>>,
+    mock_llm: Option<Arc<dyn MockLLM>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
 }
@@ -574,23 +574,72 @@ impl ApiClient {
                 },
             }
         } else if let Some(mock_llm) = &self.mock_llm {
-            // Send user message to mock LLM script
-            let mut llm = mock_llm.lock().await;
-            if llm.send_user_message(user_input_message.content.clone()).await.is_err() {
-                // If sending fails, return empty response
-                return Ok(SendMessageOutput::Mock(vec![]));
-            }
+            // Create MockLLMContext for this request - now streaming!
+            use crate::mock_llm::MockLLMContext;
             
-            // Collect ALL responses from mock LLM for this user message
-            let mut events = Vec::new();
-            while let Some(event) = llm.read_llm_response().await {
-                events.push(event);
-            }
+            let (response_tx, response_rx) = tokio::sync::mpsc::channel(32);
+            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::channel(32);
+            let mock_context = MockLLMContext::new(
+                history.unwrap_or_default(),
+                user_input_message.content,
+                mock_tx,
+            );
             
-            // Reverse events to match old mock_client behavior
-            events.reverse();
+            // Spawn the mock LLM for this conversation
+            let _handle = mock_llm.spawn_mock_llm(mock_context);
             
-            return Ok(SendMessageOutput::Mock(events));
+            // Spawn a task to convert ResponseEvent to ChatResponseStream and forward them
+            tokio::spawn(async move {
+                while let Some(result) = mock_rx.recv().await {
+                    match result {
+                        Ok(response_event) => {
+                            // Convert ResponseEvent to ChatResponseStream for compatibility
+                            let stream_event = match response_event {
+                                crate::cli::chat::ResponseEvent::AssistantText(content) => {
+                                    Some(crate::api_client::model::ChatResponseStream::AssistantResponseEvent {
+                                        content,
+                                    })
+                                }
+                                crate::cli::chat::ResponseEvent::ToolUseStart { name } => {
+                                    Some(crate::api_client::model::ChatResponseStream::ToolUseEvent {
+                                        tool_use_id: "mock".to_string(),
+                                        name,
+                                        input: None,
+                                        stop: None,
+                                    })
+                                }
+                                crate::cli::chat::ResponseEvent::ToolUse(_tool_use) => {
+                                    // TODO: Convert AssistantToolUse to proper ToolUseEvent
+                                    Some(crate::api_client::model::ChatResponseStream::ToolUseEvent {
+                                        tool_use_id: "mock".to_string(),
+                                        name: "mock_tool".to_string(),
+                                        input: Some("{}".to_string()),
+                                        stop: Some(true),
+                                    })
+                                }
+                                crate::cli::chat::ResponseEvent::EndStream { .. } => {
+                                    // End of stream - close the channel
+                                    None
+                                }
+                            };
+                            
+                            if let Some(event) = stream_event {
+                                if response_tx.send(Ok(event)).await.is_err() {
+                                    break; // Receiver dropped
+                                }
+                            } else {
+                                break; // EndStream
+                            }
+                        }
+                        Err(err) => {
+                            let _ = response_tx.send(Err(err)).await;
+                            break;
+                        }
+                    }
+                }
+            });
+            
+            return Ok(SendMessageOutput::Mock(response_rx));
         } else {
             unreachable!("One of the clients must be created by this point");
         }
@@ -648,7 +697,8 @@ impl ApiClient {
             response_groups.push(events);
         }
 
-        // Create MockLLM script that sends one response group per user message
+        // TODO: Implement for new MockLLM API
+        /*
         self.set_mock_llm(move |mut ctx| async move {
             let response_index = 0;
             
@@ -678,6 +728,7 @@ impl ApiClient {
             }
             // Script ends here, which drops the response channel and signals completion
         });
+        */
     }
 
     /// Set a mock LLM script for testing.
@@ -703,12 +754,18 @@ impl ApiClient {
     ///     }
     /// });
     /// ```
-    pub fn set_mock_llm<F>(&mut self, script: impl FnOnce(crate::mock_llm::MockLLMContext) -> F)
+    pub fn set_mock_llm<F, Fut>(&mut self, script: F)
     where
-        F: std::future::Future<Output = ()> + Send + 'static,
+        F: Fn(crate::mock_llm::MockLLMContext) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = eyre::Result<()>> + Send + 'static,
     {
-        let mock_llm = spawn_mock_llm(script);
-        self.mock_llm = Some(Arc::new(Mutex::new(mock_llm)));
+        // Create an adapter that boxes the future
+        let adapter = move |ctx: crate::mock_llm::MockLLMContext| -> std::pin::Pin<Box<dyn std::future::Future<Output = eyre::Result<()>> + Send>> {
+            Box::pin(script(ctx))
+        };
+        
+        let mock_llm = MockLLMInstance::new(adapter);
+        self.mock_llm = Some(Arc::new(mock_llm));
     }
 
     // Add a helper method to check if using non-default endpoint

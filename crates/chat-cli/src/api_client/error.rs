@@ -92,6 +92,9 @@ pub enum ApiClientError {
         status_code: Option<u16>,
     },
 
+    #[error("Mock LLM error")]
+    MockLLMError,
+
     // Credential errors
     #[error("failed to load credentials: {}", .0)]
     Credentials(CredentialsError),
@@ -125,6 +128,7 @@ impl ApiClientError {
             Self::SmithyBuild(_) => None,
             Self::AuthError(_) => None,
             Self::ModelOverloadedError { status_code, .. } => *status_code,
+            Self::MockLLMError => None,
             Self::MonthlyLimitReached { status_code } => *status_code,
             Self::Credentials(_e) => None,
             Self::ListAvailableModelsError(e) => sdk_status_code(e),
@@ -153,6 +157,7 @@ impl ReasonCode for ApiClientError {
             Self::SmithyBuild(_) => "SmithyBuildError".to_string(),
             Self::AuthError(_) => "AuthError".to_string(),
             Self::ModelOverloadedError { .. } => "ModelOverloadedError".to_string(),
+            Self::MockLLMError => "MockLLMError".to_string(),
             Self::MonthlyLimitReached { .. } => "MonthlyLimitReached".to_string(),
             Self::Credentials(_) => "CredentialsError".to_string(),
             Self::ListAvailableModelsError(e) => sdk_error_code(e),

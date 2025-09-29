@@ -2461,15 +2461,19 @@ mod tests {
         // Create mock prompt bundles
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
+                    title: Some("Arg 1".to_string()),
                     description: Some("First argument".to_string()),
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
+                    title: Some("Arg 2".to_string()),
                     description: None,
                     required: Some(false),
                 },
