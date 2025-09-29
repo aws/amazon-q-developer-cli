@@ -25,9 +25,9 @@ impl AcpTestHarness {
     }
 
     /// Set up a mock LLM script for deterministic testing
-    pub fn set_mock_llm<F>(mut self, script: impl FnOnce(MockLLMContext) -> F) -> Self
+    pub fn set_mock_llm<F>(mut self, script: F) -> Self
     where
-        F: std::future::Future<Output = ()> + Send + 'static,
+        F: Fn(MockLLMContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = eyre::Result<()>> + Send>> + Send + Sync + 'static,
     {
         self.os.client.set_mock_llm(script);
         self
@@ -84,23 +84,19 @@ async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
 
     AcpTestHarness::new()
         .await?
-        .set_mock_llm(async move |mut ctx: MockLLMContext| {
-            // First exchange
-            if let Some(mut turn) = ctx.read_user_message().await {
-                tracing::debug!("Mock LLM received: {}", turn.user_message());
-                if turn.user_message().contains("Hi, Claude") {
-                    turn.respond_to_user("Hi, you! What's your name?").await.unwrap();
-                }
-            }
-
-            // Second exchange
-            if let Some(mut turn) = ctx.read_user_message().await {
-                tracing::debug!("Mock LLM received: {}", turn.user_message());
-                if turn.user_message().contains("Ferris") {
-                    turn.respond_to_user("Hi Ferris, I'm Q!").await.unwrap();
-                }
-            }
-        })
+        .set_mock_llm(|mut ctx: MockLLMContext| Box::pin(async move {
+            // Use declarative pattern matching API - much cleaner!
+            ctx.try_patterns(&[
+                // First exchange: Greet and ask for name
+                (&[], r"Hi, Claude", "Hi, you! What's your name?"),
+                
+                // Second exchange: Capture name and respond personally  
+                (&[r"^assistant:.*What's your name"], r"(?P<name>\w+)", "Hi $name, I'm Q!"),
+                
+                // Fallback for any unrecognized input
+                (&[], r".*", "I didn't understand that."),
+            ]).await
+        }))
         .run(async |client| {
             let mut session = client
                 .new_session(acp::NewSessionRequest {

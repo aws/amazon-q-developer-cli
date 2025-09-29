@@ -1,218 +1,450 @@
-#![cfg_attr(not(test), allow(dead_code))] // outside of test code, parts of Mock LLM are unused
+//! Mock LLM architecture for testing
+//! 
+//! This provides a stateless per-turn mock system that matches real LLM behavior.
+//! Each user message spawns a fresh mock context with full conversation history.
 
-use serde_json::Value;
 use std::future::Future;
+use std::pin::Pin;
+use std::collections::HashMap;
 use tokio::sync::mpsc;
-use crate::api_client::model::ChatResponseStream;
+use eyre::Result;
+use regex::Regex;
 
-/// Spawn a mock LLM that executes a custom Rust script for testing.
-///
-/// Creates a mock LLM that runs the provided script in a separate tokio task. The script
-/// receives a [`MockLLMContext`] for bidirectional communication with the Q CLI system.
-/// This allows testing complex conversation flows with full programmatic control.
-///
-/// ## Usage
-///
-/// ```rust,ignore
-/// let mock_llm = spawn_mock_llm(|mut context| async move {
-///     while let Some(user_msg) = context.read_user_message().await {
-///         if user_msg.contains("Greece") {
-///             context.respond_to_user("The capital is Athens".to_string()).await.unwrap();
-///         } else {
-///             context.call_tool("1".to_string(), "search".to_string(), 
-///                              Some(json!({"query": user_msg})), None).await.unwrap();
-///         }
-///     }
-/// });
-/// ```
-///
-/// ## Communication Model
-///
-/// - **Input**: User messages sent via [`MockLLM::send_user_message`]
-/// - **Output**: LLM responses read via [`MockLLM::read_llm_response`]
-/// - **Script**: Runs asynchronously, processes messages and generates responses
-///
-/// The script continues running until the context channels are dropped or the script completes.
-pub fn spawn_mock_llm<F>(script: impl FnOnce(MockLLMContext) -> F) -> MockLLM
-where
-    F: Future<Output = ()> + Send + 'static,
-{
-    let (user_input_tx, user_input_rx) = mpsc::channel(1);
-    let (llm_response_tx, llm_response_rx) = mpsc::unbounded_channel();
+use crate::api_client::model::ChatMessage;
+use crate::cli::chat::{ResponseEvent, RequestMetadata, AssistantMessage, AssistantToolUse};
 
-    let context = MockLLMContext {
-        user_input_rx,
-        llm_response_tx,
-    };
-
-    tokio::spawn(script(context));
-
-    tracing::debug!(actor="mock_llm", event="spawned");
-
-    MockLLM {
-        user_input_tx,
-        llm_response_rx,
-    }
-}
-
-/// Handle for communicating with a spawned mock LLM script.
-///
-/// Provides the interface for sending user messages to the mock LLM script and receiving
-/// its responses. The actual LLM logic runs in a separate tokio task created by
-/// [`spawn_mock_llm`].
-///
-/// ## Lifecycle
-///
-/// 1. Send user messages via [`send_user_message`](Self::send_user_message)
-/// 2. Read LLM responses via [`read_llm_response`](Self::read_llm_response)
-/// 3. Responses can be text or tool calls depending on the script logic
-/// 4. Communication continues until channels are closed or script completes
-///
-/// ## Response Types
-///
-/// The mock LLM can generate:
-/// - **Text responses**: Direct assistant messages
-/// - **Tool calls**: Requests to execute tools with arguments
-/// - **Mixed flows**: Combinations of text and tool usage
-///
-/// This matches the behavior of real LLM APIs for comprehensive testing.
+/// Handle to a running mock LLM instance. 
+/// Dropping this handle will cancel the mock by closing the response channel.
 #[derive(Debug)]
-pub struct MockLLM {
-    user_input_tx: mpsc::Sender<String>,
-    llm_response_rx: mpsc::UnboundedReceiver<ChatResponseStreamOrEndTurn>,
+pub struct MockLLMHandle {
+    pub rx: mpsc::Receiver<Result<ResponseEvent, RecvError>>,
 }
 
-enum ChatResponseStreamOrEndTurn {
-    Message(ChatResponseStream),
-    EndTurn,
-}
-
-impl MockLLM {
-    /// Convey the user's message to the script.
-    pub async fn send_user_message(&mut self, text: String) -> Result<(), mpsc::error::SendError<String>> {
-        tracing::debug!(actor="mock_llm", event="send_user_message", message_len=text.len());
-        let result = self.user_input_tx.send(text).await;
-        if result.is_err() {
-            tracing::debug!(actor="mock_llm", event="send_user_message failed");
-        }
-        result
-    }
-
-    /// Read the response from the LLM (could be text or tool call).
-    /// If `None` is returned, that indicates that the end of the turn has been reached.
-    pub async fn read_llm_response(&mut self) -> Option<ChatResponseStream> {
-        match self.llm_response_rx.recv().await {
-            // The closure has fully terminated, dropping the tx side, so that implies the turn is over
-            None => {
-                tracing::debug!(actor="mock_llm", event="read_llm_response", result="channel_closed");
-                None
-            }
-
-            // Closure ended the turn.
-            Some(ChatResponseStreamOrEndTurn::EndTurn) => {
-                tracing::debug!(actor="mock_llm", event="read_llm_response", result="end_turn");
-                None
-            }
-
-            // Closure generates a concrete message.
-            Some(ChatResponseStreamOrEndTurn::Message(m)) => {
-                tracing::debug!(actor="mock_llm", event="read_llm_response", result="message", ?m);
-                Some(m)
-            }
-        }
+impl MockLLMHandle {
+    pub async fn recv(&mut self) -> Option<Result<ResponseEvent, RecvError>> {
+        self.rx.recv().await
     }
 }
 
-/// Context provided to mock LLM scripts for bidirectional communication.
-///
-/// This is the primary interface that mock LLM scripts use to interact with the Q CLI
-/// system. Scripts receive this context and use it to:
-///
-/// - **Read user input**: Via [`read_user_message`](Self::read_user_message)
-/// - **Send responses**: Via [`respond_to_user`](Self::respond_to_user)
-/// - **Make tool calls**: Via [`call_tool`](Self::call_tool)
-/// - **Internal tool logic**: Via [`invoke_tool`](Self::invoke_tool)
-///
-/// ## Communication Pattern
-///
-/// ```rust,ignore
-/// async move {
-///     while let Some(user_msg) = context.read_user_message().await {
-///         // Process user message
-///         if needs_tool_call(&user_msg) {
-///             context.call_tool("1", "search", Some(args), None).await?;
-///         } else {
-///             context.respond_to_user(generate_response(&user_msg)).await?;
-///         }
-///     }
-/// }
-/// ```
-///
-/// ## Channel-Based Architecture
-///
-/// Uses tokio mpsc channels for async communication between the script task and the
-/// main Q CLI process. This allows scripts to run independently while maintaining
-/// responsive communication.
+/// Captures from regex matching against conversation
+pub type ConversationMatches = HashMap<String, String>;
+
+/// Context for per-turn mock LLM execution with conversation history and streaming response
+/// This is the main interface that test scripts interact with.
 pub struct MockLLMContext {
-    user_input_rx: mpsc::Receiver<String>,
-    llm_response_tx: mpsc::UnboundedSender<ChatResponseStreamOrEndTurn>,
+    conversation_history: Vec<ChatMessage>,
+    current_user_message: String,
+    tx: mpsc::Sender<Result<ResponseEvent, RecvError>>,
+}
+
+/// Individual turn within a mock LLM context - represents one user message
+pub struct MockTurn {
+    user_message: String,
+    tx: mpsc::Sender<Result<ResponseEvent, RecvError>>,
 }
 
 impl MockLLMContext {
-    /// Read the next user message from the channel.
-    pub async fn read_user_message(&mut self) -> Option<MockLLMContextTurn<'_>> {
-        let user_message = self.user_input_rx.recv().await?;
-        tracing::debug!(actor="mock_llm_context", event="turn_begins", message_len=user_message.len());
-        Some(MockLLMContextTurn { user_message, cx: self })
+    pub fn new(
+        conversation_history: Vec<ChatMessage>,
+        current_user_message: String,
+        tx: mpsc::Sender<Result<ResponseEvent, RecvError>>,
+    ) -> Self {
+        Self {
+            conversation_history,
+            current_user_message,
+            tx,
+        }
+    }
+
+    /// Read the current user message as a turn - this is the main API for test scripts
+    /// Returns Some(turn) for the current user message, None if no message
+    pub async fn read_user_message(&mut self) -> Option<MockTurn> {
+        if !self.current_user_message.is_empty() {
+            let turn = MockTurn {
+                user_message: std::mem::take(&mut self.current_user_message),
+                tx: self.tx.clone(),
+            };
+            Some(turn)
+        } else {
+            None
+        }
+    }
+
+    /// Get access to conversation history for pattern matching
+    pub fn conversation_history(&self) -> &[ChatMessage] {
+        &self.conversation_history
+    }
+
+    /// Match conversation against regex patterns and return captured groups
+    /// 
+    /// # Arguments
+    /// * `history_patterns` - Patterns to match against conversation history messages
+    /// * `current_pattern` - Pattern to match against current user message  
+    /// 
+    /// # Returns
+    /// - `Ok(Some(captures))` if all patterns match, where captures contains all named groups (?P<name>...)
+    /// - `Ok(None)` if patterns are valid but don't match the conversation
+    /// - `Err(...)` if regex compilation fails or other internal errors occur
+    /// 
+    /// # Example
+    /// ```ignore
+    /// let captures = ctx.match_conversation(
+    ///     &["assistant said (?P<previous>.+)", "user.*(?P<topic>\\w+)"],
+    ///     "tell me about (?P<query>.+)"
+    /// )?;  // Propagate regex compilation errors
+    /// 
+    /// if let Some(caps) = captures {
+    ///     let query = caps.get("query").unwrap();
+    ///     // Use captured values...
+    /// }
+    /// ```
+    pub fn match_conversation(&self, history_patterns: &[&str], current_pattern: &str) -> Result<Option<ConversationMatches>> {
+        let mut all_captures = HashMap::new();
+
+        // Compile current message pattern
+        let current_regex = Regex::new(current_pattern)
+            .map_err(|e| eyre::eyre!("Failed to compile current message pattern '{}': {}", current_pattern, e))?;
+        
+        // Match against current user message
+        if let Some(caps) = current_regex.captures(&self.current_user_message) {
+            // Extract named captures from current message
+            for name in current_regex.capture_names().flatten() {
+                if let Some(m) = caps.name(name) {
+                    all_captures.insert(name.to_string(), m.as_str().to_string());
+                }
+            }
+        } else {
+            return Ok(None); // Current message doesn't match
+        }
+
+        // Match history patterns against conversation history
+        // We need to find a subsequence in the history that matches all patterns
+        if history_patterns.is_empty() {
+            return Ok(Some(all_captures));
+        }
+
+        // Compile all history patterns
+        let history_regexes: Result<Vec<Regex>, regex::Error> = history_patterns
+            .iter()
+            .map(|p| Regex::new(p))
+            .collect();
+        let history_regexes = history_regexes
+            .map_err(|e| eyre::eyre!("Failed to compile history pattern: {}", e))?;
+
+        // Convert history to strings for matching
+        let history_strings: Vec<String> = self.conversation_history
+            .iter()
+            .map(|msg| match msg {
+                ChatMessage::UserInputMessage(user_msg) => format!("user: {}", user_msg.content),
+                ChatMessage::AssistantResponseMessage(assistant_msg) => format!("assistant: {}", assistant_msg.content),
+            })
+            .collect();
+
+        // Try to match all history patterns as a sequence
+        if self.match_history_sequence(&history_strings, &history_regexes, &mut all_captures) {
+            Ok(Some(all_captures))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Helper to match history patterns as a subsequence
+    fn match_history_sequence(&self, history: &[String], patterns: &[Regex], captures: &mut ConversationMatches) -> bool {
+        if patterns.is_empty() {
+            return true;
+        }
+
+        // Try to find starting positions where we can match the full sequence
+        for start_idx in 0..=(history.len().saturating_sub(patterns.len())) {
+            let mut temp_captures = HashMap::new();
+            let mut matched = true;
+
+            // Try to match each pattern in sequence starting from start_idx
+            for (pattern_idx, pattern) in patterns.iter().enumerate() {
+                let history_idx = start_idx + pattern_idx;
+                if history_idx >= history.len() {
+                    matched = false;
+                    break;
+                }
+
+                if let Some(caps) = pattern.captures(&history[history_idx]) {
+                    // Extract named captures
+                    for name in pattern.capture_names().flatten() {
+                        if let Some(m) = caps.name(name) {
+                            temp_captures.insert(name.to_string(), m.as_str().to_string());
+                        }
+                    }
+                } else {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if matched {
+                // Merge temp_captures into main captures
+                captures.extend(temp_captures);
+                return true;
+            }
+        }
+
+        false
+    }
+
+    /// Convenience method to match and respond in one call
+    /// 
+    /// # Returns
+    /// - `Ok(true)` if pattern matched and response was sent
+    /// - `Ok(false)` if pattern didn't match (no response sent)
+    /// - `Err(...)` if regex compilation failed or response channel closed
+    pub async fn match_and_respond(&mut self, history_patterns: &[&str], current_pattern: &str, response: &str) -> Result<bool> {
+        match self.match_conversation(history_patterns, current_pattern)? {
+            Some(_captures) => {
+                self.tx.send(Ok(ResponseEvent::AssistantText(response.to_string())))
+                    .await
+                    .map_err(|_| eyre::eyre!("Response channel closed"))?;
+                Ok(true)
+            }
+            None => Ok(false)
+        }
+    }
+
+    /// Convenience method to match and respond with capture substitution
+    /// Substitutes {capture_name} in the response with captured values
+    /// 
+    /// # Returns  
+    /// - `Ok(true)` if pattern matched and response was sent
+    /// - `Ok(false)` if pattern didn't match (no response sent)
+    /// - `Err(...)` if regex compilation failed or response channel closed
+    pub async fn match_and_respond_with_captures(&mut self, history_patterns: &[&str], current_pattern: &str, response_template: &str) -> Result<bool> {
+        match self.match_conversation(history_patterns, current_pattern)? {
+            Some(captures) => {
+                let mut response = response_template.to_string();
+                
+                // Replace {capture_name} with captured values
+                for (name, value) in &captures {
+                    response = response.replace(&format!("{{{}}}", name), value);
+                }
+                
+                self.tx.send(Ok(ResponseEvent::AssistantText(response)))
+                    .await
+                    .map_err(|_| eyre::eyre!("Response channel closed"))?;
+                Ok(true)
+            }
+            None => Ok(false)
+        }
+    }
+
+    /// Declarative pattern matching with automatic regex substitution
+    /// 
+    /// Tries each pattern tuple in order until one matches, then sends response with proper
+    /// regex substitution using `$name` syntax for captured groups.
+    /// 
+    /// # Arguments
+    /// * `patterns` - Array of (history_patterns, current_pattern, response_template) tuples
+    /// 
+    /// # Returns
+    /// - `Ok(())` if any pattern matched and response was sent
+    /// - `Err("unexpected input")` if no patterns matched
+    /// - `Err(...)` if regex compilation failed or response channel closed
+    /// 
+    /// # Example
+    /// ```ignore
+    /// ctx.try_patterns(&[
+    ///     (&[], r"(?i)hi,?\s+claude", "Hi, you! What's your name?"),
+    ///     (&[r"assistant.*What's your name"], r"(?i)(?:i'm|my name is|call me)\s+(?P<name>\w+)", "Hi $name, I'm Q!"),
+    ///     (&[], r".*", "I didn't understand that."),  // Fallback
+    /// ]).await?;
+    /// ```
+    pub async fn try_patterns(&mut self, patterns: &[(&[&str], &str, &str)]) -> Result<()> {
+        for (history_patterns, current_pattern, response_template) in patterns {
+            // Try to match this pattern
+            match self.match_conversation(history_patterns, current_pattern)? {
+                Some(captures) => {
+                    // Pattern matched! Do regex substitution on response template
+                    let response = self.substitute_captures(current_pattern, &captures, response_template)?;
+                    
+                    // Send the response
+                    self.tx.send(Ok(ResponseEvent::AssistantText(response)))
+                        .await
+                        .map_err(|_| eyre::eyre!("Response channel closed"))?;
+                    
+                    return Ok(()); // Success - matched and responded
+                }
+                None => {
+                    // This pattern didn't match, try the next one
+                    continue;
+                }
+            }
+        }
+        
+        // No patterns matched
+        Err(eyre::eyre!("unexpected input"))
+    }
+
+    /// Helper to perform regex substitution using captured groups
+    /// Uses proper regex substitution with $name syntax
+    fn substitute_captures(&self, pattern: &str, captures: &ConversationMatches, template: &str) -> Result<String> {
+        // Create a regex to re-capture the current message for proper substitution
+        let regex = Regex::new(pattern)
+            .map_err(|e| eyre::eyre!("Failed to recompile pattern for substitution '{}': {}", pattern, e))?;
+        
+        if let Some(caps) = regex.captures(&self.current_user_message) {
+            // Use regex's built-in substitution which handles $name syntax properly
+            let mut result = String::new();
+            caps.expand(template, &mut result);
+            Ok(result)
+        } else {
+            // Fallback to manual substitution if regex doesn't match current message
+            // This handles cases where captures came from history patterns
+            let mut result = template.to_string();
+            for (name, value) in captures {
+                result = result.replace(&format!("${}", name), value);
+                result = result.replace(&format!("${{{}}}", name), value); // Also support ${name} syntax
+            }
+            Ok(result)
+        }
     }
 }
 
-/// Indicates a "turn" of the conversation. A turn begins with a message from the user.
-/// The LLM can send some number of messages back during the turn.
-/// The turn ends when this struct is dropped. At that point, the user should response.
-pub struct MockLLMContextTurn<'c> {
-    user_message: String,
-    cx: &'c mut MockLLMContext,
-}
-
-impl MockLLMContextTurn<'_> {
-    /// The message the user wrote
+impl MockTurn {
+    /// Get the user's message content
     pub fn user_message(&self) -> &str {
         &self.user_message
     }
 
-    /// Send a text response back to the user via channel
-    pub async fn respond_to_user(&mut self, text: impl ToString) -> eyre::Result<()> {
-        let text = text.to_string();
-        tracing::debug!(actor="mock_llm_context", event="respond_to_user", text_len=text.len());
-        Ok(self.cx.llm_response_tx.send(ChatResponseStream::AssistantResponseEvent {
-            content: text,
-        }.into())?)
+    /// Send a text response back to the user
+    pub async fn respond_to_user(&mut self, text: &str) -> Result<()> {
+        self.tx.send(Ok(ResponseEvent::AssistantText(text.to_string())))
+            .await
+            .map_err(|_| eyre::eyre!("Response channel closed"))?;
+        Ok(())
     }
 
-    /// Send a tool call via channel
-    pub async fn call_tool(&mut self, tool_use_id: String, name: String, args: Option<Value>, stop: Option<bool>) -> eyre::Result<()> {
-        tracing::debug!(actor="mock_llm_context", event="call_tool", %tool_use_id, %name, has_args=args.is_some(), ?stop);
-        let input = args.map(|v| v.to_string());
+    /// Send a tool use start event 
+    pub async fn tool_use_start(&mut self, name: &str) -> Result<()> {
+        self.tx.send(Ok(ResponseEvent::ToolUseStart { name: name.to_string() }))
+            .await
+            .map_err(|_| eyre::eyre!("Response channel closed"))?;
+        Ok(())
+    }
+
+    /// Send a tool use event with arguments
+    pub async fn tool_use(&mut self, tool_use: AssistantToolUse) -> Result<()> {
+        self.tx.send(Ok(ResponseEvent::ToolUse(tool_use)))
+            .await
+            .map_err(|_| eyre::eyre!("Response channel closed"))?;
+        Ok(())
+    }
+}
+
+
+/// Trait for creating mock LLM instances - called once per turn
+pub trait MockLLM: Send + Sync + std::fmt::Debug {
+    fn spawn_mock_llm(&self, context: MockLLMContext) -> MockLLMHandle;
+}
+
+/// Concrete implementation that wraps a closure for per-turn mock execution
+pub struct MockLLMInstance<F> 
+where 
+    F: Fn(MockLLMContext) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+{
+    closure: F,
+}
+
+impl<F> std::fmt::Debug for MockLLMInstance<F> 
+where 
+    F: Fn(MockLLMContext) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MockLLMInstance")
+            .field("closure", &"<closure>")
+            .finish()
+    }
+}
+
+impl<F> MockLLMInstance<F>
+where 
+    F: Fn(MockLLMContext) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+{
+    pub fn new(closure: F) -> Self {
+        Self { closure }
+    }
+}
+
+impl<F> MockLLM for MockLLMInstance<F>
+where 
+    F: Fn(MockLLMContext) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static,
+{
+    fn spawn_mock_llm(&self, context: MockLLMContext) -> MockLLMHandle {
+        // Create a fresh channel for this mock turn
+        // The mock script will send ResponseEvents via the context's tx
+        // The consumer will receive them via mock_rx
+        let (mock_tx, mock_rx) = mpsc::channel(32);
+        let mock_tx_clone = mock_tx.clone();
         
-        Ok(self.cx.llm_response_tx.send(ChatResponseStream::ToolUseEvent {
-            tool_use_id,
-            name,
-            input,
-            stop,
-        }.into())?)
+        // Create context with the provided tx channel  
+        let mock_context = MockLLMContext {
+            conversation_history: context.conversation_history,
+            current_user_message: context.current_user_message,
+            tx: mock_tx,
+        };
+        
+        let future = (self.closure)(mock_context);
+        tokio::spawn(async move {
+            match future.await {
+                Ok(()) => {
+                    // Send EndStream on successful completion
+                    let message = AssistantMessage::Response { 
+                        message_id: None, 
+                        content: String::new() 
+                    };
+                    let request_metadata = RequestMetadata::default();
+                    let _ = mock_tx_clone.send(Ok(ResponseEvent::EndStream { 
+                        message,
+                        request_metadata,
+                    })).await;
+                }
+                Err(e) => {
+                    // Send error on failure
+                    let _ = mock_tx_clone.send(Err(RecvError::from(e))).await;
+                }
+            }
+        });
+        
+        MockLLMHandle { rx: mock_rx }
     }
 }
 
-impl Drop for MockLLMContextTurn<'_> {
-    fn drop(&mut self) {
-        tracing::debug!(actor="mock_llm_context", event="turn_ends");
-        let _ = self.cx.llm_response_tx.send(ChatResponseStreamOrEndTurn::EndTurn);
+/// Helper function to create a mock LLM instance from a closure - provides the clean API for tests
+pub fn spawn_mock_llm<F, Fut>(closure: F) -> MockLLMInstance<impl Fn(MockLLMContext) -> Pin<Box<dyn Future<Output = Result<()>> + Send>> + Send + Sync + 'static>
+where
+    F: Fn(MockLLMContext) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Result<()>> + Send + 'static,
+{
+    MockLLMInstance::new(move |ctx| Box::pin(closure(ctx)))
+}
+
+// Error type to match existing RecvError from parser
+#[derive(Debug)]
+pub struct RecvError(eyre::Error);
+
+impl From<eyre::Error> for RecvError {
+    fn from(e: eyre::Error) -> Self {
+        RecvError(e)
     }
 }
 
-impl From<ChatResponseStream> for ChatResponseStreamOrEndTurn {
-    fn from(value: ChatResponseStream) -> Self {
-        ChatResponseStreamOrEndTurn::Message(value)
+impl std::fmt::Display for RecvError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
     }
 }
+
+impl std::error::Error for RecvError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        self.0.source()
+    }
+}
+
+// Compatibility alias for existing code during migration
+pub type MockConversationState = MockLLMContext;
