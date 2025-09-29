@@ -100,8 +100,7 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
-// This applies for both mcp server and tool name since in the end the tool name as seen by the
-// model is just {server_name}{NAMESPACE_DELIMITER}{tool_name}
+// This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -878,7 +877,7 @@ impl ToolManager {
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),
-            // Note that this name is namespaced with server_name{DELIMITER}tool_name
+            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
@@ -1073,7 +1072,14 @@ impl ToolManager {
                             },
                         }
                     } else {
-                        bundles.first().ok_or(GetPromptError::MissingPromptInfo)?
+                        // Single bundle case - check if server name matches if specified
+                        let bundle = bundles.first().ok_or(GetPromptError::MissingPromptInfo)?;
+                        if let Some(sn) = sn {
+                            if bundle.server_name != *sn {
+                                return Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name)));
+                            }
+                        }
+                        bundle
                     };
 
                     let server_name = &bundle.server_name;
@@ -1097,13 +1103,17 @@ impl ToolManager {
                         None
                     };
 
-                    let params = GetPromptRequestParam { name, arguments };
+                    let params = GetPromptRequestParam {
+                        name: prompt_name.clone(),
+                        arguments,
+                    };
                     let running_service = client.get_running_service().await?;
                     let resp = running_service.get_prompt(params).await?;
 
                     Ok(resp)
                 },
-                (None, _) => Err(GetPromptError::PromptNotFound(prompt_name)),
+                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name))),
+                (None, None) => Err(GetPromptError::PromptNotFound(prompt_name)),
             }
         } else {
             Err(GetPromptError::MissingChannel)
@@ -1216,6 +1226,7 @@ fn spawn_display_task(
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_oauth_message(&name, &mut output)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             },
                         },
                         Err(_e) => {
@@ -2078,5 +2089,80 @@ mod tests {
         let with_delim = format!("a{}b{}c", NAMESPACE_DELIMITER, NAMESPACE_DELIMITER);
         let sanitized = sanitize_name(with_delim, &regex, &mut hasher);
         assert_eq!(sanitized, "abc");
+    }
+
+    #[test]
+    fn test_server_prompt_name_parsing() {
+        // Test parsing server/prompt format
+        let name = "server1/my_prompt";
+        let (server_name, prompt_name) = match name.split_once('/') {
+            None => (None::<String>, Some(name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+        assert_eq!(server_name, Some("server1".to_string()));
+        assert_eq!(prompt_name, Some("my_prompt".to_string()));
+
+        // Test parsing prompt name only
+        let name = "my_prompt";
+        let (server_name, prompt_name) = match name.split_once('/') {
+            None => (None::<String>, Some(name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+        assert_eq!(server_name, None);
+        assert_eq!(prompt_name, Some("my_prompt".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_bundle_server_matching() {
+        // Create mock prompt bundles
+        let prompt = rmcp::model::Prompt {
+            name: "test_prompt".to_string(),
+            description: Some("Test description".to_string()),
+            title: None,
+            icons: None,
+            arguments: None,
+        };
+
+        let bundle1 = PromptBundle {
+            server_name: "server1".to_string(),
+            prompt_get: prompt.clone(),
+        };
+
+        let bundle2 = PromptBundle {
+            server_name: "server2".to_string(),
+            prompt_get: prompt,
+        };
+
+        let bundles = [&bundle1, &bundle2];
+
+        // Test finding specific server
+        let found = bundles.iter().find(|b| b.server_name == "server1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().server_name, "server1");
+
+        // Test server not found
+        let not_found = bundles.iter().find(|b| b.server_name == "server3");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_prompt_request_param_name_usage() {
+        // Test that we use prompt_name (not full name with server) for MCP calls
+        let full_name = "example-server/test-prompt";
+        let (server_name, prompt_name) = match full_name.split_once('/') {
+            None => (None::<String>, Some(full_name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+
+        let prompt_name = prompt_name.unwrap();
+
+        // This is what should be passed to MCP server
+        let params = GetPromptRequestParam {
+            name: prompt_name.clone(),
+            arguments: None,
+        };
+
+        assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"
+        assert_eq!(server_name, Some("example-server".to_string()));
     }
 }

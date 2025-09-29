@@ -41,6 +41,8 @@ pub enum Setting {
     KnowledgeIndexType,
     #[strum(message = "Key binding for fuzzy search command (single character)")]
     SkimCommandKey,
+    #[strum(message = "Key binding for autocompletion hint acceptance (single character)")]
+    AutocompletionKey,
     #[strum(message = "Enable tangent mode feature (boolean)")]
     EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
@@ -66,6 +68,8 @@ pub enum Setting {
     McpNoInteractiveTimeout,
     #[strum(message = "Track previously loaded MCP servers (boolean)")]
     McpLoadedBefore,
+    #[strum(message = "Show context usage percentage in prompt (boolean)")]
+    EnabledContextUsageIndicator,
     #[strum(message = "Default AI model for conversations (string)")]
     ChatDefaultModel,
     #[strum(message = "Disable markdown formatting in chat (boolean)")]
@@ -80,6 +84,8 @@ pub enum Setting {
     EnabledTodoList,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Enable the checkpoint feature (boolean)")]
+    EnabledCheckpoint,
 }
 
 impl AsRef<str> for Setting {
@@ -97,6 +103,7 @@ impl AsRef<str> for Setting {
             Self::KnowledgeChunkOverlap => "knowledge.chunkOverlap",
             Self::KnowledgeIndexType => "knowledge.indexType",
             Self::SkimCommandKey => "chat.skimCommandKey",
+            Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
 
@@ -117,6 +124,8 @@ impl AsRef<str> for Setting {
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::EnabledCheckpoint => "chat.enableCheckpoint",
+            Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
         }
     }
 }
@@ -144,6 +153,7 @@ impl TryFrom<&str> for Setting {
             "knowledge.chunkOverlap" => Ok(Self::KnowledgeChunkOverlap),
             "knowledge.indexType" => Ok(Self::KnowledgeIndexType),
             "chat.skimCommandKey" => Ok(Self::SkimCommandKey),
+            "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
 
@@ -163,6 +173,8 @@ impl TryFrom<&str> for Setting {
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
+            "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
+            "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -299,6 +311,7 @@ mod test {
             .set(Setting::ChatDisableMarkdownRendering, false)
             .await
             .unwrap();
+        settings.set(Setting::EnabledCheckpoint, true).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
@@ -322,6 +335,7 @@ mod test {
             settings.get(Setting::ChatDisableMarkdownRendering),
             Some(&Value::Bool(false))
         );
+        assert_eq!(settings.get(Setting::EnabledCheckpoint), Some(&Value::Bool(true)));
 
         settings.remove(Setting::TelemetryEnabled).await.unwrap();
         settings.remove(Setting::OldClientId).await.unwrap();
@@ -329,6 +343,7 @@ mod test {
         settings.remove(Setting::KnowledgeIndexType).await.unwrap();
         settings.remove(Setting::McpLoadedBefore).await.unwrap();
         settings.remove(Setting::ChatDisableMarkdownRendering).await.unwrap();
+        settings.remove(Setting::EnabledCheckpoint).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), None);
         assert_eq!(settings.get(Setting::OldClientId), None);
@@ -336,5 +351,6 @@ mod test {
         assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
         assert_eq!(settings.get(Setting::McpLoadedBefore), None);
         assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
+        assert_eq!(settings.get(Setting::EnabledCheckpoint), None);
     }
 }

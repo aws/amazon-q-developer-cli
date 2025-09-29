@@ -1,4 +1,5 @@
 pub mod changelog;
+pub mod checkpoint;
 pub mod clear;
 pub mod compact;
 pub mod context;
@@ -11,6 +12,7 @@ pub mod model;
 pub mod persist;
 pub mod profile;
 pub mod prompts;
+pub mod reply;
 pub mod subscribe;
 pub mod tangent;
 pub mod todos;
@@ -31,10 +33,12 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use reply::ReplyArgs;
 use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
+use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
@@ -71,6 +75,8 @@ pub enum SlashCommand {
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
     PromptEditor(EditorArgs),
+    /// Open $EDITOR with the most recent assistant message quoted for reply
+    Reply(ReplyArgs),
     /// Summarize the conversation to free up context space
     Compact(CompactArgs),
     /// View tools and permissions
@@ -102,6 +108,8 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
+    #[command(subcommand)]
+    Checkpoint(CheckpointSubcommand),
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
@@ -139,6 +147,7 @@ impl SlashCommand {
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
+            Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
             Self::Tools(args) => args.execute(session).await,
             Self::Issue(args) => {
@@ -151,7 +160,7 @@ impl SlashCommand {
                 })
             },
             Self::Changelog(args) => args.execute(session).await,
-            Self::Prompts(args) => args.execute(session).await,
+            Self::Prompts(args) => args.execute(os, session).await,
             Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
             Self::Mcp(args) => args.execute(session).await,
@@ -169,6 +178,7 @@ impl SlashCommand {
             //         skip_printing_tools: true,
             //     })
             // },
+            Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
         }
     }
@@ -182,6 +192,7 @@ impl SlashCommand {
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
             Self::PromptEditor(_) => "editor",
+            Self::Reply(_) => "reply",
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
@@ -198,6 +209,7 @@ impl SlashCommand {
                 PersistSubcommand::Save { .. } => "save",
                 PersistSubcommand::Load { .. } => "load",
             },
+            Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
         }
     }

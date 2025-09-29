@@ -37,6 +37,7 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::cli::agent::is_mcp_tool_ref;
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
@@ -44,6 +45,51 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::pattern_matching::matches_any_pattern;
+
+/// Hook execution result: (exit_code, output)
+/// Output is stdout if exit_code is 0, stderr otherwise.
+pub type HookOutput = (i32, String);
+
+/// Check if a hook matches a tool name based on its matcher pattern
+fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
+    match &hook.matcher {
+        None => true, // No matcher means the hook runs for all tools
+        Some(pattern) => {
+            match pattern.as_str() {
+                "*" => true,                               // Wildcard matches all tools
+                "@builtin" => !is_mcp_tool_ref(tool_name), // Built-in tools are not MCP tools
+                _ => {
+                    // If tool_name is MCP, check server pattern first
+                    if is_mcp_tool_ref(tool_name) {
+                        if let Some(server_name) = tool_name
+                            .strip_prefix('@')
+                            .and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next())
+                        {
+                            let server_pattern = format!("@{}", server_name);
+                            if pattern == &server_pattern {
+                                return true;
+                            }
+                        }
+                    }
+
+                    // Use matches_any_pattern for both MCP and built-in tools
+                    let mut patterns = std::collections::HashSet::new();
+                    patterns.insert(pattern.clone());
+                    matches_any_pattern(&patterns, tool_name)
+                },
+            }
+        },
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ToolContext {
+    pub tool_name: String,
+    pub tool_input: serde_json::Value,
+    pub tool_response: Option<serde_json::Value>,
+}
 
 #[derive(Debug, Clone)]
 pub struct CachedHook {
@@ -74,22 +120,32 @@ impl HookExecutor {
         &mut self,
         hooks: HashMap<HookTrigger, Vec<Hook>>,
         output: &mut impl Write,
+        cwd: &str,
         prompt: Option<&str>,
-    ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
+        tool_context: Option<ToolContext>,
+    ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
         for hook in hooks
             .into_iter()
             .flat_map(|(trigger, hooks)| hooks.into_iter().map(move |hook| (trigger, hook)))
         {
+            // Filter hooks by tool matcher
+            if let Some(tool_ctx) = &tool_context {
+                if !hook_matches_tool(&hook.1, &tool_ctx.tool_name) {
+                    continue; // Skip this hook - doesn't match tool
+                }
+            }
+
             if let Some(cache) = self.get_cache(&hook) {
-                cached.push((hook.clone(), cache.clone()));
+                // Note: we only cache successful hook run. hence always using 0 as exit code for cached hook
+                cached.push((hook.clone(), (0, cache)));
                 continue;
             }
-            futures.push(self.run_hook(hook, prompt));
+            futures.push(self.run_hook(hook, cwd, prompt, tool_context.clone()));
         }
 
-        let mut complete = 0;
+        let mut complete = 0; // number of hooks that are run successfully with exit code 0
         let total = futures.len();
         let mut spinner = None;
         let spinner_text = |complete: usize, total: usize| {
@@ -138,9 +194,29 @@ impl HookExecutor {
             }
 
             // Process results regardless of output enabled
-            if let Ok(output) = result {
-                complete += 1;
-                results.push((hook, output));
+            if let Ok((exit_code, hook_output)) = &result {
+                // Print warning if exit code is not 0
+                if *exit_code != 0 {
+                    queue!(
+                        output,
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print("✗ "),
+                        style::ResetColor,
+                        style::Print(format!("{} \"", hook.0)),
+                        style::Print(&hook.1.command),
+                        style::Print("\""),
+                        style::SetForegroundColor(style::Color::Red),
+                        style::Print(format!(
+                            " failed with exit code: {}, stderr: {})\n",
+                            exit_code,
+                            hook_output.trim_end()
+                        )),
+                        style::ResetColor,
+                    )?;
+                } else {
+                    complete += 1;
+                }
+                results.push((hook, result.unwrap()));
             }
 
             // Display ending summary or add a new spinner
@@ -167,12 +243,17 @@ impl HookExecutor {
         drop(futures);
 
         // Fill cache with executed results, skipping what was already from cache
-        for ((trigger, hook), output) in &results {
+        for ((trigger, hook), (exit_code, output)) in &results {
+            if *exit_code != 0 {
+                continue; // Only cache successful hooks
+            }
             self.cache.insert((*trigger, hook.clone()), CachedHook {
                 output: output.clone(),
                 expiry: match trigger {
                     HookTrigger::AgentSpawn => None,
                     HookTrigger::UserPromptSubmit => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                    HookTrigger::PreToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                    HookTrigger::PostToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                 },
             });
         }
@@ -185,8 +266,10 @@ impl HookExecutor {
     async fn run_hook(
         &self,
         hook: (HookTrigger, Hook),
+        cwd: &str,
         prompt: Option<&str>,
-    ) -> ((HookTrigger, Hook), Result<String>, Duration) {
+        tool_context: Option<ToolContext>,
+    ) -> ((HookTrigger, Hook), Result<HookOutput>, Duration) {
         let start_time = Instant::now();
 
         let command = &hook.1.command;
@@ -213,33 +296,61 @@ impl HookExecutor {
 
         let timeout = Duration::from_millis(hook.1.timeout_ms);
 
-        // Set USER_PROMPT environment variable if provided
+        // Generate hook command input in JSON format
+        let mut hook_input = serde_json::json!({
+            "hook_event_name": hook.0.to_string(),
+            "cwd": cwd
+        });
+
+        // Set USER_PROMPT environment variable and add to JSON input if provided
         if let Some(prompt) = prompt {
             // Sanitize the prompt to avoid issues with special characters
             let sanitized_prompt = sanitize_user_prompt(prompt);
             cmd.env("USER_PROMPT", sanitized_prompt);
+            hook_input["prompt"] = serde_json::Value::String(prompt.to_string());
         }
 
-        let command_future = cmd.output();
+        // ToolUse specific input
+        if let Some(tool_ctx) = tool_context {
+            hook_input["tool_name"] = serde_json::Value::String(tool_ctx.tool_name);
+            hook_input["tool_input"] = tool_ctx.tool_input;
+            if let Some(response) = tool_ctx.tool_response {
+                hook_input["tool_response"] = response;
+            }
+        }
+        let json_input = serde_json::to_string(&hook_input).unwrap_or_default();
+
+        // Build a future for hook command w/ the JSON input passed in through STDIN
+        let command_future = async move {
+            let mut child = cmd.spawn()?;
+            if let Some(stdin) = child.stdin.take() {
+                use tokio::io::AsyncWriteExt;
+                let mut stdin = stdin;
+                let _ = stdin.write_all(json_input.as_bytes()).await;
+                let _ = stdin.shutdown().await;
+            }
+            child.wait_with_output().await
+        };
 
         // Run with timeout
         let result = match tokio::time::timeout(timeout, command_future).await {
-            Ok(Ok(result)) => {
-                if result.status.success() {
-                    let stdout = result.stdout.to_str_lossy();
-                    let stdout = format!(
-                        "{}{}",
-                        truncate_safe(&stdout, hook.1.max_output_size),
-                        if stdout.len() > hook.1.max_output_size {
-                            " ... truncated"
-                        } else {
-                            ""
-                        }
-                    );
-                    Ok(stdout)
+            Ok(Ok(output)) => {
+                let exit_code = output.status.code().unwrap_or(-1);
+                let raw_output = if exit_code == 0 {
+                    output.stdout.to_str_lossy()
                 } else {
-                    Err(eyre!("command returned non-zero exit code: {}", result.status))
-                }
+                    output.stderr.to_str_lossy()
+                };
+                let formatted_output = format!(
+                    "{}{}",
+                    truncate_safe(&raw_output, hook.1.max_output_size),
+                    if raw_output.len() > hook.1.max_output_size {
+                        " ... truncated"
+                    } else {
+                        ""
+                    }
+                );
+                Ok((exit_code, formatted_output))
             },
             Ok(Err(err)) => Err(eyre!("failed to execute command: {}", err)),
             Err(_) => Err(eyre!("command timed out after {} ms", timeout.as_millis())),
@@ -328,5 +439,272 @@ impl HooksArgs {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use tempfile::TempDir;
+
+    use super::*;
+    use crate::cli::agent::hook::{
+        Hook,
+        HookTrigger,
+    };
+
+    #[test]
+    fn test_hook_matches_tool() {
+        let hook_no_matcher = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None,
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let fs_write_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_write".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let fs_wildcard_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_*".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let all_tools_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("*".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let builtin_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@builtin".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let git_server_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@git".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let git_status_hook = Hook {
+            command: "echo test".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("@git/status".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        // No matcher should match all tools
+        assert!(hook_matches_tool(&hook_no_matcher, "fs_write"));
+        assert!(hook_matches_tool(&hook_no_matcher, "execute_bash"));
+        assert!(hook_matches_tool(&hook_no_matcher, "@git/status"));
+
+        // Exact matcher should only match exact tool
+        assert!(hook_matches_tool(&fs_write_hook, "fs_write"));
+        assert!(!hook_matches_tool(&fs_write_hook, "fs_read"));
+
+        // Wildcard matcher should match pattern
+        assert!(hook_matches_tool(&fs_wildcard_hook, "fs_write"));
+        assert!(hook_matches_tool(&fs_wildcard_hook, "fs_read"));
+        assert!(!hook_matches_tool(&fs_wildcard_hook, "execute_bash"));
+
+        // * should match all tools
+        assert!(hook_matches_tool(&all_tools_hook, "fs_write"));
+        assert!(hook_matches_tool(&all_tools_hook, "execute_bash"));
+        assert!(hook_matches_tool(&all_tools_hook, "@git/status"));
+
+        // @builtin should match built-in tools only
+        assert!(hook_matches_tool(&builtin_hook, "fs_write"));
+        assert!(hook_matches_tool(&builtin_hook, "execute_bash"));
+        assert!(!hook_matches_tool(&builtin_hook, "@git/status"));
+
+        // @git should match all git server tools
+        assert!(hook_matches_tool(&git_server_hook, "@git/status"));
+        assert!(!hook_matches_tool(&git_server_hook, "@other/tool"));
+        assert!(!hook_matches_tool(&git_server_hook, "fs_write"));
+
+        // @git/status should match exact MCP tool
+        assert!(hook_matches_tool(&git_status_hook, "@git/status"));
+        assert!(!hook_matches_tool(&git_status_hook, "@git/commit"));
+        assert!(!hook_matches_tool(&git_status_hook, "fs_write"));
+    }
+
+    #[tokio::test]
+    async fn test_hook_executor_with_tool_context() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Create temp directory and file
+        let temp_dir = TempDir::new().unwrap();
+        let test_file = temp_dir.path().join("hook_output.json");
+        let test_file_str = test_file.to_string_lossy();
+
+        // Create a simple hook that writes JSON input to a file
+        #[cfg(unix)]
+        let command = format!("cat > {}", test_file_str);
+        #[cfg(windows)]
+        let command = format!(
+            "powershell -Command \"$input | Out-File -FilePath '{}'\"",
+            test_file_str
+        );
+
+        let hook = Hook {
+            command,
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_write".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let mut hooks = HashMap::new();
+        hooks.insert(HookTrigger::PreToolUse, vec![hook]);
+
+        let tool_context = ToolContext {
+            tool_name: "fs_write".to_string(),
+            tool_input: serde_json::json!({
+                "command": "create",
+                "path": "/test/file.py"
+            }),
+            tool_response: None,
+        };
+
+        // Run the hook
+        let result = executor
+            .run_hooks(hooks, &mut output, ".", None, Some(tool_context))
+            .await;
+
+        assert!(result.is_ok());
+
+        // Verify the hook wrote the JSON input to the file
+        if let Ok(content) = std::fs::read_to_string(&test_file) {
+            let json: serde_json::Value = serde_json::from_str(&content).unwrap();
+            assert_eq!(json["hook_event_name"], "preToolUse");
+            assert_eq!(json["tool_name"], "fs_write");
+            assert_eq!(json["tool_input"]["command"], "create");
+            assert_eq!(json["cwd"], ".");
+        }
+        // TempDir automatically cleans up when dropped
+    }
+
+    #[tokio::test]
+    async fn test_hook_filtering_no_match() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Hook that matches execute_bash (should NOT run for fs_write tool call)
+        let execute_bash_hook = Hook {
+            command: "echo 'should not run'".to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("execute_bash".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let mut hooks = HashMap::new();
+        hooks.insert(HookTrigger::PostToolUse, vec![execute_bash_hook]);
+
+        let tool_context = ToolContext {
+            tool_name: "fs_write".to_string(),
+            tool_input: serde_json::json!({"command": "create"}),
+            tool_response: Some(serde_json::json!({"success": true})),
+        };
+
+        // Run the hooks
+        let result = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd - using current directory for now
+                None, // prompt - no user prompt for this test
+                Some(tool_context),
+            )
+            .await;
+
+        assert!(result.is_ok());
+        let hook_results = result.unwrap();
+
+        // Should run 0 hooks because matcher doesn't match tool_name
+        assert_eq!(hook_results.len(), 0);
+
+        // Output should be empty since no hooks ran
+        assert!(output.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_hook_exit_code_2() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Create a hook that exits with code 2 and outputs to stderr
+        #[cfg(unix)]
+        let command = "echo 'Tool execution blocked by security policy' >&2; exit 2";
+        #[cfg(windows)]
+        let command = "echo Tool execution blocked by security policy 1>&2 & exit /b 2";
+
+        let hook = Hook {
+            command: command.to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: Some("fs_write".to_string()),
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::PreToolUse, vec![hook])]);
+
+        let tool_context = ToolContext {
+            tool_name: "fs_write".to_string(),
+            tool_input: serde_json::json!({
+                "command": "create",
+                "path": "/sensitive/file.py"
+            }),
+            tool_response: None,
+        };
+
+        let results = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd
+                None, // prompt
+                Some(tool_context),
+            )
+            .await
+            .unwrap();
+
+        // Should have one result
+        assert_eq!(results.len(), 1);
+
+        let ((trigger, _hook), (exit_code, hook_output)) = &results[0];
+        assert_eq!(*trigger, HookTrigger::PreToolUse);
+        assert_eq!(*exit_code, 2);
+        assert!(hook_output.contains("Tool execution blocked by security policy"));
     }
 }
