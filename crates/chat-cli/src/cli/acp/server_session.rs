@@ -278,8 +278,12 @@ impl AcpServerSessionHandle {
         })
     }
 
-    async fn handle_cancel(_args: acp::CancelNotification) -> Result<(), acp::Error> {
-        // TODO: Cancel ongoing operations
+    async fn handle_cancel(args: acp::CancelNotification) -> Result<(), acp::Error> {
+        // When no prompt is active, cancellation is a no-op but we log it
+        tracing::debug!("Cancel request received outside prompt processing: {:?}", args);
+        
+        // According to ACP spec, cancel is always successful even if there's nothing to cancel
+        // The real cancellation logic is handled in the prompt processing loop above
         Ok(())
     }
 

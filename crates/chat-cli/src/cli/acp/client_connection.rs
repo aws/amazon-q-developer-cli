@@ -125,6 +125,7 @@ pub(super) enum ClientConnectionMethod {
     // to the other notifications that are routed to that same session.
     Prompt(acp::PromptRequest),
     
+    #[allow(dead_code)] // Will be used when client-side cancellation is implemented
     Cancel(
         acp::CancelNotification,
         oneshot::Sender<Result<(), acp::Error>>,
@@ -228,6 +229,7 @@ impl AcpClientConnectionHandle {
         Ok(rx.await??)
     }
 
+    #[allow(dead_code)] // Will be used when client-side cancellation is implemented
     pub async fn cancel(&self, args: acp::CancelNotification) -> Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.client_tx
