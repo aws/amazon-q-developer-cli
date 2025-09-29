@@ -2113,6 +2113,8 @@ mod tests {
         let prompt = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
             description: Some("Test description".to_string()),
+            title: None,
+            icons: None,
             arguments: None,
         };
 
@@ -2126,7 +2128,7 @@ mod tests {
             prompt_get: prompt,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test finding specific server
         let found = bundles.iter().find(|b| b.server_name == "server1");
