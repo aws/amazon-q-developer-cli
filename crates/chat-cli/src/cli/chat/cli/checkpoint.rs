@@ -107,7 +107,7 @@ impl CheckpointSubcommand {
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(
-                    "⚠️ Checkpoint is disabled while in tangent mode. Disable tangent mode with: q settings -d chat.enableTangentMode.\n\n"
+                    "⚠️ Checkpoint is disabled while in tangent mode. Please exit tangent mode if you want to use checkpoint.\n\n"
                 ),
                 style::SetForegroundColor(Color::Reset),
             )?;

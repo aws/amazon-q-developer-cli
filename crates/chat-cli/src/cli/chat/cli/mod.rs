@@ -108,7 +108,11 @@ pub enum SlashCommand {
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
-    #[command(subcommand)]
+    #[command(
+        about = "(Beta) Manage workspace checkpoints (init, list, restore, expand, diff, clean)\nExperimental features may be changed or removed at any time",
+        hide = true,
+        subcommand
+    )]
     Checkpoint(CheckpointSubcommand),
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
