@@ -253,6 +253,10 @@ impl ConversationState {
         self.transcript = checkpoint.main_transcript;
         self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
+        if let Some(manager) = self.checkpoint_manager.as_mut() {
+            manager.message_locked = false;
+            manager.pending_user_message = None;
+        }
     }
 
     /// Enter tangent mode - creates checkpoint of current state
