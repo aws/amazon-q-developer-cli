@@ -50,7 +50,7 @@
       "default": null
     },
     "prompt": {
-      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.",
+      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.\nSupports both inline text and file:// URIs to reference external files.\nExample: \"file://./my-prompt.md\" (relative to agent config file)",
       "type": [
         "string",
         "null"
