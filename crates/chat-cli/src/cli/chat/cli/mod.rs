@@ -109,7 +109,7 @@ pub enum SlashCommand {
     // #[command(flatten)]
     // Root(RootSubcommand),
     #[command(
-        about = "(Beta) Manage workspace checkpoints (list, expand, diff, restore)\n Experimental features may be changed or removed at any time",
+        about = "(Beta) Manage workspace checkpoints (init, list, restore, expand, diff, clean)\nExperimental features may be changed or removed at any time",
         hide = true,
         subcommand
     )]

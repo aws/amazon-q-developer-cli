@@ -76,8 +76,6 @@ use crate::cli::agent::hook::{
 use crate::cli::chat::ChatError;
 use crate::cli::chat::checkpoint::{
     Checkpoint,
-    Checkpoint,
-    CheckpointManager,
     CheckpointManager,
 };
 use crate::cli::chat::cli::model::{

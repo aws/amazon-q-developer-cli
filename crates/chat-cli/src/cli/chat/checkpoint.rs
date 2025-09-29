@@ -36,6 +36,9 @@ pub struct CheckpointManager {
     /// Path to the shadow (bare) git repository
     pub shadow_repo_path: PathBuf,
 
+    /// Path to current working directory
+    pub work_tree_path: PathBuf,
+
     /// All checkpoints in chronological order
     pub checkpoints: Vec<Checkpoint>,
 
@@ -103,14 +106,17 @@ impl CheckpointManager {
         let path = path.as_ref();
         os.fs.create_dir_all(path).await?;
 
+        let work_tree_path =
+            std::env::current_dir().map_err(|e| eyre!("Failed to get current working directory: {}", e))?;
+
         // Initialize bare repository
-        run_git(path, false, &["init", "--bare", &path.to_string_lossy()])?;
+        run_git(path, None, &["init", "--bare", &path.to_string_lossy()])?;
 
         // Configure git
         configure_git(&path.to_string_lossy())?;
 
         // Create initial checkpoint
-        stage_commit_tag(&path.to_string_lossy(), "Initial state", "0")?;
+        stage_commit_tag(&path.to_string_lossy(), &work_tree_path, "Initial state", "0")?;
 
         let initial_checkpoint = Checkpoint {
             tag: "0".to_string(),
@@ -126,6 +132,7 @@ impl CheckpointManager {
 
         Ok(Self {
             shadow_repo_path: path.to_path_buf(),
+            work_tree_path,
             checkpoints: vec![initial_checkpoint],
             tag_index,
             current_turn: 0,
@@ -146,7 +153,12 @@ impl CheckpointManager {
         tool_name: Option<String>,
     ) -> Result<()> {
         // Stage, commit and tag
-        stage_commit_tag(&self.shadow_repo_path.to_string_lossy(), description, tag)?;
+        stage_commit_tag(
+            &self.shadow_repo_path.to_string_lossy(),
+            &self.work_tree_path,
+            description,
+            tag,
+        )?;
 
         // Record checkpoint metadata
         let checkpoint = Checkpoint {
@@ -175,7 +187,9 @@ impl CheckpointManager {
 
         if hard {
             // Hard: reset the whole work-tree to the tag
-            let output = run_git(&self.shadow_repo_path, true, &["reset", "--hard", tag])?;
+            let output = run_git(&self.shadow_repo_path, Some(&self.work_tree_path), &[
+                "reset", "--hard", tag,
+            ])?;
             if !output.status.success() {
                 bail!("Failed to restore: {}", String::from_utf8_lossy(&output.stderr));
             }
@@ -187,7 +201,9 @@ impl CheckpointManager {
                 return Ok(());
             }
             // Use checkout against work-tree
-            let output = run_git(&self.shadow_repo_path, true, &["checkout", tag, "--", "."])?;
+            let output = run_git(&self.shadow_repo_path, Some(&self.work_tree_path), &[
+                "checkout", tag, "--", ".",
+            ])?;
             if !output.status.success() {
                 bail!("Failed to restore: {}", String::from_utf8_lossy(&output.stderr));
             }
@@ -205,7 +221,7 @@ impl CheckpointManager {
         let out = run_git(
             &self.shadow_repo_path,
             // work_tree
-            false,
+            None,
             &["ls-tree", "-r", "--name-only", tag],
         )?;
         Ok(!out.stdout.is_empty())
@@ -223,7 +239,7 @@ impl CheckpointManager {
 
     /// Compute file statistics between two checkpoints
     pub fn compute_stats_between(&self, from: &str, to: &str) -> Result<FileStats> {
-        let output = run_git(&self.shadow_repo_path, false, &["diff", "--name-status", from, to])?;
+        let output = run_git(&self.shadow_repo_path, None, &["diff", "--name-status", from, to])?;
 
         let mut stats = FileStats::default();
         for line in String::from_utf8_lossy(&output.stdout).lines() {
@@ -246,7 +262,7 @@ impl CheckpointManager {
         let mut result = String::new();
 
         // Get file changes
-        let output = run_git(&self.shadow_repo_path, false, &["diff", "--name-status", from, to])?;
+        let output = run_git(&self.shadow_repo_path, None, &["diff", "--name-status", from, to])?;
 
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             if let Some((status, file)) = line.split_once('\t') {
@@ -261,7 +277,7 @@ impl CheckpointManager {
         }
 
         // Add statistics
-        let stat_output = run_git(&self.shadow_repo_path, false, &[
+        let stat_output = run_git(&self.shadow_repo_path, None, &[
             "diff",
             from,
             to,
@@ -279,7 +295,10 @@ impl CheckpointManager {
 
     /// Check for uncommitted changes
     pub fn has_changes(&self) -> Result<bool> {
-        let output = run_git(&self.shadow_repo_path, true, &["status", "--porcelain"])?;
+        let output = run_git(&self.shadow_repo_path, Some(&self.work_tree_path), &[
+            "status",
+            "--porcelain",
+        ])?;
         Ok(!output.stdout.is_empty())
     }
 
@@ -351,18 +370,18 @@ fn is_in_git_repo() -> bool {
 }
 
 fn configure_git(shadow_path: &str) -> Result<()> {
-    run_git(Path::new(shadow_path), false, &["config", "user.name", "Q"])?;
-    run_git(Path::new(shadow_path), false, &["config", "user.email", "qcli@local"])?;
-    run_git(Path::new(shadow_path), false, &["config", "core.preloadindex", "true"])?;
+    run_git(Path::new(shadow_path), None, &["config", "user.name", "Q"])?;
+    run_git(Path::new(shadow_path), None, &["config", "user.email", "qcli@local"])?;
+    run_git(Path::new(shadow_path), None, &["config", "core.preloadindex", "true"])?;
     Ok(())
 }
 
-fn stage_commit_tag(shadow_path: &str, message: &str, tag: &str) -> Result<()> {
+fn stage_commit_tag(shadow_path: &str, work_tree: &Path, message: &str, tag: &str) -> Result<()> {
     // Stage all changes
-    run_git(Path::new(shadow_path), true, &["add", "-A"])?;
+    run_git(Path::new(shadow_path), Some(work_tree), &["add", "-A"])?;
 
     // Commit
-    let output = run_git(Path::new(shadow_path), true, &[
+    let output = run_git(Path::new(shadow_path), Some(work_tree), &[
         "commit",
         "--allow-empty",
         "--no-verify",
@@ -375,7 +394,7 @@ fn stage_commit_tag(shadow_path: &str, message: &str, tag: &str) -> Result<()> {
     }
 
     // Tag
-    let output = run_git(Path::new(shadow_path), false, &["tag", tag])?;
+    let output = run_git(Path::new(shadow_path), None, &["tag", tag])?;
     if !output.status.success() {
         bail!("Git tag failed: {}", String::from_utf8_lossy(&output.stderr));
     }
@@ -383,12 +402,12 @@ fn stage_commit_tag(shadow_path: &str, message: &str, tag: &str) -> Result<()> {
     Ok(())
 }
 
-fn run_git(dir: &Path, with_work_tree: bool, args: &[&str]) -> Result<Output> {
+fn run_git(dir: &Path, work_tree: Option<&Path>, args: &[&str]) -> Result<Output> {
     let mut cmd = Command::new("git");
     cmd.arg(format!("--git-dir={}", dir.display()));
 
-    if with_work_tree {
-        cmd.arg("--work-tree=.");
+    if let Some(work_tree_path) = work_tree {
+        cmd.arg(format!("--work-tree={}", work_tree_path.display()));
     }
 
     cmd.args(args);
