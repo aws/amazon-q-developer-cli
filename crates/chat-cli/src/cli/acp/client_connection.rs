@@ -124,6 +124,11 @@ pub(super) enum ClientConnectionMethod {
     // This ensures that the prompt termination is ordered with respect
     // to the other notifications that are routed to that same session.
     Prompt(acp::PromptRequest),
+    
+    Cancel(
+        acp::CancelNotification,
+        oneshot::Sender<Result<(), acp::Error>>,
+    ),
 }
 
 impl AcpClientConnectionHandle {
@@ -195,6 +200,11 @@ impl AcpClientConnectionHandle {
                         tracing::debug!(actor="client_connection", event="sending response", ?session_id, ?response);
                         client_dispatch.client_callback(ClientCallback::PromptResponse(session_id, response));
                     },
+                    ClientConnectionMethod::Cancel(cancel_notification, sender) => {
+                        let response = client_conn.cancel(cancel_notification).await;
+                        tracing::debug!(actor="client_connection", event="sending response", ?response);
+                        ignore_error(sender.send(response));
+                    },
                 }
             }
         });
@@ -214,6 +224,14 @@ impl AcpClientConnectionHandle {
         let (tx, rx) = tokio::sync::oneshot::channel();
         self.client_tx
             .send(ClientConnectionMethod::NewSession(args, tx))
+            .await?;
+        Ok(rx.await??)
+    }
+
+    pub async fn cancel(&self, args: acp::CancelNotification) -> Result<()> {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        self.client_tx
+            .send(ClientConnectionMethod::Cancel(args, tx))
             .await?;
         Ok(rx.await??)
     }
