@@ -523,7 +523,9 @@ fn fallback<'a, 'b>(
         let fallback = any.parse_next(i)?;
         if let Some(width) = fallback.width() {
             queue_newline_or_advance(&mut o, state, width)?;
-            if fallback != ' ' || state.column != 1 {
+            // When markdown is disabled, preserve all characters including leading spaces
+            // to maintain proper indentation in code blocks
+            if state.markdown_disabled.unwrap_or(false) || fallback != ' ' || state.column != 1 {
                 queue(&mut o, style::Print(fallback))?;
             }
         }
@@ -827,6 +829,12 @@ mod tests {
         markdown_disabled_fallback,
         "+ % @ . ?",
         [style::Print("+ % @ . ?")],
+        true
+    );
+    validate!(
+        markdown_disabled_indentation_preserved,
+        "    if n <= 1:",
+        [style::Print("    if n <= 1:")],
         true
     );
 }
