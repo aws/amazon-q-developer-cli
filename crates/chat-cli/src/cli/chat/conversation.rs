@@ -76,6 +76,8 @@ use crate::cli::agent::hook::{
 use crate::cli::chat::ChatError;
 use crate::cli::chat::checkpoint::{
     Checkpoint,
+    Checkpoint,
+    CheckpointManager,
     CheckpointManager,
 };
 use crate::cli::chat::cli::model::{
@@ -912,6 +914,21 @@ Return only the JSON configuration, no additional text.",
 
         // 3. Update valid history range
         self.valid_history_range = (0, self.history.len());
+
+        Ok(())
+    }
+
+    /// Reloads only built-in tools while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os, stderr: &mut impl Write) -> Result<(), ChatError> {
+        let builtin_tools = self
+            .tool_manager
+            .load_tools(os, stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to reload built-in tools: {e}").into()))?;
+
+        // Remove existing built-in tools and add updated ones, preserving MCP tools
+        self.tools.retain(|origin, _| *origin != ToolOrigin::Native);
+        self.tools.extend(format_tool_spec(builtin_tools));
 
         Ok(())
     }

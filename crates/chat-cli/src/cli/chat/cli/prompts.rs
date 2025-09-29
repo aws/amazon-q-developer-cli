@@ -3,7 +3,10 @@ use std::collections::{
     VecDeque,
 };
 use std::fs;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 use std::sync::LazyLock;
 
 use clap::{
@@ -25,6 +28,7 @@ use rmcp::model::{
     PromptMessageContent,
     PromptMessageRole,
 };
+use serde_json::Value;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
@@ -219,6 +223,360 @@ fn validate_prompt_name(name: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// Formats a prompt description for display in the prompts list.
+///
+/// Handles None and empty descriptions by returning a placeholder.
+/// For multi-line descriptions, only the first line is returned.
+fn format_description(description: Option<&String>) -> String {
+    match description {
+        Some(desc) if !desc.trim().is_empty() => {
+            // Take only the first line for multi-line descriptions
+            desc.lines().next().unwrap_or("").to_string()
+        },
+        _ => "(no description)".to_string(),
+    }
+}
+
+/// Truncates a description string to the specified maximum length.
+///
+/// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
+/// to ensure clean formatting.
+fn truncate_description(text: &str, max_length: usize) -> String {
+    if text.len() <= max_length {
+        text.to_string()
+    } else {
+        let truncated = &text[..max_length.saturating_sub(3)];
+        format!("{}...", truncated.trim_end())
+    }
+}
+
+/// Represents parsed MCP error details for generating user-friendly messages.
+#[derive(Debug)]
+struct McpErrorDetails {
+    code: String,
+    message: String,
+    path: Vec<String>,
+}
+
+/// Parses MCP error JSON to extract all validation errors for user-friendly messages.
+///
+/// Attempts to extract JSON error details from MCP server error strings to provide
+/// more specific and user-friendly error messages for all validation failures.
+///
+/// # Arguments
+/// * `error_str` - The raw error string from the MCP server
+///
+/// # Returns
+/// * `Vec<McpErrorDetails>` containing all parsed errors, empty if parsing fails
+fn parse_all_mcp_error_details(error_str: &str) -> Vec<McpErrorDetails> {
+    // Try to extract JSON from error string - MCP errors often contain JSON in the message
+    let json_start = match error_str.find('[') {
+        Some(pos) => pos,
+        None => return Vec::new(),
+    };
+    let json_end = match error_str.rfind(']') {
+        Some(pos) => pos + 1,
+        None => return Vec::new(),
+    };
+    let json_str = &error_str[json_start..json_end];
+
+    let error_array: Vec<Value> = match serde_json::from_str(json_str) {
+        Ok(array) => array,
+        Err(_) => return Vec::new(),
+    };
+
+    error_array
+        .iter()
+        .filter_map(|error_val| {
+            let error_obj = error_val.as_object()?;
+            let code = error_obj.get("code")?.as_str()?;
+            let message = error_obj.get("message")?.as_str().unwrap_or("");
+            let path = match error_obj.get("path").and_then(|p| p.as_array()) {
+                Some(path_array) => path_array
+                    .iter()
+                    .filter_map(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .collect(),
+                None => Vec::new(),
+            };
+
+            Some(McpErrorDetails {
+                code: code.to_string(),
+                message: message.to_string(),
+                path,
+            })
+        })
+        .collect()
+}
+
+/// Handles MCP -32602 (Invalid params) errors with user-friendly messages.
+///
+/// Parses the error details and displays appropriate error messages based on the
+/// specific type of invalid parameter error (missing args, invalid values, etc.).
+fn handle_mcp_invalid_params_error(
+    name: &str,
+    error_str: &str,
+    prompts: &HashMap<String, Vec<PromptBundle>>,
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
+    let all_errors = parse_all_mcp_error_details(error_str);
+
+    if !all_errors.is_empty() {
+        // Check if this is a missing required arguments error
+        if all_errors.len() == 1
+            && all_errors[0].code == "invalid_type"
+            && all_errors[0].message == "Required"
+            && all_errors[0].path.is_empty()
+        {
+            display_missing_args_error(name, prompts, session)?;
+            return Ok(());
+        }
+
+        // Display validation errors
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("Error: Invalid arguments for prompt '"),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(name),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("':\n"),
+            style::SetForegroundColor(Color::Reset),
+        )?;
+
+        for error in &all_errors {
+            if !error.path.is_empty() {
+                let param_name = error.path.join(".");
+                queue!(
+                    session.stderr,
+                    style::Print("  - "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&param_name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(": "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(&error.message),
+                    style::Print("\n"),
+                )?;
+            } else {
+                queue!(
+                    session.stderr,
+                    style::Print("  - "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print(&error.message),
+                    style::Print("\n"),
+                )?;
+            }
+        }
+
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("Use '/prompts details "),
+            style::Print(name),
+            style::Print("' for usage information."),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+
+        execute!(session.stderr)?;
+    } else {
+        // Fallback for unparsable -32602 errors
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("Error: Invalid arguments for prompt '"),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print(name),
+            style::SetForegroundColor(Color::Yellow),
+            style::Print("'. Use '/prompts details "),
+            style::Print(name),
+            style::Print("' for usage information."),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+        execute!(session.stderr)?;
+    }
+    Ok(())
+}
+
+/// Handles MCP -32603 (Internal error) errors with user-friendly messages.
+///
+/// Attempts to parse structured error information from the server response
+/// and displays it in a user-friendly format.
+fn handle_mcp_internal_error(name: &str, error_str: &str, session: &mut ChatSession) -> Result<(), ChatError> {
+    // Try to parse JSON error response
+    if let Some(json_start) = error_str.find('{') {
+        if let Some(json_end) = error_str.rfind('}') {
+            let json_str = &error_str[json_start..=json_end];
+            if let Ok(error_obj) = serde_json::from_str::<serde_json::Value>(json_str) {
+                if let Some(error_field) = error_obj.get("error") {
+                    let message = error_field
+                        .get("message")
+                        .and_then(|m| m.as_str())
+                        .unwrap_or("Internal error");
+
+                    queue!(
+                        session.stderr,
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Error: "),
+                        style::Print(message),
+                        style::SetForegroundColor(Color::Reset),
+                        style::Print("\n"),
+                    )?;
+
+                    if let Some(data) = error_field.get("data") {
+                        if let Ok(data_str) = serde_json::to_string_pretty(data) {
+                            queue!(
+                                session.stderr,
+                                style::Print("Details: "),
+                                style::Print(data_str),
+                                style::Print("\n"),
+                            )?;
+                        }
+                    }
+                    execute!(session.stderr)?;
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    // Fallback for unparsable internal errors
+    queue!(
+        session.stderr,
+        style::Print("\n"),
+        style::SetForegroundColor(Color::Red),
+        style::Print("Error: MCP server internal error while processing prompt '"),
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(name),
+        style::SetForegroundColor(Color::Red),
+        style::Print("'."),
+        style::SetForegroundColor(Color::Reset),
+        style::Print("\n"),
+    )?;
+    execute!(session.stderr)?;
+    Ok(())
+}
+
+/// Displays a user-friendly error message for missing required arguments.
+///
+/// Shows usage information and lists all required and optional arguments
+/// with descriptions when available.
+fn display_missing_args_error(
+    prompt_name: &str,
+    prompts: &HashMap<String, Vec<PromptBundle>>,
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
+    queue!(
+        session.stderr,
+        style::Print("\n"),
+        style::SetForegroundColor(Color::Yellow),
+        style::Print("Error: Missing required arguments for prompt "),
+        style::SetForegroundColor(Color::Cyan),
+        style::Print(prompt_name),
+        style::SetForegroundColor(Color::Reset),
+        style::Print("\n\n"),
+    )?;
+
+    // Extract the actual prompt name from server/prompt format if needed
+    let actual_prompt_name = if let Some((_, name)) = prompt_name.split_once('/') {
+        name
+    } else {
+        prompt_name
+    };
+
+    if let Some(bundles) = prompts.get(actual_prompt_name) {
+        if let Some(bundle) = bundles.first() {
+            if let Some(args) = &bundle.prompt_get.arguments {
+                let required_args: Vec<_> = args.iter().filter(|arg| arg.required == Some(true)).collect();
+                let optional_args: Vec<_> = args.iter().filter(|arg| arg.required != Some(true)).collect();
+
+                // Usage line
+                queue!(
+                    session.stderr,
+                    style::Print("Usage: "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("@"),
+                    style::Print(prompt_name),
+                )?;
+
+                for arg in &required_args {
+                    queue!(
+                        session.stderr,
+                        style::Print(" <"),
+                        style::Print(&arg.name),
+                        style::Print(">"),
+                    )?;
+                }
+                for arg in &optional_args {
+                    queue!(
+                        session.stderr,
+                        style::Print(" ["),
+                        style::Print(&arg.name),
+                        style::Print("]"),
+                    )?;
+                }
+
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+
+                if !args.is_empty() {
+                    queue!(session.stderr, style::Print("\nArguments:\n"),)?;
+
+                    // Show required arguments first
+                    for arg in required_args {
+                        queue!(
+                            session.stderr,
+                            style::Print("  "),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("(required) "),
+                            style::SetForegroundColor(Color::Cyan),
+                            style::Print(&arg.name),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                        if let Some(desc) = &arg.description {
+                            if !desc.trim().is_empty() {
+                                queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
+                            }
+                        }
+                        queue!(session.stderr, style::Print("\n"))?;
+                    }
+
+                    // Then show optional arguments
+                    for arg in optional_args {
+                        queue!(
+                            session.stderr,
+                            style::Print("  "),
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print("(optional) "),
+                            style::SetForegroundColor(Color::Cyan),
+                            style::Print(&arg.name),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                        if let Some(desc) = &arg.description {
+                            if !desc.trim().is_empty() {
+                                queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
+                            }
+                        }
+                        queue!(session.stderr, style::Print("\n"))?;
+                    }
+                }
+            }
+        }
+    }
+
+    execute!(session.stderr)?;
+    Ok(())
+}
+
 /// Command-line arguments for prompt operations
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -247,6 +605,7 @@ impl PromptsArgs {
             if matches!(
                 subcommand,
                 PromptsSubcommand::Get { .. }
+                    | PromptsSubcommand::Details { .. }
                     | PromptsSubcommand::Create { .. }
                     | PromptsSubcommand::Edit { .. }
                     | PromptsSubcommand::Remove { .. }
@@ -269,47 +628,6 @@ impl PromptsArgs {
                 longest_name = name;
             }
         }
-
-        let arg_pos = {
-            let optimal_case = UnicodeWidthStr::width(longest_name) + terminal_width / 4;
-            if optimal_case > terminal_width {
-                terminal_width / 3
-            } else {
-                optimal_case
-            }
-        };
-        // Add usage guidance at the top
-        queue!(
-            session.stderr,
-            style::Print("\n"),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Usage: "),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("You can use a prompt by typing "),
-            style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Green),
-            style::Print("'@<prompt name> [...args]'"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("\n\n"),
-        )?;
-        queue!(
-            session.stderr,
-            style::Print("\n"),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Prompt"),
-            style::SetAttribute(Attribute::Reset),
-            style::Print({
-                let name_width = UnicodeWidthStr::width("Prompt");
-                let padding = arg_pos.saturating_sub(name_width);
-                " ".repeat(padding)
-            }),
-            style::SetAttribute(Attribute::Bold),
-            style::Print("Arguments (* = required)"),
-            style::SetAttribute(Attribute::Reset),
-            style::Print("\n"),
-            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-        )?;
         let mut prompts_by_server: Vec<_> = prompts
             .iter()
             .fold(
@@ -331,6 +649,53 @@ impl PromptsArgs {
             .into_iter()
             .collect();
         prompts_by_server.sort_by_key(|(server_name, _)| server_name.as_str());
+
+        // Calculate positions for three-column layout: Prompt | Description | Arguments
+        let prompt_col_width = (UnicodeWidthStr::width(longest_name) + 4).max(20); // Min 20 chars for "Prompt"
+        let description_col_width = 41; // Fixed width for descriptions
+        let description_pos = prompt_col_width;
+        let arguments_pos = description_pos + description_col_width;
+
+        // Add usage guidance at the top
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("You can use a prompt by typing "),
+            style::SetAttribute(Attribute::Bold),
+            style::SetForegroundColor(Color::Green),
+            style::Print("'@<prompt name> [...args]'"),
+            style::SetForegroundColor(Color::Reset),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Print header with three columns
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print({
+                let padding = description_pos.saturating_sub(UnicodeWidthStr::width("Prompt"));
+                " ".repeat(padding)
+            }),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Description"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print({
+                let padding = arguments_pos.saturating_sub(description_pos + UnicodeWidthStr::width("Description"));
+                " ".repeat(padding)
+            }),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Arguments (* = required)"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+        )?;
 
         // Display prompts by category
         let filtered_names: Vec<_> = prompt_names
@@ -403,16 +768,6 @@ impl PromptsArgs {
                         )?;
                     }
 
-                    // Show override indicator if this local prompt overrides a global one
-                    if overridden_globals.contains(name) {
-                        queue!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(" (overrides global)"),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
-                    }
-
                     queue!(session.stderr, style::Print("\n"))?;
                 }
             }
@@ -432,42 +787,48 @@ impl PromptsArgs {
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n"),
             )?;
+
             for bundle in bundles {
+                let prompt_name = &bundle.prompt_get.name;
+                let description = format_description(bundle.prompt_get.description.as_ref());
+                let truncated_desc = truncate_description(&description, 40);
+
+                // Print prompt name
+                queue!(session.stderr, style::Print("- "), style::Print(prompt_name),)?;
+
+                // Print description with proper alignment
+                let name_width = UnicodeWidthStr::width(prompt_name.as_str()) + 2; // +2 for "- "
+                let description_padding = description_pos.saturating_sub(name_width);
                 queue!(
                     session.stderr,
-                    style::Print("- "),
-                    style::Print(&bundle.prompt_get.name),
-                    style::Print({
-                        if bundle
-                            .prompt_get
-                            .arguments
-                            .as_ref()
-                            .is_some_and(|args| !args.is_empty())
-                        {
-                            let name_width = UnicodeWidthStr::width(bundle.prompt_get.name.as_str());
-                            let padding = arg_pos
-                                .saturating_sub(name_width)
-                                .saturating_sub(UnicodeWidthStr::width("- "));
-                            " ".repeat(padding.max(1))
-                        } else {
-                            "\n".to_owned()
-                        }
-                    })
+                    style::Print(" ".repeat(description_padding)),
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print(&truncated_desc),
+                    style::SetForegroundColor(Color::Reset),
                 )?;
+
+                // Print arguments if they exist
                 if let Some(args) = bundle.prompt_get.arguments.as_ref() {
-                    for (i, arg) in args.iter().enumerate() {
-                        queue!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(match arg.required {
-                                Some(true) => format!("{}*", arg.name),
-                                _ => arg.name.clone(),
-                            }),
-                            style::SetForegroundColor(Color::Reset),
-                            style::Print(if i < args.len() - 1 { ", " } else { "\n" }),
-                        )?;
+                    if !args.is_empty() {
+                        let current_pos = description_pos + UnicodeWidthStr::width(truncated_desc.as_str());
+                        let arguments_padding = arguments_pos.saturating_sub(current_pos);
+                        queue!(session.stderr, style::Print(" ".repeat(arguments_padding)))?;
+
+                        for (i, arg) in args.iter().enumerate() {
+                            queue!(
+                                session.stderr,
+                                style::SetForegroundColor(Color::DarkGrey),
+                                style::Print(match arg.required {
+                                    Some(true) => format!("{}*", arg.name),
+                                    _ => arg.name.clone(),
+                                }),
+                                style::SetForegroundColor(Color::Reset),
+                                style::Print(if i < args.len() - 1 { ", " } else { "" }),
+                            )?;
+                        }
                     }
                 }
+                queue!(session.stderr, style::Print("\n"))?;
             }
         }
 
@@ -489,6 +850,11 @@ pub enum PromptsSubcommand {
     List {
         /// Optional search word to filter prompts
         search_word: Option<String>,
+    },
+    /// Show detailed information about a specific prompt
+    Details {
+        /// Name of the prompt to show details for
+        name: String,
     },
     /// Get a specific prompt by name
     Get {
@@ -533,11 +899,12 @@ pub enum PromptsSubcommand {
 impl PromptsSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match self {
+            PromptsSubcommand::Details { name } => Self::execute_details(name, os, session).await,
             PromptsSubcommand::Get {
                 orig_input,
                 name,
-                arguments: _,
-            } => Self::execute_get(os, session, orig_input, name).await,
+                arguments,
+            } => Self::execute_get(os, session, orig_input, name, arguments).await,
             PromptsSubcommand::Create { name, content, global } => {
                 Self::execute_create(os, session, name, content, global).await
             },
@@ -549,11 +916,393 @@ impl PromptsSubcommand {
         }
     }
 
+    async fn execute_details(name: String, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // First try to find file-based prompt (global or local)
+        let file_prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        if let Some((content, source)) = file_prompts
+            .load_existing()
+            .map_err(|e| ChatError::Custom(e.to_string().into()))?
+        {
+            // Check if there's also an MCP prompt with the same name (conflict)
+            let mcp_prompts = session.conversation.tool_manager.list_prompts().await?;
+            if mcp_prompts.contains_key(&name) {
+                // Show conflict warning
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' exist. Showing file-based prompt.\n"),
+                    style::Print("To see MCP prompt, specify server: "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts details <server>/"),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+                execute!(session.stderr)?;
+            }
+
+            // Display file-based prompt details
+            Self::display_file_prompt_details(&name, &content, &source, session)?;
+            execute!(session.stderr, style::Print("\n"))?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        // If not found as file-based prompt, try MCP prompts
+        let prompts = session.conversation.tool_manager.list_prompts().await?;
+
+        // Parse server/prompt format if provided
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name.as_str())
+        };
+
+        // Find matching prompts
+        let matching_bundles: Vec<&PromptBundle> = prompts
+            .get(prompt_name)
+            .map(|bundles| {
+                if let Some(server) = server_filter {
+                    bundles.iter().filter(|b| b.server_name == server).collect()
+                } else {
+                    bundles.iter().collect()
+                }
+            })
+            .unwrap_or_default();
+
+        match matching_bundles.len() {
+            0 => {
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" not found. Use "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("/prompts list"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" to see available prompts.\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+            1 => {
+                let bundle = matching_bundles[0];
+                Self::display_prompt_details(bundle, session)?;
+            },
+            _ => {
+                let alt_names: Vec<String> = matching_bundles
+                    .iter()
+                    .map(|b| format!("- @{}/{}", b.server_name, prompt_name))
+                    .collect();
+                let alt_msg = format!("\n{}\n", alt_names.join("\n"));
+
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("Prompt "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print(" is ambiguous. Use one of the following:"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(alt_msg),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            },
+        }
+
+        execute!(session.stderr, style::Print("\n"))?;
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
+    }
+
+    fn display_prompt_details(bundle: &PromptBundle, session: &mut ChatSession) -> Result<(), ChatError> {
+        let prompt = &bundle.prompt_get;
+        let terminal_width = session.terminal_width();
+
+        // Display header
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt Details"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print("▔".repeat(terminal_width)),
+            style::Print("\n\n"),
+        )?;
+
+        // Display basic information
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Name: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(&prompt.name),
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Server: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(&bundle.server_name),
+            style::Print("\n\n"),
+        )?;
+
+        // Display description
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Description:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        match &prompt.description {
+            Some(desc) if !desc.trim().is_empty() => {
+                for line in desc.lines() {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::Print(line),
+                        style::Print("\n")
+                    )?;
+                }
+            },
+            _ => {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("  (no description available)"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+            },
+        }
+
+        // Display usage example
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::Cyan),
+            style::Print("@"),
+            style::Print(&prompt.name),
+        )?;
+
+        if let Some(args) = &prompt.arguments {
+            for arg in args {
+                match arg.required {
+                    Some(true) => {
+                        queue!(
+                            session.stderr,
+                            style::Print(" <"),
+                            style::Print(&arg.name),
+                            style::Print(">"),
+                        )?;
+                    },
+                    _ => {
+                        queue!(
+                            session.stderr,
+                            style::Print(" ["),
+                            style::Print(&arg.name),
+                            style::Print("]"),
+                        )?;
+                    },
+                }
+            }
+        }
+
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+
+        // Display arguments
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Arguments:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        if let Some(args) = &prompt.arguments {
+            if args.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("  (no arguments)"),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+            } else {
+                let required_args: Vec<_> = args.iter().filter(|arg| arg.required == Some(true)).collect();
+                let optional_args: Vec<_> = args.iter().filter(|arg| arg.required != Some(true)).collect();
+
+                // Show required arguments first
+                for arg in required_args {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("(required) "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&arg.name),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+
+                    // Show argument description if available
+                    if let Some(desc) = &arg.description {
+                        if !desc.trim().is_empty() {
+                            queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
+                        }
+                    }
+
+                    queue!(session.stderr, style::Print("\n"))?;
+                }
+
+                // Then show optional arguments
+                for arg in optional_args {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print("(optional) "),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&arg.name),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+
+                    // Show argument description if available
+                    if let Some(desc) = &arg.description {
+                        if !desc.trim().is_empty() {
+                            queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
+                        }
+                    }
+
+                    queue!(session.stderr, style::Print("\n"))?;
+                }
+            }
+        } else {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  (no arguments)"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        Ok(())
+    }
+
+    fn display_file_prompt_details(
+        name: &str,
+        content: &str,
+        source: &Path,
+        session: &mut ChatSession,
+    ) -> Result<(), ChatError> {
+        let terminal_width = session.terminal_width();
+
+        // Display header
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Prompt Details"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+            style::Print("▔".repeat(terminal_width)),
+            style::Print("\n\n"),
+        )?;
+
+        // Display basic information
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Name: "),
+            style::SetAttribute(Attribute::Reset),
+            style::Print(name),
+            style::Print("\n"),
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Source: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print(source.display().to_string()),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Display usage example
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::Green),
+            style::Print("@"),
+            style::Print(name),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Display content preview (first few lines)
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Content Preview:"),
+            style::SetAttribute(Attribute::Reset),
+            style::Print("\n"),
+        )?;
+
+        let lines: Vec<&str> = content.lines().collect();
+        let preview_lines = lines.iter().take(5);
+        for line in preview_lines {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  "),
+                style::Print(line),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        if lines.len() > 5 {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("  ... ("),
+                style::Print((lines.len() - 5).to_string()),
+                style::Print(" more lines)"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+
+        Ok(())
+    }
+
     async fn execute_get(
         os: &Os,
         session: &mut ChatSession,
         orig_input: Option<String>,
         name: String,
+        arguments: Option<Vec<String>>,
     ) -> Result<ChatState, ChatError> {
         // First try to find prompt (global or local)
         let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
@@ -561,6 +1310,32 @@ impl PromptsSubcommand {
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
         {
+            // Check if there's also an MCP prompt with the same name (conflict)
+            let mcp_prompts = session.conversation.tool_manager.list_prompts().await?;
+            if mcp_prompts.contains_key(&name) {
+                // Show conflict warning
+                queue!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Yellow),
+                    style::Print("' exist. Using file-based prompt.\n"),
+                    style::Print("To use MCP prompt, specify server: "),
+                    style::SetForegroundColor(Color::Cyan),
+                    style::Print("@<server>/"),
+                    style::Print(&name),
+                    style::SetForegroundColor(Color::Reset),
+                    style::Print("\n"),
+                )?;
+                execute!(session.stderr)?;
+            }
+
+            // Display the file-based prompt content to the user
+            display_file_prompt_content(&name, &content, session)?;
+
             // Handle local prompt
             session.pending_prompts.clear();
 
@@ -577,8 +1352,17 @@ impl PromptsSubcommand {
         }
 
         // If not found locally, try MCP prompts
-        let prompts = match session.conversation.tool_manager.get_prompt(name, None).await {
-            Ok(resp) => resp,
+        let prompts = match session
+            .conversation
+            .tool_manager
+            .get_prompt(name.clone(), arguments)
+            .await
+        {
+            Ok(resp) => {
+                // Display the fetched prompt content to the user
+                display_prompt_content(&name, &resp.messages, session)?;
+                resp
+            },
             Err(e) => {
                 match e {
                     GetPromptError::AmbiguousPrompt(prompt_name, alt_msg) => {
@@ -612,6 +1396,40 @@ impl PromptsSubcommand {
                             style::Print(" to see available prompts.\n"),
                             style::SetForegroundColor(Color::Reset),
                         )?;
+                    },
+                    GetPromptError::McpClient(_) | GetPromptError::Service(_) => {
+                        let error_str = e.to_string();
+
+                        // Check for specific MCP error codes in the error string
+                        if error_str.contains("-32602") {
+                            // Invalid params error
+                            let prompts_list = session
+                                .conversation
+                                .tool_manager
+                                .list_prompts()
+                                .await
+                                .unwrap_or_default();
+                            handle_mcp_invalid_params_error(&name, &error_str, &prompts_list, session)?;
+                        } else if error_str.contains("-32603") {
+                            // Internal server error
+                            handle_mcp_internal_error(&name, &error_str, session)?;
+                        } else {
+                            // Other MCP errors - show generic message
+                            queue!(
+                                session.stderr,
+                                style::Print("\n"),
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print("Error: Failed to execute prompt "),
+                                style::SetForegroundColor(Color::Cyan),
+                                style::Print(&name),
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(". "),
+                                style::Print(&error_str),
+                                style::SetForegroundColor(Color::Reset),
+                                style::Print("\n"),
+                            )?;
+                            execute!(session.stderr)?;
+                        }
                     },
                     _ => return Err(ChatError::Custom(e.to_string().into())),
                 }
@@ -1159,6 +1977,7 @@ impl PromptsSubcommand {
     pub fn name(&self) -> &'static str {
         match self {
             PromptsSubcommand::List { .. } => "list",
+            PromptsSubcommand::Details { .. } => "details",
             PromptsSubcommand::Get { .. } => "get",
             PromptsSubcommand::Create { .. } => "create",
             PromptsSubcommand::Edit { .. } => "edit",
@@ -1166,10 +1985,79 @@ impl PromptsSubcommand {
         }
     }
 }
+
+/// Display fetched prompt content to the user before AI processing
+fn display_prompt_content(
+    _prompt_name: &str,
+    messages: &[PromptMessage],
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
+    fn stringify_prompt_message_content(content: &PromptMessageContent) -> String {
+        match content {
+            PromptMessageContent::Text { text } => text.clone(),
+            PromptMessageContent::Image { image } => image.raw.data.clone(),
+            PromptMessageContent::Resource { resource } => match &resource.raw.resource {
+                rmcp::model::ResourceContents::TextResourceContents {
+                    uri, mime_type, text, ..
+                } => {
+                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                    format!("Text resource of uri: {uri}, mime_type: {mime_type}, text: {text}")
+                },
+                rmcp::model::ResourceContents::BlobResourceContents { uri, mime_type, .. } => {
+                    let mime_type = mime_type.as_deref().unwrap_or("unknown");
+                    format!("Blob resource of uri: {uri}, mime_type: {mime_type}")
+                },
+            },
+            PromptMessageContent::ResourceLink { link } => {
+                format!("Resource link with uri: {}, name: {}", link.raw.uri, link.raw.name)
+            },
+        }
+    }
+
+    queue!(session.stderr, style::Print("\n"),)?;
+
+    for message in messages {
+        let content = stringify_prompt_message_content(&message.content);
+        if !content.trim().is_empty() {
+            queue!(
+                session.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print(content),
+                style::SetForegroundColor(Color::Reset),
+                style::Print("\n"),
+            )?;
+        }
+    }
+
+    queue!(session.stderr, style::Print("\n"))?;
+    execute!(session.stderr)?;
+    Ok(())
+}
+
+/// Display file-based prompt content to the user before AI processing
+fn display_file_prompt_content(_prompt_name: &str, content: &str, session: &mut ChatSession) -> Result<(), ChatError> {
+    queue!(session.stderr, style::Print("\n"),)?;
+
+    if !content.trim().is_empty() {
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print(content),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n"),
+        )?;
+    }
+
+    queue!(session.stderr, style::Print("\n"))?;
+    execute!(session.stderr)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
 
+    use rmcp::model::PromptArgument;
     use tempfile::TempDir;
 
     use super::*;
@@ -1309,5 +2197,343 @@ mod tests {
         assert!(validate_prompt_name("name`backtick").is_err()); // backtick
         assert!(validate_prompt_name("name~tilde").is_err()); // tilde
         assert!(validate_prompt_name("name!exclamation").is_err()); // exclamation
+    }
+
+    #[test]
+    fn test_format_description() {
+        // Test normal description
+        let desc = Some("This is a test description".to_string());
+        assert_eq!(format_description(desc.as_ref()), "This is a test description");
+
+        // Test None description
+        assert_eq!(format_description(None), "(no description)");
+
+        // Test empty description
+        let empty_desc = Some("".to_string());
+        assert_eq!(format_description(empty_desc.as_ref()), "(no description)");
+
+        // Test whitespace-only description
+        let whitespace_desc = Some("   \n\t  ".to_string());
+        assert_eq!(format_description(whitespace_desc.as_ref()), "(no description)");
+
+        // Test multi-line description (should take first line)
+        let multiline_desc = Some("First line\nSecond line\nThird line".to_string());
+        assert_eq!(format_description(multiline_desc.as_ref()), "First line");
+    }
+
+    #[test]
+    fn test_truncate_description() {
+        // Test normal length
+        let short = "Short description";
+        assert_eq!(truncate_description(short, 40), "Short description");
+
+        // Test truncation
+        let long =
+            "This is a very long description that should be truncated because it exceeds the maximum length limit";
+        let result = truncate_description(long, 40);
+        assert!(result.len() <= 40);
+        assert!(result.ends_with("..."));
+        // Length may be less than 40 due to trim_end() removing trailing spaces
+        assert!(result.len() >= 37); // At least max_length - 3 chars
+
+        // Test exact length
+        let exact = "A".repeat(40);
+        assert_eq!(truncate_description(&exact, 40), exact);
+
+        // Test very short max length
+        let result = truncate_description("Hello world", 5);
+        assert_eq!(result, "He...");
+        assert_eq!(result.len(), 5);
+
+        // Test space trimming before ellipsis
+        let with_space = "Prompt to explain available tools and how";
+        let result = truncate_description(with_space, 40);
+        assert!(!result.contains(" ..."));
+        assert!(result.ends_with("..."));
+        assert_eq!(result, "Prompt to explain available tools and...");
+    }
+
+    #[test]
+    fn test_parse_all_mcp_error_details() {
+        // Test parsing multiple validation errors
+        let error_str = r#"MCP error -32602: Invalid arguments for prompt validation-test: [
+  {
+    "validation": "regex",
+    "code": "invalid_string",
+    "message": "Must be a valid email ending in .com",
+    "path": [
+      "email"
+    ]
+  },
+  {
+    "validation": "regex",
+    "code": "invalid_string",
+    "message": "Must be a positive number",
+    "path": [
+      "count"
+    ]
+  }
+]"#;
+
+        let errors = parse_all_mcp_error_details(error_str);
+        assert_eq!(errors.len(), 2);
+
+        // First error
+        assert_eq!(errors[0].code, "invalid_string");
+        assert_eq!(errors[0].message, "Must be a valid email ending in .com");
+        assert_eq!(errors[0].path, vec!["email"]);
+
+        // Second error
+        assert_eq!(errors[1].code, "invalid_string");
+        assert_eq!(errors[1].message, "Must be a positive number");
+        assert_eq!(errors[1].path, vec!["count"]);
+
+        // Test empty array
+        let empty_error = "MCP error -32602: Invalid arguments for prompt test: []";
+        let empty_errors = parse_all_mcp_error_details(empty_error);
+        assert_eq!(empty_errors.len(), 0);
+
+        // Test invalid JSON
+        let invalid_error = "Not a valid MCP error";
+        let invalid_errors = parse_all_mcp_error_details(invalid_error);
+        assert_eq!(invalid_errors.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_32603_error_with_data() {
+        // Test parsing -32603 error with data object
+        let error_str = r#"MCP error -32603: {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "error": {
+                "code": -32603,
+                "message": "Tool execution failed",
+                "data": {
+                    "tool": "get_weather",
+                    "reason": "API service unavailable"
+                }
+            }
+        }"#;
+
+        // Extract JSON part
+        let json_start = error_str.find('{').unwrap();
+        let json_end = error_str.rfind('}').unwrap();
+        let json_str = &error_str[json_start..=json_end];
+
+        let error_obj: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        let error_field = error_obj.get("error").unwrap();
+
+        let message = error_field.get("message").unwrap().as_str().unwrap();
+        assert_eq!(message, "Tool execution failed");
+
+        let data = error_field.get("data").unwrap();
+        assert_eq!(data.get("tool").unwrap().as_str().unwrap(), "get_weather");
+        assert_eq!(data.get("reason").unwrap().as_str().unwrap(), "API service unavailable");
+    }
+
+    #[test]
+    fn test_parse_32603_error_without_data() {
+        // Test parsing -32603 error without data object
+        let error_str = r#"MCP error -32603: {
+            "jsonrpc": "2.0",
+            "id": 5,
+            "error": {
+                "code": -32603,
+                "message": "Internal error"
+            }
+        }"#;
+
+        let json_start = error_str.find('{').unwrap();
+        let json_end = error_str.rfind('}').unwrap();
+        let json_str = &error_str[json_start..=json_end];
+
+        let error_obj: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        let error_field = error_obj.get("error").unwrap();
+
+        let message = error_field.get("message").unwrap().as_str().unwrap();
+        assert_eq!(message, "Internal error");
+
+        // Data field should not exist
+        assert!(error_field.get("data").is_none());
+    }
+
+    #[test]
+    fn test_parse_32603_error_with_complex_data() {
+        // Test parsing -32603 error with complex data object
+        let error_str = r#"MCP error -32603: {
+            "jsonrpc": "2.0",
+            "id": 3,
+            "error": {
+                "code": -32603,
+                "message": "Database connection failed",
+                "data": {
+                    "details": "Connection timeout",
+                    "timestamp": "2025-09-13T20:18:59.742Z",
+                    "retry_count": 3,
+                    "config": {
+                        "host": "localhost",
+                        "port": 5432
+                    }
+                }
+            }
+        }"#;
+
+        let json_start = error_str.find('{').unwrap();
+        let json_end = error_str.rfind('}').unwrap();
+        let json_str = &error_str[json_start..=json_end];
+
+        let error_obj: serde_json::Value = serde_json::from_str(json_str).unwrap();
+        let error_field = error_obj.get("error").unwrap();
+
+        let message = error_field.get("message").unwrap().as_str().unwrap();
+        assert_eq!(message, "Database connection failed");
+
+        let data = error_field.get("data").unwrap();
+        assert_eq!(data.get("details").unwrap().as_str().unwrap(), "Connection timeout");
+        assert_eq!(data.get("retry_count").unwrap().as_u64().unwrap(), 3);
+
+        let config = data.get("config").unwrap();
+        assert_eq!(config.get("host").unwrap().as_str().unwrap(), "localhost");
+        assert_eq!(config.get("port").unwrap().as_u64().unwrap(), 5432);
+    }
+
+    #[test]
+    fn test_prompts_subcommand_name() {
+        assert_eq!(PromptsSubcommand::List { search_word: None }.name(), "list");
+        assert_eq!(
+            PromptsSubcommand::Details {
+                name: "test".to_string()
+            }
+            .name(),
+            "details"
+        );
+        assert_eq!(
+            PromptsSubcommand::Get {
+                orig_input: None,
+                name: "test".to_string(),
+                arguments: None
+            }
+            .name(),
+            "get"
+        );
+    }
+
+    #[test]
+    fn test_prompts_subcommand_parsing() {
+        // Test that Details variant can be created
+        let details_cmd = PromptsSubcommand::Details {
+            name: "test_prompt".to_string(),
+        };
+        assert_eq!(details_cmd.name(), "details");
+
+        // Test equality
+        let details_cmd2 = PromptsSubcommand::Details {
+            name: "test_prompt".to_string(),
+        };
+        assert_eq!(details_cmd, details_cmd2);
+    }
+
+    #[test]
+    fn test_server_prompt_name_parsing() {
+        // Test parsing server/prompt format
+        let name = "server1/my_prompt";
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name)
+        };
+        assert_eq!(server_filter, Some("server1"));
+        assert_eq!(prompt_name, "my_prompt");
+
+        // Test parsing prompt name only
+        let name = "my_prompt";
+        let (server_filter, prompt_name) = if let Some((server, prompt)) = name.split_once('/') {
+            (Some(server), prompt)
+        } else {
+            (None, name)
+        };
+        assert_eq!(server_filter, None);
+        assert_eq!(prompt_name, "my_prompt");
+    }
+
+    #[test]
+    fn test_prompt_bundle_filtering() {
+        // Create mock prompt bundles
+        let prompt1 = rmcp::model::Prompt {
+            name: "test_prompt".to_string(),
+            description: Some("Test description".to_string()),
+            arguments: Some(vec![
+                PromptArgument {
+                    name: "arg1".to_string(),
+                    description: Some("First argument".to_string()),
+                    required: Some(true),
+                },
+                PromptArgument {
+                    name: "arg2".to_string(),
+                    description: None,
+                    required: Some(false),
+                },
+            ]),
+        };
+
+        let bundle1 = PromptBundle {
+            server_name: "server1".to_string(),
+            prompt_get: prompt1.clone(),
+        };
+
+        let bundle2 = PromptBundle {
+            server_name: "server2".to_string(),
+            prompt_get: prompt1,
+        };
+
+        let bundles = vec![&bundle1, &bundle2];
+
+        // Test filtering by server
+        let filtered: Vec<&PromptBundle> = bundles.iter().filter(|b| b.server_name == "server1").copied().collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].server_name, "server1");
+
+        // Test no filtering (all bundles)
+        let all: Vec<&PromptBundle> = bundles.iter().copied().collect();
+        assert_eq!(all.len(), 2);
+    }
+
+    #[test]
+    fn test_ambiguous_prompt_message_generation() {
+        // Test generating disambiguation message
+        let prompt_name = "test_prompt";
+        let server_names = vec!["server1", "server2", "server3"];
+
+        let alt_names: Vec<String> = server_names
+            .iter()
+            .map(|s| format!("- @{}/{}", s, prompt_name))
+            .collect();
+        let alt_msg = format!("\n{}\n", alt_names.join("\n"));
+
+        assert_eq!(
+            alt_msg,
+            "\n- @server1/test_prompt\n- @server2/test_prompt\n- @server3/test_prompt\n"
+        );
+    }
+
+    #[test]
+    fn test_extract_prompt_name_from_qualified_name() {
+        // Test extracting prompt name from server/prompt format
+        let qualified_name = "server1/my_prompt";
+        let actual_prompt_name = if let Some((_, name)) = qualified_name.split_once('/') {
+            name
+        } else {
+            qualified_name
+        };
+        assert_eq!(actual_prompt_name, "my_prompt");
+
+        // Test with unqualified name
+        let unqualified_name = "my_prompt";
+        let actual_prompt_name = if let Some((_, name)) = unqualified_name.split_once('/') {
+            name
+        } else {
+            unqualified_name
+        };
+        assert_eq!(actual_prompt_name, "my_prompt");
     }
 }

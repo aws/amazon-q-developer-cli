@@ -12,6 +12,7 @@ pub mod model;
 pub mod persist;
 pub mod profile;
 pub mod prompts;
+pub mod reply;
 pub mod subscribe;
 pub mod tangent;
 pub mod todos;
@@ -32,6 +33,7 @@ use model::ModelArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
+use reply::ReplyArgs;
 use tangent::TangentArgs;
 use todos::TodoSubcommand;
 use tools::ToolsArgs;
@@ -73,6 +75,8 @@ pub enum SlashCommand {
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
     PromptEditor(EditorArgs),
+    /// Open $EDITOR with the most recent assistant message quoted for reply
+    Reply(ReplyArgs),
     /// Summarize the conversation to free up context space
     Compact(CompactArgs),
     /// View tools and permissions
@@ -147,6 +151,7 @@ impl SlashCommand {
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
+            Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
             Self::Tools(args) => args.execute(session).await,
             Self::Issue(args) => {
@@ -191,6 +196,7 @@ impl SlashCommand {
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
             Self::PromptEditor(_) => "editor",
+            Self::Reply(_) => "reply",
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
