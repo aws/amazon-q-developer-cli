@@ -30,7 +30,10 @@ use rmcp::model::{
 };
 use serde_json::Value;
 use thiserror::Error;
-use unicode_width::UnicodeWidthStr;
+use unicode_width::{
+    UnicodeWidthChar,
+    UnicodeWidthStr,
+};
 
 use crate::cli::chat::cli::editor::open_editor_file;
 use crate::cli::chat::tool_manager::PromptBundle;
@@ -240,13 +243,31 @@ fn format_description(description: Option<&String>) -> String {
 /// Truncates a description string to the specified maximum length.
 ///
 /// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
-/// to ensure clean formatting.
+/// to ensure clean formatting. Takes into account the display width of characters,
+/// where CJK characters are counted as 2 units wide.
 fn truncate_description(text: &str, max_length: usize) -> String {
-    if text.chars().count() <= max_length {
+    let text_width = UnicodeWidthStr::width(text);
+    if text_width <= max_length {
         text.to_string()
     } else {
-        let truncated: String = text.chars().take(max_length.saturating_sub(3)).collect();
-        format!("{}...", truncated.trim_end())
+        let ellipsis = "...";
+        let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+        let target_width = max_length.saturating_sub(ellipsis_width);
+
+        let mut current_width = 0;
+        let mut chars_to_take = 0;
+
+        for ch in text.chars() {
+            let char_width = ch.width().unwrap_or(0);
+            if current_width + char_width > target_width {
+                break;
+            }
+            current_width += char_width;
+            chars_to_take += 1;
+        }
+
+        let truncated: String = text.chars().take(chars_to_take).collect();
+        format!("{}{}", truncated.trim_end(), ellipsis)
     }
 }
 
@@ -2243,7 +2264,7 @@ mod tests {
         // Test very short max length
         let result = truncate_description("Hello world", 5);
         assert_eq!(result, "He...");
-        assert_eq!(result.len(), 5);
+        assert_eq!(UnicodeWidthStr::width(result.as_str()), 5);
 
         // Test space trimming before ellipsis
         let with_space = "Prompt to explain available tools and how";
@@ -2257,38 +2278,46 @@ mod tests {
     fn test_truncate_description_utf8_boundaries() {
         // Test Korean text that would cause byte boundary issues
         let korean_text = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때 사용할 수 있는 프롬프트로, 원본의 어투와 어조를 유지하면서 자연스러운 표현으로 개선해줍니다";
-        
+
         // Test truncation at various lengths
         let result_40 = truncate_description(korean_text, 40);
-        assert!(result_40.len() <= 40 * 3); // Korean chars are up to 3 bytes each
+        assert!(UnicodeWidthStr::width(result_40.as_str()) <= 40);
         assert!(result_40.ends_with("..."));
-        
+
         let result_50 = truncate_description(korean_text, 50);
-        assert!(result_50.len() <= 50 * 3);
+        assert!(UnicodeWidthStr::width(result_50.as_str()) <= 50);
         assert!(result_50.ends_with("..."));
-        
+
         // Test with mixed ASCII and Korean
         let mixed_text = "Hello 안녕하세요 World 세계";
         let result_mixed = truncate_description(mixed_text, 15);
         assert!(result_mixed.ends_with("..."));
-        
+
         // Test with text shorter than limit
         let short_korean = "안녕하세요";
         let result_short = truncate_description(short_korean, 20);
         assert_eq!(result_short, "안녕하세요");
         assert!(!result_short.ends_with("..."));
-        
+
         // Test edge case: exactly at limit
-        let exact_text = "정확히";  // 3 characters
-        let result_exact = truncate_description(exact_text, 3);
+        let exact_text = "정확히"; // 3 characters, 6 width units
+        let result_exact = truncate_description(exact_text, 6);
         assert_eq!(result_exact, "정확히");
         assert!(!result_exact.ends_with("..."));
-        
-        // Test edge case: one character over limit
-        let over_text = "정확히다";  // 4 characters
-        let result_over = truncate_description(over_text, 3);
+
+        // Test edge case: one width unit over limit
+        let over_text = "정확히다"; // 4 characters, 8 width units
+        let result_over = truncate_description(over_text, 6);
         assert!(result_over.ends_with("..."));
-        assert_eq!(result_over.chars().count(), 3); // Should be exactly 3 chars including "..."
+        assert!(UnicodeWidthStr::width(result_over.as_str()) <= 6);
+
+        // Test CJK width handling - Korean chars are 2 width units each
+        let korean_only = "한글테스트입니다"; // 7 chars, 14 width units
+        let result_korean = truncate_description(korean_only, 10);
+        assert!(result_korean.ends_with("..."));
+        assert!(UnicodeWidthStr::width(result_korean.as_str()) <= 10);
+        // Should fit "한글테..." (3 Korean chars + ellipsis = 6 + 3 = 9 width units)
+        assert_eq!(result_korean, "한글테...");
     }
 
     #[test]
