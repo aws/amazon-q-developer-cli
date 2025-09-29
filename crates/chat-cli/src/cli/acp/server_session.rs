@@ -21,6 +21,7 @@ pub struct AcpServerSessionHandle {
 }
 
 /// Messages sent to session actors
+#[derive(Debug)]
 enum ServerSessionMethod {
     Prompt(acp::PromptRequest, oneshot::Sender<Result<acp::PromptResponse, acp::Error>>),
     Cancel(acp::CancelNotification, oneshot::Sender<Result<(), acp::Error>>),
@@ -178,9 +179,21 @@ impl AcpServerSessionHandle {
                                 meta: None,
                             });
                         }
-                        Some(_other) => {
-                            // Other messages during prompt processing - could queue them
-                            tracing::warn!("Received non-cancel message during prompt processing");
+                        Some(other_method) => {
+                            // Respond with error for non-cancel messages during prompt processing
+                            tracing::warn!("Received non-cancel message during prompt processing: {:?}", other_method);
+                            match other_method {
+                                ServerSessionMethod::Prompt(_, tx) => {
+                                    let _ = tx.send(Err(acp::Error::internal_error()));
+                                }
+                                ServerSessionMethod::SetMode(_, tx) => {
+                                    let _ = tx.send(Err(acp::Error::internal_error()));
+                                }
+                                ServerSessionMethod::Cancel(_, _) => {
+                                    // This case is already handled above, shouldn't reach here
+                                    unreachable!("Cancel should be handled in the previous match arm");
+                                }
+                            }
                         }
                         None => {
                             // Session is shutting down
