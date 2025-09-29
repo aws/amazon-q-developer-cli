@@ -184,10 +184,10 @@ impl AcpServerSessionHandle {
                             tracing::warn!("Received non-cancel message during prompt processing: {:?}", other_method);
                             match other_method {
                                 ServerSessionMethod::Prompt(_, tx) => {
-                                    let _ = tx.send(Err(acp::Error::internal_error()));
+                                    let _ = tx.send(Err(acp::Error::invalid_params()));
                                 }
                                 ServerSessionMethod::SetMode(_, tx) => {
-                                    let _ = tx.send(Err(acp::Error::internal_error()));
+                                    let _ = tx.send(Err(acp::Error::invalid_params()));
                                 }
                                 ServerSessionMethod::Cancel(_, _) => {
                                     // This case is already handled above, shouldn't reach here
