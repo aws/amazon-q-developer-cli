@@ -92,7 +92,7 @@ async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
                 (&[], r"Hi, Claude", "Hi, you! What's your name?"),
                 
                 // Second exchange: Capture name and respond personally  
-                (&[r"^assistant:.*What's your name"], r"(?P<name>\w+)", "Hi $name, I'm Q!"),
+                (&[r"^assistant:.*What's your name"], r"--- USER MESSAGE BEGIN ---\s*(?P<name>\w+)", "Hi $name, I'm Q!"),
                 
                 // Fallback for any unrecognized input
                 (&[], r".*", "I didn't understand that."),
