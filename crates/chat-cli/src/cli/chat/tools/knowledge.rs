@@ -20,7 +20,7 @@ use crate::cli::agent::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
-use crate::util::pattern_matching::matches_any_pattern;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 /// The Knowledge tool allows storing and retrieving information across chat sessions.
 /// It provides semantic search capabilities for files, directories, and text content.
@@ -497,7 +497,7 @@ impl Knowledge {
         _ = self;
         _ = os;
 
-        if matches_any_pattern(&agent.allowed_tools, "knowledge") {
+        if is_tool_in_allowlist(&agent.allowed_tools, "knowledge", None) {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask

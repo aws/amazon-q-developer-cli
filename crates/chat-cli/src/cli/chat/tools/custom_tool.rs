@@ -22,10 +22,12 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::CONTINUATION_LINE;
 use crate::cli::chat::token_counter::TokenCounter;
-use crate::mcp_client::RunningService;
+use crate::mcp_client::{
+    RunningService,
+    oauth_util,
+};
 use crate::os::Os;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
-use crate::util::pattern_matching::matches_any_pattern;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -43,17 +45,20 @@ impl Default for TransportType {
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
-    /// The type of transport the mcp server is expecting. For http transport, only url (for now)
-    /// is taken into account.
+    /// The transport type to use for communication with the MCP server
     #[serde(default)]
     pub r#type: TransportType,
-    /// The URL endpoint for HTTP-based MCP servers
+    /// The URL for HTTP-based MCP server communication
     #[serde(default)]
     pub url: String,
     /// HTTP headers to include when communicating with HTTP-based MCP servers
     #[serde(default)]
     pub headers: HashMap<String, String>,
+    /// Scopes with which oauth is done
+    #[serde(default = "get_default_scopes")]
+    pub oauth_scopes: Vec<String>,
     /// The command string used to initialize the mcp server
     #[serde(default)]
     pub command: String,
@@ -72,6 +77,13 @@ pub struct CustomToolConfig {
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
+}
+
+pub fn get_default_scopes() -> Vec<String> {
+    oauth_util::get_default_scopes()
+        .iter()
+        .map(|s| (*s).to_string())
+        .collect::<Vec<_>>()
 }
 
 pub fn default_timeout() -> u64 {
@@ -96,6 +108,11 @@ pub struct CustomTool {
 }
 
 impl CustomTool {
+    /// Returns the full tool name with server prefix in the format @server_name/tool_name
+    pub fn namespaced_tool_name(&self) -> String {
+        format!("@{}{}{}", self.server_name, MCP_SERVER_TOOL_DELIMITER, self.name)
+    }
+
     pub async fn invoke(&self, _os: &Os, _updates: &mut impl Write) -> Result<InvokeOutput> {
         let params = CallToolRequestParam {
             name: Cow::from(self.name.clone()),
@@ -157,19 +174,12 @@ impl CustomTool {
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        let Self { name: tool_name, .. } = self;
-        let server_name = &self.server_name;
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
-        let server_pattern = format!("@{server_name}");
-        if agent.allowed_tools.contains(&server_pattern) {
-            return PermissionEvalResult::Allow;
+        if is_tool_in_allowlist(&agent.allowed_tools, &self.name, Some(&self.server_name)) {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
         }
-
-        let tool_pattern = format!("@{server_name}{MCP_SERVER_TOOL_DELIMITER}{tool_name}");
-        if matches_any_pattern(&agent.allowed_tools, &tool_pattern) {
-            return PermissionEvalResult::Allow;
-        }
-
-        PermissionEvalResult::Ask
     }
 }

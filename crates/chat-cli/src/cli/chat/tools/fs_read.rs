@@ -46,7 +46,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 use crate::util::directories;
-use crate::util::pattern_matching::matches_any_pattern;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FsRead {
@@ -113,7 +113,7 @@ impl FsRead {
             allow_read_only: bool,
         }
 
-        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "fs_read");
+        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "fs_read", None);
         let settings = agent
             .tools_settings
             .get("fs_read")

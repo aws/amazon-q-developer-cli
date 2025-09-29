@@ -14,15 +14,17 @@ pub use builder_id::{
 pub use consts::START_URL;
 use thiserror::Error;
 
+use crate::aws_common::SdkErrorDisplay;
+
 #[derive(Debug, Error)]
 pub enum AuthError {
     #[error(transparent)]
     Ssooidc(Box<aws_sdk_ssooidc::Error>),
-    #[error(transparent)]
+    #[error("{}", SdkErrorDisplay(.0))]
     SdkRegisterClient(Box<SdkError<RegisterClientError>>),
-    #[error(transparent)]
+    #[error("{}", SdkErrorDisplay(.0))]
     SdkCreateToken(Box<SdkError<CreateTokenError>>),
-    #[error(transparent)]
+    #[error("{}", SdkErrorDisplay(.0))]
     SdkStartDeviceAuthorization(Box<SdkError<StartDeviceAuthorizationError>>),
     #[error(transparent)]
     Io(#[from] std::io::Error),

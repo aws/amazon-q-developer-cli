@@ -29,7 +29,7 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::os::Os;
-use crate::util::pattern_matching::matches_any_pattern;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
 
@@ -187,7 +187,7 @@ impl UseAws {
         }
 
         let Self { service_name, .. } = self;
-        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, "use_aws");
+        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "use_aws", None);
         match agent.tools_settings.get("use_aws") {
             Some(settings) => {
                 let settings = match serde_json::from_value::<Settings>(settings.clone()) {

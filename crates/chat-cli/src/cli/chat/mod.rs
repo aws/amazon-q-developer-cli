@@ -6,11 +6,13 @@ mod input_source;
 mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
+pub mod checkpoint;
 mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -42,6 +44,7 @@ use clap::{
     ValueEnum,
 };
 use cli::compact::CompactStrategy;
+use cli::hooks::ToolContext;
 use cli::model::{
     find_model,
     get_available_models,
@@ -141,6 +144,10 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
+use crate::cli::chat::checkpoint::{
+    CheckpointManager,
+    truncate_message,
+};
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::prompts::{
@@ -164,6 +171,7 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
+use crate::util::directories::get_shadow_repo_dir;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     directories,
@@ -454,7 +462,7 @@ const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off.
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 19] = [
+const ROTATING_TIPS: [&str; 20] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -489,6 +497,7 @@ const ROTATING_TIPS: [&str; 19] = [
     color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
     color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
     color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
+    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -1321,6 +1330,38 @@ impl ChatSession {
             }
         }
 
+        // Initialize capturing if possible
+        if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledCheckpoint)
+            .unwrap_or(false)
+        {
+            let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
+            let start = std::time::Instant::now();
+            let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
+                Ok(manager) => {
+                    execute!(
+                        self.stderr,
+                        style::Print(
+                            format!(
+                                "📷 Checkpoints are enabled! (took {:.2}s)\n\n",
+                                start.elapsed().as_secs_f32()
+                            )
+                            .blue()
+                            .bold()
+                        )
+                    )?;
+                    Some(manager)
+                },
+                Err(e) => {
+                    execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
+                    None
+                },
+            };
+            self.conversation.checkpoint_manager = checkpoint_manager;
+        }
+
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
         }
@@ -1919,7 +1960,7 @@ impl ChatSession {
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset)
         )?;
-        let prompt = self.generate_tool_trust_prompt();
+        let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -2047,7 +2088,7 @@ impl ChatSession {
                 name: prompt_name,
                 arguments,
             };
-            return subcommand.execute(self).await;
+            return subcommand.execute(os, self).await;
         } else if let Some(command) = input.strip_prefix("!") {
             // Use platform-appropriate shell
             let result = if cfg!(target_os = "windows") {
@@ -2082,6 +2123,23 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
+            // Track the message for checkpoint descriptions, but only if not already set
+            // This prevents tool approval responses (y/n/t) from overwriting the original message
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
+            {
+                if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
+                    if !manager.message_locked && self.pending_tool_index.is_none() {
+                        manager.pending_user_message = Some(user_input.clone());
+                        manager.message_locked = true;
+                    }
+                }
+            }
+
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);
@@ -2261,6 +2319,7 @@ impl ChatSession {
             });
         }
 
+        // All tools are allowed now
         // Execute the requested tools.
         let mut tool_results = vec![];
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
@@ -2304,6 +2363,74 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
+            // Handle checkpoint after tool execution - store tag for later display
+            let checkpoint_tag: Option<String> = {
+                let enabled = os
+                    .database
+                    .settings
+                    .get_bool(Setting::EnabledCheckpoint)
+                    .unwrap_or(false)
+                    && !self.conversation.is_in_tangent_mode();
+                if invoke_result.is_err() || !enabled {
+                    None
+                }
+                // Take manager out temporarily to avoid borrow conflicts
+                else if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
+                    // Check if there are uncommitted changes
+                    let has_changes = match manager.has_changes() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n")),
+                                style::Print("Saving anyways...\n"),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                            true
+                        },
+                    };
+                    let tag = if has_changes {
+                        // Generate tag for this tool use
+                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+
+                        // Get tool summary for commit message
+                        let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
+                        let description = if is_fs_read {
+                            "External edits detected (likely manual change)".to_string()
+                        } else {
+                            match tool.tool.get_summary() {
+                                Some(summary) => summary,
+                                None => tool.tool.display_name(),
+                            }
+                        };
+
+                        // Create checkpoint
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            &self.conversation.history().clone(),
+                            false,
+                            Some(tool.name.clone()),
+                        ) {
+                            debug!("Failed to create tool checkpoint: {}", e);
+                            None
+                        } else {
+                            manager.tools_in_turn += 1;
+                            Some(tag)
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Put manager back
+                    self.conversation.checkpoint_manager = Some(manager);
+                    tag
+                } else {
+                    None
+                }
+            };
+
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
             tool_telemetry = tool_telemetry.and_modify(|ev| {
@@ -2346,8 +2473,18 @@ impl ChatSession {
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
-                        style::Print("\n\n"),
                     )?;
+                    if let Some(tag) = checkpoint_tag {
+                        execute!(
+                            self.stdout,
+                            style::SetForegroundColor(Color::Blue),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print(format!(" [{tag}]")),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetAttribute(Attribute::Reset),
+                        )?;
+                    }
+                    execute!(self.stdout, style::Print("\n\n"))?;
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
@@ -2423,6 +2560,50 @@ impl ChatSession {
                         );
                     }
                 },
+            }
+        }
+
+        // Run PostToolUse hooks for all executed tools after we have the tool_results
+        if let Some(cm) = self.conversation.context_manager.as_mut() {
+            for result in &tool_results {
+                if let Some(tool) = self.tool_uses.iter().find(|t| t.id == result.tool_use_id) {
+                    let content: Vec<serde_json::Value> = result
+                        .content
+                        .iter()
+                        .map(|block| match block {
+                            ToolUseResultBlock::Text(text) => serde_json::Value::String(text.clone()),
+                            ToolUseResultBlock::Json(json) => json.clone(),
+                        })
+                        .collect();
+
+                    let tool_response = match result.status {
+                        ToolResultStatus::Success => serde_json::json!({"success": true, "result": content}),
+                        ToolResultStatus::Error => serde_json::json!({"success": false, "error": content}),
+                    };
+
+                    let tool_context = ToolContext {
+                        tool_name: match &tool.tool {
+                            Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), /* for MCP tool, pass MCP name to the hook */
+                            _ => tool.name.clone(),
+                        },
+                        tool_input: tool.tool_input.clone(),
+                        tool_response: Some(tool_response),
+                    };
+
+                    // Here is how we handle postToolUse output:
+                    // Exit code is 0: nothing. stdout is not shown to user. We don't support processing the PostToolUse
+                    // hook output yet. Exit code is non-zero: display an error to user (already
+                    // taken care of by the ContextManager.run_hooks)
+                    let _ = cm
+                        .run_hooks(
+                            crate::cli::agent::hook::HookTrigger::PostToolUse,
+                            &mut std::io::stderr(),
+                            os,
+                            None,
+                            Some(tool_context),
+                        )
+                        .await;
+                }
             }
         }
 
@@ -2648,6 +2829,56 @@ impl ChatSession {
                                     .await?,
                             ));
                         },
+                        RecvErrorKind::ToolValidationError {
+                            tool_use_id,
+                            name,
+                            message,
+                            error_message,
+                        } => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
+                            error!(
+                                recv_error.request_metadata.request_id,
+                                tool_use_id, name, error_message, "Tool validation failed"
+                            );
+                            self.conversation
+                                .push_assistant_message(os, *message, Some(recv_error.request_metadata));
+                            let tool_results = vec![ToolUseResult {
+                                tool_use_id,
+                                content: vec![ToolUseResultBlock::Text(format!(
+                                    "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
+                                    error_message
+                                ))],
+                                status: ToolResultStatus::Error,
+                            }];
+                            // User hint of what happened
+                            let _ = queue!(
+                                self.stdout,
+                                style::Print("\n\n"),
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!(
+                                    "Tool validation failed: {}\n Retrying the request...",
+                                    error_message
+                                )),
+                                style::ResetColor,
+                                style::Print("\n"),
+                            );
+                            self.conversation.add_tool_results(tool_results);
+                            self.send_tool_use_telemetry(os).await;
+                            return Ok(ChatState::HandleResponseStream(
+                                self.conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?,
+                            ));
+                        },
                         _ => {
                             self.send_chat_telemetry(
                                 os,
@@ -2752,6 +2983,64 @@ impl ChatSession {
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
 
+            // Create turn checkpoint if tools were used
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
+            {
+                if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
+                    if manager.tools_in_turn > 0 {
+                        // Increment turn counter
+                        manager.current_turn += 1;
+
+                        // Get user message for description
+                        let description = manager.pending_user_message.take().map_or_else(
+                            || "Turn completed".to_string(),
+                            |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
+                        );
+
+                        // Create turn checkpoint
+                        let tag = manager.current_turn.to_string();
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            &self.conversation.history().clone(),
+                            true,
+                            None,
+                        ) {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("⚠️ Could not create automatic checkpoint: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        } else {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Blue),
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print(format!("✓ Created checkpoint {}\n\n", tag)),
+                                style::SetForegroundColor(Color::Reset),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
+                        }
+
+                        // Reset for next turn
+                        manager.tools_in_turn = 0;
+                        manager.message_locked = false; // Unlock for next turn
+                    } else {
+                        // Clear pending message even if no tools were used
+                        manager.pending_user_message = None;
+                    }
+
+                    // Put manager back
+                    self.conversation.checkpoint_manager = Some(manager);
+                }
+            }
+
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
 
@@ -2761,6 +3050,8 @@ impl ChatSession {
         }
     }
 
+    // Validate the tool use request from LLM, including basic checks like fs_read file should exist, as
+    // well as user-defined preToolUse hook check.
     async fn validate_tools(&mut self, os: &Os, tool_uses: Vec<AssistantToolUse>) -> Result<ChatState, ChatError> {
         let conv_id = self.conversation.conversation_id().to_owned();
         debug!(?tool_uses, "Validating tool uses");
@@ -2770,6 +3061,7 @@ impl ChatSession {
         for tool_use in tool_uses {
             let tool_use_id = tool_use.id.clone();
             let tool_use_name = tool_use.name.clone();
+            let tool_input = tool_use.args.clone();
             let mut tool_telemetry = ToolUseEventBuilder::new(
                 conv_id.clone(),
                 tool_use.id.clone(),
@@ -2791,6 +3083,7 @@ impl ChatSession {
                                 name: tool_use_name,
                                 tool,
                                 accepted: false,
+                                tool_input,
                             });
                         },
                         Err(err) => {
@@ -2862,9 +3155,81 @@ impl ChatSession {
             ));
         }
 
+        // Execute PreToolUse hooks for all validated tools
+        // The mental model is preToolHook is like validate tools, but its behavior can be customized by
+        // user Note that after preTookUse hook, user can still reject the took run
+        if let Some(cm) = self.conversation.context_manager.as_mut() {
+            for tool in &queued_tools {
+                let tool_context = ToolContext {
+                    tool_name: match &tool.tool {
+                        Tool::Custom(custom_tool) => custom_tool.namespaced_tool_name(), // for MCP tool, pass MCP
+                        // name to the hook
+                        _ => tool.name.clone(),
+                    },
+                    tool_input: tool.tool_input.clone(),
+                    tool_response: None,
+                };
+
+                let hook_results = cm
+                    .run_hooks(
+                        crate::cli::agent::hook::HookTrigger::PreToolUse,
+                        &mut std::io::stderr(),
+                        os,
+                        None, // prompt
+                        Some(tool_context),
+                    )
+                    .await?;
+
+                // Here is how we handle the preToolUse hook output:
+                // Exit code is 0: nothing. stdout is not shown to user.
+                // Exit code is 2: block the tool use. return stderr to LLM. show warning to user
+                // Other error: show warning to user.
+
+                // Check for exit code 2 and add to tool_results
+                for (_, (exit_code, output)) in &hook_results {
+                    if *exit_code == 2 {
+                        tool_results.push(ToolUseResult {
+                            tool_use_id: tool.id.clone(),
+                            content: vec![ToolUseResultBlock::Text(format!(
+                                "PreToolHook blocked the tool execution: {}",
+                                output
+                            ))],
+                            status: ToolResultStatus::Error,
+                        });
+                    }
+                }
+            }
+        }
+
+        // If we have any hook validation errors, return them immediately to the model
+        if !tool_results.is_empty() {
+            debug!(?tool_results, "Error found in PreToolUse hooks");
+            for tool_result in &tool_results {
+                for block in &tool_result.content {
+                    if let ToolUseResultBlock::Text(content) = block {
+                        queue!(
+                            self.stderr,
+                            style::Print("\n"),
+                            style::SetForegroundColor(Color::Red),
+                            style::Print(format!("{}\n", content)),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    }
+                }
+            }
+
+            self.conversation.add_tool_results(tool_results);
+            return Ok(ChatState::HandleResponseStream(
+                self.conversation
+                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                    .await?,
+            ));
+        }
+
         self.tool_uses = queued_tools;
         self.pending_tool_index = Some(0);
         self.tool_turn_start_time = Some(Instant::now());
+
         Ok(ChatState::ExecuteTools)
     }
 
@@ -2993,11 +3358,25 @@ impl ChatSession {
     }
 
     /// Helper function to generate a prompt based on the current context
-    fn generate_tool_trust_prompt(&mut self) -> String {
+    async fn generate_tool_trust_prompt(&mut self, os: &Os) -> String {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
+
+        // Check if context usage indicator is enabled
+        let usage_percentage = if os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
+            .unwrap_or(false)
+        {
+            use crate::cli::chat::cli::usage::get_total_usage_percentage;
+            get_total_usage_percentage(self, os).await.ok()
+        } else {
+            None
+        };
+
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -3784,6 +4163,252 @@ mod tests {
         .spawn(&mut os)
         .await
         .unwrap();
+    }
+
+    // Integration test for PreToolUse hook functionality.
+    //
+    // In this integration test we create a preToolUse hook that logs tool info into a file
+    // and we run fs_read and verify the log is generated with the correct ToolContext data.
+    #[tokio::test]
+    async fn test_tool_hook_integration() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::hook::{
+            Hook,
+            HookTrigger,
+        };
+
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "I'll read that file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_read",
+                    "args": {
+                        "operations": [
+                            {
+                                "mode": "Line",
+                                "path": "/test.txt",
+                                "start_line": 1,
+                                "end_line": 3
+                            }
+                        ]
+                    }
+                }
+            ],
+            [
+                "Here's the file content!",
+            ],
+        ]));
+
+        // Create test file
+        os.fs.write("/test.txt", "line1\nline2\nline3\n").await.unwrap();
+
+        // Create agent with PreToolUse and PostToolUse hooks
+        let mut agents = Agents::default();
+        let mut hooks = HashMap::new();
+
+        // Get the real path in the temp directory for the hooks to write to
+        let pre_hook_log_path = os.fs.chroot_path_str("/pre-hook-test.log");
+        let post_hook_log_path = os.fs.chroot_path_str("/post-hook-test.log");
+        let pre_hook_command = format!("cat > {}", pre_hook_log_path);
+        let post_hook_command = format!("cat > {}", post_hook_log_path);
+
+        hooks.insert(HookTrigger::PreToolUse, vec![Hook {
+            command: pre_hook_command,
+            timeout_ms: 5000,
+            max_output_size: 1024,
+            cache_ttl_seconds: 0,
+            matcher: Some("fs_*".to_string()), // Match fs_read, fs_write, etc.
+            source: crate::cli::agent::hook::Source::Agent,
+        }]);
+
+        hooks.insert(HookTrigger::PostToolUse, vec![Hook {
+            command: post_hook_command,
+            timeout_ms: 5000,
+            max_output_size: 1024,
+            cache_ttl_seconds: 0,
+            matcher: Some("fs_*".to_string()), // Match fs_read, fs_write, etc.
+            source: crate::cli::agent::hook::Source::Agent,
+        }]);
+
+        let agent = Agent {
+            name: "TestAgent".to_string(),
+            hooks,
+            ..Default::default()
+        };
+        agents.agents.insert("TestAgent".to_string(), agent);
+        agents.switch("TestAgent").expect("Failed to switch agent");
+
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        // Test that PreToolUse hook runs
+        ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "fake_conv_id",
+            agents,
+            None, // No initial input
+            InputSource::new_mock(vec![
+                "read /test.txt".to_string(),
+                "y".to_string(), // Accept tool execution
+                "exit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap()
+        .spawn(&mut os)
+        .await
+        .unwrap();
+
+        // Verify the PreToolUse hook was called
+        if let Ok(pre_log_content) = os.fs.read_to_string("/pre-hook-test.log").await {
+            let pre_hook_data: serde_json::Value =
+                serde_json::from_str(&pre_log_content).expect("PreToolUse hook output should be valid JSON");
+
+            assert_eq!(pre_hook_data["hook_event_name"], "preToolUse");
+            assert_eq!(pre_hook_data["tool_name"], "fs_read");
+            assert_eq!(pre_hook_data["tool_response"], serde_json::Value::Null);
+
+            let tool_input = &pre_hook_data["tool_input"];
+            assert!(tool_input["operations"].is_array());
+
+            println!("✓ PreToolUse hook validation passed: {}", pre_log_content);
+        } else {
+            panic!("PreToolUse hook log file not found - hook may not have been called");
+        }
+
+        // Verify the PostToolUse hook was called
+        if let Ok(post_log_content) = os.fs.read_to_string("/post-hook-test.log").await {
+            let post_hook_data: serde_json::Value =
+                serde_json::from_str(&post_log_content).expect("PostToolUse hook output should be valid JSON");
+
+            assert_eq!(post_hook_data["hook_event_name"], "postToolUse");
+            assert_eq!(post_hook_data["tool_name"], "fs_read");
+
+            // Validate tool_response structure for successful execution
+            let tool_response = &post_hook_data["tool_response"];
+            assert_eq!(tool_response["success"], true);
+            assert!(tool_response["result"].is_array());
+
+            let result_blocks = tool_response["result"].as_array().unwrap();
+            assert!(!result_blocks.is_empty());
+            let content = result_blocks[0].as_str().unwrap();
+            assert!(content.contains("line1\nline2\nline3"));
+
+            println!("✓ PostToolUse hook validation passed: {}", post_log_content);
+        } else {
+            panic!("PostToolUse hook log file not found - hook may not have been called");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_pretool_hook_blocking_integration() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::hook::{
+            Hook,
+            HookTrigger,
+        };
+
+        let mut os = Os::new().await.unwrap();
+
+        // Create a test file to read
+        os.fs.write("/sensitive.txt", "classified information").await.unwrap();
+
+        // Mock LLM responses: first tries fs_read, gets blocked, then responds to error
+        os.client.set_mock_output(serde_json::json!([
+            [
+                "I'll read that file for you",
+                {
+                    "tool_use_id": "1",
+                    "name": "fs_read",
+                    "args": {
+                        "operations": [
+                            {
+                                "mode": "Line",
+                                "path": "/sensitive.txt"
+                            }
+                        ]
+                    }
+                }
+            ],
+            [
+                "I understand the security policy blocked access to that file.",
+            ],
+        ]));
+
+        // Create agent with blocking PreToolUse hook
+        let mut agents = Agents::default();
+        let mut hooks = HashMap::new();
+
+        // Create a hook that blocks fs_read of sensitive files with exit code 2
+        #[cfg(unix)]
+        let hook_command = "echo 'Security policy violation: cannot read sensitive files' >&2; exit 2";
+        #[cfg(windows)]
+        let hook_command = "echo Security policy violation: cannot read sensitive files 1>&2 & exit /b 2";
+
+        hooks.insert(HookTrigger::PreToolUse, vec![Hook {
+            command: hook_command.to_string(),
+            timeout_ms: 5000,
+            max_output_size: 1024,
+            cache_ttl_seconds: 0,
+            matcher: Some("fs_read".to_string()),
+            source: crate::cli::agent::hook::Source::Agent,
+        }]);
+
+        let agent = Agent {
+            name: "SecurityAgent".to_string(),
+            hooks,
+            ..Default::default()
+        };
+        agents.agents.insert("SecurityAgent".to_string(), agent);
+        agents.switch("SecurityAgent").expect("Failed to switch agent");
+
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        // Run chat session - hook should block tool execution
+        let result = ChatSession::new(
+            &mut os,
+            std::io::stdout(),
+            std::io::stderr(),
+            "test_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec!["read /sensitive.txt".to_string(), "exit".to_string()]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap()
+        .spawn(&mut os)
+        .await;
+
+        // The session should complete successfully (hook blocks tool but doesn't crash)
+        assert!(
+            result.is_ok(),
+            "Chat session should complete successfully even when hook blocks tool"
+        );
     }
 
     #[test]

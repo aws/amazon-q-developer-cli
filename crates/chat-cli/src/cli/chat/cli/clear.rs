@@ -52,6 +52,12 @@ impl ClearArgs {
             if let Some(cm) = session.conversation.context_manager.as_mut() {
                 cm.hook_executor.cache.clear();
             }
+
+            // Reset pending tool state to prevent orphaned tool approval prompts
+            session.tool_uses.clear();
+            session.pending_tool_index = None;
+            session.tool_turn_start_time = None;
+
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Green),

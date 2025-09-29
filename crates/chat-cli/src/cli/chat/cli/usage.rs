@@ -21,6 +21,60 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 
+/// Detailed usage data for context window analysis
+#[derive(Debug)]
+pub struct DetailedUsageData {
+    pub total_tokens: TokenCount,
+    pub context_tokens: TokenCount,
+    pub assistant_tokens: TokenCount,
+    pub user_tokens: TokenCount,
+    pub tools_tokens: TokenCount,
+    pub context_window_size: usize,
+    pub dropped_context_files: Vec<(String, String)>,
+}
+
+/// Calculate usage percentage from token counts
+pub fn calculate_usage_percentage(tokens: TokenCount, context_window_size: usize) -> f32 {
+    (tokens.value() as f32 / context_window_size as f32) * 100.0
+}
+
+/// Get detailed usage data for context window analysis
+pub async fn get_detailed_usage_data(session: &mut ChatSession, os: &Os) -> Result<DetailedUsageData, ChatError> {
+    let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
+
+    let state = session
+        .conversation
+        .backend_conversation_state(os, true, &mut std::io::stderr())
+        .await?;
+
+    let data = state.calculate_conversation_size();
+    let tool_specs_json: String = state
+        .tools
+        .values()
+        .filter_map(|s| serde_json::to_string(s).ok())
+        .collect::<Vec<String>>()
+        .join("");
+    let tools_char_count: CharCount = tool_specs_json.len().into();
+    let total_tokens: TokenCount =
+        (data.context_messages + data.user_messages + data.assistant_messages + tools_char_count).into();
+
+    Ok(DetailedUsageData {
+        total_tokens,
+        context_tokens: data.context_messages.into(),
+        assistant_tokens: data.assistant_messages.into(),
+        user_tokens: data.user_messages.into(),
+        tools_tokens: tools_char_count.into(),
+        context_window_size,
+        dropped_context_files: state.dropped_context_files,
+    })
+}
+
+/// Get total usage percentage (simple interface for prompt generation)
+pub async fn get_total_usage_percentage(session: &mut ChatSession, os: &Os) -> Result<f32, ChatError> {
+    let data = get_detailed_usage_data(session, os).await?;
+    Ok(calculate_usage_percentage(data.total_tokens, data.context_window_size))
+}
+
 /// Arguments for the usage command that displays token usage statistics and context window
 /// information.
 ///
@@ -32,12 +86,9 @@ pub struct UsageArgs;
 
 impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let state = session
-            .conversation
-            .backend_conversation_state(os, true, &mut session.stderr)
-            .await?;
+        let usage_data = get_detailed_usage_data(session, os).await?;
 
-        if !state.dropped_context_files.is_empty() {
+        if !usage_data.dropped_context_files.is_empty() {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::DarkYellow),
@@ -50,33 +101,18 @@ impl UsageArgs {
             )?;
         }
 
-        let data = state.calculate_conversation_size();
-        let tool_specs_json: String = state
-            .tools
-            .values()
-            .filter_map(|s| serde_json::to_string(s).ok())
-            .collect::<Vec<String>>()
-            .join("");
-        let context_token_count: TokenCount = data.context_messages.into();
-        let assistant_token_count: TokenCount = data.assistant_messages.into();
-        let user_token_count: TokenCount = data.user_messages.into();
-        let tools_char_count: CharCount = tool_specs_json.len().into(); // usize → CharCount
-        let tools_token_count: TokenCount = tools_char_count.into(); // CharCount → TokenCount
-        let total_token_used: TokenCount =
-            (data.context_messages + data.user_messages + data.assistant_messages + tools_char_count).into();
         let window_width = session.terminal_width();
         // set a max width for the progress bar for better aesthetic
         let progress_bar_width = std::cmp::min(window_width, 80);
 
-        let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
-        let context_width =
-            ((context_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
-        let assistant_width =
-            ((assistant_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
-        let tools_width =
-            ((tools_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
-        let user_width =
-            ((user_token_count.value() as f64 / context_window_size as f64) * progress_bar_width as f64) as usize;
+        let context_width = ((usage_data.context_tokens.value() as f64 / usage_data.context_window_size as f64)
+            * progress_bar_width as f64) as usize;
+        let assistant_width = ((usage_data.assistant_tokens.value() as f64 / usage_data.context_window_size as f64)
+            * progress_bar_width as f64) as usize;
+        let tools_width = ((usage_data.tools_tokens.value() as f64 / usage_data.context_window_size as f64)
+            * progress_bar_width as f64) as usize;
+        let user_width = ((usage_data.user_tokens.value() as f64 / usage_data.context_window_size as f64)
+            * progress_bar_width as f64) as usize;
 
         let left_over_width = progress_bar_width
             - std::cmp::min(
@@ -86,44 +122,45 @@ impl UsageArgs {
 
         let is_overflow = (context_width + assistant_width + user_width + tools_width) > progress_bar_width;
 
+        let total_percentage = calculate_usage_percentage(usage_data.total_tokens, usage_data.context_window_size);
+
         if is_overflow {
             queue!(
                 session.stderr,
                 style::Print(format!(
                     "\nCurrent context window ({} of {}k tokens used)\n",
-                    total_token_used,
-                    context_window_size / 1000
+                    usage_data.total_tokens,
+                    usage_data.context_window_size / 1000
                 )),
                 style::SetForegroundColor(Color::DarkRed),
                 style::Print("█".repeat(progress_bar_width)),
                 style::SetForegroundColor(Color::Reset),
                 style::Print(" "),
-                style::Print(format!(
-                    "{:.2}%",
-                    (total_token_used.value() as f32 / context_window_size as f32) * 100.0
-                )),
+                style::Print(format!("{:.2}%", total_percentage)),
             )?;
         } else {
             queue!(
                 session.stderr,
                 style::Print(format!(
                     "\nCurrent context window ({} of {}k tokens used)\n",
-                    total_token_used,
-                    context_window_size / 1000
+                    usage_data.total_tokens,
+                    usage_data.context_window_size / 1000
                 )),
                 // Context files
                 style::SetForegroundColor(Color::DarkCyan),
                 // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
                 // empty
-                style::Print("|".repeat(if context_width == 0 && *context_token_count > 0 {
-                    1
-                } else {
-                    0
-                })),
+                style::Print(
+                    "|".repeat(if context_width == 0 && usage_data.context_tokens.value() > 0 {
+                        1
+                    } else {
+                        0
+                    })
+                ),
                 style::Print("█".repeat(context_width)),
                 // Tools
                 style::SetForegroundColor(Color::DarkRed),
-                style::Print("|".repeat(if tools_width == 0 && *tools_token_count > 0 {
+                style::Print("|".repeat(if tools_width == 0 && usage_data.tools_tokens.value() > 0 {
                     1
                 } else {
                     0
@@ -131,24 +168,27 @@ impl UsageArgs {
                 style::Print("█".repeat(tools_width)),
                 // Assistant responses
                 style::SetForegroundColor(Color::Blue),
-                style::Print("|".repeat(if assistant_width == 0 && *assistant_token_count > 0 {
+                style::Print(
+                    "|".repeat(if assistant_width == 0 && usage_data.assistant_tokens.value() > 0 {
+                        1
+                    } else {
+                        0
+                    })
+                ),
+                style::Print("█".repeat(assistant_width)),
+                // User prompts
+                style::SetForegroundColor(Color::Magenta),
+                style::Print("|".repeat(if user_width == 0 && usage_data.user_tokens.value() > 0 {
                     1
                 } else {
                     0
                 })),
-                style::Print("█".repeat(assistant_width)),
-                // User prompts
-                style::SetForegroundColor(Color::Magenta),
-                style::Print("|".repeat(if user_width == 0 && *user_token_count > 0 { 1 } else { 0 })),
                 style::Print("█".repeat(user_width)),
                 style::SetForegroundColor(Color::DarkGrey),
                 style::Print("█".repeat(left_over_width)),
                 style::Print(" "),
                 style::SetForegroundColor(Color::Reset),
-                style::Print(format!(
-                    "{:.2}%",
-                    (total_token_used.value() as f32 / context_window_size as f32) * 100.0
-                )),
+                style::Print(format!("{:.2}%", total_percentage)),
             )?;
         }
 
@@ -161,32 +201,32 @@ impl UsageArgs {
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
                 "~{} tokens ({:.2}%)\n",
-                context_token_count,
-                (context_token_count.value() as f32 / context_window_size as f32) * 100.0
+                usage_data.context_tokens,
+                calculate_usage_percentage(usage_data.context_tokens, usage_data.context_window_size)
             )),
             style::SetForegroundColor(Color::DarkRed),
             style::Print("█ Tools:    "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n",
-                tools_token_count,
-                (tools_token_count.value() as f32 / context_window_size as f32) * 100.0
+                usage_data.tools_tokens,
+                calculate_usage_percentage(usage_data.tools_tokens, usage_data.context_window_size)
             )),
             style::SetForegroundColor(Color::Blue),
             style::Print("█ Q responses: "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
                 "  ~{} tokens ({:.2}%)\n",
-                assistant_token_count,
-                (assistant_token_count.value() as f32 / context_window_size as f32) * 100.0
+                usage_data.assistant_tokens,
+                calculate_usage_percentage(usage_data.assistant_tokens, usage_data.context_window_size)
             )),
             style::SetForegroundColor(Color::Magenta),
             style::Print("█ Your prompts: "),
             style::SetForegroundColor(Color::Reset),
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n\n",
-                user_token_count,
-                (user_token_count.value() as f32 / context_window_size as f32) * 100.0
+                usage_data.user_tokens,
+                calculate_usage_percentage(usage_data.user_tokens, usage_data.context_window_size)
             )),
         )?;
 

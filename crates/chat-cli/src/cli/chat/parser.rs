@@ -91,6 +91,7 @@ impl RecvError {
             RecvErrorKind::StreamTimeout { .. } => None,
             RecvErrorKind::UnexpectedToolUseEos { .. } => None,
             RecvErrorKind::Cancelled => None,
+            RecvErrorKind::ToolValidationError { .. } => None,
         }
     }
 }
@@ -103,6 +104,7 @@ impl ReasonCode for RecvError {
             RecvErrorKind::StreamTimeout { .. } => "RecvErrorStreamTimeout".to_string(),
             RecvErrorKind::UnexpectedToolUseEos { .. } => "RecvErrorUnexpectedToolUseEos".to_string(),
             RecvErrorKind::Cancelled => "Interrupted".to_string(),
+            RecvErrorKind::ToolValidationError { .. } => "RecvErrorToolValidation".to_string(),
         }
     }
 }
@@ -151,6 +153,14 @@ pub enum RecvErrorKind {
     /// The stream processing task was cancelled
     #[error("Stream handling was cancelled")]
     Cancelled,
+    /// Tool validation failed due to invalid arguments
+    #[error("Tool validation failed for tool: {} with id: {}", .name, .tool_use_id)]
+    ToolValidationError {
+        tool_use_id: String,
+        name: String,
+        message: Box<AssistantMessage>,
+        error_message: String,
+    },
 }
 
 /// Represents a response stream from a call to the SendMessage API.
@@ -472,7 +482,43 @@ impl ResponseParser {
         }
 
         let args = match serde_json::from_str(&tool_string) {
-            Ok(args) => args,
+            Ok(args) => {
+                // Ensure we have a valid JSON object
+                match args {
+                    serde_json::Value::Object(_) => args,
+                    _ => {
+                        error!("Received non-object JSON for tool arguments: {:?}", args);
+                        let warning_args = serde_json::Value::Object(
+                            [(
+                                "key".to_string(),
+                                serde_json::Value::String(
+                                    "WARNING: the actual tool use arguments were not a valid JSON object".to_string(),
+                                ),
+                            )]
+                            .into_iter()
+                            .collect(),
+                        );
+                        self.tool_uses.push(AssistantToolUse {
+                            id: id.clone(),
+                            name: name.clone(),
+                            orig_name: name.clone(),
+                            args: warning_args.clone(),
+                            orig_args: warning_args.clone(),
+                        });
+                        let message = Box::new(AssistantMessage::new_tool_use(
+                            Some(self.message_id.clone()),
+                            std::mem::take(&mut self.assistant_text),
+                            self.tool_uses.clone().into_iter().collect(),
+                        ));
+                        return Err(self.error(RecvErrorKind::ToolValidationError {
+                            tool_use_id: id,
+                            name,
+                            message,
+                            error_message: format!("Expected JSON object, got: {:?}", args),
+                        }));
+                    },
+                }
+            },
             Err(err) if !tool_string.is_empty() => {
                 // If we failed deserializing after waiting for a long time, then this is most
                 // likely bedrock responding with a stop event for some reason without actually
@@ -751,6 +797,77 @@ mod tests {
         assert!(
             !output.contains(content_to_ignore),
             "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_response_parser_avoid_invalid_json() {
+        let content_to_ignore = "IGNORE ME PLEASE";
+        let tool_use_id = "TEST_ID".to_string();
+        let tool_name = "execute_bash".to_string();
+        let tool_args = serde_json::json!("invalid json").to_string();
+        let mut events = vec![
+            ChatResponseStream::AssistantResponseEvent {
+                content: "hi".to_string(),
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: " there".to_string(),
+            },
+            ChatResponseStream::AssistantResponseEvent {
+                content: content_to_ignore.to_string(),
+            },
+            ChatResponseStream::CodeReferenceEvent(()),
+            ChatResponseStream::ToolUseEvent {
+                tool_use_id: tool_use_id.clone(),
+                name: tool_name.clone(),
+                input: None,
+                stop: None,
+            },
+            ChatResponseStream::ToolUseEvent {
+                tool_use_id: tool_use_id.clone(),
+                name: tool_name.clone(),
+                input: Some(tool_args),
+                stop: None,
+            },
+        ];
+        events.reverse();
+        let mock = SendMessageOutput::Mock(events);
+        let mut parser = ResponseParser::new(
+            mock,
+            "".to_string(),
+            None,
+            1,
+            vec![],
+            mpsc::channel(32).0,
+            Instant::now(),
+            SystemTime::now(),
+            CancellationToken::new(),
+            Arc::new(Mutex::new(None)),
+        );
+
+        let mut output = String::new();
+        let mut found_validation_error = false;
+        for _ in 0..5 {
+            match parser.recv().await {
+                Ok(event) => {
+                    output.push_str(&format!("{:?}", event));
+                },
+                Err(recv_error) => {
+                    if matches!(recv_error.source, RecvErrorKind::ToolValidationError { .. }) {
+                        found_validation_error = true;
+                    }
+                    break;
+                },
+            }
+        }
+
+        assert!(
+            !output.contains(content_to_ignore),
+            "assistant text preceding a code reference should be ignored as this indicates licensed code is being returned"
+        );
+        assert!(
+            found_validation_error,
+            "Expected to find tool validation error for non-object JSON"
         );
     }
 }

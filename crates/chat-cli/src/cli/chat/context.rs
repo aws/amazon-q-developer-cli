@@ -14,6 +14,7 @@ use serde::{
     Serializer,
 };
 
+use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
 use crate::cli::agent::Agent;
@@ -247,11 +248,16 @@ impl ContextManager {
         &mut self,
         trigger: HookTrigger,
         output: &mut impl Write,
+        os: &crate::os::Os,
         prompt: Option<&str>,
-    ) -> Result<Vec<((HookTrigger, Hook), String)>, ChatError> {
+        tool_context: Option<crate::cli::chat::cli::hooks::ToolContext>,
+    ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
-        self.hook_executor.run_hooks(hooks, output, prompt).await
+        let cwd = os.env.current_dir()?.to_string_lossy().to_string();
+        self.hook_executor
+            .run_hooks(hooks, output, &cwd, prompt, tool_context)
+            .await
     }
 }
 

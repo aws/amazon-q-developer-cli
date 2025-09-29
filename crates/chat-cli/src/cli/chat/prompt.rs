@@ -54,6 +54,7 @@ pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
+    "/reply",
     "/issue",
     "/quit",
     "/tools",
@@ -408,6 +409,18 @@ impl Highlighter for ChatHelper {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
             }
 
+            // Add percentage part if present (colored by usage level)
+            if let Some(percentage) = components.usage_percentage {
+                let colored_percentage = if percentage < 50.0 {
+                    format!("{}% ", percentage as u32).green()
+                } else if percentage < 90.0 {
+                    format!("{}% ", percentage as u32).yellow()
+                } else {
+                    format!("{}% ", percentage as u32).red()
+                };
+                result.push_str(&colored_percentage.to_string());
+            }
+
             // Add tangent indicator if present (yellow)
             if components.tangent_mode {
                 result.push_str(&"↯ ".yellow().to_string());
@@ -474,19 +487,23 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
     );
 
-    // Add custom keybinding for Ctrl+J to insert a newline
+    // Add custom keybinding for Ctrl+j to insert a newline
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('j'), Modifiers::CTRL),
         EventHandler::Simple(Cmd::Insert(1, "\n".to_string())),
     );
 
-    // Add custom keybinding for Ctrl+F to accept hint (like fish shell)
+    // Add custom keybinding for autocompletion hint acceptance (configurable)
+    let autocompletion_key_char = match os.database.settings.get_string(Setting::AutocompletionKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('g'),
+        _ => 'g', // Default to 'g' if setting is missing or invalid
+    };
     rl.bind_sequence(
-        KeyEvent(KeyCode::Char('f'), Modifiers::CTRL),
+        KeyEvent(KeyCode::Char(autocompletion_key_char), Modifiers::CTRL),
         EventHandler::Simple(Cmd::CompleteHint),
     );
 
-    // Add custom keybinding for Ctrl+T to toggle tangent mode (configurable)
+    // Add custom keybinding for Ctrl+t to toggle tangent mode (configurable)
     let tangent_key_char = match os.database.settings.get_string(Setting::TangentModeKey) {
         Some(key) if key.len() == 1 => key.chars().next().unwrap_or('t'),
         _ => 't', // Default to 't' if setting is missing or invalid
@@ -721,5 +738,33 @@ mod tests {
 
         let hint = hinter.hint(line, pos, &ctx);
         assert_eq!(hint, None);
+    }
+
+    #[tokio::test]
+    // If you get a unit test failure for key override, please consider using a new key binding instead.
+    // The list of reserved keybindings here are the standard in UNIX world so please don't take them
+    async fn test_no_emacs_keybindings_overridden() {
+        let (sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
+        let (_, receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let mut test_editor = rl(&mock_os, sender, receiver).unwrap();
+
+        // Reserved Emacs keybindings that should not be overridden
+        let reserved_keys = ['a', 'e', 'f', 'b', 'k'];
+
+        for &key in &reserved_keys {
+            let key_event = KeyEvent(KeyCode::Char(key), Modifiers::CTRL);
+
+            // Try to bind and get the previous handler
+            let previous_handler = test_editor.bind_sequence(key_event, EventHandler::Simple(Cmd::Noop));
+
+            // If there was a previous handler, it means the key was already bound
+            // (which could be our custom binding overriding Emacs)
+            if previous_handler.is_some() {
+                panic!("Ctrl+{} appears to be overridden (found existing binding)", key);
+            }
+        }
     }
 }
