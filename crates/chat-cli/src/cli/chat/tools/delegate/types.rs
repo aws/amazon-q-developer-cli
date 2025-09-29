@@ -2,7 +2,12 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use strum::{Display, EnumString};
+use strum::{
+    Display,
+    EnumString,
+};
+
+use crate::cli::Agent;
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display, EnumString)]
 #[strum(serialize_all = "lowercase")]
@@ -50,14 +55,18 @@ impl AgentExecution {
                 format!("Agent '{}' is still running. Please wait...", self.agent)
             },
             AgentStatus::Completed => {
-                format!("Agent '{}' completed successfully.\n\nOutput:\n{}", 
-                    self.agent, self.output)
+                format!(
+                    "Agent '{}' completed successfully.\n\nOutput:\n{}",
+                    self.agent, self.output
+                )
             },
             AgentStatus::Failed => {
-                format!("Agent '{}' failed.\nExit code: {}\n\nError:\n{}", 
-                    self.agent, 
+                format!(
+                    "Agent '{}' failed.\nExit code: {}\n\nError:\n{}",
+                    self.agent,
                     self.exit_code.unwrap_or(-1),
-                    self.output)
+                    self.output
+                )
             },
         }
     }
@@ -68,4 +77,13 @@ pub struct AgentConfig {
     pub description: Option<String>,
     #[serde(rename = "allowedTools")]
     pub allowed_tools: Vec<String>,
+}
+
+impl From<&Agent> for AgentConfig {
+    fn from(value: &Agent) -> Self {
+        Self {
+            description: value.description.clone(),
+            allowed_tools: value.allowed_tools.iter().cloned().collect::<Vec<String>>(),
+        }
+    }
 }

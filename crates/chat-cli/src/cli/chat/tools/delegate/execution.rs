@@ -1,26 +1,36 @@
 use std::process::Command;
-use eyre::Result;
-use chrono::Utc;
 
-use crate::cli::chat::tools::delegate::types::{AgentExecution, AgentStatus};
-use crate::cli::chat::tools::delegate::agent::{save_agent_execution, load_agent_execution};
+use chrono::Utc;
+use eyre::Result;
+
+use crate::cli::chat::tools::delegate::agent::{
+    load_agent_execution,
+    save_agent_execution,
+};
+use crate::cli::chat::tools::delegate::types::{
+    AgentExecution,
+    AgentStatus,
+};
 use crate::os::Os;
 
 pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<AgentExecution> {
     let now = Utc::now().to_rfc3339();
-    
+
     // Run Q chat with specific agent in background, non-interactive
     let mut cmd = tokio::process::Command::new("q");
     cmd.args(["chat", "--agent", agent, task]);
-    
+
     // Redirect to capture output (runs silently)
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
-    
+
+    #[cfg(not(windows))]
+    cmd.process_group(0);
+
     let child = cmd.spawn()?;
-    let pid = child.id().unwrap_or(0);
-    
+    let pid = child.id().ok_or(eyre::eyre!("Process spawned had already exited"))?;
+
     let execution = AgentExecution {
         agent: agent.to_string(),
         task: task.to_string(),
@@ -33,10 +43,10 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     };
 
     save_agent_execution(os, &execution).await?;
-    
+
     // Start monitoring with the actual child process
     tokio::spawn(monitor_child_process(child, execution.clone(), os.clone()));
-    
+
     Ok(execution)
 }
 
@@ -50,7 +60,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             };
             execution.completed_at = Some(Utc::now().to_rfc3339());
             execution.exit_code = output.status.code();
-            
+
             // Combine stdout and stderr into the output field
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
@@ -59,23 +69,23 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             } else {
                 format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
             };
-            
+
             // Save to ~/.aws/amazonq/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
-        }
+        },
         Err(e) => {
             execution.status = AgentStatus::Failed;
             execution.completed_at = Some(Utc::now().to_rfc3339());
             execution.exit_code = Some(-1);
             execution.output = format!("Failed to wait for process: {}", e);
-            
+
             // Save to ~/.aws/amazonq/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
-        }
+        },
     }
 }
 
@@ -83,19 +93,17 @@ pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
     match load_agent_execution(os, agent).await? {
         Some(mut execution) => {
             // If status is running, check if PID is still alive
-            if execution.status == AgentStatus::Running {
-                if execution.pid != 0 && !is_process_alive(execution.pid) {
-                    // Process died, mark as failed
-                    execution.status = AgentStatus::Failed;
-                    execution.completed_at = Some(chrono::Utc::now().to_rfc3339());
-                    execution.exit_code = Some(-1);
-                    execution.output = "Process terminated unexpectedly (PID not found)".to_string();
-                    
-                    // Save the updated status
-                    save_agent_execution(os, &execution).await?;
-                }
+            if execution.status == AgentStatus::Running && execution.pid != 0 && !is_process_alive(execution.pid) {
+                // Process died, mark as failed
+                execution.status = AgentStatus::Failed;
+                execution.completed_at = Some(chrono::Utc::now().to_rfc3339());
+                execution.exit_code = Some(-1);
+                execution.output = "Process terminated unexpectedly (PID not found)".to_string();
+
+                // Save the updated status
+                save_agent_execution(os, &execution).await?;
             }
-            
+
             Ok(execution.format_status())
         },
         None => Ok(format!("No execution found for agent '{}'", agent)),
@@ -117,7 +125,7 @@ fn is_process_alive(pid: u32) -> bool {
             .map(|output| output.status.success())
             .unwrap_or(false)
     }
-    
+
     #[cfg(not(unix))]
     {
         // For non-Unix systems, assume process is alive (fallback)
