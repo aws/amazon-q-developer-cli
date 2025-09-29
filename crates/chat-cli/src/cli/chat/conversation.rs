@@ -199,7 +199,7 @@ impl ConversationState {
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
-            transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
+            transcript: VecDeque::new(),
             tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
@@ -253,6 +253,10 @@ impl ConversationState {
         self.transcript = checkpoint.main_transcript;
         self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
+        if let Some(manager) = self.checkpoint_manager.as_mut() {
+            manager.message_locked = false;
+            manager.pending_user_message = None;
+        }
     }
 
     /// Enter tangent mode - creates checkpoint of current state
@@ -1385,7 +1389,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1415,7 +1419,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1451,7 +1455,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1511,7 +1515,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await

@@ -2112,7 +2112,9 @@ mod tests {
         // Create mock prompt bundles
         let prompt = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            icons: None,
             arguments: None,
         };
 
@@ -2126,7 +2128,7 @@ mod tests {
             prompt_get: prompt,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test finding specific server
         let found = bundles.iter().find(|b| b.server_name == "server1");
