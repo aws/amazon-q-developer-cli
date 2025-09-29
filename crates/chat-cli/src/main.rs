@@ -5,6 +5,7 @@ mod cli;
 mod database;
 mod logging;
 mod mcp_client;
+mod mock_llm;
 mod os;
 mod request;
 mod telemetry;

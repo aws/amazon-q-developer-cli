@@ -83,6 +83,8 @@ pub enum Setting {
     EnabledTodoList,
     #[strum(message = "Enable the checkpoint feature (boolean)")]
     EnabledCheckpoint,
+    #[strum(message = "Enable Agent Client Protocol server (boolean)")]
+    EnabledAcp,
 }
 
 impl AsRef<str> for Setting {
@@ -121,6 +123,7 @@ impl AsRef<str> for Setting {
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
+            Self::EnabledAcp => "acp.enabled",
         }
     }
 }
@@ -169,6 +172,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "acp.enabled" => Ok(Self::EnabledAcp),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
