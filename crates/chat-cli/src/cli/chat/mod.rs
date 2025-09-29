@@ -6,11 +6,13 @@ mod input_source;
 mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
+pub mod checkpoint;
 mod line_tracker;
 mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -142,6 +144,10 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
+use crate::cli::chat::checkpoint::{
+    CheckpointManager,
+    truncate_message,
+};
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::chat::cli::editor::open_editor;
 use crate::cli::chat::cli::prompts::{
@@ -165,6 +171,7 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
+use crate::util::directories::get_shadow_repo_dir;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     directories,
@@ -455,7 +462,7 @@ const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off.
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 19] = [
+const ROTATING_TIPS: [&str; 20] = [
     color_print::cstr! {"You can resume the last conversation from your current directory by launching with
     <green!>q chat --resume</green!>"},
     color_print::cstr! {"Get notified whenever Q CLI finishes responding.
@@ -490,6 +497,7 @@ const ROTATING_TIPS: [&str; 19] = [
     color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
     color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
     color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
+    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
 ];
 
 const GREETING_BREAK_POINT: usize = 80;
@@ -1322,6 +1330,38 @@ impl ChatSession {
             }
         }
 
+        // Initialize capturing if possible
+        if os
+            .database
+            .settings
+            .get_bool(Setting::EnabledCheckpoint)
+            .unwrap_or(false)
+        {
+            let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
+            let start = std::time::Instant::now();
+            let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
+                Ok(manager) => {
+                    execute!(
+                        self.stderr,
+                        style::Print(
+                            format!(
+                                "📷 Checkpoints are enabled! (took {:.2}s)\n\n",
+                                start.elapsed().as_secs_f32()
+                            )
+                            .blue()
+                            .bold()
+                        )
+                    )?;
+                    Some(manager)
+                },
+                Err(e) => {
+                    execute!(self.stderr, style::Print(format!("{e}\n\n").blue()))?;
+                    None
+                },
+            };
+            self.conversation.checkpoint_manager = checkpoint_manager;
+        }
+
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
         }
@@ -1920,7 +1960,7 @@ impl ChatSession {
             style::SetForegroundColor(Color::Reset),
             style::SetAttribute(Attribute::Reset)
         )?;
-        let prompt = self.generate_tool_trust_prompt();
+        let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -2048,7 +2088,7 @@ impl ChatSession {
                 name: prompt_name,
                 arguments,
             };
-            return subcommand.execute(self).await;
+            return subcommand.execute(os, self).await;
         } else if let Some(command) = input.strip_prefix("!") {
             // Use platform-appropriate shell
             let result = if cfg!(target_os = "windows") {
@@ -2083,6 +2123,23 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else {
+            // Track the message for checkpoint descriptions, but only if not already set
+            // This prevents tool approval responses (y/n/t) from overwriting the original message
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
+            {
+                if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
+                    if !manager.message_locked && self.pending_tool_index.is_none() {
+                        manager.pending_user_message = Some(user_input.clone());
+                        manager.message_locked = true;
+                    }
+                }
+            }
+
             // Check for a pending tool approval
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);
@@ -2306,6 +2363,74 @@ impl ChatSession {
             }
             execute!(self.stdout, style::Print("\n"))?;
 
+            // Handle checkpoint after tool execution - store tag for later display
+            let checkpoint_tag: Option<String> = {
+                let enabled = os
+                    .database
+                    .settings
+                    .get_bool(Setting::EnabledCheckpoint)
+                    .unwrap_or(false)
+                    && !self.conversation.is_in_tangent_mode();
+                if invoke_result.is_err() || !enabled {
+                    None
+                }
+                // Take manager out temporarily to avoid borrow conflicts
+                else if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
+                    // Check if there are uncommitted changes
+                    let has_changes = match manager.has_changes() {
+                        Ok(b) => b,
+                        Err(e) => {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("Could not check if uncommitted changes exist: {e}\n")),
+                                style::Print("Saving anyways...\n"),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                            true
+                        },
+                    };
+                    let tag = if has_changes {
+                        // Generate tag for this tool use
+                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+
+                        // Get tool summary for commit message
+                        let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
+                        let description = if is_fs_read {
+                            "External edits detected (likely manual change)".to_string()
+                        } else {
+                            match tool.tool.get_summary() {
+                                Some(summary) => summary,
+                                None => tool.tool.display_name(),
+                            }
+                        };
+
+                        // Create checkpoint
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            &self.conversation.history().clone(),
+                            false,
+                            Some(tool.name.clone()),
+                        ) {
+                            debug!("Failed to create tool checkpoint: {}", e);
+                            None
+                        } else {
+                            manager.tools_in_turn += 1;
+                            Some(tag)
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Put manager back
+                    self.conversation.checkpoint_manager = Some(manager);
+                    tag
+                } else {
+                    None
+                }
+            };
+
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
             tool_telemetry = tool_telemetry.and_modify(|ev| {
@@ -2348,8 +2473,18 @@ impl ChatSession {
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(" ● Completed in {}s", tool_time)),
                         style::SetForegroundColor(Color::Reset),
-                        style::Print("\n\n"),
                     )?;
+                    if let Some(tag) = checkpoint_tag {
+                        execute!(
+                            self.stdout,
+                            style::SetForegroundColor(Color::Blue),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print(format!(" [{tag}]")),
+                            style::SetForegroundColor(Color::Reset),
+                            style::SetAttribute(Attribute::Reset),
+                        )?;
+                    }
+                    execute!(self.stdout, style::Print("\n\n"))?;
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
@@ -2694,6 +2829,56 @@ impl ChatSession {
                                     .await?,
                             ));
                         },
+                        RecvErrorKind::ToolValidationError {
+                            tool_use_id,
+                            name,
+                            message,
+                            error_message,
+                        } => {
+                            self.send_chat_telemetry(
+                                os,
+                                TelemetryResult::Failed,
+                                Some(reason),
+                                Some(reason_desc),
+                                status_code,
+                                false, // We retry the request, so don't end the current turn yet.
+                            )
+                            .await;
+
+                            error!(
+                                recv_error.request_metadata.request_id,
+                                tool_use_id, name, error_message, "Tool validation failed"
+                            );
+                            self.conversation
+                                .push_assistant_message(os, *message, Some(recv_error.request_metadata));
+                            let tool_results = vec![ToolUseResult {
+                                tool_use_id,
+                                content: vec![ToolUseResultBlock::Text(format!(
+                                    "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
+                                    error_message
+                                ))],
+                                status: ToolResultStatus::Error,
+                            }];
+                            // User hint of what happened
+                            let _ = queue!(
+                                self.stdout,
+                                style::Print("\n\n"),
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!(
+                                    "Tool validation failed: {}\n Retrying the request...",
+                                    error_message
+                                )),
+                                style::ResetColor,
+                                style::Print("\n"),
+                            );
+                            self.conversation.add_tool_results(tool_results);
+                            self.send_tool_use_telemetry(os).await;
+                            return Ok(ChatState::HandleResponseStream(
+                                self.conversation
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .await?,
+                            ));
+                        },
                         _ => {
                             self.send_chat_telemetry(
                                 os,
@@ -2797,6 +2982,64 @@ impl ChatSession {
             self.tool_uses.clear();
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
+
+            // Create turn checkpoint if tools were used
+            if os
+                .database
+                .settings
+                .get_bool(Setting::EnabledCheckpoint)
+                .unwrap_or(false)
+                && !self.conversation.is_in_tangent_mode()
+            {
+                if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
+                    if manager.tools_in_turn > 0 {
+                        // Increment turn counter
+                        manager.current_turn += 1;
+
+                        // Get user message for description
+                        let description = manager.pending_user_message.take().map_or_else(
+                            || "Turn completed".to_string(),
+                            |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
+                        );
+
+                        // Create turn checkpoint
+                        let tag = manager.current_turn.to_string();
+                        if let Err(e) = manager.create_checkpoint(
+                            &tag,
+                            &description,
+                            &self.conversation.history().clone(),
+                            true,
+                            None,
+                        ) {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Yellow),
+                                style::Print(format!("⚠️ Could not create automatic checkpoint: {}\n\n", e)),
+                                style::SetForegroundColor(Color::Reset),
+                            )?;
+                        } else {
+                            execute!(
+                                self.stderr,
+                                style::SetForegroundColor(Color::Blue),
+                                style::SetAttribute(Attribute::Bold),
+                                style::Print(format!("✓ Created checkpoint {}\n\n", tag)),
+                                style::SetForegroundColor(Color::Reset),
+                                style::SetAttribute(Attribute::Reset),
+                            )?;
+                        }
+
+                        // Reset for next turn
+                        manager.tools_in_turn = 0;
+                    } else {
+                        // Clear pending message even if no tools were used
+                        manager.pending_user_message = None;
+                    }
+                    manager.message_locked = false; // Unlock for next turn
+
+                    // Put manager back
+                    self.conversation.checkpoint_manager = Some(manager);
+                }
+            }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
@@ -3115,11 +3358,25 @@ impl ChatSession {
     }
 
     /// Helper function to generate a prompt based on the current context
-    fn generate_tool_trust_prompt(&mut self) -> String {
+    async fn generate_tool_trust_prompt(&mut self, os: &Os) -> String {
         let profile = self.conversation.current_profile().map(|s| s.to_string());
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode)
+
+        // Check if context usage indicator is enabled
+        let usage_percentage = if os
+            .database
+            .settings
+            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
+            .unwrap_or(false)
+        {
+            use crate::cli::chat::cli::usage::get_total_usage_percentage;
+            get_total_usage_percentage(self, os).await.ok()
+        } else {
+            None
+        };
+
+        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {

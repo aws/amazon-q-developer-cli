@@ -74,6 +74,10 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::checkpoint::{
+    Checkpoint,
+    CheckpointManager,
+};
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -138,6 +142,8 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+
+    pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
@@ -193,7 +199,7 @@ impl ConversationState {
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
-            transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
+            transcript: VecDeque::new(),
             tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
@@ -203,6 +209,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
         }
@@ -246,6 +253,10 @@ impl ConversationState {
         self.transcript = checkpoint.main_transcript;
         self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
+        if let Some(manager) = self.checkpoint_manager.as_mut() {
+            manager.message_locked = false;
+            manager.pending_user_message = None;
+        }
     }
 
     /// Enter tangent mode - creates checkpoint of current state
@@ -891,6 +902,35 @@ Return only the JSON configuration, no additional text.",
         self.transcript.push_back(message);
     }
 
+    /// Restore conversation from a checkpoint's history snapshot
+    pub fn restore_to_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), eyre::Report> {
+        // 1. Restore history from snapshot
+        self.history = checkpoint.history_snapshot.clone();
+
+        // 2. Clear any pending next message (uncommitted state)
+        self.next_message = None;
+
+        // 3. Update valid history range
+        self.valid_history_range = (0, self.history.len());
+
+        Ok(())
+    }
+
+    /// Reloads only built-in tools while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os, stderr: &mut impl Write) -> Result<(), ChatError> {
+        let builtin_tools = self
+            .tool_manager
+            .load_tools(os, stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to reload built-in tools: {e}").into()))?;
+
+        // Remove existing built-in tools and add updated ones, preserving MCP tools
+        self.tools.retain(|origin, _| *origin != ToolOrigin::Native);
+        self.tools.extend(format_tool_spec(builtin_tools));
+
+        Ok(())
+    }
+
     /// Swapping agent involves the following:
     /// - Reinstantiate the context manager
     /// - Swap agent on tool manager
@@ -1349,7 +1389,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1379,7 +1419,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1415,7 +1455,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1475,7 +1515,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await

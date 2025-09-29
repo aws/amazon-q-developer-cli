@@ -54,6 +54,7 @@ pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
     "/editor",
+    "/reply",
     "/issue",
     "/quit",
     "/tools",
@@ -406,6 +407,18 @@ impl Highlighter for ChatHelper {
             // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
+            }
+
+            // Add percentage part if present (colored by usage level)
+            if let Some(percentage) = components.usage_percentage {
+                let colored_percentage = if percentage < 50.0 {
+                    format!("{}% ", percentage as u32).green()
+                } else if percentage < 90.0 {
+                    format!("{}% ", percentage as u32).yellow()
+                } else {
+                    format!("{}% ", percentage as u32).red()
+                };
+                result.push_str(&colored_percentage.to_string());
             }
 
             // Add tangent indicator if present (yellow)
