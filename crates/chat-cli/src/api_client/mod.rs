@@ -33,7 +33,6 @@ use aws_types::request_id::RequestId;
 use aws_types::sdk_config::StalledStreamProtectionConfig;
 pub use endpoints::Endpoint;
 pub use error::ApiClientError;
-use tokio::sync::Mutex;
 pub use profile::list_available_profiles;
 use serde_json::Map;
 use tokio::sync::RwLock;
@@ -61,7 +60,7 @@ use crate::database::{
     AuthProfile,
     Database,
 };
-use crate::mock_llm::{MockLLM, MockLLMInstance};
+use crate::mock_llm::MockLLM;
 use crate::os::{
     Env,
     Fs,
@@ -94,7 +93,7 @@ pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
-    mock_llm: Option<Arc<dyn MockLLM>>,
+    mock_llm: Option<Arc<MockLLM>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
 }
@@ -574,72 +573,12 @@ impl ApiClient {
                 },
             }
         } else if let Some(mock_llm) = &self.mock_llm {
-            // Create MockLLMContext for this request - now streaming!
-            use crate::mock_llm::MockLLMContext;
-            
-            let (response_tx, response_rx) = tokio::sync::mpsc::channel(32);
-            let (mock_tx, mut mock_rx) = tokio::sync::mpsc::channel(32);
-            let mock_context = MockLLMContext::new(
+            // Spawn the mock LLM for this conversation
+            let mock_rx = mock_llm.spawn_turn(
                 history.unwrap_or_default(),
                 user_input_message.content,
-                mock_tx,
             );
-            
-            // Spawn the mock LLM for this conversation
-            let _handle = mock_llm.spawn_mock_llm(mock_context);
-            
-            // Spawn a task to convert ResponseEvent to ChatResponseStream and forward them
-            tokio::spawn(async move {
-                while let Some(result) = mock_rx.recv().await {
-                    match result {
-                        Ok(response_event) => {
-                            // Convert ResponseEvent to ChatResponseStream for compatibility
-                            let stream_event = match response_event {
-                                crate::cli::chat::ResponseEvent::AssistantText(content) => {
-                                    Some(crate::api_client::model::ChatResponseStream::AssistantResponseEvent {
-                                        content,
-                                    })
-                                }
-                                crate::cli::chat::ResponseEvent::ToolUseStart { name } => {
-                                    Some(crate::api_client::model::ChatResponseStream::ToolUseEvent {
-                                        tool_use_id: "mock".to_string(),
-                                        name,
-                                        input: None,
-                                        stop: None,
-                                    })
-                                }
-                                crate::cli::chat::ResponseEvent::ToolUse(_tool_use) => {
-                                    // TODO: Convert AssistantToolUse to proper ToolUseEvent
-                                    Some(crate::api_client::model::ChatResponseStream::ToolUseEvent {
-                                        tool_use_id: "mock".to_string(),
-                                        name: "mock_tool".to_string(),
-                                        input: Some("{}".to_string()),
-                                        stop: Some(true),
-                                    })
-                                }
-                                crate::cli::chat::ResponseEvent::EndStream { .. } => {
-                                    // End of stream - close the channel
-                                    None
-                                }
-                            };
-                            
-                            if let Some(event) = stream_event {
-                                if response_tx.send(Ok(event)).await.is_err() {
-                                    break; // Receiver dropped
-                                }
-                            } else {
-                                break; // EndStream
-                            }
-                        }
-                        Err(err) => {
-                            let _ = response_tx.send(Err(err)).await;
-                            break;
-                        }
-                    }
-                }
-            });
-            
-            return Ok(SendMessageOutput::Mock(response_rx));
+            return Ok(SendMessageOutput::Mock(mock_rx));
         } else {
             unreachable!("One of the clients must be created by this point");
         }
@@ -754,17 +693,13 @@ impl ApiClient {
     ///     }
     /// });
     /// ```
-    pub fn set_mock_llm<F, Fut>(&mut self, script: F)
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_mock_llm<F, Fut>(&mut self, closure: F)
     where
         F: Fn(crate::mock_llm::MockLLMContext) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = eyre::Result<()>> + Send + 'static,
     {
-        // Create an adapter that boxes the future
-        let adapter = move |ctx: crate::mock_llm::MockLLMContext| -> std::pin::Pin<Box<dyn std::future::Future<Output = eyre::Result<()>> + Send>> {
-            Box::pin(script(ctx))
-        };
-        
-        let mock_llm = MockLLMInstance::new(adapter);
+        let mock_llm = MockLLM::new(closure);
         self.mock_llm = Some(Arc::new(mock_llm));
     }
 

@@ -25,9 +25,10 @@ impl AcpTestHarness {
     }
 
     /// Set up a mock LLM script for deterministic testing
-    pub fn set_mock_llm<F>(mut self, script: F) -> Self
+    pub fn set_mock_llm<F, Fut>(mut self, script: F) -> Self
     where
-        F: Fn(MockLLMContext) -> std::pin::Pin<Box<dyn std::future::Future<Output = eyre::Result<()>> + Send>> + Send + Sync + 'static,
+        F: Fn(MockLLMContext) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = eyre::Result<()>> + Send + Sync + 'static,
     {
         self.os.client.set_mock_llm(script);
         self
@@ -84,7 +85,7 @@ async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
 
     AcpTestHarness::new()
         .await?
-        .set_mock_llm(|mut ctx: MockLLMContext| Box::pin(async move {
+        .set_mock_llm(|mut ctx: MockLLMContext| async move {
             // Use declarative pattern matching API - much cleaner!
             ctx.try_patterns(&[
                 // First exchange: Greet and ask for name
@@ -96,7 +97,7 @@ async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
                 // Fallback for any unrecognized input
                 (&[], r".*", "I didn't understand that."),
             ]).await
-        }))
+        })
         .run(async |client| {
             let mut session = client
                 .new_session(acp::NewSessionRequest {
