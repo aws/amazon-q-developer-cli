@@ -29,7 +29,7 @@ enum ServerSessionMethod {
 }
 
 impl AcpServerSessionHandle {
-    pub fn spawn_local(session_id: acp::SessionId, os: Os, transport: AcpServerConnectionHandle) -> Self {
+    pub fn spawn_local(session_id: acp::SessionId, mut os: Os, transport: AcpServerConnectionHandle) -> Self {
         let (session_tx, mut session_rx) = mpsc::channel(32);
         
         tokio::task::spawn_local(async move {
@@ -48,7 +48,7 @@ impl AcpServerSessionHandle {
             while let Some(method) = session_rx.recv().await {
                 match method {
                     ServerSessionMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args, &transport, &os, &mut conversation_state, &mut session_rx).await;
+                        let response = Self::handle_prompt(args, &transport, &mut os, &mut conversation_state, &mut session_rx).await;
                         if tx.send(response).is_err() {
                             tracing::debug!(actor="session", event="response receiver dropped", method="prompt", session_id=%session_id.0);
                             break;
@@ -101,7 +101,7 @@ impl AcpServerSessionHandle {
     async fn handle_prompt(
         args: acp::PromptRequest, 
         transport: &AcpServerConnectionHandle,
-        os: &Os,
+        os: &mut Os,
         conversation_state: &mut ConversationState,
         session_rx: &mut mpsc::Receiver<ServerSessionMethod>,
     ) -> Result<acp::PromptResponse, acp::Error> {
@@ -134,18 +134,20 @@ impl AcpServerSessionHandle {
         })?;
         
         // Stream responses via transport with cancellation support
-        loop {
+        let end_stream_info = loop {
             tokio::select! {
                 stream_result = stream.recv() => {
                     match stream_result {
                         Some(Ok(event)) => {
-                            match &event {
-                                ResponseEvent::EndStream { .. } => {
-                                    // Stream is complete
-                                    break;
+                            match event {
+                                ResponseEvent::EndStream { message, request_metadata } => {
+                                    // The `message` here cotains all of the accumulated text and tool uses 
+                                    // that we received so far.
+                                    break Some((message, request_metadata));
                                 }
+
                                 _ => {
-                                    // Convert and send notification
+                                    // Send the notification (this consumes event)
                                     let notification = Self::convert_response_to_acp_notification(&args.session_id, event)?;
                                     if let Err(e) = transport.session_notification(notification).await {
                                         tracing::error!("Failed to send notification: {}", e);
@@ -161,7 +163,7 @@ impl AcpServerSessionHandle {
                         None => {
                             // Stream ended unexpectedly
                             tracing::warn!("Stream ended without EndStream event");
-                            break;
+                            break None;
                         }
                     }
                 }
@@ -203,6 +205,11 @@ impl AcpServerSessionHandle {
                     }
                 }
             }
+        };
+
+        // Add the assistant response to conversation history
+        if let Some((assistant_message, metadata)) = end_stream_info {
+            conversation_state.push_assistant_message(os, assistant_message, Some(metadata));
         }
 
         conversation_state.reset_next_user_message();

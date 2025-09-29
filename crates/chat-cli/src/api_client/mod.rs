@@ -636,38 +636,53 @@ impl ApiClient {
             response_groups.push(events);
         }
 
-        // TODO: Implement for new MockLLM API
-        /*
-        self.set_mock_llm(move |mut ctx| async move {
-            let response_index = 0;
+        // Create mock LLM that cycles through response groups based on user message count
+        self.set_mock_llm(move |mut ctx| {
+            let response_groups = response_groups.clone();
+            async move {
+            // Determine which response group to use based on user message count
+            // Each user message gets the next response group in sequence
+            let response_index = ctx.count_user_messages().saturating_sub(1); // 0-indexed
             
-            // Wait for user message
-            if let Some(mut turn) = ctx.read_user_message().await {
-                // Send the corresponding response group
-                if response_index < response_groups.len() {
-                    for event in &response_groups[response_index] {
-                        match event {
-                            ChatResponseStream::AssistantResponseEvent { content } => {
-                                let _ = turn.respond_to_user(content.clone()).await;
-                            },
-                            ChatResponseStream::ToolUseEvent { tool_use_id, name, input, .. } => {
-                                let args = input.as_ref().unwrap_or(&String::new()).clone();
-                                let args_value: serde_json::Value = serde_json::from_str(&args).unwrap_or(serde_json::Value::String(args));
+            // Send the corresponding response group
+            if response_index < response_groups.len() {
+                for event in &response_groups[response_index] {
+                    match event {
+                        ChatResponseStream::AssistantResponseEvent { content } => {
+                            ctx.respond(content).await?;
+                        },
+                        ChatResponseStream::ToolUseEvent { tool_use_id, name, input, stop } => {
+                            // For tool events, we need to create proper tool use structure
+                            if stop.unwrap_or(false) {
+                                // This is a complete tool use - parse the arguments
+                                let args = input.as_ref().map(|s| {
+                                    serde_json::from_str(s).unwrap_or(serde_json::Value::String(s.clone()))
+                                }).unwrap_or(serde_json::Value::Null);
                                 
-                                // Send streaming tool use events to match parser expectations
-                                // 1. Start event: input=None, stop=None
-                                let _ = turn.call_tool(tool_use_id.clone(), name.clone(), None, None).await;
-                                // 2. Final event: input=Some(args), stop=Some(true)  
-                                let _ = turn.call_tool(tool_use_id.clone(), name.clone(), Some(args_value), Some(true)).await;
-                            },
-                            _ => {}, // Ignore other event types
-                        }
+                                let _tool_use = crate::cli::chat::AssistantToolUse {
+                                    id: tool_use_id.clone(),
+                                    name: name.clone(),
+                                    orig_name: name.clone(),
+                                    args: args.clone(),
+                                    orig_args: args,
+                                };
+                                
+                                // For now, just send text response about tool use since we don't have direct tool event API
+                                // TODO: Implement proper tool event support in MockLLMContext if needed
+                                ctx.respond(format!("[Tool: {} with args: {}]", name, tool_use_id)).await?;
+                            }
+                        },
+                        _ => {}, // Ignore other event types
                     }
                 }
+            } else {
+                // No more predefined responses, send a fallback
+                ctx.respond("I don't have a response configured for this message.").await?;
             }
-            // Script ends here, which drops the response channel and signals completion
+            
+            Ok(())
+            }
         });
-        */
     }
 
     /// Set a mock LLM script for testing.
