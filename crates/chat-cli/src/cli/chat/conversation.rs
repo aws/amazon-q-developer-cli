@@ -199,7 +199,7 @@ impl ConversationState {
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
-            transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
+            transcript: VecDeque::new(),
             tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
@@ -1385,7 +1385,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1415,7 +1415,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1451,7 +1451,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1511,7 +1511,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
