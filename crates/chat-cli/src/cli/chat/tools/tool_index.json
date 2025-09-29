@@ -385,22 +385,64 @@
     "description": "Launch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents that run independently in the background.\n\nOperations:\n- launch: Start a new task with an agent (requires task parameter, agent is optional)\n- status: Check agent status and get full output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are stored in ~/.aws/amazonq/.subagents/\n\nIMPORTANT: If a specific agent is requested but not found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\": \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents: {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand): {\"operation\": \"status\"}",
     "input_schema": {
       "type": "object",
-      "properties": {
-        "operation": {
-          "type": "string",
-          "description": "Operation to perform: launch or status",
-          "enum": ["launch", "status"]
+        "properties": {
+          "operation": {
+            "description": "Operation to perform: launch, status, or list",
+            "$ref": "#/$defs/Operation"
+          },
+          "agent": {
+            "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "task": {
+            "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
         },
-        "agent": {
-          "type": "string",
-          "description": "Agent name to use (optional - uses 'default_agent' if not specified)"
+        "required": [
+          "operation"
+        ],
+        "$defs": {
+          "Operation": {
+            "oneOf": [
+              {
+                "description": "Launch a new agent with a specified task",
+                "type": "string",
+                "const": "launch"
+              },
+              {
+                "description": "Check the status of a specific agent or all agents if None is provided",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "description": "List all available agents",
+                "type": "string",
+                "const": "list"
+              }
+            ]
+          }
         },
-        "task": {
-          "type": "string",
-          "description": "Task description (required for launch operation)"
-        }
-      },
-      "required": ["operation"]
+        "required": ["operation"]
     }
   }
 }

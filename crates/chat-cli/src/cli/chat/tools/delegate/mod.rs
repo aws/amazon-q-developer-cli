@@ -7,20 +7,30 @@ mod ui;
 use std::io::Write;
 
 use agent::{
-    list_available_agents,
     load_agent_execution,
     request_user_approval,
     validate_agent_availability,
 };
-use execution::{spawn_agent_process, status_agent, status_all_agents};
-use ui::display_default_agent_warning;
-use eyre::{
-    Result,
-    eyre,
+use crossterm::{
+    queue,
+    style,
 };
-use serde::{Deserialize, Serialize};
-use strum::{Display, EnumString};
+use execution::{
+    spawn_agent_process,
+    status_agent,
+    status_all_agents,
+};
+use eyre::Result;
+use schemars::JsonSchema;
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use strum::Display;
+use ui::display_default_agent_warning;
 
+use crate::cli::DEFAULT_AGENT_NAME;
+use crate::cli::agent::Agents;
 use crate::cli::chat::tools::{
     InvokeOutput,
     OutputKind,
@@ -28,14 +38,24 @@ use crate::cli::chat::tools::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 
-const DEFAULT_AGENT: &str = "default";
-const ALL_AGENTS: &str = "all";
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+/// Launch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents
+/// that run independently in the background.\n\nOperations:\n- launch: Start a new task with an
+/// agent (requires task parameter, agent is optional)\n- status: Check agent status and get full
+/// output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is
+/// specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are
+/// stored in ~/.aws/amazonq/.subagents/\n\nIMPORTANT: If a specific agent is requested but not
+/// found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the
+/// error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\":
+/// \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without
+/// agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific
+/// agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents:
+/// {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand):
+/// {\"operation\": \"status\"}
 pub struct Delegate {
     /// Operation to perform: launch, status, or list
-    pub operation: String,
-    /// Agent name to use (optional - uses "default" if not specified)
+    pub operation: Operation,
+    /// Agent name to use (optional - uses "q_cli_default" if not specified)
     #[serde(default)]
     pub agent: Option<String>,
     /// Task description (required for launch operation)
@@ -43,11 +63,14 @@ pub struct Delegate {
     pub task: Option<String>,
 }
 
-#[derive(Debug, Display, EnumString)]
-#[strum(serialize_all = "lowercase")]
-enum Operation {
+#[derive(Serialize, Clone, Deserialize, Debug, Display, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum Operation {
+    /// Launch a new agent with a specified task
     Launch,
-    Status,
+    /// Check the status of a specific agent or all agents if None is provided
+    Status(Option<String>),
+    /// List all available agents
     List,
 }
 
@@ -59,7 +82,7 @@ pub use types::{
 };
 
 impl Delegate {
-    pub async fn invoke(&self, os: &Os, _output: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, _output: &mut impl Write, agents: &Agents) -> Result<InvokeOutput> {
         if !is_enabled(os) {
             return Ok(InvokeOutput {
                 output: OutputKind::Text(
@@ -68,55 +91,28 @@ impl Delegate {
             });
         }
 
-        // Validate operation first
-        let operation = self.operation.parse::<Operation>()
-            .map_err(|_| eyre!("Invalid operation. Use: launch, status, or list"))?;
-
-        // Validate required fields based on operation
-        match operation {
+        let result = match &self.operation {
             Operation::Launch => {
-                if self.task.is_none() {
-                    return Err(eyre!("Task description is required for launch operation"));
-                }
-                if self.agent.is_none() {
-                    return Err(eyre!("Agent name is required for launch operation. Use 'list' operation to see available agents, then specify agent name."));
-                }
-                
-                // Validate agent name exists
-                let agent_name = self.agent.as_ref().unwrap();
-                if agent_name != DEFAULT_AGENT {
-                    let available_agents = list_available_agents(os).await?;
-                    if !available_agents.contains(agent_name) {
-                        return Err(eyre!(
-                            "Agent '{}' not found. Available agents: default, {}. Use exact names only.", 
-                            agent_name, 
-                            available_agents.join(", ")
-                        ));
-                    }
-                }
-            },
-            Operation::Status | Operation::List => {
-                // No additional validation needed
-            }
-        }
+                let task = self
+                    .task
+                    .as_ref()
+                    .ok_or(eyre::eyre!("Task description is required for launch operation"))?;
 
-        let agent_name = self.get_agent_name();
-        
-        let result = match operation {
-            Operation::Launch => {
-                let task = self.task.as_ref().unwrap(); // Safe due to validation above
-                launch_agent(os, agent_name, task).await?
+                let agent_name = self.agent.as_deref().unwrap_or(DEFAULT_AGENT_NAME);
+
+                launch_agent(os, agent_name, agents, task).await?
             },
-            Operation::Status => {
-                if agent_name == ALL_AGENTS {
-                    status_all_agents(os).await?
-                } else {
-                    status_agent(os, agent_name).await?
-                }
+            Operation::Status(name) => match name {
+                Some(agent_name) => status_agent(os, agent_name).await?,
+                None => status_all_agents(os).await?,
             },
-            Operation::List => {
-                list_agents(os).await?
-            },
+            Operation::List => agents.agents.keys().cloned().fold(
+                format!("Available agents: \n- {DEFAULT_AGENT_NAME}\n"),
+                |mut acc, name| {
+                    acc.push_str(&format!("- {name}\n"));
+                    acc
+                },
+            ),
         };
 
         Ok(InvokeOutput {
@@ -125,66 +121,39 @@ impl Delegate {
     }
 
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
-        if let Ok(operation) = self.operation.parse::<Operation>() {
-            match operation {
-                Operation::Launch => writeln!(output, "Delegating task to agent")?,
-                Operation::Status => writeln!(output, "Checking agent status")?,
-                Operation::List => writeln!(output, "Listing available agents")?,
-            }
-        } else {
-            writeln!(
-                output,
-                "Invalid operation '{}'. Use: launch, status, or list",
-                self.operation
-            )?;
+        match self.operation {
+            Operation::Launch => queue!(output, style::Print("Delegating task to agent\n"))?,
+            Operation::Status(_) => queue!(output, style::Print("Checking agent status\n"))?,
+            Operation::List => queue!(output, style::Print("Listing available agents\n"))?,
         }
+
         Ok(())
     }
-
-    fn get_agent_name(&self) -> &str {
-        if let Ok(operation) = self.operation.parse::<Operation>() {
-            match operation {
-                Operation::Launch => {
-                    // Agent is required for launch (validated above)
-                    self.agent.as_deref().unwrap_or("") 
-                },
-                Operation::Status => self.agent.as_deref().unwrap_or(ALL_AGENTS),
-                Operation::List => "", // Agent name not needed for list operation
-            }
-        } else {
-            self.agent.as_deref().unwrap_or("")
-        }
-    }
 }
 
-async fn list_agents(os: &Os) -> Result<String> {
-    let agents = list_available_agents(os).await?;
-    if agents.is_empty() {
-        Ok("No custom agents configured. Only 'default' agent is available.".to_string())
-    } else {
-        Ok(format!("Available agents: default, {}", agents.join(", ")))
-    }
-}
-
-async fn launch_agent(os: &Os, agent: &str, task: &str) -> Result<String> {
+async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<String> {
     validate_agent_availability(os, agent).await?;
-    
+
     // Check if agent is already running
     if let Some(execution) = load_agent_execution(os, agent).await? {
         if execution.status == AgentStatus::Running {
-            return Err(eyre::eyre!("Agent '{}' is already running. Use status operation to check progress or wait for completion.", agent));
+            return Err(eyre::eyre!(
+                "Agent '{}' is already running. Use status operation to check progress or wait for completion.",
+                agent
+            ));
         }
     }
-    
-    if agent == DEFAULT_AGENT {
+
+    if agent == DEFAULT_AGENT_NAME {
         // Show warning for default agent but no approval needed
         display_default_agent_warning()?;
     } else {
         // Show agent info and require approval for specific agents
-        request_user_approval(os, agent, task).await?;
+        request_user_approval(agent, agents, task).await?;
     }
-    
-    let _execution = spawn_agent_process(os, agent, task).await?;
+
+    spawn_agent_process(os, agent, task).await?;
+
     Ok(format_launch_success(agent, task))
 }
 
@@ -197,4 +166,15 @@ fn format_launch_success(agent: &str, task: &str) -> String {
 
 fn is_enabled(os: &Os) -> bool {
     os.database.settings.get_bool(Setting::EnabledDelegate).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn get_schema() {
+        let schema = schemars::schema_for!(Delegate);
+        println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    }
 }

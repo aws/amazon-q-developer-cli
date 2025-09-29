@@ -1,5 +1,4 @@
 use std::io::{
-    Write,
     stdin,
     stdout,
 };
@@ -71,8 +70,6 @@ pub fn get_user_confirmation() -> Result<bool> {
         Print("Continue? [y/N]: "),
         SetForegroundColor(Color::Reset),
     )?;
-
-    stdout().flush()?;
 
     let mut input = String::new();
     stdin().read_line(&mut input)?;

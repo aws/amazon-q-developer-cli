@@ -25,8 +25,11 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<()>
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
 
+    #[cfg(not(windows))]
+    cmd.process_group(0);
+
     let child = cmd.spawn()?;
-    let pid = child.id().unwrap_or(0);
+    let pid = child.id().ok_or(eyre::eyre!("Process spawned had already exited"))?;
 
     let execution = AgentExecution {
         agent: agent.to_string(),

@@ -55,6 +55,11 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         setting_key: Setting::EnabledDelegate,
     },
     Experiment {
+        name: "Context Usage Indicator",
+        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
+        setting_key: Setting::EnabledContextUsageIndicator,
+    },
+    Experiment {
         name: "Checkpoint",
         description: concat!(
             "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\n",
