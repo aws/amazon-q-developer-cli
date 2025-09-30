@@ -539,6 +539,7 @@ mod tests {
     use rustyline::history::DefaultHistory;
 
     use super::*;
+    use crate::cli::experiment::experiment_manager::ExperimentName;
 
     #[tokio::test]
     async fn test_chat_completer_command_completion() {
