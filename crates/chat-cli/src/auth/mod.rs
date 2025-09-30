@@ -2,6 +2,7 @@ pub mod builder_id;
 mod consts;
 pub mod pkce;
 mod scope;
+pub mod social;
 
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
@@ -48,6 +49,10 @@ pub enum AuthError {
     OAuthCustomError(String),
     #[error(transparent)]
     DatabaseError(#[from] crate::database::DatabaseError),
+    #[error(transparent)]
+    Reqwest(#[from] reqwest::Error),
+    #[error("HTTP error: {0}")]
+    HttpStatus(reqwest::StatusCode),
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {
