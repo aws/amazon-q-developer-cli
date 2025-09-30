@@ -3029,11 +3029,11 @@ impl ChatSession {
 
                         // Reset for next turn
                         manager.tools_in_turn = 0;
-                        manager.message_locked = false; // Unlock for next turn
                     } else {
                         // Clear pending message even if no tools were used
                         manager.pending_user_message = None;
                     }
+                    manager.message_locked = false; // Unlock for next turn
 
                     // Put manager back
                     self.conversation.checkpoint_manager = Some(manager);

@@ -2462,14 +2462,18 @@ mod tests {
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
             description: Some("Test description".to_string()),
+            title: Some("Test Prompt".to_string()),
+            icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
                     description: Some("First argument".to_string()),
+                    title: Some("Argument 1".to_string()),
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
+                    title: Some("Argument 2".to_string()),
                     description: None,
                     required: Some(false),
                 },
