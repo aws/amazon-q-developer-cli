@@ -84,7 +84,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct ToolContext {
     pub tool_name: String,
     pub tool_input: serde_json::Value,

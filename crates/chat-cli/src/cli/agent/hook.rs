@@ -69,7 +69,7 @@ pub struct Hook {
     pub matcher: Option<String>,
 
     /// If true, PostToolUse hooks are deferred until turn completion
-    #[serde(default = "Hook::default_only_when_turn_complete")]
+    #[serde(default)]
     pub only_when_turn_complete: bool,
 
     #[schemars(skip)]
@@ -85,7 +85,7 @@ impl Hook {
             max_output_size: Self::default_max_output_size(),
             cache_ttl_seconds: Self::default_cache_ttl_seconds(),
             matcher: None,
-            only_when_turn_complete: Self::default_only_when_turn_complete(),
+            only_when_turn_complete: false,
             source,
         }
     }
@@ -100,10 +100,6 @@ impl Hook {
 
     fn default_cache_ttl_seconds() -> u64 {
         DEFAULT_CACHE_TTL_SECONDS
-    }
-
-    fn default_only_when_turn_complete() -> bool {
-        false
     }
 }
 
