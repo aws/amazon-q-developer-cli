@@ -51,11 +51,7 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     },
     Experiment {
         name: "Checkpoint",
-        description: concat!(
-            "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\n",
-            "                             ",
-            "Cannot be used in tangent mode (to avoid mixing up conversation history)"
-        ),
+        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\nNote: Cannot be used in tangent mode (to avoid mixing up conversation history)",
         setting_key: Setting::EnabledCheckpoint,
     },
     Experiment {
@@ -84,17 +80,21 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         let is_enabled = os.database.settings.get_bool(experiment.setting_key).unwrap_or(false);
 
         current_states.push(is_enabled);
-        // Create clean single-line format: "Knowledge    [ON]   - Description"
+
         let status_indicator = if is_enabled {
-            style::Stylize::green("[ON] ")
+            format!("{}", style::Stylize::green("[ON] "))
         } else {
-            style::Stylize::grey("[OFF]")
+            format!("{}", style::Stylize::grey("[OFF]"))
         };
+
+        // Handle multi-line descriptions with proper indentation
+        let description = experiment.description.replace('\n', &format!("\n{}", " ".repeat(34)));
+
         let label = format!(
-            "{:<18} {} - {}",
+            "{:<25} {:<6} {}",
             experiment.name,
             status_indicator,
-            style::Stylize::dark_grey(experiment.description)
+            style::Stylize::dark_grey(description)
         );
         experiment_labels.push(label);
     }

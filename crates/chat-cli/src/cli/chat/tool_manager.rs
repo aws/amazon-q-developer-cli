@@ -2128,7 +2128,7 @@ mod tests {
             prompt_get: prompt,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test finding specific server
         let found = bundles.iter().find(|b| b.server_name == "server1");
