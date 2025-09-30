@@ -58,11 +58,6 @@ pub enum GetPromptError {
     PromptNotFound(String),
     #[error("Prompt {0} is offered by more than one server. Use one of the following {1}")]
     AmbiguousPrompt(String, String),
-    #[error("Missing required arguments for prompt {prompt_name}: {required_args:?}")]
-    MissingRequiredArguments {
-        prompt_name: String,
-        required_args: Vec<String>,
-    },
     #[error("Missing client")]
     MissingClient,
     #[error("Missing prompt name")]
@@ -1384,18 +1379,6 @@ impl PromptsSubcommand {
                             style::Print(alt_msg),
                             style::SetForegroundColor(Color::Reset),
                         )?;
-                    },
-                    GetPromptError::MissingRequiredArguments {
-                        prompt_name,
-                        required_args: _,
-                    } => {
-                        let prompts_list = session
-                            .conversation
-                            .tool_manager
-                            .list_prompts()
-                            .await
-                            .unwrap_or_default();
-                        display_missing_args_error(&prompt_name, &prompts_list, session)?;
                     },
                     GetPromptError::PromptNotFound(prompt_name) => {
                         queue!(

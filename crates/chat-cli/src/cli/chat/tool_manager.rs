@@ -1008,6 +1008,35 @@ impl ToolManager {
         }
     }
 
+    #[inline]
+    fn process_prompt_arguments(
+        schema: &Option<Vec<rmcp::model::PromptArgument>>,
+        arguments: &Option<Vec<String>>,
+    ) -> Option<serde_json::Map<String, serde_json::Value>> {
+        match (schema, arguments) {
+            // No schema defined - pass None
+            (None, _) => None,
+            // Schema exists but no user values - pass empty map for MCP server
+            (Some(_schema), None) => Some(serde_json::Map::new()),
+            // Schema exists with user values - process normally
+            (Some(schema), Some(value)) => {
+                let params = schema.iter().zip(value.iter()).fold(
+                    HashMap::<String, String>::new(),
+                    |mut acc, (prompt_get_arg, value)| {
+                        acc.insert(prompt_get_arg.name.clone(), value.clone());
+                        acc
+                    },
+                );
+                Some(
+                    params
+                        .into_iter()
+                        .map(|(k, v)| (k, serde_json::Value::String(v)))
+                        .collect(),
+                )
+            },
+        }
+    }
+
     pub async fn get_prompt(
         &mut self,
         name: String,
@@ -1081,42 +1110,7 @@ impl ToolManager {
                     let client = self.clients.get_mut(server_name).ok_or(GetPromptError::MissingClient)?;
                     let PromptBundle { prompt_get, .. } = bundle;
 
-                    // Validate required arguments before processing
-                    if let Some(schema) = &prompt_get.arguments {
-                        let required_args: Vec<_> = schema.iter().filter(|arg| arg.required == Some(true)).collect();
-
-                        let provided_count = arguments.as_ref().map_or(0, |args| args.len());
-
-                        if !required_args.is_empty() && provided_count < required_args.len() {
-                            return Err(GetPromptError::MissingRequiredArguments {
-                                prompt_name: prompt_name.clone(),
-                                required_args: required_args.iter().map(|arg| arg.name.clone()).collect(),
-                            });
-                        }
-                    }
-
-                    let arguments = match (&prompt_get.arguments, &arguments) {
-                        // No schema defined - pass None
-                        (None, _) => None,
-                        // Schema exists but no user values - pass empty map for MCP server
-                        (Some(_schema), None) => Some(serde_json::Map::new()),
-                        // Schema exists with user values - process normally
-                        (Some(schema), Some(value)) => {
-                            let params = schema.iter().zip(value.iter()).fold(
-                                HashMap::<String, String>::new(),
-                                |mut acc, (prompt_get_arg, value)| {
-                                    acc.insert(prompt_get_arg.name.clone(), value.clone());
-                                    acc
-                                },
-                            );
-                            Some(
-                                params
-                                    .into_iter()
-                                    .map(|(k, v)| (k, serde_json::Value::String(v)))
-                                    .collect(),
-                            )
-                        },
-                    };
+                    let arguments = Self::process_prompt_arguments(&prompt_get.arguments, &arguments);
 
                     let params = GetPromptRequestParam {
                         name: prompt_name.clone(),
@@ -2182,83 +2176,14 @@ mod tests {
     }
 
     #[test]
-    fn test_argument_processing_logic() {
-        use std::collections::HashMap;
-
+    fn test_process_prompt_arguments() {
         use rmcp::model::PromptArgument;
-
-        // Test the core logic that should be fixed
-        // This simulates the current buggy behavior vs expected behavior
-
-        // Case 1: Prompt with no arguments schema - should work
-        let no_schema: Option<Vec<PromptArgument>> = None;
-        let no_user_args: Option<Vec<String>> = None;
-
-        // Current logic: if let (Some(schema), Some(value)) = (&no_schema, &no_user_args)
-        // This evaluates to false, so arguments = None (correct for no schema)
-        let current_result = if let (Some(_schema), Some(_value)) = (&no_schema, &no_user_args) {
-            Some(HashMap::<String, serde_json::Value>::new())
-        } else {
-            None
-        };
-        assert_eq!(current_result, None); // This is correct
-
-        // Case 2: Prompt with optional args schema, no user input - should work
-        let optional_schema = Some(vec![PromptArgument {
-            name: "optional_param".to_string(),
-            title: Some("Optional Parameter".to_string()),
-            description: Some("An optional parameter".to_string()),
-            required: Some(false),
-        }]);
-
-        // Current logic: if let (Some(schema), Some(value)) = (&optional_schema, &no_user_args)
-        // This evaluates to false because no_user_args is None, so arguments = None
-        // But MCP server might expect empty arguments object instead
-        let current_result = if let (Some(_schema), Some(_value)) = (&optional_schema, &no_user_args) {
-            Some(HashMap::<String, serde_json::Value>::new())
-        } else {
-            None
-        };
-        assert_eq!(current_result, None); // This might be the bug!
-
-        // Expected behavior: should return Some(empty map) for optional args with no input
-        let expected_result = if optional_schema.is_some() {
-            Some(HashMap::<String, serde_json::Value>::new())
-        } else {
-            None
-        };
-        assert_eq!(expected_result, Some(HashMap::new()));
-    }
-
-    #[test]
-    fn test_fixed_argument_processing_logic() {
-        use rmcp::model::PromptArgument;
-
-        // Test the new fixed logic
-        let no_schema: Option<Vec<PromptArgument>> = None;
-        let no_user_args: Option<Vec<String>> = None;
 
         // Test Case 1: No schema - should return None
-        let result1 = match (&no_schema, &no_user_args) {
-            (None, _) => None,
-            (Some(_schema), None) => Some(serde_json::Map::new()),
-            (Some(schema), Some(value)) => {
-                let params = schema.iter().zip(value.iter()).fold(
-                    std::collections::HashMap::<String, String>::new(),
-                    |mut acc, (prompt_get_arg, value)| {
-                        acc.insert(prompt_get_arg.name.clone(), value.clone());
-                        acc
-                    },
-                );
-                Some(
-                    params
-                        .into_iter()
-                        .map(|(k, v)| (k, serde_json::Value::String(v)))
-                        .collect(),
-                )
-            },
-        };
-        assert_eq!(result1, None);
+        let no_schema: Option<Vec<PromptArgument>> = None;
+        let no_user_args: Option<Vec<String>> = None;
+        let result = ToolManager::process_prompt_arguments(&no_schema, &no_user_args);
+        assert_eq!(result, None);
 
         // Test Case 2: Schema exists but no user args - should return empty map
         let optional_schema = Some(vec![PromptArgument {
@@ -2267,55 +2192,17 @@ mod tests {
             description: Some("An optional parameter".to_string()),
             required: Some(false),
         }]);
-
-        let result2 = match (&optional_schema, &no_user_args) {
-            (None, _) => None,
-            (Some(_schema), None) => Some(serde_json::Map::new()),
-            (Some(schema), Some(value)) => {
-                let params = schema.iter().zip(value.iter()).fold(
-                    std::collections::HashMap::<String, String>::new(),
-                    |mut acc, (prompt_get_arg, value)| {
-                        acc.insert(prompt_get_arg.name.clone(), value.clone());
-                        acc
-                    },
-                );
-                Some(
-                    params
-                        .into_iter()
-                        .map(|(k, v)| (k, serde_json::Value::String(v)))
-                        .collect(),
-                )
-            },
-        };
-        assert_eq!(result2, Some(serde_json::Map::new()));
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &no_user_args);
+        assert_eq!(result, Some(serde_json::Map::new()));
 
         // Test Case 3: Schema with user args - should process normally
         let user_args = Some(vec!["test_value".to_string()]);
-        let result3 = match (&optional_schema, &user_args) {
-            (None, _) => None,
-            (Some(_schema), None) => Some(serde_json::Map::new()),
-            (Some(schema), Some(value)) => {
-                let params = schema.iter().zip(value.iter()).fold(
-                    std::collections::HashMap::<String, String>::new(),
-                    |mut acc, (prompt_get_arg, value)| {
-                        acc.insert(prompt_get_arg.name.clone(), value.clone());
-                        acc
-                    },
-                );
-                Some(
-                    params
-                        .into_iter()
-                        .map(|(k, v)| (k, serde_json::Value::String(v)))
-                        .collect(),
-                )
-            },
-        };
-
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &user_args);
         let mut expected_map = serde_json::Map::new();
         expected_map.insert(
             "optional_param".to_string(),
             serde_json::Value::String("test_value".to_string()),
         );
-        assert_eq!(result3, Some(expected_map));
+        assert_eq!(result, Some(expected_map));
     }
 }
