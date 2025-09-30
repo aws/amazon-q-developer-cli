@@ -17,7 +17,10 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
@@ -88,10 +91,7 @@ pub struct KnowledgeCancel {
 impl Knowledge {
     /// Checks if the knowledge feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
-        os.database
-            .settings
-            .get_bool(Setting::EnabledKnowledge)
-            .unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::Knowledge)
     }
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {

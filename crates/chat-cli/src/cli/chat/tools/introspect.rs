@@ -16,6 +16,10 @@ use super::{
     OutputKind,
 };
 use crate::cli::chat::cli::SlashCommand;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 
@@ -135,11 +139,7 @@ impl Introspect {
         };
 
         // Add footer as direct text output if tangent mode is enabled
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTangentMode)
-            .unwrap_or(false)
+        if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
                 .database
                 .settings

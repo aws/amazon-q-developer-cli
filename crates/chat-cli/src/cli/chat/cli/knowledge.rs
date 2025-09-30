@@ -18,7 +18,10 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 use crate::util::knowledge_store::KnowledgeStore;
 
@@ -79,10 +82,7 @@ impl KnowledgeSubcommand {
     }
 
     fn is_feature_enabled(os: &Os) -> bool {
-        os.database
-            .settings
-            .get_bool(Setting::EnabledKnowledge)
-            .unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::Knowledge)
     }
 
     fn write_feature_disabled_message(session: &mut ChatSession) -> Result<(), std::io::Error> {
