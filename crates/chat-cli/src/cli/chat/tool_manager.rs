@@ -99,8 +99,7 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
-// This applies for both mcp server and tool name since in the end the tool name as seen by the
-// model is just {server_name}{NAMESPACE_DELIMITER}{tool_name}
+// This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
@@ -150,9 +149,26 @@ enum LoadingMsg {
 /// surface (since we would only want to surface fatal errors in non-interactive mode).
 #[derive(Clone, Debug)]
 pub enum LoadingRecord {
-    Success(String),
-    Warn(String),
-    Err(String),
+    Success(String, String),
+    Warn(String, String),
+    Err(String, String),
+}
+
+impl LoadingRecord {
+    pub fn success(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Success(timestamp, msg)
+    }
+
+    pub fn warn(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Warn(timestamp, msg)
+    }
+
+    pub fn err(msg: String) -> Self {
+        let timestamp = chrono::Local::now().format("%Y:%H:%S").to_string();
+        LoadingRecord::Err(timestamp, msg)
+    }
 }
 
 pub struct ToolManagerBuilder {
@@ -473,10 +489,11 @@ pub enum PromptQueryResult {
 /// - `IllegalChar`: The tool name contains characters that are not allowed
 /// - `EmptyDescription`: The tool description is empty or missing
 #[allow(dead_code)]
-enum OutOfSpecName {
+enum ToolValidationViolation {
     TooLong(String),
     IllegalChar(String),
     EmptyDescription(String),
+    DescriptionTooLong(String),
 }
 
 #[derive(Clone, Default, Debug, Eq, PartialEq)]
@@ -814,7 +831,7 @@ impl ToolManager {
                 .lock()
                 .await
                 .iter()
-                .any(|(_, records)| records.iter().any(|record| matches!(record, LoadingRecord::Err(_))))
+                .any(|(_, records)| records.iter().any(|record| matches!(record, LoadingRecord::Err(..))))
         {
             queue!(
                 stderr,
@@ -855,7 +872,7 @@ impl ToolManager {
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
-            // Note that this name is namespaced with server_name{DELIMITER}tool_name
+            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
@@ -962,7 +979,7 @@ impl ToolManager {
         if !conflicts.is_empty() {
             let mut record_lock = self.mcp_load_record.lock().await;
             for (server_name, msg) in conflicts {
-                let record = LoadingRecord::Err(msg);
+                let record = LoadingRecord::err(msg);
                 record_lock
                     .entry(server_name)
                     .and_modify(|v| v.push(record.clone()))
@@ -1050,7 +1067,14 @@ impl ToolManager {
                             },
                         }
                     } else {
-                        bundles.first().ok_or(GetPromptError::MissingPromptInfo)?
+                        // Single bundle case - check if server name matches if specified
+                        let bundle = bundles.first().ok_or(GetPromptError::MissingPromptInfo)?;
+                        if let Some(sn) = sn {
+                            if bundle.server_name != *sn {
+                                return Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name)));
+                            }
+                        }
+                        bundle
                     };
 
                     let server_name = &bundle.server_name;
@@ -1074,13 +1098,17 @@ impl ToolManager {
                         None
                     };
 
-                    let params = GetPromptRequestParam { name, arguments };
+                    let params = GetPromptRequestParam {
+                        name: prompt_name.clone(),
+                        arguments,
+                    };
                     let running_service = client.get_running_service().await?;
                     let resp = running_service.get_prompt(params).await?;
 
                     Ok(resp)
                 },
-                (None, _) => Err(GetPromptError::PromptNotFound(prompt_name)),
+                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name))),
+                (None, None) => Err(GetPromptError::PromptNotFound(prompt_name)),
             }
         } else {
             Err(GetPromptError::MissingChannel)
@@ -1193,6 +1221,7 @@ fn spawn_display_task(
                                     terminal::Clear(terminal::ClearType::CurrentLine),
                                 )?;
                                 queue_oauth_message(&name, &mut output)?;
+                                queue_init_message(spinner_logo_idx, complete, failed, total, &mut output)?;
                             },
                         },
                         Err(_e) => {
@@ -1494,9 +1523,9 @@ fn spawn_orchestrator_task(
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
                             let record = if process_result.is_err() {
-                                LoadingRecord::Warn(record)
+                                LoadingRecord::warn(record)
                             } else {
-                                LoadingRecord::Success(record)
+                                LoadingRecord::success(record)
                             };
                             load_record
                                 .lock()
@@ -1522,7 +1551,7 @@ fn spawn_orchestrator_task(
                             let _ = buf_writer.flush();
                             drop(buf_writer);
                             let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                            let record = LoadingRecord::Err(record);
+                            let record = LoadingRecord::err(record);
                             load_record
                                 .lock()
                                 .await
@@ -1606,7 +1635,7 @@ fn spawn_orchestrator_task(
                         let _ = buf_writer.flush();
                         drop(buf_writer);
                         let record = String::from_utf8_lossy(record_temp_buf).to_string();
-                        let record = LoadingRecord::Err(record);
+                        let record = LoadingRecord::err(record);
                         load_record
                             .lock()
                             .await
@@ -1626,7 +1655,7 @@ fn spawn_orchestrator_task(
                     let _ = buf_writer.flush();
                     drop(buf_writer);
                     let record_str = String::from_utf8_lossy(record_temp_buf).to_string();
-                    let record = LoadingRecord::Warn(record_str.clone());
+                    let record = LoadingRecord::warn(record_str.clone());
                     load_record
                         .lock()
                         .await
@@ -1720,7 +1749,7 @@ async fn process_tool_specs(
     //
     // For non-compliance due to point 1, we shall change it on behalf of the users.
     // For the rest, we simply throw a warning and reject the tool.
-    let mut out_of_spec_tool_names = Vec::<OutOfSpecName>::new();
+    let mut out_of_spec_tool_names = Vec::<ToolValidationViolation>::new();
     let mut hasher = DefaultHasher::new();
     let mut number_of_tools = 0_usize;
 
@@ -1745,12 +1774,18 @@ async fn process_tool_specs(
             }
         });
         if model_tool_name.len() > 64 {
-            out_of_spec_tool_names.push(OutOfSpecName::TooLong(spec.name.clone()));
+            out_of_spec_tool_names.push(ToolValidationViolation::TooLong(spec.name.clone()));
             continue;
         } else if spec.description.is_empty() {
-            out_of_spec_tool_names.push(OutOfSpecName::EmptyDescription(spec.name.clone()));
+            out_of_spec_tool_names.push(ToolValidationViolation::EmptyDescription(spec.name.clone()));
             continue;
         }
+
+        if spec.description.len() > 10_004 {
+            spec.description.truncate(10_004);
+            out_of_spec_tool_names.push(ToolValidationViolation::DescriptionTooLong(spec.name.clone()));
+        }
+
         tn_map.insert(model_tool_name.clone(), ToolInfo {
             server_name: server_name.to_string(),
             host_tool_name: spec.name.clone(),
@@ -1788,21 +1823,25 @@ async fn process_tool_specs(
     if !out_of_spec_tool_names.is_empty() {
         Err(eyre::eyre!(out_of_spec_tool_names.iter().fold(
             String::from(
-                "The following tools are out of spec. They will be excluded from the list of available tools:\n",
+                "The following tools are out of spec. They may have been excluded from the list of available tools:\n",
             ),
             |mut acc, name| {
                 let (tool_name, msg) = match name {
-                    OutOfSpecName::TooLong(tool_name) => (
+                    ToolValidationViolation::TooLong(tool_name) => (
                         tool_name.as_str(),
                         "tool name exceeds max length of 64 when combined with server name",
                     ),
-                    OutOfSpecName::IllegalChar(tool_name) => (
+                    ToolValidationViolation::IllegalChar(tool_name) => (
                         tool_name.as_str(),
                         "tool name must be compliant with ^[a-zA-Z][a-zA-Z0-9_]*$",
                     ),
-                    OutOfSpecName::EmptyDescription(tool_name) => {
+                    ToolValidationViolation::EmptyDescription(tool_name) => {
                         (tool_name.as_str(), "tool schema contains empty description")
                     },
+                    ToolValidationViolation::DescriptionTooLong(tool_name) => (
+                        tool_name.as_str(),
+                        "tool description is longer than 10024 characters and has been truncated",
+                    ),
                 };
                 acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
                 acc
@@ -2045,5 +2084,80 @@ mod tests {
         let with_delim = format!("a{}b{}c", NAMESPACE_DELIMITER, NAMESPACE_DELIMITER);
         let sanitized = sanitize_name(with_delim, &regex, &mut hasher);
         assert_eq!(sanitized, "abc");
+    }
+
+    #[test]
+    fn test_server_prompt_name_parsing() {
+        // Test parsing server/prompt format
+        let name = "server1/my_prompt";
+        let (server_name, prompt_name) = match name.split_once('/') {
+            None => (None::<String>, Some(name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+        assert_eq!(server_name, Some("server1".to_string()));
+        assert_eq!(prompt_name, Some("my_prompt".to_string()));
+
+        // Test parsing prompt name only
+        let name = "my_prompt";
+        let (server_name, prompt_name) = match name.split_once('/') {
+            None => (None::<String>, Some(name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+        assert_eq!(server_name, None);
+        assert_eq!(prompt_name, Some("my_prompt".to_string()));
+    }
+
+    #[test]
+    fn test_prompt_bundle_server_matching() {
+        // Create mock prompt bundles
+        let prompt = rmcp::model::Prompt {
+            name: "test_prompt".to_string(),
+            title: Some("Test Prompt".to_string()),
+            description: Some("Test description".to_string()),
+            icons: None,
+            arguments: None,
+        };
+
+        let bundle1 = PromptBundle {
+            server_name: "server1".to_string(),
+            prompt_get: prompt.clone(),
+        };
+
+        let bundle2 = PromptBundle {
+            server_name: "server2".to_string(),
+            prompt_get: prompt,
+        };
+
+        let bundles = [&bundle1, &bundle2];
+
+        // Test finding specific server
+        let found = bundles.iter().find(|b| b.server_name == "server1");
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().server_name, "server1");
+
+        // Test server not found
+        let not_found = bundles.iter().find(|b| b.server_name == "server3");
+        assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn test_prompt_request_param_name_usage() {
+        // Test that we use prompt_name (not full name with server) for MCP calls
+        let full_name = "example-server/test-prompt";
+        let (server_name, prompt_name) = match full_name.split_once('/') {
+            None => (None::<String>, Some(full_name.to_string())),
+            Some((server_name, prompt_name)) => (Some(server_name.to_string()), Some(prompt_name.to_string())),
+        };
+
+        let prompt_name = prompt_name.unwrap();
+
+        // This is what should be passed to MCP server
+        let params = GetPromptRequestParam {
+            name: prompt_name.clone(),
+            arguments: None,
+        };
+
+        assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"
+        assert_eq!(server_name, Some("example-server".to_string()));
     }
 }

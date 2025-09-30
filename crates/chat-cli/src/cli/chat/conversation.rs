@@ -29,6 +29,7 @@ use tracing::{
 };
 
 use super::cli::compact::CompactStrategy;
+use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
 use super::consts::{
     DUMMY_TOOL_NAME,
@@ -73,6 +74,10 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::chat::ChatError;
+use crate::cli::chat::checkpoint::{
+    Checkpoint,
+    CheckpointManager,
+};
 use crate::cli::chat::cli::model::{
     ModelInfo,
     get_model_info,
@@ -137,6 +142,8 @@ pub struct ConversationState {
     /// Maps from a file path to [FileLineTracker]
     #[serde(default)]
     pub file_line_tracker: HashMap<String, FileLineTracker>,
+
+    pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
@@ -192,7 +199,7 @@ impl ConversationState {
             next_message: None,
             history: VecDeque::new(),
             valid_history_range: Default::default(),
-            transcript: VecDeque::with_capacity(MAX_CONVERSATION_STATE_HISTORY_LEN),
+            transcript: VecDeque::new(),
             tools: format_tool_spec(tool_config),
             context_manager,
             tool_manager,
@@ -202,6 +209,7 @@ impl ConversationState {
             model: None,
             model_info: model,
             file_line_tracker: HashMap::new(),
+            checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
         }
@@ -245,6 +253,10 @@ impl ConversationState {
         self.transcript = checkpoint.main_transcript;
         self.latest_summary = checkpoint.main_latest_summary;
         self.valid_history_range = (0, self.history.len());
+        if let Some(manager) = self.checkpoint_manager.as_mut() {
+            manager.message_locked = false;
+            manager.pending_user_message = None;
+        }
     }
 
     /// Enter tangent mode - creates checkpoint of current state
@@ -563,12 +575,26 @@ impl ConversationState {
         let mut agent_spawn_context = None;
         if let Some(cm) = self.context_manager.as_mut() {
             let user_prompt = self.next_message.as_ref().and_then(|m| m.prompt());
-            let agent_spawn = cm.run_hooks(HookTrigger::AgentSpawn, output, user_prompt).await?;
+            let agent_spawn = cm
+                .run_hooks(
+                    HookTrigger::AgentSpawn,
+                    output,
+                    os,
+                    user_prompt,
+                    None, // tool_context
+                )
+                .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
                 let per_prompt = cm
-                    .run_hooks(HookTrigger::UserPromptSubmit, output, next_message.prompt())
+                    .run_hooks(
+                        HookTrigger::UserPromptSubmit,
+                        output,
+                        os,
+                        next_message.prompt(),
+                        None, // tool_context
+                    )
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
                     next_message.additional_context = ctx;
@@ -876,6 +902,35 @@ Return only the JSON configuration, no additional text.",
         self.transcript.push_back(message);
     }
 
+    /// Restore conversation from a checkpoint's history snapshot
+    pub fn restore_to_checkpoint(&mut self, checkpoint: &Checkpoint) -> Result<(), eyre::Report> {
+        // 1. Restore history from snapshot
+        self.history = checkpoint.history_snapshot.clone();
+
+        // 2. Clear any pending next message (uncommitted state)
+        self.next_message = None;
+
+        // 3. Update valid history range
+        self.valid_history_range = (0, self.history.len());
+
+        Ok(())
+    }
+
+    /// Reloads only built-in tools while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os, stderr: &mut impl Write) -> Result<(), ChatError> {
+        let builtin_tools = self
+            .tool_manager
+            .load_tools(os, stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to reload built-in tools: {e}").into()))?;
+
+        // Remove existing built-in tools and add updated ones, preserving MCP tools
+        self.tools.retain(|origin, _| *origin != ToolOrigin::Native);
+        self.tools.extend(format_tool_spec(builtin_tools));
+
+        Ok(())
+    }
+
     /// Swapping agent involves the following:
     /// - Reinstantiate the context manager
     /// - Swap agent on tool manager
@@ -1030,8 +1085,12 @@ impl From<InputSchema> for ToolInputSchema {
 /// # Returns
 /// [Option::Some] if `hook_results` is not empty and at least one hook has content. Otherwise,
 /// [Option::None]
-fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: HookTrigger) -> Option<String> {
-    if hook_results.iter().all(|(_, content)| content.is_empty()) {
+fn format_hook_context(hook_results: &[((HookTrigger, Hook), HookOutput)], trigger: HookTrigger) -> Option<String> {
+    // Note: only format context when hook command exit code is 0
+    if hook_results
+        .iter()
+        .all(|(_, (exit_code, content))| *exit_code != 0 || content.is_empty())
+    {
         return None;
     }
 
@@ -1044,7 +1103,10 @@ fn format_hook_context(hook_results: &[((HookTrigger, Hook), String)], trigger: 
     }
     context_content.push_str("\n\n");
 
-    for (_, output) in hook_results.iter().filter(|((h_trigger, _), _)| *h_trigger == trigger) {
+    for (_, (_, output)) in hook_results
+        .iter()
+        .filter(|((h_trigger, _), (exit_code, _))| *h_trigger == trigger && *exit_code == 0)
+    {
         context_content.push_str(&format!("{output}\n\n"));
     }
     context_content.push_str(CONTEXT_ENTRY_END_HEADER);
@@ -1327,7 +1389,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1357,7 +1419,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1393,7 +1455,7 @@ mod tests {
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await
@@ -1453,7 +1515,7 @@ mod tests {
         // First, build a large conversation history. We need to ensure that the order is always
         // User -> Assistant -> User -> Assistant ...and so on.
         conversation.set_next_user_message("start".to_string()).await;
-        for i in 0..=(MAX_CONVERSATION_STATE_HISTORY_LEN + 100) {
+        for i in 0..=200 {
             let s = conversation
                 .as_sendable_conversation_state(&os, &mut vec![], true)
                 .await

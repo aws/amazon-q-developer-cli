@@ -23,7 +23,7 @@ use crate::cli::chat::tools::{
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
-use crate::util::pattern_matching::matches_any_pattern;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Platform-specific modules
 #[cfg(windows)]
@@ -196,22 +196,22 @@ impl ExecuteCommand {
             #[serde(default)]
             denied_commands: Vec<String>,
             #[serde(default = "default_allow_read_only")]
-            allow_read_only: bool,
+            auto_allow_readonly: bool,
         }
 
         fn default_allow_read_only() -> bool {
-            true
+            false
         }
 
         let Self { command, .. } = self;
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = matches_any_pattern(&agent.allowed_tools, tool_name);
+        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, tool_name, None);
         match agent.tools_settings.get(tool_name) {
             Some(settings) => {
                 let Settings {
                     allowed_commands,
                     denied_commands,
-                    allow_read_only,
+                    auto_allow_readonly,
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
@@ -233,7 +233,7 @@ impl ExecuteCommand {
 
                 if is_in_allowlist {
                     PermissionEvalResult::Allow
-                } else if self.requires_acceptance(Some(&allowed_commands), allow_read_only) {
+                } else if self.requires_acceptance(Some(&allowed_commands), auto_allow_readonly) {
                     PermissionEvalResult::Ask
                 } else {
                     PermissionEvalResult::Allow
@@ -487,6 +487,133 @@ mod tests {
         // Denied list should remain denied
         let res = tool_one.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Deny(ref rules) if rules.contains(&"\\Agit .*\\z".to_string())));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_allow_read_only_default() {
+        use crate::cli::agent::Agent;
+
+        let os = Os::new().await.unwrap();
+
+        // Test read-only command with default settings (allow_read_only = false)
+        let readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "ls -la",
+        }))
+        .unwrap();
+
+        let agent = Agent::default();
+        let res = readonly_cmd.eval_perm(&os, &agent);
+        // Should ask for confirmation even for read-only commands by default
+        assert!(matches!(res, PermissionEvalResult::Ask));
+
+        // Test non-read-only command with default settings
+        let write_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "rm file.txt",
+        }))
+        .unwrap();
+
+        let res = write_cmd.eval_perm(&os, &agent);
+        // Should ask for confirmation for write commands
+        assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_allow_read_only_enabled() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::{
+            Agent,
+            ToolSettingTarget,
+        };
+
+        let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "autoAllowReadonly": true
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test read-only command with allow_read_only = true
+        let readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "ls -la",
+        }))
+        .unwrap();
+
+        let res = readonly_cmd.eval_perm(&os, &agent);
+        // Should allow read-only commands without confirmation
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test write command with allow_read_only = true
+        let write_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "rm file.txt",
+        }))
+        .unwrap();
+
+        let res = write_cmd.eval_perm(&os, &agent);
+        // Should still ask for confirmation for write commands
+        assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_allow_read_only_with_denied_commands() {
+        use std::collections::HashMap;
+
+        use crate::cli::agent::{
+            Agent,
+            ToolSettingTarget,
+        };
+
+        let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "autoAllowReadonly": true,
+                        "deniedCommands": ["ls .*"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test read-only command that's in denied list
+        let denied_readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "ls -la",
+        }))
+        .unwrap();
+
+        let res = denied_readonly_cmd.eval_perm(&os, &agent);
+        // Should deny even read-only commands if they're in denied list
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref commands) if commands.contains(&"\\Als .*\\z".to_string()))
+        );
+
+        // Test different read-only command not in denied list
+        let allowed_readonly_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
+            "command": "cat file.txt",
+        }))
+        .unwrap();
+
+        let res = allowed_readonly_cmd.eval_perm(&os, &agent);
+        // Should allow read-only commands not in denied list
+        assert!(matches!(res, PermissionEvalResult::Allow));
     }
 
     #[tokio::test]

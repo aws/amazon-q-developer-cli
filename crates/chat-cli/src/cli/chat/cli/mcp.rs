@@ -54,9 +54,9 @@ impl McpArgs {
             let msg = msg
                 .iter()
                 .map(|record| match record {
-                    LoadingRecord::Err(content) | LoadingRecord::Warn(content) | LoadingRecord::Success(content) => {
-                        content.clone()
-                    },
+                    LoadingRecord::Err(timestamp, content)
+                    | LoadingRecord::Warn(timestamp, content)
+                    | LoadingRecord::Success(timestamp, content) => format!("[{timestamp}]: {content}"),
                 })
                 .collect::<Vec<_>>()
                 .join("\n--- tools refreshed ---\n");

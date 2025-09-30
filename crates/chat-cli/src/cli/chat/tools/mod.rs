@@ -57,7 +57,7 @@ use crate::cli::agent::{
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
-pub const DEFAULT_APPROVE: [&str; 1] = ["fs_read"];
+pub const DEFAULT_APPROVE: [&str; 0] = [];
 pub const NATIVE_TOOLS: [&str; 8] = [
     "fs_read",
     "fs_write",
@@ -187,6 +187,16 @@ impl Tool {
             _ => None,
         }
     }
+
+    /// Returns the tool's summary if available
+    pub fn get_summary(&self) -> Option<String> {
+        match self {
+            Tool::FsWrite(fs_write) => fs_write.get_summary().cloned(),
+            Tool::ExecuteCommand(execute_cmd) => execute_cmd.summary.clone(),
+            Tool::FsRead(fs_read) => fs_read.summary.clone(),
+            _ => None,
+        }
+    }
 }
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
@@ -271,6 +281,7 @@ pub struct QueuedTool {
     pub name: String,
     pub accepted: bool,
     pub tool: Tool,
+    pub tool_input: serde_json::Value,
 }
 
 /// The schema specification describing a tool's fields.

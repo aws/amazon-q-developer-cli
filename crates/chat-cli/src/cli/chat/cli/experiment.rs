@@ -12,7 +12,6 @@ use crossterm::{
 };
 use dialoguer::Select;
 
-use crate::cli::chat::conversation::format_tool_spec;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -50,6 +49,16 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
     },
+    Experiment {
+        name: "Checkpoint",
+        description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\nNote: Cannot be used in tangent mode (to avoid mixing up conversation history)",
+        setting_key: Setting::EnabledCheckpoint,
+    },
+    Experiment {
+        name: "Context Usage Indicator",
+        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
+        setting_key: Setting::EnabledContextUsageIndicator,
+    },
 ];
 
 #[derive(Debug, PartialEq, Args)]
@@ -71,17 +80,21 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         let is_enabled = os.database.settings.get_bool(experiment.setting_key).unwrap_or(false);
 
         current_states.push(is_enabled);
-        // Create clean single-line format: "Knowledge    [ON]   - Description"
+
         let status_indicator = if is_enabled {
-            style::Stylize::green("[ON] ")
+            format!("{}", style::Stylize::green("[ON] "))
         } else {
-            style::Stylize::grey("[OFF]")
+            format!("{}", style::Stylize::grey("[OFF]"))
         };
+
+        // Handle multi-line descriptions with proper indentation
+        let description = experiment.description.replace('\n', &format!("\n{}", " ".repeat(34)));
+
         let label = format!(
-            "{:<18} {} - {}",
+            "{:<25} {:<6} {}",
             experiment.name,
             status_indicator,
-            style::Stylize::dark_grey(experiment.description)
+            style::Stylize::dark_grey(description)
         );
         experiment_labels.push(label);
     }
@@ -149,15 +162,12 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update experiment setting: {e}").into()))?;
 
-        // Reload tools to reflect the experiment change
-        let tools = session
+        // Reload built-in tools to reflect the experiment change while preserving MCP tools
+        session
             .conversation
-            .tool_manager
-            .load_tools(os, &mut session.stderr)
+            .reload_builtin_tools(os, &mut session.stderr)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))?;
-
-        session.conversation.tools = format_tool_spec(tools);
 
         let status_text = if new_state { "enabled" } else { "disabled" };
 

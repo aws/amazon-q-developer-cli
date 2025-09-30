@@ -147,7 +147,11 @@ impl ToolsArgs {
             queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print("Servers still loading"),
+                style::Print("Servers loading (Some of these might need auth. See "),
+                style::SetForegroundColor(Color::Green),
+                style::Print("/mcp"),
+                style::SetForegroundColor(Color::Reset),
+                style::Print(" for details)"),
                 style::SetAttribute(Attribute::Reset),
                 style::Print("\n"),
                 style::Print("▔".repeat(terminal_width)),
