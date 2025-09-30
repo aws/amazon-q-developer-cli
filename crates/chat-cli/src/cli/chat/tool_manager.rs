@@ -2126,8 +2126,8 @@ mod tests {
         // Create mock prompt bundles
         let prompt = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
-            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            title: None,
             icons: None,
             arguments: None,
         };
@@ -2142,7 +2142,7 @@ mod tests {
             prompt_get: prompt,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test finding specific server
         let found = bundles.iter().find(|b| b.server_name == "server1");
@@ -2188,8 +2188,8 @@ mod tests {
         // Test Case 2: Schema exists but no user args - should return empty map
         let optional_schema = Some(vec![PromptArgument {
             name: "optional_param".to_string(),
-            title: Some("Optional Parameter".to_string()),
             description: Some("An optional parameter".to_string()),
+            title: None,
             required: Some(false),
         }]);
         let result = ToolManager::process_prompt_arguments(&optional_schema, &no_user_args);

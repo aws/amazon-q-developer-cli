@@ -866,7 +866,7 @@ pub enum PromptsSubcommand {
         /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
-    /// Create a new prompt
+    /// Create a new local prompt
     Create {
         /// Name of the prompt to create
         #[arg(short = 'n', long)]
@@ -878,7 +878,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Edit an existing prompt
+    /// Edit an existing local prompt
     Edit {
         /// Name of the prompt to edit
         name: String,
@@ -886,7 +886,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Remove an existing prompt
+    /// Remove an existing local prompt
     Remove {
         /// Name of the prompt to remove
         name: String,
@@ -2461,20 +2461,20 @@ mod tests {
         // Create mock prompt bundles
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
-            title: Some("Test Prompt".to_string()),
             description: Some("Test description".to_string()),
+            title: None,
             icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
-                    title: Some("Argument 1".to_string()),
                     description: Some("First argument".to_string()),
+                    title: None,
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
-                    title: Some("Argument 2".to_string()),
                     description: None,
+                    title: None,
                     required: Some(false),
                 },
             ]),

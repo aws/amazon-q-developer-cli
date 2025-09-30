@@ -568,7 +568,10 @@ mod tests {
         #[cfg(unix)]
         let command = format!("cat > {}", test_file_str);
         #[cfg(windows)]
-        let command = format!("type > {}", test_file_str);
+        let command = format!(
+            "powershell -Command \"$input | Out-File -FilePath '{}'\"",
+            test_file_str
+        );
 
         let hook = Hook {
             command,
