@@ -35,6 +35,11 @@ impl AcpClientSessionHandle {
         })
     }
 
+    /// Get the session ID for this session
+    pub fn session_id(&self) -> &acp::SessionId {
+        &self.session_info.session_id
+    }
+
     /// Send a message to the agent and read the complete response
     pub async fn prompt(&mut self, message: impl IntoPrompt) -> Result<String> {
         // Construct the prompt
@@ -53,6 +58,7 @@ impl AcpClientSessionHandle {
         // Read notifications until we get the prompt response, then we can return.
         let mut response_text = String::new();
         while let Some(client_callback) = self.callback_rx.recv().await {
+            tracing::debug!(actor="client_session", event="callback received", "session_id"=?self.session_info.session_id, ?client_callback);
             match client_callback {
                 ClientCallback::Notification(notification, tx) => {
                     self.handle_notification(notification, tx, &mut response_text)

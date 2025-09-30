@@ -55,16 +55,16 @@ impl AcpServerConnectionHandle {
 
         // Launch the "transport actor", which owns the connection.
         tokio::task::spawn_local(async move {
-            tracing::debug!(actor="transport", event="started");
+            tracing::debug!(actor="server_connection", event="started");
 
             while let Some(method) = transport_rx.recv().await {
-                tracing::debug!(actor="transport", event="message received", ?method);
+                tracing::debug!(actor="server_connection", event="message received", ?method);
                 match method {
                     TransportMethod::SessionNotification(notification, tx) => {
                         let result = connection.session_notification(notification).await;
-                        tracing::debug!(actor="transport", event="notification delivered");
+                        tracing::debug!(actor="server_connection", event="notification delivered");
                         if tx.send(result).is_err() {
-                            tracing::debug!(actor="transport", event="response receiver dropped");
+                            tracing::debug!(actor="server_connection", event="response receiver dropped");
                         }
                     },
                 }

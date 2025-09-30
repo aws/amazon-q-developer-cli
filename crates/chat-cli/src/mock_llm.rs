@@ -56,6 +56,13 @@ impl MockLLMContext {
         user_messages_in_history + 1 // +1 for current message
     }
 
+    /// Get the current user message content.
+    /// Useful for routing based on message content in tests.
+    #[allow(dead_code)]
+    pub fn current_user_message(&self) -> &str {
+        &self.current_user_message
+    }
+
     /// Match conversation against regex patterns and return captured groups
     ///
     /// # Arguments
@@ -275,6 +282,44 @@ impl MockLLMContext {
         Err(eyre::eyre!("unexpected input"))
     }
 
+    /// Block until the response channel is canceled, sending a coordination signal first.
+    /// This is useful for testing cancellation scenarios where you want the mock LLM
+    /// to send a signal and then wait to be canceled.
+    /// 
+    /// # Usage
+    /// ```ignore
+    /// // In test: start prompt and cancellation concurrently
+    /// let (prompt_result, _) = tokio::join!(
+    ///     session.prompt("test message"), 
+    ///     async {
+    ///         // Wait for LLM to signal it's ready, then cancel
+    ///         coordination_rx.recv().await;
+    ///         client.cancel(session_id).await;
+    ///     }
+    /// );
+    /// assert_eq!(prompt_result.unwrap_err().to_string(), "canceled");
+    /// ```
+    #[allow(dead_code)]
+    pub async fn block_until_canceled(&mut self, coordination_signal: &str) -> eyre::Result<()> {
+        // Send the coordination signal first to let the test know we're ready
+        self.respond(coordination_signal).await?;
+        
+        // Now block by checking if channel is closed periodically
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            
+            // Check if the channel is closed
+            if self.tx.is_closed() {
+                tracing::debug!(
+                    actor = "MockLLM", 
+                    event = "detected cancellation via closed channel",
+                    current_user_message = self.current_user_message(),
+                );
+                return Ok(());
+            }
+        }
+    }
+
     /// Helper to perform regex substitution using captured groups
     /// Uses proper regex substitution with $name syntax
     fn substitute_captures(&self, pattern: &str, captures: &ConversationMatches, template: &str) -> Result<String> {
@@ -330,6 +375,13 @@ impl MockLLM {
         conversation_history: Vec<ChatMessage>,
         current_user_message: String,
     ) -> mpsc::Receiver<Result<ChatResponseStream, RecvError>> {
+        tracing::debug!(
+            actor = "MockLLM", 
+            event = "spawn_turn",
+            ?current_user_message,
+            ?conversation_history,
+        );
+        
         // Create a fresh channel for this mock turn
         // The mock script will send ResponseEvents via the context's tx
         // The consumer will receive them via mock_rx
@@ -339,7 +391,7 @@ impl MockLLM {
         // Create context with the provided tx channel
         let mock_context = MockLLMContext {
             conversation_history,
-            current_user_message,
+            current_user_message: current_user_message.clone(),
             tx: mock_tx,
         };
 
@@ -347,7 +399,11 @@ impl MockLLM {
         tokio::spawn(async move {
             match future.await {
                 Ok(()) => {
-                    // Just return, this will close the channel.
+                    tracing::debug!(
+                        actor = "MockLLM", 
+                        event = "terminate",
+                        ?current_user_message,
+                    );                    
                 }
                 Err(e) => {
                     // Send error on failure

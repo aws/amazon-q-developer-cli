@@ -7,7 +7,7 @@ use agent_client_protocol as acp;
 use serde_json::value::RawValue;
 use tokio::sync::{mpsc, oneshot};
 
-use crate::os::Os;
+use crate::{cli::acp::util::ignore_error, os::Os};
 use super::{server_session::AcpServerSessionHandle, server_connection::AcpServerConnectionHandle};
 
 /// Convert channel errors to ACP errors
@@ -30,6 +30,7 @@ pub struct AcpServerHandle {
 /// Each variant contains:
 /// - Request parameters (the input)
 /// - oneshot::Sender (the "return address" where the actor sends the response back)
+#[derive(Debug)]
 enum ServerMethod {
     Initialize(acp::InitializeRequest, oneshot::Sender<Result<acp::InitializeResponse, acp::Error>>),
     Authenticate(acp::AuthenticateRequest, oneshot::Sender<Result<acp::AuthenticateResponse, acp::Error>>),
@@ -50,6 +51,7 @@ impl AcpServerHandle {
             let mut sessions: HashMap<String, AcpServerSessionHandle> = HashMap::new();
             
             while let Some(method) = server_rx.recv().await {
+                tracing::debug!(actor="server", event="method call received", ?method);
                 match method {
                     ServerMethod::Initialize(args, tx) => {
                         let response = Self::handle_initialize(args).await;
@@ -87,11 +89,7 @@ impl AcpServerHandle {
                         }
                     }
                     ServerMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args, &sessions).await;
-                        if tx.send(response).is_err() {
-                            tracing::debug!(actor="server", event="response receiver dropped", method="prompt");
-                            break;
-                        }
+                        Self::handle_prompt(args, tx, &sessions).await;
                     }
                     ServerMethod::Cancel(args, tx) => {
                         let response = Self::handle_cancel(args, &sessions).await;
@@ -267,17 +265,20 @@ impl AcpServerHandle {
 
     async fn handle_prompt(
         args: acp::PromptRequest,
+        prompt_tx: oneshot::Sender<Result<acp::PromptResponse, acp::Error>>,
         sessions: &HashMap<String, AcpServerSessionHandle>,
-    ) -> Result<acp::PromptResponse, acp::Error> {
+    ) {
         let session_id = args.session_id.0.as_ref();
         
         // Find the session actor
         if let Some(session_handle) = sessions.get(session_id) {
-            // Forward to session actor
-            session_handle.prompt(args).await
+            // Forward to session actor. Importantly, this actor is responsible
+            // for sending the final result from the prompt to `prompt_tx` -- we just
+            // return immediately.
+            session_handle.prompt(args, prompt_tx).await;
         } else {
             tracing::warn!("Session not found for prompt: {}", session_id);
-            Err(acp::Error::invalid_params())
+            ignore_error(prompt_tx.send(Err(acp::Error::invalid_params())))
         }
     }
 

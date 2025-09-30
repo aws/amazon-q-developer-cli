@@ -1,13 +1,15 @@
 //! ACP Session Actor - Per-session actor that owns conversation state
 
 use agent_client_protocol as acp;
-use tokio::sync::{mpsc, oneshot};
 use eyre::Result;
+use tokio::sync::mpsc::error::SendError;
 use std::collections::HashMap;
+use tokio::sync::{mpsc, oneshot};
 
-use crate::os::Os;
-use crate::cli::chat::{ConversationState, SendMessageStream, ResponseEvent};
 use super::server_connection::AcpServerConnectionHandle;
+use crate::cli::acp::util::ignore_error;
+use crate::cli::chat::{ConversationState, ResponseEvent, SendMessageStream};
+use crate::os::Os;
 
 /// Convert channel errors to ACP errors
 fn channel_to_acp_error<E>(_err: E) -> acp::Error {
@@ -23,18 +25,35 @@ pub struct AcpServerSessionHandle {
 /// Messages sent to session actors
 #[derive(Debug)]
 enum ServerSessionMethod {
-    Prompt(acp::PromptRequest, oneshot::Sender<Result<acp::PromptResponse, acp::Error>>),
+    Prompt(
+        acp::PromptRequest,
+        oneshot::Sender<Result<acp::PromptResponse, acp::Error>>,
+    ),
     Cancel(acp::CancelNotification, oneshot::Sender<Result<(), acp::Error>>),
-    SetMode(acp::SetSessionModeRequest, oneshot::Sender<Result<acp::SetSessionModeResponse, acp::Error>>),
+    SetMode(
+        acp::SetSessionModeRequest,
+        oneshot::Sender<Result<acp::SetSessionModeResponse, acp::Error>>,
+    ),
+}
+
+impl ServerSessionMethod {
+    // Respond to the embedded channel (if any) with an error.
+    pub fn send_error(self) {
+        match self {
+            ServerSessionMethod::Prompt(_, sender) => ignore_error(sender.send(Err(acp::Error::internal_error()))),
+            ServerSessionMethod::Cancel(_, sender) => ignore_error(sender.send(Err(acp::Error::internal_error()))),
+            ServerSessionMethod::SetMode(_, sender) => ignore_error(sender.send(Err(acp::Error::internal_error()))),
+        }
+    }
 }
 
 impl AcpServerSessionHandle {
     pub fn spawn_local(session_id: acp::SessionId, mut os: Os, transport: AcpServerConnectionHandle) -> Self {
         let (session_tx, mut session_rx) = mpsc::channel(32);
-        
+
         tokio::task::spawn_local(async move {
             tracing::debug!(actor="session", event="started", session_id=%session_id.0);
-            
+
             let mut conversation_state = ConversationState::new(
                 &session_id.0,
                 Default::default(), // agents
@@ -42,97 +61,117 @@ impl AcpServerSessionHandle {
                 Default::default(), // tool_manager
                 None,               // current_model_id
                 &os,
-                false,              // mcp_enabled
-            ).await;
-            
+                false, // mcp_enabled
+            )
+            .await;
+
             while let Some(method) = session_rx.recv().await {
                 match method {
                     ServerSessionMethod::Prompt(args, tx) => {
-                        let response = Self::handle_prompt(args, &transport, &mut os, &mut conversation_state, &mut session_rx).await;
+                        let response =
+                            Self::handle_prompt(args, &transport, &mut os, &mut conversation_state, &mut session_rx)
+                                .await;
                         if tx.send(response).is_err() {
                             tracing::debug!(actor="session", event="response receiver dropped", method="prompt", session_id=%session_id.0);
                             break;
                         }
-                    }
+                    },
                     ServerSessionMethod::Cancel(args, tx) => {
                         let response = Self::handle_cancel(args).await;
                         if tx.send(response).is_err() {
                             tracing::debug!(actor="session", event="response receiver dropped", method="cancel", session_id=%session_id.0);
                             break;
                         }
-                    }
+                    },
                     ServerSessionMethod::SetMode(args, tx) => {
                         let response = Self::handle_set_mode(args).await;
                         if tx.send(response).is_err() {
                             tracing::debug!(actor="session", event="response receiver dropped", method="set_mode", session_id=%session_id.0);
                             break;
                         }
-                    }
+                    },
                 }
             }
-            
+
             tracing::info!("Session actor shutting down for session: {}", session_id.0);
         });
-        
+
         Self { session_tx }
     }
 
-    pub async fn prompt(&self, args: acp::PromptRequest) -> Result<acp::PromptResponse, acp::Error> {
-        let (tx, rx) = oneshot::channel();
-        self.session_tx.send(ServerSessionMethod::Prompt(args, tx)).await
-            .map_err(channel_to_acp_error)?;
-        rx.await.map_err(channel_to_acp_error)?
+    /// Sends the prompt `args` to this session. Returns immediately.
+    /// The final result from prompt processing is sent to `prompt_tx`.
+    pub async fn prompt(
+        &self,
+        args: acp::PromptRequest,
+        prompt_tx: oneshot::Sender<Result<acp::PromptResponse, acp::Error>>,
+    ) {
+        let msg = self.session_tx
+            .send(ServerSessionMethod::Prompt(args, prompt_tx))
+            .await;
+        match msg {
+            Ok(()) => {}
+
+            Err(SendError(cancel)) => {
+                cancel.send_error();
+            }
+        }
     }
 
     pub async fn cancel(&self, args: acp::CancelNotification) -> Result<(), acp::Error> {
         let (tx, rx) = oneshot::channel();
-        self.session_tx.send(ServerSessionMethod::Cancel(args, tx)).await
+        self.session_tx
+            .send(ServerSessionMethod::Cancel(args, tx))
+            .await
             .map_err(channel_to_acp_error)?;
         rx.await.map_err(channel_to_acp_error)?
     }
 
     pub async fn set_mode(&self, args: acp::SetSessionModeRequest) -> Result<acp::SetSessionModeResponse, acp::Error> {
         let (tx, rx) = oneshot::channel();
-        self.session_tx.send(ServerSessionMethod::SetMode(args, tx)).await
+        self.session_tx
+            .send(ServerSessionMethod::SetMode(args, tx))
+            .await
             .map_err(channel_to_acp_error)?;
         rx.await.map_err(channel_to_acp_error)?
     }
 
     async fn handle_prompt(
-        args: acp::PromptRequest, 
+        args: acp::PromptRequest,
         transport: &AcpServerConnectionHandle,
         os: &mut Os,
         conversation_state: &mut ConversationState,
         session_rx: &mut mpsc::Receiver<ServerSessionMethod>,
     ) -> Result<acp::PromptResponse, acp::Error> {
         tracing::info!("Processing ACP prompt with {} content blocks", args.prompt.len());
-        
+
         // Convert ACP prompt to string and set it
         let prompt_text = Self::convert_acp_prompt_to_string(args.prompt)?;
         conversation_state.set_next_user_message(prompt_text).await;
-        
+
         // Convert to API format
         let mut stderr = std::io::stderr();
-        let api_conversation_state = conversation_state.as_sendable_conversation_state(
-            os,
-            &mut stderr,
-            false,
-        ).await.map_err(|e| {
-            tracing::error!("Failed to create sendable conversation state: {}", e);
-            acp::Error::internal_error()
-        })?;
-        
+        let api_conversation_state = conversation_state
+            .as_sendable_conversation_state(os, &mut stderr, false)
+            .await
+            .map_err(|e| {
+                tracing::error!("Failed to create sendable conversation state: {}", e);
+                acp::Error::internal_error()
+            })?;
+
         // Send to LLM and stream responses
         let mut stream = SendMessageStream::send_message(
             &os.client,
             api_conversation_state,
             std::sync::Arc::new(tokio::sync::Mutex::new(None)),
             None,
-        ).await.map_err(|e| {
+        )
+        .await
+        .map_err(|e| {
             tracing::error!("Failed to send message: {}", e);
             acp::Error::internal_error()
         })?;
-        
+
         // Stream responses via transport with cancellation support
         let end_stream_info = loop {
             tokio::select! {
@@ -141,7 +180,7 @@ impl AcpServerSessionHandle {
                         Some(Ok(event)) => {
                             match event {
                                 ResponseEvent::EndStream { message, request_metadata } => {
-                                    // The `message` here cotains all of the accumulated text and tool uses 
+                                    // The `message` here cotains all of the accumulated text and tool uses
                                     // that we received so far.
                                     break Some((message, request_metadata));
                                 }
@@ -213,50 +252,46 @@ impl AcpServerSessionHandle {
         }
 
         conversation_state.reset_next_user_message();
-        
+
         Ok(acp::PromptResponse {
             stop_reason: acp::StopReason::EndTurn,
             meta: None,
         })
     }
-    
+
     fn convert_acp_prompt_to_string(prompt: Vec<acp::ContentBlock>) -> Result<String, acp::Error> {
         let mut content = String::new();
-        
+
         for block in prompt {
             match block {
                 acp::ContentBlock::Text(text_content) => {
                     content.push_str(&text_content.text);
                     content.push('\n');
-                }
+                },
                 _ => {
                     tracing::warn!("Unsupported ACP content block type, skipping");
-                }
+                },
             }
         }
-        
+
         Ok(content.trim().to_string())
     }
-    
+
     fn convert_response_to_acp_notification(
-        session_id: &acp::SessionId, 
-        event: ResponseEvent
+        session_id: &acp::SessionId,
+        event: ResponseEvent,
     ) -> Result<acp::SessionNotification, acp::Error> {
         let content = match event {
-            ResponseEvent::AssistantText(text) => {
-                acp::ContentBlock::Text(acp::TextContent {
-                    text,
-                    annotations: None,
-                    meta: None,
-                })
-            }
-            ResponseEvent::ToolUseStart { name } => {
-                acp::ContentBlock::Text(acp::TextContent {
-                    text: format!("[Tool: {}]", name),
-                    annotations: None,
-                    meta: None,
-                })
-            }
+            ResponseEvent::AssistantText(text) => acp::ContentBlock::Text(acp::TextContent {
+                text,
+                annotations: None,
+                meta: None,
+            }),
+            ResponseEvent::ToolUseStart { name } => acp::ContentBlock::Text(acp::TextContent {
+                text: format!("[Tool: {}]", name),
+                annotations: None,
+                meta: None,
+            }),
             ResponseEvent::ToolUse(_tool_use) => {
                 // TODO: Convert tool use to proper ACP format
                 acp::ContentBlock::Text(acp::TextContent {
@@ -264,13 +299,13 @@ impl AcpServerSessionHandle {
                     annotations: None,
                     meta: None,
                 })
-            }
+            },
             ResponseEvent::EndStream { .. } => {
                 // This shouldn't be called for EndStream
                 return Err(acp::Error::internal_error());
-            }
+            },
         };
-        
+
         Ok(acp::SessionNotification {
             session_id: session_id.clone(),
             update: acp::SessionUpdate::AgentMessageChunk { content },
@@ -281,8 +316,9 @@ impl AcpServerSessionHandle {
     async fn handle_cancel(args: acp::CancelNotification) -> Result<(), acp::Error> {
         // When no prompt is active, cancellation is a no-op but we log it
         tracing::debug!("Cancel request received outside prompt processing: {:?}", args);
-        
-        // According to ACP spec, cancel is always successful even if there's nothing to cancel
+
+        // Per ACP RFC: "Q CLI's current ACP implementation has cancellation as a no-op"
+        // When no prompt is active, there's nothing to cancel, so this succeeds
         // The real cancellation logic is handled in the prompt processing loop above
         Ok(())
     }

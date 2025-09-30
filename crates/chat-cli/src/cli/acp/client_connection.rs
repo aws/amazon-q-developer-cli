@@ -124,12 +124,9 @@ pub(super) enum ClientConnectionMethod {
     // This ensures that the prompt termination is ordered with respect
     // to the other notifications that are routed to that same session.
     Prompt(acp::PromptRequest),
-    
+
     #[allow(dead_code)] // Will be used when client-side cancellation is implemented
-    Cancel(
-        acp::CancelNotification,
-        oneshot::Sender<Result<(), acp::Error>>,
-    ),
+    Cancel(acp::CancelNotification, oneshot::Sender<Result<(), acp::Error>>),
 }
 
 impl AcpClientConnectionHandle {
@@ -159,6 +156,7 @@ impl AcpClientConnectionHandle {
                 acp::ClientSideConnection::new(callbacks, outgoing_bytes, incoming_bytes, |fut| {
                     tokio::task::spawn_local(fut);
                 });
+            let client_conn = Arc::new(client_conn);
 
             // Start the client I/O handler
             tokio::task::spawn_local(async move {
@@ -168,42 +166,55 @@ impl AcpClientConnectionHandle {
             });
 
             while let Some(method) = client_rx.recv().await {
-                tracing::debug!(actor="client_connection", event="message received", ?method);
+                tracing::debug!(actor = "client_connection", event = "message received", ?method);
 
                 match method {
                     ClientConnectionMethod::Initialize(initialize_request, sender) => {
                         let response = client_conn.initialize(initialize_request).await;
-                        tracing::debug!(actor="client_connection", event="sending response", ?response);
+                        tracing::debug!(actor = "client_connection", event = "sending response", ?response);
                         ignore_error(sender.send(response));
                     },
                     ClientConnectionMethod::NewSession(new_session_request, sender) => {
                         match client_conn.new_session(new_session_request).await {
                             Ok(session_info) => {
-                                let result = AcpClientSessionHandle::new(
-                                    session_info,
-                                    &client_dispatch,
-                                    client_tx.clone(),
-                                )
-                                .await
-                                .map_err(|_err| acp::Error::internal_error());
-                                tracing::debug!(actor="client_connection", event="sending response", ?result);
+                                let result =
+                                    AcpClientSessionHandle::new(session_info, &client_dispatch, client_tx.clone())
+                                        .await
+                                        .map_err(|_err| acp::Error::internal_error());
+                                tracing::debug!(actor = "client_connection", event = "sending response", ?result);
                                 ignore_error(sender.send(result));
                             },
                             Err(err) => {
-                                tracing::debug!(actor="client_connection", event="sending response", ?err);
+                                tracing::debug!(actor = "client_connection", event = "sending response", ?err);
                                 ignore_error(sender.send(Err(err)));
                             },
                         }
                     },
                     ClientConnectionMethod::Prompt(prompt_request) => {
                         let session_id = prompt_request.session_id.clone();
-                        let response = client_conn.prompt(prompt_request).await;
-                        tracing::debug!(actor="client_connection", event="sending response", ?session_id, ?response);
-                        client_dispatch.client_callback(ClientCallback::PromptResponse(session_id, response));
+
+                        // Spawn off the call to prompt so it runs concurrently.
+                        //
+                        // This way if the user tries to cancel, that message can be received
+                        // and sent to the server. That will cause the server to cancel this prompt call.
+                        tokio::task::spawn_local({
+                            let client_conn = client_conn.clone();
+                            let client_dispatch = client_dispatch.clone();
+                            async move {
+                                let response = client_conn.prompt(prompt_request).await;
+                                tracing::debug!(
+                                    actor = "client_connection",
+                                    event = "sending response",
+                                    ?session_id,
+                                    ?response
+                                );
+                                client_dispatch.client_callback(ClientCallback::PromptResponse(session_id, response));
+                            }
+                        });
                     },
                     ClientConnectionMethod::Cancel(cancel_notification, sender) => {
                         let response = client_conn.cancel(cancel_notification).await;
-                        tracing::debug!(actor="client_connection", event="sending response", ?response);
+                        tracing::debug!(actor = "client_connection", event = "sending response", ?response);
                         ignore_error(sender.send(response));
                     },
                 }
@@ -229,12 +240,10 @@ impl AcpClientConnectionHandle {
         Ok(rx.await??)
     }
 
-    #[allow(dead_code)] // Will be used when client-side cancellation is implemented
+    #[cfg_attr(not(test), allow(dead_code))] // Will be used when client-side cancellation is implemented
     pub async fn cancel(&self, args: acp::CancelNotification) -> Result<()> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        self.client_tx
-            .send(ClientConnectionMethod::Cancel(args, tx))
-            .await?;
+        self.client_tx.send(ClientConnectionMethod::Cancel(args, tx)).await?;
         Ok(rx.await??)
     }
 }
@@ -258,7 +267,10 @@ impl acp::Client for AcpClientForward {
         todo!()
     }
 
-    async fn write_text_file(&self, _args: acp::WriteTextFileRequest) -> Result<acp::WriteTextFileResponse, acp::Error> {
+    async fn write_text_file(
+        &self,
+        _args: acp::WriteTextFileRequest,
+    ) -> Result<acp::WriteTextFileResponse, acp::Error> {
         todo!()
     }
 
@@ -267,12 +279,16 @@ impl acp::Client for AcpClientForward {
     }
 
     async fn session_notification(&self, args: acp::SessionNotification) -> Result<(), acp::Error> {
-        tracing::debug!(actor="client_connection", event="session_notification", ?args);
+        tracing::debug!(actor = "client_connection", event = "session_notification", ?args);
         let (tx, rx) = oneshot::channel();
         self.client_dispatch
             .client_callback(ClientCallback::Notification(args, tx));
         let result = rx.await;
-        tracing::debug!(actor="client_connection", event="session_notification complete", ?result);
+        tracing::debug!(
+            actor = "client_connection",
+            event = "session_notification complete",
+            ?result
+        );
         result.map_err(acp::Error::into_internal_error)?
     }
 
@@ -342,4 +358,3 @@ impl ClientCallback {
         }
     }
 }
-
