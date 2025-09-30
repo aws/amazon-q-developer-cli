@@ -34,6 +34,7 @@ pub struct Experiment {
     pub description: &'static str,
     pub setting_key: Setting,
     pub enabled: bool,
+    pub commands: &'static [&'static str],
 }
 
 static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
@@ -42,36 +43,70 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables persistent context storage and retrieval across chat sessions (/knowledge)",
         setting_key: Setting::EnabledKnowledge,
         enabled: true,
+        commands: &[
+            "/knowledge",
+            "/knowledge help",
+            "/knowledge show",
+            "/knowledge add",
+            "/knowledge remove",
+            "/knowledge clear",
+            "/knowledge search",
+            "/knowledge update",
+            "/knowledge status",
+            "/knowledge cancel",
+        ],
     },
     Experiment {
         experiment_name: ExperimentName::Thinking,
         description: "Enables complex reasoning with step-by-step thought processes",
         setting_key: Setting::EnabledThinking,
         enabled: true,
+        commands: &[],
     },
     Experiment {
         experiment_name: ExperimentName::TangentMode,
         description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
         setting_key: Setting::EnabledTangentMode,
         enabled: true,
+        commands: &["/tangent", "/tangent tail"],
     },
     Experiment {
         experiment_name: ExperimentName::TodoList,
         description: "Enables Q to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
         enabled: true,
+        commands: &[
+            "/todos",
+            "/todos help",
+            "/todos clear-finished",
+            "/todos resume",
+            "/todos view",
+            "/todos delete",
+            "/todos delete --all",
+        ],
     },
     Experiment {
         experiment_name: ExperimentName::Checkpoint,
         description: "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\nNote: Cannot be used in tangent mode (to avoid mixing up conversation history)",
         setting_key: Setting::EnabledCheckpoint,
         enabled: true,
+        commands: &[
+            "/checkpoint",
+            "/checkpoint help",
+            "/checkpoint init",
+            "/checkpoint list",
+            "/checkpoint restore",
+            "/checkpoint expand",
+            "/checkpoint diff",
+            "/checkpoint clean",
+        ],
     },
     Experiment {
         experiment_name: ExperimentName::ContextUsageIndicator,
         description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
         setting_key: Setting::EnabledContextUsageIndicator,
         enabled: true,
+        commands: &[],
     },
 ];
 
@@ -122,5 +157,15 @@ impl ExperimentManager {
     // Returns all list of available experiments, with enabled state.
     pub fn get_experiments() -> Vec<&'static Experiment> {
         AVAILABLE_EXPERIMENTS.iter().filter(|exp| exp.enabled).collect()
+    }
+
+    /// Returns all commands from enabled experiments
+    pub fn get_commands(os: &Os) -> Vec<&'static str> {
+        AVAILABLE_EXPERIMENTS
+            .iter()
+            .filter(|exp| exp.enabled && Self::is_enabled(os, exp.experiment_name))
+            .flat_map(|exp| exp.commands.iter())
+            .copied()
+            .collect()
     }
 }

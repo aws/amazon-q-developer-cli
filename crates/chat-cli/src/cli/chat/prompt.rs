@@ -46,10 +46,7 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
-use crate::cli::experiment::experiment_manager::{
-    ExperimentManager,
-    ExperimentName,
-};
+use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
@@ -106,55 +103,7 @@ pub const COMMANDS: &[&str] = &[
 /// Generate dynamic command list including experiment-based commands when enabled
 pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
     let mut commands = COMMANDS.to_vec();
-
-    // Add knowledge commands if Knowledge experiment is enabled
-    if ExperimentManager::is_enabled(os, ExperimentName::Knowledge) {
-        commands.extend_from_slice(&[
-            "/knowledge",
-            "/knowledge help",
-            "/knowledge show",
-            "/knowledge add",
-            "/knowledge remove",
-            "/knowledge clear",
-            "/knowledge search",
-            "/knowledge update",
-            "/knowledge status",
-            "/knowledge cancel",
-        ]);
-    }
-
-    // Add checkpoint commands if Checkpoint experiment is enabled
-    if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
-        commands.extend_from_slice(&[
-            "/checkpoint",
-            "/checkpoint help",
-            "/checkpoint init",
-            "/checkpoint list",
-            "/checkpoint restore",
-            "/checkpoint expand",
-            "/checkpoint diff",
-            "/checkpoint clean",
-        ]);
-    }
-
-    // Add todos commands if TodoList experiment is enabled
-    if ExperimentManager::is_enabled(os, ExperimentName::TodoList) {
-        commands.extend_from_slice(&[
-            "/todos",
-            "/todos help",
-            "/todos clear-finished",
-            "/todos resume",
-            "/todos view",
-            "/todos delete",
-            "/todos delete --all",
-        ]);
-    }
-
-    // Add tangent commands if TangentMode experiment is enabled
-    if ExperimentManager::is_enabled(os, ExperimentName::TangentMode) {
-        commands.extend_from_slice(&["/tangent", "/tangent tail"]);
-    }
-
+    commands.extend(ExperimentManager::get_commands(os));
     commands.sort();
     commands
 }
