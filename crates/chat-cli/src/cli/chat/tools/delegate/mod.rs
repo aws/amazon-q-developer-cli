@@ -1,5 +1,5 @@
 mod agent;
-mod execution;
+pub mod execution;
 mod types;
 mod ui;
 
@@ -69,7 +69,7 @@ pub enum Operation {
     /// Launch a new agent with a specified task
     Launch,
     /// Check the status of a specific agent or all agents if None is provided
-    Status(Option<String>),
+    Status,
     /// List all available agents
     List,
 }
@@ -91,6 +91,8 @@ impl Delegate {
             });
         }
 
+        tracing::info!("## delegate: invoking");
+
         let result = match &self.operation {
             Operation::Launch => {
                 let task = self
@@ -102,9 +104,12 @@ impl Delegate {
 
                 launch_agent(os, agent_name, agents, task).await?
             },
-            Operation::Status(name) => match name {
+            Operation::Status => match &self.agent {
                 Some(agent_name) => status_agent(os, agent_name).await?,
-                None => status_all_agents(os).await?,
+                None => match status_all_agents(os).await {
+                    Ok(execution) => execution,
+                    Err(msg) => msg.to_string(),
+                },
             },
             Operation::List => agents.agents.keys().cloned().fold(
                 format!("Available agents: \n- {DEFAULT_AGENT_NAME}\n"),
@@ -123,7 +128,7 @@ impl Delegate {
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
         match self.operation {
             Operation::Launch => queue!(output, style::Print("Delegating task to agent\n"))?,
-            Operation::Status(_) => queue!(output, style::Print("Checking agent status\n"))?,
+            Operation::Status => queue!(output, style::Print("Checking agent status\n"))?,
             Operation::List => queue!(output, style::Print("Listing available agents\n"))?,
         }
 
@@ -135,7 +140,7 @@ async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> Resu
     validate_agent_availability(os, agent).await?;
 
     // Check if agent is already running
-    if let Some(execution) = load_agent_execution(os, agent).await? {
+    if let Some((execution, _)) = load_agent_execution(os, agent).await? {
         if execution.status == AgentStatus::Running {
             return Err(eyre::eyre!(
                 "Agent '{}' is already running. Use status operation to check progress or wait for completion.",

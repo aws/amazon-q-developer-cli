@@ -29,13 +29,14 @@ pub async fn request_user_approval(agent: &str, agents: &Agents, task: &str) -> 
     Ok(())
 }
 
-pub async fn load_agent_execution(os: &Os, agent: &str) -> Result<Option<AgentExecution>> {
+pub async fn load_agent_execution(os: &Os, agent: &str) -> Result<Option<(AgentExecution, PathBuf)>> {
+    tracing::info!("## delegate: running load_agent_execution for {agent}");
     let file_path = agent_file_path(os, agent).await?;
 
     if file_path.exists() {
         let content = os.fs.read_to_string(&file_path).await?;
         let execution: AgentExecution = serde_json::from_str(&content)?;
-        Ok(Some(execution))
+        Ok(Some((execution, file_path)))
     } else {
         Ok(None)
     }
@@ -48,12 +49,12 @@ pub async fn save_agent_execution(os: &Os, execution: &AgentExecution) -> Result
     Ok(())
 }
 
-async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
+pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
     let subagents_dir = subagents_dir(os).await?;
     Ok(subagents_dir.join(format!("{}.json", agent)))
 }
 
-async fn subagents_dir(os: &Os) -> Result<PathBuf> {
+pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
     let subagents_dir = home_dir(os)?.join(".aws").join("amazonq").join(".subagents");
     if !subagents_dir.exists() {
         os.fs.create_dir_all(&subagents_dir).await?;

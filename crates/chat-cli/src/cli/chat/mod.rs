@@ -106,6 +106,7 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
+use tools::delegate::execution::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
     NATIVE_TOOLS,
@@ -522,6 +523,7 @@ const CONTINUATION_LINE: &str = " ⋮ ";
 const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
+const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 /// Enum used to denote the origin of a tool use event
 enum ToolUseStatus {
@@ -3361,7 +3363,14 @@ impl ChatSession {
             None
         };
 
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
+        let mut generated_prompt =
+            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
+            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
