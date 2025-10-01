@@ -417,6 +417,11 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
+            // Add notifier part if present (blue)
+            if let Some(notifier) = components.delegate_notifier {
+                result.push_str(&format!("[{}]\n", notifier).blue().to_string());
+            }
+
             // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());

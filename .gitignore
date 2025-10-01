@@ -8,6 +8,10 @@ xcuserdata/
 .DS_Store
 node_modules/
 .eslintcache
+
+# Conversation/data files
+/delegate
+/delegatetool
 yarn-error.log
 yarn.lock
 package-lock.json
