@@ -133,6 +133,16 @@ impl SocialToken {
         Ok(())
     }
 
+    pub async fn save_profile_if_any(&self, database: &mut Database) -> Result<(), AuthError> {
+        if let Some(profile_arn) = &self.profile_arn {
+            database.set_auth_profile(&crate::database::AuthProfile {
+                arn: profile_arn.clone(),
+                profile_name: "Social_default_Profile".to_string(),
+            })?;
+        }
+        Ok(())
+    }
+
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
         Ok(())
@@ -417,6 +427,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
         };
 
         token.save(&os.database).await?;
+        token.save_profile_if_any(&mut os.database).await?;
         info!("Successfully logged in with {}", provider);
 
         // Wait for the browser to load index.html before exiting
