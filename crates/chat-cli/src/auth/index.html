@@ -156,18 +156,28 @@
                 const params = new URLSearchParams(window.location.search)
 
                 const error = params.get('error')
+                const success = params.get('success');
                 if (error) {
                     showErrorMessage(error)
                     return
                 }
 
-                const productName = 'Amazon Q for CLI'
-                document.getElementById(
-                    'approvalMessage'
-                ).innerText = `${productName} have been given requested permissions`
-                document.getElementById(
-                    'footerText'
-                ).innerText = `You can close this window and start using ${productName}`
+
+                // Only show success message if explicitly marked as successful
+                // This prevents showing success when token exchange might still fail
+                if (success === 'true') {
+                    const productName = 'Amazon Q for CLI';
+                    document.getElementById('approvalMessage').innerText = 
+                        `${productName} has been granted given requested permissions.`;
+                    document.getElementById('footerText').innerText = 
+                        `You can close this window and start using ${productName}`;
+                } else {
+                    // Show neutral "processing" message
+                    document.getElementById('approvalMessage').innerText = 
+                        'Processing authentication...';
+                    document.getElementById('footerText').innerText = 
+                        'You can close this window and check the terminal for results.';
+                }
 
                 function showErrorMessage(errorParam) {
                     document.getElementById('approved-auth').classList.add('hidden');
