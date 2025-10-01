@@ -137,7 +137,10 @@ impl RootSubcommand {
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
-        if self.requires_auth() && !crate::auth::is_logged_in(&mut os.database).await {
+        if self.requires_auth()
+            && !crate::auth::is_logged_in(&mut os.database).await
+                & !crate::auth::social::is_social_logged_in(&os.database).await
+        {
             bail!(
                 "You are not logged in, please log in with {}",
                 format!("{CLI_BINARY_NAME} login").bold()
