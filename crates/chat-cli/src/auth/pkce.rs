@@ -459,14 +459,14 @@ impl PkceQueryParams {
 /// Generates a random 43-octet URL safe string according to the RFC recommendation.
 ///
 /// Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.1
-fn generate_code_verifier() -> String {
+pub fn generate_code_verifier() -> String {
     URL_SAFE.encode(rand::random::<[u8; 32]>()).replace('=', "")
 }
 
 /// Base64 URL encoded sha256 hash of the code verifier.
 ///
 /// Reference: https://datatracker.ietf.org/doc/html/rfc7636#section-4.2
-fn generate_code_challenge(code_verifier: &str) -> String {
+pub fn generate_code_challenge(code_verifier: &str) -> String {
     use sha2::{
         Digest,
         Sha256,

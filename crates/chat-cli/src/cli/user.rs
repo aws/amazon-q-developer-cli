@@ -171,7 +171,7 @@ impl LoginArgs {
                     },
                     Err(e) => {
                         spinner.stop();
-                        return Err(e.into());
+                        return Err(e);
                     },
                 }
             },

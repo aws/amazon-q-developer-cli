@@ -1,13 +1,15 @@
 use std::fmt;
 
-// use aws_smithy_runtime_api::client::identity::http::Token;
-// use aws_smithy_runtime_api::client::identity::{
-//     Identity,
-//     IdentityFuture,
-//     ResolveIdentity,
-// };
-// use aws_smithy_types::config_bag::ConfigBag;
-// use aws_smithy_types::runtime_components::RuntimeComponents;
+use aws_sdk_ssooidc::config::{
+    ConfigBag,
+    RuntimeComponents,
+};
+use aws_smithy_runtime_api::client::identity::http::Token;
+use aws_smithy_runtime_api::client::identity::{
+    Identity,
+    IdentityFuture,
+    ResolveIdentity,
+};
 use eyre::{
     Result,
     bail,
@@ -28,6 +30,7 @@ use tracing::{
 };
 
 use crate::auth::AuthError;
+use crate::auth::consts::SOCIAL_AUTH_SERVICE_ENDPOINT;
 use crate::database::{
     Database,
     Secret,
@@ -35,7 +38,6 @@ use crate::database::{
 use crate::os::Os;
 use crate::util::open::open_url_async;
 
-const AUTH_SERVICE_ENDPOINT: &str = "https://prod.us-east-1.auth.desktop.kiro.dev";
 const CALLBACK_PORTS: &[u16] = &[49153, 50153, 51153, 52153, 53153];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
@@ -145,7 +147,7 @@ impl SocialToken {
 
         let client = Client::new();
         let response = client
-            .post(format!("{}/refreshToken", AUTH_SERVICE_ENDPOINT))
+            .post(format!("{}/refreshToken", SOCIAL_AUTH_SERVICE_ENDPOINT))
             .json(&serde_json::json!({
                 "refreshToken": refresh_token.0
             }))
@@ -301,7 +303,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
     let state = generate_random_string(16);
     let login_url = format!(
         "{}/login?idp={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
-        AUTH_SERVICE_ENDPOINT,
+        SOCIAL_AUTH_SERVICE_ENDPOINT,
         match provider {
             SocialProvider::Google => "Google",
             SocialProvider::Github => "Github",
@@ -343,7 +345,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
     }
 
     let response = client
-        .post(&format!("{}/oauth/token", AUTH_SERVICE_ENDPOINT))
+        .post(&format!("{}/oauth/token", SOCIAL_AUTH_SERVICE_ENDPOINT))
         .header("Content-Type", "application/json")
         .header("User-Agent", "q-cli")
         .json(&token_request)
@@ -385,28 +387,28 @@ fn generate_random_string(len: usize) -> String {
         .collect()
 }
 
-// /// Social bearer token resolver for AWS SDK
-// #[derive(Debug, Clone)]
-// pub struct SocialBearerResolver;
+/// Social bearer token resolver for AWS SDK
+#[derive(Debug, Clone)]
+pub struct SocialBearerResolver;
 
-// impl ResolveIdentity for SocialBearerResolver {
-//     fn resolve_identity<'a>(
-//         &'a self,
-//         _runtime_components: &'a RuntimeComponents,
-//         _config_bag: &'a ConfigBag,
-//     ) -> IdentityFuture<'a> {
-//         IdentityFuture::new_boxed(Box::pin(async {
-//             let database = Database::new().await?;
-//             match SocialToken::load(&database).await? {
-//                 Some(token) => Ok(Identity::new(
-//                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
-//                     Some(token.expires_at.into()),
-//                 )),
-//                 None => Err(AuthError::NoToken.into()),
-//             }
-//         }))
-//     }
-// }
+impl ResolveIdentity for SocialBearerResolver {
+    fn resolve_identity<'a>(
+        &'a self,
+        _runtime_components: &'a RuntimeComponents,
+        _config_bag: &'a ConfigBag,
+    ) -> IdentityFuture<'a> {
+        IdentityFuture::new_boxed(Box::pin(async {
+            let database = Database::new().await?;
+            match SocialToken::load(&database).await? {
+                Some(token) => Ok(Identity::new(
+                    Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
+                    Some(token.expires_at.into()),
+                )),
+                None => Err(AuthError::NoToken.into()),
+            }
+        }))
+    }
+}
 
 /// Check if user is logged in with social auth
 pub async fn is_social_logged_in(database: &Database) -> bool {
