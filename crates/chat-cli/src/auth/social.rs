@@ -1,44 +1,35 @@
 use std::fmt;
+use std::time::Duration;
 
-use aws_sdk_ssooidc::config::{
-    ConfigBag,
-    RuntimeComponents,
-};
+use aws_sdk_ssooidc::config::{ConfigBag, RuntimeComponents};
 use aws_smithy_runtime_api::client::identity::http::Token;
-use aws_smithy_runtime_api::client::identity::{
-    Identity,
-    IdentityFuture,
-    ResolveIdentity,
-};
-use eyre::{
-    Result,
-    bail,
-};
+use aws_smithy_runtime_api::client::identity::{Identity, IdentityFuture, ResolveIdentity};
+use base64::Engine;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use bytes::Bytes;
+use eyre::{Result, bail};
+use http_body_util::Full;
+use hyper::body::Incoming;
+use hyper::server::conn::http1;
+use hyper::service::Service;
+use hyper::{Request, Response};
+use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 use tokio::net::TcpListener;
 use tokio::sync::mpsc;
-use tracing::{
-    debug,
-    error,
-    info,
-    trace,
-};
+use tracing::{debug, error, info, trace};
 
 use crate::auth::AuthError;
 use crate::auth::consts::SOCIAL_AUTH_SERVICE_ENDPOINT;
-use crate::database::{
-    Database,
-    Secret,
-};
+use crate::database::{Database, Secret};
 use crate::os::Os;
 use crate::util::open::open_url_async;
 
 const CALLBACK_PORTS: &[u16] = &[49153, 50153, 51153, 52153, 53153];
+const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum SocialProvider {
@@ -72,9 +63,7 @@ pub struct SocialToken {
 impl SocialToken {
     const SECRET_KEY: &'static str = "codewhisperer:social:token";
 
-    /// Load the social token from the keychain
     pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
-        // For testing
         if cfg!(test) {
             return Ok(Some(Self {
                 access_token: Secret("test_access_token".to_string()),
@@ -97,25 +86,24 @@ impl SocialToken {
                         }
                         trace!(?token, "found a valid social token");
                         Ok(Some(token))
-                    },
+                    }
                     None => {
                         debug!("social secret stored in the database was empty");
                         Ok(None)
-                    },
+                    }
                 }
-            },
+            }
             Ok(None) => {
                 debug!("no social secret found in the database");
                 Ok(None)
-            },
+            }
             Err(err) => {
                 error!(%err, "Error getting social token from keychain");
                 Err(err)?
-            },
+            }
         }
     }
 
-    /// Save the token to the keychain
     pub async fn save(&self, database: &Database) -> Result<(), AuthError> {
         database
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(self)?)
@@ -123,19 +111,16 @@ impl SocialToken {
         Ok(())
     }
 
-    /// Delete the token from the keychain
     pub async fn delete(&self, database: &Database) -> Result<(), AuthError> {
         database.delete_secret(Self::SECRET_KEY).await?;
         Ok(())
     }
 
-    /// Check if the token is expired
     pub fn is_expired(&self) -> bool {
         let now = OffsetDateTime::now_utc();
         (now + time::Duration::minutes(1)) > self.expires_at
     }
 
-    /// Refresh the access token
     pub async fn refresh_token(&self, database: &Database) -> Result<Self, AuthError> {
         let Some(refresh_token) = &self.refresh_token else {
             error!("no refresh token was found for social login");
@@ -158,7 +143,8 @@ impl SocialToken {
             let token_response: TokenResponse = response.json().await?;
             let new_token = Self {
                 access_token: Secret(token_response.access_token),
-                expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(token_response.expires_in as i64),
+                expires_at: OffsetDateTime::now_utc()
+                    + time::Duration::seconds(token_response.expires_in as i64),
                 refresh_token: Some(Secret(token_response.refresh_token)),
                 provider: self.provider,
                 profile_arn: token_response.profile_arn.or(self.profile_arn.clone()),
@@ -170,7 +156,7 @@ impl SocialToken {
             let status = response.status();
             error!("Failed to refresh social token: {}", response.status());
             self.delete(database).await?;
-            return Err(AuthError::HttpStatus(status));
+            Err(AuthError::HttpStatus(status))
         }
     }
 }
@@ -187,113 +173,122 @@ struct TokenResponse {
     profile_arn: Option<String>,
 }
 
-/// OAuth callback server
-struct CallbackServer {
-    listener: TcpListener,
-    tx: mpsc::Sender<String>,
+type CodeSender = std::sync::Arc<mpsc::Sender<Result<String, AuthError>>>;
+type ServiceError = AuthError;
+type ServiceResponse = Response<Full<Bytes>>;
+type ServiceFuture = std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<ServiceResponse, ServiceError>> + Send>,
+>;
+
+/// OAuth callback server (reused pattern from pkce.rs)
+#[derive(Debug, Clone)]
+struct SocialCallbackService {
+    code_tx: CodeSender,
+    host: String,
 }
 
-impl CallbackServer {
-    async fn new(ports: &[u16]) -> Result<(Self, mpsc::Receiver<String>, String)> {
-        let (tx, rx) = mpsc::channel(1);
+impl SocialCallbackService {
+    async fn handle_oauth_callback(
+        code_tx: CodeSender,
+        host: String,
+        req: Request<Incoming>,
+    ) -> Result<ServiceResponse, AuthError> {
+        let query_params = req
+            .uri()
+            .query()
+            .map(|query| {
+                query
+                    .split('&')
+                    .filter_map(|kv| kv.split_once('='))
+                    .collect::<std::collections::HashMap<_, _>>()
+            })
+            .ok_or_else(|| {
+                AuthError::SocialAuthProviderFailure(
+                    "query parameters are missing".to_string(),
+                )
+            })?;
 
-        for port in ports {
-            match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
-                Ok(listener) => {
-                    let addr = listener.local_addr()?;
-                    let redirect_uri = format!("http://localhost:{}/oauth/callback", addr.port());
-                    info!("OAuth callback server listening on {}", redirect_uri);
+        // Handle error responses from identity provider
+        if let Some(error) = query_params.get("error") {
+            let error_description = query_params
+                .get("error_description")
+                .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
+                .unwrap_or_default();
 
-                    return Ok((Self { listener, tx }, rx, redirect_uri));
-                },
-                Err(e) => {
-                    debug!("Failed to bind to port {}: {}", port, e);
-                    continue;
-                },
-            }
-        }
-
-        bail!("Failed to bind to any available port");
-    }
-
-    async fn handle_callback(self) {
-        tokio::spawn(async move {
-            if let Ok((stream, _)) = self.listener.accept().await {
-                let mut buf = vec![0; 1024];
-
-                use tokio::io::{
-                    AsyncReadExt,
-                    AsyncWriteExt,
-                };
-                let mut stream = tokio::net::TcpStream::from_std(stream.into_std().unwrap()).unwrap();
-
-                if let Ok(n) = stream.read(&mut buf).await {
-                    let request = String::from_utf8_lossy(&buf[..n]);
-
-                    // Extract code from query params
-                    if let Some(code) = extract_code_from_request(&request) {
-                        let _ = self.tx.send(code).await;
-
-                        // Send success response
-                        let response = "HTTP/1.1 200 OK\r\n\
-                            Content-Type: text/html\r\n\
-                            \r\n\
-                            <html><body>\
-                            <h2>Login successful!</h2>\
-                            <p>You can close this window and return to the terminal.</p>\
-                            </body></html>";
-
-                        let _ = stream.write_all(response.as_bytes()).await;
-                    }
+            let auth_error = match *error {
+                "access_denied" => {
+                    info!("User denied access through identity provider");
+                    AuthError::SocialAuthProviderDeniedAccess
                 }
-            }
-        });
+                _ => {
+                    error!("Identity provider error: {} - {}", error, error_description);
+                    AuthError::SocialAuthProviderFailure(format!(
+                        "{}: {}",
+                        error, error_description
+                    ))
+                }
+            };
+
+            let _ = code_tx.send(Err(auth_error)).await;
+            return Self::redirect_to_index(&host, &format!("?error={}", urlencoding::encode(error)));
+        }
+
+        // Extract authorization code
+        let code = query_params.get("code").ok_or_else(|| {
+            AuthError::SocialAuthProviderFailure("missing code in callback".to_string())
+        })?;
+
+        let _ = code_tx.send(Ok((*code).to_string())).await;
+        Self::redirect_to_index(&host, "")
+    }
+
+    fn redirect_to_index(host: &str, query_params: &str) -> Result<ServiceResponse, AuthError> {
+        Ok(Response::builder()
+            .status(302)
+            .header("Location", format!("http://{}/index.html{}", host, query_params))
+            .body("".into())
+            .expect("valid builder will not panic"))
     }
 }
 
-fn extract_code_from_request(request: &str) -> Option<String> {
-    // Parse GET request for code parameter
-    let lines: Vec<&str> = request.lines().collect();
-    if lines.is_empty() {
-        return None;
-    }
+impl Service<Request<Incoming>> for SocialCallbackService {
+    type Error = ServiceError;
+    type Future = ServiceFuture;
+    type Response = ServiceResponse;
 
-    let parts: Vec<&str> = lines[0].split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
+    fn call(&self, req: Request<Incoming>) -> Self::Future {
+        let code_tx = std::sync::Arc::clone(&self.code_tx);
+        let host = self.host.clone();
+        Box::pin(async move {
+            debug!(?req, "Handling OAuth callback");
+            match req.uri().path() {
+                "/oauth/callback" | "/oauth/callback/" => {
+                    Self::handle_oauth_callback(code_tx, host, req).await
+                }
+                "/index.html" => Ok(Response::builder()
+                    .status(200)
+                    .header("Content-Type", "text/html")
+                    .header("Connection", "close")
+                    .body(include_str!("./index.html").into())
+                    .expect("valid builder will not panic")),
+                _ => Ok(Response::builder()
+                    .status(404)
+                    .body("".into())
+                    .expect("valid builder will not panic")),
+            }
+        })
     }
-
-    let path = parts[1];
-    if !path.starts_with("/oauth/callback?") {
-        return None;
-    }
-
-    let query = &path[16..]; // Skip "/oauth/callback?"
-    for param in query.split('&') {
-        let kv: Vec<&str> = param.split('=').collect();
-        if kv.len() == 2 && kv[0] == "code" {
-            return Some(kv[1].to_string());
-        }
-    }
-
-    None
 }
 
 /// Start social login flow with optional invitation code
-pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitation_code: Option<String>) -> Result<()> {
+pub async fn start_social_login(
+    os: &mut Os,
+    provider: SocialProvider,
+    invitation_code: Option<String>,
+) -> Result<()> {
     info!("Starting social login with {}", provider);
 
-    // Start callback server
-    let (server, mut rx, redirect_uri) = CallbackServer::new(CALLBACK_PORTS).await?;
-
     // Generate PKCE challenge
-    use base64::Engine;
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use sha2::{
-        Digest,
-        Sha256,
-    };
-
     let verifier = generate_random_string(32);
     let mut hasher = Sha256::new();
     hasher.update(&verifier);
@@ -301,6 +296,35 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
 
     // Build login URL
     let state = generate_random_string(16);
+    
+    // Start callback server first to get redirect_uri
+    let (code_tx, mut code_rx) = mpsc::channel(1);
+    let code_tx_arc = std::sync::Arc::new(code_tx);
+    
+    let mut listener = None;
+    let mut redirect_uri = String::new();
+    
+    for port in CALLBACK_PORTS {
+        match TcpListener::bind(format!("127.0.0.1:{}", port)).await {
+            Ok(l) => {
+                let addr = l.local_addr()?;
+                redirect_uri = format!("http://localhost:{}/oauth/callback", addr.port());
+                listener = Some(l);
+                break;
+            }
+            Err(e) => {
+                debug!("Failed to bind to port {}: {}", port, e);
+            }
+        }
+    }
+    
+    let listener = listener.ok_or_else(|| {
+        std::io::Error::new(std::io::ErrorKind::AddrInUse, "Failed to bind to any port")
+    })?;
+    
+    let host = listener.local_addr()?.to_string();
+    info!("OAuth callback server listening on {}", redirect_uri);
+
     let login_url = format!(
         "{}/login?idp={}&redirect_uri={}&code_challenge={}&code_challenge_method=S256&state={}",
         SOCIAL_AUTH_SERVICE_ENDPOINT,
@@ -316,21 +340,50 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
     // Open browser
     open_url_async(&login_url).await?;
 
-    // Start handling callback
-    server.handle_callback().await;
+    // Serve multiple connections to handle both /oauth/callback and /index.html
+    let server_handle = tokio::spawn(async move {
+        // Handle up to 2 connections (callback + index.html)
+        for _ in 0..2 {
+            if let Ok((stream, _)) = listener.accept().await {
+                let stream = TokioIo::new(stream);
+                let service = SocialCallbackService {
+                    code_tx: code_tx_arc.clone(),
+                    host: host.clone(),
+                };
+                
+                tokio::spawn(async move {
+                    if let Err(err) = http1::Builder::new()
+                        .serve_connection(stream, service)
+                        .await
+                    {
+                        debug!(?err, "Error serving connection");
+                    }
+                });
+            }
+        }
+    });
 
     // Wait for authorization code
-    let code = tokio::time::timeout(
-        std::time::Duration::from_secs(300), // 5 minute timeout
-        rx.recv(),
-    )
-    .await
-    .map_err(|_| eyre::eyre!("Login timeout"))?
-    .ok_or_else(|| eyre::eyre!("No authorization code received"))?;
+    let code = tokio::select! {
+        code = code_rx.recv() => {
+            match code {
+                Some(Ok(c)) => c,
+                Some(Err(e)) => {
+                    return Err(e.into());
+                }
+                None => {
+                    return Err(AuthError::OAuthMissingCode.into());
+                }
+            }
+        },
+        _ = tokio::time::sleep(DEFAULT_AUTHORIZATION_TIMEOUT) => {
+            return Err(AuthError::OAuthTimeout.into());
+        }
+    };
 
     debug!("Received authorization code");
 
-    // Exchange code for token - include invitation_code if provided
+    // Exchange code for token
     let client = Client::new();
     let mut token_request = serde_json::json!({
         "code": code,
@@ -338,7 +391,6 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
         "redirect_uri": redirect_uri,
     });
 
-    // Add invitation_code if provided
     if let Some(inv_code) = invitation_code {
         token_request["invitation_code"] = serde_json::Value::String(inv_code);
         debug!("Including invitation code in token exchange");
@@ -357,7 +409,8 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
 
         let token = SocialToken {
             access_token: Secret(token_response.access_token),
-            expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(token_response.expires_in as i64),
+            expires_at: OffsetDateTime::now_utc()
+                + time::Duration::seconds(token_response.expires_in as i64),
             refresh_token: Some(Secret(token_response.refresh_token)),
             provider,
             profile_arn: token_response.profile_arn,
@@ -365,12 +418,38 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
 
         token.save(&os.database).await?;
         info!("Successfully logged in with {}", provider);
+        
+        // Wait for the browser to load index.html before exiting
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        
+        // Allow server to finish serving index.html
+        let _ = tokio::time::timeout(Duration::from_secs(2), server_handle).await;
+        
         Ok(())
     } else {
         let status = response.status();
-        let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
-        error!("Failed to exchange code for token: {} - {}", status, error_text);
-        bail!("Failed to exchange code for token: {} - {}", status, error_text);
+        let error_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+
+        // Map specific HTTP errors to user-friendly messages
+        let auth_error = match status.as_u16() {
+            401 if error_text.contains("signups are temporarily paused") 
+                || error_text.contains("invitation") => {
+                AuthError::SocialInvalidInvitationCode
+            }
+            401 | 403 => AuthError::SocialAuthProviderDeniedAccess,
+            _ => {
+                error!("Failed to exchange code for token: {} - {}", status, error_text);
+                AuthError::SocialAuthProviderFailure(format!(
+                    "Token exchange failed: {}",
+                    error_text
+                ))
+            }
+        };
+
+        Err(auth_error.into())
     }
 }
 
@@ -410,12 +489,10 @@ impl ResolveIdentity for SocialBearerResolver {
     }
 }
 
-/// Check if user is logged in with social auth
 pub async fn is_social_logged_in(database: &Database) -> bool {
     matches!(SocialToken::load(database).await, Ok(Some(_)))
 }
 
-/// Logout social auth
 pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(SocialToken::SECRET_KEY).await?;
     Ok(())

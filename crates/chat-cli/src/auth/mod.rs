@@ -53,6 +53,13 @@ pub enum AuthError {
     Reqwest(#[from] reqwest::Error),
     #[error("HTTP error: {0}")]
     HttpStatus(reqwest::StatusCode),
+    // Social auth specific errors
+    #[error("Authentication failed: The identity provider denied access. Please ensure you grant all required permissions.")]
+    SocialAuthProviderDeniedAccess,
+    #[error("Authentication failed: The identity provider reported an error: {0}")]
+    SocialAuthProviderFailure(String),
+    #[error("Invalid access code. Please check your invitation code and try again.")]
+    SocialInvalidInvitationCode,
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {
