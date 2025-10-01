@@ -68,7 +68,7 @@ pub struct Hook {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub matcher: Option<String>,
 
-    /// If true, PostToolUse hooks are deferred until turn completion
+    /// If true, the hook is deferred until turn completion
     #[serde(default)]
     pub only_when_turn_complete: bool,
 

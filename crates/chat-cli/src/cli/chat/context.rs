@@ -244,25 +244,29 @@ impl ContextManager {
         Ok(())
     }
 
-    /// Run immediate PostToolUse hooks and return deferred ones
-    pub async fn run_post_tool_hooks(
+    /// Run immediate hooks for the given trigger and return deferred ones
+    pub async fn run_hooks_with_deferral(
         &mut self,
+        trigger: HookTrigger,
         output: &mut impl Write,
         os: &Os,
         tool_context: ToolContext,
-    ) -> Result<(Vec<((HookTrigger, Hook), HookOutput)>, Vec<(Hook, ToolContext)>), ChatError> {
+    ) -> Result<(Vec<((HookTrigger, Hook), HookOutput)>, Vec<(HookTrigger, Hook, ToolContext)>), ChatError> {
         let mut immediate_hooks = HashMap::new();
         let mut deferred_hooks = Vec::new();
 
-        if let Some(hooks) = self.hooks.get(&HookTrigger::PostToolUse) {
+        if let Some(hooks) = self.hooks.get(&trigger) {
             for hook in hooks {
-                if hook.only_when_turn_complete {
-                    deferred_hooks.push((hook.clone(), tool_context.clone()));
-                } else {
-                    immediate_hooks
-                        .entry(HookTrigger::PostToolUse)
-                        .or_insert_with(Vec::new)
-                        .push(hook.clone());
+                // Check if the hook matches the current tool
+                if crate::cli::chat::cli::hooks::hook_matches_tool(hook, &tool_context.tool_name) {
+                    if hook.only_when_turn_complete {
+                        deferred_hooks.push((trigger, hook.clone(), tool_context.clone()));
+                    } else {
+                        immediate_hooks
+                            .entry(trigger)
+                            .or_insert_with(Vec::new)
+                            .push(hook.clone());
+                    }
                 }
             }
         }

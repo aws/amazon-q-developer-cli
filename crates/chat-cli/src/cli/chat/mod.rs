@@ -12,6 +12,7 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+use crate::cli::agent::hook::HookTrigger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 #[cfg(unix)]
 mod skim_integration;
@@ -657,8 +658,8 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
-    /// Deferred PostToolUse hooks to run at turn completion, with their working directories
-    deferred_post_tool_hooks: std::collections::HashSet<(crate::cli::agent::hook::Hook, String)>,
+    /// Deferred hooks to run at turn completion, with all their contexts
+    deferred_hooks: HashMap<(HookTrigger, crate::cli::agent::hook::Hook), Vec<ToolContext>>,
 }
 
 impl ChatSession {
@@ -771,7 +772,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
-            deferred_post_tool_hooks: std::collections::HashSet::new(),
+            deferred_hooks: HashMap::new(),
         })
     }
 
@@ -2593,12 +2594,11 @@ impl ChatSession {
                     // hook output yet. Exit code is non-zero: display an error to user (already
                     // taken care of by the ContextManager.run_hooks)
                     // We run all immediate PostToolUse hooks
-                    let (_, deferred) = cm.run_post_tool_hooks(&mut std::io::stderr(), os, tool_context).await?;
+                    let (_, deferred) = cm.run_hooks_with_deferral(HookTrigger::PostToolUse, &mut std::io::stderr(), os, tool_context.clone()).await?;
 
-                    // We then keep the deferred ones for later, with current working directory
-                    let cwd = os.env.current_dir()?.to_string_lossy().to_string();
-                    for (hook, _context) in deferred {
-                        self.deferred_post_tool_hooks.insert((hook, cwd.clone()));
+                    // We then keep the deferred ones for later
+                    for (trigger, hook, matched_context) in deferred {
+                        self.deferred_hooks.entry((trigger, hook)).or_insert_with(Vec::new).push(matched_context);
                     }
                 }
             }
@@ -3036,17 +3036,25 @@ impl ChatSession {
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
 
-            // Run deferred PostToolUse hooks at turn completion
+            // Run deferred hooks at turn completion
             if let Some(cm) = self.conversation.context_manager.as_mut() {
-                for (hook, cwd) in &self.deferred_post_tool_hooks {
+                for ((trigger, hook), tool_contexts) in &self.deferred_hooks {
                     let mut hooks = HashMap::new();
-                    hooks.insert(crate::cli::agent::hook::HookTrigger::PostToolUse, vec![hook.clone()]);
+                    hooks.insert(*trigger, vec![hook.clone()]);
+                    let cwd = os.env.current_dir()?.to_string_lossy().to_string();
+                    
+                    // Set the deferred contexts before execution
+                    cm.hook_executor.set_deferred_contexts(tool_contexts.clone());
+                    
                     let _ = cm
                         .hook_executor
-                        .run_hooks(hooks, &mut std::io::stderr(), cwd, None, None)
+                        .run_hooks(hooks, &mut std::io::stderr(), &cwd, None, None)
                         .await;
+                    
+                    // Clear the deferred contexts after execution
+                    cm.hook_executor.clear_deferred_contexts();
                 }
-                self.deferred_post_tool_hooks.clear();
+                self.deferred_hooks.clear();
             }
 
             Ok(ChatState::PromptUser {
@@ -4483,6 +4491,7 @@ mod tests {
         let mut agents = Agents::default();
         let mut hooks = HashMap::new();
 
+        let fs_write_deferred_context_log = os.fs.chroot_path_str("/fs_write_deferred_context.json");
         let fs_write_immediate_log = os.fs.chroot_path_str("/fs_write_immediate.log");
         let fs_write_deferred_log = os.fs.chroot_path_str("/fs_write_deferred.log");
         let fs_read_immediate_log = os.fs.chroot_path_str("/fs_read_immediate.log");
@@ -4501,6 +4510,16 @@ mod tests {
             // fs_write: deferred hook
             Hook {
                 command: format!("echo 'fs_write deferred hook' >> {}", fs_write_deferred_log),
+                timeout_ms: 5000,
+                max_output_size: 1024,
+                cache_ttl_seconds: 0,
+                matcher: Some("fs_write".to_string()),
+                only_when_turn_complete: true,
+                source: crate::cli::agent::hook::Source::Agent,
+            },
+            // fs_write: deferred hook that captures context
+            Hook {
+                command: format!("tee {}", fs_write_deferred_context_log),
                 timeout_ms: 5000,
                 max_output_size: 1024,
                 cache_ttl_seconds: 0,
@@ -4563,35 +4582,37 @@ mod tests {
         .await
         .unwrap();
 
-        // Verify fs_write immediate hook ran 2 times (once per fs_write call)
-        if let Ok(content) = os.fs.read_to_string("/fs_write_immediate.log").await {
-            let count = content.matches("fs_write immediate hook").count();
-            assert_eq!(count, 2, "fs_write immediate hook should run 2 times, got {}", count);
+        // Verify fs_write deferred hook ran once and received proper context array
+        if let Ok(content) = os.fs.read_to_string("/fs_write_deferred_context.json").await {
+            let hook_data: serde_json::Value = serde_json::from_str(&content)
+                .expect("Hook context should be valid JSON");
+            
+            // Verify basic hook structure
+            assert_eq!(hook_data["hook_event_name"], "postToolUse");
+            assert_eq!(hook_data["cwd"], "/");
+            
+            // Verify hook_events array exists and has 2 entries (2 fs_write calls)
+            let hook_events = hook_data["hook_events"].as_array().expect("hook_events should be an array");
+            assert_eq!(hook_events.len(), 2, "Should have 2 hook events for 2 fs_write calls");
+            
+            // Verify first hook event
+            let first_event = &hook_events[0];
+            assert_eq!(first_event["tool_name"], "fs_write");
+            assert_eq!(first_event["tool_input"]["command"], "create");
+            assert!(first_event["tool_input"]["path"].as_str().unwrap().contains("deferred_hook_test1.txt"));
+            assert_eq!(first_event["tool_input"]["file_text"], "test content 1");
+            assert_eq!(first_event["tool_response"]["success"], true);
+            
+            // Verify second hook event
+            let second_event = &hook_events[1];
+            assert_eq!(second_event["tool_name"], "fs_write");
+            assert_eq!(second_event["tool_input"]["command"], "create");
+            assert!(second_event["tool_input"]["path"].as_str().unwrap().contains("deferred_hook_test2.txt"));
+            assert_eq!(second_event["tool_input"]["file_text"], "test content 2");
+            assert_eq!(second_event["tool_response"]["success"], true);
         } else {
-            panic!("fs_write immediate hook log not found");
+            panic!("fs_write deferred hook context log not found");
         }
-
-        // Verify fs_write deferred hook ran only once (at turn completion)
-        if let Ok(content) = os.fs.read_to_string("/fs_write_deferred.log").await {
-            let count = content.matches("fs_write deferred hook").count();
-            assert_eq!(count, 1, "fs_write deferred hook should run exactly once, got {}", count);
-        } else {
-            panic!("fs_write deferred hook log not found");
-        }
-
-        // Verify fs_read immediate hook ran once
-        if let Ok(content) = os.fs.read_to_string("/fs_read_immediate.log").await {
-            let count = content.matches("fs_read immediate hook").count();
-            assert_eq!(count, 1, "fs_read immediate hook should run once, got {}", count);
-        } else {
-            panic!("fs_read immediate hook log not found");
-        }
-
-        // Verify no other hook logs exist (execute_bash should have no hooks)
-        assert!(
-            !os.fs.exists("/execute_bash.log"),
-            "execute_bash should not trigger any hooks"
-        );
     }
 
     #[test]

@@ -28,6 +28,7 @@ use futures::stream::{
     FuturesUnordered,
     StreamExt,
 };
+use serde::Serialize;
 use spinners::{
     Spinner,
     Spinners,
@@ -53,7 +54,7 @@ use crate::util::pattern_matching::matches_any_pattern;
 pub type HookOutput = (i32, String);
 
 /// Check if a hook matches a tool name based on its matcher pattern
-fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
+pub fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
     match &hook.matcher {
         None => true, // No matcher means the hook runs for all tools
         Some(pattern) => {
@@ -84,7 +85,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
     }
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, Serialize)]
 pub struct ToolContext {
     pub tool_name: String,
     pub tool_input: serde_json::Value,
@@ -101,11 +102,26 @@ pub struct CachedHook {
 #[derive(Debug, Clone, Default)]
 pub struct HookExecutor {
     pub cache: HashMap<(HookTrigger, Hook), CachedHook>,
+    /// Temporary storage for deferred hook contexts during execution
+    pub deferred_contexts: Option<Vec<ToolContext>>,
 }
 
 impl HookExecutor {
     pub fn new() -> Self {
-        Self { cache: HashMap::new() }
+        Self { 
+            cache: HashMap::new(),
+            deferred_contexts: None,
+        }
+    }
+
+    /// Set deferred contexts for the next hook execution
+    pub fn set_deferred_contexts(&mut self, contexts: Vec<ToolContext>) {
+        self.deferred_contexts = Some(contexts);
+    }
+
+    /// Clear deferred contexts after execution
+    pub fn clear_deferred_contexts(&mut self) {
+        self.deferred_contexts = None;
     }
 
     /// Run and cache [`Hook`]s. Any hooks that are already cached will be returned without
@@ -209,7 +225,7 @@ impl HookExecutor {
                         style::Print(format!(
                             " failed with exit code: {}, stderr: {})\n",
                             exit_code,
-                            hook_output.trim_end()
+                            hook_output.as_str().trim_end()
                         )),
                         style::ResetColor,
                     )?;
@@ -302,20 +318,25 @@ impl HookExecutor {
             "cwd": cwd
         });
 
-        // Set USER_PROMPT environment variable and add to JSON input if provided
-        if let Some(prompt) = prompt {
-            // Sanitize the prompt to avoid issues with special characters
-            let sanitized_prompt = sanitize_user_prompt(prompt);
-            cmd.env("USER_PROMPT", sanitized_prompt);
-            hook_input["prompt"] = serde_json::Value::String(prompt.to_string());
-        }
+        // For deferred hooks, use hook_events array instead of individual tool context
+        if let Some(contexts) = &self.deferred_contexts {
+            hook_input["hook_events"] = serde_json::json!(contexts);
+        } else {
+            // Set USER_PROMPT environment variable and add to JSON input if provided
+            if let Some(prompt) = prompt {
+                // Sanitize the prompt to avoid issues with special characters
+                let sanitized_prompt = sanitize_user_prompt(prompt);
+                cmd.env("USER_PROMPT", sanitized_prompt);
+                hook_input["prompt"] = serde_json::Value::String(prompt.to_string());
+            }
 
-        // ToolUse specific input
-        if let Some(tool_ctx) = tool_context {
-            hook_input["tool_name"] = serde_json::Value::String(tool_ctx.tool_name);
-            hook_input["tool_input"] = tool_ctx.tool_input;
-            if let Some(response) = tool_ctx.tool_response {
-                hook_input["tool_response"] = response;
+            // ToolUse specific input
+            if let Some(tool_ctx) = tool_context {
+                hook_input["tool_name"] = serde_json::Value::String(tool_ctx.tool_name);
+                hook_input["tool_input"] = tool_ctx.tool_input;
+                if let Some(response) = tool_ctx.tool_response {
+                    hook_input["tool_response"] = response;
+                }
             }
         }
         let json_input = serde_json::to_string(&hook_input).unwrap_or_default();
@@ -715,7 +736,7 @@ mod tests {
 
         // Run post tool hooks - should only run immediate ones and return deferred ones
         let result = context_manager
-            .run_post_tool_hooks(&mut std::io::stderr(), &os, tool_context)
+            .run_hooks_with_deferral(HookTrigger::PostToolUse, &mut std::io::stderr(), &os, tool_context)
             .await;
 
         assert!(result.is_ok());
