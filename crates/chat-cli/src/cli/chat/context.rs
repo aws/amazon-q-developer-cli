@@ -367,7 +367,8 @@ async fn process_path(
 ///
 /// This method:
 /// 1. Reads the content of the file
-/// 2. Adds the (filename, content) pair to the context collection
+/// 2. Checks front matter inclusion rules for steering files
+/// 3. Adds the (filename, content) pair to the context collection if allowed
 ///
 /// # Arguments
 /// * `path` - The path to the file
@@ -378,8 +379,69 @@ async fn process_path(
 async fn add_file_to_context(os: &Os, path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
     let filename = path.to_string_lossy().to_string();
     let content = os.fs.read_to_string(path).await?;
+    
+    // Check if this is a steering file that needs front matter filtering
+    if filename.contains(".kiro/steering") && filename.ends_with(".md") {
+        if !should_include_steering_file(&content)? {
+            return Ok(());
+        }
+    }
+    
     context_files.push((filename, content));
     Ok(())
+}
+
+#[derive(Debug, Deserialize)]
+struct FrontMatter {
+    inclusion: Option<String>,
+}
+
+/// Check if a steering file should be included based on its front matter
+fn should_include_steering_file(content: &str) -> Result<bool> {
+    // Check if file has YAML front matter
+    if !content.starts_with("---\n") {
+        // No front matter - include the file
+        return Ok(true);
+    }
+    
+    // Find the end of the front matter
+    let lines: Vec<&str> = content.lines().collect();
+    let mut end_index = None;
+    
+    for (i, line) in lines.iter().enumerate().skip(1) {
+        if line.trim() == "---" {
+            end_index = Some(i);
+            break;
+        }
+    }
+    
+    let end_index = match end_index {
+        Some(idx) => idx,
+        None => {
+            // Malformed front matter - include the file
+            return Ok(true);
+        }
+    };
+    
+    // Extract and parse the front matter
+    let front_matter_lines = &lines[1..end_index];
+    let front_matter_yaml = front_matter_lines.join("\n");
+    
+    match serde_yaml::from_str::<FrontMatter>(&front_matter_yaml) {
+        Ok(front_matter) => {
+            match front_matter.inclusion.as_deref() {
+                Some("always") => Ok(true),
+                Some("fileMatch") => Ok(false), // Exclude fileMatch files
+                Some("manual") => Ok(false),    // Exclude manual files
+                None => Ok(true),               // No inclusion field - include
+                Some(_) => Ok(true),            // Unknown inclusion value - include
+            }
+        }
+        Err(_) => {
+            // Failed to parse front matter - include the file
+            Ok(true)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -456,5 +518,36 @@ mod tests {
             })),
             96_000
         );
+    }
+
+    #[test]
+    fn test_should_include_steering_file() {
+        // Test file without front matter - should be included
+        let content_no_frontmatter = "# Regular markdown file\nSome content here.";
+        assert!(should_include_steering_file(content_no_frontmatter).unwrap());
+
+        // Test file with inclusion: always - should be included
+        let content_always = "---\ninclusion: always\n---\n# Always included\nContent here.";
+        assert!(should_include_steering_file(content_always).unwrap());
+
+        // Test file with inclusion: fileMatch - should be excluded
+        let content_filematch = "---\ninclusion: fileMatch\n---\n# File match only\nContent here.";
+        assert!(!should_include_steering_file(content_filematch).unwrap());
+
+        // Test file with inclusion: manual - should be excluded
+        let content_manual = "---\ninclusion: manual\n---\n# Manual only\nContent here.";
+        assert!(!should_include_steering_file(content_manual).unwrap());
+
+        // Test file with no inclusion field - should be included
+        let content_no_inclusion = "---\ntitle: Some Title\n---\n# No inclusion field\nContent here.";
+        assert!(should_include_steering_file(content_no_inclusion).unwrap());
+
+        // Test file with malformed front matter - should be included
+        let content_malformed = "---\ninvalid yaml: [\n---\n# Malformed\nContent here.";
+        assert!(should_include_steering_file(content_malformed).unwrap());
+
+        // Test file with incomplete front matter - should be included
+        let content_incomplete = "---\ninclusion: always\n# Missing closing ---\nContent here.";
+        assert!(should_include_steering_file(content_incomplete).unwrap());
     }
 }
