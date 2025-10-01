@@ -2387,7 +2387,7 @@ impl ChatSession {
                     };
                     let tag = if has_changes {
                         // Generate tag for this tool use
-                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+                        let tool_tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
 
                         // Get tool summary for commit message
                         let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
@@ -2400,9 +2400,9 @@ impl ChatSession {
                             }
                         };
 
-                        // Create checkpoint
+                        // Create tool checkpoint
                         if let Err(e) = manager.create_checkpoint(
-                            &tag,
+                            &tool_tag,
                             &description,
                             &self.conversation.history().clone(),
                             false,
@@ -2412,7 +2412,23 @@ impl ChatSession {
                             None
                         } else {
                             manager.tools_in_turn += 1;
-                            Some(tag)
+
+                            // Also update/create the turn checkpoint to point to latest state
+                            // This is important so that we create turn-checkpoints even when tools are aborted
+                            let turn_tag = format!("{}", manager.current_turn + 1);
+                            let turn_description = "Turn in progress".to_string();
+
+                            if let Err(e) = manager.create_checkpoint(
+                                &turn_tag,
+                                &turn_description,
+                                &self.conversation.history().clone(),
+                                true,
+                                None,
+                            ) {
+                                debug!("Failed to update turn checkpoint: {}", e);
+                            }
+
+                            Some(tool_tag)
                         }
                     } else {
                         None
