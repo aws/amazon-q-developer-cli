@@ -17,8 +17,10 @@ The knowledge feature is experimental and disabled by default. Enable it with:
 
 Once enabled, you can use `/knowledge` commands within your chat session:
 
-`/knowledge add myproject /path/to/project`
-`/knowledge show`
+```
+/knowledge add /path/to/project
+/knowledge show
+```
 
 ## Commands
 
@@ -26,14 +28,15 @@ Once enabled, you can use `/knowledge` commands within your chat session:
 
 Display all entries in your knowledge base with detailed information including creation dates, item counts, and persistence status.
 
-#### `/knowledge add <name> <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]`
+#### `/knowledge add <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]`
 
 Add files or directories to your knowledge base. The system will recursively index all supported files in directories.
 
-`/knowledge add "project-docs" /path/to/documentation`
-`/knowledge add "config-files" /path/to/config.json`
-`/knowledge add "fast-search" /path/to/logs --index-type Fast`
-`/knowledge add "semantic-search" /path/to/docs --index-type Best`
+```
+/knowledge add /path/to/documentation
+/knowledge add /path/to/logs --index-type Fast
+/knowledge add /path/to/docs --index-type Best
+```
 
 **Index Types**
 
@@ -74,7 +77,7 @@ If you don't specify `--index-type`, the system uses your configured default:
 q settings knowledge.indexType Fast   # or Best
 
 # This will use your default setting
-/knowledge add "my-project" /path/to/project
+/knowledge add /path/to/project
 ```
 
 **Default Pattern Behavior**
@@ -92,18 +95,20 @@ q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.py"]'
 q settings knowledge.defaultExcludePatterns '["target/**", "__pycache__/**"]'
 
 # This will use the default patterns
-/knowledge add "my-project" /path/to/project
+/knowledge add /path/to/project
 
 # This will override defaults with explicit patterns
-/knowledge add "docs-only" /path/to/project --include "**/*.md"
+/knowledge add /path/to/project --include "**/*.md"
 ```
 
 **New: Pattern Filtering**
 
 You can now control which files are indexed using include and exclude patterns:
 
-`/knowledge add "rust-code" /path/to/project --include "*.rs" --exclude "target/**"`
-`/knowledge add "docs" /path/to/project --include "**/*.md" --include "**/*.txt" --exclude "node_modules/**"`
+```
+/knowledge add /path/to/project --include "*.rs" --exclude "target/**"
+/knowledge add /path/to/project --include "**/*.md" --include "**/*.txt" --exclude "node_modules/**"
+```
 
 Pattern examples:
 - `*.rs` - All Rust files in all directories recursively (equivalent to `**/*.rs`)
@@ -126,10 +131,11 @@ Supported file types (expanded):
 
 #### `/knowledge remove <identifier>`
 
-Remove entries from your knowledge base. You can remove by name, path, or context ID.
+Remove entries from your knowledge base by path.
 
-`/knowledge remove "project-docs"` # Remove by name
-`/knowledge remove /path/to/old/project` # Remove by path
+```
+/knowledge remove /path/to/old/project
+```
 
 #### `/knowledge update <path>`
 
@@ -153,19 +159,23 @@ View the status of background indexing operations, including progress and queue 
 
 Cancel background operations. You can cancel a specific operation by ID or all operations if no ID is provided.
 
-`/knowledge cancel abc12345 # Cancel specific operation`
-`/knowledge cancel all # Cancel all operations`
+```
+/knowledge cancel abc12345  # Cancel specific operation
+/knowledge cancel all       # Cancel all operations
+```
 
 ## Configuration
 
 Configure knowledge base behavior:
 
-`q settings knowledge.maxFiles 10000` # Maximum files per knowledge base
-`q settings knowledge.chunkSize 1024` # Text chunk size for processing
-`q settings knowledge.chunkOverlap 256` # Overlap between chunks
-`q settings knowledge.indexType Fast` # Default index type (Fast or Best)
-`q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.md"]'` # Default include patterns
-`q settings knowledge.defaultExcludePatterns '["target/**", "node_modules/**"]'` # Default exclude patterns
+```bash
+q settings knowledge.maxFiles 10000  # Maximum files per knowledge base
+q settings knowledge.chunkSize 1024  # Text chunk size for processing
+q settings knowledge.chunkOverlap 256  # Overlap between chunks
+q settings knowledge.indexType Fast  # Default index type (Fast or Best)
+q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.md"]'  # Default include patterns
+q settings knowledge.defaultExcludePatterns '["target/**", "node_modules/**"]'  # Default exclude patterns
+```
 
 ## Agent-Specific Knowledge Bases
 
@@ -258,7 +268,6 @@ The knowledge base uses semantic search, which means:
 
 Organizing Your Knowledge Base
 
-- Use descriptive names when adding contexts: "api-documentation" instead of "docs"
 - Group related files in directories before adding them
 - Use include/exclude patterns to focus on relevant files
 - Regularly review and update outdated contexts
