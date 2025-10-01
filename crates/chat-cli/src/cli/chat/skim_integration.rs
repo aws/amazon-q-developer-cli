@@ -56,17 +56,12 @@ impl ConditionalEventHandler for SkimCommandSelector {
     }
 }
 
-pub fn get_available_commands() -> Vec<String> {
-    // Import the COMMANDS array directly from prompt.rs
-    // This is the single source of truth for available commands
-    let commands_array = super::prompt::COMMANDS;
-
-    let mut commands = Vec::new();
-    for &cmd in commands_array {
-        commands.push(cmd.to_string());
-    }
-
-    commands
+pub fn get_available_commands(os: &Os) -> Vec<String> {
+    // Use the experiment-aware function from prompt.rs
+    super::prompt::get_available_commands(os)
+        .iter()
+        .map(|&cmd| cmd.to_string())
+        .collect()
 }
 
 /// Format commands for skim display
@@ -212,8 +207,8 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 }
 
 /// Launch the command selector and handle the selected command
-pub fn select_command(_os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
-    let commands = get_available_commands();
+pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
+    let commands = get_available_commands(os);
 
     match launch_skim_selector(&commands, "Select command: ", false)? {
         Some(selections) if !selections.is_empty() => {
@@ -329,10 +324,13 @@ mod tests {
 
     /// Test to verify that all hardcoded command strings in select_command
     /// are present in the COMMANDS array from prompt.rs
-    #[test]
-    fn test_hardcoded_commands_in_commands_array() {
+    #[tokio::test]
+    async fn test_hardcoded_commands_in_commands_array() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+
         // Get the set of available commands from prompt.rs
-        let available_commands: HashSet<String> = get_available_commands().iter().cloned().collect();
+        let available_commands: HashSet<String> = get_available_commands(&mock_os).iter().cloned().collect();
 
         // List of hardcoded commands used in select_command
         let hardcoded_commands = vec![

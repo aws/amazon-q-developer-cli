@@ -13,7 +13,10 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 
 #[derive(Debug, PartialEq, Args)]
@@ -46,12 +49,7 @@ impl TangentArgs {
 
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Check if tangent mode is enabled
-        if !os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTangentMode)
-            .unwrap_or(false)
-        {
+        if !ExperimentManager::is_enabled(os, ExperimentName::TangentMode) {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -66,12 +64,7 @@ impl TangentArgs {
         match self.subcommand {
             Some(TangentSubcommand::Tail) => {
                 // Check if checkpoint is enabled
-                if os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledCheckpoint)
-                    .unwrap_or(false)
-                {
+                if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
                     execute!(
                         session.stderr,
                         style::SetForegroundColor(Color::Yellow),
@@ -123,12 +116,7 @@ impl TangentArgs {
                     )?;
                 } else {
                     // Check if checkpoint is enabled
-                    if os
-                        .database
-                        .settings
-                        .get_bool(Setting::EnabledCheckpoint)
-                        .unwrap_or(false)
-                    {
+                    if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
                         execute!(
                             session.stderr,
                             style::SetForegroundColor(Color::Yellow),

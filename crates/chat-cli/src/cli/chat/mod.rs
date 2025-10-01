@@ -156,6 +156,10 @@ use crate::cli::chat::cli::prompts::{
 };
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::core::{
@@ -1154,6 +1158,14 @@ impl ChatSession {
 
         Ok(())
     }
+
+    /// Reload built-in tools to reflect experiment changes while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os) -> Result<(), ChatError> {
+        self.conversation
+            .reload_builtin_tools(os, &mut self.stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))
+    }
 }
 
 impl Drop for ChatSession {
@@ -1334,12 +1346,7 @@ impl ChatSession {
         }
 
         // Initialize capturing if possible
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledCheckpoint)
-            .unwrap_or(false)
-        {
+        if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
             let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
             let start = std::time::Instant::now();
             let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
@@ -2128,12 +2135,7 @@ impl ChatSession {
         } else {
             // Track the message for checkpoint descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
                     if !manager.message_locked && self.pending_tool_index.is_none() {
@@ -2223,11 +2225,7 @@ impl ChatSession {
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
         // Check if we should auto-enter tangent mode for introspect tool
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTangentMode)
-            .unwrap_or(false)
+        if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
                 .database
                 .settings
@@ -2368,13 +2366,10 @@ impl ChatSession {
 
             // Handle checkpoint after tool execution - store tag for later display
             let checkpoint_tag: Option<String> = {
-                let enabled = os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledCheckpoint)
-                    .unwrap_or(false)
-                    && !self.conversation.is_in_tangent_mode();
-                if invoke_result.is_err() || !enabled {
+                if invoke_result.is_err()
+                    || !ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+                    || self.conversation.is_in_tangent_mode()
+                {
                     None
                 }
                 // Take manager out temporarily to avoid borrow conflicts
@@ -2986,12 +2981,7 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             // Create turn checkpoint if tools were used
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     if manager.tools_in_turn > 0 {
@@ -3379,12 +3369,7 @@ impl ChatSession {
         let tangent_mode = self.conversation.is_in_tangent_mode();
 
         // Check if context usage indicator is enabled
-        let usage_percentage = if os
-            .database
-            .settings
-            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
-            .unwrap_or(false)
-        {
+        let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
             use crate::cli::chat::cli::usage::get_total_usage_percentage;
             get_total_usage_percentage(self, os).await.ok()
         } else {
