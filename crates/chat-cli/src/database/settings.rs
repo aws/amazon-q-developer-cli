@@ -47,6 +47,8 @@ pub enum Setting {
     EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
     TangentModeKey,
+    #[strum(message = "Key binding for delegate command (single character)")]
+    DelegateModeKey,
 
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
@@ -106,6 +108,7 @@ impl AsRef<str> for Setting {
             Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
+            Self::DelegateModeKey => "chat.delegateModeKey",
 
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",

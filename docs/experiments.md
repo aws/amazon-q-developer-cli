@@ -108,6 +108,29 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 
 **When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
 
+### Delegate
+**Command:** `/delegate`
+**Keyboard Shortcut:** `Ctrl+D` (customizable via `q settings chat.delegateModeKey x`)
+**Description:** Launch and manage asynchronous task processes. Enables running Q chat sessions with specific agents in parallel to the main conversation.
+**Usage:**
+- `/delegate launch "Fix the bug in main.rs"` - Launch task with default agent
+- `/delegate launch --agent coding "Fix the bug in main.rs"` - Launch with specific agent (shows approval dialog)
+- `/delegate status` - Show summary of all tasks
+- `/delegate status abc12345` - Show status of specific task
+- `/delegate read abc12345` - Read output from completed task (triggers LLM analysis)
+- `/delegate delete abc12345` - Delete task and its files
+- `/delegate list` - List all tasks with timestamps and brief info
+**Agent Approval Flow:**
+When using `--agent`, you'll see an approval dialog:
+```
+Agent: coding
+Description: Coding assistant for software development
+Task: Fix the bug in main.rs
+Tools: fs_read, fs_write, execute_bash
+⚠️  This task will run with trust-all permissions and can execute commands or consume system/cloud resources. Continue? [y/N]:
+```
+**When enabled:** Use `/delegate` commands or `Ctrl+D` to spawn independent Q processes that work on tasks while you continue your main conversation. Tasks with agents require explicit approval and show agent details. Tasks without agents run with a warning about trust-all permissions. Once delegated, tasks work independently and you can check progress, read results, or delete them as needed.
+
 ### TODO Lists
 **Tool name**: `todo_list`
 **Command:** `/todos`  
