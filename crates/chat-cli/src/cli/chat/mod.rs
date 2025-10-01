@@ -2347,7 +2347,7 @@ impl ChatSession {
                     os,
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
-                    self.conversation.agents.get_active(),
+                    &self.conversation.agents,
                 )
                 .await;
 
