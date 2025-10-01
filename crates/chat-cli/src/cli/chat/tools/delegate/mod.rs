@@ -1,4 +1,4 @@
-mod agent;
+pub mod agent;
 pub mod execution;
 mod types;
 mod ui;
@@ -91,8 +91,6 @@ impl Delegate {
             });
         }
 
-        tracing::info!("## delegate: invoking");
-
         let result = match &self.operation {
             Operation::Launch => {
                 let task = self
@@ -136,7 +134,7 @@ impl Delegate {
     }
 }
 
-async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<String> {
+pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<String> {
     validate_agent_availability(os, agent).await?;
 
     // Check if agent is already running

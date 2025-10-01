@@ -4,18 +4,13 @@ use eyre::Result;
 use serde_json;
 
 use crate::cli::agent::Agents;
-use crate::cli::chat::tools::delegate::types::{
-    AgentConfig,
-    AgentExecution,
-    AgentExecution,
-};
+use crate::cli::chat::tools::delegate::types::AgentExecution;
 use crate::cli::chat::tools::delegate::ui::{
     display_agent_info,
-    display_agent_info,
-    get_user_confirmation,
     get_user_confirmation,
 };
 use crate::os::Os;
+use crate::util::directories::home_dir;
 
 pub async fn validate_agent_availability(_os: &Os, _agent: &str) -> Result<()> {
     // For now, accept any agent name (no need to print here, will show in approval)
@@ -35,7 +30,6 @@ pub async fn request_user_approval(agent: &str, agents: &Agents, task: &str) -> 
 }
 
 pub async fn load_agent_execution(os: &Os, agent: &str) -> Result<Option<(AgentExecution, PathBuf)>> {
-    tracing::info!("## delegate: running load_agent_execution for {agent}");
     let file_path = agent_file_path(os, agent).await?;
 
     if file_path.exists() {

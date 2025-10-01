@@ -5,7 +5,6 @@ use eyre::{
     Result,
     bail,
 };
-use tracing::info;
 
 use super::agent::subagents_dir;
 use crate::cli::chat::tools::delegate::agent::{
@@ -109,10 +108,7 @@ pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
                 save_agent_execution(os, &execution).await?;
             }
 
-            info!("## delegate: checking status for {}", path.display());
-
             if execution.status == AgentStatus::Completed {
-                info!("## delegate: attempting to delete {}", path.display());
                 let _ = os.fs.remove_file(path).await;
             }
 
@@ -130,16 +126,22 @@ pub async fn status_all_agents(os: &Os) -> Result<String> {
 
     while let Ok(Some(file)) = dir_walker.next_entry().await {
         let file_name = file.file_name();
-        let file_name = file_name
-            .as_os_str()
-            .to_str()
-            .ok_or(eyre::eyre!("Error obtaining execution file name"))?;
 
-        if !status.is_empty() {
-            status.push_str(", ");
+        let bytes = os.fs.read(file.path()).await?;
+        let execution = serde_json::from_slice::<AgentExecution>(&bytes)?;
+
+        if execution.status != AgentStatus::Running {
+            let file_name = file_name
+                .as_os_str()
+                .to_str()
+                .ok_or(eyre::eyre!("Error obtaining execution file name"))?;
+
+            if !status.is_empty() {
+                status.push_str(", ");
+            }
+
+            status.push_str(file_name);
         }
-
-        status.push_str(file_name);
     }
 
     if status.is_empty() {
