@@ -3034,6 +3034,19 @@ impl ChatSession {
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
 
+            // Run Stop hooks when the assistant finishes responding
+            if let Some(cm) = self.conversation.context_manager.as_mut() {
+                let _ = cm
+                    .run_hooks(
+                        crate::cli::agent::hook::HookTrigger::Stop,
+                        &mut std::io::stderr(),
+                        os,
+                        None,
+                        None,
+                    )
+                    .await;
+            }
+
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
             })

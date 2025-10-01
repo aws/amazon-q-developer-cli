@@ -133,6 +133,26 @@ Runs after tool execution with access to tool results.
 - **0**: Hook succeeded.
 - **Other**: Show STDERR warning to user. Tool already ran.
 
+### Stop
+
+Runs when the assistant finishes responding to the user (at the end of each turn). 
+This is useful for running post-processing tasks like code compilation, testing, formatting, 
+or cleanup after the assistant's response.
+
+**Hook Event**
+```json
+{
+  "hook_event_name": "stop",
+  "cwd": "/current/working/directory"
+}
+```
+
+**Exit Code Behavior:**
+- **0**: Hook succeeded.
+- **Other**: Show STDERR warning to user.
+
+**Note**: Stop hooks do not use matchers since they don't relate to specific tools.
+
 ### MCP Example
 
 For MCP tools, the tool name includes the full namespaced format including the MCP Server name:

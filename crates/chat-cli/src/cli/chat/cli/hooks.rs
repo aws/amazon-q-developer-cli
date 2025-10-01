@@ -254,6 +254,7 @@ impl HookExecutor {
                     HookTrigger::UserPromptSubmit => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                     HookTrigger::PreToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                     HookTrigger::PostToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                    HookTrigger::Stop => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                 },
             });
         }
@@ -706,5 +707,47 @@ mod tests {
         assert_eq!(*trigger, HookTrigger::PreToolUse);
         assert_eq!(*exit_code, 2);
         assert!(hook_output.contains("Tool execution blocked by security policy"));
+    }
+
+    #[tokio::test]
+    async fn test_stop_hook() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Create a simple Stop hook that outputs a message
+        #[cfg(unix)]
+        let command = "echo 'Turn completed successfully'";
+        #[cfg(windows)]
+        let command = "echo Turn completed successfully";
+
+        let hook = Hook {
+            command: command.to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None, // Stop hooks don't use matchers
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
+
+        let results = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd
+                None, // prompt
+                None, // tool_context - Stop doesn't have tool context
+            )
+            .await
+            .unwrap();
+
+        // Should have one result
+        assert_eq!(results.len(), 1);
+
+        let ((trigger, _hook), (exit_code, hook_output)) = &results[0];
+        assert_eq!(*trigger, HookTrigger::Stop);
+        assert_eq!(*exit_code, 0);
+        assert!(hook_output.contains("Turn completed successfully"));
     }
 }
