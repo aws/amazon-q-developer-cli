@@ -189,6 +189,7 @@ impl Default for Agent {
                 "file://AGENTS.md",
                 "file://README.md",
                 "file://.amazonq/rules/**/*.md",
+                "file://.kiro/steering/**/*.md",
             ]
             .into_iter()
             .map(Into::into)

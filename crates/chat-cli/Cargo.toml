@@ -119,6 +119,7 @@ schemars.workspace = true
 jsonschema.workspace = true
 zip.workspace = true
 rmcp.workspace = true
+serde_yaml.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
