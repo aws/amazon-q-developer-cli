@@ -32,13 +32,11 @@ use base64::engine::general_purpose::URL_SAFE;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::body::Incoming;
-use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{
     Request,
     Response,
 };
-use hyper_util::rt::TokioIo;
 use percent_encoding::{
     NON_ALPHANUMERIC,
     utf8_percent_encode,
@@ -282,42 +280,85 @@ impl PkceRegistration {
         Ok(())
     }
 
-    async fn recv_code(listener: TcpListener, expected_state: String) -> Result<String, AuthError> {
+    async fn recv_code(listener: tokio::net::TcpListener, expected_state: String) -> Result<String, AuthError> {
+        Self::recv_code_with_extra_accepts(listener, expected_state, 0).await
+    }
+
+    // NEW: extended version that accepts N extra connections to serve /index.html again
+    pub async fn recv_code_with_extra_accepts(
+        listener: tokio::net::TcpListener,
+        expected_state: String,
+        extra_accepts: usize,
+    ) -> Result<String, AuthError> {
+        use std::time::Duration;
+
+        use hyper::server::conn::http1;
+        use hyper_util::rt::TokioIo;
+
+        // 1) First connection: /oauth/callback on the SAME connection; returns /index.html via 302 +
+        //    keep-alive
         let (code_tx, mut code_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
         let (stream, _) = listener.accept().await?;
-        let stream = TokioIo::new(stream); // Wrapper to implement Hyper IO traits for Tokio types.
+        let stream = TokioIo::new(stream);
         let host = listener.local_addr()?.to_string();
+
         tokio::spawn(async move {
             if let Err(err) = http1::Builder::new()
                 .serve_connection(stream, PkceHttpService {
                     code_tx: std::sync::Arc::new(code_tx),
-                    host,
+                    host: host.clone(),
                 })
                 .await
             {
-                error!(?err, "Error occurred serving the connection");
+                error!(?err, "Error occurred serving the first connection");
             }
         });
-        match code_rx.recv().await {
+
+        // Wait for code/state (or error)
+        let result = match code_rx.recv().await {
             Some(Ok((code, state))) => {
                 debug!(code = "<redacted>", state, "Received code and state");
                 if state != expected_state {
-                    return Err(AuthError::OAuthStateMismatch {
+                    Err(AuthError::OAuthStateMismatch {
                         actual: state,
                         expected: expected_state,
-                    });
+                    })
+                } else {
+                    Ok(code)
                 }
-                // Give time for the user to be redirected to index.html.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                Ok(code)
             },
-            Some(Err(err)) => {
-                // Give time for the user to be redirected to index.html.
-                tokio::time::sleep(Duration::from_millis(200)).await;
-                Err(err)
-            },
+            Some(Err(err)) => Err(err),
             None => Err(AuthError::OAuthMissingCode),
+        };
+
+        // 2) Optional: accept a few more connections just to serve /index.html again (for agents that open
+        //    a new TCP)
+        // We give a short window for these follow-up requests.
+        for _ in 0..extra_accepts {
+            let (dummy_tx, _dummy_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
+            let host2 = listener.local_addr()?.to_string();
+            if let Ok(Ok((stream2, _))) = tokio::time::timeout(Duration::from_secs(3), listener.accept()).await {
+                let stream2 = TokioIo::new(stream2);
+                tokio::spawn(async move {
+                    if let Err(err) = http1::Builder::new()
+                        .serve_connection(stream2, PkceHttpService {
+                            code_tx: std::sync::Arc::new(dummy_tx), // we don't expect code again
+                            host: host2,
+                        })
+                        .await
+                    {
+                        debug!(?err, "Error occurred serving an extra connection");
+                    }
+                });
+            } else {
+                break;
+            }
         }
+
+        // A tiny grace to let the browser render /index.html
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        result
     }
 }
 
