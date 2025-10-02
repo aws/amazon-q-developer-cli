@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 
+use crossterm::queue;
 use eyre::Result;
 use serde::{
     Deserialize,
@@ -9,11 +10,11 @@ use serde::{
 };
 
 use crate::cli::DEFAULT_AGENT_NAME;
-use crate::cli::chat::tools::delegate::agent::subagents_dir;
 use crate::cli::chat::tools::delegate::{
     AgentExecution,
     AgentStatus,
     launch_agent,
+    subagents_dir,
 };
 use crate::cli::chat::{
     ChatError,
@@ -141,10 +142,10 @@ impl DelegateArgs {
 
         match result {
             Ok(output) => {
-                crossterm::queue!(session.stderr, crossterm::style::Print(format!("{}\n", output)))?;
+                queue!(session.stderr, crossterm::style::Print(format!("{}\n", output)))?;
             },
             Err(e) => {
-                crossterm::queue!(session.stderr, crossterm::style::Print(format!("Error: {}\n", e)))?;
+                queue!(session.stderr, crossterm::style::Print(format!("Error: {}\n", e)))?;
             },
         }
 

@@ -115,7 +115,14 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         description: "Enables launching and managing asynchronous subagent processes",
         setting_key: Setting::EnabledDelegate,
         enabled: true,
-        commands: &[],
+        commands: &[
+            "/delegate",
+            "/delegate help",
+            "/delegate status",
+            "/delegate read",
+            "/delegate delete",
+            "/delegate launch",
+        ],
     },
 ];
 

@@ -46,7 +46,10 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
-use crate::cli::experiment::experiment_manager::ExperimentManager;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
@@ -503,15 +506,16 @@ pub fn rl(
     }
 
     // Add custom keybinding for Ctrl+D to open delegate command (configurable)
-    let delegate_key_char = match os.database.settings.get_string(Setting::DelegateModeKey) {
-        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('d'),
-        _ => 'd', // Default to 'd' if setting is missing or invalid
-    };
-
-    rl.bind_sequence(
-        KeyEvent(KeyCode::Char(delegate_key_char), Modifiers::CTRL),
-        EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
-    );
+    if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+        if let Some(key) = os.database.settings.get_string(Setting::DelegateModeKey) {
+            if key.len() == 1 {
+                rl.bind_sequence(
+                    KeyEvent(KeyCode::Char(key.chars().next().unwrap()), Modifiers::CTRL),
+                    EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+                );
+            }
+        };
+    }
 
     // Add custom keybinding for Alt+Enter to insert a newline
     rl.bind_sequence(
