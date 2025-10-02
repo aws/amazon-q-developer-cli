@@ -31,8 +31,9 @@ use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
-    TRUST_ALL_TEXT,
+    trust_all_text,
 };
+use crate::constants::help_text::tools_long_help;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
 /// Command-line arguments for managing tools in the chat session
@@ -197,10 +198,7 @@ impl ToolsArgs {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
-    before_long_help = "By default, Amazon Q will ask for your permission to use certain tools. You can control which tools you
-trust so that no confirmation is required.
-
-Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field"
+    before_long_help = tools_long_help()
 )]
 /// Subcommands for managing tool permissions and configurations
 pub enum ToolsSubcommand {
@@ -369,7 +367,7 @@ impl ToolsSubcommand {
             },
             Self::TrustAll => {
                 session.conversation.agents.trust_all_tools = true;
-                queue!(session.stderr, style::Print(TRUST_ALL_TEXT))?;
+                queue!(session.stderr, style::Print(trust_all_text()))?;
             },
             Self::Reset => {
                 session.conversation.agents.trust_all_tools = false;

@@ -11,6 +11,7 @@ use crossterm::{
 };
 
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
+use crate::constants::help_text::{CONTEXT_DESCRIPTION, context_long_help};
 use crate::cli::chat::context::{
     ContextFilePath,
     calc_max_context_files_size,
@@ -22,23 +23,16 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+
 use crate::os::Os;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
-    before_long_help = "Context rules determine which files are included in your Amazon Q session. 
-They are derived from the current active agent.
-The files matched by these rules provide Amazon Q with additional information 
-about your project or environment. Adding relevant files helps Q generate 
-more accurate and helpful responses.
-
-Notes:
-• You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
-• Agent rules apply only to the current agent 
-• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file."
+    about = CONTEXT_DESCRIPTION,
+    before_long_help = context_long_help()
 )]
-/// Subcommands for managing context rules and files in Amazon Q chat sessions
+/// Context subcommands
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files
     Show {

@@ -47,9 +47,9 @@ use crate::util::spinner::{
     SpinnerComponent,
 };
 use crate::util::system_info::is_remote;
+use crate::constants::PRODUCT_NAME;
 use crate::util::{
     CLI_BINARY_NAME,
-    PRODUCT_NAME,
     choose,
     input,
 };

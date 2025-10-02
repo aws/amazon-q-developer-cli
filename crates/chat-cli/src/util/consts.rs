@@ -2,7 +2,6 @@
 pub const CLI_BINARY_NAME: &str = "q";
 pub const CHAT_BINARY_NAME: &str = "qchat";
 
-pub const PRODUCT_NAME: &str = "Amazon Q";
 
 pub const GITHUB_REPO_NAME: &str = "aws/amazon-q-developer-cli";
 

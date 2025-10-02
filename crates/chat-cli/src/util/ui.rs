@@ -9,6 +9,7 @@ use crossterm::style::{
 use eyre::Result;
 
 use crate::cli::feed::Feed;
+use crate::constants::ui_text;
 
 /// Render changelog content from feed.json with manual formatting
 pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
@@ -23,11 +24,7 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
     // Title
     execute!(
         output,
-        style::SetForegroundColor(Color::Magenta),
-        style::SetAttribute(Attribute::Bold),
-        style::Print("What's New in Amazon Q CLI\n\n"),
-        style::SetAttribute(Attribute::Reset),
-        style::SetForegroundColor(Color::Reset),
+        style::Print(ui_text::changelog_header()),
     )?;
 
     // Render recent entries
