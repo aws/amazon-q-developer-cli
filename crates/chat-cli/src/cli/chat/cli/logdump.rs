@@ -74,26 +74,24 @@ impl LogdumpArgs {
         let mut log_count = 0;
 
         // Only collect qchat.log (keeping current implementation logic)
-        log_count += self.collect_qchat_log(&mut zip, &logs_dir)?;
+        log_count += Self::collect_qchat_log(&mut zip, &logs_dir)?;
 
         zip.finish()?;
         Ok(log_count)
     }
 
     fn collect_qchat_log(
-        &self,
         zip: &mut ZipWriter<std::fs::File>,
         logs_dir: &Path,
     ) -> Result<usize, Box<dyn std::error::Error>> {
         let qchat_log_path = logs_dir.join("qchat.log");
         if qchat_log_path.exists() {
-            return self.add_log_file_to_zip(&qchat_log_path, zip, "logs");
+            return Self::add_log_file_to_zip(&qchat_log_path, zip, "logs");
         }
         Ok(0)
     }
 
     fn add_log_file_to_zip(
-        &self,
         path: &Path,
         zip: &mut ZipWriter<std::fs::File>,
         prefix: &str,
