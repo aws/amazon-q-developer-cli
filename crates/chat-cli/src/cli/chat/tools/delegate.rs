@@ -269,7 +269,7 @@ pub struct AgentExecution {
     pub task: String,
     #[serde(default)]
     pub status: AgentStatus,
-    #[serde(default)]
+    #[serde(default, with = "chrono::serde::ts_seconds")]
     pub launched_at: chrono::DateTime<chrono::Utc>,
     #[serde(default, with = "chrono::serde::ts_seconds_option")]
     pub completed_at: Option<chrono::DateTime<chrono::Utc>>,
