@@ -83,8 +83,12 @@ pub enum Operation {
 }
 
 impl Delegate {
+    pub fn is_enabled(os: &Os) -> bool {
+        ExperimentManager::is_enabled(os, ExperimentName::Delegate)
+    }
+
     pub async fn invoke(&self, os: &Os, _output: &mut impl Write, agents: &Agents) -> Result<InvokeOutput> {
-        if !ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+        if !Self::is_enabled(os) {
             return Ok(InvokeOutput {
                 output: OutputKind::Text(
                     "Delegate tool is experimental and not enabled. Use /experiment to enable it.".to_string(),

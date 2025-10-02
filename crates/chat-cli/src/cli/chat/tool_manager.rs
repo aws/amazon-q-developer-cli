@@ -728,7 +728,7 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
-            if !os.database.settings.get_bool(Setting::EnabledDelegate).unwrap_or(false) {
+            if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
                 tool_specs.remove("delegate");
             }
 
