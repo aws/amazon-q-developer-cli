@@ -140,38 +140,56 @@ impl LoginArgs {
 
         match login_method {
             AuthMethod::Social(provider) => {
-                let invitation_code = if let Some(code) = &self.invitation_code {
-                    Some(code.clone())
-                } else {
-                    match input(
-                        "Kiro CLI requires an access code to use—please enter the code you received via email below.",
-                        None,
-                    ) {
-                        Ok(response) if !response.trim().is_empty() => Some(response.trim().to_string()),
-                        _ => {
-                            error!("Invitation code is required for social login");
-                            return Err(AuthError::OAuthCustomError(
-                                "Invitation code is required for social login".to_string(),
-                            )
-                            .into());
-                        },
-                    }
-                };
+                let first_code = self.invitation_code.clone();
 
-                // Handle social login with optional invitation code
                 let mut spinner = Spinner::new(vec![
                     SpinnerComponent::Spinner,
                     SpinnerComponent::Text(format!(" Logging in with {}...", provider)),
                 ]);
 
-                match start_social_login(os, provider, invitation_code).await {
+                match start_social_login(os, provider, first_code).await {
                     Ok(_) => {
                         os.telemetry.send_user_logged_in().ok();
                         spinner.stop_with_message(format!("Logged in with {}", provider));
                     },
-                    Err(e) => {
+                    Err(err) => {
                         spinner.stop();
-                        return Err(e);
+                        // Auth service needs invitation code
+                        if let Some(AuthError::OAuthCustomError(s)) = err.downcast_ref::<AuthError>() {
+                            if s == "SIGN_IN_BLOCKED" {
+                                let prompt = "\nKiro CLI requires an access code to use—please enter the code you received via email below.";
+                                let code = match input(prompt, None) {
+                                    Ok(response) if !response.trim().is_empty() => response.trim().to_string(),
+                                    _ => {
+                                        error!("No access code entered. Aborting social login.");
+                                        return Err(AuthError::OAuthCustomError("No invitation code".into()).into());
+                                    },
+                                };
+
+                                let mut spinner2 = Spinner::new(vec![
+                                    SpinnerComponent::Spinner,
+                                    SpinnerComponent::Text(format!(
+                                        " Validating access code and logging in with {}...",
+                                        provider
+                                    )),
+                                ]);
+
+                                match start_social_login(os, provider, Some(code)).await {
+                                    Ok(_) => {
+                                        os.telemetry.send_user_logged_in().ok();
+                                        spinner2.stop_with_message(format!("Logged in with {}", provider));
+                                    },
+                                    Err(e2) => {
+                                        spinner2.stop();
+                                        return Err(e2);
+                                    },
+                                }
+                            } else {
+                                return Err(err);
+                            }
+                        } else {
+                            return Err(err);
+                        }
                     },
                 }
             },

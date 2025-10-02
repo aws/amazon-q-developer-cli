@@ -402,6 +402,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
         "redirect_uri": redirect_uri,
     });
 
+    let had_invitation_code = invitation_code.is_some();
     if let Some(inv_code) = invitation_code {
         token_request["invitation_code"] = serde_json::Value::String(inv_code);
         debug!("Including invitation code in token exchange");
@@ -442,8 +443,14 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
         let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
 
         // Map specific HTTP errors to user-friendly messages
+        let error_text_lc = error_text.to_lowercase();
+        let signups_paused = error_text_lc.contains("signups are temporarily paused");
+
         let (auth_error, error_param) = match status.as_u16() {
-            401 if error_text.contains("signups are temporarily paused") || error_text.contains("invitation") => {
+            401 if signups_paused && !had_invitation_code => {
+                (AuthError::OAuthCustomError("SIGN_IN_BLOCKED".into()), "sign_in_blocked")
+            },
+            401 if signups_paused && had_invitation_code => {
                 (AuthError::SocialInvalidInvitationCode, "invalid_invitation_code")
             },
             401 | 403 => (AuthError::SocialAuthProviderDeniedAccess, "access_denied"),
