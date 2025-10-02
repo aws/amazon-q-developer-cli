@@ -14,7 +14,10 @@ use serde::{
     Serializer,
 };
 
-use super::cli::hooks::HookOutput;
+use super::cli::hooks::{
+    HookOutput,
+    ToolContext,
+};
 use super::cli::model::context_window_tokens;
 use super::util::drop_matched_context_files;
 use crate::cli::agent::Agent;
@@ -239,6 +242,42 @@ impl ContextManager {
             process_path(os, path.get_path_as_str(), context_files, false).await?;
         }
         Ok(())
+    }
+
+    /// Run immediate hooks for the given trigger and return deferred ones
+    pub async fn run_hooks_with_deferral(
+        &mut self,
+        trigger: HookTrigger,
+        output: &mut impl Write,
+        os: &Os,
+        tool_context: ToolContext,
+    ) -> Result<(Vec<((HookTrigger, Hook), HookOutput)>, Vec<(HookTrigger, Hook, ToolContext)>), ChatError> {
+        let mut immediate_hooks = HashMap::new();
+        let mut deferred_hooks = Vec::new();
+
+        if let Some(hooks) = self.hooks.get(&trigger) {
+            for hook in hooks {
+                // Check if the hook matches the current tool
+                if crate::cli::chat::cli::hooks::hook_matches_tool(hook, &tool_context.tool_name) {
+                    if hook.only_when_turn_complete {
+                        deferred_hooks.push((trigger, hook.clone(), tool_context.clone()));
+                    } else {
+                        immediate_hooks
+                            .entry(trigger)
+                            .or_insert_with(Vec::new)
+                            .push(hook.clone());
+                    }
+                }
+            }
+        }
+
+        let cwd = os.env.current_dir()?.to_string_lossy().to_string();
+        let immediate_results = self
+            .hook_executor
+            .run_hooks(immediate_hooks, output, &cwd, None, Some(tool_context))
+            .await?;
+
+        Ok((immediate_results, deferred_hooks))
     }
 
     /// Run all the currently enabled hooks from both the global and profile contexts.

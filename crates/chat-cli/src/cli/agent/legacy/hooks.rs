@@ -81,6 +81,7 @@ impl From<LegacyHook> for Option<Hook> {
             max_output_size: value.max_output_size,
             cache_ttl_seconds: value.cache_ttl_seconds,
             matcher: None,
+            only_when_turn_complete: false,
             source: Default::default(),
         })
     }

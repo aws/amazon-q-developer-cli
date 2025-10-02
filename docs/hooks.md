@@ -133,6 +133,61 @@ Runs after tool execution with access to tool results.
 - **0**: Hook succeeded.
 - **Other**: Show STDERR warning to user. Tool already ran.
 
+**Deferred Execution:**
+PostToolUse hooks can be deferred until turn completion by setting `only_when_turn_complete: true`. 
+This is useful for formatting, cleanup tasks or for running tests that should run only once after all tools complete, 
+rather than after each individual tool.
+
+```json
+{
+  "postToolUse": [
+    {
+      "matcher": "fs_write",
+      "command": "cargo fmt --all",
+      "only_when_turn_complete": true
+    }
+  ]
+}
+```
+
+When deferred, the hook receives an array of all hook events that triggered it during the turn. This allows you to parse and process multiple tool executions however you prefer - whether that's running once per unique directory, processing all modified files, or any other custom logic.
+
+**Deferred Hook Event**
+```json
+{
+  "hook_event_name": "postToolUse",
+  "cwd": "/current/working/directory",
+  "hook_events": [
+    {
+      "tool_name": "fs_write",
+      "cwd": "/project1",
+      "tool_input": {
+        "command": "create",
+        "path": "/project1/src/main.rs",
+        "file_text": "fn main() {}"
+      },
+      "tool_response": {
+        "success": true,
+        "result": [""]
+      }
+    },
+    {
+      "tool_name": "fs_write", 
+      "cwd": "/project2",
+      "tool_input": {
+        "command": "create",
+        "path": "/project2/lib.rs",
+        "file_text": "pub fn hello() {}"
+      },
+      "tool_response": {
+        "success": true,
+        "result": [""]
+      }
+    }
+  ]
+}
+```
+
 ### MCP Example
 
 For MCP tools, the tool name includes the full namespaced format including the MCP Server name:
