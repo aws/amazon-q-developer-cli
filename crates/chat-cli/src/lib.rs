@@ -6,6 +6,7 @@ pub mod api_client;
 pub mod auth;
 pub mod aws_common;
 pub mod cli;
+pub mod constants;
 pub mod database;
 pub mod logging;
 pub mod mcp_client;

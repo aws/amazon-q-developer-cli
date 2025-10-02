@@ -13,6 +13,7 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
+use crate::constants::ui_text::{LIMIT_REACHED_TEXT, WELCOME_TEXT, RESUME_TEXT, SMALL_SCREEN_WELCOME, POPULAR_SHORTCUTS, SMALL_SCREEN_POPULAR_SHORTCUTS};
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -144,6 +145,11 @@ use crate::api_client::{
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
+use crate::constants::{
+    error_messages,
+    tips,
+    ui_text,
+};
 use crate::cli::agent::Agents;
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
@@ -182,29 +188,6 @@ use crate::util::{
     directories,
     ui,
 };
-
-const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
-2. Wait until next month when your limit automatically resets." };
-
-pub const EXTRA_HELP: &str = color_print::cstr! {"
-<cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
-
-<cyan,em>Tips:</cyan,em>
-<em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>         <black!>Insert new-line to provide multi-line prompt</black!>
-                    <black!>Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
-                    <black!>Use Tab to select multiple items</black!>
-                    <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
-<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
-                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
-<em>Ctrl(^) + d</em>         <black!>Start delegate command for task delegation</black!>
-                    <black!>Change the keybind using: q settings chat.delegateModeKey x</black!>
-<em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
-                    <black!>Change using: q settings chat.skimCommandKey x</black!>
-"};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum WrapMode {
@@ -453,72 +436,22 @@ impl ChatArgs {
     }
 }
 
-const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
-    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
- ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
- ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
- ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
- ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
- ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
 
-const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
-const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
 
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 20] = [
-    color_print::cstr! {"You can resume the last conversation from your current directory by launching with
-    <green!>q chat --resume</green!>"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding.
-    Just run <green!>q settings chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can use
-    <green!>/editor</green!> to edit your prompt with a vim-like experience"},
-    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings
-    chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can execute bash commands by typing
-    <green!>!</green!> followed by the command"},
-    color_print::cstr! {"Q can use tools without asking for
-    confirmation every time. Give <green!>/tools trust</green!> a try"},
-    color_print::cstr! {"You can
-    programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks
-    help</green!>"},
-    color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation
-    history with its summary to free up the context space"},
-    color_print::cstr! {"If you want to file an issue
-    to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
-    color_print::cstr! {"You can enable
-    custom tools with <green!>MCP servers</green!>. Learn more with /help"},
-    color_print::cstr! {"You can
-    specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in
-    int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use
-    /tools to see pending servers."},
-    color_print::cstr! {"You can see the server load status as well as any
-    warnings or errors associated with <green!>/mcp</green!>"},
-    color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
-    color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
-    color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
-    color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
-    color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
-    color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
-    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
-];
+const ROTATING_TIPS: [&str; 20] = tips::ROTATING_TIPS;
 
 const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
-const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
-<green!>ctrl + j</green!> new lines
-<green!>ctrl + s</green!> fuzzy search
-</black!>"};
+
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
-const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>
-\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"};
+fn trust_all_text() -> String {
+    ui_text::trust_all_warning()
+}
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
@@ -977,12 +910,13 @@ impl ChatSession {
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print(" ⚠️  Amazon Q rate limit reached:\n"),
+                        style::Print(error_messages::RATE_LIMIT_PREFIX),
+                        style::Print("\n"),
                         style::Print(format!("    {}\n\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
                     if self.interactive {
@@ -1022,12 +956,12 @@ impl ChatSession {
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print("Amazon Q is having trouble responding right now:\n"),
+                        style::Print(format!("{}:\n", error_messages::TROUBLE_RESPONDING)),
                         style::Print(format!("    {}\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::MonthlyLimitReached { .. } => {
                     let subscription_status = get_subscription_status(os).await;
@@ -1085,13 +1019,13 @@ impl ChatSession {
                     return Ok(());
                 },
                 _ => (
-                    "Amazon Q is having trouble responding right now",
+                    error_messages::TROUBLE_RESPONDING,
                     Report::from(err),
                     true,
                 ),
             },
             _ => (
-                "Amazon Q is having trouble responding right now",
+                error_messages::TROUBLE_RESPONDING,
                 Report::from(err),
                 true,
             ),
@@ -1270,7 +1204,7 @@ impl ChatSession {
             let welcome_text = match self.existing_conversation {
                 true => RESUME_TEXT,
                 false => match is_small_screen {
-                    true => SMALL_SCREEN_WELCOME_TEXT,
+                    true => SMALL_SCREEN_WELCOME,
                     false => WELCOME_TEXT,
                 },
             };
@@ -1320,7 +1254,7 @@ impl ChatSession {
             queue!(
                 self.stderr,
                 style::Print(format!(
-                    "{}{TRUST_ALL_TEXT}\n\n",
+                    "{}{}\n\n", trust_all_text(),
                     if !is_small_screen { "\n" } else { "" }
                 ))
             )?;

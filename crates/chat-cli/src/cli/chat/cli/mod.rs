@@ -48,9 +48,10 @@ use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
-    EXTRA_HELP,
 };
+use crate::constants::ui_text::EXTRA_HELP;
 use crate::cli::issue;
+
 use crate::os::Os;
 
 /// q (Amazon Q Chat)
