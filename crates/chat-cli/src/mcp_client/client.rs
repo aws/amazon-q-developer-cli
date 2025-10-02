@@ -677,4 +677,30 @@ mod tests {
         assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
         assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
     }
+
+    #[tokio::test]
+    async fn test_http_headers_env_var_processing() {
+        let os = Os::new().await.unwrap();
+        unsafe {
+            os.env.set_var("GITHUB_TOKEN", "github_pat_test123");
+            os.env.set_var("API_KEY", "secret_key_456");
+        }
+
+        // Simulate HTTP headers with environment variables
+        let mut headers = HashMap::new();
+        headers.insert("Authorization".to_string(), "Bearer ${env:GITHUB_TOKEN}".to_string());
+        headers.insert("X-API-Key".to_string(), "${env:API_KEY}".to_string());
+        headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        // Process headers (same logic as in HTTP transport)
+        let mut processed_headers = headers.clone();
+        for (_, value) in processed_headers.iter_mut() {
+            *value = substitute_env_vars(value, &os.env);
+        }
+
+        // Verify environment variables were substituted
+        assert_eq!(processed_headers.get("Authorization").unwrap(), "Bearer github_pat_test123");
+        assert_eq!(processed_headers.get("X-API-Key").unwrap(), "secret_key_456");
+        assert_eq!(processed_headers.get("Content-Type").unwrap(), "application/json");
+    }
 }
