@@ -417,6 +417,11 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
+            // Add notifier part if present (blue)
+            if let Some(notifier) = components.delegate_notifier {
+                result.push_str(&format!("[{}]\n", notifier).blue().to_string());
+            }
+
             // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
@@ -496,6 +501,17 @@ pub fn rl(
             eprintln!("Warning: Failed to load history: {}", e);
         }
     }
+
+    // Add custom keybinding for Ctrl+D to open delegate command (configurable)
+    let delegate_key_char = match os.database.settings.get_string(Setting::DelegateModeKey) {
+        Some(key) if key.len() == 1 => key.chars().next().unwrap_or('d'),
+        _ => 'd', // Default to 'd' if setting is missing or invalid
+    };
+
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char(delegate_key_char), Modifiers::CTRL),
+        EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+    );
 
     // Add custom keybinding for Alt+Enter to insert a newline
     rl.bind_sequence(

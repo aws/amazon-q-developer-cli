@@ -106,6 +106,7 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
+use tools::delegate::execution::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
     NATIVE_TOOLS,
@@ -199,6 +200,8 @@ pub const EXTRA_HELP: &str = color_print::cstr! {"
                     <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
 <em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
                     <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
+<em>Ctrl(^) + d</em>         <black!>Start delegate command for task delegation</black!>
+                    <black!>Change the keybind using: q settings chat.delegateModeKey x</black!>
 <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
                     <black!>Change using: q settings chat.skimCommandKey x</black!>
 "};
@@ -522,6 +525,7 @@ const CONTINUATION_LINE: &str = " ⋮ ";
 const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
+const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 /// Enum used to denote the origin of a tool use event
 enum ToolUseStatus {
@@ -2347,7 +2351,7 @@ impl ChatSession {
                     os,
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
-                    self.conversation.agents.get_active(),
+                    &self.conversation.agents,
                 )
                 .await;
 
@@ -3374,7 +3378,14 @@ impl ChatSession {
             None
         };
 
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
+        let mut generated_prompt =
+            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
+            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
