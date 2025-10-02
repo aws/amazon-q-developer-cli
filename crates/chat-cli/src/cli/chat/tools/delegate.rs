@@ -455,6 +455,7 @@ pub async fn status_all_agents(os: &Os) -> Result<String> {
     }
 }
 
+#[allow(unused_variables)]
 fn is_process_alive(pid: u32) -> bool {
     #[cfg(unix)]
     {
