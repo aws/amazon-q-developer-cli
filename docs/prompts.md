@@ -78,9 +78,39 @@ The system automatically detects `{{placeholder}}` patterns in your prompt conte
 ```
 
 ### Use a Prompt
+
+Arguments are provided **positionally** in the order they appear in your prompt:
+
 ```
-@prompt-name arg1="value1" arg2="value2"
+@prompt-name value1 value2 value3
 ```
+
+**Example:**
+```markdown
+Get weather for {{city}} in {{units}} format.
+```
+
+**Usage:** `@weather Tokyo celsius`
+- First argument (`Tokyo`) replaces `{{city}}`
+- Second argument (`celsius`) replaces `{{units}}`
+
+### Argument Order
+
+**For auto-detected arguments:** Order is determined by first appearance in the text.
+
+**For YAML-defined arguments:** Order follows the sequence in the `arguments` list.
+
+```markdown
+---
+arguments:
+  - name: "city"      # Position 0
+  - name: "units"     # Position 1
+  - name: "details"   # Position 2
+---
+Weather for {{city}} in {{units}} with {{details}} information.
+```
+
+**Usage:** `@weather Tokyo celsius detailed`
 
 ### Get Prompt Details
 ```
@@ -97,7 +127,7 @@ Write a {{language}} function named {{function_name}} that {{description}}.
 Include proper error handling and documentation.
 ```
 
-**Usage**: `@generate-function language="Python" function_name="calculate_tax" description="calculates tax based on income"`
+**Usage**: `@generate-function Python calculate_tax "calculates tax based on income"`
 
 ### 2. Documentation Template
 **File**: `api-docs.md`
@@ -121,6 +151,8 @@ description: "Generate API documentation"
 {{response_format}}
 ```
 
+**Usage**: `@api-docs "User Management" "/api/users" "GET" "Retrieves user information" "user_id (required)" "JSON object with user data"`
+
 ### 3. Plain Text Prompt
 **File**: `summarize.md`
 ```markdown
@@ -131,13 +163,17 @@ Please summarize the following {{content_type}} in {{length}} sentences:
 Focus on the main points and key takeaways.
 ```
 
+**Usage**: `@summarize article 3 "This is the content to summarize..."`
+
 ## Best Practices
 
 1. **Use descriptive placeholder names**: `{{user_name}}` instead of `{{x}}`
-2. **Add descriptions for complex prompts**: Use YAML frontmatter when helpful
-3. **Keep prompts focused**: One clear purpose per prompt
-4. **Test your prompts**: Verify they work with different argument values
-5. **Use consistent naming**: Follow a naming convention for your prompts
+2. **Order arguments logically**: Most important arguments first
+3. **Add descriptions for complex prompts**: Use YAML frontmatter when helpful
+4. **Keep prompts focused**: One clear purpose per prompt
+5. **Test your prompts**: Verify they work with different argument values
+6. **Use consistent naming**: Follow a naming convention for your prompts
+7. **Quote arguments with spaces**: Use quotes for multi-word arguments
 
 ## Migration from Old Format
 
