@@ -22,10 +22,7 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
     execute!(output, style::Print("\n"))?;
 
     // Title
-    execute!(
-        output,
-        style::Print(ui_text::changelog_header()),
-    )?;
+    execute!(output, style::Print(ui_text::changelog_header()),)?;
 
     // Render recent entries
     for entry in recent_entries {

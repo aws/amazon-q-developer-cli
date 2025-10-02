@@ -37,6 +37,7 @@ use crate::auth::builder_id::{
     start_device_authorization,
 };
 use crate::auth::pkce::start_pkce_authorization;
+use crate::constants::PRODUCT_NAME;
 use crate::os::Os;
 use crate::telemetry::{
     QProfileSwitchIntent,
@@ -47,7 +48,6 @@ use crate::util::spinner::{
     SpinnerComponent,
 };
 use crate::util::system_info::is_remote;
-use crate::constants::PRODUCT_NAME;
 use crate::util::{
     CLI_BINARY_NAME,
     choose,

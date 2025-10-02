@@ -11,7 +11,6 @@ use crossterm::{
 };
 
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
-use crate::constants::help_text::{CONTEXT_DESCRIPTION, context_long_help};
 use crate::cli::chat::context::{
     ContextFilePath,
     calc_max_context_files_size,
@@ -23,7 +22,10 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-
+use crate::constants::help_text::{
+    CONTEXT_DESCRIPTION,
+    context_long_help,
+};
 use crate::os::Os;
 
 #[deny(missing_docs)]

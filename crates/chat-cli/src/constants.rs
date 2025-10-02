@@ -22,15 +22,20 @@ pub mod ui_text {
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        format!("{}", color_print::cstr! {"<magenta,bold>What's New in Amazon Q CLI</magenta,bold>\n\n"})
+        format!(
+            "{}",
+            color_print::cstr! {"<magenta,bold>What's New in Amazon Q CLI</magenta,bold>\n\n"}
+        )
     }
-
 
     /// Trust all tools warning text
     pub fn trust_all_warning() -> String {
-        format!("{}", color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
+        format!(
+            "{}",
+            color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
 \nAgents can sometimes do unexpected things so understand the risks.</green!>
-\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"})
+\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"}
+        )
     }
 
     /// Rate limit reached message

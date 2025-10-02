@@ -13,7 +13,14 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
-use crate::constants::ui_text::{LIMIT_REACHED_TEXT, WELCOME_TEXT, RESUME_TEXT, SMALL_SCREEN_WELCOME, POPULAR_SHORTCUTS, SMALL_SCREEN_POPULAR_SHORTCUTS};
+use crate::constants::ui_text::{
+    LIMIT_REACHED_TEXT,
+    POPULAR_SHORTCUTS,
+    RESUME_TEXT,
+    SMALL_SCREEN_POPULAR_SHORTCUTS,
+    SMALL_SCREEN_WELCOME,
+    WELCOME_TEXT,
+};
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -145,11 +152,6 @@ use crate::api_client::{
 use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
-use crate::constants::{
-    error_messages,
-    tips,
-    ui_text,
-};
 use crate::cli::agent::Agents;
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
@@ -166,6 +168,11 @@ use crate::cli::chat::util::sanitize_unicode_tags;
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
+};
+use crate::constants::{
+    error_messages,
+    tips,
+    ui_text,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -436,8 +443,6 @@ impl ChatArgs {
     }
 }
 
-
-
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
@@ -445,8 +450,6 @@ const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 const ROTATING_TIPS: [&str; 20] = tips::ROTATING_TIPS;
 
 const GREETING_BREAK_POINT: usize = 80;
-
-
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
 fn trust_all_text() -> String {
@@ -1018,17 +1021,9 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                _ => (
-                    error_messages::TROUBLE_RESPONDING,
-                    Report::from(err),
-                    true,
-                ),
+                _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
             },
-            _ => (
-                error_messages::TROUBLE_RESPONDING,
-                Report::from(err),
-                true,
-            ),
+            _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
         };
 
         if display_err_message {
@@ -1254,7 +1249,8 @@ impl ChatSession {
             queue!(
                 self.stderr,
                 style::Print(format!(
-                    "{}{}\n\n", trust_all_text(),
+                    "{}{}\n\n",
+                    trust_all_text(),
                     if !is_small_screen { "\n" } else { "" }
                 ))
             )?;
