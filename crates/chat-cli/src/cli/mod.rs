@@ -8,6 +8,7 @@ pub mod feed;
 mod issue;
 mod mcp;
 mod settings;
+pub mod tool;
 mod user;
 
 use std::fmt::Display;

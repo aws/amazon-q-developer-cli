@@ -140,7 +140,6 @@ use winnow::stream::Offset;
 use super::agent::{
     Agent,
     DEFAULT_AGENT_NAME,
-    PermissionEvalResult,
 };
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
@@ -151,6 +150,10 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
+use crate::cli::tool::{
+    evaluate_tool_permissions,
+    ToolPermissionResult,
+};
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
     truncate_message,
@@ -2179,84 +2182,66 @@ impl ChatSession {
             self.conversation.enter_tangent_mode();
         }
 
-        // Verify tools have permissions.
-        for i in 0..self.tool_uses.len() {
-            let tool = &mut self.tool_uses[i];
+        // Verify tools have permissions using pure evaluation function
+        let permission_results = evaluate_tool_permissions(&self.tool_uses, &self.conversation.agents, os);
+        
+        for result in permission_results {
+            match result {
+                ToolPermissionResult::Allowed { tool_index: _ } => {
+                    // Tool is already allowed, continue
+                    continue;
+                }
+                ToolPermissionResult::Denied { tool_index: _, tool_name, rules } => {
+                    let formatted_set = rules.into_iter().fold(String::new(), |mut acc, rule| {
+                        acc.push_str(&format!("\n  - {rule}"));
+                        acc
+                    });
 
-            // Manually accepted by the user or otherwise verified already.
-            if tool.accepted {
-                continue;
+                    execute!(
+                        self.stderr,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Command "),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print(&tool_name),
+                        style::SetForegroundColor(Color::Red),
+                        style::Print(" is rejected because it matches one or more rules on the denied list:"),
+                        style::Print(formatted_set),
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+
+                    return Ok(ChatState::HandleInput {
+                        input: format!(
+                            "Tool use with {} was rejected because the arguments supplied were forbidden",
+                            tool_name
+                        ),
+                    });
+                }
+                ToolPermissionResult::RequiresConfirmation { tool_index, tool_name: _ } => {
+                    let _tool = &mut self.tool_uses[tool_index];
+                    let allowed = false; // This tool requires confirmation
+
+                    if os
+                        .database
+                        .settings
+                        .get_bool(Setting::ChatEnableNotifications)
+                        .unwrap_or(false)
+                    {
+                        play_notification_bell(!allowed);
+                    }
+
+                    // TODO: Control flow is hacky here because of borrow rules
+                    let _ = _tool;
+                    self.print_tool_description(os, tool_index, allowed).await?;
+                    let _tool = &mut self.tool_uses[tool_index];
+
+                    self.pending_tool_index = Some(tool_index);
+
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: false,
+                    });
+                }
             }
-
-            let mut denied_match_set = None::<Vec<String>>;
-            let allowed =
-                self.conversation
-                    .agents
-                    .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
-                        PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask => false,
-                        PermissionEvalResult::Deny(matches) => {
-                            denied_match_set.replace(matches);
-                            false
-                        },
-                    })
-                    || self.conversation.agents.trust_all_tools;
-
-            if let Some(match_set) = denied_match_set {
-                let formatted_set = match_set.into_iter().fold(String::new(), |mut acc, rule| {
-                    acc.push_str(&format!("\n  - {rule}"));
-                    acc
-                });
-
-                execute!(
-                    self.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print("Command "),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(&tool.name),
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(" is rejected because it matches one or more rules on the denied list:"),
-                    style::Print(formatted_set),
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-
-                return Ok(ChatState::HandleInput {
-                    input: format!(
-                        "Tool use with {} was rejected because the arguments supplied were forbidden",
-                        tool.name
-                    ),
-                });
-            }
-
-            if os
-                .database
-                .settings
-                .get_bool(Setting::ChatEnableNotifications)
-                .unwrap_or(false)
-            {
-                play_notification_bell(!allowed);
-            }
-
-            // TODO: Control flow is hacky here because of borrow rules
-            let _ = tool;
-            self.print_tool_description(os, i, allowed).await?;
-            let tool = &mut self.tool_uses[i];
-
-            if allowed {
-                tool.accepted = true;
-                self.tool_use_telemetry_events
-                    .entry(tool.id.clone())
-                    .and_modify(|ev| ev.is_trusted = true);
-                continue;
-            }
-
-            self.pending_tool_index = Some(i);
-
-            return Ok(ChatState::PromptUser {
-                skip_printing_tools: false,
-            });
         }
 
         // All tools are allowed now

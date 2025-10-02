@@ -39,12 +39,19 @@ The implementation uses an actor-based pattern for clean message passing instead
    - *Dependencies*: Requires MockLLM refactor completion
    - *Test*: ACP actor tests work with new stateless MockLLMContext API
 
-### Phase 3: Advanced Features
-10. **Tool system integration** - Implement ACP tool permissions and execution through actors
-    - *Test*: Tools work through session actors, permission requests flow correctly
-    - *Note*: Session actors handle tool execution, report via ACP `ToolCall` messages
-11. **File operation routing** - Replace builtin file tools with ACP versions in session actors
-    - *Test*: `fs_read`/`fs_write` work through editor, session actors route file operations
+### Phase 3: Tool System Refactoring & ACP Integration
+10. **Tool system UI separation** - Refactor existing tool system to separate UI concerns from core logic
+    - *Problem*: Current tool execution mixes permission evaluation, console I/O, and state management
+    - *Solution*: Extract pure permission functions and create `PermissionInterface` trait abstraction
+    - *Test*: Identical console behavior with cleaner, more testable architecture
+    - *Details*: See `TOOL_USE_REFACTOR.md` for complete refactoring plan
+11. **ACP tool permissions** - Implement ACP permission interface using refactored system
+    - *Implementation*: Create `AcpPermissionInterface` that sends protocol permission requests
+    - *Test*: Tools work through session actors, permission requests flow correctly via ACP
+    - *Note*: Session actors route tool permissions through ACP instead of console prompts
+12. **ACP file operation routing** - Implement ACP file tools using refactored architecture
+    - *Implementation*: Create ACP-aware `fs_read`/`fs_write` tools that use protocol operations
+    - *Test*: File operations work through editor, session actors route via ACP protocol
     - *Note*: Session actors use ACP file operations instead of direct filesystem access
 
 **Architecture Benefits:**
@@ -115,23 +122,30 @@ ctx.try_patterns(&[
 ]).await
 ```
 
-**Phase 3: Advanced Features**  
-10. ⚠️ **Tool system integration** - Basic tool execution works, need ACP permissions
-    - Current: Tool use shows as `[Tool execution]` placeholder
+**🔄 NEXT - Phase 3: Tool System Refactoring & ACP Integration**
+10. **Tool system UI separation** - Ready to begin refactoring 
+    - Current: Tool execution mixes permission evaluation, console I/O, and state management in `tool_use_execute()`
+    - Plan: Extract pure permission functions, create `PermissionInterface` trait for swappable UI implementations
+    - Goal: Enable ACP integration while preserving identical console behavior
+11. ⚠️ **ACP tool permissions** - Blocked on refactoring completion
+    - Current: Tool use shows as `[Tool execution]` placeholder in ACP sessions
     - Missing: ACP `session/request_permission` flow, proper `ToolCall` messages
-11. ⚠️ **File operation routing** - Need ACP file operations instead of direct filesystem
-    - Current: Uses direct filesystem access
-    - Missing: Route `fs_read`/`fs_write` through ACP protocol
+    - Depends: Requires `PermissionInterface` abstraction from step 10
+12. ⚠️ **ACP file operation routing** - Blocked on permission system
+    - Current: Uses direct filesystem access even in ACP sessions
+    - Missing: Route `fs_read`/`fs_write` through ACP protocol operations
+    - Depends: Requires ACP tool permission system from step 11
 
 **Minor TODOs:**
 - Session configuration from ACP (currently uses defaults)
-- Cancel operations implementation (currently no-op)
 - Set session mode implementation (currently returns method not found)
 
-**Current State:** The ACP server is **functionally complete** for basic chat functionality with **sophisticated test infrastructure**. Users can connect editors, create sessions, send prompts, and receive streaming AI responses. The actor architecture is solid and now has a stateless MockLLM system that matches real LLM behavior patterns, enabling comprehensive testing of the actor-based system with declarative pattern matching APIs.
+**Current State:** The ACP server is **functionally complete** for basic chat functionality with **sophisticated test infrastructure** and **comprehensive cancellation support**. Users can connect editors, create sessions, send prompts, receive streaming AI responses, and cancel active prompts. The actor architecture is solid and now has a stateless MockLLM system that matches real LLM behavior patterns, enabling comprehensive testing of the actor-based system with declarative pattern matching APIs.
 
 **🔍 READY FOR REVIEW** 
-The MockLLM refactor work is complete and ready for in-depth code review. Key areas for review:
+The ACP server implementation is complete and ready for in-depth code review. Key areas for review:
+- **Cancellation system** (`crates/chat-cli/src/cli/acp/server_session.rs`) - Concurrent prompt processing with tokio::select! cancellation
+- **Cross-session isolation** (`crates/chat-cli/src/cli/acp/tests.rs`) - Comprehensive test coverage for session independence
 - **MockLLM architecture** (`crates/chat-cli/src/mock_llm.rs`) - Stateless per-turn design with streaming
 - **Pattern matching API** - Regex-based conversation matching with declarative `try_patterns()` 
 - **ApiClient integration** - Streaming compatibility and performance fixes
