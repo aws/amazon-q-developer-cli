@@ -46,7 +46,10 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
-use crate::cli::experiment::experiment_manager::ExperimentManager;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
@@ -417,6 +420,11 @@ impl Highlighter for ChatHelper {
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
+            // Add notifier part if present (blue)
+            if let Some(notifier) = components.delegate_notifier {
+                result.push_str(&format!("[{}]\n", notifier).blue().to_string());
+            }
+
             // Add profile part if present (cyan)
             if let Some(profile) = components.profile {
                 result.push_str(&format!("[{}] ", profile).cyan().to_string());
@@ -495,6 +503,18 @@ pub fn rl(
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
             eprintln!("Warning: Failed to load history: {}", e);
         }
+    }
+
+    // Add custom keybinding for Ctrl+D to open delegate command (configurable)
+    if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+        if let Some(key) = os.database.settings.get_string(Setting::DelegateModeKey) {
+            if key.len() == 1 {
+                rl.bind_sequence(
+                    KeyEvent(KeyCode::Char(key.chars().next().unwrap()), Modifiers::CTRL),
+                    EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+                );
+            }
+        };
     }
 
     // Add custom keybinding for Alt+Enter to insert a newline

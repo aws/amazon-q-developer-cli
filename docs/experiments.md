@@ -108,6 +108,13 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 
 **When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
 
+### Delegate
+**Description:** Launch and manage asynchronous task processes. Enables running Q chat sessions with specific agents in parallel to the main conversation.
+**Usage:**
+Use natural language to ask the model to launch a background task. Once the task is ready, you can then ask the model to check on the result
+**Agent Approval Flow:**
+**When enabled:** Tasks with agents require explicit approval and show agent details. Tasks without agents run with a warning about trust-all permissions. Once delegated, tasks work independently and you can check progress, read results, or delete them as needed.
+
 ### TODO Lists
 **Tool name**: `todo_list`
 **Command:** `/todos`  
@@ -128,7 +135,6 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 
 **Settings:**
 - `chat.enableTodoList` - Enable/disable TODO list functionality (boolean)
-
 
 ## Managing Experiments
 
