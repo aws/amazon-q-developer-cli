@@ -457,7 +457,13 @@ impl McpClientService {
                     ..
                 } = &self.config;
 
-                let http_service_builder = HttpServiceBuilder::new(url, os, url, *timeout, scopes, headers, messenger);
+                // Process environment variables in headers
+                let mut processed_headers = headers.clone();
+                for (_, value) in processed_headers.iter_mut() {
+                    *value = substitute_env_vars(value, &os.env);
+                }
+
+                let http_service_builder = HttpServiceBuilder::new(url, os, url, *timeout, scopes, &processed_headers, messenger);
 
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 
