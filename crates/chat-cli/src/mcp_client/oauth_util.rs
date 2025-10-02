@@ -270,7 +270,6 @@ impl<'a> HttpServiceBuilder<'a> {
                 }
             })
         });
-        
         let needs_auth = is_probe_err || is_status_401_or_403 || contains_auth_header;
 
         // Here we attempt the following in the order they are presented:
