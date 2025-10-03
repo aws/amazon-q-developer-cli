@@ -21,6 +21,11 @@
       "description": "Identifies the source component where the telemetry event originated."
     },
     {
+      "name": "socialProvider",
+      "type": "string",
+      "description": "Social login provider used by the user, e.g., Google or GitHub. Now only 'Google' and 'GitHub' are allowed."
+    },
+    {
       "name": "amazonqConversationId",
       "type": "string",
       "description": "Uniquely identifies a message with which the user interacts."
@@ -366,7 +371,8 @@
       "passive": false,
       "metadata": [
         { "type": "credentialStartUrl" },
-        { "type": "codewhispererterminal_inCloudshell" }
+        { "type": "codewhispererterminal_inCloudshell" },
+        { "type": "socialProvider" }
       ]
     },
     {

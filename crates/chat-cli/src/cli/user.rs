@@ -149,7 +149,7 @@ impl LoginArgs {
 
                 match start_social_login(os, provider, first_code).await {
                     Ok(_) => {
-                        os.telemetry.send_user_logged_in().ok();
+                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider));
                         spinner.stop_with_message(format!("Logged in with {}", provider));
                     },
                     Err(err) => {
@@ -176,7 +176,7 @@ impl LoginArgs {
 
                                 match start_social_login(os, provider, Some(code)).await {
                                     Ok(_) => {
-                                        os.telemetry.send_user_logged_in().ok();
+                                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider));
                                         spinner2.stop_with_message(format!("Logged in with {}", provider));
                                     },
                                     Err(e2) => {
@@ -238,7 +238,7 @@ impl LoginArgs {
                                     exit(1);
                                 },
                             }
-                            os.telemetry.send_user_logged_in().ok();
+                            let _ = os.telemetry.send_user_logged_in(&os.database, None);
                             spinner.stop_with_message("Logged in".into());
                         },
                         // If we are unable to open the link with the browser, then fallback to
@@ -427,7 +427,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                os.telemetry.send_user_logged_in().ok();
+                let _ = os.telemetry.send_user_logged_in(&os.database, None);
                 spinner.stop_with_message("Logged in".into());
                 break;
             },

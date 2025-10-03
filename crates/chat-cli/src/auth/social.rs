@@ -41,9 +41,10 @@ use crate::database::{
 use crate::os::Os;
 use crate::util::open::open_url_async;
 
-const CALLBACK_PORTS: &[u16] = &[49153, 50153, 51153, 52153, 53153];
+const CALLBACK_PORTS: &[u16] = &[49153, 50153, 51153, 52153, 53153, 4649, 6588, 9091, 8008, 3128];
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 const SIGN_UP_PAUSED_MESSAGE: &str = "New signups are temporarily paused.";
+const USER_AGENT: &str = "Kiro-CLI";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, clap::ValueEnum)]
 pub enum SocialProvider {
@@ -263,7 +264,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
     let response = client
         .post(format!("{}/oauth/token", SOCIAL_AUTH_SERVICE_ENDPOINT))
         .header("Content-Type", "application/json")
-        .header("User-Agent", "q-cli")
+        .header("User-Agent", USER_AGENT)
         .json(&token_request)
         .send()
         .await?;
