@@ -378,8 +378,16 @@ impl HookExecutor {
 
 /// Sanitizes a string value to be used as an environment variable
 fn sanitize_user_prompt(input: &str) -> String {
-    // Limit the size of input to first 4096 characters
-    let truncated = if input.len() > 4096 { &input[0..4096] } else { input };
+    // Limit the size of input to first 4096 bytes, respecting character boundaries
+    let truncated = if input.len() > 4096 {
+        let mut end = 4096;
+        while end > 0 && !input.is_char_boundary(end) {
+            end -= 1;
+        }
+        &input[0..end]
+    } else {
+        input
+    };
 
     // Remove any potentially problematic characters
     truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
@@ -749,5 +757,32 @@ mod tests {
         assert_eq!(*trigger, HookTrigger::Stop);
         assert_eq!(*exit_code, 0);
         assert!(hook_output.contains("Turn completed successfully"));
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_cjk_characters() {
+        // Test with CJK characters that would cause panic with naive byte slicing
+        let korean_text = "한".repeat(2000); // Each Korean character is 3 bytes in UTF-8
+        let result = sanitize_user_prompt(&korean_text);
+
+        // Should not panic and should be truncated safely
+        assert!(result.len() <= 4096);
+        assert!(!result.is_empty());
+
+        // Test with mixed ASCII and CJK at boundary
+        let mixed_text = "a".repeat(4094) + "한국어"; // 4094 + 9 bytes = 4103 bytes
+        let result = sanitize_user_prompt(&mixed_text);
+        assert!(result.len() <= 4096);
+        assert!(result.ends_with("a")); // Should end with ASCII, not partial CJK
+
+        // Test with text shorter than limit
+        let short_text = "안녕하세요";
+        let result = sanitize_user_prompt(short_text);
+        assert_eq!(result, short_text);
+
+        // Test with control characters
+        let text_with_controls = "Hello\x00World\nTest\r\tEnd";
+        let result = sanitize_user_prompt(text_with_controls);
+        assert_eq!(result, "HelloWorld\nTest\r\tEnd");
     }
 }
