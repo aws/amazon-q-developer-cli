@@ -1,10 +1,11 @@
 //! This is largely based on https://docs.ag-ui.com/concepts/events
 //! They do not have a rust SDK so for now we are handrolling these types
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use serde_json::Value;
-use std::collections::HashMap;
-use chrono::{DateTime, Utc};
 
 /// Role of a message sender
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -207,7 +208,7 @@ pub struct Raw {
 }
 
 /// Used for application-specific custom events
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Default, Deserialize)]
 pub struct Custom {
     pub name: String,
     pub value: Value,
@@ -232,7 +233,7 @@ pub struct ActivitySnapshotEvent {
 pub struct ActivityDeltaEvent {
     pub message_id: String,
     pub activity_type: String, // e.g., "PLAN", "SEARCH", "SCRAPE"
-    pub patch: Vec<Value>, // JSON Patch operations (RFC 6902)
+    pub patch: Vec<Value>,     // JSON Patch operations (RFC 6902)
 }
 
 // ============================================================================
@@ -306,76 +307,49 @@ pub struct MetaEvent {
 
 /// Main event enum that encompasses all event types in the Agent UI Protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "camelCase")]
 pub enum Event {
     // Lifecycle Events
-    #[serde(rename = "runStarted")]
     RunStarted(RunStarted),
-    #[serde(rename = "runFinished")]
     RunFinished(RunFinished),
-    #[serde(rename = "runError")]
     RunError(RunError),
-    #[serde(rename = "stepStarted")]
     StepStarted(StepStarted),
-    #[serde(rename = "stepFinished")]
     StepFinished(StepFinished),
 
     // Text Message Events
-    #[serde(rename = "textMessageStart")]
     TextMessageStart(TextMessageStart),
-    #[serde(rename = "textMessageContent")]
     TextMessageContent(TextMessageContent),
-    #[serde(rename = "textMessageEnd")]
     TextMessageEnd(TextMessageEnd),
-    #[serde(rename = "textMessageChunk")]
     TextMessageChunk(TextMessageChunk),
 
     // Tool Call Events
-    #[serde(rename = "toolCallStart")]
     ToolCallStart(ToolCallStart),
-    #[serde(rename = "toolCallArgs")]
     ToolCallArgs(ToolCallArgs),
-    #[serde(rename = "toolCallEnd")]
     ToolCallEnd(ToolCallEnd),
-    #[serde(rename = "toolCallResult")]
     ToolCallResult(ToolCallResult),
 
     // State Management Events
-    #[serde(rename = "stateSnapshot")]
     StateSnapshot(StateSnapshot),
-    #[serde(rename = "stateDelta")]
     StateDelta(StateDelta),
-    #[serde(rename = "messagesSnapshot")]
     MessagesSnapshot(MessagesSnapshot),
 
     // Special Events
-    #[serde(rename = "raw")]
     Raw(Raw),
-    #[serde(rename = "custom")]
     Custom(Custom),
 
     // Draft Events - Activity Events
-    #[serde(rename = "activitySnapshotEvent")]
     ActivitySnapshotEvent(ActivitySnapshotEvent),
-    #[serde(rename = "activityDeltaEvent")]
     ActivityDeltaEvent(ActivityDeltaEvent),
 
     // Draft Events - Reasoning Events
-    #[serde(rename = "reasoningStart")]
     ReasoningStart(ReasoningStart),
-    #[serde(rename = "reasoningMessageStart")]
     ReasoningMessageStart(ReasoningMessageStart),
-    #[serde(rename = "reasoningMessageContent")]
     ReasoningMessageContent(ReasoningMessageContent),
-    #[serde(rename = "reasoningMessageEnd")]
     ReasoningMessageEnd(ReasoningMessageEnd),
-    #[serde(rename = "reasoningMessageChunk")]
     ReasoningMessageChunk(ReasoningMessageChunk),
-    #[serde(rename = "reasoningEnd")]
     ReasoningEnd(ReasoningEnd),
 
     // Draft Events - Meta Events
-    #[serde(rename = "metaEvent")]
     MetaEvent(MetaEvent),
 }
 
@@ -428,6 +402,13 @@ impl Event {
         }
     }
 
+    pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
+        matches!(
+            self,
+            Event::Custom(_) | Event::TextMessageContent(_) | Event::TextMessageChunk(_)
+        )
+    }
+
     /// Check if this is a lifecycle event
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
@@ -455,10 +436,7 @@ impl Event {
     pub fn is_tool_call_event(&self) -> bool {
         matches!(
             self,
-            Event::ToolCallStart(_)
-                | Event::ToolCallArgs(_)
-                | Event::ToolCallEnd(_)
-                | Event::ToolCallResult(_)
+            Event::ToolCallStart(_) | Event::ToolCallArgs(_) | Event::ToolCallEnd(_) | Event::ToolCallResult(_)
         )
     }
 
@@ -486,5 +464,3 @@ impl Event {
         )
     }
 }
-
-
