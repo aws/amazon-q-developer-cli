@@ -377,7 +377,7 @@ mod tests {
 
         assert_eq!(images.len(), 3, "Should process all pasted images");
 
-        for (i, (image_block, metadata)) in images.iter().enumerate() {
+        for (image_block, metadata) in images.iter() {
             assert!(metadata.filename.ends_with(".png"), "Should have .png extension");
             assert_eq!(image_block.format, ImageFormat::Png, "Format should be PNG");
             assert!(metadata.size > 0, "Should have non-zero size");

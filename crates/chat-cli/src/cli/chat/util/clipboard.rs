@@ -1,5 +1,12 @@
 use std::path::PathBuf;
 
+use image::{
+    ImageBuffer,
+    ImageFormat,
+    Rgba,
+    guess_format,
+};
+
 /// Error types for clipboard operations
 #[derive(Debug, thiserror::Error)]
 pub enum ClipboardError {
@@ -14,6 +21,9 @@ pub enum ClipboardError {
 
     #[error("Failed to write image file: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("Image processing error: {0}")]
+    ImageError(#[from] image::ImageError),
 }
 
 /// Paste an image from the clipboard to a temporary file
@@ -24,39 +34,38 @@ pub fn paste_image_from_clipboard() -> Result<PathBuf, ClipboardError> {
     let mut clipboard = arboard::Clipboard::new().map_err(|e| ClipboardError::AccessDenied(e.to_string()))?;
 
     // Retrieve image data from clipboard
-    let image = clipboard.get_image().map_err(|e| match e {
+    let image_data = clipboard.get_image().map_err(|e| match e {
         arboard::Error::ContentNotAvailable => ClipboardError::NoImage,
         arboard::Error::ConversionFailure => ClipboardError::UnsupportedFormat,
         _ => ClipboardError::AccessDenied(e.to_string()),
     })?;
 
-    // Create temporary file with .png extension
-    let temp_file = tempfile::Builder::new().suffix(".png").tempfile()?;
+    // Try to guess format from raw bytes, fallback to PNG
+    let format = guess_format(&image_data.bytes).unwrap_or(ImageFormat::Png);
+    let extension = match format {
+        ImageFormat::Png => ".png",
+        ImageFormat::Jpeg => ".jpg",
+        ImageFormat::WebP => ".webp",
+        ImageFormat::Bmp => ".bmp",
+        ImageFormat::Gif => ".gif",
+        ImageFormat::Tiff => ".tiff",
+        _ => ".png", // Default fallback
+    };
 
-    // Convert image to PNG format and write to temp file
-    let mut encoder = png::Encoder::new(
-        std::io::BufWriter::new(temp_file.as_file()),
-        image.width as u32,
-        image.height as u32,
-    );
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
+    // Create image buffer from clipboard data
+    let img_buffer =
+        ImageBuffer::<Rgba<u8>, _>::from_raw(image_data.width as u32, image_data.height as u32, image_data.bytes)
+            .ok_or(ClipboardError::UnsupportedFormat)?;
 
-    let mut writer = encoder
-        .write_header()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    writer
-        .write_image_data(&image.bytes)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-    writer
-        .finish()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-
-    // Get the path and persist the temp file
+    // Create temporary file with detected extension
+    let temp_file = tempfile::Builder::new().suffix(extension).tempfile()?;
     let path = temp_file.path().to_path_buf();
-    temp_file
-        .keep()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
+
+    // Save with detected format
+    img_buffer.save_with_format(&path, format)?;
+
+    // Persist the temp file
+    temp_file.keep().map_err(|e| std::io::Error::other(e.to_string()))?;
 
     Ok(path)
 }
