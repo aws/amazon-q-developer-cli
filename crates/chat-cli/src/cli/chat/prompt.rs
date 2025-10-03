@@ -54,7 +54,6 @@ use super::util::clipboard::{
     ClipboardError,
     paste_image_from_clipboard,
 };
-use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,

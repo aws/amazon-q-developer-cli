@@ -104,8 +104,6 @@ use thiserror::Error;
 use time::OffsetDateTime;
 use token_counter::TokenCounter;
 use tokio::signal::ctrl_c;
-use tokio::sync::{Mutex, broadcast};
-use tool_manager::{PromptQuery, PromptQueryResult, ToolManager, ToolManagerBuilder};
 use tokio::sync::{
     Mutex,
     broadcast,
