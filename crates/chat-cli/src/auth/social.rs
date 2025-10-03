@@ -353,3 +353,49 @@ pub async fn logout_social(database: &Database) -> Result<(), AuthError> {
     database.delete_secret(SocialToken::SECRET_KEY).await?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+
+    use super::*;
+
+    #[test]
+    fn test_social_provider_display() {
+        assert_eq!(SocialProvider::Google.to_string(), "Google");
+        assert_eq!(SocialProvider::Github.to_string(), "GitHub");
+    }
+
+    #[test]
+    fn test_social_token_is_expired() {
+        let mut token = SocialToken {
+            access_token: Secret("a".into()),
+            expires_at: OffsetDateTime::now_utc() + time::Duration::seconds(120),
+            refresh_token: Some(Secret("r".into())),
+            provider: SocialProvider::Google,
+            profile_arn: None,
+        };
+        assert!(!token.is_expired(), "fresh token should not be expired");
+
+        token.expires_at = OffsetDateTime::now_utc() - time::Duration::seconds(1);
+        assert!(token.is_expired(), "past token should be expired");
+    }
+
+    #[test]
+    fn test_token_response_deser() {
+        // matches camelCase keys from the social auth service
+        let json = r#"
+        {
+          "accessToken": "acc",
+          "refreshToken": "ref",
+          "expiresIn": 3600,
+          "profileArn": "arn:aws:iam::123456789012:role/Demo"
+        }
+        "#;
+
+        let tr: TokenResponse = serde_json::from_str(json).expect("deser ok");
+        assert_eq!(tr.access_token, "acc");
+        assert_eq!(tr.refresh_token, "ref");
+        assert_eq!(tr.expires_in, 3600);
+        assert_eq!(tr.profile_arn.as_deref(), Some("arn:aws:iam::123456789012:role/Demo"));
+    }
+}
