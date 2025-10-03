@@ -147,7 +147,9 @@ impl RootSubcommand {
 
         // Daily heartbeat check
         if os.database.should_send_heartbeat() && os.telemetry.send_daily_heartbeat().is_ok() {
-            os.database.record_heartbeat_sent().ok();
+            if let Err(e) = os.database.record_heartbeat_sent() {
+                tracing::warn!("Failed to record heartbeat in database: {}", e);
+            }
         }
 
         // Send executed telemetry.
