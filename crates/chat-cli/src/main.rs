@@ -11,6 +11,7 @@ mod os;
 mod request;
 mod telemetry;
 mod util;
+mod test_util;
 
 use std::process::ExitCode;
 

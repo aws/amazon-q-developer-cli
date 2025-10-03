@@ -45,7 +45,7 @@ use crate::os::Os;
 mod server;
 mod server_session;
 mod server_connection;
-mod util;
+pub(crate) mod util;
 #[cfg(test)]
 mod client_connection;
 #[cfg(test)]

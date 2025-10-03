@@ -17,3 +17,5 @@ pub mod telemetry;
 pub mod util;
 
 pub use mcp_client::*;
+
+mod test_util;
