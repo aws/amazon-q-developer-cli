@@ -1393,6 +1393,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "chat_cli_ui"
+version = "1.17.1"
+dependencies = [
+ "nix 0.29.0",
+ "objc2 0.5.2",
+ "objc2-app-kit 0.2.2",
+ "objc2-foundation 0.2.2",
+ "security-framework 3.3.0",
+ "skim",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "windows 0.61.3",
+ "winreg",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
