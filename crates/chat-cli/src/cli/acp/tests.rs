@@ -77,12 +77,6 @@ impl AcpTestHarness {
 
 #[tokio::test]
 async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .try_init()
-        .ok();
-
     AcpTestHarness::new()
         .await?
         .set_mock_llm(|mut ctx: MockLLMContext| async move {
@@ -122,12 +116,6 @@ async fn test_acp_actor_system_conversation() -> eyre::Result<()> {
 
 #[tokio::test]
 async fn test_acp_cancel_during_prompt() -> eyre::Result<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::DEBUG)
-        .with_writer(std::io::stderr)
-        .try_init()
-        .ok();
-
     // Create a coordination channel for mock LLM and test coordination
     let (coordination_tx, mut coordination_rx) = tokio::sync::mpsc::channel::<String>(1);
 
