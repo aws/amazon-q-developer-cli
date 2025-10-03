@@ -8,6 +8,9 @@ edition = "2021"
 [dependencies]
 expectrl = "0.7"
 regex = "1.0"
+serial_test = "3.0"
+ctor = "0.2"
+
 
 [features]
 core_session = ["help", "quit", "clear", "changelog"] # Core Session Commands (/help, /quit, /clear, /changelog)

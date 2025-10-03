@@ -1,61 +1,5 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-#[allow(dead_code)]
-static INIT: Once = Once::new();
-#[allow(dead_code)]
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-#[allow(dead_code)]
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
-    }
-}
-
-#[allow(dead_code)]
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-  Ok(count)
-}
-#[allow(dead_code)]
-static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-// List of covered tests
-#[allow(dead_code)]
-const TEST_NAMES: &[&str] = &[
-    "test_tools_command",
-    "test_tools_help_command",
-    "test_tools_trust_all_command",
-    "test_tools_trust_all_help_command",
-    "test_tools_reset_help_command",
-    "test_tools_trust_command",
-    "test_tools_trust_help_command",
-    "test_tools_untrust_help_command",
-    "test_tools_schema_help_command",
-    "test_fs_write_and_fs_read_tools",
-    "test_execute_bash_tool",
-    "test_report_issue_tool",
-    "test_use_aws_tool",
-    "test_trust_execute_bash_for_direct_execution"
-];
-#[allow(dead_code)]
-const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[allow(dead_code)]
 struct FileCleanup<'a> {
@@ -76,7 +20,7 @@ impl<'a> Drop for FileCleanup<'a> {
 fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools command... | Description: Tests the <code>/tools</code> command to display all available tools with their permission status including built-in and MCP tools");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools")?;
@@ -117,11 +61,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ /tools command executed successfully");
 
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -131,7 +71,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools --help command... | Description: Tests the <code> /tools --help</code> command to display comprehensive help information about tools management including available subcommands and options");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools --help")?;
@@ -163,11 +103,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools help content verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -177,7 +113,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust-all command... | Description: Tests the <code> /tools trust-all</code> command to trust all available tools and verify all tools show trusted status, then tests reset functionality");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute trust-all command
@@ -243,11 +179,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools reset functionality verified!");
 
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -257,7 +189,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust-all --help command... | Description: Tests the <code> /tools trust-all --help</code>command to display help information for the trust-all subcommand");
   
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools trust-all --help")?;
@@ -279,11 +211,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
     
     println!("✅ All tools trust-all help functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -293,7 +221,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
 fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools reset --help command... | Description: Tests the <code> /tools reset --help</code> command to display help information for the reset subcommand");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools reset --help")?;
@@ -314,11 +242,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools reset help functionality verified!");
      
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -328,7 +252,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust command... | Description: Tests the <code> /tools</code> trust and untrust commands to manage individual tool permissions and verify trust status changes");
   
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First get list of tools to find one that's not trusted
@@ -392,11 +316,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
         println!("ℹ️ No untrusted tools found to test trust command");
     }
   
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -406,7 +326,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools trust --help command... | Description: Tests the <code>/tools trust --help</code> command to display help information for trusting specific tools");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/tools trust --help")?;
@@ -431,11 +351,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools trust help functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -445,7 +361,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools untrust --help command... | Description: Tests the <code>/tools untrust --help</code> command to display help information for untrusting specific tools");
 
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools untrust --help")?;
@@ -470,11 +386,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools untrust help functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -484,7 +396,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools schema --help command... | Description: Tests the <code>/tools schema --help</code> command to display help information for viewing tool schemas");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/tools schema --help")?;
@@ -505,11 +417,7 @@ fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools schema help functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -519,7 +427,7 @@ fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /tools schema command...");
   
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     let response = chat.execute_command("/tools schema")?;
     
@@ -561,11 +469,7 @@ fn test_tools_schema_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All tools schema content verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }*/
@@ -578,7 +482,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     let save_path = "demo.txt";
     let _cleanup = FileCleanup { path: save_path };
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test fs_write tool by asking to create a file with "Hello World" content
@@ -635,11 +539,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All fs_write and fs_read tool functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -649,7 +549,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
 fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `execute_bash` tool ... | Description: Tests the <code>execute_bash</code> tool by running the 'pwd' command and verifying proper command execution and output");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test execute_bash tool by asking to run pwd command
@@ -674,11 +574,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All execute_bash functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -688,7 +584,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
 fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `report_issue` tool ... | Description: Tests the <code> report_issue</code> reporting functionality by creating a sample issue and verifying the browser opens GitHub for issue submission");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test report_issue tool by asking to report an issue
@@ -709,11 +605,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All report_issue functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -723,7 +615,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
 fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing `use_aws` tool ... | Description: Tests the <code>use_aws</code> tool by executing AWS commands to describe EC2 instances and verifying proper AWS CLI integration");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test use_aws tool by asking to describe EC2 instances in us-west-2
@@ -744,11 +636,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All use_aws functionality verified!");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -758,7 +646,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
 fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing Trust execute_bash for direct execution ... | Description: Tests the ability to trust the <code>execute_bash</code> tool so it runs commands without asking for user confirmation each time");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First, trust the execute_bash tool
@@ -795,11 +683,7 @@ fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::err
      
     println!("✅ Directory successfully deleted");
     
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }

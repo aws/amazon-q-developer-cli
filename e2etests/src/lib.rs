@@ -8,6 +8,9 @@ pub mod q_chat_helper {
     pub use std::time::Duration;
     pub use std::process::{Command, Stdio};
     pub use std::thread;
+    pub use std::sync::{Mutex, OnceLock};
+    
+    static GLOBAL_CHAT_SESSION: OnceLock<Mutex<QChatSession>> = OnceLock::new();
 
     pub struct QChatSession {
         session: expectrl::Session<expectrl::process::unix::UnixProcess, expectrl::process::unix::PtyStream>,
@@ -216,6 +219,26 @@ pub mod q_chat_helper {
         }
         
         Ok(response)
+    }
+    
+    /// Get or create the global shared chat session
+    pub fn get_chat_session() -> &'static Mutex<QChatSession> {
+        GLOBAL_CHAT_SESSION.get_or_init(|| {
+            let chat = QChatSession::new().expect("Failed to create chat session");
+            println!("✅ Global Q Chat session started");
+            Mutex::new(chat)
+        })
+    }
+    
+    /// Close the global chat session
+    pub fn close_session() -> Result<(), Error> {
+        if let Some(session) = GLOBAL_CHAT_SESSION.get() {
+            if let Ok(mut chat) = session.lock() {
+                chat.quit()?;
+                println!("✅ Global chat session closed");
+            }
+        }
+        Ok(())
     }
 
 }

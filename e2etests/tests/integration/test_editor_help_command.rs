@@ -1,62 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-
-#[allow(dead_code)]
-static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-// List of covered tests
-#[allow(dead_code)]
-const TEST_NAMES: &[&str] = &[
-    "test_editor_help_command",
-    "test_help_editor_command",
-    "test_editor_h_command",
-    "test_editor_command_interaction",
-    "test_editor_command_error",
-    "test_editor_with_file_path",
-];
-#[allow(dead_code)]
-const TOTAL_TESTS: usize = TEST_NAMES.len();
-
-#[allow(dead_code)]
-static INIT: Once = Once::new();
-#[allow(dead_code)]
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-#[allow(dead_code)]
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
-    }
-}
-
-#[allow(dead_code)]
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-  Ok(count)
-}
 
 #[test]
 #[cfg(all(feature = "editor", feature = "sanity"))]
 fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /editor --help command... | Description: Tests the <code> /editor --help</code> command to display help information for the editor functionality including usage and options");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/editor --help")?;
@@ -85,11 +35,8 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All editor help content verified!");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -99,7 +46,7 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /help editor command... | Description: Tests the <code> /help editor</code> command to display editor-specific help information and usage instructions");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/help editor")?;
@@ -128,11 +75,8 @@ fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All editor help content verified!");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -142,7 +86,7 @@ fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /editor -h command... | Description: Tests the <code> /editor -h</code> command (short form) to display editor help information and verify proper flag handling");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/editor -h")?;
@@ -171,11 +115,8 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All editor help content verified!");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -185,7 +126,7 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /editor command interaction... | Description: Test that the <code> /editor</code> command successfully launches the integrated editor interface");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command to open editor panel
@@ -222,11 +163,8 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ Editor command interaction test completed successfully!");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -236,7 +174,7 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
 fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
     println!("🔍 Testing /editor command error handling ... | Description: Tests the <code> /editor <non_exixt_filepath> </code> command error handling when attempting to open a nonexistent file");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command to open editor panel
@@ -274,11 +212,8 @@ fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Editor command error test completed successfully!");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -295,7 +230,7 @@ fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::write(&test_file_path, "Hello from test file\nThis is a test file for editor command.")?;
     println!("✅ Created test file at {}", test_file_path);
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command with file path
@@ -348,11 +283,8 @@ fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
     std::fs::remove_file(test_file_path).ok();
     println!("✅ Cleaned up test file");
     
-    // Release the lock before cleanup
+    // Release the lock
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }

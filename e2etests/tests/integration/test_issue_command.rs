@@ -1,60 +1,12 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-#[allow(dead_code)]
-static INIT: Once = Once::new();
-#[allow(dead_code)]
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-#[allow(dead_code)]
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
-    }
-}
-
-#[allow(dead_code)]
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-  Ok(count)
-}
-
-#[allow(dead_code)]
-static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-// List of covered tests
-#[allow(dead_code)]
-const TEST_NAMES: &[&str] = &[
-    "test_issue_command",
-    "test_issue_force_command",
-    "test_issue_f_command",
-    "test_issue_help_command",
-    "test_issue_h_command",
-];
-#[allow(dead_code)]
-const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 #[test]
 #[cfg(all(feature = "issue_reporting", feature = "sanity"))]
 fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /issue command with bug report... | Description: Tests the <code> /issue</code> command to create a bug report and verify it opens GitHub issue creation interface");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/issue \"Bug: Q CLI crashes when using large files\"")?;
@@ -70,11 +22,7 @@ fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All issue command functionality verified!");
 
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -84,7 +32,7 @@ fn test_issue_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /issue --force command with critical bug... | Description: Tests the <code> /issue --force</code> command to create a critical bug report and verify forced issue creation workflow");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/issue --force \"Critical bug in file handling\"")?;
@@ -100,11 +48,7 @@ fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All issue --force command functionality verified!");
 
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -114,7 +58,7 @@ fn test_issue_force_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /issue -f command with critical bug... | Description: Tests the <code> /issue -f</code> command (short form) to create a critical bug report with force flag");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/issue -f \"Critical bug in file handling\"")?;
@@ -130,11 +74,7 @@ fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All issue --force command functionality verified!");
 
-    // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -145,7 +85,7 @@ fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /issue --help command... | Description: Tests the <code> /issue --help</code> command to display help information for issue reporting functionality including options and usage");
      
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/issue --help")?;
@@ -171,11 +111,7 @@ fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All issue help content verified!");
 
-     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }
@@ -185,7 +121,7 @@ fn test_issue_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_issue_h_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /issue -h command... | Description: Tests the <code> /issue -h</code> command (short form) to display issue reporting help information");
      
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     let response = chat.execute_command("/issue -h")?;
@@ -211,11 +147,7 @@ fn test_issue_h_command() -> Result<(), Box<dyn std::error::Error>> {
     
     println!("✅ All issue help content verified!");
 
-     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
 
     Ok(())
 }

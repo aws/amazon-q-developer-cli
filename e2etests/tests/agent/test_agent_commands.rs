@@ -1,55 +1,4 @@
-#[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
-use std::sync::{Mutex, Once, atomic::{AtomicUsize, Ordering}};
-#[allow(dead_code)]
-static INIT: Once = Once::new();
-#[allow(dead_code)]
-static mut CHAT_SESSION: Option<Mutex<q_chat_helper::QChatSession>> = None;
-
-#[allow(dead_code)]
-pub fn get_chat_session() -> &'static Mutex<q_chat_helper::QChatSession> {
-    unsafe {
-        INIT.call_once(|| {
-            let chat = q_chat_helper::QChatSession::new().expect("Failed to create chat session");
-            println!("✅ Q Chat session started");
-            CHAT_SESSION = Some(Mutex::new(chat));
-        });
-        (&raw const CHAT_SESSION).as_ref().unwrap().as_ref().unwrap()
-    }
-}
-
-#[allow(dead_code)]
-pub fn cleanup_if_last_test(test_count: &AtomicUsize, total_tests: usize) -> Result<usize, Box<dyn std::error::Error>> {
-    let count = test_count.fetch_add(1, Ordering::SeqCst) + 1;
-    if count == total_tests {
-        unsafe {
-            if let Some(session) = (&raw const CHAT_SESSION).as_ref().unwrap() {
-                if let Ok(mut chat) = session.lock() {
-                    chat.quit()?;
-                    println!("✅ Test completed successfully");
-                }
-            }
-        }
-    }
-  Ok(count)
-}
-#[allow(dead_code)]
-static TEST_COUNT: AtomicUsize = AtomicUsize::new(0);
-
-#[allow(dead_code)]
-const TEST_NAMES: &[&str] = &[
-    "agent_without_subcommand",
-    "test_agent_create_command",
-    "test_agent_create_missing_args",
-    "test_agent_help_command",
-    "test_agent_invalid_command",
-    "test_agent_list_command",
-    // "test_agent_schema_command", 
-    "test_agent_set_default_command",
-    "test_agent_set_default_missing_args",
-];
-#[allow(dead_code)]
-const TOTAL_TESTS: usize = TEST_NAMES.len();
 
 /// Tests the /agent command without subcommands to display help information
 /// Verifies agent management description, usage, available subcommands, and options
@@ -58,7 +7,7 @@ const TOTAL_TESTS: usize = TEST_NAMES.len();
 fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent command... | Description: Tests the <code> /agent</code> command without subcommands to display help information. Verifies agent management description, usage, available subcommands, and options");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent")?;
@@ -98,9 +47,6 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     // Release the lock before cleanup
     drop(chat);
     
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
     Ok(())
 }
 
@@ -117,7 +63,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
         .as_secs();
     let agent_name = format!("test_demo_agent_{}", timestamp);
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let create_response = chat.execute_command(&format!("/agent create --name {}", agent_name))?;
@@ -166,10 +112,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+ 
     Ok(())
 }
 
@@ -180,7 +123,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent create without required arguments... | Description: Tests the <code> /agent create</code> command without required arguments to verify error handling. Verifies proper error messages, usage information, and help suggestions");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent create")?;
@@ -217,10 +160,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+       
     Ok(())
 }
 
@@ -231,7 +171,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent help... | Description: Tests the <code> /agent help</code> command to display comprehensive agent help information. Verifies agent descriptions, usage notes, launch instructions, and configuration paths");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent help")?;
@@ -264,10 +204,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+
     Ok(())
 }
 
@@ -278,7 +215,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent invalidcommand... | Description: Tests the <code> /agent</code> command with invalid subcommand to verify error handling. Verifies that invalid commands display help information with available commands and options");
     
-    let session = get_chat_session();
+    let session =q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent invalidcommand")?;
@@ -303,10 +240,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+      
     Ok(())
 }
 
@@ -317,7 +251,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent list command... | Description: Tests the <code> /agent list</code> command to display all available agents. Verifies agent listing format and presence of default agent");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent list")?;
@@ -337,10 +271,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+   
     Ok(())
 }
 
@@ -378,10 +309,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     
 //     // Release the lock before cleanup
 //     drop(chat);
-    
-//     // Cleanup only if this is the last test
-//     cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+     
 //     Ok(())
 // }
 
@@ -392,7 +320,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent set-default with valid arguments... | Description: Tests the <code> /agent set-default</code> command with valid arguments to set default agent. Verifies success messages and confirmation of default agent configuration");
     
-    let session = get_chat_session();
+    let session =q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent set-default -n q_cli_default")?;
@@ -419,9 +347,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
+
     
     Ok(())
 }
@@ -433,7 +359,7 @@ fn test_agent_set_default_command() -> Result<(), Box<dyn std::error::Error>> {
 fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n🔍 Testing /agent set-default without required arguments... | Description: Tests the <code> /agent set-default</code> command without required arguments to verify error handling. Verifies error messages, usage information, and available options display");
     
-    let session = get_chat_session();
+    let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     let response = chat.execute_command("/agent set-default")?;
@@ -469,9 +395,6 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
     
     // Release the lock before cleanup
     drop(chat);
-    
-    // Cleanup only if this is the last test
-    cleanup_if_last_test(&TEST_COUNT, TOTAL_TESTS)?;
-    
+   
     Ok(())
 }
