@@ -10,6 +10,7 @@ pub mod knowledge;
 pub mod logdump;
 pub mod mcp;
 pub mod model;
+pub mod paste;
 pub mod persist;
 pub mod profile;
 pub mod prompts;
@@ -32,6 +33,7 @@ use knowledge::KnowledgeSubcommand;
 use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
+use paste::PasteArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
@@ -122,6 +124,8 @@ pub enum SlashCommand {
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
+    /// Paste an image from clipboard
+    Paste(PasteArgs),
 }
 
 impl SlashCommand {
@@ -190,6 +194,7 @@ impl SlashCommand {
             // },
             Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
+            Self::Paste(args) => args.execute(os, session).await,
         }
     }
 
@@ -222,6 +227,7 @@ impl SlashCommand {
             },
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
+            Self::Paste(_) => "paste",
         }
     }
 

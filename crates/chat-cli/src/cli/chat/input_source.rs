@@ -1,17 +1,16 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
 
-use super::prompt::{
-    PromptQueryResponseReceiver,
-    PromptQuerySender,
-    rl,
-};
+use super::prompt::{PasteState, PromptQueryResponseReceiver, PromptQuerySender, rl};
 #[cfg(unix)]
 use super::skim_integration::SkimCommandSelector;
 use crate::os::Os;
 
 #[derive(Debug)]
-pub struct InputSource(inner::Inner);
+pub struct InputSource {
+    inner: inner::Inner,
+    paste_state: PasteState,
+}
 
 mod inner {
     use rustyline::Editor;
@@ -38,12 +37,16 @@ impl Drop for InputSource {
 }
 impl InputSource {
     pub fn new(os: &Os, sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Result<Self> {
-        Ok(Self(inner::Inner::Readline(rl(os, sender, receiver)?)))
+        let paste_state = PasteState::new();
+        Ok(Self {
+            inner: inner::Inner::Readline(rl(os, sender, receiver, paste_state.clone())?),
+            paste_state,
+        })
     }
 
     /// Save history to file
     pub fn save_history(&mut self) -> Result<()> {
-        if let inner::Inner::Readline(rl) = &mut self.0 {
+        if let inner::Inner::Readline(rl) = &mut self.inner {
             if let Some(helper) = rl.helper() {
                 let history_path = helper.get_history_path();
 
@@ -65,14 +68,11 @@ impl InputSource {
         context_manager: std::sync::Arc<super::context::ContextManager>,
         tool_names: Vec<String>,
     ) {
-        use rustyline::{
-            EventHandler,
-            KeyEvent,
-        };
+        use rustyline::{EventHandler, KeyEvent};
 
         use crate::database::settings::Setting;
 
-        if let inner::Inner::Readline(rl) = &mut self.0 {
+        if let inner::Inner::Readline(rl) = &mut self.inner {
             let key_char = match os.database.settings.get_string(Setting::SkimCommandKey) {
                 Some(key) if key.len() == 1 => key.chars().next().unwrap_or('s'),
                 _ => 's', // Default to 's' if setting is missing or invalid
@@ -90,11 +90,14 @@ impl InputSource {
 
     #[allow(dead_code)]
     pub fn new_mock(lines: Vec<String>) -> Self {
-        Self(inner::Inner::Mock { index: 0, lines })
+        Self {
+            inner: inner::Inner::Mock { index: 0, lines },
+            paste_state: PasteState::new(),
+        }
     }
 
     pub fn read_line(&mut self, prompt: Option<&str>) -> Result<Option<String>, ReadlineError> {
-        match &mut self.0 {
+        match &mut self.inner {
             inner::Inner::Readline(rl) => {
                 let prompt = prompt.unwrap_or_default();
                 let curr_line = rl.readline(prompt);
@@ -131,10 +134,20 @@ impl InputSource {
     // We're keeping this method for potential future use
     #[allow(dead_code)]
     pub fn set_buffer(&mut self, content: &str) {
-        if let inner::Inner::Readline(rl) = &mut self.0 {
+        if let inner::Inner::Readline(rl) = &mut self.inner {
             // Add to history so user can access it with up arrow
             let _ = rl.add_history_entry(content);
         }
+    }
+
+    /// Check if clipboard pastes were triggered and return all paths
+    pub fn take_clipboard_pastes(&mut self) -> Vec<std::path::PathBuf> {
+        self.paste_state.take_all()
+    }
+    
+    /// Reset the paste counter (called after submitting a message)
+    pub fn reset_paste_count(&mut self) {
+        self.paste_state.reset_count();
     }
 }
 

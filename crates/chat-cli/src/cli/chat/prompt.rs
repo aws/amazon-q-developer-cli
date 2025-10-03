@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 use eyre::Result;
 use rustyline::completion::{
@@ -51,6 +52,50 @@ use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
 
+use super::util::clipboard::{paste_image_from_clipboard, ClipboardError};
+
+/// Shared state for clipboard paste operations triggered by Ctrl+V
+#[derive(Clone, Debug)]
+pub struct PasteState {
+    inner: Arc<Mutex<PasteStateInner>>,
+}
+
+#[derive(Debug)]
+struct PasteStateInner {
+    paths: Vec<PathBuf>,
+    count: usize,
+}
+
+impl PasteState {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PasteStateInner {
+                paths: Vec::new(),
+                count: 0,
+            })),
+        }
+    }
+
+    pub fn add(&self, path: PathBuf) -> usize {
+        let mut inner = self.inner.lock().unwrap();
+        inner.paths.push(path);
+        inner.count += 1;
+        inner.count
+    }
+
+    pub fn take_all(&self) -> Vec<PathBuf> {
+        let mut inner = self.inner.lock().unwrap();
+        let paths = std::mem::take(&mut inner.paths);
+        inner.count = 0;
+        paths
+    }
+
+    pub fn reset_count(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.count = 0;
+    }
+}
+
 pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
@@ -97,6 +142,7 @@ pub const COMMANDS: &[&str] = &[
     "/changelog",
     "/save",
     "/load",
+    "/paste",
     "/subscribe",
 ];
 
@@ -455,10 +501,54 @@ impl Highlighter for ChatHelper {
     }
 }
 
+/// Handler for pasting images from clipboard via Ctrl+V
+/// 
+/// This stores the pasted image path in shared state and inserts a marker.
+/// The marker causes readline to return, and the chat loop handles the paste automatically.
+struct PasteImageHandler {
+    paste_state: PasteState,
+}
+
+impl PasteImageHandler {
+    fn new(paste_state: PasteState) -> Self {
+        Self { paste_state }
+    }
+}
+
+impl rustyline::ConditionalEventHandler for PasteImageHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        _ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        match paste_image_from_clipboard() {
+            Ok(path) => {
+                // Store the full path in shared state and get the count
+                let count = self.paste_state.add(path);
+                
+                // Insert [Image #N] marker so user sees what they're pasting
+                // User presses Enter to submit
+                Some(Cmd::Insert(1, format!("[Image #{}]", count)))
+            }
+            Err(ClipboardError::NoImage) => {
+                // Silent fail - no image to paste
+                Some(Cmd::Noop)
+            }
+            Err(_) => {
+                // Could log error, but don't interrupt user
+                Some(Cmd::Noop)
+            }
+        }
+    }
+}
+
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
     receiver: PromptQueryResponseReceiver,
+    paste_state: PasteState,
 ) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -527,6 +617,12 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char(tangent_key_char), Modifiers::CTRL),
         EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
+    );
+
+    // Add custom keybinding for Ctrl+V to paste images from clipboard
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
+        EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
     );
 
     Ok(rl)
@@ -844,7 +940,8 @@ mod tests {
 
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
-        let mut test_editor = rl(&mock_os, sender, receiver).unwrap();
+        let paste_state = PasteState::new();
+        let mut test_editor = rl(&mock_os, sender, receiver, paste_state).unwrap();
 
         // Reserved Emacs keybindings that should not be overridden
         let reserved_keys = ['a', 'e', 'f', 'b', 'k'];
