@@ -28,7 +28,12 @@ use rmcp::model::{
     PromptMessageContent,
     PromptMessageRole,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use serde_json::Value;
+use serde_yaml;
 use thiserror::Error;
 use unicode_width::UnicodeWidthStr;
 
@@ -50,7 +55,12 @@ use crate::util::directories::{
 const MAX_PROMPT_NAME_LENGTH: usize = 50;
 
 /// Regex for validating prompt names (alphanumeric, hyphens, underscores only)
-static PROMPT_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
+static PROMPT_NAME_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").expect("Invalid prompt name regex"));
+
+/// Regex for detecting {{placeholder}} patterns in prompt content
+static PLACEHOLDER_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{\{(\w+)\}\}").expect("Invalid placeholder regex"));
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
@@ -76,6 +86,179 @@ pub enum GetPromptError {
     Service(#[from] rmcp::ServiceError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
+}
+
+// ============================================================================
+// ERROR TYPES
+// ============================================================================
+
+/// Error types for file-based prompt argument processing
+#[derive(Debug, Error)]
+enum PromptArgumentError {
+    #[error("Missing required arguments: {0}")]
+    MissingRequired(String),
+    #[error("Invalid YAML frontmatter: {0}")]
+    InvalidYaml(String),
+    #[error("Invalid argument: {0}")]
+    InvalidArgument(String),
+}
+
+impl From<PromptArgumentError> for GetPromptError {
+    fn from(err: PromptArgumentError) -> Self {
+        GetPromptError::General(err.into())
+    }
+}
+
+// ============================================================================
+// YAML FRONTMATTER PARSING
+// ============================================================================
+
+/// Metadata structure for file-based prompts with frontmatter
+#[derive(Debug, Clone, Deserialize, Serialize)]
+struct FilePromptMetadata {
+    description: Option<String>,
+    arguments: Option<Vec<rmcp::model::PromptArgument>>,
+}
+
+/// Parse YAML frontmatter from file content if it exists
+fn parse_frontmatter_if_exists(content: &str) -> Result<(String, Option<FilePromptMetadata>), PromptArgumentError> {
+    let (body, mut metadata) = if let Some(stripped) = content.strip_prefix("---\n") {
+        if let Some(end_pos) = stripped.find("\n---\n") {
+            let yaml_content = &stripped[..end_pos];
+            let body = &stripped[end_pos + 5..]; // +5 for "\n---\n"
+
+            let metadata: FilePromptMetadata =
+                serde_yaml::from_str(yaml_content).map_err(|e| PromptArgumentError::InvalidYaml(e.to_string()))?;
+
+            // Basic validation
+            if let Some(args) = &metadata.arguments {
+                for arg in args {
+                    if arg.name.trim().is_empty() {
+                        return Err(PromptArgumentError::InvalidArgument(
+                            "Argument name cannot be empty".to_string(),
+                        ));
+                    }
+                }
+            }
+
+            (body.to_string(), Some(metadata))
+        } else {
+            return Err(PromptArgumentError::InvalidYaml(
+                "Frontmatter missing closing '---'".to_string(),
+            ));
+        }
+    } else {
+        (content.to_string(), None)
+    };
+
+    // Auto-detect arguments from {{}} placeholders in the body
+    let mut detected_args = std::collections::HashSet::new();
+    for cap in PLACEHOLDER_REGEX.captures_iter(&body) {
+        if let Some(arg_name) = cap.get(1) {
+            detected_args.insert(arg_name.as_str().to_string());
+        }
+    }
+
+    // Create or update metadata with detected arguments
+    if !detected_args.is_empty() {
+        let auto_args: Vec<rmcp::model::PromptArgument> = detected_args
+            .into_iter()
+            .map(|name| {
+                rmcp::model::PromptArgument {
+                    name,
+                    description: None,
+                    required: Some(false), // Auto-detected args are optional by default
+                    title: None,
+                }
+            })
+            .collect();
+
+        match metadata {
+            Some(ref mut meta) => {
+                // If frontmatter exists but no arguments declared, use auto-detected ones
+                if meta.arguments.is_none() {
+                    meta.arguments = Some(auto_args);
+                }
+            },
+            None => {
+                // No frontmatter, create metadata with auto-detected arguments
+                metadata = Some(FilePromptMetadata {
+                    description: None,
+                    arguments: Some(auto_args),
+                });
+            },
+        }
+    }
+
+    Ok((body, metadata))
+}
+
+// ============================================================================
+// ARGUMENT VALIDATION & PROCESSING
+// ============================================================================
+
+/// Process file arguments with simple string replacement (positional only)
+fn process_file_arguments(
+    content: &str,
+    arguments: &[rmcp::model::PromptArgument],
+    provided_args: &[String],
+) -> Result<String, PromptArgumentError> {
+    // Validate argument names
+    for arg in arguments {
+        if arg.name.trim().is_empty() || !arg.name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            return Err(PromptArgumentError::InvalidArgument(format!(
+                "Invalid argument name: '{}'",
+                arg.name
+            )));
+        }
+    }
+
+    // Find required arguments and check if they're provided
+    let required_args: Vec<_> = arguments
+        .iter()
+        .enumerate()
+        .filter(|(_, arg)| arg.required == Some(true))
+        .collect();
+
+    let missing_required: Vec<_> = required_args
+        .iter()
+        .filter(|(i, _)| *i >= provided_args.len())
+        .map(|(_, arg)| arg.name.clone())
+        .collect();
+
+    if !missing_required.is_empty() {
+        return Err(PromptArgumentError::MissingRequired(missing_required.join(", ")));
+    }
+
+    let mut result = content.to_string();
+    let mut replaced_placeholders = std::collections::HashSet::new();
+
+    // Replace provided arguments
+    for (i, value) in provided_args.iter().enumerate() {
+        if let Some(arg) = arguments.get(i) {
+            let placeholder = format!("{{{{{}}}}}", arg.name);
+            if result.contains(&placeholder) {
+                result = result.replace(&placeholder, value);
+                replaced_placeholders.insert(&arg.name);
+            }
+        }
+    }
+
+    // Check for unreplaced placeholders
+    let remaining_placeholders: Vec<_> = PLACEHOLDER_REGEX
+        .captures_iter(&result)
+        .filter_map(|cap| cap.get(1))
+        .map(|m| m.as_str())
+        .collect();
+
+    if !remaining_placeholders.is_empty() {
+        return Err(PromptArgumentError::InvalidArgument(format!(
+            "Unreplaced placeholders: {}",
+            remaining_placeholders.join(", ")
+        )));
+    }
+
+    Ok(result)
 }
 
 /// Represents a single prompt (local or global)
@@ -151,13 +334,15 @@ impl Prompts {
     }
 
     /// Find and load existing prompt content (local takes priority)
-    fn load_existing(&self) -> Result<Option<(String, PathBuf)>, GetPromptError> {
+    fn load_existing(&self) -> Result<Option<(String, PathBuf, Option<FilePromptMetadata>)>, GetPromptError> {
         if self.local.exists() {
             let content = self.local.load_content()?;
-            Ok(Some((content, self.local.path.clone())))
+            let (body, metadata) = parse_frontmatter_if_exists(&content)?;
+            Ok(Some((body, self.local.path.clone(), metadata)))
         } else if self.global.exists() {
             let content = self.global.load_content()?;
-            Ok(Some((content, self.global.path.clone())))
+            let (body, metadata) = parse_frontmatter_if_exists(&content)?;
+            Ok(Some((body, self.global.path.clone(), metadata)))
         } else {
             Ok(None)
         }
@@ -739,10 +924,7 @@ impl PromptsArgs {
                     style::SetAttribute(Attribute::Reset),
                     style::Print("\n"),
                 )?;
-                for name in &global_prompts {
-                    queue!(session.stderr, style::Print("- "), style::Print(name))?;
-                    queue!(session.stderr, style::Print("\n"))?;
-                }
+                Self::display_file_prompts_table(&global_prompts, os, session, description_pos, arguments_pos, false)?;
             }
 
             if !local_prompts.is_empty() {
@@ -756,20 +938,7 @@ impl PromptsArgs {
                     style::SetAttribute(Attribute::Reset),
                     style::Print("\n"),
                 )?;
-                for name in &local_prompts {
-                    let has_global_version = overridden_globals.contains(name);
-                    queue!(session.stderr, style::Print("- "), style::Print(name),)?;
-                    if has_global_version {
-                        queue!(
-                            session.stderr,
-                            style::SetForegroundColor(Color::Green),
-                            style::Print(" (overrides global)"),
-                            style::SetForegroundColor(Color::Reset),
-                        )?;
-                    }
-
-                    queue!(session.stderr, style::Print("\n"))?;
-                }
+                Self::display_file_prompts_table(&local_prompts, os, session, description_pos, arguments_pos, true)?;
             }
         }
 
@@ -835,6 +1004,113 @@ impl PromptsArgs {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    fn display_file_prompts_table(
+        prompt_names: &[&&String],
+        os: &Os,
+        session: &mut ChatSession,
+        description_pos: usize,
+        arguments_pos: usize,
+        show_overrides: bool,
+    ) -> Result<(), ChatError> {
+        let overridden_globals: Vec<_> = if show_overrides {
+            prompt_names
+                .iter()
+                .filter(|name| {
+                    if let Ok(prompts) = Prompts::new(name, os) {
+                        prompts.local.exists() && prompts.global.exists()
+                    } else {
+                        false
+                    }
+                })
+                .map(|s| s.as_str())
+                .collect()
+        } else {
+            Vec::new()
+        };
+
+        for name in prompt_names {
+            // Load metadata for this prompt
+            let metadata = if let Ok(prompts) = Prompts::new(name, os) {
+                if let Ok(Some((_content, _path, metadata))) = prompts.load_existing() {
+                    metadata
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            // Display prompt name
+            queue!(session.stderr, style::Print("- "), style::Print(name))?;
+
+            // Add override indicator if needed
+            if show_overrides && overridden_globals.contains(&name.as_str()) {
+                queue!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Green),
+                    style::Print(" (overrides global)"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+            }
+
+            // Calculate current position and add description
+            let name_width = UnicodeWidthStr::width(name.as_str()) + 2; // +2 for "- "
+            let override_width = if show_overrides && overridden_globals.contains(&name.as_str()) {
+                UnicodeWidthStr::width(" (overrides global)")
+            } else {
+                0
+            };
+            let current_pos = name_width + override_width;
+
+            if let Some(ref meta) = metadata {
+                let desc_width = if let Some(ref desc) = meta.description {
+                    let truncated_desc = truncate_description(desc, 40);
+                    let description_padding = description_pos.saturating_sub(current_pos);
+                    queue!(
+                        session.stderr,
+                        style::Print(" ".repeat(description_padding)),
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print(&truncated_desc),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+                    UnicodeWidthStr::width(truncated_desc.as_str())
+                } else {
+                    // No description, just add padding to description column
+                    let description_padding = description_pos.saturating_sub(current_pos);
+                    queue!(session.stderr, style::Print(" ".repeat(description_padding)))?;
+                    0
+                };
+
+                // Display arguments if they exist
+                if let Some(ref args) = meta.arguments {
+                    if !args.is_empty() {
+                        let arguments_padding = arguments_pos.saturating_sub(description_pos + desc_width);
+                        queue!(session.stderr, style::Print(" ".repeat(arguments_padding)))?;
+
+                        let mut arg_parts = Vec::new();
+                        for arg in args {
+                            if arg.required.unwrap_or(false) {
+                                arg_parts.push(format!("{}*", arg.name));
+                            } else {
+                                arg_parts.push(arg.name.clone());
+                            }
+                        }
+                        let args_display = arg_parts.join(", ");
+                        queue!(
+                            session.stderr,
+                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(&args_display),
+                            style::SetForegroundColor(Color::Reset),
+                        )?;
+                    }
+                }
+            }
+
+            queue!(session.stderr, style::Print("\n"))?;
+        }
+        Ok(())
     }
 
     pub fn subcommand_name(&self) -> Option<&'static str> {
@@ -919,7 +1195,7 @@ impl PromptsSubcommand {
     async fn execute_details(name: String, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // First try to find file-based prompt (global or local)
         let file_prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-        if let Some((content, source)) = file_prompts
+        if let Some((content, source, metadata)) = file_prompts
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
         {
@@ -947,7 +1223,7 @@ impl PromptsSubcommand {
             }
 
             // Display file-based prompt details
-            Self::display_file_prompt_details(&name, &content, &source, session)?;
+            Self::display_file_prompt_details(&name, &content, &source, &metadata, session)?;
             execute!(session.stderr, style::Print("\n"))?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1214,6 +1490,7 @@ impl PromptsSubcommand {
         name: &str,
         content: &str,
         source: &Path,
+        metadata: &Option<FilePromptMetadata>,
         session: &mut ChatSession,
     ) -> Result<(), ChatError> {
         let terminal_width = session.terminal_width();
@@ -1246,6 +1523,104 @@ impl PromptsSubcommand {
             style::SetForegroundColor(Color::Reset),
             style::Print("\n\n"),
         )?;
+
+        // Display description if available
+        if let Some(meta) = metadata {
+            if let Some(desc) = &meta.description {
+                queue!(
+                    session.stderr,
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("Description:"),
+                    style::SetAttribute(Attribute::Reset),
+                    style::Print("\n"),
+                    style::Print("  "),
+                    style::Print(desc),
+                    style::Print("\n\n"),
+                )?;
+            }
+        }
+
+        // Display usage example
+        queue!(
+            session.stderr,
+            style::SetAttribute(Attribute::Bold),
+            style::Print("Usage: "),
+            style::SetAttribute(Attribute::Reset),
+            style::SetForegroundColor(Color::Green),
+            style::Print("@"),
+            style::Print(name),
+        )?;
+
+        // Show arguments in usage if available
+        if let Some(meta) = metadata {
+            if let Some(args) = &meta.arguments {
+                for arg in args {
+                    match arg.required {
+                        Some(true) => {
+                            queue!(
+                                session.stderr,
+                                style::Print(" <"),
+                                style::Print(&arg.name),
+                                style::Print(">")
+                            )?;
+                        },
+                        _ => {
+                            queue!(
+                                session.stderr,
+                                style::Print(" ["),
+                                style::Print(&arg.name),
+                                style::Print("]")
+                            )?;
+                        },
+                    }
+                }
+            }
+        }
+
+        queue!(
+            session.stderr,
+            style::SetForegroundColor(Color::Reset),
+            style::Print("\n\n"),
+        )?;
+
+        // Display arguments section if available
+        if let Some(meta) = metadata {
+            if let Some(args) = &meta.arguments {
+                queue!(
+                    session.stderr,
+                    style::SetAttribute(Attribute::Bold),
+                    style::Print("Arguments:"),
+                    style::SetAttribute(Attribute::Reset),
+                    style::Print("\n"),
+                )?;
+
+                for arg in args {
+                    queue!(
+                        session.stderr,
+                        style::Print("  "),
+                        style::SetForegroundColor(if arg.required == Some(true) {
+                            Color::Red
+                        } else {
+                            Color::DarkGrey
+                        }),
+                        style::Print(if arg.required == Some(true) {
+                            "(required) "
+                        } else {
+                            "(optional) "
+                        }),
+                        style::SetForegroundColor(Color::Cyan),
+                        style::Print(&arg.name),
+                        style::SetForegroundColor(Color::Reset),
+                    )?;
+
+                    if let Some(desc) = &arg.description {
+                        queue!(session.stderr, style::Print(" - "), style::Print(desc))?;
+                    }
+                    queue!(session.stderr, style::Print("\n"))?;
+                }
+                queue!(session.stderr, style::Print("\n"))?;
+            }
+        }
 
         // Display usage example
         queue!(
@@ -1306,7 +1681,7 @@ impl PromptsSubcommand {
     ) -> Result<ChatState, ChatError> {
         // First try to find prompt (global or local)
         let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-        if let Some((content, _)) = prompts
+        if let Some((content, _, metadata)) = prompts
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
         {
@@ -1333,16 +1708,28 @@ impl PromptsSubcommand {
                 execute!(session.stderr)?;
             }
 
+            // Process arguments if metadata and arguments exist
+            let final_content = if let (Some(meta), Some(args)) = (&metadata, &arguments) {
+                if let Some(prompt_args) = &meta.arguments {
+                    process_file_arguments(&content, prompt_args, args)
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                } else {
+                    content
+                }
+            } else {
+                content
+            };
+
             // Display the file-based prompt content to the user
-            display_file_prompt_content(&name, &content, session)?;
+            display_file_prompt_content(&name, &final_content, session)?;
 
             // Handle local prompt
             session.pending_prompts.clear();
 
-            // Create a PromptMessage from the local prompt content
+            // Create a PromptMessage from the processed prompt content
             let prompt_message = PromptMessage {
                 role: PromptMessageRole::User,
-                content: PromptMessageContent::Text { text: content.clone() },
+                content: PromptMessageContent::Text { text: final_content },
             };
             session.pending_prompts.push_back(prompt_message);
 
@@ -2061,6 +2448,245 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+
+    #[test]
+    fn test_parse_frontmatter_if_exists() {
+        // Test with frontmatter
+        let content_with_frontmatter = r#"---
+description: "Test prompt"
+arguments:
+  - name: "city"
+    description: "City name"
+    required: true
+---
+
+Get weather for {{city}}."#;
+
+        let (body, metadata) = parse_frontmatter_if_exists(content_with_frontmatter).unwrap();
+        assert_eq!(body.trim(), "Get weather for {{city}}.");
+        assert!(metadata.is_some());
+        let meta = metadata.unwrap();
+        assert_eq!(meta.description, Some("Test prompt".to_string()));
+        assert!(meta.arguments.is_some());
+
+        // Test without frontmatter
+        let content_without = "Simple prompt content";
+        let (body, metadata) = parse_frontmatter_if_exists(content_without).unwrap();
+        assert_eq!(body, "Simple prompt content");
+        assert!(metadata.is_none());
+
+        // Test invalid frontmatter
+        let invalid_frontmatter = "---\ninvalid: yaml: content\n---\nBody";
+        assert!(parse_frontmatter_if_exists(invalid_frontmatter).is_err());
+    }
+
+    #[test]
+    fn test_auto_detect_arguments_from_placeholders() {
+        let content = "Write a {{language}} function that uses {{framework}} with {{style}} coding practices.";
+        let (body, metadata) = parse_frontmatter_if_exists(content).unwrap();
+
+        assert_eq!(body, content);
+        assert!(metadata.is_some());
+
+        let meta = metadata.unwrap();
+        assert!(meta.description.is_none());
+        assert!(meta.arguments.is_some());
+
+        let args = meta.arguments.unwrap();
+        assert_eq!(args.len(), 3);
+
+        let arg_names: std::collections::HashSet<_> = args.iter().map(|a| &a.name).collect();
+        assert!(arg_names.contains(&"language".to_string()));
+        assert!(arg_names.contains(&"framework".to_string()));
+        assert!(arg_names.contains(&"style".to_string()));
+
+        // All auto-detected args should be optional
+        for arg in &args {
+            assert_eq!(arg.required, Some(false));
+            assert!(arg.description.is_none());
+        }
+    }
+
+    #[test]
+    fn test_plain_text_with_placeholders() {
+        let content =
+            "Today's date in {{format}} format is: {{date}}\n\nPlease use {{timezone}} timezone for the calculation.";
+        let (body, metadata) = parse_frontmatter_if_exists(content).unwrap();
+
+        assert_eq!(body, content);
+        assert!(metadata.is_some());
+
+        let meta = metadata.unwrap();
+        assert!(meta.description.is_none()); // Description should be blank/None
+        assert!(meta.arguments.is_some());
+
+        let args = meta.arguments.unwrap();
+        assert_eq!(args.len(), 3);
+
+        let arg_names: std::collections::HashSet<_> = args.iter().map(|a| &a.name).collect();
+        assert!(arg_names.contains(&"format".to_string()));
+        assert!(arg_names.contains(&"date".to_string()));
+        assert!(arg_names.contains(&"timezone".to_string()));
+
+        // All should be optional with no description
+        for arg in &args {
+            assert_eq!(arg.required, Some(false));
+            assert!(arg.description.is_none());
+        }
+    }
+
+    #[test]
+    fn test_process_file_arguments() {
+        let content = "Weather for {{city}} in {{units}}.";
+        let args = vec![
+            PromptArgument {
+                name: "city".to_string(),
+                description: Some("City name".to_string()),
+                required: Some(true),
+                title: None,
+            },
+            PromptArgument {
+                name: "units".to_string(),
+                description: Some("Temperature units".to_string()),
+                required: Some(false),
+                title: None,
+            },
+        ];
+        let provided = vec!["Tokyo".to_string(), "celsius".to_string()];
+
+        let result = process_file_arguments(content, &args, &provided);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Weather for Tokyo in celsius.");
+
+        // Test missing required arguments
+        let insufficient_args = vec![];
+        let result = process_file_arguments(content, &args, &insufficient_args);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Missing required arguments: city"));
+        }
+
+        // Test invalid argument name
+        let invalid_args = vec![PromptArgument {
+            name: "invalid name!".to_string(),
+            description: None,
+            required: Some(false),
+            title: None,
+        }];
+        let result = process_file_arguments("test", &invalid_args, &vec![]);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            assert!(e.to_string().contains("Invalid argument name"));
+        }
+    }
+
+    #[test]
+    fn test_file_prompt_with_arguments() {
+        let temp_dir = TempDir::new().unwrap();
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
+
+        let content = r#"---
+description: "Weather prompt"
+arguments:
+  - name: "city"
+    description: "City name"
+    required: true
+---
+
+Weather for {{city}}."#;
+
+        create_prompt_file(&local_dir, "weather", content);
+
+        // Test that file can be parsed
+        let file_content = fs::read_to_string(local_dir.join("weather.md")).unwrap();
+        let (body, metadata) = parse_frontmatter_if_exists(&file_content).unwrap();
+
+        assert!(metadata.is_some());
+        let meta = metadata.unwrap();
+        assert_eq!(meta.description, Some("Weather prompt".to_string()));
+        assert!(meta.arguments.is_some());
+        assert_eq!(body.trim(), "Weather for {{city}}.");
+    }
+
+    #[test]
+    fn test_backward_compatibility() {
+        let temp_dir = TempDir::new().unwrap();
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
+
+        // Test file without frontmatter (existing behavior)
+        create_prompt_file(&local_dir, "simple", "Simple prompt content");
+
+        let file_content = fs::read_to_string(local_dir.join("simple.md")).unwrap();
+        let (body, metadata) = parse_frontmatter_if_exists(&file_content).unwrap();
+
+        assert_eq!(body, "Simple prompt content");
+        assert!(metadata.is_none());
+    }
+
+    #[test]
+    fn test_frontmatter_edge_cases() {
+        // Test empty frontmatter - needs proper format with newlines
+        let empty_frontmatter = "---\n\n---\nContent";
+        let (body, metadata) = parse_frontmatter_if_exists(empty_frontmatter).unwrap();
+        assert_eq!(body.trim(), "Content");
+        assert!(metadata.is_some());
+
+        // Test frontmatter without closing - should error
+        let incomplete = "---\ndescription: test\nContent";
+        let result = parse_frontmatter_if_exists(incomplete);
+        assert!(result.is_err());
+
+        // Test content with placeholders but no frontmatter - should auto-detect
+        let no_frontmatter = "Hello {{name}}, welcome to {{place}}!";
+        let (body, metadata) = parse_frontmatter_if_exists(no_frontmatter).unwrap();
+        assert_eq!(body, no_frontmatter);
+        assert!(metadata.is_some());
+        let meta = metadata.unwrap();
+        assert!(meta.arguments.is_some());
+        assert_eq!(meta.arguments.unwrap().len(), 2);
+    }
+
+    #[test]
+    fn test_debug_actual_file() {
+        let content = "# Get date \n\nShow only date in {{time}}\nformat: YYYYMMDD\n\nDon't show anything except date";
+        let (body, metadata) = parse_frontmatter_if_exists(content).unwrap();
+
+        println!("Body: {:?}", body);
+        println!("Metadata: {:?}", metadata);
+
+        assert_eq!(body, content);
+        assert!(metadata.is_some());
+
+        let meta = metadata.unwrap();
+        assert!(meta.description.is_none());
+        assert!(meta.arguments.is_some());
+
+        let args = meta.arguments.unwrap();
+        assert_eq!(args.len(), 1);
+        assert_eq!(args[0].name, "time");
+    }
+
+    #[test]
+    fn test_argument_validation() {
+        // Test empty argument name
+        let invalid_content = r#"---
+description: "Test prompt"
+arguments:
+  - name: ""
+    description: "Empty name"
+    required: true
+---
+Content"#;
+
+        let result = parse_frontmatter_if_exists(invalid_content);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Argument name cannot be empty")
+        );
+    }
 
     fn create_prompt_file(dir: &PathBuf, name: &str, content: &str) {
         fs::create_dir_all(dir).unwrap();
