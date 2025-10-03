@@ -166,7 +166,7 @@
                 // Only show success message if explicitly marked as successful
                 // This prevents showing success when token exchange might still fail
                 if (success === 'true') {
-                    const productName = 'Amazon Q for CLI';
+                    const productName = 'KIRO CLI';
                     document.getElementById('approvalMessage').innerText = 
                         `${productName} has been granted given requested permissions.`;
                     document.getElementById('footerText').innerText = 
@@ -190,7 +190,7 @@
                     const decodedError = decodeURIComponent(errorParam);
 
                     if (decodedError === 'access_denied' || decodedError.includes('denied')) {
-                        errorMessage = 'You cancelled the authentication or denied access. Amazon Q for CLI requires the requested permissions to function properly.';
+                        errorMessage = 'You cancelled the authentication or denied access. Kiro CLI requires the requested permissions to function properly.';
                     } else if (decodedError.includes('invalid') || decodedError.includes('invitation')) {
                         errorMessage = 'Invalid access code. Please check your invitation code and try again.';
                     } else if (decodedError.includes('timeout')) {
