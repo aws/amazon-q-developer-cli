@@ -149,7 +149,7 @@ impl LoginArgs {
 
                 match start_social_login(os, provider, first_code).await {
                     Ok(_) => {
-                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider));
+                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider)).await;
                         spinner.stop_with_message(format!("Logged in with {}", provider));
                     },
                     Err(err) => {
@@ -176,7 +176,7 @@ impl LoginArgs {
 
                                 match start_social_login(os, provider, Some(code)).await {
                                     Ok(_) => {
-                                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider));
+                                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider)).await;
                                         spinner2.stop_with_message(format!("Logged in with {}", provider));
                                     },
                                     Err(e2) => {
@@ -218,6 +218,8 @@ impl LoginArgs {
                 };
 
                 // Existing BuilderId/IDC flow
+                // Remote machine won't be able to handle browser opening and redirects,
+                // hence always use device code flow.
                 if is_remote() || self.use_device_flow {
                     try_device_authorization(os, start_url.clone(), region.clone()).await?;
                 } else {
@@ -238,7 +240,7 @@ impl LoginArgs {
                                     exit(1);
                                 },
                             }
-                            let _ = os.telemetry.send_user_logged_in(&os.database, None);
+                            let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
                             spinner.stop_with_message("Logged in".into());
                         },
                         // If we are unable to open the link with the browser, then fallback to
@@ -265,6 +267,7 @@ impl LoginArgs {
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     let _ = crate::auth::logout(&mut os.database).await;
     let _ = crate::auth::social::logout_social(&os.database).await;
+
     eprintln!("You are now logged out");
     eprintln!(
         "Run {} to log back in to {PRODUCT_NAME}",
@@ -427,7 +430,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                let _ = os.telemetry.send_user_logged_in(&os.database, None);
+                let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
                 spinner.stop_with_message("Logged in".into());
                 break;
             },

@@ -2,6 +2,7 @@ pub mod builder_id;
 mod consts;
 pub mod pkce;
 mod scope;
+
 pub mod social;
 use aws_sdk_ssooidc::config::{
     ConfigBag,

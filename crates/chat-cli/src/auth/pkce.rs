@@ -299,7 +299,7 @@ impl PkceRegistration {
         //    keep-alive
         let (code_tx, mut code_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
         let (stream, _) = listener.accept().await?;
-        let stream = TokioIo::new(stream);
+        let stream = TokioIo::new(stream); // Wrapper to implement Hyper IO traits for Tokio types.
         let host = listener.local_addr()?.to_string();
 
         tokio::spawn(async move {
