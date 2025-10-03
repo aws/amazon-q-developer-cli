@@ -382,8 +382,7 @@ fn sanitize_user_prompt(input: &str) -> String {
     const MAX_LEN: usize = 4096;
 
     let truncated = if input.len() > MAX_LEN {
-        let end = (0..=MAX_LEN).rev().find(|&i| input.is_char_boundary(i)).unwrap_or(0);
-        &input[..end]
+        truncate_safe(input, MAX_LEN)
     } else {
         input
     };
