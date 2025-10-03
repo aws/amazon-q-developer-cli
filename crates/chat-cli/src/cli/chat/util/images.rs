@@ -283,18 +283,15 @@ mod tests {
 
     #[test]
     fn test_pasted_image_paths_processed_correctly() {
-        let temp_file = tempfile::Builder::new()
-            .suffix(".png")
-            .tempfile()
-            .unwrap();
-        
+        let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
         std::fs::write(temp_file.path(), b"fake_png_data").unwrap();
-        
+
         let path = temp_file.path().to_string_lossy().to_string();
         let mut output = vec![];
-        
+
         let images = handle_images_from_paths(&mut output, &[path.clone()]);
-        
+
         // Verify the image was processed correctly
         assert_eq!(images.len(), 1, "Should process one pasted image");
         assert_eq!(images[0].1.filepath, path, "Filepath should match");
@@ -305,21 +302,18 @@ mod tests {
 
     #[test]
     fn test_pasted_image_size_limit_enforcement() {
-        let temp_file = tempfile::Builder::new()
-            .suffix(".png")
-            .tempfile()
-            .unwrap();
-        
+        let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
         let large_data = vec![0u8; MAX_IMAGE_SIZE + 1];
         std::fs::write(temp_file.path(), &large_data).unwrap();
-        
+
         let path = temp_file.path().to_string_lossy().to_string();
         let mut output = vec![];
-        
+
         let images = handle_images_from_paths(&mut output, &[path]);
-        
+
         assert_eq!(images.len(), 0, "Oversized pasted image should be rejected");
-        
+
         let output_str = output.to_str_lossy();
         assert!(
             output_str.contains("The following images are dropped due to exceeding size limit"),
@@ -334,24 +328,24 @@ mod tests {
     #[test]
     fn test_pasted_image_format_validation() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let supported_formats = vec!["png", "jpg", "jpeg", "gif", "webp"];
         let unsupported_formats = vec!["txt", "pdf", "doc"];
-        
+
         let mut supported_paths = vec![];
         for format in &supported_formats {
             let temp_file = temp_dir.path().join(format!("pasted_image.{}", format));
             std::fs::write(&temp_file, b"fake_image_data").unwrap();
             supported_paths.push(temp_file.to_string_lossy().to_string());
         }
-        
+
         let mut unsupported_paths = vec![];
         for format in &unsupported_formats {
             let temp_file = temp_dir.path().join(format!("pasted_file.{}", format));
             std::fs::write(&temp_file, b"fake_data").unwrap();
             unsupported_paths.push(temp_file.to_string_lossy().to_string());
         }
-        
+
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &supported_paths);
         assert_eq!(
@@ -359,37 +353,30 @@ mod tests {
             supported_formats.len(),
             "All supported formats should be processed"
         );
-        
+
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &unsupported_paths);
-        assert_eq!(
-            images.len(),
-            0,
-            "Unsupported formats should be ignored"
-        );
+        assert_eq!(images.len(), 0, "Unsupported formats should be ignored");
     }
 
     #[test]
     fn test_multiple_pasted_images_in_sequence() {
         let mut paths = vec![];
         let mut temp_files = vec![];
-        
+
         for i in 0..3 {
-            let temp_file = tempfile::Builder::new()
-                .suffix(".png")
-                .tempfile()
-                .unwrap();
-            
+            let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
             std::fs::write(temp_file.path(), format!("fake_image_data_{}", i).as_bytes()).unwrap();
             paths.push(temp_file.path().to_string_lossy().to_string());
             temp_files.push(temp_file); // Keep temp files alive
         }
-        
+
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &paths);
-        
+
         assert_eq!(images.len(), 3, "Should process all pasted images");
-        
+
         for (i, (image_block, metadata)) in images.iter().enumerate() {
             assert!(metadata.filename.ends_with(".png"), "Should have .png extension");
             assert_eq!(image_block.format, ImageFormat::Png, "Format should be PNG");
@@ -400,36 +387,30 @@ mod tests {
     #[test]
     fn test_mixing_pasted_and_manual_image_paths() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let manual_image = temp_dir.path().join("manual_screenshot.jpg");
         std::fs::write(&manual_image, b"manual_image_data").unwrap();
-        
-        let pasted_image1 = tempfile::Builder::new()
-            .suffix(".png")
-            .tempfile()
-            .unwrap();
+
+        let pasted_image1 = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
         std::fs::write(pasted_image1.path(), b"pasted_image_1").unwrap();
-        
-        let pasted_image2 = tempfile::Builder::new()
-            .suffix(".png")
-            .tempfile()
-            .unwrap();
+
+        let pasted_image2 = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
         std::fs::write(pasted_image2.path(), b"pasted_image_2").unwrap();
-        
+
         let paths = vec![
             manual_image.to_string_lossy().to_string(),
             pasted_image1.path().to_string_lossy().to_string(),
             pasted_image2.path().to_string_lossy().to_string(),
         ];
-        
+
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &paths);
-        
+
         assert_eq!(images.len(), 3, "Should process both manual and pasted images");
-        
+
         assert_eq!(images[0].1.filename, "manual_screenshot.jpg");
         assert_eq!(images[0].0.format, ImageFormat::Jpeg);
-        
+
         assert!(images[1].1.filename.ends_with(".png"));
         assert!(images[2].1.filename.ends_with(".png"));
         assert_eq!(images[1].0.format, ImageFormat::Png);
@@ -439,42 +420,36 @@ mod tests {
     #[test]
     fn test_pasted_images_processed_uniformly_with_manual() {
         let temp_dir = tempfile::tempdir().unwrap();
-        
+
         let jpg_manual = temp_dir.path().join("photo.jpg");
         std::fs::write(&jpg_manual, b"jpg_data").unwrap();
-        
-        let png_pasted = tempfile::Builder::new()
-            .suffix(".png")
-            .tempfile()
-            .unwrap();
+
+        let png_pasted = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
         std::fs::write(png_pasted.path(), b"png_data").unwrap();
-        
+
         let gif_manual = temp_dir.path().join("animation.gif");
         std::fs::write(&gif_manual, b"gif_data").unwrap();
-        
-        let webp_pasted = tempfile::Builder::new()
-            .suffix(".webp")
-            .tempfile()
-            .unwrap();
+
+        let webp_pasted = tempfile::Builder::new().suffix(".webp").tempfile().unwrap();
         std::fs::write(webp_pasted.path(), b"webp_data").unwrap();
-        
+
         let paths = vec![
             jpg_manual.to_string_lossy().to_string(),
             png_pasted.path().to_string_lossy().to_string(),
             gif_manual.to_string_lossy().to_string(),
             webp_pasted.path().to_string_lossy().to_string(),
         ];
-        
+
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &paths);
-        
+
         assert_eq!(images.len(), 4, "Should process all images uniformly");
-        
+
         for (image_block, metadata) in &images {
             assert!(!metadata.filename.is_empty(), "Should have filename");
             assert!(!metadata.filepath.is_empty(), "Should have filepath");
             assert!(metadata.size > 0, "Should have size");
-            
+
             match image_block.format {
                 ImageFormat::Jpeg => assert!(metadata.filename.ends_with(".jpg")),
                 ImageFormat::Png => assert!(metadata.filename.ends_with(".png")),

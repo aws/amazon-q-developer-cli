@@ -21,22 +21,17 @@ pub enum ClipboardError {
 /// Returns the path to the temporary file containing the image
 pub fn paste_image_from_clipboard() -> Result<PathBuf, ClipboardError> {
     // Access system clipboard
-    let mut clipboard = arboard::Clipboard::new()
-        .map_err(|e| ClipboardError::AccessDenied(e.to_string()))?;
+    let mut clipboard = arboard::Clipboard::new().map_err(|e| ClipboardError::AccessDenied(e.to_string()))?;
 
     // Retrieve image data from clipboard
-    let image = clipboard
-        .get_image()
-        .map_err(|e| match e {
-            arboard::Error::ContentNotAvailable => ClipboardError::NoImage,
-            arboard::Error::ConversionFailure => ClipboardError::UnsupportedFormat,
-            _ => ClipboardError::AccessDenied(e.to_string()),
-        })?;
+    let image = clipboard.get_image().map_err(|e| match e {
+        arboard::Error::ContentNotAvailable => ClipboardError::NoImage,
+        arboard::Error::ConversionFailure => ClipboardError::UnsupportedFormat,
+        _ => ClipboardError::AccessDenied(e.to_string()),
+    })?;
 
     // Create temporary file with .png extension
-    let temp_file = tempfile::Builder::new()
-        .suffix(".png")
-        .tempfile()?;
+    let temp_file = tempfile::Builder::new().suffix(".png").tempfile()?;
 
     // Convert image to PNG format and write to temp file
     let mut encoder = png::Encoder::new(

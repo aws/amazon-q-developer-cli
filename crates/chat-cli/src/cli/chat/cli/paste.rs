@@ -17,17 +17,11 @@ use crate::os::Os;
 pub struct PasteArgs;
 
 impl PasteArgs {
-    pub async fn execute(
-        self,
-        _os: &mut Os,
-        session: &mut ChatSession,
-    ) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, _os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         match paste_image_from_clipboard() {
-            Ok(path) => {
-                Ok(ChatState::HandleInput {
-                    input: path.display().to_string(),
-                })
-            },
+            Ok(path) => Ok(ChatState::HandleInput {
+                input: path.display().to_string(),
+            }),
             Err(e) => {
                 execute!(
                     session.stderr,

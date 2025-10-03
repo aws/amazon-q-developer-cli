@@ -1,7 +1,10 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use eyre::Result;
 use rustyline::completion::{
@@ -47,12 +50,14 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
+use super::util::clipboard::{
+    ClipboardError,
+    paste_image_from_clipboard,
+};
 use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
-
-use super::util::clipboard::{paste_image_from_clipboard, ClipboardError};
 
 /// Shared state for clipboard paste operations triggered by Ctrl+V
 #[derive(Clone, Debug)]
@@ -502,7 +507,7 @@ impl Highlighter for ChatHelper {
 }
 
 /// Handler for pasting images from clipboard via Ctrl+V
-/// 
+///
 /// This stores the pasted image path in shared state and inserts a marker.
 /// The marker causes readline to return, and the chat loop handles the paste automatically.
 struct PasteImageHandler {
@@ -527,19 +532,19 @@ impl rustyline::ConditionalEventHandler for PasteImageHandler {
             Ok(path) => {
                 // Store the full path in shared state and get the count
                 let count = self.paste_state.add(path);
-                
+
                 // Insert [Image #N] marker so user sees what they're pasting
                 // User presses Enter to submit
                 Some(Cmd::Insert(1, format!("[Image #{}]", count)))
-            }
+            },
             Err(ClipboardError::NoImage) => {
                 // Silent fail - no image to paste
                 Some(Cmd::Noop)
-            }
+            },
             Err(_) => {
                 // Could log error, but don't interrupt user
                 Some(Cmd::Noop)
-            }
+            },
         }
     }
 }

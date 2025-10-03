@@ -1,7 +1,12 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
 
-use super::prompt::{PasteState, PromptQueryResponseReceiver, PromptQuerySender, rl};
+use super::prompt::{
+    PasteState,
+    PromptQueryResponseReceiver,
+    PromptQuerySender,
+    rl,
+};
 #[cfg(unix)]
 use super::skim_integration::SkimCommandSelector;
 use crate::os::Os;
@@ -68,7 +73,10 @@ impl InputSource {
         context_manager: std::sync::Arc<super::context::ContextManager>,
         tool_names: Vec<String>,
     ) {
-        use rustyline::{EventHandler, KeyEvent};
+        use rustyline::{
+            EventHandler,
+            KeyEvent,
+        };
 
         use crate::database::settings::Setting;
 
@@ -144,7 +152,7 @@ impl InputSource {
     pub fn take_clipboard_pastes(&mut self) -> Vec<std::path::PathBuf> {
         self.paste_state.take_all()
     }
-    
+
     /// Reset the paste counter (called after submitting a message)
     pub fn reset_paste_count(&mut self) {
         self.paste_state.reset_count();
