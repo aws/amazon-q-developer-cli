@@ -379,12 +379,11 @@ impl HookExecutor {
 /// Sanitizes a string value to be used as an environment variable
 fn sanitize_user_prompt(input: &str) -> String {
     // Limit the size of input to first 4096 bytes, respecting character boundaries
-    let truncated = if input.len() > 4096 {
-        let mut end = 4096;
-        while end > 0 && !input.is_char_boundary(end) {
-            end -= 1;
-        }
-        &input[0..end]
+    const MAX_LEN: usize = 4096;
+
+    let truncated = if input.len() > MAX_LEN {
+        let end = (0..=MAX_LEN).rev().find(|&i| input.is_char_boundary(i)).unwrap_or(0);
+        &input[..end]
     } else {
         input
     };
