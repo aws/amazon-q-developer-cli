@@ -6,6 +6,8 @@ use regex::Regex;
 use rmcp::model::{
     CallToolRequestParam,
     CallToolResult,
+    ClientCapabilities,
+    ElicitationCapability,
     ClientResult,
     ErrorCode,
     GetPromptRequestParam,
@@ -539,9 +541,18 @@ impl Service<RoleClient> for McpClientService {
             ServerRequest::ListRootsRequest(_) => {
                 Err(rmcp::ErrorData::method_not_found::<rmcp::model::ListRootsRequestMethod>())
             },
-            ServerRequest::CreateElicitationRequest(_) => Err(rmcp::ErrorData::method_not_found::<
-                rmcp::model::ElicitationCreateRequestMethod,
-            >()),
+            ServerRequest::CreateElicitationRequest(request) => {
+                match self.messenger.handle_elicitation_request(request.params).await {
+                    Ok(result) => Ok(rmcp::model::ClientResult::CreateElicitationResult(result)),
+                    Err(e) => {
+                        tracing::error!("Failed to handle elicitation request: {:?}", e);
+                        Err(rmcp::ErrorData::internal_error(
+                            format!("Elicitation failed: {}", e),
+                            None,
+                        ))
+                    },
+                }
+            },
         }
     }
 
@@ -568,7 +579,12 @@ impl Service<RoleClient> for McpClientService {
     fn get_info(&self) -> <RoleClient as rmcp::service::ServiceRole>::Info {
         InitializeRequestParam {
             protocol_version: Default::default(),
-            capabilities: Default::default(),
+            capabilities: ClientCapabilities {
+                elicitation: Some(ElicitationCapability {
+                    schema_validation: Some(true),
+                }),
+                ..Default::default()
+            },
             client_info: Implementation {
                 name: "Q DEV CLI".to_string(),
                 version: "1.0.0".to_string(),
