@@ -27,3 +27,23 @@ fn test_q_update_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     
     Ok(())
 }
+
+/// Tests the q update -h help flag
+#[test]
+#[cfg(all(feature = "q_subcommand", feature = "sanity"))]
+fn test_q_update_help_flag() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing q update -h help flag...");
+    
+    let response = q_chat_helper::execute_q_subcommand("q", &["update", "-h"])?;
+    
+    // Verify exact help output format
+    assert!(response.contains("Usage:") && response.contains("q update") && response.contains("[OPTIONS]"), "Should contain usage line");
+    assert!(response.contains("-y, --non-interactive"), "Should contain non-interactive option");
+    assert!(response.contains("--relaunch-dashboard"), "Should contain relaunch-dashboard option");
+    assert!(response.contains("--rollout"), "Should contain rollout option");
+    assert!(response.contains("-v, --verbose..."), "Should contain verbose option");
+    assert!(response.contains("-h, --help"), "Should contain help option");
+    
+    println!("✅ Update help flag test passed!");
+    Ok(())
+}

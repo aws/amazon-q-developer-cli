@@ -30,3 +30,26 @@ fn test_q_user_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     
     Ok(())
 }
+
+/// Tests the q user -h help flag
+#[test]
+#[cfg(all(feature = "q_subcommand", feature = "sanity"))]
+fn test_q_user_help_flag() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing q user -h help flag...");
+    
+    let response = q_chat_helper::execute_q_subcommand("q", &["user", "-h"])?;
+    
+   // Validate output contains expected help information
+    assert!(response.contains("Usage:") && response.contains("user") && response.contains("[OPTIONS]") && response.contains("<COMMAND>"), "Should contain usage line");
+    assert!(response.contains("Commands:"), "Should contain Commands section");
+    assert!(response.contains("login"), "Should contain login command");
+    assert!(response.contains("logout"), "Should contain logout command");
+    assert!(response.contains("whoami"), "Should contain whoami command");
+    assert!(response.contains("profile"), "Should contain profile command");
+    assert!(response.contains("Options:"), "Should contain Options section");
+    assert!(response.contains("-v, --verbose"), "Should contain verbose option");
+    assert!(response.contains("-h, --help"), "Should contain help option");
+    
+    println!("✅ User help flag test passed!");
+    Ok(())
+}
