@@ -326,12 +326,17 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
 
     // Run Q chat with specific agent in background, non-interactive
     let mut cmd = tokio::process::Command::new("q");
-    cmd.args(["chat", "--agent", agent, task]);
+    cmd.args(["chat", "--non-interactive"]);
+    if agent == DEFAULT_AGENT_NAME {
+        cmd.arg("--trust-all-tools");
+    }
+    cmd.args(["--agent", agent, task]);
 
     // Redirect to capture output (runs silently)
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
+    cmd.envs(std::env::vars());
 
     #[cfg(not(windows))]
     cmd.process_group(0);
