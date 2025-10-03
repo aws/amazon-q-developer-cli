@@ -1402,6 +1402,7 @@ dependencies = [
  "objc2-foundation 0.2.2",
  "security-framework 3.3.0",
  "skim",
+ "thiserror 2.0.14",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",
