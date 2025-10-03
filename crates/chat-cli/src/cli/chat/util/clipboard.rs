@@ -4,7 +4,6 @@ use image::{
     ImageBuffer,
     ImageFormat,
     Rgba,
-    guess_format,
 };
 
 /// Error types for clipboard operations
@@ -40,29 +39,17 @@ pub fn paste_image_from_clipboard() -> Result<PathBuf, ClipboardError> {
         _ => ClipboardError::AccessDenied(e.to_string()),
     })?;
 
-    // Try to guess format from raw bytes, fallback to PNG
-    let format = guess_format(&image_data.bytes).unwrap_or(ImageFormat::Png);
-    let extension = match format {
-        ImageFormat::Png => ".png",
-        ImageFormat::Jpeg => ".jpg",
-        ImageFormat::WebP => ".webp",
-        ImageFormat::Bmp => ".bmp",
-        ImageFormat::Gif => ".gif",
-        ImageFormat::Tiff => ".tiff",
-        _ => ".png", // Default fallback
-    };
-
-    // Create image buffer from clipboard data
+    // Clipboard data is always raw RGBA pixels, save as PNG
     let img_buffer =
         ImageBuffer::<Rgba<u8>, _>::from_raw(image_data.width as u32, image_data.height as u32, image_data.bytes)
             .ok_or(ClipboardError::UnsupportedFormat)?;
 
-    // Create temporary file with detected extension
-    let temp_file = tempfile::Builder::new().suffix(extension).tempfile()?;
+    // Create temporary file with PNG extension
+    let temp_file = tempfile::Builder::new().suffix(".png").tempfile()?;
     let path = temp_file.path().to_path_buf();
 
-    // Save with detected format
-    img_buffer.save_with_format(&path, format)?;
+    // Save as PNG
+    img_buffer.save_with_format(&path, ImageFormat::Png)?;
 
     // Persist the temp file
     temp_file.keep().map_err(|e| std::io::Error::other(e.to_string()))?;

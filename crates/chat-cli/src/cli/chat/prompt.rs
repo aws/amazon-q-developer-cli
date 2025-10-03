@@ -71,36 +71,29 @@ pub struct PasteState {
 #[derive(Debug)]
 struct PasteStateInner {
     paths: Vec<PathBuf>,
-    count: usize,
 }
 
 impl PasteState {
     pub fn new() -> Self {
         Self {
-            inner: Arc::new(Mutex::new(PasteStateInner {
-                paths: Vec::new(),
-                count: 0,
-            })),
+            inner: Arc::new(Mutex::new(PasteStateInner { paths: Vec::new() })),
         }
     }
 
     pub fn add(&self, path: PathBuf) -> usize {
         let mut inner = self.inner.lock().unwrap();
         inner.paths.push(path);
-        inner.count += 1;
-        inner.count
+        inner.paths.len()
     }
 
     pub fn take_all(&self) -> Vec<PathBuf> {
         let mut inner = self.inner.lock().unwrap();
-        let paths = std::mem::take(&mut inner.paths);
-        inner.count = 0;
-        paths
+        std::mem::take(&mut inner.paths)
     }
 
     pub fn reset_count(&self) {
         let mut inner = self.inner.lock().unwrap();
-        inner.count = 0;
+        inner.paths.clear();
     }
 }
 
