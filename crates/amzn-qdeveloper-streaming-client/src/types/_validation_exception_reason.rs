@@ -15,6 +15,7 @@
 ///     ValidationExceptionReason::ContentLengthExceedsThreshold => { /* ... */ },
 ///     ValidationExceptionReason::InvalidConversationId => { /* ... */ },
 ///     ValidationExceptionReason::InvalidKmsGrant => { /* ... */ },
+///     ValidationExceptionReason::InvalidModelId => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
 /// }
@@ -55,6 +56,8 @@ pub enum ValidationExceptionReason {
     InvalidConversationId,
     #[allow(missing_docs)] // documentation missing in model
     InvalidKmsGrant,
+    #[allow(missing_docs)] // documentation missing in model
+    InvalidModelId,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
         note = "Don't directly match on `Unknown`. See the docs on this enum for the correct way to handle unknown variants."
@@ -67,6 +70,7 @@ impl ::std::convert::From<&str> for ValidationExceptionReason {
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD" => ValidationExceptionReason::ContentLengthExceedsThreshold,
             "INVALID_CONVERSATION_ID" => ValidationExceptionReason::InvalidConversationId,
             "INVALID_KMS_GRANT" => ValidationExceptionReason::InvalidKmsGrant,
+            "INVALID_MODEL_ID" => ValidationExceptionReason::InvalidModelId,
             other => ValidationExceptionReason::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
             )),
@@ -87,6 +91,7 @@ impl ValidationExceptionReason {
             ValidationExceptionReason::ContentLengthExceedsThreshold => "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
             ValidationExceptionReason::InvalidConversationId => "INVALID_CONVERSATION_ID",
             ValidationExceptionReason::InvalidKmsGrant => "INVALID_KMS_GRANT",
+            ValidationExceptionReason::InvalidModelId => "INVALID_MODEL_ID",
             ValidationExceptionReason::Unknown(value) => value.as_str(),
         }
     }
@@ -97,6 +102,7 @@ impl ValidationExceptionReason {
             "CONTENT_LENGTH_EXCEEDS_THRESHOLD",
             "INVALID_CONVERSATION_ID",
             "INVALID_KMS_GRANT",
+            "INVALID_MODEL_ID",
         ]
     }
 }
@@ -123,6 +129,7 @@ impl ::std::fmt::Display for ValidationExceptionReason {
             ValidationExceptionReason::ContentLengthExceedsThreshold => write!(f, "CONTENT_LENGTH_EXCEEDS_THRESHOLD"),
             ValidationExceptionReason::InvalidConversationId => write!(f, "INVALID_CONVERSATION_ID"),
             ValidationExceptionReason::InvalidKmsGrant => write!(f, "INVALID_KMS_GRANT"),
+            ValidationExceptionReason::InvalidModelId => write!(f, "INVALID_MODEL_ID"),
             ValidationExceptionReason::Unknown(value) => write!(f, "{}", value),
         }
     }

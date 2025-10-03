@@ -59,7 +59,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amzn-codewhisperer-client"
-version = "0.1.10613"
+version = "0.1.11582"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -78,7 +78,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-codewhisperer-streaming-client"
-version = "0.1.10613"
+version = "0.1.11582"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -97,7 +97,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-consolas-client"
-version = "0.1.10613"
+version = "0.1.11582"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",
@@ -116,7 +116,7 @@ dependencies = [
 
 [[package]]
 name = "amzn-qdeveloper-streaming-client"
-version = "0.1.10613"
+version = "0.1.11582"
 dependencies = [
  "aws-credential-types",
  "aws-runtime",

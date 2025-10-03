@@ -18,6 +18,8 @@ pub struct AssistantResponseMessage {
     pub tool_uses: ::std::option::Option<::std::vec::Vec<crate::types::ToolUse>>,
     /// Indicates whether this message is a cache point
     pub cache_point: ::std::option::Option<crate::types::CachePoint>,
+    /// Model's internal reasoning process, either as readable text or redacted binary content
+    pub reasoning_content: ::std::option::Option<crate::types::ReasoningContent>,
 }
 impl AssistantResponseMessage {
     /// Unique identifier for the chat message
@@ -64,6 +66,11 @@ impl AssistantResponseMessage {
     pub fn cache_point(&self) -> ::std::option::Option<&crate::types::CachePoint> {
         self.cache_point.as_ref()
     }
+
+    /// Model's internal reasoning process, either as readable text or redacted binary content
+    pub fn reasoning_content(&self) -> ::std::option::Option<&crate::types::ReasoningContent> {
+        self.reasoning_content.as_ref()
+    }
 }
 impl ::std::fmt::Debug for AssistantResponseMessage {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
@@ -75,6 +82,7 @@ impl ::std::fmt::Debug for AssistantResponseMessage {
         formatter.field("followup_prompt", &self.followup_prompt);
         formatter.field("tool_uses", &self.tool_uses);
         formatter.field("cache_point", &self.cache_point);
+        formatter.field("reasoning_content", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }
@@ -97,6 +105,7 @@ pub struct AssistantResponseMessageBuilder {
     pub(crate) followup_prompt: ::std::option::Option<crate::types::FollowupPrompt>,
     pub(crate) tool_uses: ::std::option::Option<::std::vec::Vec<crate::types::ToolUse>>,
     pub(crate) cache_point: ::std::option::Option<crate::types::CachePoint>,
+    pub(crate) reasoning_content: ::std::option::Option<crate::types::ReasoningContent>,
 }
 impl AssistantResponseMessageBuilder {
     /// Unique identifier for the chat message
@@ -243,6 +252,23 @@ impl AssistantResponseMessageBuilder {
         &self.cache_point
     }
 
+    /// Model's internal reasoning process, either as readable text or redacted binary content
+    pub fn reasoning_content(mut self, input: crate::types::ReasoningContent) -> Self {
+        self.reasoning_content = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Model's internal reasoning process, either as readable text or redacted binary content
+    pub fn set_reasoning_content(mut self, input: ::std::option::Option<crate::types::ReasoningContent>) -> Self {
+        self.reasoning_content = input;
+        self
+    }
+
+    /// Model's internal reasoning process, either as readable text or redacted binary content
+    pub fn get_reasoning_content(&self) -> &::std::option::Option<crate::types::ReasoningContent> {
+        &self.reasoning_content
+    }
+
     /// Consumes the builder and constructs a
     /// [`AssistantResponseMessage`](crate::types::AssistantResponseMessage). This method will
     /// fail if any of the following fields are not set:
@@ -264,6 +290,7 @@ impl AssistantResponseMessageBuilder {
             followup_prompt: self.followup_prompt,
             tool_uses: self.tool_uses,
             cache_point: self.cache_point,
+            reasoning_content: self.reasoning_content,
         })
     }
 }
@@ -277,6 +304,7 @@ impl ::std::fmt::Debug for AssistantResponseMessageBuilder {
         formatter.field("followup_prompt", &self.followup_prompt);
         formatter.field("tool_uses", &self.tool_uses);
         formatter.field("cache_point", &self.cache_point);
+        formatter.field("reasoning_content", &"*** Sensitive Data Redacted ***");
         formatter.finish()
     }
 }

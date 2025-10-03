@@ -45,11 +45,23 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "currentUsageWithPrecision" => {
+                                builder = builder.set_current_usage_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
+                                );
+                            },
                             "usageLimit" => {
                                 builder = builder.set_usage_limit(
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                         .map(i32::try_from)
                                         .transpose()?,
+                                );
+                            },
+                            "usageLimitWithPrecision" => {
+                                builder = builder.set_usage_limit_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
                                 );
                             },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,

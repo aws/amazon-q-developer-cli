@@ -13,6 +13,7 @@
 /// # let resourcetype = unimplemented!();
 /// match resourcetype {
 ///     ResourceType::AgenticRequest => { /* ... */ },
+///     ResourceType::Credit => { /* ... */ },
 ///     ResourceType::Spec => { /* ... */ },
 ///     ResourceType::Vibe => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -51,6 +52,8 @@ pub enum ResourceType {
     #[allow(missing_docs)] // documentation missing in model
     AgenticRequest,
     #[allow(missing_docs)] // documentation missing in model
+    Credit,
+    #[allow(missing_docs)] // documentation missing in model
     Spec,
     #[allow(missing_docs)] // documentation missing in model
     Vibe,
@@ -64,6 +67,7 @@ impl ::std::convert::From<&str> for ResourceType {
     fn from(s: &str) -> Self {
         match s {
             "AGENTIC_REQUEST" => ResourceType::AgenticRequest,
+            "CREDIT" => ResourceType::Credit,
             "SPEC" => ResourceType::Spec,
             "VIBE" => ResourceType::Vibe,
             other => ResourceType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
@@ -84,6 +88,7 @@ impl ResourceType {
     pub fn as_str(&self) -> &str {
         match self {
             ResourceType::AgenticRequest => "AGENTIC_REQUEST",
+            ResourceType::Credit => "CREDIT",
             ResourceType::Spec => "SPEC",
             ResourceType::Vibe => "VIBE",
             ResourceType::Unknown(value) => value.as_str(),
@@ -92,7 +97,7 @@ impl ResourceType {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["AGENTIC_REQUEST", "SPEC", "VIBE"]
+        &["AGENTIC_REQUEST", "CREDIT", "SPEC", "VIBE"]
     }
 }
 impl ::std::convert::AsRef<str> for ResourceType {
@@ -116,6 +121,7 @@ impl ::std::fmt::Display for ResourceType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ResourceType::AgenticRequest => write!(f, "AGENTIC_REQUEST"),
+            ResourceType::Credit => write!(f, "CREDIT"),
             ResourceType::Spec => write!(f, "SPEC"),
             ResourceType::Vibe => write!(f, "VIBE"),
             ResourceType::Unknown(value) => write!(f, "{}", value),

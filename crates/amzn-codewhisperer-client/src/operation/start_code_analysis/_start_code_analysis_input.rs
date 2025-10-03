@@ -18,6 +18,10 @@ pub struct StartCodeAnalysisInput {
     pub code_diff_metadata: ::std::option::Option<crate::types::CodeDiffMetadata>,
     #[allow(missing_docs)] // documentation missing in model
     pub profile_arn: ::std::option::Option<::std::string::String>,
+    /// Unique identifier for the model
+    pub language_model_id: ::std::option::Option<::std::string::String>,
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub client_type: ::std::option::Option<crate::types::Origin>,
 }
 impl StartCodeAnalysisInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -56,6 +60,16 @@ impl StartCodeAnalysisInput {
     pub fn profile_arn(&self) -> ::std::option::Option<&str> {
         self.profile_arn.as_deref()
     }
+
+    /// Unique identifier for the model
+    pub fn language_model_id(&self) -> ::std::option::Option<&str> {
+        self.language_model_id.as_deref()
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn client_type(&self) -> ::std::option::Option<&crate::types::Origin> {
+        self.client_type.as_ref()
+    }
 }
 impl StartCodeAnalysisInput {
     /// Creates a new builder-style object to manufacture
@@ -78,6 +92,8 @@ pub struct StartCodeAnalysisInputBuilder {
     pub(crate) code_scan_name: ::std::option::Option<::std::string::String>,
     pub(crate) code_diff_metadata: ::std::option::Option<crate::types::CodeDiffMetadata>,
     pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+    pub(crate) language_model_id: ::std::option::Option<::std::string::String>,
+    pub(crate) client_type: ::std::option::Option<crate::types::Origin>,
 }
 impl StartCodeAnalysisInputBuilder {
     /// Adds a key-value pair to `artifacts`.
@@ -213,6 +229,40 @@ impl StartCodeAnalysisInputBuilder {
         &self.profile_arn
     }
 
+    /// Unique identifier for the model
+    pub fn language_model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.language_model_id = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_language_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.language_model_id = input;
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_language_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        &self.language_model_id
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn client_type(mut self, input: crate::types::Origin) -> Self {
+        self.client_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn set_client_type(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
+        self.client_type = input;
+        self
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn get_client_type(&self) -> &::std::option::Option<crate::types::Origin> {
+        &self.client_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`StartCodeAnalysisInput`](crate::operation::start_code_analysis::StartCodeAnalysisInput).
     pub fn build(
@@ -229,6 +279,8 @@ impl StartCodeAnalysisInputBuilder {
             code_scan_name: self.code_scan_name,
             code_diff_metadata: self.code_diff_metadata,
             profile_arn: self.profile_arn,
+            language_model_id: self.language_model_id,
+            client_type: self.client_type,
         })
     }
 }
