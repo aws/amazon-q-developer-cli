@@ -21,6 +21,7 @@
 
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Duration;
 
 pub use aws_sdk_ssooidc::client::Client;
@@ -32,11 +33,13 @@ use base64::engine::general_purpose::URL_SAFE;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::body::Incoming;
+use hyper::server::conn::http1;
 use hyper::service::Service;
 use hyper::{
     Request,
     Response,
 };
+use hyper_util::rt::TokioIo;
 use percent_encoding::{
     NON_ALPHANUMERIC,
     utf8_percent_encode,
@@ -290,73 +293,71 @@ impl PkceRegistration {
         expected_state: String,
         extra_accepts: usize,
     ) -> Result<String, AuthError> {
-        use std::time::Duration;
-
-        use hyper::server::conn::http1;
-        use hyper_util::rt::TokioIo;
-
-        // 1) First connection: /oauth/callback on the SAME connection; returns /index.html via 302 +
-        //    keep-alive
+        // Channel for delivering (code, state) from any served connection
         let (code_tx, mut code_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
-        let (stream, _) = listener.accept().await?;
-        let stream = TokioIo::new(stream); // Wrapper to implement Hyper IO traits for Tokio types.
+        let code_tx_arc = Arc::new(code_tx);
+
+        // Host used by the service to 302 -> /index.html
         let host = listener.local_addr()?.to_string();
 
-        tokio::spawn(async move {
-            if let Err(err) = http1::Builder::new()
-                .serve_connection(stream, PkceHttpService {
-                    code_tx: std::sync::Arc::new(code_tx),
-                    host: host.clone(),
-                })
-                .await
-            {
-                error!(?err, "Error occurred serving the first connection");
+        // Serve multiple connections to handle both /oauth/callback and /index.html
+        // Keep the behavior as close as possible to the previous version:
+        // first connection is typically the callback, but we allow extra accepts
+        // (callback + potential error redirect + index.html).
+        let max_accepts = 1 + extra_accepts;
+        let server_handle = tokio::spawn({
+            let code_tx_arc = code_tx_arc.clone();
+            let host = host.clone();
+            async move {
+                for _ in 0..max_accepts {
+                    if let Ok((stream, _)) = listener.accept().await {
+                        let stream = TokioIo::new(stream);
+                        let service = PkceHttpService {
+                            code_tx: code_tx_arc.clone(),
+                            host: host.clone(),
+                        };
+                        tokio::spawn(async move {
+                            if let Err(err) = http1::Builder::new().serve_connection(stream, service).await {
+                                debug!(?err, "Error serving connection");
+                            }
+                        });
+                    } else {
+                        // Accept error; break to avoid a tight loop
+                        break;
+                    }
+                }
             }
         });
 
-        // Wait for code/state (or error)
-        let result = match code_rx.recv().await {
-            Some(Ok((code, state))) => {
-                debug!(code = "<redacted>", state, "Received code and state");
-                if state != expected_state {
-                    Err(AuthError::OAuthStateMismatch {
-                        actual: state,
-                        expected: expected_state,
-                    })
-                } else {
-                    Ok(code)
+        // Wait for authorization code (or an error) with the same timeout semantics
+        let result = tokio::select! {
+            msg = code_rx.recv() => {
+                match msg {
+                    Some(Ok((code, state))) => {
+                        debug!(code = "<redacted>", state, "Received code and state");
+                        if state != expected_state {
+                            Err(AuthError::OAuthStateMismatch {
+                                actual: state,
+                                expected: expected_state,
+                            })
+                        } else {
+                            Ok(code)
+                        }
+                    }
+                    Some(Err(e)) => Err(e),
+                    None => Err(AuthError::OAuthMissingCode),
                 }
-            },
-            Some(Err(err)) => Err(err),
-            None => Err(AuthError::OAuthMissingCode),
+            }
+            _ = tokio::time::sleep(DEFAULT_AUTHORIZATION_TIMEOUT) => {
+                Err(AuthError::OAuthTimeout)
+            }
         };
 
-        // 2) Optional: accept a few more connections just to serve /index.html again (for agents that open
-        //    a new TCP)
-        // We give a short window for these follow-up requests.
-        for _ in 0..extra_accepts {
-            let (dummy_tx, _dummy_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
-            let host2 = listener.local_addr()?.to_string();
-            if let Ok(Ok((stream2, _))) = tokio::time::timeout(Duration::from_secs(3), listener.accept()).await {
-                let stream2 = TokioIo::new(stream2);
-                tokio::spawn(async move {
-                    if let Err(err) = http1::Builder::new()
-                        .serve_connection(stream2, PkceHttpService {
-                            code_tx: std::sync::Arc::new(dummy_tx), // we don't expect code again
-                            host: host2,
-                        })
-                        .await
-                    {
-                        debug!(?err, "Error occurred serving an extra connection");
-                    }
-                });
-            } else {
-                break;
-            }
-        }
-
-        // A tiny grace to let the browser render /index.html
+        // Small grace period so the browser can load /index.html after the 302
         tokio::time::sleep(Duration::from_millis(200)).await;
+
+        // Let the server task finish (best-effort)
+        let _ = tokio::time::timeout(Duration::from_secs(2), server_handle).await;
 
         result
     }
