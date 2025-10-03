@@ -1,3 +1,4 @@
+pub mod clipboard;
 pub mod images;
 pub mod issue;
 #[cfg(test)]
