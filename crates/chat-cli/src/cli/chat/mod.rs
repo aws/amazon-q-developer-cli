@@ -5,7 +5,7 @@ mod conversation;
 mod input_source;
 mod message;
 mod parse;
-use std::path::MAIN_SEPARATOR;
+use std::path::{MAIN_SEPARATOR, PathBuf};
 pub mod checkpoint;
 mod line_tracker;
 mod parser;
@@ -1812,7 +1812,30 @@ impl ChatSession {
         };
 
         // Save the final agent config to file
-        if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, is_global).await {
+        let agent_dir = if is_global {
+            directories::chat_global_agent_path(os)
+                .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
+        } else {
+            // For local agents, try to use the same directory as the active agent
+            self.conversation.agents.get_active()
+                .and_then(|agent| agent.path.as_ref())
+                .and_then(|path| path.parent())
+                .and_then(|dir| {
+                    // Don't use global directory even if that's where current agent is from
+                    let global_dir = directories::chat_global_agent_path(os).ok()?;
+                    if dir == global_dir {
+                        None // Fall back to local directory
+                    } else {
+                        Some(dir.to_path_buf())
+                    }
+                })
+                .unwrap_or_else(|| {
+                    directories::chat_local_agent_dir(os)
+                        .unwrap_or_else(|_| std::env::current_dir().unwrap_or_default().join(".amazonq/agents"))
+                })
+        };
+        
+        if let Err(err) = save_agent_config(&final_agent_config, agent_name, agent_dir).await {
             execute!(
                 self.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -4385,20 +4408,16 @@ mod tests {
 }
 
 // Helper method to save the agent config to file
-async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
-    let config_dir = if is_global {
-        directories::chat_global_agent_path(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
-    } else {
-        directories::chat_local_agent_dir(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
-    };
-
-    tokio::fs::create_dir_all(&config_dir)
+async fn save_agent_config(
+    config: &Agent, 
+    agent_name: &str, 
+    agent_dir: PathBuf
+) -> Result<(), ChatError> {
+    tokio::fs::create_dir_all(&agent_dir)
         .await
         .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
 
-    let config_file = config_dir.join(format!("{}.json", agent_name));
+    let config_file = agent_dir.join(format!("{}.json", agent_name));
     let config_json = serde_json::to_string_pretty(config)
         .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
 
