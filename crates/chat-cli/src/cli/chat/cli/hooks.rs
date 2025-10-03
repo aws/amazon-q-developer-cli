@@ -45,6 +45,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::constants::help_text::hooks_long_help;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
@@ -388,15 +389,7 @@ fn sanitize_user_prompt(input: &str) -> String {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 #[command(
-    before_long_help = "Use context hooks to specify shell commands to run. The output from these 
-commands will be appended to the prompt to Amazon Q.
-
-Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
-
-Notes:
-• Hooks are executed in parallel
-• 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
-• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history"
+    before_long_help = hooks_long_help()
 )]
 /// Arguments for the hooks command that displays configured context hooks
 pub struct HooksArgs;

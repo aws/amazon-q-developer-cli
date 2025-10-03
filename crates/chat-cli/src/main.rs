@@ -2,6 +2,7 @@ mod api_client;
 mod auth;
 mod aws_common;
 mod cli;
+mod constants;
 mod database;
 mod logging;
 mod mcp_client;
