@@ -41,6 +41,12 @@ use crate::database::{
 use crate::os::Os;
 use crate::util::open::open_url_async;
 
+// NOTE: We use a fixed set of callback ports (not random) because:
+// - IdP/Cognito only accepts pre-registered redirect URIs.
+// - This list must match the Cognito allowlist
+// - Bind only on loopback (127.0.0.1); never expose externally.
+// - If all ports are in use, show a clear error.
+// IMPORTANT: Do not change without auth service coordination.
 const CALLBACK_PORTS: &[u16] = &[49153, 50153, 51153, 52153, 53153, 4649, 6588, 9091, 8008, 3128];
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(300);
 const SIGN_UP_PAUSED_MESSAGE: &str = "New signups are temporarily paused.";
