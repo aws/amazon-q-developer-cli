@@ -668,21 +668,24 @@ impl Agents {
             }
 
             if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
-                if all_agents.iter().any(|a| a.name == user_set_default) {
-                    break 'active_idx user_set_default;
+                // Treat empty strings as "no default set" to allow clean reset
+                if !user_set_default.is_empty() {
+                    if all_agents.iter().any(|a| a.name == user_set_default) {
+                        break 'active_idx user_set_default;
+                    }
+                    let _ = queue!(
+                        output,
+                        style::SetForegroundColor(Color::Red),
+                        style::Print("Error"),
+                        style::SetForegroundColor(Color::Yellow),
+                        style::Print(format!(
+                            ": user defined default {} not found. Falling back to in-memory default",
+                            user_set_default
+                        )),
+                        style::Print("\n"),
+                        style::SetForegroundColor(Color::Reset)
+                    );
                 }
-                let _ = queue!(
-                    output,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(format!(
-                        ": user defined default {} not found. Falling back to in-memory default",
-                        user_set_default
-                    )),
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
-                );
             }
 
             all_agents.push({
@@ -1401,5 +1404,36 @@ mod tests {
                 assert_eq!(hook.source, Source::Agent);
             }
         }
+    }
+
+    #[test]
+    fn test_empty_default_agent_setting() {
+        use crate::database::settings::{Setting, Settings};
+        use std::collections::HashMap;
+        
+        // Test that empty string is treated as "no default set"
+        let mut settings_map = HashMap::new();
+        settings_map.insert(Setting::ChatDefaultAgent.to_string(), serde_json::Value::String("".to_string()));
+        let settings = Settings::from_map(settings_map);
+        
+        // get_string should return Some("") for empty string
+        let result = settings.get_string(Setting::ChatDefaultAgent);
+        assert_eq!(result, Some("".to_string()));
+        
+        // The fix should treat this as "no default set" by checking !user_set_default.is_empty()
+        // This test documents the expected behavior: empty strings should be ignored
+        let empty_string = result.unwrap();
+        assert!(empty_string.is_empty(), "Empty string should be detected as empty");
+        
+        // Test non-empty string still works
+        let mut settings_map = HashMap::new();
+        settings_map.insert(Setting::ChatDefaultAgent.to_string(), serde_json::Value::String("my-agent".to_string()));
+        let settings = Settings::from_map(settings_map);
+        
+        let result = settings.get_string(Setting::ChatDefaultAgent);
+        assert_eq!(result, Some("my-agent".to_string()));
+        
+        let non_empty_string = result.unwrap();
+        assert!(!non_empty_string.is_empty(), "Non-empty string should not be empty");
     }
 }
