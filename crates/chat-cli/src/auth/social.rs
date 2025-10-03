@@ -242,7 +242,7 @@ pub async fn start_social_login(os: &mut Os, provider: SocialProvider, invitatio
     let code_fut = PkceRegistration::recv_code_with_extra_accepts(listener, state.clone(), 2);
     let code = tokio::time::timeout(DEFAULT_AUTHORIZATION_TIMEOUT, code_fut)
         .await
-        .map_err(|_| AuthError::OAuthTimeout)??;
+        .map_err(|_e| AuthError::OAuthTimeout)??;
 
     debug!("Received authorization code");
 

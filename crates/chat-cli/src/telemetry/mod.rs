@@ -799,7 +799,7 @@ mod test {
         let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();
-        thread.send_user_logged_in(&database, None).await;
+        let _ = thread.send_user_logged_in(&database, None).await;
         drop(thread);
 
         assert!(!logs_contain("ERROR"));
@@ -818,7 +818,7 @@ mod test {
             .await
             .unwrap();
 
-        thread.send_user_logged_in(&database, None).await;
+        let _ = thread.send_user_logged_in(&database, None).await;
         thread
             .send_cli_subcommand_executed(&database, &RootSubcommand::Version { changelog: None })
             .await

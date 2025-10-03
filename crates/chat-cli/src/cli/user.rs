@@ -214,7 +214,7 @@ impl LoginArgs {
 
                         (Some(start_url), Some(region))
                     },
-                    _ => unreachable!(),
+                    AuthMethod::Social(_) => unreachable!(),
                 };
 
                 // Existing BuilderId/IDC flow
