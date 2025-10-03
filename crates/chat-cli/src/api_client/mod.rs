@@ -50,7 +50,7 @@ use crate::api_client::model::{
 };
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
-use crate::auth::builder_id::BearerResolver;
+use crate::auth::UnifiedBearerResolver;
 use crate::aws_common::{
     UserAgentOverrideInterceptor,
     app_name,
@@ -122,7 +122,7 @@ impl ApiClient {
                 .http_client(crate::aws_common::http_client::client())
                 .interceptor(OptOutInterceptor::new(database))
                 .interceptor(UserAgentOverrideInterceptor::new())
-                .bearer_token_resolver(BearerResolver)
+                .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
                 .endpoint_url(endpoint.url())
                 .build(),
@@ -183,7 +183,7 @@ impl ApiClient {
                         .interceptor(OptOutInterceptor::new(database))
                         .interceptor(UserAgentOverrideInterceptor::new())
                         .interceptor(DelayTrackingInterceptor::new())
-                        .bearer_token_resolver(BearerResolver)
+                        .bearer_token_resolver(UnifiedBearerResolver)
                         .app_name(app_name())
                         .endpoint_url(endpoint.url())
                         .retry_classifier(retry_classifier::QCliRetryClassifier::new())

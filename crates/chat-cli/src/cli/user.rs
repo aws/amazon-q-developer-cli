@@ -29,6 +29,7 @@ use tracing::{
 
 use super::OutputFormat;
 use crate::api_client::list_available_profiles;
+use crate::auth::AuthError;
 use crate::auth::builder_id::{
     BuilderIdToken,
     PollCreateToken,
@@ -37,6 +38,10 @@ use crate::auth::builder_id::{
     start_device_authorization,
 };
 use crate::auth::pkce::start_pkce_authorization;
+use crate::auth::social::{
+    SocialProvider,
+    start_social_login,
+};
 use crate::os::Os;
 use crate::telemetry::{
     QProfileSwitchIntent,
@@ -68,6 +73,14 @@ pub struct LoginArgs {
     #[arg(long)]
     pub region: Option<String>,
 
+    /// Social provider (google or github)
+    #[arg(long, value_enum)]
+    pub social: Option<SocialProvider>,
+
+    /// Invitation code (for social login)
+    #[arg(long)]
+    pub invitation_code: Option<String>,
+
     /// Always use the OAuth device flow for authentication. Useful for instances where browser
     /// redirects cannot be handled.
     #[arg(long)]
@@ -76,34 +89,110 @@ pub struct LoginArgs {
 
 impl LoginArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        if crate::auth::is_logged_in(&mut os.database).await {
+        if crate::auth::is_logged_in(&mut os.database).await
+            || crate::auth::social::is_social_logged_in(&os.database).await
+        {
             eyre::bail!(
                 "Already logged in, please logout with {} first",
                 format!("{CLI_BINARY_NAME} logout").magenta()
             );
         }
 
-        let login_method = match self.license {
-            Some(LicenseType::Free) => AuthMethod::BuilderId,
-            Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
-            None => {
-                if self.identity_provider.is_some() && self.region.is_some() {
-                    // If license is specified and --identity-provider and --region are specified,
-                    // the license is determined to be pro
-                    AuthMethod::IdentityCenter
-                } else {
-                    // --license is not specified, prompt the user to choose
-                    let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
+        let login_method = if let Some(social_provider) = self.social {
+            // Direct social login via CLI flag
+            AuthMethod::Social(social_provider)
+        } else {
+            match self.license {
+                Some(LicenseType::Free) => {
+                    // Show submenu for free options
+                    let options = [
+                        AuthMethod::BuilderId,
+                        AuthMethod::Social(SocialProvider::Google),
+                        AuthMethod::Social(SocialProvider::Github),
+                    ];
                     let i = match choose("Select login method", &options)? {
                         Some(i) => i,
                         None => bail!("No login method selected"),
                     };
                     options[i]
-                }
-            },
+                },
+                Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
+                None => {
+                    if self.identity_provider.is_some() && self.region.is_some() {
+                        AuthMethod::IdentityCenter
+                    } else {
+                        // Show main menu
+                        let options = [
+                            AuthMethod::BuilderId,
+                            AuthMethod::Social(SocialProvider::Google),
+                            AuthMethod::Social(SocialProvider::Github),
+                            AuthMethod::IdentityCenter,
+                        ];
+                        let i = match choose("Select login method", &options)? {
+                            Some(i) => i,
+                            None => bail!("No login method selected"),
+                        };
+                        options[i]
+                    }
+                },
+            }
         };
 
         match login_method {
+            AuthMethod::Social(provider) => {
+                let first_code = self.invitation_code.clone();
+
+                let mut spinner = Spinner::new(vec![
+                    SpinnerComponent::Spinner,
+                    SpinnerComponent::Text(format!(" Logging in with {}...", provider)),
+                ]);
+
+                match start_social_login(os, provider, first_code).await {
+                    Ok(_) => {
+                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider)).await;
+                        spinner.stop_with_message(format!("Logged in with {}", provider));
+                    },
+                    Err(err) => {
+                        spinner.stop();
+                        // Auth service needs invitation code
+                        if let Some(AuthError::OAuthCustomError(s)) = err.downcast_ref::<AuthError>() {
+                            if s == "SIGN_IN_BLOCKED" {
+                                let prompt = "\nKiro CLI requires an access code to use—please enter the code you received via email below.";
+                                let code = match input(prompt, None) {
+                                    Ok(response) if !response.trim().is_empty() => response.trim().to_string(),
+                                    _ => {
+                                        error!("No access code entered. Aborting social login.");
+                                        return Err(AuthError::OAuthCustomError("No invitation code".into()).into());
+                                    },
+                                };
+
+                                let mut spinner2 = Spinner::new(vec![
+                                    SpinnerComponent::Spinner,
+                                    SpinnerComponent::Text(format!(
+                                        " Validating access code and logging in with {}...",
+                                        provider
+                                    )),
+                                ]);
+
+                                match start_social_login(os, provider, Some(code)).await {
+                                    Ok(_) => {
+                                        let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider)).await;
+                                        spinner2.stop_with_message(format!("Logged in with {}", provider));
+                                    },
+                                    Err(e2) => {
+                                        spinner2.stop();
+                                        return Err(e2);
+                                    },
+                                }
+                            } else {
+                                return Err(err);
+                            }
+                        } else {
+                            return Err(err);
+                        }
+                    },
+                }
+            },
             AuthMethod::BuilderId | AuthMethod::IdentityCenter => {
                 let (start_url, region) = match login_method {
                     AuthMethod::BuilderId => (None, None),
@@ -125,8 +214,10 @@ impl LoginArgs {
 
                         (Some(start_url), Some(region))
                     },
+                    AuthMethod::Social(_) => unreachable!(),
                 };
 
+                // Existing BuilderId/IDC flow
                 // Remote machine won't be able to handle browser opening and redirects,
                 // hence always use device code flow.
                 if is_remote() || self.use_device_flow {
@@ -149,7 +240,7 @@ impl LoginArgs {
                                     exit(1);
                                 },
                             }
-                            os.telemetry.send_user_logged_in().ok();
+                            let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
                             spinner.stop_with_message("Logged in".into());
                         },
                         // If we are unable to open the link with the browser, then fallback to
@@ -175,6 +266,7 @@ impl LoginArgs {
 
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     let _ = crate::auth::logout(&mut os.database).await;
+    let _ = crate::auth::social::logout_social(&os.database).await;
 
     eprintln!("You are now logged out");
     eprintln!(
@@ -194,6 +286,21 @@ pub struct WhoamiArgs {
 
 impl WhoamiArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
+        // Check for social login token first
+        if let Ok(Some(social_token)) = crate::auth::social::SocialToken::load(&os.database).await {
+            self.format.print(
+                || format!("Logged in with {}", social_token.provider),
+                || {
+                    json!({
+                        "accountType": "Social",
+                        "provider": social_token.provider.to_string(),
+                    })
+                },
+            );
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        // Check for BuilderId/IDC token
         let builder_id = BuilderIdToken::load(&os.database).await;
 
         match builder_id {
@@ -238,7 +345,7 @@ impl WhoamiArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum LicenseType {
-    /// Free license with Builder ID
+    /// Free license (Builder ID or Social login)
     Free,
     /// Pro license with Identity Center
     Pro,
@@ -260,6 +367,8 @@ pub async fn profile(os: &mut Os) -> Result<ExitCode> {
 enum AuthMethod {
     /// Builder ID (free)
     BuilderId,
+    /// Social login (free)
+    Social(SocialProvider),
     /// IdC (enterprise)
     IdentityCenter,
 }
@@ -268,6 +377,8 @@ impl Display for AuthMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AuthMethod::BuilderId => write!(f, "Use for Free with Builder ID"),
+            AuthMethod::Social(SocialProvider::Google) => write!(f, "Use with Google"),
+            AuthMethod::Social(SocialProvider::Github) => write!(f, "Use with GitHub"),
             AuthMethod::IdentityCenter => write!(f, "Use with Pro license"),
         }
     }
@@ -319,7 +430,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                os.telemetry.send_user_logged_in().ok();
+                let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
                 spinner.stop_with_message("Logged in".into());
                 break;
             },

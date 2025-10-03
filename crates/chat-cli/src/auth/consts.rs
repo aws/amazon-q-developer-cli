@@ -18,6 +18,8 @@ pub(crate) const SCOPES: &[&str] = &[
 
 pub(crate) const CLIENT_TYPE: &str = "public";
 
+pub const SOCIAL_AUTH_SERVICE_ENDPOINT: &str = "https://prod.us-east-1.auth.desktop.kiro.dev";
+
 // The start URL for public builder ID users
 pub const START_URL: &str = "https://view.awsapps.com/start";
 

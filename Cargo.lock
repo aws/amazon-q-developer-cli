@@ -1320,6 +1320,7 @@ dependencies = [
  "typed-path",
  "unicode-width 0.2.1",
  "url",
+ "urlencoding",
  "uuid",
  "walkdir",
  "webpki-roots 0.26.8",
