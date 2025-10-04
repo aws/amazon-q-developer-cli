@@ -81,25 +81,16 @@ impl UseAws {
         let stdout = output.stdout.to_str_lossy();
         let stderr = output.stderr.to_str_lossy();
 
-        let stdout = format!(
-            "{}{}",
-            &stdout[0..stdout.len().min(MAX_TOOL_RESPONSE_SIZE / 3)],
-            if stdout.len() > MAX_TOOL_RESPONSE_SIZE / 3 {
-                " ... truncated"
+        fn truncate_output(s: &str, max_size: usize) -> String {
+            if s.len() > max_size {
+                format!("{}... truncated", &s[0..max_size])
             } else {
-                ""
+                s.to_string()
             }
-        );
+        }
 
-        let stderr = format!(
-            "{}{}",
-            &stderr[0..stderr.len().min(MAX_TOOL_RESPONSE_SIZE / 3)],
-            if stderr.len() > MAX_TOOL_RESPONSE_SIZE / 3 {
-                " ... truncated"
-            } else {
-                ""
-            }
-        );
+        let stdout = truncate_output(&stdout, MAX_TOOL_RESPONSE_SIZE / 3);
+        let stderr = truncate_output(&stderr, MAX_TOOL_RESPONSE_SIZE / 3);
 
         if status.eq("0") {
             Ok(InvokeOutput {
@@ -165,12 +156,37 @@ impl UseAws {
             let mut params = vec![];
             for (param_name, val) in parameters {
                 let param_name = format!("--{}", param_name.trim_start_matches("--").to_case(Case::Kebab));
-                let param_val = val.as_str().map(|s| s.to_string()).unwrap_or(val.to_string());
+                let param_val = val.as_str().map(|s| s.to_string()).unwrap_or_else(|| {
+                    // For non-string values (objects, arrays), convert keys to Pascal case for AWS CLI
+                    Self::convert_json_keys_to_pascal_case(val).to_string()
+                });
                 params.push((param_name, param_val));
             }
             Some(params)
         } else {
             None
+        }
+    }
+
+    /// Recursively converts all keys in a JSON value to Pascal case
+    /// This is needed because AWS CLI expects Pascal case keys (e.g., "Name", "Values")
+    /// in parameters like filters, while serde_json serializes with the original casing
+    fn convert_json_keys_to_pascal_case(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut new_map = serde_json::Map::new();
+                for (key, val) in map {
+                    let pascal_key = key.to_case(Case::Pascal);
+                    new_map.insert(pascal_key, Self::convert_json_keys_to_pascal_case(val));
+                }
+                serde_json::Value::Object(new_map)
+            },
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(
+                    arr.iter().map(Self::convert_json_keys_to_pascal_case).collect()
+                )
+            },
+            _ => value.clone(),
         }
     }
 
@@ -283,6 +299,64 @@ mod tests {
             "not found in {:?}",
             params
         );
+    }
+
+    #[test]
+    fn test_filters_parameter_pascal_case() {
+        // Test that filter parameters are converted to Pascal case for AWS CLI compatibility
+        let cmd = use_aws! {{
+            "service_name": "ec2",
+            "operation_name": "describe-subnets",
+            "parameters": {
+                "filters": [{"name":"tag:Name","values":["*app-a*"]}]
+            },
+            "region": "us-east-1",
+            "profile_name": "fcc-test",
+            "label": "Find app-a private subnet"
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        
+        // Find the filters parameter
+        let filters_param = params.iter().find(|p| p.0 == "--filters");
+        assert!(filters_param.is_some(), "filters parameter not found");
+        
+        let filters_value = &filters_param.unwrap().1;
+        
+        // Verify the JSON contains Pascal case keys
+        assert!(filters_value.contains("Name"), "Expected 'Name' key in Pascal case, got: {}", filters_value);
+        assert!(filters_value.contains("Values"), "Expected 'Values' key in Pascal case, got: {}", filters_value);
+        
+        // Verify lowercase keys are NOT present
+        assert!(!filters_value.contains("\"name\""), "Should not contain lowercase 'name' key");
+        assert!(!filters_value.contains("\"values\""), "Should not contain lowercase 'values' key");
+    }
+
+    #[test]
+    fn test_nested_objects_pascal_case() {
+        // Test that nested object keys are recursively converted to Pascal case
+        let cmd = use_aws! {{
+            "service_name": "dynamodb",
+            "operation_name": "query",
+            "parameters": {
+                "expressionAttributeValues": {
+                    ":val1": {"stringValue": "test"},
+                    ":val2": {"numberValue": 123}
+                }
+            },
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        let params = cmd.cli_parameters().unwrap();
+        
+        let expr_param = params.iter().find(|p| p.0 == "--expression-attribute-values");
+        assert!(expr_param.is_some());
+        
+        let expr_value = &expr_param.unwrap().1;
+        
+        // Verify nested keys are also Pascal case
+        assert!(expr_value.contains("StringValue"), "Nested keys should be Pascal case");
+        assert!(expr_value.contains("NumberValue"), "Nested keys should be Pascal case");
     }
 
     #[tokio::test]
