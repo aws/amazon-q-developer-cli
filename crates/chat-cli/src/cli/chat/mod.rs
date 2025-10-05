@@ -3694,8 +3694,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow() {
-        crate::test_util::enable_tracing();
-
         let mut os = Os::new().await.unwrap();
         os.client.set_mock_output(serde_json::json!([
             [
