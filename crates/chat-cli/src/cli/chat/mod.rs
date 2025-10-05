@@ -238,210 +238,24 @@ impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
         let mut input = self.input;
 
-        if self.no_interactive && input.is_none() {
-            if !std::io::stdin().is_terminal() {
-                let mut buffer = String::new();
-                match std::io::stdin().read_to_string(&mut buffer) {
-                    Ok(_) => {
-                        if !buffer.trim().is_empty() {
-                            input = Some(buffer.trim().to_string());
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error reading from stdin: {}", e);
-                    },
-                }
-            }
-
-            if input.is_none() {
-                bail!("Input must be supplied when running in non-interactive mode");
-            }
-        }
-
-        let stdout = std::io::stdout();
         let mut stderr = std::io::stderr();
-
-        let args: Vec<String> = std::env::args().collect();
-        if args
-            .iter()
-            .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
-        {
-            execute!(
-                stderr,
-                style::SetForegroundColor(Color::Yellow),
-                style::Print("WARNING: "),
-                style::SetForegroundColor(Color::Reset),
-                style::Print("--profile is deprecated, use "),
-                style::SetForegroundColor(Color::Green),
-                style::Print("--agent"),
-                style::SetForegroundColor(Color::Reset),
-                style::Print(" instead\n")
-            )?;
-        }
-
-        let conversation_id = uuid::Uuid::new_v4().to_string();
-        info!(?conversation_id, "Generated new conversation id");
-
-        // Check MCP status once at the beginning of the session
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
-        };
-
-        let agents = {
-            let skip_migration = self.no_interactive;
-            let (mut agents, md) =
-                Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr, mcp_enabled).await;
-            agents.trust_all_tools = self.trust_all_tools;
-
-            os.telemetry
-                .send_agent_config_init(&os.database, conversation_id.clone(), AgentConfigInitArgs {
-                    agents_loaded_count: md.load_count as i64,
-                    agents_loaded_failed_count: md.load_failed_count as i64,
-                    legacy_profile_migration_executed: md.migration_performed,
-                    legacy_profile_migrated_count: md.migrated_count as i64,
-                    launched_agent: md.launched_agent,
-                })
-                .await
-                .map_err(|err| error!(?err, "failed to send agent config init telemetry"))
-                .ok();
-
-            // Only show MCP safety message if MCP is enabled and has servers
-            if mcp_enabled
-                && agents
-                    .get_active()
-                    .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
-            {
-                if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
-                    execute!(
-                        stderr,
-                        style::Print(
-                            "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                        )
-                    )?;
-                }
-                os.database.settings.set(Setting::McpLoadedBefore, true).await?;
-            }
-
-            if let Some(trust_tools) = self.trust_tools.take() {
-                for tool in &trust_tools {
-                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
-                        let _ = queue!(
-                            stderr,
-                            style::SetForegroundColor(Color::Yellow),
-                            style::Print("WARNING: "),
-                            style::SetForegroundColor(Color::Reset),
-                            style::Print("--trust-tools arg for custom tool "),
-                            style::SetForegroundColor(Color::Cyan),
-                            style::Print(tool),
-                            style::SetForegroundColor(Color::Reset),
-                            style::Print(" needs to be prepended with "),
-                            style::SetForegroundColor(Color::Green),
-                            style::Print("@{MCPSERVERNAME}/"),
-                            style::SetForegroundColor(Color::Reset),
-                            style::Print("\n"),
-                        );
-                    }
-                }
-
-                let _ = stderr.flush();
-
-                if let Some(a) = agents.get_active_mut() {
-                    a.allowed_tools.extend(trust_tools);
-                }
-            }
-
-            agents
-        };
-
-        // If modelId is specified, verify it exists before starting the chat
-        // Otherwise, CLI will use a default model when starting chat
-        let (models, default_model_opt) = get_available_models(os).await?;
-        // Fallback logic: try user's saved default, then system default
-        let fallback_model_id = || {
-            if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-                find_model(&models, &saved)
-                    .map(|m| m.model_id.clone())
-                    .or(Some(default_model_opt.model_id.clone()))
-            } else {
-                Some(default_model_opt.model_id.clone())
-            }
-        };
-
-        let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
-            // CLI argument takes highest priority
-            if let Some(m) = find_model(&models, requested) {
-                Some(m.model_id.clone())
-            } else {
-                let available = models
-                    .iter()
-                    .map(|m| m.model_name.as_deref().unwrap_or(&m.model_id))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                bail!("Model '{}' does not exist. Available models: {}", requested, available);
-            }
-        } else if let Some(agent_model) = agents.get_active().and_then(|a| a.model.as_ref()) {
-            // Agent model takes second priority
-            if let Some(m) = find_model(&models, agent_model) {
-                Some(m.model_id.clone())
-            } else {
-                let _ = execute!(
-                    stderr,
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print("WARNING: "),
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print("Agent specifies model '"),
-                    style::SetForegroundColor(Color::Cyan),
-                    style::Print(agent_model),
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print("' which is not available. Falling back to configured defaults.\n"),
-                );
-                fallback_model_id()
-            }
-        } else {
-            fallback_model_id()
-        };
-
-        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
-        let (prompt_response_sender, prompt_response_receiver) =
-            tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let mut tool_manager = ToolManagerBuilder::default()
-            .prompt_query_result_sender(prompt_response_sender)
-            .prompt_query_receiver(prompt_request_receiver)
-            .prompt_query_sender(prompt_request_sender.clone())
-            .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
-            .conversation_id(&conversation_id)
-            .agent(agents.get_active().cloned().unwrap_or_default())
-            .build(os, Box::new(std::io::stderr()), !self.no_interactive)
-            .await?;
-        let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
-
-        ChatSession::new(
-            os,
-            stdout,
+        execute!(
             stderr,
-            &conversation_id,
-            agents,
-            input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
-            self.resume,
-            || terminal::window_size().map(|s| s.columns.into()).ok(),
-            tool_manager,
-            model_id,
-            tool_config,
-            !self.no_interactive,
-            mcp_enabled,
-            self.wrap,
-        )
-        .await?
-        .spawn(os)
-        .await
-        .map(|_| ExitCode::SUCCESS)
+            style::SetForegroundColor(Color::Red),
+            style::Print("HELLO WORLD: "),
+            style::SetForegroundColor(Color::Reset),
+            style::Print("nothing is here yet\n")
+        )?;
+
+        // TODO: This is where we plug in new entry point
+
+        Ok(ExitCode::SUCCESS)
     }
 }
+
+// ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====
+// =  ====  ORIGINAL ChatSession IMPLEMENTATION ====  ====  ====  ====  ====  =
+// ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====
 
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
