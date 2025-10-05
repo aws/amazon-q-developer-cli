@@ -721,6 +721,8 @@ impl ChatSession {
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;
 
+        tracing::debug!(func="next", state = ?self.inner);
+
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
             ChatState::PromptUser { skip_printing_tools } => {
@@ -2166,6 +2168,8 @@ impl ChatSession {
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
+        tracing::debug!(func = "tool_use_execute");
+
         // Check if we should auto-enter tangent mode for introspect tool
         if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
@@ -3690,6 +3694,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_flow() {
+        crate::test_util::enable_tracing();
+
         let mut os = Os::new().await.unwrap();
         os.client.set_mock_output(serde_json::json!([
             [

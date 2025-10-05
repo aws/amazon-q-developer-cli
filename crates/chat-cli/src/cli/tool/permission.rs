@@ -40,11 +40,15 @@ pub fn evaluate_tool_permissions(
         trust_all_tools: agents.trust_all_tools,
     };
     
-    tools
+    let result = tools
         .iter()
         .enumerate()
         .map(|(i, tool)| evaluate_single_tool_permission(i, tool, agents, os, &context))
-        .collect()
+        .collect();
+
+    tracing::debug!(func="evaluate_tool_permission", context = ?context, result = ?result);
+
+    result
 }
 
 /// Evaluates permission for a single tool
@@ -55,11 +59,13 @@ fn evaluate_single_tool_permission(
     os: &Os,
     context: &PermissionContext,
 ) -> ToolPermissionResult {
+    tracing::debug!(func="evaluate_single_tool_permission", tool = ?tool);
+
     // If tool is already accepted, it's allowed
     if tool.accepted {
         return ToolPermissionResult::Allowed { tool_index };
     }
-    
+
     // Check agent-based permissions
     let permission_result = agents
         .get_active()
