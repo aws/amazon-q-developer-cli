@@ -18,20 +18,20 @@ This document outlines the plan to reorganize the prototype from `crates/chat-ex
 
 These components form the foundation and should be production-quality:
 
-1. **Continuations System** (`continuations.rs`)
+1. **Worker Job Continuations System** (`worker_job_continuations.rs`)
    - `JobState` enum
    - `WorkerJobCompletionType` enum
    - `WorkerJobContinuationFn` type alias
    - `Continuations` struct with latched state pattern
    - Purpose: Enable dynamic callback registration for job completion
 
-2. **Model Provider** (`model_provider.rs`)
+2. **Model Provider** (`model_provider.rs` + `model_provider_impls/`)
    - `ModelRequest` struct
    - `ModelResponse` struct
    - `ModelResponseChunk` enum
    - `ToolRequest` struct
    - `ModelProvider` trait (async)
-   - `BedrockConverseStreamModelProvider` implementation
+   - `model_provider_impls/bedrock_converse_stream.rs`: BedrockConverseStreamModelProvider implementation
    - Purpose: Abstract LLM communication with streaming support
 
 3. **Worker** (`worker.rs`)
@@ -84,8 +84,11 @@ These components demonstrate the architecture but will be replaced:
 ```
 crates/chat-cli/src/agent_env/
 ├── mod.rs                      # Main module with re-exports
-├── continuations.rs            # Job continuation system
-├── model_provider.rs           # ModelProvider trait and implementations
+├── worker_job_continuations.rs # Job continuation system
+├── model_providers/            # ModelProvider trait and implementations
+│   ├── mod.rs
+│   ├── model_provider.rs       # ModelProvider trait
+│   └── bedrock_converse_stream.rs # BedrockConverseStreamModelProvider
 ├── worker.rs                   # Worker struct and state management
 ├── worker_task.rs              # WorkerTask trait
 ├── worker_job.rs               # WorkerJob struct
@@ -102,8 +105,11 @@ crates/chat-cli/src/agent_env/
 
 ```
 mod.rs
-  ├─> continuations.rs (no deps)
+  ├─> worker_job_continuations.rs (no deps)
   ├─> model_provider.rs (no deps)
+  ├─> model_provider_impls/
+  │     └─> bedrock_converse_stream.rs
+  │           └─> model_provider.rs
   ├─> worker.rs
   │     └─> model_provider.rs
   │     └─> worker_interface.rs
@@ -112,7 +118,7 @@ mod.rs
   ├─> worker_job.rs
   │     └─> worker.rs
   │     └─> worker_task.rs
-  │     └─> continuations.rs
+  │     └─> worker_job_continuations.rs
   ├─> worker_interface.rs
   │     └─> worker.rs
   │     └─> model_provider.rs
@@ -134,7 +140,7 @@ mod.rs
         └─> init.rs
               └─> session.rs
               └─> cli_interface.rs
-              └─> model_provider.rs
+              └─> model_provider_impls/bedrock_converse_stream.rs
 ```
 
 ## Integration with ChatArgs.execute()
@@ -188,7 +194,7 @@ impl ChatArgs {
 
         // Add completion continuations
         let ui_clone = ui.clone();
-        job1.continuations.add_or_run_now(
+        job1.worker_job_continuations.add_or_run_now(
             "completion_report",
             agent_env::Continuations::boxed(move |worker, completion_type, _error_msg| {
                 ui_clone.report_job_completion(worker, completion_type)
@@ -197,7 +203,7 @@ impl ChatArgs {
         ).await;
 
         let ui_clone = ui.clone();
-        job2.continuations.add_or_run_now(
+        job2.worker_job_continuations.add_or_run_now(
             "completion_report",
             agent_env::Continuations::boxed(move |worker, completion_type, _error_msg| {
                 ui_clone.report_job_completion(worker, completion_type)
@@ -226,13 +232,15 @@ impl ChatArgs {
 3. Create empty files for each core module
 
 ### Phase 2: Extract Core Components
-1. Extract continuations system → `continuations.rs`
-2. Extract model provider → `model_provider.rs`
-3. Extract worker → `worker.rs`
-4. Extract worker task → `worker_task.rs`
-5. Extract worker job → `worker_job.rs`
-6. Extract worker interface → `worker_interface.rs`
-7. Extract session → `session.rs`
+1. Extract continuations system → `worker_job_continuations.rs`
+2. Extract model provider trait → `model_provider.rs`
+3. Create `model_provider_impls/` subdirectory
+4. Extract Bedrock implementation → `model_provider_impls/bedrock_converse_stream.rs`
+5. Extract worker → `worker.rs`
+6. Extract worker task → `worker_task.rs`
+7. Extract worker job → `worker_job.rs`
+8. Extract worker interface → `worker_interface.rs`
+9. Extract session → `session.rs`
 
 ### Phase 3: Create Demo Module
 1. Create `demo/` subdirectory

@@ -6,6 +6,7 @@ pub(crate) mod input_source;
 pub(crate) mod message;
 pub(crate) mod parse;
 mod chat_session;
+pub mod agent_env;
 
 pub use chat_session::{
     ChatSession, ChatError, ChatState,
@@ -244,19 +245,66 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
-        let mut input = self.input;
+        println!("Starting Agent Environment...");
 
-        let mut stderr = std::io::stderr();
-        execute!(
-            stderr,
-            style::SetForegroundColor(Color::Red),
-            style::Print("HELLO WORLD: "),
-            style::SetForegroundColor(Color::Reset),
-            style::Print("nothing is here yet\n")
+        // Initialize session and UI
+        let session = agent_env::demo::build_session().await?;
+        let ui = agent_env::demo::build_ui();
+
+        // Create workers
+        let worker1 = session.build_worker();
+        let worker2 = session.build_worker();
+
+        // Launch jobs
+        let job1 = session.run_demo_loop(
+            worker1.clone(),
+            agent_env::demo::WorkerInput {
+                prompt: "lorem ipsum please, twice".to_string(),
+            },
+            Arc::new(ui.interface(agent_env::demo::AnsiColor::Cyan)),
         )?;
 
-        // TODO: This is where we plug in new entry point
+        let job2 = session.run_demo_loop(
+            worker2.clone(),
+            agent_env::demo::WorkerInput {
+                prompt: "introduce yourself".to_string(),
+            },
+            Arc::new(ui.interface(agent_env::demo::AnsiColor::Green)),
+        )?;
 
+        // Add completion continuations
+        let ui_clone = ui.clone();
+        job1.worker_job_continuations.add_or_run_now(
+            "completion_report",
+            agent_env::Continuations::boxed(move |worker, completion_type, _error_msg| {
+                let ui = ui_clone.clone();
+                async move {
+                    ui.report_job_completion(worker, completion_type).await
+                }
+            }),
+            job1.worker.clone(),
+        ).await;
+
+        let ui_clone = ui.clone();
+        job2.worker_job_continuations.add_or_run_now(
+            "completion_report",
+            agent_env::Continuations::boxed(move |worker, completion_type, _error_msg| {
+                let ui = ui_clone.clone();
+                async move {
+                    ui.report_job_completion(worker, completion_type).await
+                }
+            }),
+            job2.worker.clone(),
+        ).await;
+
+        // Run for a period then cancel
+        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
+        session.cancel_all_jobs();
+
+        // Wait for cleanup
+        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+
+        println!("Completed");
         Ok(ExitCode::SUCCESS)
     }
 }

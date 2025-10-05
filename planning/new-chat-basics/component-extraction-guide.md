@@ -2,7 +2,7 @@
 
 This document provides detailed instructions for extracting each component from the prototype into the new structure.
 
-## 1. Continuations System (`continuations.rs`)
+## 1. Worker Job Continuations System (`worker_job_continuations.rs`)
 
 ### Extract from prototype (lines ~13-95):
 - `WorkerJobCompletionType` enum
@@ -37,7 +37,7 @@ pub struct Continuations { ... }
 impl Continuations { ... }
 ```
 
-## 2. Model Provider (`model_provider.rs`)
+## 2. Model Provider (`model_provider.rs` + `model_provider_impls/`)
 
 ### Extract from prototype (lines ~97-265):
 - `ModelRequest` struct
@@ -45,17 +45,18 @@ impl Continuations { ... }
 - `ModelResponse` struct
 - `ToolRequest` struct
 - `ModelProvider` trait
-- `BedrockConverseStreamModelProvider` struct and implementation
+- `BedrockConverseStreamModelProvider` struct and implementation (goes in separate file)
 
 ### Key points:
+- Trait and data structures in `model_provider.rs`
+- Implementations in `model_provider_impls/` subdirectory
 - Depends on `aws_sdk_bedrockruntime` for Bedrock client
 - Uses `tokio_util::sync::CancellationToken`
 - Async trait requires `#[async_trait::async_trait]`
 - Handles streaming with cancellation support
 
-### Module structure:
+### Module structure (`model_provider.rs`):
 ```rust
-use aws_sdk_bedrockruntime::{Client as BedrockClient, types::*};
 use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone)]
@@ -72,12 +73,26 @@ pub struct ToolRequest { ... }
 
 #[async_trait::async_trait]
 pub trait ModelProvider: Send + Sync { ... }
+```
+
+### Module structure (`model_provider_impls/bedrock_converse_stream.rs`):
+```rust
+use aws_sdk_bedrockruntime::{Client as BedrockClient, types::*};
+use tokio_util::sync::CancellationToken;
+use crate::agent_env::model_provider::*;
 
 #[derive(Clone)]
 pub struct BedrockConverseStreamModelProvider { ... }
 
 #[async_trait::async_trait]
 impl ModelProvider for BedrockConverseStreamModelProvider { ... }
+```
+
+### Module structure (`model_provider_impls/mod.rs`):
+```rust
+pub mod bedrock_converse_stream;
+
+pub use bedrock_converse_stream::BedrockConverseStreamModelProvider;
 ```
 
 ## 3. Worker (`worker.rs`)
@@ -88,7 +103,7 @@ impl ModelProvider for BedrockConverseStreamModelProvider { ... }
 - Worker state management methods
 
 ### Key points:
-- Depends on `model_provider.rs` for `BedrockConverseStreamModelProvider`
+- Depends on `model_provider_impls::BedrockConverseStreamModelProvider`
 - Depends on `worker_interface.rs` for `WorkerToHostInterface`
 - Uses `Arc<Mutex<T>>` for thread-safe state
 - Uses `uuid::Uuid` for worker IDs
@@ -97,7 +112,7 @@ impl ModelProvider for BedrockConverseStreamModelProvider { ... }
 ```rust
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
-use super::model_provider::BedrockConverseStreamModelProvider;
+use super::model_provider_impls::BedrockConverseStreamModelProvider;
 use super::worker_interface::WorkerToHostInterface;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -148,7 +163,7 @@ pub trait WorkerTask: Send + Sync {
 - Job lifecycle methods
 
 ### Key points:
-- Depends on `worker.rs`, `worker_task.rs`, `continuations.rs`
+- Depends on `worker.rs`, `worker_task.rs`, `worker_job_continuations.rs`
 - Uses `tokio_util::sync::CancellationToken`
 - Uses `tokio::task::JoinHandle` for async task management
 - Integrates continuation system
@@ -159,14 +174,14 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use super::worker::Worker;
 use super::worker_task::WorkerTask;
-use super::continuations::Continuations;
+use super::worker_job_continuations::Continuations;
 
 pub struct WorkerJob {
     pub worker: Arc<Worker>,
     pub worker_task: Arc<dyn WorkerTask>,
     pub cancellation_token: CancellationToken,
     pub task_handle: Option<tokio::task::JoinHandle<Result<(), anyhow::Error>>>,
-    pub continuations: Arc<Continuations>,
+    pub worker_job_continuations: Arc<Continuations>,
 }
 
 impl WorkerJob {
@@ -216,7 +231,7 @@ pub trait WorkerToHostInterface: Send + Sync {
 - Job launching methods
 
 ### Key points:
-- Depends on `worker.rs`, `worker_job.rs`, `worker_task.rs`, `model_provider.rs`
+- Depends on `worker.rs`, `worker_job.rs`, `worker_task.rs`, `model_provider_impls`
 - Uses `Arc<Mutex<Vec<T>>>` for concurrent collections
 - Provides factory methods for workers and jobs
 
@@ -226,7 +241,7 @@ use std::sync::{Arc, Mutex};
 use super::worker::Worker;
 use super::worker_job::WorkerJob;
 use super::worker_task::WorkerTask;
-use super::model_provider::BedrockConverseStreamModelProvider;
+use super::model_provider_impls::BedrockConverseStreamModelProvider;
 use tokio_util::sync::CancellationToken;
 
 pub struct Session {
@@ -345,7 +360,7 @@ impl CliUi {
 ```rust
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_bedrockruntime::Client as BedrockClient;
-use crate::agent_env::{Session, BedrockConverseStreamModelProvider};
+use crate::agent_env::{Session, model_provider_impls::BedrockConverseStreamModelProvider};
 use super::cli_interface::CliUi;
 
 pub async fn build_session() -> Result<Session, anyhow::Error> { ... }
@@ -358,8 +373,9 @@ pub fn build_ui() -> CliUi { ... }
 ### Structure:
 ```rust
 // Core modules
-pub mod continuations;
+pub mod worker_job_continuations;
 pub mod model_provider;
+pub mod model_provider_impls;
 pub mod worker;
 pub mod worker_task;
 pub mod worker_job;
@@ -370,11 +386,11 @@ pub mod session;
 pub mod demo;
 
 // Re-exports for convenience
-pub use continuations::{Continuations, JobState, WorkerJobCompletionType};
+pub use worker_job_continuations::{Continuations, JobState, WorkerJobCompletionType};
 pub use model_provider::{
-    ModelProvider, ModelRequest, ModelResponse, ModelResponseChunk,
-    BedrockConverseStreamModelProvider,
+    ModelProvider, ModelRequest, ModelResponse, ModelResponseChunk, ToolRequest,
 };
+pub use model_provider_impls::BedrockConverseStreamModelProvider;
 pub use worker::{Worker, WorkerStates};
 pub use worker_task::WorkerTask;
 pub use worker_job::WorkerJob;
@@ -401,17 +417,20 @@ Follow this order to minimize compilation errors:
 
 1. Create directory structure
 2. Create `mod.rs` with module declarations (empty modules)
-3. Extract `continuations.rs` (no dependencies)
-4. Extract `model_provider.rs` (no dependencies)
-5. Extract `worker_interface.rs` (depends on worker, model_provider - use forward declarations)
-6. Extract `worker.rs` (depends on model_provider, worker_interface)
-7. Extract `worker_task.rs` (depends on worker)
-8. Extract `worker_job.rs` (depends on worker, worker_task, continuations)
-9. Extract `session.rs` (depends on worker, worker_job, worker_task, model_provider)
-10. Create `demo/mod.rs`
-11. Extract `demo/cli_interface.rs` (depends on core modules)
-12. Extract `demo/init.rs` (depends on session, cli_interface)
-13. Extract `demo/proto_loop.rs` (depends on all core modules)
+3. Extract `worker_job_continuations.rs` (no dependencies)
+4. Extract `model_provider.rs` (trait and data structures only)
+5. Create `model_provider_impls/` subdirectory
+6. Extract `model_provider_impls/bedrock_converse_stream.rs` (Bedrock implementation)
+7. Create `model_provider_impls/mod.rs`
+8. Extract `worker_interface.rs` (depends on worker, model_provider - use forward declarations)
+9. Extract `worker.rs` (depends on model_provider_impls, worker_interface)
+10. Extract `worker_task.rs` (depends on worker)
+11. Extract `worker_job.rs` (depends on worker, worker_task, worker_job_continuations)
+12. Extract `session.rs` (depends on worker, worker_job, worker_task, model_provider_impls)
+13. Create `demo/mod.rs`
+14. Extract `demo/cli_interface.rs` (depends on core modules)
+15. Extract `demo/init.rs` (depends on session, cli_interface)
+16. Extract `demo/proto_loop.rs` (depends on all core modules)
 
 ## Common Issues and Solutions
 
