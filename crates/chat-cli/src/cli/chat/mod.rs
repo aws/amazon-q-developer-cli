@@ -154,6 +154,9 @@ use crate::cli::tool::{
     evaluate_tool_permissions,
     ToolPermissionResult,
 };
+
+pub mod permission;
+use permission::PermissionInterface;
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
     truncate_message,
@@ -1108,6 +1111,13 @@ impl ChatSession {
             .reload_builtin_tools(os, &mut self.stderr)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))
+    }
+
+    /// Creates the appropriate permission interface for this chat session
+    fn create_permission_interface<'a>(&self, os: &'a Os) -> permission::console::ConsolePermissionInterface<'a> {
+        permission::console::ConsolePermissionInterface {
+            os,
+        }
     }
 }
 
@@ -2189,6 +2199,11 @@ impl ChatSession {
         // Verify tools have permissions using pure evaluation function
         let permission_results = evaluate_tool_permissions(&self.tool_uses, &self.conversation.agents, os);
         
+        // Create permission interface for handling UI interactions
+        let context = permission::PermissionContext {
+            trust_all_tools: self.conversation.agents.trust_all_tools,
+        };
+        
         for result in permission_results {
             match result {
                 ToolPermissionResult::Allowed { tool_index: _ } => {
@@ -2196,23 +2211,10 @@ impl ChatSession {
                     continue;
                 }
                 ToolPermissionResult::Denied { tool_index: _, tool_name, rules } => {
-                    let formatted_set = rules.into_iter().fold(String::new(), |mut acc, rule| {
-                        acc.push_str(&format!("\n  - {rule}"));
-                        acc
-                    });
-
-                    execute!(
-                        self.stderr,
-                        style::SetForegroundColor(Color::Red),
-                        style::Print("Command "),
-                        style::SetForegroundColor(Color::Yellow),
-                        style::Print(&tool_name),
-                        style::SetForegroundColor(Color::Red),
-                        style::Print(" is rejected because it matches one or more rules on the denied list:"),
-                        style::Print(formatted_set),
-                        style::Print("\n"),
-                        style::SetForegroundColor(Color::Reset),
-                    )?;
+                    // Use permission interface to show denied tool
+                    let mut permission_interface = self.create_permission_interface(os);
+                    permission_interface.show_denied_tool(&tool_name, rules).await
+                        .map_err(|e| ChatError::Custom(format!("Permission interface error: {e}").into()))?;
 
                     return Ok(ChatState::HandleInput {
                         input: format!(
@@ -2222,23 +2224,15 @@ impl ChatSession {
                     });
                 }
                 ToolPermissionResult::RequiresConfirmation { tool_index, tool_name: _ } => {
-                    let _tool = &mut self.tool_uses[tool_index];
-                    let allowed = false; // This tool requires confirmation
-
-                    if os
-                        .database
-                        .settings
-                        .get_bool(Setting::ChatEnableNotifications)
-                        .unwrap_or(false)
-                    {
-                        play_notification_bell(!allowed);
-                    }
-
-                    // TODO: Control flow is hacky here because of borrow rules
-                    let _ = _tool;
-                    self.print_tool_description(os, tool_index, allowed).await?;
-                    let _tool = &mut self.tool_uses[tool_index];
-
+                    let tool = &self.tool_uses[tool_index];
+                    
+                    // Use permission interface to request permission
+                    let mut permission_interface = self.create_permission_interface(os);
+                    let _decision = permission_interface.request_permission(tool, &context).await
+                        .map_err(|e| ChatError::Custom(format!("Permission interface error: {e}").into()))?;
+                    
+                    // For now, maintain existing behavior by setting pending_tool_index
+                    // This will be cleaned up when we fully integrate the new flow
                     self.pending_tool_index = Some(tool_index);
 
                     return Ok(ChatState::PromptUser {
