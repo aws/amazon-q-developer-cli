@@ -195,13 +195,9 @@ impl AgentSubcommand {
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
-                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                let mut cmd = std::process::Command::new(editor_cmd);
 
-                let status = cmd.arg(&path_with_file_name).status()?;
-                if !status.success() {
-                    return Err(ChatError::Custom("Editor process did not exit with success".into()));
-                }
+                crate::util::editor::launch_editor(&path_with_file_name)
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 
                 let new_agent = Agent::load(
                     os,
@@ -253,13 +249,9 @@ impl AgentSubcommand {
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 
-                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                let mut cmd = std::process::Command::new(editor_cmd);
 
-                let status = cmd.arg(&path_with_file_name).status()?;
-                if !status.success() {
-                    return Err(ChatError::Custom("Editor process did not exit with success".into()));
-                }
+                crate::util::editor::launch_editor(&path_with_file_name)
+                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 
                 let updated_agent = Agent::load(
                     os,
