@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "acp-client-test"
+version = "1.18.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
