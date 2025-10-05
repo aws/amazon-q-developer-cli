@@ -15,12 +15,7 @@ use amzn_codewhisperer_client::Client as CodewhispererClient;
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
 use amzn_codewhisperer_client::types::Origin::Cli;
 use amzn_codewhisperer_client::types::{
-    Model,
-    OptInFeatureToggle,
-    OptOutPreference,
-    SubscriptionStatus,
-    TelemetryEvent,
-    UserContext,
+    Model, OptInFeatureToggle, OptOutPreference, SubscriptionStatus, TelemetryEvent, UserContext,
 };
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
@@ -36,35 +31,19 @@ pub use error::ApiClientError;
 pub use profile::list_available_profiles;
 use serde_json::Map;
 use tokio::sync::RwLock;
-use tracing::{
-    debug,
-    error,
-};
+use tracing::{debug, error};
 
 use crate::api_client::credentials::CredentialsChain;
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
-use crate::api_client::model::{
-    ChatResponseStream,
-    ConversationState,
-};
+use crate::api_client::model::{ChatResponseStream, ConversationState};
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
 use crate::auth::builder_id::BearerResolver;
-use crate::aws_common::{
-    UserAgentOverrideInterceptor,
-    app_name,
-    behavior_version,
-};
+use crate::aws_common::{UserAgentOverrideInterceptor, app_name, behavior_version};
 use crate::database::settings::Setting;
-use crate::database::{
-    AuthProfile,
-    Database,
-};
+use crate::database::{AuthProfile, Database};
 use crate::mock_llm::MockLLM;
-use crate::os::{
-    Env,
-    Fs,
-};
+use crate::os::{Env, Fs};
 
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
@@ -574,10 +553,7 @@ impl ApiClient {
             }
         } else if let Some(mock_llm) = &self.mock_llm {
             // Spawn the mock LLM for this conversation
-            let mock_rx = mock_llm.spawn_turn(
-                history.unwrap_or_default(),
-                user_input_message.content,
-            );
+            let mock_rx = mock_llm.spawn_turn(history.unwrap_or_default(), user_input_message.content);
             return Ok(SendMessageOutput::Mock(mock_rx));
         } else {
             unreachable!("One of the clients must be created by this point");
@@ -600,7 +576,7 @@ impl ApiClient {
     ///     "I'll help you with that",
     ///     {
     ///       "tool_use_id": "1",
-    ///       "name": "fs_write", 
+    ///       "name": "fs_write",
     ///       "args": {"path": "/file.txt", "content": "Hello"}
     ///     }
     ///   ],
@@ -782,11 +758,7 @@ fn split_tool_use_event(value: &Map<String, serde_json::Value>) -> Vec<ChatRespo
 
 #[cfg(test)]
 mod tests {
-    use amzn_codewhisperer_client::types::{
-        ChatAddMessageEvent,
-        IdeCategory,
-        OperatingSystem,
-    };
+    use amzn_codewhisperer_client::types::{ChatAddMessageEvent, IdeCategory, OperatingSystem};
 
     use super::*;
     use crate::api_client::model::UserInputMessage;
@@ -826,13 +798,7 @@ mod tests {
             .await
             .unwrap();
 
-        client.set_mock_output(serde_json::json!([
-            [
-                "Hello!",
-                " How can I",
-                " assist you today?"
-            ]
-        ]));
+        client.set_mock_output(serde_json::json!([["Hello!", " How can I", " assist you today?"]]));
 
         let mut output = client
             .send_message(ConversationState {
