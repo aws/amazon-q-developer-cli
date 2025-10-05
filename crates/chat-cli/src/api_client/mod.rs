@@ -640,47 +640,43 @@ impl ApiClient {
         self.set_mock_llm(move |mut ctx| {
             let response_groups = response_groups.clone();
             async move {
-            // Determine which response group to use based on user message count
-            // Each user message gets the next response group in sequence
-            let response_index = ctx.count_user_messages().saturating_sub(1); // 0-indexed
-            
-            // Send the corresponding response group
-            if response_index < response_groups.len() {
-                for event in &response_groups[response_index] {
-                    match event {
-                        ChatResponseStream::AssistantResponseEvent { content } => {
-                            ctx.respond(content).await?;
-                        },
-                        ChatResponseStream::ToolUseEvent { tool_use_id, name, input, stop } => {
-                            // For tool events, we need to create proper tool use structure
-                            if stop.unwrap_or(false) {
-                                // This is a complete tool use - parse the arguments
-                                let args = input.as_ref().map(|s| {
-                                    serde_json::from_str(s).unwrap_or(serde_json::Value::String(s.clone()))
-                                }).unwrap_or(serde_json::Value::Null);
-                                
-                                let _tool_use = crate::cli::chat::AssistantToolUse {
-                                    id: tool_use_id.clone(),
-                                    name: name.clone(),
-                                    orig_name: name.clone(),
-                                    args: args.clone(),
-                                    orig_args: args,
-                                };
-                                
-                                // For now, just send text response about tool use since we don't have direct tool event API
-                                // TODO: Implement proper tool event support in MockLLMContext if needed
-                                ctx.respond(format!("[Tool: {} with args: {}]", name, tool_use_id)).await?;
-                            }
-                        },
-                        _ => {}, // Ignore other event types
+                // Determine which response group to use based on user message count
+                // Each user message gets the next response group in sequence
+                let response_index = ctx.count_user_messages().saturating_sub(1); // 0-indexed
+
+                tracing::debug!(
+                    actor="MockLLM", 
+                    user_message=ctx.current_user_message(), 
+                    count=ctx.count_user_messages(), 
+                    response_index, 
+                    response_groups=?response_groups,
+                );
+
+                // Send the corresponding response group
+                if response_index < response_groups.len() {
+                    for event in &response_groups[response_index] {
+                        match event {
+                            ChatResponseStream::AssistantResponseEvent { content } => {
+                                ctx.respond(content).await?;
+                            },
+                            ChatResponseStream::ToolUseEvent {
+                                tool_use_id,
+                                name,
+                                input,
+                                stop,
+                            } => {
+                                ctx.respond_tool_use(tool_use_id.clone(), name.clone(), input.clone(), stop.clone())
+                                    .await?;
+                            },
+                            _ => {}, // Ignore other event types
+                        }
                     }
+                } else {
+                    // No more predefined responses, send a fallback
+                    ctx.respond("I don't have a response configured for this message.").await?;
                 }
-            } else {
-                // No more predefined responses, send a fallback
-                ctx.respond("I don't have a response configured for this message.").await?;
-            }
-            
-            Ok(())
+                
+                Ok(())
             }
         });
     }

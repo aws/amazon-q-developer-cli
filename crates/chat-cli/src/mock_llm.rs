@@ -38,10 +38,40 @@ impl MockLLMContext {
                         .map_err(|_| eyre::eyre!("Response channel closed"))
     }
 
+    async fn send_tool_use(
+        tx: &mut mpsc::Sender<Result<ChatResponseStream, RecvError>>,
+        tool_use_id: String,
+        name: String,
+        input: Option<String>,
+        stop: Option<bool>,
+    ) -> eyre::Result<()> {
+        tx
+            .send(Ok(ChatResponseStream::ToolUseEvent {
+                tool_use_id,
+                name,
+                input,
+                stop,
+            }))
+            .await
+            .map_err(|_| eyre::eyre!("Response channel closed"))
+    }
+
     /// Respond with text to the user.
     #[allow(dead_code)]
     pub async fn respond(&mut self, text: impl ToString) -> eyre::Result<()> {
         Self::send_text(&mut self.tx, text).await
+    }
+
+    /// Respond with a tool use
+    #[allow(dead_code)]
+    pub async fn respond_tool_use(
+        &mut self,
+        tool_use_id: String,
+        name: String,
+        input: Option<String>,
+        stop: Option<bool>,
+    ) -> eyre::Result<()> {
+        Self::send_tool_use(&mut self.tx, tool_use_id, name, input, stop).await
     }
 
     /// Count the number of user messages in the conversation (including the current one).
