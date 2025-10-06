@@ -15,6 +15,7 @@
 ///     OutputFormat::JavaCdk => { /* ... */ },
 ///     OutputFormat::JsonCfn => { /* ... */ },
 ///     OutputFormat::PythonCdk => { /* ... */ },
+///     OutputFormat::TerraformIac => { /* ... */ },
 ///     OutputFormat::TypescriptCdk => { /* ... */ },
 ///     OutputFormat::YamlCfn => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
@@ -58,6 +59,8 @@ pub enum OutputFormat {
     #[allow(missing_docs)] // documentation missing in model
     PythonCdk,
     #[allow(missing_docs)] // documentation missing in model
+    TerraformIac,
+    #[allow(missing_docs)] // documentation missing in model
     TypescriptCdk,
     #[allow(missing_docs)] // documentation missing in model
     YamlCfn,
@@ -73,6 +76,7 @@ impl ::std::convert::From<&str> for OutputFormat {
             "java/cdk" => OutputFormat::JavaCdk,
             "json/cfn" => OutputFormat::JsonCfn,
             "python/cdk" => OutputFormat::PythonCdk,
+            "terraform/iac" => OutputFormat::TerraformIac,
             "typescript/cdk" => OutputFormat::TypescriptCdk,
             "yaml/cfn" => OutputFormat::YamlCfn,
             other => OutputFormat::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
@@ -95,6 +99,7 @@ impl OutputFormat {
             OutputFormat::JavaCdk => "java/cdk",
             OutputFormat::JsonCfn => "json/cfn",
             OutputFormat::PythonCdk => "python/cdk",
+            OutputFormat::TerraformIac => "terraform/iac",
             OutputFormat::TypescriptCdk => "typescript/cdk",
             OutputFormat::YamlCfn => "yaml/cfn",
             OutputFormat::Unknown(value) => value.as_str(),
@@ -103,7 +108,14 @@ impl OutputFormat {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["java/cdk", "json/cfn", "python/cdk", "typescript/cdk", "yaml/cfn"]
+        &[
+            "java/cdk",
+            "json/cfn",
+            "python/cdk",
+            "terraform/iac",
+            "typescript/cdk",
+            "yaml/cfn",
+        ]
     }
 }
 impl ::std::convert::AsRef<str> for OutputFormat {
@@ -129,6 +141,7 @@ impl ::std::fmt::Display for OutputFormat {
             OutputFormat::JavaCdk => write!(f, "java/cdk"),
             OutputFormat::JsonCfn => write!(f, "json/cfn"),
             OutputFormat::PythonCdk => write!(f, "python/cdk"),
+            OutputFormat::TerraformIac => write!(f, "terraform/iac"),
             OutputFormat::TypescriptCdk => write!(f, "typescript/cdk"),
             OutputFormat::YamlCfn => write!(f, "yaml/cfn"),
             OutputFormat::Unknown(value) => write!(f, "{}", value),

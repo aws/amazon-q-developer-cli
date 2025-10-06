@@ -13,6 +13,14 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
+use crate::constants::ui_text::{
+    LIMIT_REACHED_TEXT,
+    POPULAR_SHORTCUTS,
+    RESUME_TEXT,
+    SMALL_SCREEN_POPULAR_SHORTCUTS,
+    SMALL_SCREEN_WELCOME,
+    WELCOME_TEXT,
+};
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -106,6 +114,7 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
+use tools::delegate::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
     NATIVE_TOOLS,
@@ -156,6 +165,15 @@ use crate::cli::chat::cli::prompts::{
 };
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
+use crate::constants::{
+    error_messages,
+    tips,
+    ui_text,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::core::{
@@ -177,27 +195,6 @@ use crate::util::{
     directories,
     ui,
 };
-
-const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
-2. Wait until next month when your limit automatically resets." };
-
-pub const EXTRA_HELP: &str = color_print::cstr! {"
-<cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
-
-<cyan,em>Tips:</cyan,em>
-<em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>         <black!>Insert new-line to provide multi-line prompt</black!>
-                    <black!>Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
-                    <black!>Use Tab to select multiple items</black!>
-                    <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
-<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
-                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
-<em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
-                    <black!>Change using: q settings chat.skimCommandKey x</black!>
-"};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum WrapMode {
@@ -446,78 +443,25 @@ impl ChatArgs {
     }
 }
 
-const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
-    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
- ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
- ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
- ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
- ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
- ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
-
-const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
-const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
-
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 20] = [
-    color_print::cstr! {"You can resume the last conversation from your current directory by launching with
-    <green!>q chat --resume</green!>"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding.
-    Just run <green!>q settings chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can use
-    <green!>/editor</green!> to edit your prompt with a vim-like experience"},
-    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings
-    chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can execute bash commands by typing
-    <green!>!</green!> followed by the command"},
-    color_print::cstr! {"Q can use tools without asking for
-    confirmation every time. Give <green!>/tools trust</green!> a try"},
-    color_print::cstr! {"You can
-    programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks
-    help</green!>"},
-    color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation
-    history with its summary to free up the context space"},
-    color_print::cstr! {"If you want to file an issue
-    to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
-    color_print::cstr! {"You can enable
-    custom tools with <green!>MCP servers</green!>. Learn more with /help"},
-    color_print::cstr! {"You can
-    specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in
-    int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use
-    /tools to see pending servers."},
-    color_print::cstr! {"You can see the server load status as well as any
-    warnings or errors associated with <green!>/mcp</green!>"},
-    color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
-    color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
-    color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
-    color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
-    color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
-    color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
-    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
-];
+const ROTATING_TIPS: [&str; 20] = tips::ROTATING_TIPS;
 
 const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
-const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
-<green!>ctrl + j</green!> new lines
-<green!>ctrl + s</green!> fuzzy search
-</black!>"};
-
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
-const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>
-\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"};
+fn trust_all_text() -> String {
+    ui_text::trust_all_warning()
+}
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
 const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
+const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 /// Enum used to denote the origin of a tool use event
 enum ToolUseStatus {
@@ -969,12 +913,13 @@ impl ChatSession {
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print(" ⚠️  Amazon Q rate limit reached:\n"),
+                        style::Print(error_messages::RATE_LIMIT_PREFIX),
+                        style::Print("\n"),
                         style::Print(format!("    {}\n\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
                     if self.interactive {
@@ -1014,12 +959,12 @@ impl ChatSession {
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
                         style::SetForegroundColor(Color::Red),
-                        style::Print("Amazon Q is having trouble responding right now:\n"),
+                        style::Print(format!("{}:\n", error_messages::TROUBLE_RESPONDING)),
                         style::Print(format!("    {}\n", err.clone())),
                         style::SetAttribute(Attribute::Reset),
                         style::SetForegroundColor(Color::Reset),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::MonthlyLimitReached { .. } => {
                     let subscription_status = get_subscription_status(os).await;
@@ -1076,17 +1021,9 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                _ => (
-                    "Amazon Q is having trouble responding right now",
-                    Report::from(err),
-                    true,
-                ),
+                _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
             },
-            _ => (
-                "Amazon Q is having trouble responding right now",
-                Report::from(err),
-                true,
-            ),
+            _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
         };
 
         if display_err_message {
@@ -1150,6 +1087,14 @@ impl ChatSession {
         }
 
         Ok(())
+    }
+
+    /// Reload built-in tools to reflect experiment changes while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os) -> Result<(), ChatError> {
+        self.conversation
+            .reload_builtin_tools(os, &mut self.stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))
     }
 }
 
@@ -1254,7 +1199,7 @@ impl ChatSession {
             let welcome_text = match self.existing_conversation {
                 true => RESUME_TEXT,
                 false => match is_small_screen {
-                    true => SMALL_SCREEN_WELCOME_TEXT,
+                    true => SMALL_SCREEN_WELCOME,
                     false => WELCOME_TEXT,
                 },
             };
@@ -1304,7 +1249,8 @@ impl ChatSession {
             queue!(
                 self.stderr,
                 style::Print(format!(
-                    "{}{TRUST_ALL_TEXT}\n\n",
+                    "{}{}\n\n",
+                    trust_all_text(),
                     if !is_small_screen { "\n" } else { "" }
                 ))
             )?;
@@ -1331,12 +1277,7 @@ impl ChatSession {
         }
 
         // Initialize capturing if possible
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledCheckpoint)
-            .unwrap_or(false)
-        {
+        if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
             let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
             let start = std::time::Instant::now();
             let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
@@ -2125,12 +2066,7 @@ impl ChatSession {
         } else {
             // Track the message for checkpoint descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
                     if !manager.message_locked && self.pending_tool_index.is_none() {
@@ -2220,11 +2156,7 @@ impl ChatSession {
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
         // Check if we should auto-enter tangent mode for introspect tool
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTangentMode)
-            .unwrap_or(false)
+        if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
                 .database
                 .settings
@@ -2349,7 +2281,7 @@ impl ChatSession {
                     os,
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
-                    self.conversation.agents.get_active(),
+                    &self.conversation.agents,
                 )
                 .await;
 
@@ -2365,13 +2297,10 @@ impl ChatSession {
 
             // Handle checkpoint after tool execution - store tag for later display
             let checkpoint_tag: Option<String> = {
-                let enabled = os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledCheckpoint)
-                    .unwrap_or(false)
-                    && !self.conversation.is_in_tangent_mode();
-                if invoke_result.is_err() || !enabled {
+                if invoke_result.is_err()
+                    || !ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+                    || self.conversation.is_in_tangent_mode()
+                {
                     None
                 }
                 // Take manager out temporarily to avoid borrow conflicts
@@ -2392,7 +2321,7 @@ impl ChatSession {
                     };
                     let tag = if has_changes {
                         // Generate tag for this tool use
-                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+                        let tool_tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
 
                         // Get tool summary for commit message
                         let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
@@ -2405,9 +2334,9 @@ impl ChatSession {
                             }
                         };
 
-                        // Create checkpoint
+                        // Create tool checkpoint
                         if let Err(e) = manager.create_checkpoint(
-                            &tag,
+                            &tool_tag,
                             &description,
                             &self.conversation.history().clone(),
                             false,
@@ -2417,7 +2346,23 @@ impl ChatSession {
                             None
                         } else {
                             manager.tools_in_turn += 1;
-                            Some(tag)
+
+                            // Also update/create the turn checkpoint to point to latest state
+                            // This is important so that we create turn-checkpoints even when tools are aborted
+                            let turn_tag = format!("{}", manager.current_turn + 1);
+                            let turn_description = "Turn in progress".to_string();
+
+                            if let Err(e) = manager.create_checkpoint(
+                                &turn_tag,
+                                &turn_description,
+                                &self.conversation.history().clone(),
+                                true,
+                                None,
+                            ) {
+                                debug!("Failed to update turn checkpoint: {}", e);
+                            }
+
+                            Some(tool_tag)
                         }
                     } else {
                         None
@@ -2984,12 +2929,7 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             // Create turn checkpoint if tools were used
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     if manager.tools_in_turn > 0 {
@@ -3030,11 +2970,11 @@ impl ChatSession {
 
                         // Reset for next turn
                         manager.tools_in_turn = 0;
-                        manager.message_locked = false; // Unlock for next turn
                     } else {
                         // Clear pending message even if no tools were used
                         manager.pending_user_message = None;
                     }
+                    manager.message_locked = false; // Unlock for next turn
 
                     // Put manager back
                     self.conversation.checkpoint_manager = Some(manager);
@@ -3043,6 +2983,19 @@ impl ChatSession {
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
+
+            // Run Stop hooks when the assistant finishes responding
+            if let Some(cm) = self.conversation.context_manager.as_mut() {
+                let _ = cm
+                    .run_hooks(
+                        crate::cli::agent::hook::HookTrigger::Stop,
+                        &mut std::io::stderr(),
+                        os,
+                        None,
+                        None,
+                    )
+                    .await;
+            }
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -3364,19 +3317,21 @@ impl ChatSession {
         let tangent_mode = self.conversation.is_in_tangent_mode();
 
         // Check if context usage indicator is enabled
-        let usage_percentage = if os
-            .database
-            .settings
-            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
-            .unwrap_or(false)
-        {
+        let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
             use crate::cli::chat::cli::usage::get_total_usage_percentage;
             get_total_usage_percentage(self, os).await.ok()
         } else {
             None
         };
 
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
+        let mut generated_prompt =
+            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
+            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {

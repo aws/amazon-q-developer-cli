@@ -17,53 +17,8 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::os::Os;
-
-/// Represents an experimental feature that can be toggled
-#[derive(Debug, Clone)]
-struct Experiment {
-    name: &'static str,
-    description: &'static str,
-    setting_key: Setting,
-}
-
-static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
-    Experiment {
-        name: "Knowledge",
-        description: "Enables persistent context storage and retrieval across chat sessions (/knowledge)",
-        setting_key: Setting::EnabledKnowledge,
-    },
-    Experiment {
-        name: "Thinking",
-        description: "Enables complex reasoning with step-by-step thought processes",
-        setting_key: Setting::EnabledThinking,
-    },
-    Experiment {
-        name: "Tangent Mode",
-        description: "Enables entering into a temporary mode for sending isolated conversations (/tangent)",
-        setting_key: Setting::EnabledTangentMode,
-    },
-    Experiment {
-        name: "Todo Lists",
-        description: "Enables Q to create todo lists that can be viewed and managed using /todos",
-        setting_key: Setting::EnabledTodoList,
-    },
-    Experiment {
-        name: "Checkpoint",
-        description: concat!(
-            "Enables workspace checkpoints to snapshot, list, expand, diff, and restore files (/checkpoint)\n",
-            "                             ",
-            "Cannot be used in tangent mode (to avoid mixing up conversation history)"
-        ),
-        setting_key: Setting::EnabledCheckpoint,
-    },
-    Experiment {
-        name: "Context Usage Indicator",
-        description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
-        setting_key: Setting::EnabledContextUsageIndicator,
-    },
-];
 
 #[derive(Debug, PartialEq, Args)]
 pub struct ExperimentArgs;
@@ -79,22 +34,27 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
     // Get current experiment status
     let mut experiment_labels = Vec::new();
     let mut current_states = Vec::new();
+    let experiments = ExperimentManager::get_experiments();
 
-    for experiment in AVAILABLE_EXPERIMENTS {
-        let is_enabled = os.database.settings.get_bool(experiment.setting_key).unwrap_or(false);
+    for experiment in &experiments {
+        let is_enabled = ExperimentManager::is_enabled(os, experiment.experiment_name);
 
         current_states.push(is_enabled);
-        // Create clean single-line format: "Knowledge    [ON]   - Description"
+
         let status_indicator = if is_enabled {
-            style::Stylize::green("[ON] ")
+            format!("{}", style::Stylize::green("[ON] "))
         } else {
-            style::Stylize::grey("[OFF]")
+            format!("{}", style::Stylize::grey("[OFF]"))
         };
+
+        // Handle multi-line descriptions with proper indentation
+        let description = experiment.description.replace('\n', &format!("\n{}", " ".repeat(34)));
+
         let label = format!(
-            "{:<18} {} - {}",
-            experiment.name,
+            "{:<25} {:<6} {}",
+            experiment.experiment_name.as_str(),
             status_indicator,
-            style::Stylize::dark_grey(experiment.description)
+            style::Stylize::dark_grey(description)
         );
         experiment_labels.push(label);
     }
@@ -145,29 +105,18 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         )?;
 
         // Skip if user selected disclaimer or empty line (last 2 items)
-        if index >= AVAILABLE_EXPERIMENTS.len() {
+        if index >= experiments.len() {
             return Ok(Some(ChatState::PromptUser {
                 skip_printing_tools: false,
             }));
         }
 
-        let experiment = &AVAILABLE_EXPERIMENTS[index];
+        let experiment = &experiments[index];
         let current_state = current_states[index];
         let new_state = !current_state;
 
-        // Update the setting
-        os.database
-            .settings
-            .set(experiment.setting_key, new_state)
-            .await
-            .map_err(|e| ChatError::Custom(format!("Failed to update experiment setting: {e}").into()))?;
-
-        // Reload built-in tools to reflect the experiment change while preserving MCP tools
-        session
-            .conversation
-            .reload_builtin_tools(os, &mut session.stderr)
-            .await
-            .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))?;
+        // Update the setting using ExperimentManager
+        ExperimentManager::set_enabled(os, experiment.experiment_name, new_state, session).await?;
 
         let status_text = if new_state { "enabled" } else { "disabled" };
 
@@ -175,7 +124,11 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
             session.stderr,
             style::Print("\n"),
             style::SetForegroundColor(Color::Green),
-            style::Print(format!(" {} experiment {}\n\n", experiment.name, status_text)),
+            style::Print(format!(
+                " {} experiment {}\n\n",
+                experiment.experiment_name.as_str(),
+                status_text
+            )),
             style::ResetColor,
             style::SetForegroundColor(Color::Reset),
             style::SetBackgroundColor(Color::Reset),

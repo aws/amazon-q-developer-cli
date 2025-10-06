@@ -23,7 +23,10 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 use crate::util::directories::get_shadow_repo_dir;
 
@@ -84,12 +87,7 @@ With --hard:
 impl CheckpointSubcommand {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Check if checkpoint is enabled
-        if !os
-            .database
-            .settings
-            .get_bool(Setting::EnabledCheckpoint)
-            .unwrap_or(false)
-        {
+        if !ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
             execute!(
                 session.stderr,
                 style::SetForegroundColor(Color::Red),
@@ -107,7 +105,7 @@ impl CheckpointSubcommand {
                 session.stderr,
                 style::SetForegroundColor(Color::Yellow),
                 style::Print(
-                    "⚠️ Checkpoint is disabled while in tangent mode. Disable tangent mode with: q settings -d chat.enableTangentMode.\n\n"
+                    "⚠️ Checkpoint is disabled while in tangent mode. Please exit tangent mode if you want to use checkpoint.\n\n"
                 ),
                 style::SetForegroundColor(Color::Reset),
             )?;

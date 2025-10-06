@@ -41,6 +41,19 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "rateMultiplier" => {
+                                builder = builder.set_rate_multiplier(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
+                                );
+                            },
+                            "rateUnit" => {
+                                builder = builder.set_rate_unit(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             "tokenLimits" => {
                                 builder = builder.set_token_limits(
                                     crate::protocol_serde::shape_token_limits::de_token_limits(tokens)?,

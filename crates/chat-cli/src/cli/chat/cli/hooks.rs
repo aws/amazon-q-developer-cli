@@ -45,6 +45,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::constants::help_text::hooks_long_help;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
@@ -254,6 +255,7 @@ impl HookExecutor {
                     HookTrigger::UserPromptSubmit => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                     HookTrigger::PreToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                     HookTrigger::PostToolUse => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
+                    HookTrigger::Stop => Some(Instant::now() + Duration::from_secs(hook.cache_ttl_seconds)),
                 },
             });
         }
@@ -387,15 +389,7 @@ fn sanitize_user_prompt(input: &str) -> String {
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 #[command(
-    before_long_help = "Use context hooks to specify shell commands to run. The output from these 
-commands will be appended to the prompt to Amazon Q.
-
-Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
-
-Notes:
-• Hooks are executed in parallel
-• 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to Amazon Q
-• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history"
+    before_long_help = hooks_long_help()
 )]
 /// Arguments for the hooks command that displays configured context hooks
 pub struct HooksArgs;
@@ -568,7 +562,10 @@ mod tests {
         #[cfg(unix)]
         let command = format!("cat > {}", test_file_str);
         #[cfg(windows)]
-        let command = format!("type > {}", test_file_str);
+        let command = format!(
+            "powershell -Command \"$input | Out-File -FilePath '{}'\"",
+            test_file_str
+        );
 
         let hook = Hook {
             command,
@@ -703,5 +700,47 @@ mod tests {
         assert_eq!(*trigger, HookTrigger::PreToolUse);
         assert_eq!(*exit_code, 2);
         assert!(hook_output.contains("Tool execution blocked by security policy"));
+    }
+
+    #[tokio::test]
+    async fn test_stop_hook() {
+        let mut executor = HookExecutor::new();
+        let mut output = Vec::new();
+
+        // Create a simple Stop hook that outputs a message
+        #[cfg(unix)]
+        let command = "echo 'Turn completed successfully'";
+        #[cfg(windows)]
+        let command = "echo Turn completed successfully";
+
+        let hook = Hook {
+            command: command.to_string(),
+            timeout_ms: 5000,
+            cache_ttl_seconds: 0,
+            max_output_size: 1000,
+            matcher: None, // Stop hooks don't use matchers
+            source: crate::cli::agent::hook::Source::Session,
+        };
+
+        let hooks = HashMap::from([(HookTrigger::Stop, vec![hook])]);
+
+        let results = executor
+            .run_hooks(
+                hooks,
+                &mut output,
+                ".",  // cwd
+                None, // prompt
+                None, // tool_context - Stop doesn't have tool context
+            )
+            .await
+            .unwrap();
+
+        // Should have one result
+        assert_eq!(results.len(), 1);
+
+        let ((trigger, _hook), (exit_code, hook_output)) = &results[0];
+        assert_eq!(*trigger, HookTrigger::Stop);
+        assert_eq!(*exit_code, 0);
+        assert!(hook_output.contains("Turn completed successfully"));
     }
 }

@@ -9,6 +9,10 @@ pub struct Model {
     pub model_name: ::std::option::Option<::std::string::String>,
     /// Description of the model
     pub description: ::std::option::Option<::std::string::String>,
+    /// Rate multiplier of the model
+    pub rate_multiplier: ::std::option::Option<f64>,
+    /// Unit for the rate multiplier
+    pub rate_unit: ::std::option::Option<::std::string::String>,
     /// Limits on token usage for this model
     pub token_limits: ::std::option::Option<crate::types::TokenLimits>,
     /// List of input types supported by this model
@@ -31,6 +35,16 @@ impl Model {
     /// Description of the model
     pub fn description(&self) -> ::std::option::Option<&str> {
         self.description.as_deref()
+    }
+
+    /// Rate multiplier of the model
+    pub fn rate_multiplier(&self) -> ::std::option::Option<f64> {
+        self.rate_multiplier
+    }
+
+    /// Unit for the rate multiplier
+    pub fn rate_unit(&self) -> ::std::option::Option<&str> {
+        self.rate_unit.as_deref()
     }
 
     /// Limits on token usage for this model
@@ -65,6 +79,8 @@ pub struct ModelBuilder {
     pub(crate) model_id: ::std::option::Option<::std::string::String>,
     pub(crate) model_name: ::std::option::Option<::std::string::String>,
     pub(crate) description: ::std::option::Option<::std::string::String>,
+    pub(crate) rate_multiplier: ::std::option::Option<f64>,
+    pub(crate) rate_unit: ::std::option::Option<::std::string::String>,
     pub(crate) token_limits: ::std::option::Option<crate::types::TokenLimits>,
     pub(crate) supported_input_types: ::std::option::Option<::std::vec::Vec<crate::types::InputType>>,
     pub(crate) supports_prompt_cache: ::std::option::Option<bool>,
@@ -120,6 +136,40 @@ impl ModelBuilder {
     /// Description of the model
     pub fn get_description(&self) -> &::std::option::Option<::std::string::String> {
         &self.description
+    }
+
+    /// Rate multiplier of the model
+    pub fn rate_multiplier(mut self, input: f64) -> Self {
+        self.rate_multiplier = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Rate multiplier of the model
+    pub fn set_rate_multiplier(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.rate_multiplier = input;
+        self
+    }
+
+    /// Rate multiplier of the model
+    pub fn get_rate_multiplier(&self) -> &::std::option::Option<f64> {
+        &self.rate_multiplier
+    }
+
+    /// Unit for the rate multiplier
+    pub fn rate_unit(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.rate_unit = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Unit for the rate multiplier
+    pub fn set_rate_unit(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.rate_unit = input;
+        self
+    }
+
+    /// Unit for the rate multiplier
+    pub fn get_rate_unit(&self) -> &::std::option::Option<::std::string::String> {
+        &self.rate_unit
     }
 
     /// Limits on token usage for this model
@@ -196,6 +246,8 @@ impl ModelBuilder {
             })?,
             model_name: self.model_name,
             description: self.description,
+            rate_multiplier: self.rate_multiplier,
+            rate_unit: self.rate_unit,
             token_limits: self.token_limits,
             supported_input_types: self.supported_input_types,
             supports_prompt_cache: self.supports_prompt_cache,

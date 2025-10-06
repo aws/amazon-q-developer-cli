@@ -71,6 +71,7 @@ use crate::cli::chat::server_messenger::{
     UpdateEventMessage,
 };
 use crate::cli::chat::tools::custom_tool::CustomTool;
+use crate::cli::chat::tools::delegate::Delegate;
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -727,6 +728,9 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
+            if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
+                tool_specs.remove("delegate");
+            }
 
             #[cfg(windows)]
             {
@@ -873,6 +877,7 @@ impl ToolManager {
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
+            "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
@@ -1008,6 +1013,35 @@ impl ToolManager {
         }
     }
 
+    #[inline]
+    fn process_prompt_arguments(
+        schema: &Option<Vec<rmcp::model::PromptArgument>>,
+        arguments: &Option<Vec<String>>,
+    ) -> Option<serde_json::Map<String, serde_json::Value>> {
+        match (schema, arguments) {
+            // No schema defined - pass None
+            (None, _) => None,
+            // Schema exists but no user values - pass empty map for MCP server
+            (Some(_schema), None) => Some(serde_json::Map::new()),
+            // Schema exists with user values - process normally
+            (Some(schema), Some(value)) => {
+                let params = schema.iter().zip(value.iter()).fold(
+                    HashMap::<String, String>::new(),
+                    |mut acc, (prompt_get_arg, value)| {
+                        acc.insert(prompt_get_arg.name.clone(), value.clone());
+                        acc
+                    },
+                );
+                Some(
+                    params
+                        .into_iter()
+                        .map(|(k, v)| (k, serde_json::Value::String(v)))
+                        .collect(),
+                )
+            },
+        }
+    }
+
     pub async fn get_prompt(
         &mut self,
         name: String,
@@ -1080,23 +1114,8 @@ impl ToolManager {
                     let server_name = &bundle.server_name;
                     let client = self.clients.get_mut(server_name).ok_or(GetPromptError::MissingClient)?;
                     let PromptBundle { prompt_get, .. } = bundle;
-                    let arguments = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
-                        let params = schema.iter().zip(value.iter()).fold(
-                            HashMap::<String, String>::new(),
-                            |mut acc, (prompt_get_arg, value)| {
-                                acc.insert(prompt_get_arg.name.clone(), value.clone());
-                                acc
-                            },
-                        );
-                        Some(
-                            params
-                                .into_iter()
-                                .map(|(k, v)| (k, serde_json::Value::String(v)))
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    };
+
+                    let arguments = Self::process_prompt_arguments(&prompt_get.arguments, &arguments);
 
                     let params = GetPromptRequestParam {
                         name: prompt_name.clone(),
@@ -2159,5 +2178,36 @@ mod tests {
 
         assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"
         assert_eq!(server_name, Some("example-server".to_string()));
+    }
+
+    #[test]
+    fn test_process_prompt_arguments() {
+        use rmcp::model::PromptArgument;
+
+        // Test Case 1: No schema - should return None
+        let no_schema: Option<Vec<PromptArgument>> = None;
+        let no_user_args: Option<Vec<String>> = None;
+        let result = ToolManager::process_prompt_arguments(&no_schema, &no_user_args);
+        assert_eq!(result, None);
+
+        // Test Case 2: Schema exists but no user args - should return empty map
+        let optional_schema = Some(vec![PromptArgument {
+            name: "optional_param".to_string(),
+            description: Some("An optional parameter".to_string()),
+            title: None,
+            required: Some(false),
+        }]);
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &no_user_args);
+        assert_eq!(result, Some(serde_json::Map::new()));
+
+        // Test Case 3: Schema with user args - should process normally
+        let user_args = Some(vec!["test_value".to_string()]);
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &user_args);
+        let mut expected_map = serde_json::Map::new();
+        expected_map.insert(
+            "optional_param".to_string(),
+            serde_json::Value::String("test_value".to_string()),
+        );
+        assert_eq!(result, Some(expected_map));
     }
 }

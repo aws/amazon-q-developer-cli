@@ -70,6 +70,7 @@ pub use crate::types::_profile_info::ProfileInfoBuilder;
 pub use crate::types::_programming_language::ProgrammingLanguageBuilder;
 pub use crate::types::_prompt_logging::PromptLoggingBuilder;
 pub use crate::types::_range::RangeBuilder;
+pub use crate::types::_reasoning_text::ReasoningTextBuilder;
 pub use crate::types::_reference::ReferenceBuilder;
 pub use crate::types::_reference_tracker_configuration::ReferenceTrackerConfigurationBuilder;
 pub use crate::types::_relevant_text_document::RelevantTextDocumentBuilder;
