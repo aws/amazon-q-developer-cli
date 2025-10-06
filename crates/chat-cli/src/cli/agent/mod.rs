@@ -289,12 +289,23 @@ impl Agent {
     /// and falling back to global dir if it does not exist in local.
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
         let config_path: Result<PathBuf, PathBuf> = 'config: {
-            // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
-            if os.fs.exists(&local_config_dir) {
-                break 'config Ok(local_config_dir);
+            // Traverse upward through directories looking for agent config
+            if let Ok(mut current_dir) = os.env.current_dir() {
+                loop {
+                    if let Ok(maybe_config_dir) = directories::chat_relative_agent_dir(current_dir.clone()) {
+                        let local_config_path = maybe_config_dir.join(format!("{agent_name}.json"));
+                        if os.fs.exists(&local_config_path) {
+                            break 'config Ok(local_config_path);
+                        }
+                    }
+
+                    if !current_dir.pop() {
+                        break;
+                    }
+                }
             }
 
+            // Fall back to global config
             let global_config_dir = directories::chat_global_agent_path(os)?.join(format!("{agent_name}.json"));
             if os.fs.exists(&global_config_dir) {
                 break 'config Ok(global_config_dir);
@@ -501,29 +512,37 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir(os) else {
-                break 'local Vec::<Agent>::new();
-            };
-            let Ok(files) = os.fs.read_dir(path).await else {
+            let mut agents = Vec::<Agent>::new();
+
+            let Ok(mut current_dir) = os.env.current_dir() else {
                 break 'local Vec::<Agent>::new();
             };
 
-            let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
-            for result in results {
-                match result {
-                    Ok(agent) => agents.push(agent),
-                    Err(e) => {
-                        load_metadata.load_failed_count += 1;
-                        let _ = queue!(
-                            output,
-                            style::SetForegroundColor(Color::Red),
-                            style::Print("Error: "),
-                            style::ResetColor,
-                            style::Print(e),
-                            style::Print("\n"),
-                        );
-                    },
+            loop {
+                if let Ok(maybe_config_dir) = directories::chat_relative_agent_dir(current_dir.clone()) {
+                    if let Ok(files) = os.fs.read_dir(&maybe_config_dir).await {
+                        let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
+                        for result in results {
+                            match result {
+                                Ok(agent) => agents.push(agent),
+                                Err(e) => {
+                                    load_metadata.load_failed_count += 1;
+                                    let _ = queue!(
+                                        output,
+                                        style::SetForegroundColor(Color::Red),
+                                        style::Print("Error: "),
+                                        style::ResetColor,
+                                        style::Print(e),
+                                        style::Print("\n"),
+                                    );
+                                },
+                            }
+                        }
+                    }
+                }
+
+                if !current_dir.pop() {
+                    break;
                 }
             }
 
@@ -721,10 +740,10 @@ impl Agents {
 
         // Post parsing validation here
         let schema = schema_for!(Agent);
-        let agents = all_agents
-            .into_iter()
-            .map(|a| (a.name.clone(), a))
-            .collect::<HashMap<_, _>>();
+        let mut agents = HashMap::new();
+        for agent in all_agents {
+            agents.entry(agent.name.clone()).or_insert(agent);
+        }
         let active_agent = agents.get(&active_idx);
 
         'validate: {
