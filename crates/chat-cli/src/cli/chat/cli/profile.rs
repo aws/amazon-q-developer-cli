@@ -249,7 +249,6 @@ impl AgentSubcommand {
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 
-
                 crate::util::editor::launch_editor(&path_with_file_name)
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
 

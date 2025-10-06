@@ -16,8 +16,7 @@ pub fn launch_editor(file_path: &Path) -> eyre::Result<()> {
     let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
     // Parse the editor command to handle arguments
-    let mut parts = shlex::split(&editor_cmd)
-        .ok_or_else(|| eyre::eyre!("Failed to parse EDITOR command"))?;
+    let mut parts = shlex::split(&editor_cmd).ok_or_else(|| eyre::eyre!("Failed to parse EDITOR command"))?;
 
     if parts.is_empty() {
         eyre::bail!("EDITOR environment variable is empty");

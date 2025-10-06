@@ -143,7 +143,6 @@ impl AgentArgs {
                 let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name).await?;
 
-
                 crate::util::editor::launch_editor(&path_with_file_name)?;
 
                 let Ok(content) = os.fs.read(&path_with_file_name).await else {
