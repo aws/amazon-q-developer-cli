@@ -1,5 +1,5 @@
 [package]
-name = "chat_cli_ui"
+name = "chat-cli-ui"
 authors.workspace = true
 edition.workspace = true
 homepage.workspace = true
