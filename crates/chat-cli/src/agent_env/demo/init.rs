@@ -1,7 +1,7 @@
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_bedrockruntime::Client as BedrockClient;
 
-use crate::cli::chat::agent_env::{Session, model_providers::BedrockConverseStreamModelProvider};
+use crate::agent_env::{Session, model_providers::BedrockConverseStreamModelProvider};
 use super::cli_interface::CliUi;
 
 pub async fn build_session() -> Result<Session, eyre::Error> {

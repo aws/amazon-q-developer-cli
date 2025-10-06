@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, debug, error};
 
-use crate::cli::chat::agent_env::{
+use crate::agent_env::{
     Worker, WorkerTask, WorkerStates, WorkerToHostInterface,
     ModelRequest, ModelResponse, ModelProvider,
 };

@@ -4,7 +4,7 @@ use tokio::io::{self, AsyncBufReadExt, BufReader};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
-use crate::cli::chat::agent_env::{
+use crate::agent_env::{
     Worker, WorkerStates, WorkerToHostInterface,
     ModelResponseChunk, WorkerJobCompletionType,
 };
