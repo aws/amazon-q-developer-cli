@@ -214,7 +214,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
     for agent in &mut new_agents {
         let content = agent.to_str_pretty()?;
         if let Some(path) = agent.path.as_ref() {
-            info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());
+            info!("Agent {} persisted in path {}", agent.name, path.to_string_lossy());
             os.fs.write(path, content).await?;
         } else {
             warn!(

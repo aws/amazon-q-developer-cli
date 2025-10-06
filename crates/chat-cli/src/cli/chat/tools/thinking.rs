@@ -12,7 +12,10 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 
 /// The Think tool allows the model to reason through complex problems during response generation.
@@ -30,7 +33,7 @@ pub struct Thinking {
 impl Thinking {
     /// Checks if the thinking feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
-        os.database.settings.get_bool(Setting::EnabledThinking).unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::Thinking)
     }
 
     /// Queues up a description of the think tool for the user

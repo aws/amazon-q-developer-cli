@@ -37,5 +37,11 @@ pub fn ser_start_code_analysis_input_input(
     if let Some(var_12) = &input.profile_arn {
         object.key("profileArn").string(var_12.as_str());
     }
+    if let Some(var_13) = &input.language_model_id {
+        object.key("languageModelId").string(var_13.as_str());
+    }
+    if let Some(var_14) = &input.client_type {
+        object.key("clientType").string(var_14.as_str());
+    }
     Ok(())
 }

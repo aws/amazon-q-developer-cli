@@ -24,7 +24,10 @@ use serde::{
 };
 
 use super::InvokeOutput;
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
@@ -216,7 +219,7 @@ pub enum TodoList {
 impl TodoList {
     /// Checks if todo lists are enabled
     pub fn is_enabled(os: &Os) -> bool {
-        os.database.settings.get_bool(Setting::EnabledTodoList).unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::TodoList)
     }
 
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {

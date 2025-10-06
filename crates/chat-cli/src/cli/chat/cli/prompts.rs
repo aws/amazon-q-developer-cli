@@ -866,7 +866,7 @@ pub enum PromptsSubcommand {
         /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
-    /// Create a new prompt
+    /// Create a new local prompt
     Create {
         /// Name of the prompt to create
         #[arg(short = 'n', long)]
@@ -878,7 +878,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Edit an existing prompt
+    /// Edit an existing local prompt
     Edit {
         /// Name of the prompt to edit
         name: String,
@@ -886,7 +886,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Remove an existing prompt
+    /// Remove an existing local prompt
     Remove {
         /// Name of the prompt to remove
         name: String,

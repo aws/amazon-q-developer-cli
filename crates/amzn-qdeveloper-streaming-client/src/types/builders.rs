@@ -35,12 +35,15 @@ pub use crate::types::_interaction_components_event::InteractionComponentsEventB
 pub use crate::types::_invalid_state_event::InvalidStateEventBuilder;
 pub use crate::types::_message_metadata_event::MessageMetadataEventBuilder;
 pub use crate::types::_metadata_event::MetadataEventBuilder;
+pub use crate::types::_metering_event::MeteringEventBuilder;
 pub use crate::types::_module_link::ModuleLinkBuilder;
 pub use crate::types::_position::PositionBuilder;
 pub use crate::types::_programming_language::ProgrammingLanguageBuilder;
 pub use crate::types::_progress::ProgressBuilder;
 pub use crate::types::_progress_component::ProgressComponentBuilder;
 pub use crate::types::_range::RangeBuilder;
+pub use crate::types::_reasoning_content_event::ReasoningContentEventBuilder;
+pub use crate::types::_reasoning_text::ReasoningTextBuilder;
 pub use crate::types::_reference::ReferenceBuilder;
 pub use crate::types::_relevant_text_document::RelevantTextDocumentBuilder;
 pub use crate::types::_resource::ResourceBuilder;

@@ -42,6 +42,7 @@ use crate::auth::social::{
     SocialProvider,
     start_social_login,
 };
+use crate::constants::PRODUCT_NAME;
 use crate::os::Os;
 use crate::telemetry::{
     QProfileSwitchIntent,
@@ -54,7 +55,6 @@ use crate::util::spinner::{
 use crate::util::system_info::is_remote;
 use crate::util::{
     CLI_BINARY_NAME,
-    PRODUCT_NAME,
     choose,
     input,
 };

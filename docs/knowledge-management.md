@@ -17,23 +17,34 @@ The knowledge feature is experimental and disabled by default. Enable it with:
 
 Once enabled, you can use `/knowledge` commands within your chat session:
 
-`/knowledge add myproject /path/to/project`
-`/knowledge show`
+```bash
+/knowledge add --name myproject --path /path/to/project
+/knowledge show
+```
 
 ## Commands
 
 #### `/knowledge show`
 
-Display all entries in your knowledge base with detailed information including creation dates, item counts, and persistence status.
+Display all entries in your knowledge base with detailed information including creation dates, item counts, and persistence status. Also shows any active background indexing operations with progress and ETA information.
 
-#### `/knowledge add <name> <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]`
+This unified command replaces the previous separate `/knowledge status` command, providing a complete view of both your stored knowledge and ongoing operations in one place.
+
+#### `/knowledge add --name <name> --path <path> [--include pattern] [--exclude pattern] [--index-type Fast|Best]`
 
 Add files or directories to your knowledge base. The system will recursively index all supported files in directories.
 
-`/knowledge add "project-docs" /path/to/documentation`
-`/knowledge add "config-files" /path/to/config.json`
-`/knowledge add "fast-search" /path/to/logs --index-type Fast`
-`/knowledge add "semantic-search" /path/to/docs --index-type Best`
+**Required Parameters:**
+- `--name` or `-n`: A descriptive name for the knowledge entry
+- `--path` or `-p`: Path to the file or directory to index
+
+**Examples:**
+```bash
+/knowledge add --name "project-docs" --path /path/to/documentation
+/knowledge add -n "config-files" -p /path/to/config.json
+/knowledge add --name "fast-search" --path /path/to/logs --index-type Fast
+/knowledge add -n "semantic-search" -p /path/to/docs --index-type Best
+```
 
 **Index Types**
 
@@ -144,10 +155,6 @@ Remove all entries from your knowledge base. This action requires confirmation a
 You'll be prompted to confirm:
 
 > ⚠️ This will remove ALL knowledge base entries. Are you sure? (y/N):
-
-#### `/knowledge status`
-
-View the status of background indexing operations, including progress and queue information.
 
 #### `/knowledge cancel [operation_id]`
 
@@ -274,7 +281,7 @@ Organizing Your Knowledge Base
 
 - Add project directories rather than individual files when possible
 - Use include/exclude patterns to avoid indexing build artifacts: `--exclude "target/**" --exclude "node_modules/**"`
-- Use /knowledge status to monitor indexing progress for large directories
+- Use /knowledge show to monitor indexing progress for large directories
 - Consider breaking very large projects into logical sub-directories
 
 #### Pattern Filtering Best Practices
@@ -314,7 +321,7 @@ If your files aren't appearing in search results:
 1. **Check patterns**: Ensure your include patterns match the files you want
 2. **Verify exclude patterns**: Make sure exclude patterns aren't filtering out desired files
 3. **Check file types**: Ensure your files have supported extensions
-4. **Monitor status**: Use /knowledge status to check if indexing is still in progress
+4. **Monitor progress**: Use /knowledge show to check if indexing is still in progress
 5. **Verify paths**: Ensure the paths you added actually exist and are accessible
 6. **Check for errors**: Look for error messages in the CLI output
 
@@ -322,7 +329,7 @@ If your files aren't appearing in search results:
 
 If searches aren't returning expected results:
 
-1. **Wait for indexing**: Use /knowledge status to ensure indexing is complete
+1. **Wait for indexing**: Use /knowledge show to ensure indexing is complete
 2. **Try different queries**: Use various phrasings and keywords
 3. **Verify content**: Use /knowledge show to confirm your content was added
 4. **Check file types**: Unsupported file types won't have searchable content
@@ -331,7 +338,7 @@ If searches aren't returning expected results:
 
 If operations are slow:
 
-1. **Check queue status**: Use /knowledge status to see operation queue
+1. **Check operations**: Use /knowledge show to see operation progress and queue
 2. **Cancel if needed**: Use /knowledge cancel to stop problematic operations
 3. **Add smaller chunks**: Consider adding subdirectories instead of entire large projects
 4. **Use better patterns**: Exclude unnecessary files with exclude patterns

@@ -2,7 +2,7 @@
 
 /// Streaming events from UniDirectional Streaming Conversational APIs.
 #[non_exhaustive]
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub enum ChatResponseStream {
     /// Assistant response event - Text / Code snippet
     AssistantResponseEvent(crate::types::AssistantResponseEvent),
@@ -26,6 +26,10 @@ pub enum ChatResponseStream {
     MessageMetadataEvent(crate::types::MessageMetadataEvent),
     /// Metadata event
     MetadataEvent(crate::types::MetadataEvent),
+    /// Metering event
+    MeteringEvent(crate::types::MeteringEvent),
+    /// Reasoning process returned by models
+    ReasoningContentEvent(crate::types::ReasoningContentEvent),
     /// Web Reference links event
     SupplementaryWebLinksEvent(crate::types::SupplementaryWebLinksEvent),
     /// Tool use result
@@ -243,6 +247,42 @@ impl ChatResponseStream {
     }
 
     /// Tries to convert the enum instance into
+    /// [`MeteringEvent`](crate::types::ChatResponseStream::MeteringEvent), extracting the inner
+    /// [`MeteringEvent`](crate::types::MeteringEvent). Returns `Err(&Self)` if it can't be
+    /// converted.
+    pub fn as_metering_event(&self) -> ::std::result::Result<&crate::types::MeteringEvent, &Self> {
+        if let ChatResponseStream::MeteringEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`MeteringEvent`](crate::types::ChatResponseStream::MeteringEvent).
+    pub fn is_metering_event(&self) -> bool {
+        self.as_metering_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
+    /// [`ReasoningContentEvent`](crate::types::ChatResponseStream::ReasoningContentEvent),
+    /// extracting the inner [`ReasoningContentEvent`](crate::types::ReasoningContentEvent).
+    /// Returns `Err(&Self)` if it can't be converted.
+    pub fn as_reasoning_content_event(&self) -> ::std::result::Result<&crate::types::ReasoningContentEvent, &Self> {
+        if let ChatResponseStream::ReasoningContentEvent(val) = &self {
+            ::std::result::Result::Ok(val)
+        } else {
+            ::std::result::Result::Err(self)
+        }
+    }
+
+    /// Returns true if this is a
+    /// [`ReasoningContentEvent`](crate::types::ChatResponseStream::ReasoningContentEvent).
+    pub fn is_reasoning_content_event(&self) -> bool {
+        self.as_reasoning_content_event().is_ok()
+    }
+
+    /// Tries to convert the enum instance into
     /// [`SupplementaryWebLinksEvent`](crate::types::ChatResponseStream::SupplementaryWebLinksEvent),
     /// extracting the inner
     /// [`SupplementaryWebLinksEvent`](crate::types::SupplementaryWebLinksEvent). Returns `Err(&
@@ -301,5 +341,34 @@ impl ChatResponseStream {
     /// Returns true if the enum instance is the `Unknown` variant.
     pub fn is_unknown(&self) -> bool {
         matches!(self, Self::Unknown)
+    }
+}
+impl ::std::fmt::Debug for ChatResponseStream {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        match self {
+            ChatResponseStream::AssistantResponseEvent(val) => {
+                f.debug_tuple("AssistantResponseEvent").field(&val).finish()
+            },
+            ChatResponseStream::CitationEvent(val) => f.debug_tuple("CitationEvent").field(&val).finish(),
+            ChatResponseStream::CodeEvent(val) => f.debug_tuple("CodeEvent").field(&val).finish(),
+            ChatResponseStream::CodeReferenceEvent(val) => f.debug_tuple("CodeReferenceEvent").field(&val).finish(),
+            ChatResponseStream::DryRunSucceedEvent(val) => f.debug_tuple("DryRunSucceedEvent").field(&val).finish(),
+            ChatResponseStream::FollowupPromptEvent(val) => f.debug_tuple("FollowupPromptEvent").field(&val).finish(),
+            ChatResponseStream::IntentsEvent(val) => f.debug_tuple("IntentsEvent").field(&val).finish(),
+            ChatResponseStream::InteractionComponentsEvent(val) => {
+                f.debug_tuple("InteractionComponentsEvent").field(&val).finish()
+            },
+            ChatResponseStream::InvalidStateEvent(val) => f.debug_tuple("InvalidStateEvent").field(&val).finish(),
+            ChatResponseStream::MessageMetadataEvent(val) => f.debug_tuple("MessageMetadataEvent").field(&val).finish(),
+            ChatResponseStream::MetadataEvent(val) => f.debug_tuple("MetadataEvent").field(&val).finish(),
+            ChatResponseStream::MeteringEvent(val) => f.debug_tuple("MeteringEvent").field(&val).finish(),
+            ChatResponseStream::ReasoningContentEvent(_) => f.debug_tuple("*** Sensitive Data Redacted ***").finish(),
+            ChatResponseStream::SupplementaryWebLinksEvent(val) => {
+                f.debug_tuple("SupplementaryWebLinksEvent").field(&val).finish()
+            },
+            ChatResponseStream::ToolResultEvent(val) => f.debug_tuple("ToolResultEvent").field(&val).finish(),
+            ChatResponseStream::ToolUseEvent(val) => f.debug_tuple("ToolUseEvent").field(&val).finish(),
+            ChatResponseStream::Unknown => f.debug_tuple("Unknown").finish(),
+        }
     }
 }

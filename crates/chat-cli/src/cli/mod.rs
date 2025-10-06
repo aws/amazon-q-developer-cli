@@ -2,6 +2,7 @@ mod agent;
 pub mod chat;
 mod debug;
 mod diagnostics;
+pub mod experiment;
 pub mod feed;
 mod issue;
 mod mcp;

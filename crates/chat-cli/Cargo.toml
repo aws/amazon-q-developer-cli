@@ -117,6 +117,7 @@ whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
+zip.workspace = true
 rmcp.workspace = true
 serde_yaml.workspace = true
 urlencoding = "2.1.3"

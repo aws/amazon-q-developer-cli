@@ -505,6 +505,7 @@ mod tests {
         assert_eq!(
             calc_max_context_files_size(Some(&ModelInfo {
                 model_id: "CLAUDE_SONNET_4_20250514_V1_0".to_string(),
+                description: None,
                 model_name: Some("Claude".to_string()),
                 context_window_tokens: 200_000,
             })),
@@ -513,6 +514,7 @@ mod tests {
         assert_eq!(
             calc_max_context_files_size(Some(&ModelInfo {
                 model_id: "OPENAI_GPT_OSS_120B_1_0".to_string(),
+                description: None,
                 model_name: Some("GPT".to_string()),
                 context_window_tokens: 128_000,
             })),

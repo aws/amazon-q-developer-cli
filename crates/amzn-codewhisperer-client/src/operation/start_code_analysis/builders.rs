@@ -248,4 +248,38 @@ impl StartCodeAnalysisFluentBuilder {
     pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
         self.inner.get_profile_arn()
     }
+
+    /// Unique identifier for the model
+    pub fn language_model_id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.language_model_id(input.into());
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn set_language_model_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_language_model_id(input);
+        self
+    }
+
+    /// Unique identifier for the model
+    pub fn get_language_model_id(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_language_model_id()
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn client_type(mut self, input: crate::types::Origin) -> Self {
+        self.inner = self.inner.client_type(input);
+        self
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn set_client_type(mut self, input: ::std::option::Option<crate::types::Origin>) -> Self {
+        self.inner = self.inner.set_client_type(input);
+        self
+    }
+
+    /// Enum to represent the origin application conversing with Sidekick.
+    pub fn get_client_type(&self) -> &::std::option::Option<crate::types::Origin> {
+        self.inner.get_client_type()
+    }
 }
