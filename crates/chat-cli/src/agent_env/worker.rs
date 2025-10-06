@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
-use super::model_providers::BedrockConverseStreamModelProvider;
+use super::model_providers::ModelProvider;
 use super::worker_interface::WorkerToHostInterface;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -18,13 +18,13 @@ pub enum WorkerStates {
 pub struct Worker {
     pub id: Uuid,
     pub name: String,
-    pub model_provider: BedrockConverseStreamModelProvider,
+    pub model_provider: Arc<dyn ModelProvider>,
     pub state: Arc<Mutex<WorkerStates>>,
     pub last_failure: Arc<Mutex<Option<String>>>,
 }
 
 impl Worker {
-    pub fn new(name: String, model_provider: BedrockConverseStreamModelProvider) -> Self {
+    pub fn new(name: String, model_provider: Arc<dyn ModelProvider>) -> Self {
         Self {
             id: Uuid::new_v4(),
             name,

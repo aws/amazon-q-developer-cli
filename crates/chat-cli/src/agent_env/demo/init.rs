@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use aws_config::{BehaviorVersion, Region};
 use aws_sdk_bedrockruntime::Client as BedrockClient;
 
@@ -26,7 +27,8 @@ pub async fn build_session() -> Result<Session, eyre::Error> {
     let bedrock_client = BedrockClient::new(&config);
     println!("Bedrock client created successfully");
     
-    let model_provider = BedrockConverseStreamModelProvider::new(bedrock_client);
+    let model_provider: Arc<dyn crate::agent_env::model_providers::ModelProvider> = 
+        Arc::new(BedrockConverseStreamModelProvider::new(bedrock_client));
     let model_providers = vec![model_provider];
     
     Ok(Session::new(model_providers))

@@ -4,19 +4,19 @@ use tokio_util::sync::CancellationToken;
 use super::worker::Worker;
 use super::worker_job::WorkerJob;
 use super::worker_task::WorkerTask;
-use super::model_providers::BedrockConverseStreamModelProvider;
+use super::model_providers::ModelProvider;
 use super::worker_interface::WorkerToHostInterface;
 use super::demo::{WorkerProtoLoop, WorkerInput};
 use super::worker_tasks::{AgentLoop, AgentLoopInput};
 
 pub struct Session {
-    model_providers: Vec<BedrockConverseStreamModelProvider>,
+    model_providers: Vec<Arc<dyn ModelProvider>>,
     workers: Arc<Mutex<Vec<Arc<Worker>>>>,
     jobs: Arc<Mutex<Vec<Arc<WorkerJob>>>>,
 }
 
 impl Session {
-    pub fn new(model_providers: Vec<BedrockConverseStreamModelProvider>) -> Self {
+    pub fn new(model_providers: Vec<Arc<dyn ModelProvider>>) -> Self {
         Self {
             model_providers,
             workers: Arc::new(Mutex::new(Vec::new())),

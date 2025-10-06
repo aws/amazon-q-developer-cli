@@ -55,14 +55,19 @@ impl WorkerProtoLoop {
     async fn make_model_request(&self, model_request: ModelRequest) -> Result<ModelResponse, eyre::Error> {
         self.worker.set_state(WorkerStates::Requesting, &*self.host_interface);
         
+        let worker = self.worker.clone();
+        let host_interface = self.host_interface.clone();
+        let worker_id = self.worker.id;
+        let host_interface2 = self.host_interface.clone();
+        
         let response = self.worker.model_provider.request(
             model_request,
-            || {
-                self.worker.set_state(WorkerStates::Receiving, &*self.host_interface);
-            },
-            |chunk| {
-                self.host_interface.response_chunk_received(self.worker.id, chunk);
-            },
+            Box::new(move || {
+                worker.set_state(WorkerStates::Receiving, &*host_interface);
+            }),
+            Box::new(move |chunk| {
+                host_interface2.response_chunk_received(worker_id, chunk);
+            }),
             self.cancellation_token.clone(),
         ).await.map_err(|e| {
             if !self.cancellation_token.is_cancelled() {

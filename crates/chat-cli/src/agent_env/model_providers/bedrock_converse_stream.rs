@@ -23,8 +23,8 @@ impl ModelProvider for BedrockConverseStreamModelProvider {
     async fn request(
         &self,
         request: ModelRequest,
-        when_receiving_begin: impl Fn() + Send,
-        when_received: impl Fn(ModelResponseChunk) + Send,
+        when_receiving_begin: Box<dyn Fn() + Send>,
+        when_received: Box<dyn Fn(ModelResponseChunk) + Send>,
         cancellation_token: CancellationToken,
     ) -> Result<ModelResponse, eyre::Error> {
         let message = Message::builder()

@@ -84,6 +84,16 @@ Your goal is to
 
 ----
 
+# ✅ Minor:Worker to use abstract model provider
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+
+`Worker` class in crates/chat-cli/src/agent_env/worker.rs currently uses `BedrockConverseStreamModelProvider`. It must use its base `ModelProvider` trait.
+
+----
+
 # Prompt WorkerTask -> AgentEnvTextUi
 
 Read the following files:
