@@ -1,3 +1,5 @@
+# ✅ Move agent_env from src/cli/chat to src/
+
 Read the following files:
 - crates/chat-exp/main.md - general idea of new architecture we are working on
 - codebase/chat-exp/files-index.md - the list of some important files we are working with 
@@ -6,6 +8,8 @@ Read the following files:
 Question: Can we move content of crates/chat-cli/src/cli/chat/agent_env to crates/chat-cli/src/agent_env ? Bascilly towo folders up. What would it take? Any caveats?
 
 -----
+
+# ✅ TUI basic plan
 
 Read the following files:
 - crates/chat-exp/main.md - general idea of new architecture we are working on
@@ -32,6 +36,7 @@ Write it down under planning/basic-tui/ (new folder)
 
 -----
 
+# 🔄 ✅ Documenting the design
 
 Read the following files:
 - crates/chat-exp/main.md - general idea of new architecture we are working on
@@ -45,6 +50,8 @@ Your goals are:
 - update codebase/chat-exp/files-index.md with any extra file references that could be useful
 
 -----
+
+# ✅ TUI Rework #1
 
 Read the following files:
 - codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
@@ -86,7 +93,53 @@ Write your findings to
 
 ----
 
-# Bring in Conversation State #2 - Design
+# ✅ Bring in Conversation State #2 - Design
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+- codebase/chat-cli/conversation-state-implementation.md - docs how the original design maintained conversation history
+- codebase/chat-cli/conversation-state-reuse.md - recommendations on how that original history model could be reused
+
+We are going to follow "Strategy 3: Conversation History Abstraction" - basically creating our own structs to maintain history, using existing [`HistoryEntry`](crates/chat-cli/src/cli/chat/conversation.rs#L92) as the 'backend' model
+
+BUT, we are going to take a couple steps up in abstraction.
+
+I want to add new field to `Worker` struct - `contextContainer`. Originally it will have single field `conversationHistory`, but with the goal to expand it more in the future.
+
+For that conversationHistory we should be able to push entries to the history, similar to what's suggested in conversation-state-reuse.md strategy 3.
+
+Major conceptual change is going to be that AgentLoop doesn't need to take prompt as the input anymore - it has to be pushed to the worker's conversation history before invoking the task:
+```
+worker.contextContainer.conversationHistory.push({userPrompt:"hello"});
+session.run_agent_loop(worker, LoopInput{...nothing here...},...);
+```
+
+We are going to skip on database saving and other fancy stuff, just keep the conversation in memory.
+
+Your goal is to create a design and then implementation plan for this change.
+Write it to `planning/context-container-0/` folder
+
+
+## Tweak 1
+Make following changes:
+- design.md
+    - Worker class has been updated to use dyn ModelProvider instead of BedrockConverseStreamModelProvider
+    - ConversationHistory.commit_turn should not fail if there's no next_user_message. Reason: for some specific tasks (orchestration-style, monitroing-style) there could be no user message at all
+    - also replace "user_message" with "input_message". Reason: workers can be created and spawned by request from other workers rather than from the user
+    - rename `crates/chat-cli/src/agent_env/context/` to `crates/chat-cli/src/agent_env/context_container` (would it introduce any namig collision problems though?)
+- in `struct Worker`, `context_container` must be placed after name. This is the most critical piece of data that worker bears
+
+Update other files accordingly.
+
+## Tweak #2
+Make following changes:
+- design.md
+    - `ConversationEntry`'s properties must be Optional, both of them
+    - `ConversationHistory.next_input_message` is not needed
+    - `ConversationHistory.push_input_message` must create an entry in `entries` with `user` value only
+    - rename `ConversationHistory.commit_turn` to `ConversationHistory.push_assistant_message`. Make it also just add an entry in `entries`, but with `assistant` value only
+    - Reasoning: we will hide all 'convert to original Q CLI Database Storage format and operations' under the hood, but implemented them later. Meanwhile both Codewhisperer and Bedrock APIs follow the same pattern of providing conversation history as a chain of alternating elements
 
 ----
 
