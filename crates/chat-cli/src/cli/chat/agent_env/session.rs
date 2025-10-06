@@ -7,6 +7,7 @@ use super::worker_task::WorkerTask;
 use super::model_providers::BedrockConverseStreamModelProvider;
 use super::worker_interface::WorkerToHostInterface;
 use super::demo::{WorkerProtoLoop, WorkerInput};
+use super::worker_tasks::{AgentLoop, AgentLoopInput};
 
 pub struct Session {
     model_providers: Vec<BedrockConverseStreamModelProvider>,
@@ -53,6 +54,24 @@ impl Session {
         ));
         
         self.run(worker, worker_loop, cancellation_token)
+    }
+
+    pub fn run_agent_loop(
+        &self,
+        worker: Arc<Worker>,
+        input: AgentLoopInput,
+        ui_interface: Arc<dyn WorkerToHostInterface>,
+    ) -> Result<Arc<WorkerJob>, eyre::Error> {
+        let cancellation_token = CancellationToken::new();
+        
+        let agent_loop = Arc::new(AgentLoop::new(
+            worker.clone(),
+            input,
+            ui_interface,
+            cancellation_token.clone(),
+        ));
+        
+        self.run(worker, agent_loop, cancellation_token)
     }
 
     fn run(

@@ -253,9 +253,9 @@ impl ChatArgs {
         let worker = session.build_worker();
         let prompt = self.input.unwrap_or_else(|| "introduce yourself".to_string());
 
-        let job = session.run_demo_loop(
+        let job = session.run_agent_loop(
             worker.clone(),
-            agent_env::demo::WorkerInput { prompt },
+            agent_env::worker_tasks::AgentLoopInput { prompt },
             Arc::new(ui.interface(agent_env::demo::AnsiColor::Cyan)),
         )?;
 

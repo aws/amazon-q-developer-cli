@@ -7,6 +7,9 @@ pub mod worker_job;
 pub mod worker_interface;
 pub mod session;
 
+// Task implementations
+pub mod worker_tasks;
+
 // Demo module
 pub mod demo;
 
