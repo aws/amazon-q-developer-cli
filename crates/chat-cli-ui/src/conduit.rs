@@ -1,9 +1,6 @@
-use crossterm::{
-    execute,
-    style,
-};
+use std::{io::Write as _, marker::PhantomData};
 
-use crate::protocol::Event;
+use crate::protocol::{Event, LegacyPassThroughOutput};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {
@@ -33,40 +30,63 @@ impl ViewEnd {
     /// Method to facilitate in the interim
     /// It takes possible messages from the old even loop and queues write to the output provided
     /// This blocks the current thread and consumes the [ViewEnd]
-    pub fn into_legacy_mode(self, mut output: impl std::io::Write) -> Result<(), ConduitError> {
+    pub fn into_legacy_mode(
+        self,
+        mut stderr: std::io::Stderr,
+        mut stdout: std::io::Stdout,
+    ) -> Result<(), ConduitError> {
         while let Ok(event) = self.receiver.recv() {
-            let content = match event {
-                Event::Custom(custom) => custom.value.to_string(),
-                Event::TextMessageContent(content) => content.delta,
-                Event::TextMessageChunk(chunk) => {
-                    if let Some(content) = chunk.delta {
-                        content
-                    } else {
-                        continue;
-                    }
-                },
-                _ => continue,
-            };
-
-            execute!(&mut output, style::Print(content))?;
+            if let Event::LegacyPassThrough(content) = event {
+                match content {
+                    LegacyPassThroughOutput::Stderr(content) => {
+                        stderr.write_all(&content)?;
+                        stderr.flush()?;
+                    },
+                    LegacyPassThroughOutput::Stdout(content) => {
+                        stdout.write_all(&content)?;
+                        stdout.flush()?;
+                    },
+                }
+            }
         }
 
         Ok(())
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct DestinationStdout;
+#[derive(Clone, Debug)]
+pub struct DestinationStderr;
+#[derive(Clone, Debug)]
+pub struct DestinationStructuredOutput;
+
+pub type InputReceiver = std::sync::mpsc::Receiver<Vec<u8>>;
+
 /// This compliments the [ViewEnd]. It can be thought of as the "other end" of a pipe.
 /// The control would own this.
-pub struct ControlEnd {
+#[derive(Debug)]
+pub struct ControlEnd<T> {
     pub current_event: Option<Event>,
     /// Used by the control to send state changes to the view
     pub sender: std::sync::mpsc::Sender<Event>,
-    /// To receive user input from the view
-    // TODO: later on we will need replace this byte array with an actual event type from ACP
-    pub receiver: std::sync::mpsc::Receiver<Vec<u8>>,
+    /// Phantom data to specify the destination type for pass-through operations.
+    /// This allows the type system to track whether this ControlEnd is configured
+    /// for stdout or stderr output without runtime overhead.
+    pass_through_destination: PhantomData<T>,
 }
 
-impl ControlEnd {
+impl<T> Clone for ControlEnd<T> {
+    fn clone(&self) -> Self {
+        Self {
+            current_event: self.current_event.clone(),
+            sender: self.sender.clone(),
+            pass_through_destination: PhantomData,
+        }
+    }
+}
+
+impl<T> ControlEnd<T> {
     /// Primes the [ControlEnd] with the state passed in
     /// This api is intended to serve as an interim solution to bridge the gap between the current
     /// code base, which heavily relies on crossterm apis to print directly to the terminal and the
@@ -81,13 +101,33 @@ impl ControlEnd {
     }
 }
 
-impl std::io::Write for ControlEnd {
+impl ControlEnd<DestinationStderr> {
+    pub fn as_stdout(&self) -> ControlEnd<DestinationStdout> {
+        ControlEnd {
+            current_event: self.current_event.clone(),
+            sender: self.sender.clone(),
+            pass_through_destination: PhantomData,
+        }
+    }
+}
+
+impl ControlEnd<DestinationStdout> {
+    pub fn as_stderr(&self) -> ControlEnd<DestinationStderr> {
+        ControlEnd {
+            current_event: self.current_event.clone(),
+            sender: self.sender.clone(),
+            pass_through_destination: PhantomData,
+        }
+    }
+}
+
+impl std::io::Write for ControlEnd<DestinationStderr> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        // We'll default to custom event
-        // This hardly matters because in legacy mode we are simply extracting the bytes and
-        // dumping it to output
         if self.current_event.is_none() {
-            self.current_event.replace(Event::Custom(Default::default()));
+            self.current_event
+                .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                    Default::default(),
+                )));
         }
 
         let current_event = self
@@ -103,26 +143,74 @@ impl std::io::Write for ControlEnd {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let current_state = self.current_event.take().ok_or(std::io::Error::other("No state set"))?;
+        let current_state =
+            self.current_event
+                .take()
+                .unwrap_or(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                    Default::default(),
+                )));
 
         self.sender.send(current_state).map_err(std::io::Error::other)
     }
 }
 
-/// Creates a bidirectional communication channel between view and control layers.
+impl std::io::Write for ControlEnd<DestinationStdout> {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        if self.current_event.is_none() {
+            self.current_event
+                .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
+                    Default::default(),
+                )));
+        }
+
+        let current_event = self
+            .current_event
+            .as_mut()
+            .ok_or(std::io::Error::other("No event set"))?;
+
+        current_event
+            .insert_content(buf)
+            .map_err(|_e| std::io::Error::other("Error inserting content"))?;
+
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let current_state =
+            self.current_event
+                .take()
+                .unwrap_or(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
+                    Default::default(),
+                )));
+
+        self.sender.send(current_state).map_err(std::io::Error::other)
+    }
+}
+
+/// Creates a set of legacy conduits for communication between view and control layers.
 ///
-/// This function establishes a message-passing conduit that enables:
-/// - The view layer to send user input (as bytes) to the control layer
-/// - The control layer to send state changes to the view layer
+/// This function establishes the communication channels needed for the legacy mode operation,
+/// where the view layer and control layer can exchange events and byte data.
 ///
 /// # Returns
-/// A tuple containing:
-/// - `ViewEnd<S>`: The view-side endpoint for sending input and receiving state updates
-/// - `ControlEnd<S>`: The control-side endpoint for receiving input and sending state updates
 ///
-/// # Type Parameters
-/// - `S`: The state type that implements `ViewState` trait
-pub fn get_conduit_pair() -> (ViewEnd, ControlEnd) {
+/// A tuple containing:
+/// - `ViewEnd`: The view-side endpoint for sending input and receiving state changes
+/// - `InputReceiver`: A receiver for raw byte input from the view
+/// - `ControlEnd<DestinationStderr>`: Control endpoint configured for stderr output
+/// - `ControlEnd<DestinationStdout>`: Control endpoint configured for stdout output
+///
+/// # Example
+///
+/// ```rust
+/// let (view_end, input_receiver, stderr_control, stdout_control) = get_legacy_conduits();
+/// ```
+pub fn get_legacy_conduits() -> (
+    ViewEnd,
+    InputReceiver,
+    ControlEnd<DestinationStderr>,
+    ControlEnd<DestinationStdout>,
+) {
     let (state_tx, state_rx) = std::sync::mpsc::channel::<Event>();
     let (byte_tx, byte_rx) = std::sync::mpsc::channel::<Vec<u8>>();
 
@@ -131,10 +219,16 @@ pub fn get_conduit_pair() -> (ViewEnd, ControlEnd) {
             sender: byte_tx,
             receiver: state_rx,
         },
+        byte_rx,
+        ControlEnd {
+            current_event: None,
+            sender: state_tx.clone(),
+            pass_through_destination: PhantomData,
+        },
         ControlEnd {
             current_event: None,
             sender: state_tx,
-            receiver: byte_rx,
+            pass_through_destination: PhantomData,
         },
     )
 }
@@ -154,22 +248,10 @@ impl InterimEvent for Event {
         debug_assert!(self.is_compatible_with_legacy_event_loop());
 
         match self {
-            Self::Custom(_custom) => {
-                // custom events are defined in this UI crate
-                // TODO: use an enum as implement AsRef for it
-                // match custom.name.as_str() {
-                //     _ => {},
-                // }
-            },
-            Self::TextMessageContent(msg_content) => {
-                let str = String::from_utf8(content.to_vec())?;
-                msg_content.delta.push_str(&str);
-            },
-            Self::TextMessageChunk(chunk) => {
-                let str = String::from_utf8(content.to_vec())?;
-                if let Some(d) = chunk.delta.as_mut() {
-                    d.push_str(&str);
-                }
+            Self::LegacyPassThrough(buf) => match buf {
+                LegacyPassThroughOutput::Stdout(buf) | LegacyPassThroughOutput::Stderr(buf) => {
+                    buf.extend_from_slice(content);
+                },
             },
             _ => unreachable!(),
         }

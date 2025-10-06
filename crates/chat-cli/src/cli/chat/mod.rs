@@ -39,6 +39,12 @@ use std::time::{
 };
 
 use amzn_codewhisperer_client::types::SubscriptionStatus;
+use chat_cli_ui::conduit::{
+    ControlEnd,
+    DestinationStderr,
+    DestinationStdout,
+    get_legacy_conduits,
+};
 use clap::{
     Args,
     CommandFactory,
@@ -56,6 +62,7 @@ pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
+    Color,
     Stylize,
 };
 use crossterm::{
@@ -551,9 +558,9 @@ impl From<parser::RecvError> for ChatError {
 
 pub struct ChatSession {
     /// For output read by humans and machine
-    pub stdout: std::io::Stdout,
+    pub stdout: ControlEnd<DestinationStdout>,
     /// For display output, only read by humans
-    pub stderr: std::io::Stderr,
+    pub stderr: ControlEnd<DestinationStderr>,
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
@@ -609,6 +616,16 @@ impl ChatSession {
     ) -> Result<Self> {
         // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
+        let (view_end, _byte_receiver, control_end_stderr, control_end_stdout) = get_legacy_conduits();
+
+        tokio::task::spawn_blocking(move || {
+            let stderr = std::io::stderr();
+            let stdout = std::io::stdout();
+            if let Err(e) = view_end.into_legacy_mode(stderr, stdout) {
+                error!("Conduit view end legacy mode exited: {:?}", e);
+            }
+        });
+
         let conversation = match resume_conversation {
             true => {
                 let previous_conversation = std::env::current_dir()
@@ -689,8 +706,8 @@ impl ChatSession {
         });
 
         Ok(Self {
-            stdout,
-            stderr,
+            stdout: control_end_stdout,
+            stderr: control_end_stderr,
             initial_input: input,
             existing_conversation,
             input_source,
@@ -2630,6 +2647,7 @@ impl ChatSession {
             match rx.recv().await {
                 Some(Ok(msg_event)) => {
                     trace!("Consumed: {:?}", msg_event);
+
                     match msg_event {
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
@@ -2854,6 +2872,8 @@ impl ChatSession {
                     cursor::Show
                 )?;
             }
+
+            info!("## control end: buf: {:?}", buf);
 
             // Print the response for normal cases
             loop {
@@ -3656,6 +3676,31 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
     None
 }
 
+// Helper method to save the agent config to file
+async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+    let config_dir = if is_global {
+        directories::chat_global_agent_path(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
+    } else {
+        directories::chat_local_agent_dir(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
+    };
+
+    tokio::fs::create_dir_all(&config_dir)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
+
+    let config_file = config_dir.join(format!("{}.json", agent_name));
+    let config_json = serde_json::to_string_pretty(config)
+        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
+
+    tokio::fs::write(&config_file, config_json)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -4375,29 +4420,4 @@ mod tests {
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
     }
-}
-
-// Helper method to save the agent config to file
-async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
-    let config_dir = if is_global {
-        directories::chat_global_agent_path(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
-    } else {
-        directories::chat_local_agent_dir(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
-    };
-
-    tokio::fs::create_dir_all(&config_dir)
-        .await
-        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
-
-    let config_file = config_dir.join(format!("{}.json", agent_name));
-    let config_json = serde_json::to_string_pretty(config)
-        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
-
-    tokio::fs::write(&config_file, config_json)
-        .await
-        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
-
-    Ok(())
 }

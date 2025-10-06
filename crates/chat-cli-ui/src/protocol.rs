@@ -1,10 +1,7 @@
 //! This is largely based on https://docs.ag-ui.com/concepts/events
 //! They do not have a rust SDK so for now we are handrolling these types
 
-use serde::{
-    Deserialize,
-    Serialize,
-};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Role of a message sender
@@ -97,7 +94,7 @@ pub struct TextMessageStart {
 }
 
 /// Represents a chunk of content in a streaming text message
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TextMessageContent {
     pub message_id: String,
@@ -212,6 +209,24 @@ pub struct Raw {
 pub struct Custom {
     pub name: String,
     pub value: Value,
+}
+
+/// Legacy pass-through output for compatibility with older event systems.
+///
+/// This enum represents different types of output that can be passed through
+/// from legacy systems that haven't been fully migrated to the new event protocol.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LegacyPassThroughOutput {
+    /// Standard output stream data
+    Stdout(Vec<u8>),
+    /// Standard error stream data  
+    Stderr(Vec<u8>),
+}
+
+impl Default for LegacyPassThroughOutput {
+    fn default() -> Self {
+        Self::Stderr(Default::default())
+    }
 }
 
 // ============================================================================
@@ -336,6 +351,7 @@ pub enum Event {
     // Special Events
     Raw(Raw),
     Custom(Custom),
+    LegacyPassThrough(LegacyPassThroughOutput),
 
     // Draft Events - Activity Events
     ActivitySnapshotEvent(ActivitySnapshotEvent),
@@ -384,6 +400,7 @@ impl Event {
             // Special Events
             Event::Raw(_) => "raw",
             Event::Custom(_) => "custom",
+            Event::LegacyPassThrough(_) => "legacyPassThrough",
 
             // Draft Events - Activity Events
             Event::ActivitySnapshotEvent(_) => "activitySnapshotEvent",
@@ -403,10 +420,7 @@ impl Event {
     }
 
     pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
-        matches!(
-            self,
-            Event::Custom(_) | Event::TextMessageContent(_) | Event::TextMessageChunk(_)
-        )
+        matches!(self, Event::LegacyPassThrough(_))
     }
 
     /// Check if this is a lifecycle event
