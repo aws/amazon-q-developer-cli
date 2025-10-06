@@ -6,28 +6,27 @@ use crate::agent_env::{
     Worker, WorkerTask, WorkerStates, WorkerToHostInterface,
     ModelRequest, ModelResponse, ModelProvider,
 };
+use crate::cli::chat::message::{AssistantMessage, UserMessageContent};
 
 pub struct AgentLoopInput {
-    pub prompt: String,
+    // Empty - all context comes from Worker
 }
 
 pub struct AgentLoop {
     worker: Arc<Worker>,
     cancellation_token: CancellationToken,
-    input: AgentLoopInput,
     host_interface: Arc<dyn WorkerToHostInterface>,
 }
 
 impl AgentLoop {
     pub fn new(
         worker: Arc<Worker>,
-        input: AgentLoopInput,
+        _input: AgentLoopInput,
         host_interface: Arc<dyn WorkerToHostInterface>,
         cancellation_token: CancellationToken,
     ) -> Self {
         Self {
             worker,
-            input,
             host_interface,
             cancellation_token,
         }
@@ -45,9 +44,26 @@ impl AgentLoop {
     async fn query_llm(&self) -> Result<ModelResponse, eyre::Error> {
         self.check_cancellation()?;
         
-        let request = ModelRequest {
-            prompt: self.input.prompt.clone(),
-        };
+        // Get prompt from worker's context
+        let prompt = {
+            let history = self.worker.context_container
+                .conversation_history
+                .lock()
+                .unwrap();
+            
+            let last_entry = history.get_entries().last()
+                .ok_or_else(|| eyre::eyre!("No messages in history"))?;
+            
+            match &last_entry.user {
+                Some(user_msg) => match user_msg.content() {
+                    UserMessageContent::Prompt { prompt } => prompt.clone(),
+                    _ => return Err(eyre::eyre!("Expected prompt message")),
+                },
+                None => return Err(eyre::eyre!("Last entry is not a user message")),
+            }
+        };  // Lock dropped here
+
+        let request = ModelRequest { prompt };
 
         self.worker.set_state(WorkerStates::Requesting, &*self.host_interface);
         
@@ -103,6 +119,20 @@ impl WorkerTask for AgentLoop {
         self.worker.set_state(WorkerStates::Working, &*self.host_interface);
 
         let response = self.query_llm().await?;
+
+        // Create assistant message and add to history
+        let assistant_message = if response.tool_requests.is_empty() {
+            AssistantMessage::new_response(None, response.content.clone())
+        } else {
+            // For now, create a simple response. Tool support will be added later.
+            AssistantMessage::new_response(None, response.content.clone())
+        };
+
+        self.worker.context_container
+            .conversation_history
+            .lock()
+            .unwrap()
+            .push_assistant_message(assistant_message);
 
         if !response.tool_requests.is_empty() {
             info!(

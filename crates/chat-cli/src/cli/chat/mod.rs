@@ -3,7 +3,7 @@ mod consts;
 pub mod context;
 mod conversation;
 mod input_source;
-mod message;
+pub mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
@@ -235,9 +235,16 @@ impl ChatArgs {
         let worker = session.build_worker();
         let prompt = self.input.unwrap_or_else(|| "introduce yourself".to_string());
 
+        // Stage prompt in worker's context
+        worker.context_container
+            .conversation_history
+            .lock()
+            .unwrap()
+            .push_input_message(prompt);
+
         let job = session.run_agent_loop(
             worker.clone(),
-            crate::agent_env::worker_tasks::AgentLoopInput { prompt },
+            crate::agent_env::worker_tasks::AgentLoopInput {},
             Arc::new(ui.interface(crate::agent_env::demo::AnsiColor::Cyan)),
         )?;
 

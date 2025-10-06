@@ -143,7 +143,14 @@ Make following changes:
 
 ----
 
-# Bring in Conversation State #3 - Implement
+# ✅ Bring in Conversation State #3 - Implement
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+- planning/context-container-0/* - design and plan for the implementation of the current step. Read all files for better understanding.
+
+Proceed with the implementation
 
 ----
 

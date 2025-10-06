@@ -1,6 +1,7 @@
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+use super::context_container::ContextContainer;
 use super::model_providers::ModelProvider;
 use super::worker_interface::WorkerToHostInterface;
 
@@ -18,6 +19,7 @@ pub enum WorkerStates {
 pub struct Worker {
     pub id: Uuid,
     pub name: String,
+    pub context_container: ContextContainer,
     pub model_provider: Arc<dyn ModelProvider>,
     pub state: Arc<Mutex<WorkerStates>>,
     pub last_failure: Arc<Mutex<Option<String>>>,
@@ -28,6 +30,7 @@ impl Worker {
         Self {
             id: Uuid::new_v4(),
             name,
+            context_container: ContextContainer::new(),
             model_provider,
             state: Arc::new(Mutex::new(WorkerStates::Inactive)),
             last_failure: Arc::new(Mutex::new(None)),

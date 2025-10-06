@@ -16,7 +16,8 @@ The Agent Environment architecture enables **multiple AI agents to run in parall
 
 The architecture consists of several key components:
 
-- **[Worker](./worker.md)**: Complete AI agent configuration (model provider, state, error tracking)
+- **[Worker](./worker.md)**: Complete AI agent configuration (model provider, state, context, error tracking)
+- **[ContextContainer](./context-container.md)**: Manages conversation history and contextual information
 - **[WorkerTask](./tasks.md)**: Interface for executable work units (agent loops, commands, etc.)
 - **[WorkerJob](./job.md)**: Running instance combining Worker + Task + execution infrastructure
 - **[Session](./session.md)**: Central orchestrator managing all Workers and Jobs
@@ -36,6 +37,11 @@ agent_env/
 ├── worker_job_continuations.rs    # Job completion callbacks
 ├── worker_interface.rs             # WorkerToHostInterface trait
 ├── session.rs                      # Session orchestrator
+├── context_container/              # Context management
+│   ├── mod.rs                     # Module exports
+│   ├── context_container.rs       # ContextContainer struct
+│   ├── conversation_history.rs    # ConversationHistory management
+│   └── conversation_entry.rs      # ConversationEntry type
 ├── model_providers/                # LLM provider abstractions
 │   ├── model_provider.rs          # ModelProvider trait
 │   └── bedrock_converse_stream.rs # AWS Bedrock implementation
@@ -84,10 +90,15 @@ let session = Session::new(vec![model_provider]);
 // Build worker
 let worker = session.build_worker();
 
-// Create task input
-let input = AgentLoopInput {
-    prompt: "Hello, world!".to_string(),
-};
+// Add message to worker's context
+worker.context_container
+    .conversation_history
+    .lock()
+    .unwrap()
+    .push_input_message("Hello, world!".to_string());
+
+// Create task input (empty - context comes from worker)
+let input = AgentLoopInput {};
 
 // Launch agent loop
 let job = session.run_agent_loop(
@@ -96,13 +107,14 @@ let job = session.run_agent_loop(
     ui_interface,
 )?;
 
-// Wait for completion
+// Wait for completion (assistant response added to context automatically)
 job.wait().await?;
 ```
 
 ## Related Documentation
 
 - [Worker Details](./worker.md)
+- [Context Container](./context-container.md)
 - [Task System](./tasks.md)
 - [Job Management](./job.md)
 - [Session Orchestration](./session.md)
