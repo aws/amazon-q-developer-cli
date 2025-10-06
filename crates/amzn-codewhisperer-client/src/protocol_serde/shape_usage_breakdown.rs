@@ -27,11 +27,31 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "displayName" => {
+                                builder = builder.set_display_name(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
+                            "displayNamePlural" => {
+                                builder = builder.set_display_name_plural(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             "currentUsage" => {
                                 builder = builder.set_current_usage(
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                         .map(i32::try_from)
                                         .transpose()?,
+                                );
+                            },
+                            "currentUsageWithPrecision" => {
+                                builder = builder.set_current_usage_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
                                 );
                             },
                             "currentOverages" => {
@@ -41,11 +61,23 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "currentOveragesWithPrecision" => {
+                                builder = builder.set_current_overages_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
+                                );
+                            },
                             "usageLimit" => {
                                 builder = builder.set_usage_limit(
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                         .map(i32::try_from)
                                         .transpose()?,
+                                );
+                            },
+                            "usageLimitWithPrecision" => {
+                                builder = builder.set_usage_limit_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
                                 );
                             },
                             "unit" => {
@@ -87,6 +119,12 @@ where
                                     ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
                                         .map(i32::try_from)
                                         .transpose()?,
+                                );
+                            },
+                            "overageCapWithPrecision" => {
+                                builder = builder.set_overage_cap_with_precision(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f64_lossy()),
                                 );
                             },
                             "freeTrialInfo" => {

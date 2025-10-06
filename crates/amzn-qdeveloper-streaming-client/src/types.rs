@@ -57,6 +57,7 @@ pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
 pub use crate::types::_metadata_event::MetadataEvent;
+pub use crate::types::_metering_event::MeteringEvent;
 pub use crate::types::_module_link::ModuleLink;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_output_format::OutputFormat;
@@ -65,6 +66,9 @@ pub use crate::types::_programming_language::ProgrammingLanguage;
 pub use crate::types::_progress::Progress;
 pub use crate::types::_progress_component::ProgressComponent;
 pub use crate::types::_range::Range;
+pub use crate::types::_reasoning_content::ReasoningContent;
+pub use crate::types::_reasoning_content_event::ReasoningContentEvent;
+pub use crate::types::_reasoning_text::ReasoningText;
 pub use crate::types::_reference::Reference;
 pub use crate::types::_relevant_text_document::RelevantTextDocument;
 pub use crate::types::_resource::Resource;
@@ -229,6 +233,8 @@ mod _message_metadata_event;
 
 mod _metadata_event;
 
+mod _metering_event;
+
 mod _module_link;
 
 mod _origin;
@@ -244,6 +250,12 @@ mod _progress;
 mod _progress_component;
 
 mod _range;
+
+mod _reasoning_content;
+
+mod _reasoning_content_event;
+
+mod _reasoning_text;
 
 mod _reference;
 

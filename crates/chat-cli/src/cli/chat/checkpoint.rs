@@ -171,8 +171,28 @@ impl CheckpointManager {
             tool_name,
         };
 
-        self.checkpoints.push(checkpoint);
-        self.tag_index.insert(tag.to_string(), self.checkpoints.len() - 1);
+        // Check if checkpoint with this tag already exists
+        if let Some(&existing_idx) = self.tag_index.get(tag) {
+            if is_turn {
+                // For turn checkpoints, always move to the end to maintain correct ordering
+                self.checkpoints.remove(existing_idx);
+
+                // Update all indices in tag_index that are greater than the removed index
+                for (_, index) in self.tag_index.iter_mut() {
+                    if *index > existing_idx {
+                        *index -= 1;
+                    }
+                }
+
+                // Add the updated checkpoint at the end
+                self.checkpoints.push(checkpoint);
+                self.tag_index.insert(tag.to_string(), self.checkpoints.len() - 1);
+            }
+        } else {
+            // Add new checkpoint
+            self.checkpoints.push(checkpoint);
+            self.tag_index.insert(tag.to_string(), self.checkpoints.len() - 1);
+        }
 
         // Cache file stats for this checkpoint
         if let Ok(stats) = self.compute_file_stats(tag) {
@@ -404,7 +424,7 @@ fn stage_commit_tag(shadow_path: &str, work_tree: &Path, message: &str, tag: &st
     }
 
     // Tag
-    let output = run_git(Path::new(shadow_path), None, &["tag", tag])?;
+    let output = run_git(Path::new(shadow_path), None, &["tag", tag, "-f"])?;
     if !output.status.success() {
         bail!(
             "Checkpoint initialization failed: {}",

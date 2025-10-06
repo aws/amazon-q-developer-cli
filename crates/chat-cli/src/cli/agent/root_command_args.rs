@@ -116,13 +116,8 @@ impl AgentArgs {
             Some(AgentSubcommands::Create { name, directory, from }) => {
                 let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
-                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                let mut cmd = std::process::Command::new(editor_cmd);
 
-                let status = cmd.arg(&path_with_file_name).status()?;
-                if !status.success() {
-                    bail!("Editor process did not exit with success");
-                }
+                crate::util::editor::launch_editor(&path_with_file_name)?;
 
                 let Ok(content) = os.fs.read(&path_with_file_name).await else {
                     bail!(
@@ -148,13 +143,7 @@ impl AgentArgs {
                 let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
                 let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name).await?;
 
-                let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
-                let mut cmd = std::process::Command::new(editor_cmd);
-
-                let status = cmd.arg(&path_with_file_name).status()?;
-                if !status.success() {
-                    bail!("Editor process did not exit with success");
-                }
+                crate::util::editor::launch_editor(&path_with_file_name)?;
 
                 let Ok(content) = os.fs.read(&path_with_file_name).await else {
                     bail!(

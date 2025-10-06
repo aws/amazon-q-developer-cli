@@ -57,5 +57,11 @@ pub fn ser_assistant_response_message(
         crate::protocol_serde::shape_cache_point::ser_cache_point(&mut object_17, var_16)?;
         object_17.finish();
     }
+    if let Some(var_18) = &input.reasoning_content {
+        #[allow(unused_mut)]
+        let mut object_19 = object.key("reasoningContent").start_object();
+        crate::protocol_serde::shape_reasoning_content::ser_reasoning_content(&mut object_19, var_18)?;
+        object_19.finish();
+    }
     Ok(())
 }

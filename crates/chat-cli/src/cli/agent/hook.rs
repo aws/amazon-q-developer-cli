@@ -21,6 +21,8 @@ pub enum HookTrigger {
     PreToolUse,
     /// Triggered after tool execution
     PostToolUse,
+    /// Triggered when the assistant finishes responding
+    Stop,
 }
 
 impl Display for HookTrigger {
@@ -30,6 +32,7 @@ impl Display for HookTrigger {
             HookTrigger::UserPromptSubmit => write!(f, "userPromptSubmit"),
             HookTrigger::PreToolUse => write!(f, "preToolUse"),
             HookTrigger::PostToolUse => write!(f, "postToolUse"),
+            HookTrigger::Stop => write!(f, "stop"),
         }
     }
 }
