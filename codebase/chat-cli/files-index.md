@@ -7,10 +7,11 @@
   - subcommands are defined as a [enum RootSubcommand](../../crates/chat-cli/src/cli/mod.rs#L93)
   - We are intersted in `Chat(ChatArgs)`
   - `ChatArgs` are defined in "chat" folder:  [ChatArgs](../../crates/chat-cli/src/cli/chat/mod.rs#L210)
-- **Chat entry point is** [`ChatArgs.execute()](../../crates/chat-cli/src/cli/chat/mod.rs#L238)
-    - it makes a lot of checks and validations, creates some data
-    - Mainly it kicks off [`ChatSession::new`] - [link](../../crates/chat-cli/src/cli/chat/mod.rs#L422)
-    - TODO: review and list what kind of information is obtained and configured at this stage
+- **Chat entry point is** [`ChatArgs.execute()](../../crates/chat-cli/src/cli/chat/mod.rs#L229)
+    - It currently starts up a proto-implementation of Agent Environment Architecture
+    - In the originnal implementation it would do a lot of checks and kick off [`ChatSession::new`]
+    - TODO: review and list what kind of information was obtained and configured at this stage in the original design
+    - **IMPORTANT** This file is huge, but for the work on new architecture we only care about `ChatArgs` - You can ignore anything below comment 'ORIGINAL ChatSession IMPLEMENTATION'
 - `ChatSession::new` - [link](../../crates/chat-cli/src/cli/chat/mod.rs#L604)
 
 

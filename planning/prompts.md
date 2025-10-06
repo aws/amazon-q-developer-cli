@@ -66,13 +66,23 @@ Note that it would also affect how we handle ctrl+c and graceful shutdown.
 
 ----
 
-# Bring in Conversation State #1 - Assessment
+# ✅ Bring in Conversation State #1 - Assessment
 Read the following files:
 - codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
-- codebase/chat-exp/files-index.md - the list of some important files we are working with 
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
 - crates/chat-cli/src/agent_env - current implementation of the new architecture
 
-Your goal is to 
+Your goal is to review original ChatSession implementation and how it was initialized in `ChatArgs.execute()`, focusing primarly on the conversation state.
+You will have to check out a temporary copy of `crates/chat-cli/src/cli/chat/mod.rs` as it was on `main` branch. Save it to `codebase/chat-cli/temp/original_mode.rs`. The rest of the code around this package remains the same.
+
+The main questions to answer are:
+- How is conversation history maintained. Specifically operations of pushing in user's promts and agent's responses.
+- What are classes implementing it?
+- What's required to re-use the existing implementation? Can we simply do something like `let conversation = ConversationState::new(...)` and then toss around this instance?
+
+Write your findings to
+- codebase/chat-cli/convrsation-state-implementation.md - focused on current implementation
+- codebase/chat-cli/convrsation-state-reuse.md - focused on re-use and ways to use (multiple) instances of conversation state in new architecture
 
 ----
 
