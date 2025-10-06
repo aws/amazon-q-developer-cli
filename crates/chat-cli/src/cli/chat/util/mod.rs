@@ -21,8 +21,7 @@ use super::ChatError;
 use super::token_counter::TokenCounter;
 
 /// Truncates text to a maximum display width.
-/// Takes into account the display width of characters, where CJK characters are counted as 2 units
-/// wide. Returns the truncated text without ellipsis.
+/// Dynamically calculate the display width of characters, where CJK characters are counted as 2
 pub fn truncate_safe_with_width(text: &str, max_width: usize) -> String {
     let text_width = UnicodeWidthStr::width(text);
     if text_width <= max_width {
