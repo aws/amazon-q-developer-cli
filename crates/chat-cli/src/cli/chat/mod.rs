@@ -54,7 +54,6 @@ use clap::{
 use cli::compact::CompactStrategy;
 use cli::hooks::ToolContext;
 use cli::model::{
-    find_model,
     get_available_models,
     select_model,
 };
@@ -75,7 +74,6 @@ use crossterm::{
 use eyre::{
     Report,
     Result,
-    bail,
     eyre,
 };
 use input_source::InputSource;
@@ -108,16 +106,10 @@ use tokio::sync::{
     Mutex,
     broadcast,
 };
-use tool_manager::{
-    PromptQuery,
-    PromptQueryResult,
-    ToolManager,
-    ToolManagerBuilder,
-};
+use tool_manager::ToolManager;
 use tools::delegate::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
-    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
@@ -177,7 +169,6 @@ use crate::constants::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::core::{
-    AgentConfigInitArgs,
     ChatAddedMessageParams,
     ChatConversationType,
     MessageMetaTag,
@@ -235,7 +226,7 @@ pub struct ChatArgs {
 }
 
 impl ChatArgs {
-    pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
+    pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         println!("Starting Agent Environment...");
 
         let session = crate::agent_env::demo::build_session().await?;

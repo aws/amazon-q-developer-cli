@@ -14,13 +14,11 @@ pub mod worker_tasks;
 pub mod demo;
 
 // Re-exports for convenience
-pub use worker_job_continuations::{Continuations, JobState, WorkerJobCompletionType};
+pub use worker_job_continuations::{Continuations, WorkerJobCompletionType};
 pub use model_providers::{
-    ModelProvider, ModelRequest, ModelResponse, ModelResponseChunk, ToolRequest,
-    BedrockConverseStreamModelProvider,
+    ModelProvider, ModelRequest, ModelResponse, ModelResponseChunk,
 };
 pub use worker::{Worker, WorkerStates};
 pub use worker_task::WorkerTask;
-pub use worker_job::WorkerJob;
 pub use worker_interface::WorkerToHostInterface;
 pub use session::Session;
