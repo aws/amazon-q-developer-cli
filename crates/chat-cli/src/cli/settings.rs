@@ -88,6 +88,9 @@ impl SettingsArgs {
             },
             None => {
                 let Some(key) = &self.key else {
+                    if self.delete {
+                        return Err(eyre::eyre!("the argument {} requires a {}\n Usage: q settings {} {}", "'--delete'".yellow(), "<KEY>".green(), "--delete".yellow(), "<KEY>".green()));
+                    }
                     return Ok(ExitCode::SUCCESS);
                 };
 
