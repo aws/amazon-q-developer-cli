@@ -262,5 +262,32 @@ Task:
         - dequeue - dequeued result worker.id
 
 
+----
+
+# ✅ Two workers demo - planning
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+
+We are going to work on show-off for the core feature of this architecture - an ability to run multiple jobs in parallel. While it's not supposed to be used this way in TUI, we will try to show two workers produce output at the same time.
+
+Base implementation looks like this:
+- TextUiWorkerToHostInterface to take in an optional color argumant. If provided - response_chunk_received to print the text in that color
+    - Refer to `CliUi.interface()` in crates/chat-cli/src/agent_env/demo/cli_interface.rs for the idea 
+- AgentEnvTextUi to maintain a map workerId -> TextUiWorkerToHostInterface instance
+- AgentEnvTextUi.create_ui_interface() to take workerId(optional) and color (optional)
+    - if color is provided - use in in TextUiWorkerToHostInterface constructor
+    - if workerId is provided - use it to store the created instance in the map
+- AgentEnvTextUi.run, when spawning new task for a worker - try to reuse existing TextUiWorkerToHostInterface instance from the map, if present
+- Entry point in ChatArgs.execute() to create an additonal job and spawn it too, in the same manner as the existing one.
+    - Use Green for the UI for the first worker, and Cyan for the UI for the second
+
+This will allow us to display that we can run two processes at once, but UI is going to be shaky. We will address it in the next iteration.
+
+Your task now is to define the implementation architecture that would cover that goal.
+Write it down under planning/two-workers/ (new folder)
+
+You must identify any potential issues with the proposed set of cnahges, and propose improvements. But keep it limited to primary goal, to display two workers work at the same time.
 
 ----
