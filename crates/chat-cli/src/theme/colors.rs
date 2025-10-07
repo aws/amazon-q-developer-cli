@@ -20,6 +20,8 @@ pub struct StatusColors {
 pub struct UiColors {
     /// Primary brand color
     pub primary_brand: Color,
+    /// Primary text color
+    pub primary_text: Color,
     /// Secondary/muted text for descriptions and helper text
     pub secondary_text: Color,
     /// Emphasis color for important text and headers (typically magenta)
@@ -60,6 +62,7 @@ impl Default for UiColors {
     fn default() -> Self {
         Self {
             primary_brand: Color::Cyan,
+            primary_text: Color::White,
             secondary_text: Color::DarkGrey,
             emphasis: Color::Magenta,
             command_highlight: Color::Green,

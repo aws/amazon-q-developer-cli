@@ -51,12 +51,12 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::cli::issue;
-use crate::constants::ui_text::EXTRA_HELP;
+use crate::constants::ui_text;
 use crate::os::Os;
 
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
-#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
+#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help())]
 pub enum SlashCommand {
     /// Quit the application
     #[command(aliases = ["q", "exit"])]

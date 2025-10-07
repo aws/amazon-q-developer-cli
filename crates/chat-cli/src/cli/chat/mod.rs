@@ -14,14 +14,7 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
-use crate::constants::ui_text::{
-    LIMIT_REACHED_TEXT,
-    POPULAR_SHORTCUTS,
-    RESUME_TEXT,
-    SMALL_SCREEN_POPULAR_SHORTCUTS,
-    SMALL_SCREEN_WELCOME,
-    WELCOME_TEXT,
-};
+use crate::constants::ui_text;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -172,7 +165,6 @@ use crate::cli::experiment::experiment_manager::{
 use crate::constants::{
     error_messages,
     tips,
-    ui_text,
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
@@ -445,9 +437,6 @@ impl ChatArgs {
 
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
-
-// Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 20] = tips::ROTATING_TIPS;
 
 const GREETING_BREAK_POINT: usize = 80;
 
@@ -997,7 +986,7 @@ impl ChatSession {
                     {
                         execute!(
                             self.stderr,
-                            style::Print(format!("\n\n{LIMIT_REACHED_TEXT} {limits_text}")),
+                            style::Print(format!("\n\n{} {limits_text}", ui_text::limit_reached_text())),
                             StyledText::secondary_fg(),
                             style::Print("\n\nUse "),
                             StyledText::success_fg(),
@@ -1193,16 +1182,17 @@ impl ChatSession {
             .unwrap_or(true)
         {
             let welcome_text = match self.existing_conversation {
-                true => RESUME_TEXT,
+                true => ui_text::resume_text(),
                 false => match is_small_screen {
-                    true => SMALL_SCREEN_WELCOME,
-                    false => WELCOME_TEXT,
+                    true => ui_text::small_screen_welcome(),
+                    false => ui_text::welcome_text(),
                 },
             };
 
-            execute!(self.stderr, style::Print(welcome_text), style::Print("\n\n"),)?;
+            execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
 
-            let tip = ROTATING_TIPS[usize::try_from(rand::random::<u32>()).unwrap_or(0) % ROTATING_TIPS.len()];
+            let rotating_tips = tips::get_rotating_tips();
+            let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
             if is_small_screen {
                 // If the screen is small, print the tip in a single line
                 execute!(
@@ -1224,9 +1214,9 @@ impl ChatSession {
             execute!(
                 self.stderr,
                 style::Print("\n"),
-                style::Print(match is_small_screen {
-                    true => SMALL_SCREEN_POPULAR_SHORTCUTS,
-                    false => POPULAR_SHORTCUTS,
+                style::Print(&match is_small_screen {
+                    true => ui_text::small_screen_popular_shortcuts(),
+                    false => ui_text::popular_shortcuts(),
                 }),
                 style::Print("\n"),
                 style::Print(

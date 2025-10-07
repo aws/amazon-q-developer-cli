@@ -97,6 +97,26 @@ impl StyledText {
         )
     }
 
+    /// Create brand-styled text (primary brand color)
+    pub fn brand(text: &str) -> String {
+        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.primary_brand), text)
+    }
+
+    /// Create primary-styled text (primary text color)
+    pub fn primary(text: &str) -> String {
+        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.primary_text), text)
+    }
+
+    /// Create secondary-styled text (muted/helper text)
+    pub fn secondary(text: &str) -> String {
+        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.secondary_text), text)
+    }
+
+    /// Create success-styled text
+    pub fn success(text: &str) -> String {
+        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().status.success), text)
+    }
+
     // ===== Low-level crossterm command methods =====
     // These return crossterm commands for complex terminal operations
 
