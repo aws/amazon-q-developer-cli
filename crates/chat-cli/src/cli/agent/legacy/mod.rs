@@ -18,6 +18,7 @@ use super::{
 use crate::cli::agent::hook::Hook;
 use crate::cli::agent::legacy::context::LegacyContextConfig;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 
 /// Performs the migration from legacy profile configuration to agent configuration if it hasn't
@@ -110,10 +111,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             .interact_on_opt(&dialoguer::console::Term::stdout())
         {
             Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                );
+                let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
                 sel
             },
             // Ctrl‑C -> Err(Interrupted)

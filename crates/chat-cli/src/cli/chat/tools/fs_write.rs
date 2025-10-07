@@ -9,7 +9,6 @@ use std::sync::LazyLock;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::{
     ContextCompat as _,
@@ -44,6 +43,10 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
+use crate::theme::{
+    StyledText,
+    theme,
+};
 use crate::util::directories;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
@@ -120,9 +123,9 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print(invoke_description),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
 
@@ -134,9 +137,9 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
                 match matches.len() {
@@ -155,9 +158,9 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Updating: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
 
@@ -176,9 +179,9 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Appending to: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format_path(cwd, &path)),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
 
@@ -423,9 +426,9 @@ impl FsWrite {
         queue!(
             output,
             style::Print("Path: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&relative_path),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print("\n\n"),
         )?;
         Ok(())
@@ -663,20 +666,20 @@ fn print_diff(
     for change in diff.iter_all_changes() {
         // Define the colors per line.
         let (text_color, gutter_bg_color, line_bg_color) = match (change.tag(), new_str.truecolor) {
-            (similar::ChangeTag::Equal, true) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Equal, true) => (theme().ui.secondary_text, new_str.gutter_bg, new_str.line_bg),
             (similar::ChangeTag::Delete, true) => (
-                style::Color::Reset,
+                theme().ui.secondary_text,
                 style::Color::Rgb { r: 79, g: 40, b: 40 },
                 style::Color::Rgb { r: 36, g: 25, b: 28 },
             ),
             (similar::ChangeTag::Insert, true) => (
-                style::Color::Reset,
+                theme().ui.secondary_text,
                 style::Color::Rgb { r: 40, g: 67, b: 43 },
                 style::Color::Rgb { r: 24, g: 38, b: 30 },
             ),
-            (similar::ChangeTag::Equal, false) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Delete, false) => (style::Color::Red, new_str.gutter_bg, new_str.line_bg),
-            (similar::ChangeTag::Insert, false) => (style::Color::Green, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Equal, false) => (theme().ui.secondary_text, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Delete, false) => (theme().status.error, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Insert, false) => (theme().status.success, new_str.gutter_bg, new_str.line_bg),
         };
         // Define the change tag character to print, if any.
         let sign = match change.tag() {
@@ -720,13 +723,13 @@ fn print_diff(
         // Print the line.
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Reset),
+            StyledText::reset(),
             style::Print(":"),
             style::SetForegroundColor(text_color),
             style::SetBackgroundColor(line_bg_color),
             style::Print(" "),
             style::Print(change),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
     }
     queue!(
@@ -772,8 +775,8 @@ fn stylize_output_if_able(os: &Os, path: impl AsRef<Path>, file_text: &str) -> S
     StylizedFile {
         truecolor: false,
         content: file_text.to_string(),
-        gutter_bg: style::Color::Reset,
-        line_bg: style::Color::Reset,
+        gutter_bg: theme().ui.secondary_text,
+        line_bg: theme().ui.secondary_text,
     }
 }
 
@@ -796,8 +799,8 @@ impl Default for StylizedFile {
         Self {
             truecolor: false,
             content: Default::default(),
-            gutter_bg: style::Color::Reset,
-            line_bg: style::Color::Reset,
+            gutter_bg: theme().ui.secondary_text,
+            line_bg: theme().ui.secondary_text,
         }
     }
 }

@@ -19,6 +19,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Defines subcommands that allow users to view and manage todo lists
 #[derive(Debug, PartialEq, Subcommand)]
@@ -70,9 +71,9 @@ impl TodoSubcommand {
         if !TodoList::is_enabled(os) {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(style::Color::Red),
+                StyledText::error_fg(),
                 style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true\n"),
-                style::SetForegroundColor(style::Color::Reset)
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,

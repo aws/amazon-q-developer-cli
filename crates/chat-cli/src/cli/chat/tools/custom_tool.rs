@@ -27,6 +27,7 @@ use crate::mcp_client::{
     oauth_util,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -137,9 +138,9 @@ impl CustomTool {
         queue!(
             output,
             style::Print("Running "),
-            style::SetForegroundColor(style::Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.name),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
         if let Some(params) = &self.params {
             let params = match serde_json::to_string_pretty(params) {
@@ -155,7 +156,7 @@ impl CustomTool {
                 style::Print(" with the param:\n"),
                 style::Print(params),
                 style::Print("\n"),
-                style::ResetColor,
+                StyledText::reset(),
             )?;
         } else {
             queue!(output, style::Print("\n"))?;

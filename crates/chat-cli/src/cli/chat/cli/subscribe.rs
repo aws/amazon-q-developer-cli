@@ -1,8 +1,5 @@
 use clap::Args;
-use crossterm::style::{
-    Color,
-    Stylize,
-};
+use crossterm::style::Stylize;
 use crossterm::{
     cursor,
     execute,
@@ -20,6 +17,7 @@ use crate::cli::chat::{
     with_spinner,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::system_info::is_remote;
 
 const SUBSCRIBE_TITLE_TEXT: &str = color_print::cstr! { "<white!,bold>Subscribe to Q Developer Pro</white!,bold>" };
@@ -45,9 +43,9 @@ impl SubscribeArgs {
         {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\nYour Q Developer Pro subscription is managed through IAM Identity Center.\n\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
         } else if self.manage {
             queue!(session.stderr, style::Print("\n"),)?;
@@ -56,24 +54,24 @@ impl SubscribeArgs {
                     if status != ActualSubscriptionStatus::Active {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("You don't seem to have a Q Developer Pro subscription. "),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("Use "),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("/subscribe"),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print(" to upgrade your subscription.\n\n"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
                 },
                 Err(err) => {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!("Failed to get subscription status: {}\n\n", err)),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 },
             }
@@ -90,8 +88,8 @@ impl SubscribeArgs {
                 execute!(
                     session.stderr,
                     style::Print(format!("Open this URL to manage your subscription: {}\n\n", url.blue())),
-                    style::ResetColor,
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
+                    StyledText::reset(),
                 )?;
             }
         } else {
@@ -113,9 +111,9 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
             if status == ActualSubscriptionStatus::Active {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Your Builder ID already has a Q Developer Pro subscription.\n\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
                 return Ok(());
             }
@@ -123,9 +121,9 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
         Err(e) => {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print(format!("{}\n\n", e)),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             // Don't exit early here, the check isn't required to subscribe.
         },
@@ -135,9 +133,9 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     queue!(
         session.stderr,
         style::Print(SUBSCRIBE_TITLE_TEXT),
-        style::SetForegroundColor(Color::Grey),
+        StyledText::secondary_fg(),
         style::Print(format!("\n\n{}\n\n", SUBSCRIBE_TEXT)),
-        style::SetForegroundColor(Color::Reset),
+        StyledText::reset(),
         cursor::Show
     )?;
 
@@ -151,18 +149,14 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     );
 
     let user_input = session.read_user_input(&prompt, true);
-    queue!(
-        session.stderr,
-        style::SetForegroundColor(Color::Reset),
-        style::Print("\n"),
-    )?;
+    queue!(session.stderr, StyledText::reset(), style::Print("\n"),)?;
 
     if !user_input.is_some_and(|i| ["y", "Y"].contains(&i.as_str())) {
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("Upgrade cancelled.\n\n"),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
         return Ok(());
     }
@@ -180,13 +174,13 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     if is_remote() || crate::util::open::open_url_async(&url).await.is_err() {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(format!(
                 "{} Having issues opening the AWS console? Try copy and pasting the URL > {}\n\n",
                 "?".magenta(),
                 url.blue()
             )),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
     }
 

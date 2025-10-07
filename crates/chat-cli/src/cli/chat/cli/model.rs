@@ -2,7 +2,6 @@ use amzn_codewhisperer_client::types::Model;
 use clap::Args;
 use crossterm::style::{
     self,
-    Color,
 };
 use crossterm::{
     execute,
@@ -21,6 +20,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
@@ -93,9 +93,9 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
     if models.is_empty() {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("No models available\n"),
-            style::ResetColor
+            StyledText::reset(),
         )?;
         return Ok(None);
     }
@@ -128,10 +128,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
         Ok(sel) => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-            );
+            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
             sel
         },
         // Ctrl‑C -> Err(Interrupted)
@@ -139,7 +136,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         Err(e) => return Err(ChatError::Custom(format!("Failed to choose model: {e}").into())),
     };
 
-    queue!(session.stderr, style::ResetColor)?;
+    queue!(session.stderr, StyledText::reset())?;
 
     if let Some(index) = selection {
         let selected = models[index].clone();
@@ -150,13 +147,13 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             session.stderr,
             style::Print("\n"),
             style::Print(format!(" Using {}\n\n", display_name)),
-            style::ResetColor,
-            style::SetForegroundColor(Color::Reset),
-            style::SetBackgroundColor(Color::Reset),
+            StyledText::reset(),
+            StyledText::reset(),
+            StyledText::reset(),
         )?;
     }
 
-    execute!(session.stderr, style::ResetColor)?;
+    execute!(session.stderr, StyledText::reset())?;
 
     Ok(Some(ChatState::PromptUser {
         skip_printing_tools: false,

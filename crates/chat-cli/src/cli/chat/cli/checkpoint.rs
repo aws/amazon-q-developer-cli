@@ -3,7 +3,6 @@ use std::io::Write;
 use clap::Subcommand;
 use crossterm::style::{
     Attribute,
-    Color,
     StyledContent,
     Stylize,
 };
@@ -28,6 +27,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories::get_shadow_repo_dir;
 
 #[derive(Debug, PartialEq, Subcommand)]
@@ -90,9 +90,9 @@ impl CheckpointSubcommand {
         if !ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print("\nCheckpoint is disabled. Enable it with: q settings chat.enableCheckpoint true\n"),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -103,11 +103,11 @@ impl CheckpointSubcommand {
         if session.conversation.is_in_tangent_mode() {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(
                     "⚠️ Checkpoint is disabled while in tangent mode. Please exit tangent mode if you want to use checkpoint.\n\n"
                 ),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -127,11 +127,11 @@ impl CheckpointSubcommand {
         if session.conversation.checkpoint_manager.is_some() {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print(
                     "✓ Checkpoints are already enabled for this session! Use /checkpoint list to see current checkpoints.\n"
                 ),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
         } else {
             let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
@@ -146,14 +146,14 @@ impl CheckpointSubcommand {
 
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::SetAttribute(Attribute::Bold),
                 style::Print(format!(
                     "📷  Checkpoints are enabled! (took {:.2}s)\n",
                     start.elapsed().as_secs_f32()
                 )),
-                style::SetForegroundColor(Color::Reset),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset(),
+                StyledText::reset_attributes(),
             )?;
         }
 
@@ -172,9 +172,9 @@ impl CheckpointSubcommand {
         let Some(manager) = session.conversation.checkpoint_manager.take() else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -214,11 +214,11 @@ impl CheckpointSubcommand {
             Ok(_) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Blue),
+                    StyledText::info_fg(),
                     style::SetAttribute(Attribute::Bold),
                     style::Print(format!("✓ Restored to checkpoint {}\n", tag)),
-                    style::SetForegroundColor(Color::Reset),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset(),
+                    StyledText::reset_attributes(),
                 )?;
                 session.conversation.checkpoint_manager = Some(manager);
             },
@@ -237,9 +237,9 @@ impl CheckpointSubcommand {
         let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -258,9 +258,9 @@ impl CheckpointSubcommand {
         let Some(manager) = session.conversation.checkpoint_manager.take() else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠️ ️Checkpoints not enabled.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -279,7 +279,7 @@ impl CheckpointSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::Print("✓ Deleted shadow repository for this session.\n"),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                 )?;
             },
             Err(e) => {
@@ -297,9 +297,9 @@ impl CheckpointSubcommand {
         let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠️ ️Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -318,9 +318,9 @@ impl CheckpointSubcommand {
         let Some(manager) = session.conversation.checkpoint_manager.as_ref() else {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠️ Checkpoints not enabled. Use '/checkpoint init' to enable.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -333,12 +333,12 @@ impl CheckpointSubcommand {
         if tag1 != "HEAD" && !manager.tag_index.contains_key(&tag1) {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(format!(
                     "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
                     tag1
                 )),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -348,12 +348,12 @@ impl CheckpointSubcommand {
         if tag2 != "HEAD" && !manager.tag_index.contains_key(&tag2) {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(format!(
                     "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
                     tag2
                 )),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -368,9 +368,9 @@ impl CheckpointSubcommand {
 
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::Print(header),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
 
         match manager.diff(&tag1, &tag2) {
@@ -378,9 +378,9 @@ impl CheckpointSubcommand {
                 if diff.trim().is_empty() {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("No changes.\n"),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 } else {
                     execute!(session.stderr, style::Print(diff))?;
@@ -497,9 +497,9 @@ fn expand_checkpoint(manager: &CheckpointManager, output: &mut impl Write, tag: 
     let Some(&idx) = manager.tag_index.get(tag) else {
         execute!(
             output,
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print(format!("⚠️ checkpoint '{}' not found\n", tag)),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
         return Ok(());
     };
@@ -540,18 +540,18 @@ fn expand_checkpoint(manager: &CheckpointManager, output: &mut impl Write, tag: 
 
         execute!(
             output,
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::Print(" └─ "),
             style::Print(display),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
 
         if !stats_str.is_empty() {
             execute!(
                 output,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(format!(" ({})", stats_str)),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
         }
 

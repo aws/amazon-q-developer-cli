@@ -6,11 +6,7 @@ use std::io::{
 use std::path::PathBuf;
 
 use chrono::Utc;
-use crossterm::style::{
-    Color,
-    Print,
-    SetForegroundColor,
-};
+use crossterm::style::Print;
 use crossterm::{
     execute,
     queue,
@@ -44,6 +40,7 @@ use crate::cli::{
     DEFAULT_AGENT_NAME,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
@@ -191,9 +188,9 @@ pub fn display_agent_info(agent: &str, task: &str, config: &AgentConfig) -> Resu
     execute!(
         stdout(),
         Print("\n"),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print("! This task will run with the agent's specific tool permissions.\n\n"),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
 
     Ok(())
@@ -213,11 +210,11 @@ pub fn display_default_agent_warning() -> Result<()> {
     execute!(
         stdout(),
         Print("\n"),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print(
             "! This task will run with trust-all permissions and can execute commands or consume system/cloud resources.\n\n"
         ),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
     Ok(())
 }
@@ -225,9 +222,9 @@ pub fn display_default_agent_warning() -> Result<()> {
 pub fn get_user_confirmation() -> Result<bool> {
     execute!(
         stdout(),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print("Continue? [y/N]: "),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
 
     let mut input = String::new();

@@ -3,7 +3,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use serde::Deserialize;
@@ -22,6 +21,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::knowledge_store::KnowledgeStore;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
@@ -156,9 +156,9 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print("Adding to knowledge base: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(&add.name),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 // Check if value is a path or text content
@@ -168,9 +168,9 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print(format!(" ({}: ", path_type)),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&add.value),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(")\n")
                     )?;
                 } else {
@@ -179,18 +179,18 @@ impl Knowledge {
                         queue!(
                             updates,
                             style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
+                            StyledText::info_fg(),
                             style::Print(format!("{}...", preview)),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(")\n")
                         )?;
                     } else {
                         queue!(
                             updates,
                             style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
+                            StyledText::info_fg(),
                             style::Print(&add.value),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(")\n")
                         )?;
                     }
@@ -201,33 +201,33 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by name: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.name),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !remove.context_id.is_empty() {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by ID: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !remove.path.is_empty() {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by path: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.path),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base: "),
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("No identifier provided"),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 }
             },
@@ -238,17 +238,17 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print(" with ID: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&update.context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !update.name.is_empty() {
                     queue!(
                         updates,
                         style::Print(" with name: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&update.name),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 }
 
@@ -257,18 +257,18 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print(format!(" using new {}: ", path_type)),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(&update.path),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
             },
             Knowledge::Clear(_) => {
                 queue!(
                     updates,
                     style::Print("Clearing "),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("all"),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(" knowledge base entries"),
                 )?;
             },
@@ -276,18 +276,18 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print("Searching knowledge base for: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(&search.query),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 if let Some(context_id) = &search.context_id {
                     queue!(
                         updates,
                         style::Print(" in context: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     queue!(updates, style::Print(" across all contexts"),)?;

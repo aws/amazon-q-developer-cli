@@ -9,15 +9,16 @@ mod mcp_client;
 mod os;
 mod request;
 mod telemetry;
+mod theme;
 mod util;
 
 use std::process::ExitCode;
 
 use anstream::eprintln;
 use clap::Parser;
-use crossterm::style::Stylize;
 use eyre::Result;
 use logging::get_log_level_max;
+use theme::StyledText;
 use tracing::metadata::LevelFilter;
 
 #[global_allocator]
@@ -42,9 +43,9 @@ fn main() -> Result<ExitCode> {
         Ok(exit_code) => Ok(exit_code),
         Err(err) => {
             if verbose || get_log_level_max() > LevelFilter::INFO {
-                eprintln!("{} {err:?}", "error:".bold().red());
+                eprintln!("{} {err:?}", StyledText::error("error:"));
             } else {
-                eprintln!("{} {err}", "error:".bold().red());
+                eprintln!("{} {err}", StyledText::error("error:"));
             }
 
             Ok(ExitCode::FAILURE)

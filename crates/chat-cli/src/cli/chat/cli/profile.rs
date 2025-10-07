@@ -5,8 +5,6 @@ use std::io::Write;
 use clap::Subcommand;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
 };
 use crossterm::{
     execute,
@@ -42,6 +40,7 @@ use crate::cli::chat::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories::chat_global_agent_path;
 use crate::util::{
     NullWriter,
@@ -148,9 +147,9 @@ impl AgentSubcommand {
             ($err:expr) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("\nError: {}\n\n", $err)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?
             };
         }
@@ -164,10 +163,10 @@ impl AgentSubcommand {
                     if active_profile.is_some_and(|p| p == *profile) {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("* "),
                             style::Print(&profile.name),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     } else {
                         queue!(session.stderr, style::Print("  "), style::Print(&profile.name),)?;
@@ -214,9 +213,9 @@ impl AgentSubcommand {
                     Err(e) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(&e),
                             style::Print("\n"),
                         )?;
@@ -230,17 +229,17 @@ impl AgentSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("Agent "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(name),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(" has been created successfully"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Changes take effect on next launch"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
             },
 
@@ -267,9 +266,9 @@ impl AgentSubcommand {
                     Err(e) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(&e),
                             style::Print("\n"),
                         )?;
@@ -283,17 +282,17 @@ impl AgentSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("Agent "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(name),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(" has been edited successfully"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Changes take effect on next launch"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
             },
 
@@ -324,10 +323,7 @@ impl AgentSubcommand {
                     .interact_on_opt(&dialoguer::console::Term::stdout())
                 {
                     Ok(sel) => {
-                        let _ = crossterm::execute!(
-                            std::io::stdout(),
-                            crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                        );
+                        let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
                         sel
                     },
                     // Ctrl‑C -> Err(Interrupted)
@@ -406,12 +402,12 @@ impl AgentSubcommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!(
                         "To make changes or create agents, please do so via create the corresponding config in {}, where you would also find an example config for your reference.\nTo switch agent, launch another instance of q chat with --agent.\n\n",
                         global_path
                     )),
-                    style::SetAttribute(Attribute::Reset)
+                    StyledText::reset_attributes()
                 )?;
             },
             Self::SetDefault { name } => match session.conversation.agents.agents.get(&name) {
@@ -424,19 +420,19 @@ impl AgentSubcommand {
 
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print("✓ Default agent set to '"),
                         style::Print(&agent.name),
                         style::Print("'. This will take effect the next time q chat is launched.\n"),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 },
                 None => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print("Error: "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(format!("No agent with name {name} found\n")),
                     )?;
                 },
@@ -461,10 +457,7 @@ impl AgentSubcommand {
                             .interact_on_opt(&dialoguer::console::Term::stdout())
                         {
                             Ok(sel) => {
-                                let _ = crossterm::execute!(
-                                    std::io::stdout(),
-                                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                                );
+                                let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
                                 sel
                             },
                             // Ctrl‑C -> Err(Interrupted)
@@ -521,7 +514,7 @@ fn highlight_json(output: &mut impl Write, json_str: &str) -> eyre::Result<()> {
         queue!(output, style::Print(escaped))?;
     }
 
-    Ok(execute!(output, style::ResetColor)?)
+    Ok(execute!(output, StyledText::reset())?)
 }
 
 /// Searches all configuration sources for MCP servers and returns a deduplicated list.

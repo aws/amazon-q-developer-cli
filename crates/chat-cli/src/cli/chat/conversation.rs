@@ -7,7 +7,6 @@ use std::io::Write;
 use std::sync::atomic::Ordering;
 
 use chrono::Local;
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
@@ -84,6 +83,7 @@ use crate::cli::chat::cli::model::{
 };
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
+use crate::theme::StyledText;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -515,13 +515,13 @@ impl ConversationState {
         if !context.dropped_context_files.is_empty() {
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                StyledText::success_fg(),
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print("to learn more.\n"),
-                style::SetForegroundColor(style::Color::Reset)
+                StyledText::reset(),
             )
             .ok();
         }

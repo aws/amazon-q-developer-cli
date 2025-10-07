@@ -9,7 +9,6 @@ use clap::Args;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Color,
 };
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
@@ -19,6 +18,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::theme::StyledText;
 use crate::util::directories::logs_dir;
 
 /// Arguments for the logdump command that collects logs for support investigation
@@ -29,9 +29,9 @@ impl LogdumpArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::brand_fg(),
             style::Print("Collecting logs...\n"),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
 
         let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%SZ").to_string();
@@ -44,20 +44,20 @@ impl LogdumpArgs {
             Ok(log_count) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!(
                         "✓ Successfully created {} with {} log files\n",
                         zip_filename, log_count
                     )),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
             },
             Err(e) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("✗ Failed to create log dump: {}\n\n", e)),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
                 return Err(ChatError::Custom(format!("Log dump failed: {}", e).into()));
             },

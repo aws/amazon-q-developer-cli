@@ -10,8 +10,6 @@ use bstr::ByteSlice;
 use clap::Args;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -46,6 +44,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::constants::help_text::hooks_long_help;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
@@ -181,15 +180,15 @@ impl HookExecutor {
             if let Err(err) = &result {
                 queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Red),
+                    StyledText::error_fg(),
                     style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Blue),
+                    StyledText::info_fg(),
                     style::Print(&hook.1.command),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(" failed after "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("{:.2} s", duration.as_secs_f32())),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(format!(": {}\n", err)),
                 )?;
             }
@@ -200,19 +199,19 @@ impl HookExecutor {
                 if *exit_code != 0 {
                     queue!(
                         output,
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print("✗ "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(format!("{} \"", hook.0)),
                         style::Print(&hook.1.command),
                         style::Print("\""),
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!(
                             " failed with exit code: {}, stderr: {})\n",
                             exit_code,
                             hook_output.trim_end()
                         )),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     complete += 1;
@@ -231,11 +230,11 @@ impl HookExecutor {
 
                 queue!(
                     output,
-                    style::SetForegroundColor(Color::Blue),
+                    StyledText::info_fg(),
                     style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
             } else {
                 spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
@@ -421,9 +420,9 @@ impl HooksArgs {
                 style::Print(
                     "No hooks are configured.\n\nRefer to the documentation for how to add hooks to your agent: "
                 ),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
                 style::Print("\n"),
             )?;
         } else {

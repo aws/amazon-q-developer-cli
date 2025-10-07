@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
@@ -137,16 +138,16 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),
                     style::Print("\n"),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 Ok(ChatState::PromptUser {

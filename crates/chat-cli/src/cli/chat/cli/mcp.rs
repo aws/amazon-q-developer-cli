@@ -1,10 +1,9 @@
 use std::io::Write;
 
 use clap::Args;
-use crossterm::queue;
-use crossterm::style::{
-    self,
-    Color,
+use crossterm::{
+    queue,
+    style,
 };
 
 use crate::cli::chat::tool_manager::LoadingRecord;
@@ -13,6 +12,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::theme::StyledText;
 
 /// Arguments for the MCP (Model Context Protocol) command.
 ///
@@ -27,10 +27,10 @@ impl McpArgs {
         if !session.conversation.mcp_enabled {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             )?;
             session.stderr.flush()?;

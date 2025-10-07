@@ -6,7 +6,6 @@ use clap::{
     Args,
     Subcommand,
 };
-use crossterm::style::Color;
 use crossterm::{
     queue,
     style,
@@ -25,6 +24,7 @@ use super::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
@@ -175,9 +175,9 @@ impl AgentArgs {
                             let Ok(instance) = serde_json::to_value(&agent) else {
                                 queue!(
                                     stderr,
-                                    style::SetForegroundColor(style::Color::Red),
+                                    StyledText::error_fg(),
                                     style::Print("Error: "),
-                                    style::ResetColor,
+                                    StyledText::reset(),
                                     style::Print("failed to obtain value from agent provided. Aborting validation"),
                                 )?;
                                 break 'validate;
@@ -188,9 +188,9 @@ impl AgentArgs {
                                 Err(e) => {
                                     queue!(
                                         stderr,
-                                        style::SetForegroundColor(style::Color::Red),
+                                        StyledText::error_fg(),
                                         style::Print("Error: "),
-                                        style::ResetColor,
+                                        StyledText::reset(),
                                         style::Print(format!("failed to obtain schema: {e}. Aborting validation"))
                                     )?;
                                     break 'validate;
@@ -201,17 +201,17 @@ impl AgentArgs {
                                 let name = &agent.name;
                                 queue!(
                                     stderr,
-                                    style::SetForegroundColor(Color::Yellow),
+                                    StyledText::warning_fg(),
                                     style::Print("WARNING "),
-                                    style::ResetColor,
+                                    StyledText::reset(),
                                     style::Print("Agent config "),
-                                    style::SetForegroundColor(Color::Green),
+                                    StyledText::success_fg(),
                                     style::Print(name),
-                                    style::ResetColor,
+                                    StyledText::reset(),
                                     style::Print(" is malformed at "),
-                                    style::SetForegroundColor(Color::Yellow),
+                                    StyledText::warning_fg(),
                                     style::Print(&e.instance_path),
-                                    style::ResetColor,
+                                    StyledText::reset(),
                                     style::Print(format!(": {e}\n")),
                                 )?;
                             }
@@ -219,9 +219,9 @@ impl AgentArgs {
                         Err(e) => {
                             let _ = queue!(
                                 stderr,
-                                style::SetForegroundColor(Color::Red),
+                                StyledText::error_fg(),
                                 style::Print("Error: "),
-                                style::ResetColor,
+                                StyledText::reset(),
                                 style::Print(e),
                                 style::Print("\n"),
                             );
@@ -235,15 +235,15 @@ impl AgentArgs {
                 if !force {
                     let _ = queue!(
                         stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("WARNING: "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(
                             "manual migrate is potentially destructive to existing agent configs with name collision. Use"
                         ),
-                        style::SetForegroundColor(Color::Cyan),
+                        StyledText::brand_fg(),
                         style::Print(" --force "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print("to run"),
                         style::Print("\n"),
                     );
@@ -255,9 +255,9 @@ impl AgentArgs {
                         let migrated_count = new_agents.len();
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("✓ Success: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!(
                                 "Profile migration successful. Migrated {} agent(s)\n",
                                 migrated_count
@@ -267,18 +267,18 @@ impl AgentArgs {
                     Ok(None) => {
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Blue),
+                            StyledText::info_fg(),
                             style::Print("Info: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print("Migration was not performed. Nothing to migrate\n"),
                         );
                     },
                     Err(e) => {
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!("Migration did not happen for the following reason: {e}\n")),
                         );
                     },
@@ -295,19 +295,19 @@ impl AgentArgs {
 
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("✓ Default agent set to '"),
                             style::Print(&agent.name),
                             style::Print("'. This will take effect the next time q chat is launched.\n"),
-                            style::ResetColor,
+                            StyledText::reset(),
                         );
                     },
                     Err(e) => {
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!("Failed to set default agent: {e}\n")),
                         );
                     },

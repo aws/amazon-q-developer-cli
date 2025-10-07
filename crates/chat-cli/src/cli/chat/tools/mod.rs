@@ -24,7 +24,6 @@ use std::path::{
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use custom_tool::CustomTool;
 use delegate::Delegate;
@@ -58,6 +57,10 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
+use crate::theme::{
+    StyledText,
+    theme,
+};
 
 pub const DEFAULT_APPROVE: [&str; 0] = [];
 pub const NATIVE_TOOLS: [&str; 9] = [
@@ -416,9 +419,9 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
             style::Print(super::CONTINUATION_LINE),
             style::Print("\n"),
             style::Print(super::PURPOSE_ARROW),
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::Print("Purpose: "),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(purpose),
             style::Print("\n"),
         )?;
@@ -438,9 +441,9 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
 
     // Determine symbol and color
     let (symbol, color) = match (is_error, use_bullet) {
-        (true, _) => (super::ERROR_EXCLAMATION, Color::Red),
-        (false, true) => (super::TOOL_BULLET, Color::Reset),
-        (false, false) => (super::SUCCESS_TICK, Color::Green),
+        (true, _) => (super::ERROR_EXCLAMATION, theme().status.error),
+        (false, true) => (super::TOOL_BULLET, theme().ui.secondary_text),
+        (false, false) => (super::SUCCESS_TICK, theme().status.success),
     };
 
     queue!(updates, style::Print("\n"))?;
@@ -451,7 +454,7 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
             updates,
             style::SetForegroundColor(color),
             style::Print(symbol),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(first_line),
             style::Print("\n"),
         )?;

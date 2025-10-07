@@ -2,7 +2,6 @@ use std::io::Write;
 
 use crossterm::style::{
     Attribute,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -45,11 +44,7 @@ use winnow::token::{
     take_while,
 };
 
-const CODE_COLOR: Color = Color::Green;
-const HEADING_COLOR: Color = Color::Magenta;
-const BLOCKQUOTE_COLOR: Color = Color::DarkGrey;
-const URL_TEXT_COLOR: Color = Color::Blue;
-const URL_LINK_COLOR: Color = Color::DarkGrey;
+use crate::theme::StyledText;
 
 const DEFAULT_RULE_WIDTH: usize = 40;
 
@@ -228,7 +223,7 @@ fn heading<'a, 'b>(
         let print = format!("{level} ");
 
         queue_newline_or_advance(&mut o, state, print.width())?;
-        queue(&mut o, style::SetForegroundColor(HEADING_COLOR))?;
+        queue(&mut o, StyledText::emphasis_fg())?;
         queue(&mut o, style::SetAttribute(Attribute::Bold))?;
         queue(&mut o, style::Print(print))
     }
@@ -301,9 +296,9 @@ fn code<'a, 'b>(
         let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
-        queue(&mut o, style::SetForegroundColor(Color::Green))?;
+        queue(&mut o, StyledText::success_fg())?;
         queue(&mut o, style::Print(out))?;
-        queue(&mut o, style::ResetColor)
+        queue(&mut o, StyledText::reset())
     }
 }
 
@@ -321,7 +316,7 @@ fn blockquote<'a, 'b>(
             .len();
         let print = "│ ".repeat(level);
 
-        queue(&mut o, style::SetForegroundColor(BLOCKQUOTE_COLOR))?;
+        queue(&mut o, StyledText::secondary_fg())?;
         queue_newline_or_advance(&mut o, state, print.width())?;
         queue(&mut o, style::Print(print))
     }
@@ -410,9 +405,9 @@ fn citation<'a, 'b>(
         state.citations.push((num.to_owned(), link.to_owned()));
 
         queue_newline_or_advance(&mut o, state, num.width() + 1)?;
-        queue(&mut o, style::SetForegroundColor(URL_TEXT_COLOR))?;
+        queue(&mut o, StyledText::info_fg())?;
         queue(&mut o, style::Print(format!("[^{num}]")))?;
-        queue(&mut o, style::ResetColor)
+        queue(&mut o, StyledText::reset())
     }
 }
 
@@ -446,12 +441,12 @@ fn url<'a, 'b>(
 
         // Only generate output if the complete URL pattern matches
         queue_newline_or_advance(&mut o, state, display.width() + 1)?;
-        queue(&mut o, style::SetForegroundColor(URL_TEXT_COLOR))?;
+        queue(&mut o, StyledText::info_fg())?;
         queue(&mut o, style::Print(format!("{display} ")))?;
-        queue(&mut o, style::SetForegroundColor(URL_LINK_COLOR))?;
+        queue(&mut o, StyledText::secondary_fg())?;
         state.column += link.width();
         queue(&mut o, style::Print(link))?;
-        queue(&mut o, style::ResetColor)
+        queue(&mut o, StyledText::reset())
     }
 }
 
@@ -509,8 +504,8 @@ fn line_ending<'a, 'b>(
         state.column = 0;
         state.set_newline = true;
 
-        queue(&mut o, style::ResetColor)?;
-        queue(&mut o, style::SetAttribute(style::Attribute::Reset))?;
+        queue(&mut o, StyledText::reset())?;
+        queue(&mut o, StyledText::reset_attributes())?;
         queue(&mut o, style::Print("\n"))
     }
 }
@@ -577,7 +572,7 @@ fn codeblock_begin<'a, 'b>(
             queue(&mut o, style::Print(format!("{}\n", language).bold()))?;
         }
 
-        queue(&mut o, style::SetForegroundColor(CODE_COLOR))?;
+        queue(&mut o, StyledText::success_fg())?;
 
         Ok(())
     }
@@ -590,7 +585,7 @@ fn codeblock_end<'a, 'b>(
     move |i| {
         "```".parse_next(i)?;
         state.in_codeblock = false;
-        queue(&mut o, style::ResetColor)
+        queue(&mut o, StyledText::reset())
     }
 }
 
@@ -713,27 +708,27 @@ mod tests {
     validate!(linted_codeblock_1, "```java\nhello world!```", [
         style::SetAttribute(Attribute::Bold),
         style::Print("java\n"),
-        style::SetAttribute(Attribute::Reset),
-        style::SetForegroundColor(CODE_COLOR),
+        StyledText::reset_attributes(),
+        StyledText::success_fg(),
         style::Print("hello world!"),
-        style::ResetColor,
+        StyledText::reset(),
     ]);
     validate!(code_1, "`print`", [
-        style::SetForegroundColor(CODE_COLOR),
+        StyledText::success_fg(),
         style::Print("print"),
-        style::ResetColor,
+        StyledText::reset(),
     ]);
     validate!(url_1, "[google](google.com)", [
-        style::SetForegroundColor(URL_TEXT_COLOR),
+        StyledText::info_fg(),
         style::Print("google "),
-        style::SetForegroundColor(URL_LINK_COLOR),
+        StyledText::secondary_fg(),
         style::Print("google.com"),
-        style::ResetColor,
+        StyledText::reset(),
     ]);
     validate!(citation_1, "[[1]](google.com)", [
-        style::SetForegroundColor(URL_TEXT_COLOR),
+        StyledText::info_fg(),
         style::Print("[^1]"),
-        style::ResetColor,
+        StyledText::reset(),
     ]);
     validate!(bold_1, "**hello**", [
         style::SetAttribute(Attribute::Bold),
@@ -757,7 +752,7 @@ mod tests {
     validate!(fallback_1, "+ % @ . ? ", [style::Print("+ % @ . ?")]);
     validate!(horizontal_rule_1, "---", [style::Print("━".repeat(80))]);
     validate!(heading_1, "# Hello World", [
-        style::SetForegroundColor(HEADING_COLOR),
+        StyledText::emphasis_fg(),
         style::SetAttribute(Attribute::Bold),
         style::Print("# Hello World"),
     ]);
@@ -765,7 +760,7 @@ mod tests {
     validate!(bulleted_item_2, "* bullet", [style::Print("• bullet")]);
     validate!(numbered_item_1, "1. number", [style::Print("1. number")]);
     validate!(blockquote_1, "> hello", [
-        style::SetForegroundColor(BLOCKQUOTE_COLOR),
+        StyledText::secondary_fg(),
         style::Print("│ hello"),
     ]);
     validate!(square_bracket_1, "[test]", [style::Print("[test]")]);
@@ -816,8 +811,8 @@ mod tests {
         "line one\nline two",
         [
             style::Print("line one"),
-            style::ResetColor,
-            style::SetAttribute(style::Attribute::Reset),
+            StyledText::reset(),
+            StyledText::reset_attributes(),
             style::Print("\n"),
             style::Print("line two")
         ],
