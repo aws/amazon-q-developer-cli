@@ -59,6 +59,8 @@ use cli::model::{
     select_model,
 };
 pub use conversation::ConversationState;
+pub use parser::{SendMessageStream, RequestMetadata, ResponseEvent};
+pub use message::{AssistantMessage, AssistantToolUse};
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
@@ -80,8 +82,6 @@ use eyre::{
 };
 use input_source::InputSource;
 use message::{
-    AssistantMessage,
-    AssistantToolUse,
     ToolUseResult,
     ToolUseResultBlock,
 };
@@ -91,8 +91,6 @@ use parse::{
 };
 use parser::{
     RecvErrorKind,
-    RequestMetadata,
-    SendMessageStream,
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
@@ -142,7 +140,6 @@ use winnow::stream::Offset;
 use super::agent::{
     Agent,
     DEFAULT_AGENT_NAME,
-    PermissionEvalResult,
 };
 use crate::api_client::model::ToolResultStatus;
 use crate::api_client::{
@@ -153,6 +150,13 @@ use crate::auth::AuthError;
 use crate::auth::builder_id::is_idc_user;
 use crate::cli::TodoListState;
 use crate::cli::agent::Agents;
+use crate::cli::tool::{
+    evaluate_tool_permissions,
+    ToolPermissionResult,
+};
+
+pub mod permission;
+use permission::PermissionInterface;
 use crate::cli::chat::checkpoint::{
     CheckpointManager,
     truncate_message,
@@ -568,9 +572,11 @@ pub struct ChatSession {
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
+    /// Where to read input from; could be the terminal, could be a mock.
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
+    /// Spinner state, if we are displaying a spinner.
     spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
@@ -593,8 +599,10 @@ pub struct ChatSession {
     failed_request_ids: Vec<String>,
     /// Pending prompts to be sent
     pending_prompts: VecDeque<PromptMessage>,
+    /// Are we accepting user input?
     interactive: bool,
     inner: Option<ChatState>,
+    /// Receives a message when user hits C-c.
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
 }
@@ -715,6 +723,8 @@ impl ChatSession {
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
         // Update conversation state with new tool information
         self.conversation.update_state(false).await;
+
+        tracing::debug!(func="next", state = ?self.inner);
 
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
@@ -1048,10 +1058,7 @@ impl ChatSession {
             )?;
         }
 
-        self.conversation.enforce_conversation_invariants();
-        self.conversation.reset_next_user_message();
-        self.pending_tool_index = None;
-        self.tool_turn_start_time = None;
+        self.reset_user_message_and_pending_tool_use();
         self.reset_user_turn();
 
         self.inner = Some(ChatState::PromptUser {
@@ -1059,6 +1066,15 @@ impl ChatSession {
         });
 
         Ok(())
+    }
+
+    /// Clear our the state associated with the user message, including
+    /// pending tool user and so forth. Used when resetting back to a "ground" state (e.g., PromptUser).
+    fn reset_user_message_and_pending_tool_use(&mut self) {
+        self.conversation.enforce_conversation_invariants();
+        self.conversation.reset_next_user_message();
+        self.pending_tool_index = None;
+        self.tool_turn_start_time = None;
     }
 
     async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
@@ -1095,6 +1111,13 @@ impl ChatSession {
             .reload_builtin_tools(os, &mut self.stderr)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))
+    }
+
+    /// Creates the appropriate permission interface for this chat session
+    fn create_permission_interface<'a>(&self, os: &'a Os) -> permission::console::ConsolePermissionInterface<'a> {
+        permission::console::ConsolePermissionInterface {
+            os,
+        }
     }
 }
 
@@ -2155,6 +2178,8 @@ impl ChatSession {
     }
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
+        tracing::debug!(func = "tool_use_execute");
+
         // Check if we should auto-enter tangent mode for introspect tool
         if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
@@ -2171,84 +2196,50 @@ impl ChatSession {
             self.conversation.enter_tangent_mode();
         }
 
-        // Verify tools have permissions.
-        for i in 0..self.tool_uses.len() {
-            let tool = &mut self.tool_uses[i];
+        // Verify tools have permissions using pure evaluation function
+        let permission_results = evaluate_tool_permissions(&self.tool_uses, &self.conversation.agents, os);
+        
+        // Create permission interface for handling UI interactions
+        let context = permission::PermissionContext {
+            trust_all_tools: self.conversation.agents.trust_all_tools,
+        };
+        
+        for result in permission_results {
+            match result {
+                ToolPermissionResult::Allowed { tool_index: _ } => {
+                    // Tool is already allowed, continue
+                    continue;
+                }
+                ToolPermissionResult::Denied { tool_index: _, tool_name, rules } => {
+                    // Use permission interface to show denied tool
+                    let mut permission_interface = self.create_permission_interface(os);
+                    permission_interface.show_denied_tool(&tool_name, rules).await
+                        .map_err(|e| ChatError::Custom(format!("Permission interface error: {e}").into()))?;
 
-            // Manually accepted by the user or otherwise verified already.
-            if tool.accepted {
-                continue;
+                    return Ok(ChatState::HandleInput {
+                        input: format!(
+                            "Tool use with {} was rejected because the arguments supplied were forbidden",
+                            tool_name
+                        ),
+                    });
+                }
+                ToolPermissionResult::RequiresConfirmation { tool_index, tool_name: _ } => {
+                    let tool = &self.tool_uses[tool_index];
+                    
+                    // Use permission interface to request permission
+                    let mut permission_interface = self.create_permission_interface(os);
+                    let _decision = permission_interface.request_permission(tool, &context).await
+                        .map_err(|e| ChatError::Custom(format!("Permission interface error: {e}").into()))?;
+                    
+                    // For now, maintain existing behavior by setting pending_tool_index
+                    // This will be cleaned up when we fully integrate the new flow
+                    self.pending_tool_index = Some(tool_index);
+
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: false,
+                    });
+                }
             }
-
-            let mut denied_match_set = None::<Vec<String>>;
-            let allowed =
-                self.conversation
-                    .agents
-                    .get_active()
-                    .is_some_and(|a| match tool.tool.requires_acceptance(os, a) {
-                        PermissionEvalResult::Allow => true,
-                        PermissionEvalResult::Ask => false,
-                        PermissionEvalResult::Deny(matches) => {
-                            denied_match_set.replace(matches);
-                            false
-                        },
-                    })
-                    || self.conversation.agents.trust_all_tools;
-
-            if let Some(match_set) = denied_match_set {
-                let formatted_set = match_set.into_iter().fold(String::new(), |mut acc, rule| {
-                    acc.push_str(&format!("\n  - {rule}"));
-                    acc
-                });
-
-                execute!(
-                    self.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print("Command "),
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(&tool.name),
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(" is rejected because it matches one or more rules on the denied list:"),
-                    style::Print(formatted_set),
-                    style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-
-                return Ok(ChatState::HandleInput {
-                    input: format!(
-                        "Tool use with {} was rejected because the arguments supplied were forbidden",
-                        tool.name
-                    ),
-                });
-            }
-
-            if os
-                .database
-                .settings
-                .get_bool(Setting::ChatEnableNotifications)
-                .unwrap_or(false)
-            {
-                play_notification_bell(!allowed);
-            }
-
-            // TODO: Control flow is hacky here because of borrow rules
-            let _ = tool;
-            self.print_tool_description(os, i, allowed).await?;
-            let tool = &mut self.tool_uses[i];
-
-            if allowed {
-                tool.accepted = true;
-                self.tool_use_telemetry_events
-                    .entry(tool.id.clone())
-                    .and_modify(|ev| ev.is_trusted = true);
-                continue;
-            }
-
-            self.pending_tool_index = Some(i);
-
-            return Ok(ChatState::PromptUser {
-                skip_printing_tools: false,
-            });
         }
 
         // All tools are allowed now
@@ -3192,10 +3183,7 @@ impl ChatSession {
             Ok(Some(_)) => (),
             Ok(None) => {
                 // User did not select a model, so reset the current request state.
-                self.conversation.enforce_conversation_invariants();
-                self.conversation.reset_next_user_message();
-                self.pending_tool_index = None;
-                self.tool_turn_start_time = None;
+                self.reset_user_message_and_pending_tool_use();
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: false,
                 });
@@ -4365,6 +4353,7 @@ mod tests {
             "Chat session should complete successfully even when hook blocks tool"
         );
     }
+
 
     #[test]
     fn test_does_input_reference_file() {

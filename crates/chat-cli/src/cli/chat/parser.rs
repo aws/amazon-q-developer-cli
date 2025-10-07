@@ -725,6 +725,24 @@ fn system_time_to_unix_ms(time: SystemTime) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::sync::mpsc;
+    
+    /// Helper function to convert Vec<ChatResponseStream> to mock receiver for tests
+    fn create_mock_receiver(mut events: Vec<ChatResponseStream>) -> mpsc::Receiver<Result<ChatResponseStream, crate::mock_llm::RecvError>> {
+        let (tx, rx) = mpsc::channel(events.len());
+        
+        // Spawn task to send all events
+        tokio::spawn(async move {
+            while let Some(event) = events.pop() {
+                if tx.send(Ok(event)).await.is_err() {
+                    break; // Receiver dropped
+                }
+            }
+            // Channel closes automatically when tx is dropped
+        });
+        
+        rx
+    }
 
     #[tokio::test]
     async fn test_response_parser_ignores_licensed_code() {
@@ -775,7 +793,7 @@ mod tests {
             },
         ];
         events.reverse();
-        let mock = SendMessageOutput::Mock(events);
+        let mock = SendMessageOutput::Mock(create_mock_receiver(events));
         let mut parser = ResponseParser::new(
             mock,
             "".to_string(),
@@ -831,7 +849,7 @@ mod tests {
             },
         ];
         events.reverse();
-        let mock = SendMessageOutput::Mock(events);
+        let mock = SendMessageOutput::Mock(create_mock_receiver(events));
         let mut parser = ResponseParser::new(
             mock,
             "".to_string(),

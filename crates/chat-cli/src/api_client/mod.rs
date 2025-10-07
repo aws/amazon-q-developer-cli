@@ -15,12 +15,7 @@ use amzn_codewhisperer_client::Client as CodewhispererClient;
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
 use amzn_codewhisperer_client::types::Origin::Cli;
 use amzn_codewhisperer_client::types::{
-    Model,
-    OptInFeatureToggle,
-    OptOutPreference,
-    SubscriptionStatus,
-    TelemetryEvent,
-    UserContext,
+    Model, OptInFeatureToggle, OptOutPreference, SubscriptionStatus, TelemetryEvent, UserContext,
 };
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
@@ -33,38 +28,22 @@ use aws_types::request_id::RequestId;
 use aws_types::sdk_config::StalledStreamProtectionConfig;
 pub use endpoints::Endpoint;
 pub use error::ApiClientError;
-use parking_lot::Mutex;
 pub use profile::list_available_profiles;
 use serde_json::Map;
 use tokio::sync::RwLock;
-use tracing::{
-    debug,
-    error,
-};
+use tracing::{debug, error};
 
 use crate::api_client::credentials::CredentialsChain;
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
-use crate::api_client::model::{
-    ChatResponseStream,
-    ConversationState,
-};
+use crate::api_client::model::{ChatResponseStream, ConversationState};
 use crate::api_client::opt_out::OptOutInterceptor;
 use crate::api_client::send_message_output::SendMessageOutput;
 use crate::auth::builder_id::BearerResolver;
-use crate::aws_common::{
-    UserAgentOverrideInterceptor,
-    app_name,
-    behavior_version,
-};
+use crate::aws_common::{UserAgentOverrideInterceptor, app_name, behavior_version};
 use crate::database::settings::Setting;
-use crate::database::{
-    AuthProfile,
-    Database,
-};
-use crate::os::{
-    Env,
-    Fs,
-};
+use crate::database::{AuthProfile, Database};
+use crate::mock_llm::MockLLM;
+use crate::os::{Env, Fs};
 
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
@@ -93,7 +72,7 @@ pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
-    mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
+    mock_llm: Option<Arc<MockLLM>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
 }
@@ -133,7 +112,7 @@ impl ApiClient {
                 client,
                 streaming_client: None,
                 sigv4_streaming_client: None,
-                mock_client: None,
+                mock_llm: None,
                 profile: None,
                 model_cache: Arc::new(RwLock::new(None)),
             };
@@ -212,7 +191,7 @@ impl ApiClient {
             client,
             streaming_client,
             sigv4_streaming_client,
-            mock_client: None,
+            mock_llm: None,
             profile,
             model_cache: Arc::new(RwLock::new(None)),
         })
@@ -572,38 +551,143 @@ impl ApiClient {
                     Err(err.into())
                 },
             }
-        } else if let Some(client) = &self.mock_client {
-            let mut new_events = client.lock().next().unwrap_or_default().clone();
-            new_events.reverse();
-
-            return Ok(SendMessageOutput::Mock(new_events));
+        } else if let Some(mock_llm) = &self.mock_llm {
+            // Spawn the mock LLM for this conversation
+            let mock_rx = mock_llm.spawn_turn(history.unwrap_or_default(), user_input_message.content);
+            return Ok(SendMessageOutput::Mock(mock_rx));
         } else {
             unreachable!("One of the clients must be created by this point");
         }
     }
 
-    /// Only meant for testing. Do not use outside of testing responses.
+    /// Helper to convert JSON mock responses to MockLLM script (for Q_MOCK_CHAT_RESPONSE compatibility).
+    ///
+    /// This is a convenience method that invokes [`Self::set_mock_llm`] with a simple script
+    /// that emits the events described by the `json` argument in sequence.
+    ///
+    /// ## Expected Format
+    ///
+    /// The JSON should be an array of response groups, where each response group is an array
+    /// of events that will be sent for one user message:
+    ///
+    /// ```json
+    /// [
+    ///   [
+    ///     "I'll help you with that",
+    ///     {
+    ///       "tool_use_id": "1",
+    ///       "name": "fs_write",
+    ///       "args": {"path": "/file.txt", "content": "Hello"}
+    ///     }
+    ///   ],
+    ///   [
+    ///     "Task completed successfully"
+    ///   ]
+    /// ]
+    /// ```
+    ///
+    /// Each event can be:
+    /// - **String**: Assistant text response
+    /// - **Object**: Tool use with `tool_use_id`, `name`, and `args` fields
+    ///
+    /// The script will send one response group per user message received.
     pub fn set_mock_output(&mut self, json: serde_json::Value) {
-        let mut mock = Vec::new();
+        // Convert JSON array to response groups (each array element is one response)
+        let mut response_groups = Vec::new();
         for response in json.as_array().unwrap() {
-            let mut stream = Vec::new();
+            let mut events = Vec::new();
             for event in response.as_array().unwrap() {
                 match event {
                     serde_json::Value::String(assistant_text) => {
-                        stream.push(ChatResponseStream::AssistantResponseEvent {
+                        events.push(ChatResponseStream::AssistantResponseEvent {
                             content: assistant_text.clone(),
                         });
                     },
                     serde_json::Value::Object(tool_use) => {
-                        stream.append(&mut split_tool_use_event(tool_use));
+                        events.append(&mut split_tool_use_event(tool_use));
                     },
                     other => panic!("Unexpected value: {:?}", other),
                 }
             }
-            mock.push(stream);
+            response_groups.push(events);
         }
 
-        self.mock_client = Some(Arc::new(Mutex::new(mock.into_iter())));
+        // Create mock LLM that cycles through response groups based on user message count
+        self.set_mock_llm(move |mut ctx| {
+            let response_groups = response_groups.clone();
+            async move {
+                // Determine which response group to use based on user message count
+                // Each user message gets the next response group in sequence
+                let response_index = ctx.count_user_messages().saturating_sub(1); // 0-indexed
+
+                tracing::debug!(
+                    actor="MockLLM", 
+                    user_message=ctx.current_user_message(), 
+                    count=ctx.count_user_messages(), 
+                    response_index, 
+                    response_groups=?response_groups,
+                );
+
+                // Send the corresponding response group
+                if response_index < response_groups.len() {
+                    for event in &response_groups[response_index] {
+                        match event {
+                            ChatResponseStream::AssistantResponseEvent { content } => {
+                                ctx.respond(content).await?;
+                            },
+                            ChatResponseStream::ToolUseEvent {
+                                tool_use_id,
+                                name,
+                                input,
+                                stop,
+                            } => {
+                                ctx.respond_tool_use(tool_use_id.clone(), name.clone(), input.clone(), stop.clone())
+                                    .await?;
+                            },
+                            _ => {}, // Ignore other event types
+                        }
+                    }
+                } else {
+                    // No more predefined responses, send a fallback
+                    ctx.respond("I don't have a response configured for this message.").await?;
+                }
+                
+                Ok(())
+            }
+        });
+    }
+
+    /// Set a mock LLM script for testing.
+    ///
+    /// The closure receives a `MockLLMContext` and should return a Future that will be run
+    /// in a separate task. The closure can contain arbitrary Rust logic and interact with
+    /// the mock LLM context to:
+    ///
+    /// - Read incoming user messages via `context.recv_request().await`
+    /// - Send LLM responses via `context.send_response(response).await`
+    /// - Implement complex conversation flows with branching logic
+    /// - Access conversation state and history
+    ///
+    /// Example:
+    /// ```rust,ignore
+    /// client.set_mock_llm(|mut context| async move {
+    ///     while let Some(request) = context.recv_request().await {
+    ///         if request.messages.last().unwrap().content.contains("Greece") {
+    ///             context.send_response(json!({
+    ///                 "content": [{"type": "text", "text": "The capital is Athens"}]
+    ///             })).await;
+    ///         }
+    ///     }
+    /// });
+    /// ```
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn set_mock_llm<F, Fut>(&mut self, closure: F)
+    where
+        F: Fn(crate::mock_llm::MockLLMContext) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = eyre::Result<()>> + Send + 'static,
+    {
+        let mock_llm = MockLLM::new(closure);
+        self.mock_llm = Some(Arc::new(mock_llm));
     }
 
     // Add a helper method to check if using non-default endpoint
@@ -674,11 +758,7 @@ fn split_tool_use_event(value: &Map<String, serde_json::Value>) -> Vec<ChatRespo
 
 #[cfg(test)]
 mod tests {
-    use amzn_codewhisperer_client::types::{
-        ChatAddMessageEvent,
-        IdeCategory,
-        OperatingSystem,
-    };
+    use amzn_codewhisperer_client::types::{ChatAddMessageEvent, IdeCategory, OperatingSystem};
 
     use super::*;
     use crate::api_client::model::UserInputMessage;
@@ -718,20 +798,7 @@ mod tests {
             .await
             .unwrap();
 
-        client.mock_client = Some(Arc::new(Mutex::new(
-            vec![vec![
-                ChatResponseStream::AssistantResponseEvent {
-                    content: "Hello!".to_owned(),
-                },
-                ChatResponseStream::AssistantResponseEvent {
-                    content: " How can I".to_owned(),
-                },
-                ChatResponseStream::AssistantResponseEvent {
-                    content: " assist you today?".to_owned(),
-                },
-            ]]
-            .into_iter(),
-        )));
+        client.set_mock_output(serde_json::json!([["Hello!", " How can I", " assist you today?"]]));
 
         let mut output = client
             .send_message(ConversationState {

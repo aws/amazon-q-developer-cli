@@ -509,8 +509,6 @@ mod tests {
     #[ignore = "not in ci"]
     #[tokio::test]
     async fn test_pkce_flow_e2e() {
-        tracing_subscriber::fmt::init();
-
         let start_url = "https://amzn.awsapps.com/start".to_string();
         let region = Region::new("us-east-1");
         let client = client(region.clone());

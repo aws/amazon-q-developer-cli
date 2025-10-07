@@ -10,9 +10,12 @@ pub mod constants;
 pub mod database;
 pub mod logging;
 pub mod mcp_client;
+pub mod mock_llm;
 pub mod os;
 pub mod request;
 pub mod telemetry;
 pub mod util;
 
 pub use mcp_client::*;
+
+mod test_util;

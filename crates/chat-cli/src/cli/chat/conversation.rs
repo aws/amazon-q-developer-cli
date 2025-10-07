@@ -370,14 +370,17 @@ impl ConversationState {
         Some(stringify_prompt_message_content(last_msg.content))
     }
 
+    /// Read the [`Self::next_message`][] field.
     pub fn next_user_message(&self) -> Option<&UserMessage> {
         self.next_message.as_ref()
     }
 
+    /// Clear the [`Self::next_message`][] field to `None`.
     pub fn reset_next_user_message(&mut self) {
         self.next_message = None;
     }
 
+    /// Set the [`Self::next_message`][] field; it should be cleared.
     pub async fn set_next_user_message(&mut self, input: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {

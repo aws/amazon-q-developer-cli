@@ -1,4 +1,5 @@
 use aws_types::request_id::RequestId;
+use tokio::sync::mpsc;
 
 use crate::api_client::ApiClientError;
 use crate::api_client::model::ChatResponseStream;
@@ -9,7 +10,7 @@ pub enum SendMessageOutput {
         amzn_codewhisperer_streaming_client::operation::generate_assistant_response::GenerateAssistantResponseOutput,
     ),
     QDeveloper(amzn_qdeveloper_streaming_client::operation::send_message::SendMessageOutput),
-    Mock(Vec<ChatResponseStream>),
+    Mock(mpsc::Receiver<Result<ChatResponseStream, crate::mock_llm::RecvError>>),
 }
 
 impl SendMessageOutput {
@@ -29,7 +30,13 @@ impl SendMessageOutput {
                 .await?
                 .map(|s| s.into())),
             SendMessageOutput::QDeveloper(output) => Ok(output.send_message_response.recv().await?.map(|s| s.into())),
-            SendMessageOutput::Mock(vec) => Ok(vec.pop()),
+            SendMessageOutput::Mock(rx) => {
+                match rx.recv().await {
+                    Some(Ok(stream)) => Ok(Some(stream)),
+                    Some(Err(_)) => Err(ApiClientError::MockLLMError),
+                    None => Ok(None),
+                }
+            }
         }
     }
 }
