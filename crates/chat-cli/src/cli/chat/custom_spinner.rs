@@ -1,5 +1,13 @@
-use crossterm::{cursor, execute, style, terminal};
-use indicatif::{ProgressBar, ProgressStyle};
+use crossterm::{
+    cursor,
+    execute,
+    style,
+    terminal,
+};
+use indicatif::{
+    ProgressBar,
+    ProgressStyle,
+};
 use tokio_util::sync::CancellationToken;
 
 const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
