@@ -1,4 +1,4 @@
-# Visual Diagrams
+# Visual Diagrams (Queue-Based)
 
 ## Component Relationships
 
@@ -10,18 +10,17 @@
                          │
                          ↓
 ┌─────────────────────────────────────────────────────────────┐
-│                      AgentEnvUi                             │
+│                   AgentEnvTextUi                            │
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Main Loop                                           │   │
-│  │  • Prompt user                                       │   │
-│  │  • Spawn job                                         │   │
-│  │  • Wait for completion                               │   │
-│  │  • Cleanup old jobs                                  │   │
+│  │  • Dequeue prompt request                            │   │
+│  │  • Read user input                                   │   │
+│  │  • Launch job with continuation                      │   │
+│  │  • Continuation re-queues prompt                     │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                             │
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐       │
-│  │ InputHandler │  │ CtrlCHandler │  │  Shutdown    │       │
-│  │              │  │              │  │ Coordinator  │       │
+│  │ PromptQueue  │  │ InputHandler │  │ CtrlCHandler │       │
 │  └──────────────┘  └──────────────┘  └──────────────┘       │
 └────────────────────────┬────────────────────────────────────┘
                          │
@@ -31,7 +30,6 @@
 │  ┌──────────────────────────────────────────────────────┐   │
 │  │  Workers: [Worker1, Worker2, ...]                    │   │
 │  │  Jobs:    [Job1, Job2, Job3, ...]                    │   │
-│  │           (max 3 inactive)                           │   │
 │  └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -53,64 +51,101 @@
        │
        ↓
 ┌─────────────────────┐
-│ Enter Prompt        │◄──────────────────┐
-│ Context             │                   │
+│ Enqueue Initial     │
+│ Prompt              │
+└──────┬──────────────┘
+       │
+       ↓
+┌─────────────────────┐
+│ Check Shutdown?     │◄──────────────────┐
 └──────┬──────────────┘                   │
+       │                                  │
+       ├─→ Yes ──────────→ [Cleanup]      │
+       │                                  │
+       ↓                                  │
+┌─────────────────────┐                   │
+│ Dequeue Prompt      │                   │
+│ Request             │                   │
+└──────┬──────────────┘                   │
+       │                                  │
+       ├─→ None ──→ Sleep 100ms ──────────┤
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
 │ Read User Input     │                   │
-│ (with cancellation) │                   │
 └──────┬──────────────┘                   │
        │                                  │
-       ├─→ None/Cancelled ──→ [Shutdown]  │
+       ├─→ Error ────────→ [Cleanup]      │
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
-│ Check Special       │                   │
-│ Commands            │                   │
-└──────┬──────────────┘                   │
        │                                  │
-       ├─→ /quit ──────────→ [Shutdown]   │
+│ Empty? ──→ Re-queue ─────────────────┤
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
-│ Cleanup Old Jobs    │                   │
-│ (keep max 3)        │                   │
-└──────┬──────────────┘                   │
+│ /quit? ──────────────→ [Cleanup]        │
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
-│ Spawn New Job       │                   │
+│ Push to             │                   │
+│ Conversation        │                   │
 └──────┬──────────────┘                   │
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
-│ Enter Job Context   │                   │
+│ Launch AgentLoop    │                   │
+│ with Continuation   │                   │
 └──────┬──────────────┘                   │
        │                                  │
        ↓                                  │
 ┌─────────────────────┐                   │
-│ Wait for Job        │                   │
-│ Completion          │                   │
-└──────┬──────────────┘                   │
-       │                                  │
-       ├─→ Shutdown? ────→ [Shutdown]     │
-       │                                  │
-       ↓                                  │
-┌─────────────────────┐                   │
-│ Exit Job Context    │                   │
-└──────┬──────────────┘                   │
-       │                                  │
-       ↓                                  │
-┌─────────────────────┐                   │
-│ Display Result      │                   │
+│ Continuation        │                   │
+│ Re-queues Prompt    │                   │
+│ (when job completes)│                   │
 └──────┬──────────────┘                   │
        │                                  │
        └──────────────────────────────────┘
 ```
 
-## Ctrl+C Handling State Machine
+## Continuation Flow
+
+```
+┌─────────────────────┐
+│ AgentLoop Job       │
+│ Completes           │
+└──────┬──────────────┘
+       │
+       ↓
+┌─────────────────────┐
+│ Continuation        │
+│ Executes            │
+└──────┬──────────────┘
+       │
+       ├─→ Normal ──────┐
+       ├─→ Cancelled ───┤
+       ├─→ Failed ──────┤
+       │                │
+       ↓                ↓
+┌─────────────────────┐
+│ Display Status      │
+│ Message             │
+└──────┬──────────────┘
+       │
+       ↓
+┌─────────────────────┐
+│ Re-queue Prompt     │
+│ for Worker          │
+└──────┬──────────────┘
+       │
+       ↓
+┌─────────────────────┐
+│ Main Loop Will      │
+│ Process Next        │
+└─────────────────────┘
+```
+
+## Ctrl+C Handling
 
 ```
                     ┌──────────────┐
@@ -123,75 +158,60 @@
                 ↓                       ↓
         ┌───────────────┐       ┌──────────────┐
         │  In Prompt?   │       │  In Job?     │
-        │               │       │              │
-        │  YES          │       │  YES         │
+        │  (read_line)  │       │              │
         └───────┬───────┘       └──────┬───────┘
                 │                      │
                 ↓                      ↓
         ┌───────────────┐       ┌──────────────────┐
-        │  Exit App     │       │  First Ctrl+C?   │
-        │  Immediately  │       │                  │
-        └───────────────┘       └──────┬───────────┘
-                                       │
-                        ┌──────────────┴──────────────┐
-                        │                             │
-                        ↓                             ↓
-                ┌───────────────┐           ┌─────────────────┐
-                │  YES          │           │  NO             │
-                │               │           │                 │
-                │  Cancel Job   │           │  < 1 sec since  │
-                │  Show Message │           │  last Ctrl+C?   │
-                └───────────────┘           └────────┬────────┘
-                                                     │
-                                    ┌────────────────┴────────────────┐
-                                    │                                 │
-                                    ↓                                 ↓
-                            ┌───────────────┐               ┌─────────────────┐
-                            │  YES          │               │  NO             │
-                            │               │               │                 │
-                            │  Exit App     │               │  Cancel Job     │
-                            │  (Force)      │               │  Reset Counter  │
-                            └───────────────┘               └─────────────────┘
+        │  InputHandler │       │  First Ctrl+C?   │
+        │  Returns Error│       │                  │
+        └───────┬───────┘       └──────┬───────────┘
+                │                      │
+                ↓               ┌──────┴──────┐
+        ┌───────────────┐       │             │
+        │  Main Loop    │       ↓             ↓
+        │  Exits        │   ┌───────┐   ┌─────────┐
+        └───────────────┘   │  YES  │   │   NO    │
+                            │       │   │         │
+                            │Cancel │   │< 1 sec? │
+                            │ Jobs  │   └────┬────┘
+                            └───────┘        │
+                                      ┌──────┴──────┐
+                                      │             │
+                                      ↓             ↓
+                                  ┌───────┐   ┌─────────┐
+                                  │  YES  │   │   NO    │
+                                  │       │   │         │
+                                  │Trigger│   │ Cancel  │
+                                  │Shutdown   │ Jobs    │
+                                  └───────┘   └─────────┘
 ```
 
-## Job Lifecycle
+## Prompt Queue (Multi-Worker)
 
 ```
-┌─────────────┐
-│  Job        │
-│  Created    │
-└──────┬──────┘
-       │
-       ↓
-┌─────────────┐
-│  Job        │
-│  Launched   │
-│  (Active)   │
-└──────┬──────┘
-       │
-       ├─────────────────────────────────┐
-       │                                 │
-       ↓                                 ↓
-┌─────────────┐                   ┌─────────────┐
-│  Job        │                   │  Job        │
-│  Completes  │                   │  Cancelled  │
-│  (Inactive) │                   │  (Inactive) │
-└──────┬──────┘                   └──────┬──────┘
-       │                                 │
-       └─────────────┬───────────────────┘
-                     │
-                     ↓
-              ┌─────────────┐
-              │  Cleanup    │
-              │  Triggered  │
-              └──────┬──────┘
-                     │
-                     ↓
-              ┌─────────────┐
-              │  Keep Last  │
-              │  3 Inactive │
-              │  Jobs       │
-              └─────────────┘
+Worker1 Job Completes
+    ↓
+Continuation Re-queues Prompt1
+    ↓
+┌─────────────────────────────────┐
+│      PromptQueue (FIFO)         │
+│                                 │
+│  [Prompt1] [Prompt2]            │
+│     ↑         ↑                 │
+│     │         │                 │
+│  Worker1   Worker2              │
+└─────────────────────────────────┘
+    ↓
+Main Loop Dequeues Prompt1
+    ↓
+Display: "Worker1> "
+    ↓
+User enters input for Worker1
+    ↓
+Launch Job for Worker1
+    ↓
+(Meanwhile Worker2's prompt waits in queue)
 ```
 
 ## Shutdown Sequence
@@ -201,12 +221,6 @@
 │  Shutdown       │
 │  Triggered      │
 │  (Ctrl+C, /quit)│
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
-│  Set Shutdown   │
-│  Token          │
 └────────┬────────┘
          │
          ↓
@@ -223,32 +237,13 @@
          │
          ↓
 ┌─────────────────┐
-│  Wait for Jobs  │
-│  to Complete    │
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
 │  Save History   │
 └────────┬────────┘
          │
          ↓
 ┌─────────────────┐
-│  Cleanup        │
-│  Resources      │
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
 │  Return from    │
-│  AgentEnvUi.run │
-└────────┬────────┘
-         │
-         ↓
-┌─────────────────┐
-│  Return from    │
-│  ChatArgs       │
-│  .execute()     │
+│  run()          │
 └────────┬────────┘
          │
          ↓
@@ -257,125 +252,51 @@
 └─────────────────┘
 ```
 
-## Component Interaction Timeline
+## Memory Layout (Prompt Queue)
 
+### Single Worker
 ```
-Time  │ AgentEnvUi │ InputHandler │ CtrlCHandler │ Session │ WorkerJob
-──────┼────────────┼──────────────┼──────────────┼─────────┼──────────
-  0   │ Initialize │              │              │         │
-  1   │            │ Create       │              │         │
-  2   │            │              │ Create       │         │
-  3   │            │              │ Start Listen │         │
-  4   │ Enter      │              │              │         │
-      │ Prompt     │              │              │         │
-  5   │            │ Read Input   │              │         │
-  6   │            │ [User types] │              │         │
-  7   │            │ Return Input │              │         │
-  8   │ Cleanup    │              │              │ Cleanup │
-      │ Jobs       │              │              │ Old Jobs│
-  9   │ Spawn Job  │              │              │ Create  │ Create
- 10   │            │              │              │ Launch  │ Launch
- 11   │ Enter Job  │              │              │         │
- 12   │ Wait       │              │              │         │ Running
- 13   │            │              │              │         │ Running
- 14   │            │              │              │         │ Complete
- 15   │ Exit Job   │              │              │         │
- 16   │ Display    │              │              │         │
-      │ Result     │              │              │         │
- 17   │ Loop Back  │              │              │         │
-      │ to Step 4  │              │              │         │
-```
-
-## Memory Layout (Job Cleanup)
-
-### Before Cleanup (5 inactive jobs)
-```
-Jobs List:
+PromptQueue:
 ┌─────────────────────────────────────────┐
-│ Job 1 (Inactive - Completed)            │  ← Oldest
-├─────────────────────────────────────────┤
-│ Job 2 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 3 (Inactive - Cancelled)            │
-├─────────────────────────────────────────┤
-│ Job 4 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 5 (Inactive - Completed)            │  ← Newest
+│ [Worker1 Request]                       │
 └─────────────────────────────────────────┘
 ```
 
-### After Cleanup (3 inactive jobs kept)
+### Multiple Workers (Future)
 ```
-Jobs List:
+PromptQueue:
 ┌─────────────────────────────────────────┐
-│ Job 3 (Inactive - Cancelled)            │
-├─────────────────────────────────────────┤
-│ Job 4 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 5 (Inactive - Completed)            │  ← Newest
+│ [Worker1] [Worker2] [Worker1] [Worker3] │
+│     ↑         ↑         ↑         ↑     │
+│     │         │         │         │     │
+│  Job1     Job2      Job3      Job4      │
+│  Done     Done     Done      Done       │
 └─────────────────────────────────────────┘
 
-Removed: Job 1, Job 2
+Main loop processes FIFO:
+1. Prompt Worker1
+2. Prompt Worker2
+3. Prompt Worker1 (again)
+4. Prompt Worker3
 ```
 
-### With Active Jobs (1 active + 4 inactive)
-```
-Before Cleanup:
-┌─────────────────────────────────────────┐
-│ Job 1 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 2 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 3 (Active)                          │  ← Never removed
-├─────────────────────────────────────────┤
-│ Job 4 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 5 (Inactive - Completed)            │
-└─────────────────────────────────────────┘
-
-After Cleanup:
-┌─────────────────────────────────────────┐
-│ Job 3 (Active)                          │  ← Preserved
-├─────────────────────────────────────────┤
-│ Job 2 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 4 (Inactive - Completed)            │
-├─────────────────────────────────────────┤
-│ Job 5 (Inactive - Completed)            │
-└─────────────────────────────────────────┘
-
-Removed: Job 1 only (oldest inactive)
-```
-
-## Cancellation Token Flow
+## Timeline
 
 ```
-┌──────────────────────────────────────────────────────────┐
-│                    Shutdown Token                        │
-│              (Global, created by                         │
-│              ShutdownCoordinator)                        │
-└────────────────────┬─────────────────────────────────────┘
-                     │
-                     ├─→ Passed to InputHandler
-                     │   (cancels read_prompt)
-                     │
-                     ├─→ Passed to CtrlCHandler
-                     │   (triggers on Ctrl+C)
-                     │
-                     └─→ Checked in main loop
-                         (exits loop when cancelled)
-
-┌──────────────────────────────────────────────────────────┐
-│                    Job Token                             │
-│              (Per-job, created by Session)               │
-└────────────────────┬─────────────────────────────────────┘
-                     │
-                     ├─→ Passed to WorkerTask
-                     │   (cancels task execution)
-                     │
-                     ├─→ Passed to CtrlCHandler
-                     │   (cancelled on first Ctrl+C)
-                     │
-                     └─→ Checked by WorkerTask
-                         (stops work when cancelled)
+Time  │ Main Loop      │ PromptQueue    │ AgentLoop      │ Continuation
+──────┼────────────────┼────────────────┼────────────────┼──────────────
+  0   │ Start          │ Empty          │                │
+  1   │ Enqueue        │ [Worker1]      │                │
+  2   │ Dequeue        │ Empty          │                │
+  3   │ Read input     │                │                │
+  4   │ Launch job     │                │ Start          │
+  5   │ Loop back      │                │ Running        │
+  6   │ Dequeue        │ Empty          │ Running        │
+  7   │ Sleep 100ms    │                │ Running        │
+  8   │ Loop back      │                │ Running        │
+  9   │ Dequeue        │ Empty          │ Complete       │ Execute
+ 10   │ Sleep 100ms    │ [Worker1]      │                │ Re-queue
+ 11   │ Loop back      │ [Worker1]      │                │
+ 12   │ Dequeue        │ Empty          │                │
+ 13   │ Read input     │                │                │
 ```

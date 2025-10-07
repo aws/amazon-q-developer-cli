@@ -2,8 +2,8 @@
 
 ## Problem
 Ctrl+C needs to integrate with continuation-based architecture:
-1. **During PromptTask**: Exit application (break continuation chain)
-2. **During AgentLoop**: Cancel job (continuation spawns PromptTask)
+1. **During Prompt (in AgentEnvTextUi)**: Exit application
+2. **During AgentLoop**: Cancel job (continuation re-queues prompt)
 3. **Second Ctrl+C**: Force exit regardless of context
 4. **During shutdown**: Force immediate exit (hard stop)
 
@@ -11,7 +11,7 @@ Ctrl+C needs to integrate with continuation-based architecture:
 - Cancel jobs gracefully via CancellationToken
 - Allow quick exit with double Ctrl+C (within 1 second)
 - No explicit context tracking (continuations handle flow)
-- Trigger shutdown signal to stop continuation chain
+- Trigger shutdown signal to stop UI loop
 
 ## Architecture
 
@@ -28,8 +28,8 @@ Cancel current job's CancellationToken
 Job completes with Cancelled status
     ↓
 Continuation decides next action:
-    - PromptTask cancelled → trigger shutdown
-    - AgentLoop cancelled → spawn PromptTask
+    - During prompt → exit (handled by InputHandler)
+    - AgentLoop cancelled → re-queue prompt
 ```
 
 ### Double Ctrl+C Flow
@@ -40,9 +40,9 @@ Check time since last Ctrl+C
     ↓ < 1 second (second press)
 Trigger shutdown signal
     ↓
-All continuations see shutdown
+AgentEnvTextUi sees shutdown
     ↓
-Stop spawning new tasks
+Stop processing prompts
     ↓
 Application exits
 ```
@@ -119,37 +119,54 @@ impl CtrlCHandler {
 }
 ```
 
-## Integration with AgentEnvUi
+## Integration with AgentEnvTextUi
 
 ### Setup
 ```rust
-// In AgentEnvUi::run()
+// In AgentEnvTextUi::run()
 pub async fn run(mut self) -> Result<(), eyre::Error> {
-    let shutdown_signal = Arc::new(Notify::new());
-    let session = Arc::new(self.session);
-    
     let ctrl_c_handler = Arc::new(CtrlCHandler::new(
-        shutdown_signal.clone(),
-        session.clone(),
+        self.shutdown_signal.clone(),
+        self.session.clone(),
     ));
     
     // Start listening for Ctrl+C
     ctrl_c_handler.start_listening();
     
-    // Launch initial PromptTask with continuations
-    self.launch_initial_prompt(shutdown_signal.clone()).await?;
+    // Start with initial prompt
+    self.prompt_queue.enqueue(self.worker.clone()).await;
     
-    // Wait for shutdown signal
-    shutdown_signal.notified().await;
+    loop {
+        // Check for shutdown
+        tokio::select! {
+            _ = self.shutdown_signal.notified() => break,
+            else => {}
+        }
+        
+        // Process next prompt in queue
+        let request = match self.prompt_queue.dequeue().await {
+            Some(req) => req,
+            None => {
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                continue;
+            }
+        };
+        
+        // Read user input (Ctrl+C here exits via InputHandler error)
+        let input = match self.input_handler.read_line(&request.worker.name).await {
+            Ok(input) => input,
+            Err(e) => {
+                eprintln!("Input error: {}", e);
+                break;
+            }
+        };
+        
+        // ... rest of processing ...
+    }
     
-    // Cancel all jobs (if not already cancelled)
-    session.cancel_all_jobs();
-    
-    // Wait for jobs to complete
-    session.wait_for_all_jobs().await;
-    
-    // Save history
-    self.input_handler.save_history(&self.history_path)?;
+    // Cleanup
+    self.session.cancel_all_jobs();
+    self.input_handler.save_history()?;
     
     Ok(())
 }
@@ -157,69 +174,49 @@ pub async fn run(mut self) -> Result<(), eyre::Error> {
 
 ## Continuation Integration
 
-### PromptTask Continuation
+### AgentLoop Continuation (in AgentEnvTextUi)
 ```rust
-// When PromptTask completes
-match completion_type {
-    WorkerJobCompletionType::Cancelled => {
-        // User pressed Ctrl+C during prompt - trigger shutdown
-        shutdown_signal.notify_one();
-        return;
-    }
-    WorkerJobCompletionType::Normal => {
-        // Got user input - check for /quit
-        if input == "/quit" {
-            shutdown_signal.notify_one();
-            return;
-        }
+// When AgentLoop completes
+fn create_agent_completion_continuation(&self) -> WorkerJobContinuationFn {
+    let prompt_queue = self.prompt_queue.clone();
+    
+    Continuations::boxed(move |worker, completion_type, error_msg| {
+        let prompt_queue = prompt_queue.clone();
         
-        // Launch AgentLoop
-        // ...
-    }
-    WorkerJobCompletionType::Failed => {
-        // Error during input - trigger shutdown
-        eprintln!("Input error: {}", error_msg.unwrap_or_default());
-        shutdown_signal.notify_one();
-        return;
-    }
+        async move {
+            match completion_type {
+                WorkerJobCompletionType::Cancelled => {
+                    println!("Task cancelled");
+                    // Re-queue prompt to continue
+                    prompt_queue.enqueue(worker).await;
+                }
+                WorkerJobCompletionType::Normal => {
+                    // Normal completion - re-queue prompt
+                    prompt_queue.enqueue(worker).await;
+                }
+                WorkerJobCompletionType::Failed => {
+                    if let Some(msg) = error_msg {
+                        eprintln!("Agent failed: {}", msg);
+                    }
+                    // Re-queue prompt to continue
+                    prompt_queue.enqueue(worker).await;
+                }
+            }
+        }
+    })
 }
 ```
 
-### AgentLoop Continuation
-```rust
-// When AgentLoop completes
-match completion_type {
-    WorkerJobCompletionType::Cancelled => {
-        // Job was cancelled - check if shutting down
-        // (This check prevents spawning PromptTask during shutdown)
-        if is_shutting_down() {
-            return;
-        }
-        
-        println!("Task cancelled");
-        // Launch PromptTask to continue
-        // ...
-    }
-    WorkerJobCompletionType::Normal | WorkerJobCompletionType::Failed => {
-        // Check if shutting down
-        if is_shutting_down() {
-            return;
-        }
-        
-        // Launch PromptTask to continue
-        // ...
-    }
-}
-```
+Note: Continuations don't need to check shutdown state - the main loop in AgentEnvTextUi handles that. Continuations just re-queue prompts, and if shutdown is triggered, the main loop will exit before processing them.
 
 ## Behavior Examples
 
-### Scenario 1: Ctrl+C During PromptTask
+### Scenario 1: Ctrl+C During Prompt
 ```
 Q> [user typing...]
-^C (Cancelling... Press Ctrl+C again to force exit)
-[PromptTask cancelled]
-[Continuation sees Cancelled → triggers shutdown]
+^C
+[InputHandler returns error]
+[AgentEnvTextUi main loop exits]
 [Application exits]
 ```
 
@@ -229,7 +226,7 @@ Q> analyze this code
 [AgentLoop running...]
 ^C (Cancelling... Press Ctrl+C again to force exit)
 [AgentLoop cancelled]
-[Continuation sees Cancelled → spawns PromptTask]
+[Continuation re-queues prompt]
 Task cancelled
 
 Q> [back to prompt]
@@ -242,6 +239,7 @@ Q> analyze this code
 ^C (Cancelling... Press Ctrl+C again to force exit)
 ^C (Force exit)
 [Shutdown signal triggered]
+[AgentEnvTextUi main loop exits]
 [All jobs cancelled]
 [Application exits]
 ```
@@ -249,7 +247,7 @@ Q> analyze this code
 ### Scenario 4: /quit Command
 ```
 Q> /quit
-[Continuation sees /quit → triggers shutdown]
+[AgentEnvTextUi sees /quit → breaks loop]
 [Application exits]
 ```
 
@@ -285,47 +283,28 @@ impl Session {
 }
 ```
 
-## Shutdown Detection in Continuations
+## Shutdown Detection
 
-### Approach 1: Check Shutdown Signal
+AgentEnvTextUi uses `Arc<Notify>` for shutdown signal:
+
 ```rust
-// Pass shutdown_signal to continuation
-if shutdown_signal.is_notified() {
-    return;  // Don't spawn next task
+pub struct AgentEnvTextUi {
+    shutdown_signal: Arc<Notify>,
+    // ...
+}
+
+// In main loop
+loop {
+    tokio::select! {
+        _ = self.shutdown_signal.notified() => break,
+        else => {
+            // Process prompts
+        }
+    }
 }
 ```
 
-**Problem**: `Notify` doesn't have `is_notified()` method
-
-### Approach 2: Use CancellationToken
-```rust
-// Use CancellationToken instead of Notify
-let shutdown_token = CancellationToken::new();
-
-// In continuation
-if shutdown_token.is_cancelled() {
-    return;  // Don't spawn next task
-}
-
-// In Ctrl+C handler
-shutdown_token.cancel();
-```
-
-**Recommended**: Use CancellationToken for shutdown signal
-
-### Updated Structure
-```rust
-pub struct CtrlCHandler {
-    last_interrupt_time: Arc<AtomicU64>,
-    shutdown_token: CancellationToken,  // Changed from Notify
-    session: Arc<Session>,
-}
-
-// In continuation
-if shutdown_token.is_cancelled() {
-    return;  // Don't spawn next task
-}
-```
+Continuations don't need to check shutdown - they just re-queue prompts. The main loop handles shutdown detection and stops processing the queue.
 
 ## Edge Cases
 
@@ -340,20 +319,25 @@ if shutdown_token.is_cancelled() {
 
 ### 3. Ctrl+C After Shutdown Started
 - Already shutting down
-- Solution: Continuations check shutdown_token before spawning
+- Solution: Main loop checks shutdown_signal before processing prompts
 
 ### 4. Job Doesn't Respond to Cancellation
 - Job hangs despite cancellation
-- Solution: Hard timeout in wait_for_all_jobs() (5 seconds)
+- Solution: Hard timeout in cleanup (5 seconds)
+
+### 5. Ctrl+C While Prompt Queued But Not Active
+- Prompt in queue, not yet displayed
+- Solution: Main loop exits, queued prompts never processed
 
 ## Testing Considerations
 
 ### Test Scenarios
-1. Ctrl+C during PromptTask exits immediately
+1. Ctrl+C during prompt exits immediately
 2. Ctrl+C during AgentLoop cancels and returns to prompt
 3. Double Ctrl+C exits immediately
 4. /quit command exits gracefully
 5. Ctrl+C after shutdown started is no-op
+6. Prompt queued but not active when shutdown triggered
 
 ### Mock Signal Handler
 ```rust

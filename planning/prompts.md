@@ -164,11 +164,11 @@ Read the following files:
 
 ----
 
-# Prompt WorkerTask -> AgentEnvTextUi
+# ✅ Prompt WorkerTask -> AgentEnvTextUi (TUI planning)
 
 Read the following files:
 - codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
-- codebase/chat-exp/files-index.md - the list of some important files we are working with 
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
 - crates/chat-cli/src/agent_env - current implementation of the new architecture
 - planning/basic-tui/* - the plans for the next iteration
 
@@ -180,7 +180,7 @@ While I like the idea of "prompt is a task", I'm not fully sold on it.
 Session's task/job management is supposed to focus on long-running autonomous processes that mutate Worker's state. "Prompt user" matches all except "autonomous" part.
 Also, in the future I want to be able to replace TUI with web API OR even have them both up at the same time. Web API 'UI' won't need to keep up a job "ask user", as it's asynchronous by nature.
 
-I've made a copy of the design docs in planning/basic-tui-as-a-task/ as a backup (this is still an interesting idea)
+I've made a copy of the design docs in planning/basic-tui-as-a-task/ as a backup (this is still an interesting idea to research later)
 
 I want you to re-work the main copy (planning/basic-tui/), specifically planning/basic-tui/02-user-input.md
 
@@ -190,9 +190,38 @@ I want you to re-work the main copy (planning/basic-tui/), specifically planning
 
 Important things to consider designing AgentEnvTextUi:
 - on the next iteration we will spawn two workers at the app start. It means the prompt must be able to "queue" prompt processes somehow
-    - For example, if prompt for worker1 is active, but worker2 completed, prompt for worker2 must NOT take over UI - user should be able to complete prompt1, and only after that it would show up prompt2
+    - For example, if prompt1 for worker1 is active, but worker2 completed, prompt2 for worker2 must NOT take over UI - user should be able to complete prompt1, and only after that it would show up prompt2
+    - Bunus points if the prompt UI displays worker's ID and name
 - AgentEnvTextUi must be able to share Session object with other *Ui's in the future
 - Everything related to prompt maintenance, and jumping between prompt and loop task must be isolated in AgentEnvTextUi - Session must remain centered on the jobs and tasks tracking and management
-- **TODO** Conversation State!
+- Same goes for handling extra commands. Right now we are going to support single command `/quit`, but in the future we will adopt all existing commands
+- Prompt handler can simply push new request to Worker's ConversationState, and kick off AgentLoop task without parameters
 
 In the end - **Session** maintains the state of jobs; **AgentEnvTextUi** maintains the state of user-facing UI.
+
+## Tweak 1
+Make the following adjustements:
+- UI must NOT accept a worker or a list of workers, because new workers can be added to the session on the fly in the future
+- has to account for workers being in the fly (with a job) at the time UI is `run()`
+- entry point (`ChatArgs.execute()`) would create UI, create a worker, (maybe) start a job for the worker (using UI's continuation), and the do `ui.run()`
+- in addition, ui should provide WorkerToHostInterface instances just like in the demo implementation. it will stream out the response to the screen
+
+Also, just a question for now - what are the options to have TUI that would keep assistant answer printing to the screen, but also allow user to enter new prompt without messing things on the screen. i.e. all prints from WorkerToHostInterface.response_chunk_received would go 
+
+## Tweak 2
+Make the following changes:
+- planning/basic-tui/05-complete-flow-example.md
+    - `Main Entry Point` - check how current implementation uses `self.input`. Entry point should either start with continuation, like you suggested, OR launch a job with continuation, if input was provided
+    - in `AgentEnvTextUi.run()` 
+        - use `TextUiInterface` referenced below for `ui_interface`. Also rename this variable to `worker_host_ui`
+    - in `impl WorkerToHostInterface for TextUiInterface`
+        - rename `TextUiInterface` to `TextUiWorkerToHostInterface`
+        - `worker_state_change` - add info-level logs "Worker {id} switched to state {new_state}"
+        - where `stream_complete` is coming from and used for? it's not a part of current `WorkerToHostInterface`
+            - Refer to crates/chat-cli/src/agent_env/worker_interface.rs
+
+Update other files accordingly
+
+
+----
+
