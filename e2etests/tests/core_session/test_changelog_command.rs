@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
+#[allow(unused_imports)]
 use regex::Regex;
 
 #[test]
