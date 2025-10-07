@@ -23,6 +23,7 @@ The architecture consists of several key components:
 - **[Session](./session.md)**: Central orchestrator managing all Workers and Jobs
 - **[WorkerToHostInterface](./interface.md)**: Communication contract between Workers and UI layer
 - **[ModelProvider](./model-provider.md)**: Abstraction for LLM communication
+- **[TUI](./tui.md)**: Terminal User Interface for interactive agent sessions
 
 ## Code Location
 
@@ -52,6 +53,17 @@ agent_env/
     ├── proto_loop.rs              # Prototype task
     ├── cli_interface.rs           # CLI UI implementation
     └── init.rs                    # Demo initialization
+```
+
+TUI implementation is in: `crates/chat-cli/src/cli/chat/agent_env_ui/`
+
+```
+agent_env_ui/
+├── mod.rs                              # AgentEnvTextUi main loop
+├── prompt_queue.rs                     # Prompt request queue
+├── input_handler.rs                    # User input with rustyline
+├── ctrl_c_handler.rs                   # Ctrl+C signal handling
+└── text_ui_worker_to_host_interface.rs # Terminal output interface
 ```
 
 ## Execution Flow

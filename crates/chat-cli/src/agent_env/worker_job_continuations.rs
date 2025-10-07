@@ -26,7 +26,7 @@ pub type WorkerJobContinuationFn = Arc<
 >;
 
 pub struct Continuations {
-    state: RwLock<JobState>,
+    pub(crate) state: RwLock<JobState>,
     map: RwLock<HashMap<String, WorkerJobContinuationFn>>,
 }
 
@@ -36,6 +36,11 @@ impl Continuations {
             state: RwLock::new(JobState::Running),
             map: RwLock::new(HashMap::new()),
         }
+    }
+    
+    /// Get current job state
+    pub async fn get_state(&self) -> JobState {
+        self.state.read().await.clone()
     }
 
     pub fn boxed<F, Fut>(f: F) -> WorkerJobContinuationFn

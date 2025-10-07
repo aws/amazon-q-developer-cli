@@ -12,6 +12,7 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+mod agent_env_ui;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 use crate::constants::ui_text::{
     LIMIT_REACHED_TEXT,
@@ -229,42 +230,52 @@ impl ChatArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         println!("Starting Agent Environment...");
 
-        let session = crate::agent_env::demo::build_session().await?;
-        let ui = crate::agent_env::demo::build_ui();
-
+        // Build session with model providers
+        let session = Arc::new(crate::agent_env::demo::build_session().await?);
+        
+        // Get history path
+        let history_path = crate::util::directories::chat_cli_bash_history_path(os).ok();
+        
+        // Create UI
+        let ui = agent_env_ui::AgentEnvTextUi::new(session.clone(), history_path)?;
+        
+        // Build worker
         let worker = session.build_worker();
-        let prompt = self.input.unwrap_or_else(|| "introduce yourself".to_string());
-
-        // Stage prompt in worker's context
-        worker.context_container
-            .conversation_history
-            .lock()
-            .unwrap()
-            .push_input_message(prompt);
-
-        let job = session.run_agent_loop(
-            worker.clone(),
-            crate::agent_env::worker_tasks::AgentLoopInput {},
-            Arc::new(ui.interface(crate::agent_env::demo::AnsiColor::Cyan)),
-        )?;
-
-        let ui_clone = ui.clone();
-        job.worker_job_continuations.add_or_run_now(
-            "completion_report",
-            crate::agent_env::Continuations::boxed(move |worker, completion_type, _error_msg| {
-                let ui = ui_clone.clone();
-                async move {
-                    ui.report_job_completion(worker, completion_type).await
-                }
-            }),
-            job.worker.clone(),
-        ).await;
-
-        tokio::time::sleep(tokio::time::Duration::from_secs(15)).await;
-        session.cancel_all_jobs();
-        tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-
-        println!("Completed");
+        
+        // Check if input was provided
+        if let Some(input) = self.input {
+            // Stage input in worker's context
+            worker.context_container
+                .conversation_history
+                .lock()
+                .unwrap()
+                .push_input_message(input);
+            
+            // Launch job with continuation
+            let worker_host_ui = ui.create_ui_interface();
+            let job = session.run_agent_loop(
+                worker.clone(),
+                crate::agent_env::worker_tasks::AgentLoopInput {},
+                worker_host_ui,
+            )?;
+            
+            let continuation = ui.create_agent_completion_continuation();
+            job.worker_job_continuations.add_or_run_now(
+                "agent_to_prompt",
+                continuation,
+                worker.clone(),
+            ).await;
+        } else {
+            // No input - start with prompt
+            let continuation = ui.create_agent_completion_continuation();
+            continuation(worker, crate::agent_env::WorkerJobCompletionType::Normal, None).await;
+        }
+        
+        tracing::info!("Launching UI loop");
+        // Run UI (blocks until shutdown)
+        ui.run().await?;
+        
+        println!("Goodbye!");
         Ok(ExitCode::SUCCESS)
     }
 }

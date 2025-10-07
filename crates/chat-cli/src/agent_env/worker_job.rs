@@ -3,7 +3,15 @@ use tokio_util::sync::CancellationToken;
 
 use super::worker::Worker;
 use super::worker_task::WorkerTask;
-use super::worker_job_continuations::Continuations;
+use super::worker_job_continuations::{Continuations, WorkerJobCompletionType};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JobState {
+    Active,
+    Completed,
+    Cancelled,
+    Failed,
+}
 
 pub struct WorkerJob {
     pub worker: Arc<Worker>,
@@ -53,6 +61,39 @@ impl WorkerJob {
                 Err(join_error) => Err(eyre::eyre!("Task panicked: {}", join_error)),
             },
             None => Err(eyre::eyre!("Task not launched")),
+        }
+    }
+
+    /// Check if job is still active (running)
+    pub fn is_active(&self) -> bool {
+        match &self.task_handle {
+            Some(handle) => !handle.is_finished(),
+            None => false,
+        }
+    }
+
+    /// Check if job is complete (finished, cancelled, or failed)
+    pub fn is_complete(&self) -> bool {
+        !self.is_active()
+    }
+
+    /// Get current job state
+    pub async fn get_state(&self) -> JobState {
+        if self.is_active() {
+            return JobState::Active;
+        }
+
+        // Job is complete, check completion type from continuations
+        let state = self.worker_job_continuations.get_state().await;
+        match state {
+            super::worker_job_continuations::JobState::Running => JobState::Active,
+            super::worker_job_continuations::JobState::Done(completion_type, _) => {
+                match completion_type {
+                    WorkerJobCompletionType::Normal => JobState::Completed,
+                    WorkerJobCompletionType::Cancelled => JobState::Cancelled,
+                    WorkerJobCompletionType::Failed => JobState::Failed,
+                }
+            }
         }
     }
 }

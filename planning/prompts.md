@@ -225,3 +225,42 @@ Update other files accordingly
 
 ----
 
+# ✅ Basic TUI
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+- planning/basic-tui/* - the plans for the next iteration. Read all files for better understanding
+
+Proceed with the implementation
+
+After implementation is complete - update documentation in codebase/agent-environment/
+
+## Tweak 1
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+- planning/basic-tui/* - the plans for the next iteration. Read all files for better understanding
+
+We are woking on:
+- codebase/agent-environment/tui.md - documentation
+- crates/chat-cli/src/cli/chat/agent_env_ui/*.rs - files we created
+
+Task:
+- Add debug level logs to
+    - AgentEnvTextUi
+        - create_agent_completion_continuation - log when continuation is created
+        - create_agent_completion_continuation - long when continuation is invoked
+        - run - when request was dequeued
+    - Session
+        - run - when the job is spawned, worker.id
+    - TextUiWorkerToHostInterface
+        - worker_state_change - when state changed, worker.id and new state
+    - PromptQueue
+        - enqueue - worker.id
+        - dequeue - dequeued result worker.id
+
+
+
+----
