@@ -19,6 +19,7 @@ serde.workspace = true
 serde_json.workspace = true
 chrono.workspace = true
 crossterm.workspace = true
+tokio.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

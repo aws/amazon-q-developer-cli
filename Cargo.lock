@@ -1283,6 +1283,7 @@ dependencies = [
  "serde_json",
  "skim",
  "thiserror 2.0.14",
+ "tokio",
  "tracing",
  "tracing-appender",
  "tracing-subscriber",

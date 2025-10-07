@@ -3,6 +3,7 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod custom_spinner;
 mod input_source;
 mod message;
 mod parse;
@@ -62,7 +63,6 @@ pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -72,6 +72,7 @@ use crossterm::{
     style,
     terminal,
 };
+use custom_spinner::Spinners;
 use eyre::{
     Report,
     Result,
@@ -96,10 +97,6 @@ use parser::{
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
-use spinners::{
-    Spinner,
-    Spinners,
-};
 use thiserror::Error;
 use time::OffsetDateTime;
 use token_counter::TokenCounter;
@@ -257,7 +254,6 @@ impl ChatArgs {
             }
         }
 
-        let stdout = std::io::stdout();
         let mut stderr = std::io::stderr();
 
         let args: Vec<String> = std::env::args().collect();
@@ -420,8 +416,6 @@ impl ChatArgs {
 
         ChatSession::new(
             os,
-            stdout,
-            stderr,
             &conversation_id,
             agents,
             input,
@@ -567,7 +561,7 @@ pub struct ChatSession {
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
-    spinner: Option<Spinner>,
+    spinner: Option<Spinners>,
     /// [ConversationState].
     conversation: ConversationState,
     /// Tool uses requested by the model that are actively being handled.
@@ -599,8 +593,6 @@ impl ChatSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         os: &mut Os,
-        stdout: std::io::Stdout,
-        mut stderr: std::io::Stderr,
         conversation_id: &str,
         mut agents: Agents,
         mut input: Option<String>,
@@ -616,7 +608,8 @@ impl ChatSession {
     ) -> Result<Self> {
         // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
-        let (view_end, _byte_receiver, control_end_stderr, control_end_stdout) = get_legacy_conduits();
+
+        let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) = get_legacy_conduits();
 
         tokio::task::spawn_blocking(move || {
             let stderr = std::io::stderr();
@@ -672,6 +665,26 @@ impl ChatSession {
                         )
                         .await
                     },
+%%%%%%% Changes from base to side #2
+                 let mut cs = previous_conversation.unwrap();
+                 existing_conversation = true;
+                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                 cs.tool_manager = tool_manager;
+                 if let Some(profile) = cs.current_profile() {
+                     if agents.switch(profile).is_err() {
+                         execute!(
+-                            stderr,
++                            control_end_stderr,
+                             StyledText::error_fg(),
+                             style::Print("Error"),
+                             StyledText::reset(),
+                             style::Print(format!(
+                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
+                             ))
+                         )?;
+                         let _ = agents.switch(DEFAULT_AGENT_NAME);
+                     }
+>>>>>>> Conflict 2 of 2 ends
                 }
             },
             false => {
@@ -1113,10 +1126,6 @@ impl ChatSession {
 
 impl Drop for ChatSession {
     fn drop(&mut self) {
-        if let Some(spinner) = &mut self.spinner {
-            spinner.stop();
-        }
-
         execute!(
             self.stderr,
             cursor::MoveToColumn(0),
@@ -1415,7 +1424,7 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
+            self.spinner = Some(Spinners::new("Creating summary...".to_string()));
         }
 
         let mut response = match self
@@ -1710,10 +1719,10 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinner::new(
-                Spinners::Dots,
-                format!("Generating agent config for '{}'...", agent_name),
-            ));
+            self.spinner = Some(Spinners::new(format!(
+                "Generating agent config for '{}'...",
+                agent_name
+            )));
         }
 
         let mut response = match self
@@ -2157,7 +2166,7 @@ impl ChatSession {
             queue!(self.stderr, cursor::Hide)?;
 
             if self.interactive {
-                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+                self.spinner = Some(Spinners::new("Thinking...".to_owned()));
             }
 
             Ok(ChatState::HandleResponseStream(conv_state))
@@ -2578,7 +2587,7 @@ impl ChatSession {
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+            self.spinner = Some(Spinners::new("Thinking...".to_string()));
         }
 
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
@@ -2726,7 +2735,7 @@ impl ChatSession {
                             );
 
                             execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                            self.spinner = Some(Spinners::new("Dividing up the work...".to_string()));
 
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -2900,7 +2909,7 @@ impl ChatSession {
             if tool_name_being_recvd.is_some() {
                 queue!(self.stderr, cursor::Hide)?;
                 if self.interactive {
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+                    self.spinner = Some(Spinners::new("Thinking...".to_string()));
                 }
             }
 
@@ -3217,7 +3226,7 @@ impl ChatSession {
         }
 
         if self.interactive {
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+            self.spinner = Some(Spinners::new("Thinking...".to_owned()));
         }
 
         Ok(ChatState::HandleResponseStream(
@@ -3627,7 +3636,7 @@ async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus
 
 async fn get_subscription_status_with_spinner(
     os: &mut Os,
-    output: &mut impl Write,
+    output: &mut (impl Write + Clone + Send + Sync + 'static),
 ) -> Result<ActualSubscriptionStatus> {
     return with_spinner(output, "Checking subscription status...", || async {
         get_subscription_status(os).await
@@ -3635,24 +3644,26 @@ async fn get_subscription_status_with_spinner(
     .await;
 }
 
-pub async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
+pub async fn with_spinner<T, E, F, Fut, S: std::io::Write + Clone + Send + Sync + 'static>(
+    output: &mut S,
+    spinner_text: &str,
+    f: F,
+) -> Result<T, E>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
 {
     queue!(output, cursor::Hide,).ok();
-    let spinner = Some(Spinner::new(Spinners::Dots, spinner_text.to_owned()));
+    let spinner = Spinners::new(spinner_text.to_owned());
 
     let result = f().await;
 
-    if let Some(mut s) = spinner {
-        s.stop();
-        let _ = queue!(
-            output,
-            terminal::Clear(terminal::ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-        );
-    }
+    drop(spinner);
+    let _ = queue!(
+        output,
+        terminal::Clear(terminal::ClearType::CurrentLine),
+        cursor::MoveToColumn(0),
+    );
 
     result
 }
@@ -3763,8 +3774,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -3893,8 +3902,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4000,8 +4007,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4078,8 +4083,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4136,8 +4139,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4241,8 +4242,6 @@ mod tests {
         // Test that PreToolUse hook runs
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None, // No initial input
@@ -4377,8 +4376,6 @@ mod tests {
         // Run chat session - hook should block tool execution
         let result = ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "test_conv_id",
             agents,
             None,

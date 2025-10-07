@@ -21,7 +21,7 @@ pub enum ConduitError {
 pub struct ViewEnd {
     /// Used by the view to send input to the control
     // TODO: later on we will need replace this byte array with an actual event type from ACP
-    pub sender: std::sync::mpsc::Sender<Vec<u8>>,
+    pub sender: tokio::sync::mpsc::Sender<Vec<u8>>,
     /// To receive messages from control about state changes
     pub receiver: std::sync::mpsc::Receiver<Event>,
 }
@@ -61,7 +61,7 @@ pub struct DestinationStderr;
 #[derive(Clone, Debug)]
 pub struct DestinationStructuredOutput;
 
-pub type InputReceiver = std::sync::mpsc::Receiver<Vec<u8>>;
+pub type InputReceiver = tokio::sync::mpsc::Receiver<Vec<u8>>;
 
 /// This compliments the [ViewEnd]. It can be thought of as the "other end" of a pipe.
 /// The control would own this.
@@ -212,7 +212,7 @@ pub fn get_legacy_conduits() -> (
     ControlEnd<DestinationStdout>,
 ) {
     let (state_tx, state_rx) = std::sync::mpsc::channel::<Event>();
-    let (byte_tx, byte_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let (byte_tx, byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(10);
 
     (
         ViewEnd {
