@@ -1,6 +1,10 @@
-use std::{io::Write as _, marker::PhantomData};
+use std::io::Write as _;
+use std::marker::PhantomData;
 
-use crate::protocol::{Event, LegacyPassThroughOutput};
+use crate::protocol::{
+    Event,
+    LegacyPassThroughOutput,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {

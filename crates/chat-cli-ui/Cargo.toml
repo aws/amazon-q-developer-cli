@@ -20,6 +20,10 @@ serde_json.workspace = true
 chrono.workspace = true
 crossterm.workspace = true
 tokio.workspace = true
+eyre.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+ratatui = "0.29.0"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

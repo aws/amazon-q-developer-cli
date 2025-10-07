@@ -192,6 +192,29 @@ use crate::util::{
     ui,
 };
 
+const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
+ 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
+ 2. Wait until next month when your limit automatically resets." };
+
+pub const EXTRA_HELP: &str = color_print::cstr! {"
+ <cyan,em>MCP:</cyan,em>
+ <black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
+ 
+ <cyan,em>Tips:</cyan,em>
+ <em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
+ <em>Ctrl(^) + j</em>         <black!>Insert new-line to provide multi-line prompt</black!>
+                     <black!>Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
+ <em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
+                     <black!>Use Tab to select multiple items</black!>
+                     <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
+ <em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
+                     <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
+ <em>Ctrl(^) + d</em>         <black!>Start delegate command for task delegation</black!>
+                     <black!>Change the keybind using: q settings chat.delegateModeKey x</black!>
+ <em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
+                     <black!>Change using: q settings chat.skimCommandKey x</black!>
+ "};
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum WrapMode {
     /// Always wrap at terminal width
@@ -636,7 +659,7 @@ impl ChatSession {
                         if let Some(profile) = cs.current_profile() {
                             if agents.switch(profile).is_err() {
                                 execute!(
-                                    stderr,
+                                    &mut control_end_stderr,
                                     StyledText::error_fg(),
                                     style::Print("Error"),
                                     StyledText::reset(),
@@ -665,26 +688,6 @@ impl ChatSession {
                         )
                         .await
                     },
-%%%%%%% Changes from base to side #2
-                 let mut cs = previous_conversation.unwrap();
-                 existing_conversation = true;
-                 input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
-                 cs.tool_manager = tool_manager;
-                 if let Some(profile) = cs.current_profile() {
-                     if agents.switch(profile).is_err() {
-                         execute!(
--                            stderr,
-+                            control_end_stderr,
-                             StyledText::error_fg(),
-                             style::Print("Error"),
-                             StyledText::reset(),
-                             style::Print(format!(
-                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
-                             ))
-                         )?;
-                         let _ = agents.switch(DEFAULT_AGENT_NAME);
-                     }
->>>>>>> Conflict 2 of 2 ends
                 }
             },
             false => {

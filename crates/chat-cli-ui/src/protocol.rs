@@ -1,7 +1,10 @@
 //! This is largely based on https://docs.ag-ui.com/concepts/events
 //! They do not have a rust SDK so for now we are handrolling these types
 
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use serde_json::Value;
 
 /// Role of a message sender
