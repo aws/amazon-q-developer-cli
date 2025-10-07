@@ -4,11 +4,13 @@ use tokio_util::sync::CancellationToken;
 
 use crate::agent_env::{WorkerToHostInterface, WorkerStates, ModelResponseChunk};
 
-pub struct TextUiWorkerToHostInterface {}
+pub struct TextUiWorkerToHostInterface {
+    color_code: Option<&'static str>,
+}
 
 impl TextUiWorkerToHostInterface {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(color_code: Option<&'static str>) -> Self {
+        Self { color_code }
     }
 }
 
@@ -26,7 +28,11 @@ impl WorkerToHostInterface for TextUiWorkerToHostInterface {
     fn response_chunk_received(&self, _worker_id: Uuid, chunk: ModelResponseChunk) {
         match chunk {
             ModelResponseChunk::AssistantMessage(text) => {
-                print!("{}", text);
+                if let Some(color) = self.color_code {
+                    print!("{}{}\x1b[0m", color, text);
+                } else {
+                    print!("{}", text);
+                }
                 io::stdout().flush().unwrap();
             }
             ModelResponseChunk::ToolUseRequest { tool_name, parameters } => {

@@ -291,3 +291,15 @@ Write it down under planning/two-workers/ (new folder)
 You must identify any potential issues with the proposed set of cnahges, and propose improvements. But keep it limited to primary goal, to display two workers work at the same time.
 
 ----
+
+# ✅ Two workers demo - implementation
+Read the following files:
+- codebase/agent-environment/README.md - documentation about the new architecture that we are working on (read linked files, and other files in that folder as needed)
+- codebase/chat-cli/files-index.md - the list of some important files we are working with 
+- crates/chat-cli/src/agent_env - current implementation of the new architecture
+- planning/two-workers/* - the scope for the current iteration, read all files
+
+Proceed with the implementation.
+Update documentation in codebase/agent-environment/ accordingly when done.
+
+----

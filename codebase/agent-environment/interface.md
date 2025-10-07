@@ -81,7 +81,81 @@ Requests user input/confirmation:
 
 **Example**: CLI prompts for input with Ctrl+C support, web UI shows modal dialog
 
-## CLI Implementation
+## TextUiWorkerToHostInterface (Production)
+
+**File**: `crates/chat-cli/src/cli/chat/agent_env_ui/text_ui_worker_to_host_interface.rs`
+
+Production implementation for terminal UI with optional color support for multiple workers.
+
+### Structure
+
+```rust
+pub struct TextUiWorkerToHostInterface {
+    color_code: Option<&'static str>,
+}
+
+impl TextUiWorkerToHostInterface {
+    pub fn new(color_code: Option<&'static str>) -> Self {
+        Self { color_code }
+    }
+}
+```
+
+### State Change Implementation
+
+```rust
+fn worker_state_change(&self, worker_id: Uuid, new_state: WorkerStates) {
+    tracing::debug!("Worker {} state changed to {:?}", worker_id, new_state);
+    
+    match new_state {
+        WorkerStates::Working => print!("\n"),
+        _ => {}
+    }
+}
+```
+
+### Response Chunk Implementation
+
+```rust
+fn response_chunk_received(&self, _worker_id: Uuid, chunk: ModelResponseChunk) {
+    match chunk {
+        ModelResponseChunk::AssistantMessage(text) => {
+            if let Some(color) = self.color_code {
+                print!("{}{}\x1b[0m", color, text);
+            } else {
+                print!("{}", text);
+            }
+            io::stdout().flush().unwrap();
+        }
+        ModelResponseChunk::ToolUseRequest { tool_name, parameters } => {
+            println!("\n[Tool: {} with params: {}]", tool_name, parameters);
+        }
+    }
+}
+```
+
+**Color Support**: When `color_code` is provided, wraps output with ANSI escape codes.
+
+**Used Colors**:
+- Green (`\x1b[32m`) - Worker 1
+- Cyan (`\x1b[36m`) - Worker 2
+
+### Tool Confirmation Implementation
+
+```rust
+async fn get_tool_confirmation(
+    &self,
+    _worker_id: Uuid,
+    _request: String,
+    _cancellation_token: CancellationToken,
+) -> Result<String, eyre::Error> {
+    Ok("approved".to_string())
+}
+```
+
+Currently auto-approves all tools. Interactive confirmation will be added in future iteration.
+
+## CLI Implementation (Demo)
 
 **File**: `crates/chat-cli/src/agent_env/demo/cli_interface.rs`
 

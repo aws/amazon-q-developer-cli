@@ -28,13 +28,13 @@ impl Session {
         }
     }
 
-    pub fn build_worker(&self) -> Arc<Worker> {
+    pub fn build_worker(&self, name: String) -> Arc<Worker> {
         let model_provider = self.model_providers.first()
             .expect("At least one model provider required")
             .clone();
         
         let worker = Arc::new(Worker::new(
-            "Test worker".to_string(),
+            name,
             model_provider,
         ));
         

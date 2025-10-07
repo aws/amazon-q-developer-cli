@@ -46,8 +46,15 @@ User input management using rustyline:
 
 Implements WorkerToHostInterface for terminal output:
 - Streams assistant messages to stdout
+- Optional color support for distinguishing multiple workers
 - Displays tool use requests
 - Auto-approves tools (TODO: interactive confirmation)
+
+**Color Support**: Accepts optional ANSI color code in constructor:
+```rust
+TextUiWorkerToHostInterface::new(Some("\x1b[32m"))  // Green
+TextUiWorkerToHostInterface::new(None)              // No color
+```
 
 #### CtrlCHandler
 **Location**: `crates/chat-cli/src/cli/chat/agent_env_ui/ctrl_c_handler.rs`
@@ -59,7 +66,7 @@ Signal handling with context-aware behavior:
 
 ## Flow
 
-### Startup Flow
+### Startup Flow (Two Workers Implementation)
 ```
 ChatArgs.execute()
     ↓
@@ -67,13 +74,19 @@ Create Session with model providers
     ↓
 Create AgentEnvTextUi
     ↓
-Build initial worker
+Build two workers (worker1, worker2)
+    ↓
+Pre-register colored interfaces:
+    - Worker 1: Green (\x1b[32m)
+    - Worker 2: Cyan (\x1b[36m)
     ↓
 If input provided:
-    - Stage input in worker context
-    - Launch AgentLoop with continuation
+    - Stage input in both workers' contexts
+    - Launch AgentLoop for worker1 with continuation
+    - Launch AgentLoop for worker2 with continuation
 Else:
-    - Trigger continuation to start with prompt
+    - Trigger continuation for worker1 (queues for prompt)
+    - Trigger continuation for worker2 (queues for prompt)
     ↓
 Run UI main loop
 ```
@@ -151,39 +164,86 @@ Shutdown sequence:
 4. Input history saved
 5. Return from `ChatArgs.execute()`
 
-## Multi-Worker Support (Future)
+## Multi-Worker Support (Implemented)
 
-The architecture supports multiple workers running in parallel:
+The architecture now supports multiple workers running in parallel with color-coded output.
+
+### Worker Interface Management
+
+**AgentEnvTextUi** maintains a map of worker interfaces:
 
 ```rust
-// Create additional worker
-let worker2 = session.build_worker();
-
-// Launch job for worker2
-let job = session.run_agent_loop(
-    worker2.clone(),
-    AgentLoopInput {},
-    ui.create_ui_interface(),
-)?;
-
-// Use UI's continuation to re-queue prompt
-let continuation = ui.create_agent_completion_continuation();
-job.worker_job_continuations.add_or_run_now(
-    "agent_to_prompt",
-    continuation,
-    worker2.clone(),
-).await;
+pub struct AgentEnvTextUi {
+    // ... other fields
+    worker_interfaces: Arc<Mutex<HashMap<Uuid, Arc<dyn WorkerToHostInterface>>>>,
+}
 ```
 
-Key points:
-- Prompt queue ensures one prompt at a time
-- Worker name displayed in prompt
-- FIFO ordering for fairness
-- Jobs can run while prompts are queued
+### get_worker_interface Method
+
+Provides lookup-first pattern for interface reuse:
+
+```rust
+pub fn get_worker_interface(
+    &self,
+    worker_id: Option<Uuid>,
+    color: Option<&'static str>,
+) -> Arc<dyn WorkerToHostInterface> {
+    if let Some(id) = worker_id {
+        let mut interfaces = self.worker_interfaces.lock().unwrap();
+        
+        // Check if interface already exists
+        if let Some(interface) = interfaces.get(&id) {
+            return interface.clone();
+        }
+        
+        // Create and store new interface
+        let interface = Arc::new(TextUiWorkerToHostInterface::new(color));
+        interfaces.insert(id, interface.clone());
+        interface
+    } else {
+        // No worker_id, create without storing
+        Arc::new(TextUiWorkerToHostInterface::new(color))
+    }
+}
+```
+
+### Usage Pattern
+
+```rust
+// Create workers
+let worker1 = session.build_worker();
+let worker2 = session.build_worker();
+
+// Pre-register colored interfaces
+ui.get_worker_interface(Some(worker1.id), Some("\x1b[32m"));  // Green
+ui.get_worker_interface(Some(worker2.id), Some("\x1b[36m"));  // Cyan
+
+// Launch jobs - interfaces automatically reused
+let job1 = session.run_agent_loop(
+    worker1.clone(),
+    AgentLoopInput {},
+    ui.get_worker_interface(Some(worker1.id), None),
+)?;
+
+let job2 = session.run_agent_loop(
+    worker2.clone(),
+    AgentLoopInput {},
+    ui.get_worker_interface(Some(worker2.id), None),
+)?;
+```
+
+### Key Features
+
+- **Interface Reuse**: Same interface instance used across multiple job launches
+- **Color Coding**: Each worker gets distinct color for output
+- **Automatic Lookup**: `get_worker_interface()` returns existing interface if present
+- **Prompt Queue**: Ensures one prompt at a time despite multiple workers
+- **FIFO Ordering**: Workers prompted in completion order
 
 ## Integration
 
-### Entry Point
+### Entry Point (Two Workers Implementation)
 **Location**: `crates/chat-cli/src/cli/chat/mod.rs`
 
 ```rust
@@ -193,32 +253,58 @@ impl ChatArgs {
         let history_path = chat_cli_bash_history_path(os).ok();
         let ui = AgentEnvTextUi::new(session.clone(), history_path)?;
         
-        let worker = session.build_worker();
+        // Create two workers
+        let worker1 = session.build_worker();
+        let worker2 = session.build_worker();
+        
+        // Pre-register colored interfaces
+        ui.get_worker_interface(Some(worker1.id), Some("\x1b[32m"));
+        ui.get_worker_interface(Some(worker2.id), Some("\x1b[36m"));
         
         if let Some(input) = self.input {
-            // Launch with input
-            worker.context_container
+            // Launch both workers with same input
+            worker1.context_container
+                .conversation_history
+                .lock()
+                .unwrap()
+                .push_input_message(input.clone());
+            
+            let job1 = session.run_agent_loop(
+                worker1.clone(),
+                AgentLoopInput {},
+                ui.get_worker_interface(Some(worker1.id), None),
+            )?;
+            
+            let continuation1 = ui.create_agent_completion_continuation();
+            job1.worker_job_continuations.add_or_run_now(
+                "agent_to_prompt",
+                continuation1,
+                worker1.clone(),
+            ).await;
+            
+            worker2.context_container
                 .conversation_history
                 .lock()
                 .unwrap()
                 .push_input_message(input);
             
-            let job = session.run_agent_loop(
-                worker.clone(),
+            let job2 = session.run_agent_loop(
+                worker2.clone(),
                 AgentLoopInput {},
-                ui.create_ui_interface(),
+                ui.get_worker_interface(Some(worker2.id), None),
             )?;
             
-            let continuation = ui.create_agent_completion_continuation();
-            job.worker_job_continuations.add_or_run_now(
+            let continuation2 = ui.create_agent_completion_continuation();
+            job2.worker_job_continuations.add_or_run_now(
                 "agent_to_prompt",
-                continuation,
-                worker.clone(),
+                continuation2,
+                worker2.clone(),
             ).await;
         } else {
-            // Start with prompt
+            // Queue both workers for prompts
             let continuation = ui.create_agent_completion_continuation();
-            continuation(worker, WorkerJobCompletionType::Normal, None).await;
+            continuation(worker1, WorkerJobCompletionType::Normal, None).await;
+            continuation(worker2, WorkerJobCompletionType::Normal, None).await;
         }
         
         ui.run().await?;

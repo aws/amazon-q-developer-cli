@@ -3,9 +3,11 @@ mod input_handler;
 mod text_ui_worker_to_host_interface;
 mod ctrl_c_handler;
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
 use tokio::sync::Notify;
+use uuid::Uuid;
 
 use crate::agent_env::{Session, WorkerToHostInterface, WorkerJobCompletionType};
 use crate::agent_env::worker_tasks::AgentLoopInput;
@@ -20,6 +22,7 @@ pub struct AgentEnvTextUi {
     input_handler: InputHandler,
     prompt_queue: Arc<PromptQueue>,
     shutdown_signal: Arc<Notify>,
+    worker_interfaces: Arc<Mutex<HashMap<Uuid, Arc<dyn WorkerToHostInterface>>>>,
 }
 
 impl AgentEnvTextUi {
@@ -32,6 +35,7 @@ impl AgentEnvTextUi {
             input_handler: InputHandler::new(history_path)?,
             prompt_queue: Arc::new(PromptQueue::new()),
             shutdown_signal: Arc::new(Notify::new()),
+            worker_interfaces: Arc::new(Mutex::new(HashMap::new())),
         })
     }
     
@@ -66,10 +70,30 @@ impl AgentEnvTextUi {
         })
     }
     
-    /// Create UI interface for worker
-    /// Streams output to terminal
-    pub fn create_ui_interface(&self) -> Arc<dyn WorkerToHostInterface> {
-        Arc::new(TextUiWorkerToHostInterface::new())
+    /// Get or create UI interface for worker
+    /// If worker_id is provided, checks map first and reuses existing interface
+    /// If color is provided, creates colored interface
+    pub fn get_worker_interface(
+        &self,
+        worker_id: Option<Uuid>,
+        color: Option<&'static str>,
+    ) -> Arc<dyn WorkerToHostInterface> {
+        if let Some(id) = worker_id {
+            let mut interfaces = self.worker_interfaces.lock().unwrap();
+            
+            // Check if interface already exists
+            if let Some(interface) = interfaces.get(&id) {
+                return interface.clone();
+            }
+            
+            // Create and store new interface
+            let interface = Arc::new(TextUiWorkerToHostInterface::new(color));
+            interfaces.insert(id, interface.clone());
+            interface
+        } else {
+            // No worker_id, create without storing
+            Arc::new(TextUiWorkerToHostInterface::new(color))
+        }
     }
     
     pub async fn run(mut self) -> Result<(), eyre::Error> {
@@ -139,7 +163,7 @@ impl AgentEnvTextUi {
             
             // Launch AgentLoop
             let agent_input = AgentLoopInput {};
-            let ui_interface = self.create_ui_interface();
+            let ui_interface = self.get_worker_interface(Some(request.worker.id), None);
             
             let job = match self.session.run_agent_loop(
                 request.worker.clone(),

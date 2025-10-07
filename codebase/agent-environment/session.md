@@ -41,14 +41,23 @@ Creates a new Session with provided model providers. Initializes empty worker an
 **Location**: `session.rs` lines 24-36
 
 ```rust
-pub fn build_worker(&self) -> Arc<Worker>
+pub fn build_worker(&self, name: String) -> Arc<Worker>
 ```
 
 Creates a new Worker with:
+- Specified name for identification
 - First available model provider
-- Default name "Test worker"
 - Registered in session's worker collection
 - Returns Arc-wrapped worker for shared ownership
+
+**Parameters**:
+- `name`: Human-readable name for the worker (e.g., "Worker#1")
+
+**Example**:
+```rust
+let worker1 = session.build_worker("Worker#1".to_string());
+let worker2 = session.build_worker("Worker#2".to_string());
+```
 
 ### Task Launchers
 
@@ -130,8 +139,8 @@ Cancels all running jobs:
 let session = Session::new(vec![bedrock_provider]);
 
 // Create workers
-let worker1 = session.build_worker();
-let worker2 = session.build_worker();
+let worker1 = session.build_worker("Worker#1".to_string());
+let worker2 = session.build_worker("Worker#2".to_string());
 
 // Launch agent loops
 let job1 = session.run_agent_loop(

@@ -151,35 +151,89 @@ Demonstrates complete agent flow:
 
 ## Running the Demo
 
-### From Source
+### Two Workers Demo (Current Implementation)
+
+The current implementation demonstrates two workers running in parallel with color-coded output.
+
+**Entry Point**: `crates/chat-cli/src/cli/chat/mod.rs` - `ChatArgs::execute()`
+
+#### With Input (Both Workers Process Same Input)
 
 ```bash
-# Run demo
-cargo run --bin chat_cli -- demo
-
-# Or directly
-cargo run --bin chat_cli
+cargo run --bin chat_cli -- chat "Tell me a joke"
 ```
+
+Expected behavior:
+- Both workers receive the same input
+- Both start processing simultaneously
+- Output appears interleaved with green and cyan colors
+- Both workers complete and return to prompt queue
+
+#### Interactive Mode (Workers Alternate)
+
+```bash
+cargo run --bin chat_cli -- chat
+```
+
+Expected behavior:
+- Both workers queued for prompts
+- First prompt goes to worker 1 (green output)
+- After completion, worker 1 re-queues
+- Second prompt goes to worker 2 (cyan output)
+- Alternating pattern continues
 
 ### Expected Output
 
+With input:
 ```
-Working
-Requesting
-Receiving
-Hello! How can I help you today?
-Inactive
+Starting Agent Environment with TWO WORKERS...
 
-Working
-Requesting
-Receiving
-1, 2, 3, 4, 5
-Inactive
+[Green text] Hello! Here's a joke for you...
+[Cyan text] Sure! Why did the chicken...
+[Green text] ...cross the road?
+[Cyan text] ...cross the road?
 ```
 
-(With colors: first agent in cyan, second in green)
+Interactive mode:
+```
+Starting Agent Environment with TWO WORKERS...
+Worker-1> Hello
+[Green text] Hi! How can I help you?
+
+Worker-2> What's 2+2?
+[Cyan text] 2+2 equals 4.
+```
+
+**Note**: Output will be interleaved character-by-character. This is expected behavior for this iteration.
 
 ## Demo Features Showcased
+
+### Two Workers Implementation
+
+**Current Status**: Fully implemented and functional
+
+The production implementation in `ChatArgs::execute()` demonstrates:
+
+#### Color-Coded Output
+- **Worker 1**: Green (`\x1b[32m`)
+- **Worker 2**: Cyan (`\x1b[36m`)
+- Colors help distinguish output from each worker
+
+#### Worker Interface Reuse
+- Interfaces pre-registered with colors in `AgentEnvTextUi`
+- `get_worker_interface()` method provides lookup-first pattern
+- Same interface instance reused across multiple job launches
+
+#### Parallel Execution
+- Both workers process same input simultaneously
+- Independent state machines
+- Shared Session and model provider
+- Output streams interleaved in real-time
+
+#### Prompt Queue Management
+- Workers automatically re-queue after completion
+- FIFO ordering ensures fair access
+- Single input handler serializes user prompts
 
 ### Concurrent Execution
 
@@ -287,7 +341,21 @@ Disconnect network during execution:
 
 ## Demo Limitations
 
-Current demo is simplified:
+### Current Implementation (Two Workers)
+
+**Known Limitations**:
+- **Interleaved Output**: Character-by-character mixing of output from both workers
+  - This is expected and will be addressed with proper TUI in future iteration
+- **Single Input Handler**: Only one worker can receive user input at a time
+  - This is correct behavior - prompt queue serializes input requests
+- **No Worker Identification**: Only color distinguishes workers
+  - Could add worker name/ID prefix if needed
+- **Auto-Approve Tools**: All tool requests auto-approved
+  - Real implementation will need proper tool approval UI
+
+### Legacy Demo Limitations
+
+Original demo (proto_loop) is simplified:
 - No tool execution
 - No conversation history
 - No error recovery

@@ -228,7 +228,7 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        println!("Starting Agent Environment...");
+        println!("Starting Agent Environment with TWO WORKERS...");
 
         // Build session with model providers
         let session = Arc::new(crate::agent_env::demo::build_session().await?);
@@ -239,36 +239,62 @@ impl ChatArgs {
         // Create UI
         let ui = agent_env_ui::AgentEnvTextUi::new(session.clone(), history_path)?;
         
-        // Build worker
-        let worker = session.build_worker();
+        // Create two workers
+        let worker1 = session.build_worker("Worker#1".to_string());
+        let worker2 = session.build_worker("Worker#2".to_string());
+        
+        // Pre-register colored interfaces (creates and stores in map)
+        let green_code = "\x1b[32m";
+        let cyan_code = "\x1b[36m";
+        ui.get_worker_interface(Some(worker1.id), Some(green_code));
+        ui.get_worker_interface(Some(worker2.id), Some(cyan_code));
         
         // Check if input was provided
         if let Some(input) = self.input {
-            // Stage input in worker's context
-            worker.context_container
+            // Launch worker 1
+            worker1.context_container
+                .conversation_history
+                .lock()
+                .unwrap()
+                .push_input_message(input.clone());
+            
+            let job1 = session.run_agent_loop(
+                worker1.clone(),
+                crate::agent_env::worker_tasks::AgentLoopInput {},
+                ui.get_worker_interface(Some(worker1.id), None),
+            )?;
+            
+            let continuation1 = ui.create_agent_completion_continuation();
+            job1.worker_job_continuations.add_or_run_now(
+                "agent_to_prompt",
+                continuation1,
+                worker1.clone(),
+            ).await;
+            
+            // Launch worker 2
+            worker2.context_container
                 .conversation_history
                 .lock()
                 .unwrap()
                 .push_input_message(input);
             
-            // Launch job with continuation
-            let worker_host_ui = ui.create_ui_interface();
-            let job = session.run_agent_loop(
-                worker.clone(),
+            let job2 = session.run_agent_loop(
+                worker2.clone(),
                 crate::agent_env::worker_tasks::AgentLoopInput {},
-                worker_host_ui,
+                ui.get_worker_interface(Some(worker2.id), None),
             )?;
             
-            let continuation = ui.create_agent_completion_continuation();
-            job.worker_job_continuations.add_or_run_now(
+            let continuation2 = ui.create_agent_completion_continuation();
+            job2.worker_job_continuations.add_or_run_now(
                 "agent_to_prompt",
-                continuation,
-                worker.clone(),
+                continuation2,
+                worker2.clone(),
             ).await;
         } else {
-            // No input - start with prompt
+            // No input - queue both workers for prompts
             let continuation = ui.create_agent_completion_continuation();
-            continuation(worker, crate::agent_env::WorkerJobCompletionType::Normal, None).await;
+            continuation(worker1, crate::agent_env::WorkerJobCompletionType::Normal, None).await;
+            continuation(worker2, crate::agent_env::WorkerJobCompletionType::Normal, None).await;
         }
         
         tracing::info!("Launching UI loop");
