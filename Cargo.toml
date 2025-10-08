@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/semantic-search-client"]
+members = [ "crates/agent","crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/semantic-search-client"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]

@@ -1,0 +1,691 @@
+pub mod types;
+pub mod util;
+
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::{
+    Duration,
+    Instant,
+    SystemTime,
+};
+
+use aws_types::request_id::RequestId;
+use eyre::Result;
+use futures::{
+    FutureExt,
+    Stream,
+    StreamExt,
+};
+use rand::seq::IndexedRandom;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::sync::CancellationToken;
+use tracing::{
+    debug,
+    error,
+    info,
+    trace,
+    warn,
+};
+use util::serde_value_to_document;
+
+use super::agent_loop::model::Model;
+use super::agent_loop::types::{
+    StreamError,
+    StreamEvent,
+};
+use crate::agent::agent_loop::types::{
+    ContentBlockDelta,
+    ContentBlockDeltaEvent,
+    ContentBlockStart,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    Message,
+    MessageStopEvent,
+    MetadataEvent,
+    MetadataMetrics,
+    MetadataService,
+    Role,
+    StopReason,
+    StreamErrorKind,
+    ToolSpec,
+    ToolUseBlockDelta,
+    ToolUseBlockStart,
+};
+use crate::api_client::error::{
+    ApiClientError,
+    ConverseStreamError,
+    ConverseStreamErrorKind,
+};
+use crate::api_client::model::{
+    ChatResponseStream,
+    ConversationState,
+    ToolSpecification,
+    UserInputMessage,
+    UserInputMessageContext,
+};
+use crate::api_client::send_message_output::SendMessageOutput;
+use crate::api_client::{
+    ApiClient,
+    model as rts,
+};
+
+#[derive(Debug, Clone)]
+pub struct RtsModel {
+    client: ApiClient,
+    conversation_id: String,
+    model_id: Option<String>,
+}
+
+impl RtsModel {
+    pub fn new(client: ApiClient, conversation_id: String, model_id: Option<String>) -> Self {
+        Self {
+            client,
+            conversation_id,
+            model_id,
+        }
+    }
+
+    pub fn conversation_id(&self) -> &str {
+        &self.conversation_id
+    }
+
+    pub fn model_id(&self) -> Option<&str> {
+        self.model_id.as_deref()
+    }
+
+    async fn converse_stream_rts(
+        self,
+        tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+        cancel_token: CancellationToken,
+        messages: Vec<Message>,
+        tool_specs: Option<Vec<ToolSpec>>,
+        system_prompt: Option<String>,
+    ) {
+        let state = match self.make_conversation_state(messages, tool_specs, system_prompt) {
+            Ok(s) => s,
+            Err(msg) => {
+                error!(?msg, "failed to create conversation state");
+                tx.send(Err(StreamError::new(StreamErrorKind::Validation {
+                    message: Some(msg),
+                })))
+                .await
+                .map_err(|err| error!(?err, "failed to send model event"))
+                .ok();
+                return;
+            },
+        };
+
+        let request_start_time = Instant::now();
+        let request_start_time_sys = SystemTime::now();
+        let token_clone = cancel_token.clone();
+        let result = tokio::select! {
+            _ = token_clone.cancelled() => {
+                warn!("rts request cancelled during send");
+                tx.send(Err(StreamError::new(StreamErrorKind::Interrupted)))
+                    .await
+                    .map_err(|err| (error!(?err, "failed to send event")))
+                    .ok();
+                return;
+            },
+            result = self.client.send_message(state) => {
+                result
+            }
+        };
+        self.handle_send_message_output(
+            result,
+            request_start_time.elapsed(),
+            tx,
+            cancel_token,
+            request_start_time,
+            request_start_time_sys,
+        )
+        .await;
+    }
+
+    async fn handle_send_message_output(
+        &self,
+        res: Result<SendMessageOutput, ConverseStreamError>,
+        request_duration: Duration,
+        tx: mpsc::Sender<std::result::Result<StreamEvent, StreamError>>,
+        token: CancellationToken,
+        request_start_time: Instant,
+        request_start_time_sys: SystemTime,
+    ) {
+        match res {
+            Ok(output) => {
+                info!(?request_duration, "rts request sent successfully");
+                let request_id = output.request_id().map(String::from);
+                ResponseParser::new(
+                    output,
+                    tx,
+                    token,
+                    request_id,
+                    request_start_time,
+                    request_start_time_sys,
+                )
+                .consume_stream()
+                .await;
+            },
+            Err(err) => {
+                error!(?err, ?request_duration, "failed to send rts request");
+                let kind = match err.kind {
+                    ConverseStreamErrorKind::Throttling => StreamErrorKind::Throttling,
+                    ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other(err.to_string()),
+                    ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::Throttling,
+                    ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
+                    ConverseStreamErrorKind::Unknown => StreamErrorKind::Other(err.to_string()),
+                };
+                let request_id = err.request_id.clone();
+                tx.send(Err(StreamError::new(kind)
+                    .set_original_request_id(request_id)
+                    .set_original_status_code(err.status_code)
+                    .with_source(Arc::new(err))))
+                    .await
+                    .map_err(|err| error!(?err, "failed to send stream event"))
+                    .ok();
+            },
+        }
+    }
+
+    fn make_conversation_state(
+        &self,
+        mut messages: Vec<Message>,
+        tool_specs: Option<Vec<ToolSpec>>,
+        _system_prompt: Option<String>,
+    ) -> Result<ConversationState, String> {
+        debug!(?messages, ?tool_specs, "creating converation state");
+        let tools = tool_specs.map(|v| {
+            v.into_iter()
+                .map(Into::<ToolSpecification>::into)
+                .map(Into::into)
+                .collect()
+        });
+
+        // Creates the next user message to send.
+        let user_input_message = match messages.pop() {
+            Some(m) if m.role == Role::User => {
+                let content = m.text();
+                let (tool_results, images) = extract_tool_results_and_images(&m);
+                let user_input_message_context = Some(UserInputMessageContext {
+                    env_state: None,
+                    git_state: None,
+                    tool_results,
+                    tools,
+                });
+
+                UserInputMessage {
+                    content,
+                    user_input_message_context,
+                    user_intent: None,
+                    images,
+                    model_id: self.model_id.clone(),
+                }
+            },
+            Some(m) => return Err(format!("Next message must be from the user, instead found: {}", m.role)),
+            None => return Err("Empty conversation".to_string()),
+        };
+
+        let history = messages
+            .into_iter()
+            .map(|m| match m.role {
+                Role::User => {
+                    let content = m.text();
+                    let (tool_results, _) = extract_tool_results_and_images(&m);
+                    let ctx = if tool_results.is_some() {
+                        Some(UserInputMessageContext {
+                            env_state: None,
+                            git_state: None,
+                            tool_results,
+                            tools: None,
+                        })
+                    } else {
+                        None
+                    };
+                    let msg = UserInputMessage {
+                        content,
+                        user_input_message_context: ctx,
+                        user_intent: None,
+                        images: None,
+                        model_id: None,
+                    };
+                    rts::ChatMessage::UserInputMessage(msg)
+                },
+                Role::Assistant => {
+                    let msg = rts::AssistantResponseMessage {
+                        message_id: m.id.clone(),
+                        content: m.text(),
+                        tool_uses: m.tool_uses().map(|v| v.into_iter().map(Into::into).collect()),
+                    };
+                    rts::ChatMessage::AssistantResponseMessage(msg)
+                },
+            })
+            .collect();
+
+        Ok(ConversationState {
+            conversation_id: Some(self.conversation_id.clone()),
+            user_input_message,
+            history: Some(history),
+        })
+    }
+}
+
+/// Annoyingly, the RTS API doesn't allow images as tool use results, so we have to extract tool
+/// results and image content separately.
+fn extract_tool_results_and_images(message: &Message) -> (Option<Vec<rts::ToolResult>>, Option<Vec<rts::ImageBlock>>) {
+    use crate::agent::agent_loop::types::{
+        ContentBlock,
+        ToolResultContentBlock,
+    };
+
+    let mut images = Vec::new();
+    let mut tool_results = Vec::new();
+    for item in &message.content {
+        match item {
+            ContentBlock::ToolResult(block) => {
+                let tool_use_id = block.tool_use_id.clone();
+                let status = block.status.into();
+                let mut content = Vec::new();
+                for c in &block.content {
+                    match c {
+                        ToolResultContentBlock::Text(t) => content.push(rts::ToolResultContentBlock::Text(t.clone())),
+                        ToolResultContentBlock::Json(v) => {
+                            content.push(rts::ToolResultContentBlock::Json(serde_value_to_document(v.clone())));
+                        },
+                        ToolResultContentBlock::Image(img) => images.push(rts::ImageBlock {
+                            format: img.format.into(),
+                            source: img.source.clone().into(),
+                        }),
+                    }
+                }
+                tool_results.push(rts::ToolResult {
+                    tool_use_id,
+                    content,
+                    status,
+                });
+            },
+            ContentBlock::Image(img) => images.push(rts::ImageBlock {
+                format: img.format.into(),
+                source: img.source.clone().into(),
+            }),
+            _ => (),
+        }
+    }
+
+    (
+        if tool_results.is_empty() {
+            None
+        } else {
+            Some(tool_results)
+        },
+        if images.is_empty() { None } else { Some(images) },
+    )
+}
+
+impl Model for RtsModel {
+    fn stream(
+        &self,
+        messages: Vec<Message>,
+        tool_specs: Option<Vec<ToolSpec>>,
+        system_prompt: Option<String>,
+        cancel_token: CancellationToken,
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
+        let (tx, rx) = mpsc::channel(16);
+
+        let self_clone = self.clone();
+        let cancel_token_clone = cancel_token.clone();
+
+        tokio::spawn(async move {
+            self_clone
+                .converse_stream_rts(tx, cancel_token_clone, messages, tool_specs, system_prompt)
+                .await;
+        });
+
+        Box::pin(RtsDropWrapper {
+            receiver_stream: ReceiverStream::new(rx),
+            cancel_token,
+        })
+    }
+}
+
+#[derive(Debug)]
+struct RtsDropWrapper {
+    receiver_stream: ReceiverStream<Result<StreamEvent, StreamError>>,
+    cancel_token: CancellationToken,
+}
+
+impl Stream for RtsDropWrapper {
+    type Item = Result<StreamEvent, StreamError>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
+        Pin::new(&mut self.receiver_stream).poll_next(cx)
+    }
+}
+
+impl Drop for RtsDropWrapper {
+    fn drop(&mut self) {
+        // TODO - I don't think RtsDropWrapper is really required here.
+        //
+        // Cancelling is already handled by agent_loop correctly (when AgentLoop is dropped, the
+        // cancel token will call cancel)
+        // debug!("rts stream dropped, cancelling");
+        // self.cancel_token.cancel();
+    }
+}
+
+#[derive(Debug)]
+struct ResponseParser {
+    /// The response to consume and parse into a sequence of [StreamEvent].
+    response: SendMessageOutput,
+    event_tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+    cancel_token: CancellationToken,
+
+    /// Buffer that is continually written to during stream parsing.
+    buf: Vec<Result<StreamEvent, StreamError>>,
+
+    // parse state
+    /// Whether or not the stream has completed.
+    ended: bool,
+    /// Buffer to hold the next event in [SendMessageOutput].
+    peek: Option<ChatResponseStream>,
+    /// Whether or not we are currently receiving tool use delta events. Tuple of
+    /// `Some((tool_use_id, name))` if true, [None] otherwise.
+    parsing_tool_use: Option<(String, String)>,
+    /// Whether or not the response stream contained at least one tool use.
+    tool_use_seen: bool,
+
+    // metadata fields
+    request_id: Option<String>,
+    /// Time immediately before sending the request.
+    request_start_time: Instant,
+    /// Time immediately before sending the request, as a [SystemTime].
+    request_start_time_sys: SystemTime,
+    time_to_first_chunk: Option<Duration>,
+    time_between_chunks: Vec<Duration>,
+    /// Total size (in bytes) of the response received so far.
+    received_response_size: usize,
+}
+
+impl ResponseParser {
+    fn new(
+        response: SendMessageOutput,
+        event_tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+        cancel_token: CancellationToken,
+        request_id: Option<String>,
+        request_start_time: Instant,
+        request_start_time_sys: SystemTime,
+    ) -> Self {
+        Self {
+            response,
+            event_tx,
+            cancel_token,
+            ended: false,
+            peek: None,
+            parsing_tool_use: None,
+            tool_use_seen: false,
+            buf: vec![],
+            time_to_first_chunk: None,
+            time_between_chunks: vec![],
+            request_id,
+            request_start_time,
+            request_start_time_sys,
+            received_response_size: 0,
+        }
+    }
+
+    /// Consumes the entire response stream, emitting [StreamEvent] and [StreamError], or exiting
+    /// early if [Self::cancel_token] is cancelled.
+    ///
+    /// In either case, metadata regarding the stream is emitted with a [StreamEvent::Metadata].
+    async fn consume_stream(mut self) {
+        loop {
+            if self.ended {
+                debug!("rts response stream has ended");
+                return;
+            }
+
+            let token = self.cancel_token.clone();
+            tokio::select! {
+                _ = token.cancelled() => {
+                    debug!("rts response parser was cancelled");
+                    self.buf.push(Ok(self.make_metadata()));
+                    self.buf.push(Err(StreamError::new(StreamErrorKind::Interrupted)));
+                    self.drain_buf_events().await;
+                    return;
+                },
+                res = self.fill_streamevent_buf() => {
+                    match res {
+                        Ok(_) => {
+                            self.drain_buf_events().await;
+                        },
+                        Err(err) => {
+                            self.buf.push(Ok(self.make_metadata()));
+                            self.buf.push(Err(self.recv_error_to_stream_error(err)));
+                            self.drain_buf_events().await;
+                            return;
+                        },
+                    }
+                }
+            }
+        }
+    }
+
+    async fn drain_buf_events(&mut self) {
+        for ev in self.buf.drain(..) {
+            self.event_tx
+                .send(ev)
+                .await
+                .map_err(|err| error!(?err, "failed to send event to channel"))
+                .ok();
+        }
+    }
+
+    /// Consumes the next token(s) in the response stream, filling [Self::buf] with the stream
+    /// events to be emitted, sequentially.
+    ///
+    /// We only consume the stream in parts in order to ensure we exit in a timely manner if
+    /// [Self::cancel_token] is cancelled.
+    async fn fill_streamevent_buf(&mut self) -> Result<(), RecvError> {
+        // First, handle discarding AssistantResponseEvent's that immediately precede a
+        // CodeReferenceEvent.
+        let peek = self.peek().await?;
+        if let Some(ChatResponseStream::AssistantResponseEvent { content }) = peek {
+            // Cloning to bypass borrowchecker stuff.
+            let content = content.clone();
+            self.next().await?;
+            match self.peek().await? {
+                Some(ChatResponseStream::CodeReferenceEvent(_)) => (),
+                _ => {
+                    self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+                        delta: ContentBlockDelta::Text(content),
+                        content_block_index: None,
+                    })));
+                },
+            }
+        }
+
+        loop {
+            match self.next().await? {
+                Some(ev) => match ev {
+                    ChatResponseStream::AssistantResponseEvent { content } => {
+                        self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+                            delta: ContentBlockDelta::Text(content),
+                            content_block_index: None,
+                        })));
+                        return Ok(());
+                    },
+                    ChatResponseStream::ToolUseEvent {
+                        tool_use_id,
+                        name,
+                        input,
+                        stop,
+                    } => {
+                        self.tool_use_seen = true;
+                        if self.parsing_tool_use.is_none() {
+                            self.parsing_tool_use = Some((tool_use_id.clone(), name.clone()));
+                            self.buf.push(Ok(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
+                                content_block_start: Some(ContentBlockStart::ToolUse(ToolUseBlockStart {
+                                    tool_use_id,
+                                    name,
+                                })),
+                                content_block_index: None,
+                            })));
+                        }
+                        if let Some(input) = input {
+                            self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
+                                delta: ContentBlockDelta::ToolUse(ToolUseBlockDelta { input }),
+                                content_block_index: None,
+                            })));
+                        }
+                        if let Some(true) = stop {
+                            self.buf.push(Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                                content_block_index: None,
+                            })));
+                            self.parsing_tool_use = None;
+                        }
+                        return Ok(());
+                    },
+                    other => {
+                        warn!(?other, "received unexpected rts event");
+                    },
+                },
+                None => {
+                    self.ended = true;
+                    self.buf.push(Ok(StreamEvent::MessageStop(MessageStopEvent {
+                        stop_reason: if self.tool_use_seen {
+                            StopReason::ToolUse
+                        } else {
+                            StopReason::EndTurn
+                        },
+                    })));
+                    self.buf.push(Ok(self.make_metadata()));
+                    return Ok(());
+                },
+            }
+        }
+    }
+
+    async fn peek(&mut self) -> Result<Option<&ChatResponseStream>, RecvError> {
+        if self.peek.is_some() {
+            return Ok(self.peek.as_ref());
+        }
+        match self.next().await? {
+            Some(v) => {
+                self.peek = Some(v);
+                Ok(self.peek.as_ref())
+            },
+            None => Ok(None),
+        }
+    }
+
+    async fn next(&mut self) -> Result<Option<ChatResponseStream>, RecvError> {
+        if let Some(ev) = self.peek.take() {
+            return Ok(Some(ev));
+        }
+
+        trace!("Attempting to recv next event");
+        let start = Instant::now();
+        let result = self.response.recv().await;
+        let duration = Instant::now().duration_since(start);
+        match result {
+            Ok(ev) => {
+                trace!(?ev, "Received new event");
+
+                // Track metadata about the chunk.
+                self.time_to_first_chunk
+                    .get_or_insert_with(|| self.request_start_time.elapsed());
+                self.time_between_chunks.push(duration);
+                self.received_response_size += ev.as_ref().map(|e| e.len()).unwrap_or_default();
+
+                Ok(ev)
+            },
+            Err(err) => {
+                error!(?err, "failed to receive the next event");
+                if duration.as_secs() >= 59 {
+                    Err(RecvError::Timeout { source: err, duration })
+                } else {
+                    Err(RecvError::Other { source: err })
+                }
+            },
+        }
+    }
+
+    fn recv_error_to_stream_error(&self, err: RecvError) -> StreamError {
+        match err {
+            RecvError::Timeout { source, duration } => StreamError::new(StreamErrorKind::StreamTimeout { duration })
+                .set_original_request_id(self.request_id.clone())
+                .with_source(Arc::new(source)),
+            RecvError::Other { source } => StreamError::new(StreamErrorKind::Other(format!(
+                "An unexpected error occurred during the response stream: {:?}",
+                source
+            )))
+            .set_original_request_id(self.request_id.clone())
+            .with_source(Arc::new(source)),
+        }
+    }
+
+    fn make_metadata(&self) -> StreamEvent {
+        StreamEvent::Metadata(MetadataEvent {
+            metrics: Some(MetadataMetrics {
+                time_to_first_chunk: self.time_to_first_chunk,
+                time_between_chunks: if self.time_between_chunks.is_empty() {
+                    None
+                } else {
+                    Some(self.time_between_chunks.clone())
+                },
+                response_stream_len: self.received_response_size as u32,
+            }),
+            // if only rts gave usage metrics...
+            usage: None,
+            service: Some(MetadataService {
+                request_id: self.response.request_id().map(String::from),
+                status_code: None,
+            }),
+        })
+    }
+}
+
+#[derive(Debug)]
+enum RecvError {
+    Timeout { source: ApiClientError, duration: Duration },
+    Other { source: ApiClientError },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::agent_loop::types::ContentBlock;
+
+    /// Manual test to verify cancellation succeeds in a timely manner.
+    #[tokio::test]
+    async fn test_rts_cancel() {
+        let rts = RtsModel::new(ApiClient::new().await.unwrap(), "test".to_string(), None);
+        let cancel_token = CancellationToken::new();
+        let token_clone = cancel_token.clone();
+        tokio::spawn(async move {
+            let mut stream = rts.stream(
+                vec![Message::new(
+                    Role::User,
+                    vec![ContentBlock::Text(
+                        "Hello, can you explain how to write hello world in c, python, and rust?".to_string(),
+                    )],
+                    None,
+                )],
+                None,
+                None,
+                token_clone,
+            );
+            while let Some(ev) = stream.next().await {
+                println!("{:?}", ev);
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        let now = Instant::now();
+        println!("cancelling");
+        cancel_token.cancel();
+        println!("cancelled: {}s", now.elapsed().as_secs_f32());
+        println!("sleeping for 1s before exiting");
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+}
