@@ -116,6 +116,86 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+/// Tests the /agent edit command to edit a existing agent with specified name
+/// Verifies agent edit process, file system operations, and cleanup
+#[test]
+#[cfg(all(feature = "agent", feature = "sanity"))]
+fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing /agent edit --name <agent_name> command... | Description: Tests the <code> /agent edit</code> command to edit a existing agent. Verifies agent edit process, file system operations, and cleanup");
+   
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let agent_name = format!("test_demo_agent_{}", timestamp);
+    
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let create_response = chat.execute_command(&format!("/agent create --name {}", agent_name))?;
+    
+    let save_response = chat.execute_command(":wq")?;
+    
+    
+    assert!(save_response.contains("Agent") && save_response.contains(&agent_name) && save_response.contains("has been created successfully"), "Missing agent creation success message");
+    println!("✅ Found agent creation success message");
+
+    // Edit the agent description
+    let edit_response = chat.execute_command(&format!("/agent edit --name {}", agent_name))?;
+    
+    println!("📝 Agent edit response: {} bytes", edit_response.len());
+    println!("📝 EDIT RESPONSE:");
+    println!("{}", edit_response);
+    println!("📝 END EDIT RESPONSE");
+
+
+    // Use line-based editing
+    chat.execute_command("3G")?; // Go to line 2 (assuming description is there)
+    chat.execute_command("S")?; // Delete line and enter insert mode
+    chat.execute_command("  \"description\": \"Updated agent description for testing\",")?;
+    chat.execute_command("\u{1b}")?; // ESC
+
+    let save_edit = chat.execute_command(":wq")?;
+    
+    println!("📝 Edit save response: {} bytes", save_edit.len());
+    println!("📝 EDIT SAVE RESPONSE:"); 
+    println!("{}", save_edit);
+    println!("📝 END EDIT SAVE RESPONSE");
+
+    assert!(save_edit.contains("Agent") && save_edit.contains(&agent_name) && save_edit.contains("has been edited successfully"), "Missing agent update success message");
+    println!("✅ Found agent update success message");
+    
+    let whoami_response = chat.execute_command("!whoami")?;
+    
+    println!("📝 Whoami response: {} bytes", whoami_response.len());
+    println!("📝 WHOAMI RESPONSE:");
+    println!("{}", whoami_response);
+    println!("📝 END WHOAMI RESPONSE");
+    
+    let lines: Vec<&str> = whoami_response.lines().collect();
+    let username = lines.iter()
+        .find(|line| !line.starts_with("!") && !line.starts_with(">") && !line.trim().is_empty())
+        .expect("Failed to get username from whoami command")
+        .trim();
+    println!("✅ Current username: {}", username);
+    
+    let agent_path = format!("/Users/{}/.aws/amazonq/cli-agents/{}.json", username, agent_name);
+    println!("✅ Agent path: {}", agent_path);
+    
+    if std::path::Path::new(&agent_path).exists() {
+        std::fs::remove_file(&agent_path)?;
+        println!("✅ Agent file deleted: {}", agent_path);
+    } else {
+        println!("⚠️ Agent file not found at: {}", agent_path);
+    }
+    
+    assert!(!std::path::Path::new(&agent_path).exists(), "Agent file should be deleted");
+    println!("✅ Agent deletion verified");
+    
+    //Release the lock before cleanup
+    drop(chat);
+ 
+    Ok(())
+}
 /// Tests the /agent create command without required arguments to verify error handling
 /// Verifies proper error messages, usage information, and help suggestions
 #[test]
