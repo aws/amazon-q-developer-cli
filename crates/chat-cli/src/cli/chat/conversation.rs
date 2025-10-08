@@ -315,12 +315,6 @@ impl ConversationState {
     /// Replaces tangent entries with a single summary entry in-place
     pub fn exit_tangent_mode_with_compact(&mut self) {
         if let Some(checkpoint) = self.tangent_state.take() {
-            tracing::debug!(
-                "exit_tangent_mode_with_compact: tangent history len={}, latest_summary present={}",
-                self.history.len(),
-                self.latest_summary.is_some()
-            );
-            
             // Capture the tangent's latest_summary (created by compact)
             let tangent_summary = self.latest_summary.clone();
 
@@ -330,15 +324,9 @@ impl ConversationState {
             self.transcript = checkpoint.main_transcript;
             self.latest_summary = checkpoint.main_latest_summary;
             self.valid_history_range = (0, self.history.len());
-            
-            tracing::debug!(
-                "exit_tangent_mode_with_compact: after restore, main history len={}",
-                self.history.len()
-            );
 
             // Add summary as a history entry at the tangent position
             if let Some((summary, metadata)) = tangent_summary {
-                tracing::debug!("exit_tangent_mode_with_compact: adding tangent summary as history entry");
                 let summary_entry = HistoryEntry {
                     user: UserMessage::new_prompt("[Tangent conversation]".to_string(), None),
                     assistant: AssistantMessage::new_response(None, summary),
