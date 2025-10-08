@@ -607,44 +607,55 @@ impl ChatSession {
         mcp_enabled: bool,
         wrap: Option<WrapMode>,
     ) -> Result<Self> {
-        // Reload prior conversation
+        // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
-        let previous_conversation = std::env::current_dir()
-            .ok()
-            .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
-            .flatten();
-
-        // Only restore conversations where there were actual messages.
-        // Prevents edge case where user clears conversation then exits without chatting.
-        let conversation = match resume_conversation
-            && previous_conversation
-                .as_ref()
-                .is_some_and(|cs| !cs.history().is_empty())
-        {
+        let conversation = match resume_conversation {
             true => {
-                let mut cs = previous_conversation.unwrap();
-                existing_conversation = true;
-                input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
-                cs.tool_manager = tool_manager;
-                if let Some(profile) = cs.current_profile() {
-                    if agents.switch(profile).is_err() {
-                        execute!(
-                            stderr,
-                            StyledText::error_fg(),
-                            style::Print("Error"),
-                            StyledText::reset(),
-                            style::Print(format!(
-                                ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
-                            ))
-                        )?;
-                        let _ = agents.switch(DEFAULT_AGENT_NAME);
-                    }
+                let previous_conversation = std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
+                    .flatten();
+
+                // Only restore conversations where there were actual messages
+                // Prevents edge case where user clears conversation then exits without chatting.
+                match previous_conversation.filter(|cs| !cs.history().is_empty()) {
+                    Some(mut cs) => {
+                        existing_conversation = true;
+                        input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
+                        cs.tool_manager = tool_manager;
+                        if let Some(profile) = cs.current_profile() {
+                            if agents.switch(profile).is_err() {
+                                execute!(
+                                    stderr,
+                                    StyledText::error_fg(),
+                                    style::Print("Error"),
+                                    StyledText::reset(),
+                                    style::Print(format!(
+                                        ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
+                                    ))
+                                )?;
+                                let _ = agents.switch(DEFAULT_AGENT_NAME);
+                            }
+                        }
+                        cs.agents = agents;
+                        cs.mcp_enabled = mcp_enabled;
+                        cs.update_state(true).await;
+                        cs.enforce_tool_use_history_invariants();
+                        cs
+                    },
+                    None => {
+                        ConversationState::new(
+                            conversation_id,
+                            agents,
+                            tool_config,
+                            tool_manager,
+                            model_id,
+                            os,
+                            mcp_enabled,
+                        )
+                        .await
+                    },
                 }
-                cs.agents = agents;
-                cs.mcp_enabled = mcp_enabled;
-                cs.update_state(true).await;
-                cs.enforce_tool_use_history_invariants();
-                cs
             },
             false => {
                 ConversationState::new(
