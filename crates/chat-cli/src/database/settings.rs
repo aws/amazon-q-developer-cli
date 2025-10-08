@@ -88,6 +88,8 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Port for OAuth redirect/callback server (number, default: 7777)")]
+    ChatOAuthRedirectPort,
 }
 
 impl AsRef<str> for Setting {
@@ -129,6 +131,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::ChatOAuthRedirectPort => "chat.oauthRedirectPort",
         }
     }
 }
@@ -178,6 +181,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "chat.oauthRedirectPort" => Ok(Self::ChatOAuthRedirectPort),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

@@ -56,6 +56,7 @@ use tracing::{
 use url::Url;
 
 use super::messenger::Messenger;
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::{
     DirectoryError,
@@ -293,6 +294,7 @@ impl<'a> HttpServiceBuilder<'a> {
                                     reg_full_path.clone(),
                                     scopes,
                                     messenger,
+                                    os,
                                 )
                                 .await?;
 
@@ -453,6 +455,7 @@ async fn get_auth_manager(
     reg_full_path: PathBuf,
     scopes: &[String],
     messenger: &dyn Messenger,
+    os: &Os,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
@@ -474,7 +477,7 @@ async fn get_auth_manager(
         _ => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, messenger).await?;
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, messenger, os).await?;
 
             // Client registration is done in [start_authorization]
             // If we have gotten past that point that means we have the info to persist the
@@ -510,8 +513,16 @@ async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     scopes: &[String],
     messenger: &dyn Messenger,
+    os: &Os,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
-    let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    // Get port from settings, default to 7777 if not configured
+    let port = os
+        .database
+        .settings
+        .get_int(Setting::ChatOAuthRedirectPort)
+        .map_or(7777, |p| p as u16);
+
+    let socket_addr = SocketAddr::from(([127, 0, 0, 1], port));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<(String, String)>();
 
