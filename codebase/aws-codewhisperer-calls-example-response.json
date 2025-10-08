@@ -1,0 +1,46 @@
+{
+  "responseMetadata": {
+    "requestId": "12345678-1234-1234-1234-123456789012",
+    "httpStatusCode": 200,
+    "httpHeaders": {
+      "content-type": "application/x-amz-json-1.1",
+      "date": "Thu, 26 Sep 2024 06:14:08 GMT",
+      "x-amzn-requestid": "12345678-1234-1234-1234-123456789012"
+    }
+  },
+  "stream": [
+    {
+      "assistantResponseEvent": {
+        "content": "I'll help you create a Python function to calculate Fibonacci numbers. Here's an efficient implementation:\n\n"
+      }
+    },
+    {
+      "assistantResponseEvent": {
+        "content": "```python\ndef fibonacci(n):\n    \"\"\"\n    Calculate the nth Fibonacci number using dynamic programming.\n    \n    Args:\n        n (int): The position in the Fibonacci sequence (0-indexed)\n    \n    Returns:\n        int: The nth Fibonacci number\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    \n    if n <= 1:\n        return n\n    \n    # Use dynamic programming for efficiency\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    \n    return b\n```\n\n"
+      }
+    },
+    {
+      "assistantResponseEvent": {
+        "content": "This implementation has O(n) time complexity and O(1) space complexity. Would you like me to create this file for you?"
+      }
+    },
+    {
+      "toolUseEvent": {
+        "toolUse": {
+          "toolUseId": "tool_01XYZ789ABC123DEF456GHI",
+          "name": "fs_write",
+          "input": {
+            "path": "fibonacci.py",
+            "content": "def fibonacci(n):\n    \"\"\"\n    Calculate the nth Fibonacci number using dynamic programming.\n    \n    Args:\n        n (int): The position in the Fibonacci sequence (0-indexed)\n    \n    Returns:\n        int: The nth Fibonacci number\n    \"\"\"\n    if n < 0:\n        raise ValueError(\"n must be non-negative\")\n    \n    if n <= 1:\n        return n\n    \n    # Use dynamic programming for efficiency\n    a, b = 0, 1\n    for _ in range(2, n + 1):\n        a, b = b, a + b\n    \n    return b\n\n\nif __name__ == \"__main__\":\n    # Test the function\n    for i in range(10):\n        print(f\"fibonacci({i}) = {fibonacci(i)}\")\n"
+          }
+        }
+      }
+    },
+    {
+      "messageStopEvent": {
+        "stopReason": "tool_use",
+        "messageId": "msg_02DEF456GHI789JKL012MNO"
+      }
+    }
+  ]
+}

@@ -27,6 +27,7 @@ async-trait.workspace = true
 aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-runtime.workspace = true
+aws-sdk-bedrockruntime = "1.106.0"
 aws-sdk-cognitoidentity.workspace = true
 aws-sdk-ssooidc.workspace = true
 aws-smithy-async.workspace = true

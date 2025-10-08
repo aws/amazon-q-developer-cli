@@ -1,0 +1,82 @@
+{
+  "conversationState": {
+    "conversationId": "550e8400-e29b-41d4-a716-446655440000",
+    "currentMessage": {
+      "userInputMessage": {
+        "content": "Can you help me write a Python function to calculate fibonacci numbers?",
+        "userInputMessageContext": {
+          "envState": {
+            "operatingSystem": "macOS",
+            "architecture": "arm64",
+            "shell": "zsh",
+            "currentWorkingDirectory": "/Users/developer/projects/fibonacci-calc"
+          },
+          "gitState": {
+            "repositoryName": "fibonacci-calc",
+            "branch": "main",
+            "hasUncommittedChanges": true
+          },
+          "tools": [
+            {
+              "toolSpec": {
+                "name": "fs_write",
+                "description": "Create or modify files",
+                "inputSchema": {
+                  "type": "object",
+                  "properties": {
+                    "path": {"type": "string"},
+                    "content": {"type": "string"}
+                  }
+                }
+              }
+            },
+            {
+              "toolSpec": {
+                "name": "execute_bash",
+                "description": "Execute bash commands",
+                "inputSchema": {
+                  "type": "object", 
+                  "properties": {
+                    "command": {"type": "string"}
+                  }
+                }
+              }
+            }
+          ],
+          "toolResults": []
+        },
+        "userIntent": null,
+        "images": null,
+        "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+        "origin": "CLI"
+      }
+    },
+    "chatTriggerType": "Manual",
+    "history": [
+      {
+        "userInputMessage": {
+          "content": "Hello, I'm working on a Python project and need some help.",
+          "userInputMessageContext": {
+            "envState": {
+              "operatingSystem": "macOS",
+              "architecture": "arm64",
+              "shell": "zsh",
+              "currentWorkingDirectory": "/Users/developer/projects/fibonacci-calc"
+            },
+            "tools": []
+          },
+          "modelId": "anthropic.claude-3-sonnet-20240229-v1:0",
+          "origin": "CLI"
+        }
+      },
+      {
+        "assistantResponseMessage": {
+          "messageId": "msg_01ABC123DEF456GHI789JKL",
+          "content": "Hello! I'd be happy to help you with your Python project. What specific assistance do you need?",
+          "toolUses": null
+        }
+      }
+    ]
+  },
+  "profileArn": "arn:aws:codewhisperer:us-east-1:123456789012:profile/developer-profile"
+}
