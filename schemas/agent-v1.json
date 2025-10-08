@@ -94,6 +94,22 @@
               "offline_access"
             ]
           },
+          "oauth": {
+            "description": "OAuth configuration for this server",
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "redirectUri": {
+                "description": "Custom redirect URI for OAuth flow (e.g., \"127.0.0.1:7778\"). If not specified, a random available port will be assigned by the OS",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
           "command": {
             "description": "The command string used to initialize the mcp server",
             "type": "string",

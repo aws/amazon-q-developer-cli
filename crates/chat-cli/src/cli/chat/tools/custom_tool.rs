@@ -46,6 +46,15 @@ impl Default for TransportType {
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct OAuthConfig {
+    /// Custom redirect URI for OAuth flow (e.g., "127.0.0.1:7778")
+    /// If not specified, a random available port will be assigned by the OS
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_uri: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
     /// The transport type to use for communication with the MCP server
     #[serde(default)]
@@ -59,6 +68,9 @@ pub struct CustomToolConfig {
     /// Scopes with which oauth is done
     #[serde(default = "get_default_scopes")]
     pub oauth_scopes: Vec<String>,
+    /// OAuth configuration for this server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
     /// The command string used to initialize the mcp server
     #[serde(default)]
     pub command: String,
