@@ -55,7 +55,9 @@ pub async fn get_cognito_credentials_send(
             "no credentials from get_credentials_for_identity",
         ))?;
 
-    database.set_credentials_entry(&credentials).ok();
+    if let Err(e) = database.set_credentials_entry(&credentials) {
+        tracing::warn!("Failed to save credentials to database: {}", e);
+    }
 
     let Some(access_key_id) = credentials.access_key_id else {
         return Err(CredentialsError::provider_error("access key id not found"));

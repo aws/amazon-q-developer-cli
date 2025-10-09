@@ -413,7 +413,9 @@ impl ConversationState {
         });
 
         if let Ok(cwd) = std::env::current_dir() {
-            os.database.set_conversation_by_path(cwd, self).ok();
+            if let Err(e) = os.database.set_conversation_by_path(cwd, self) {
+                tracing::error!("Failed to save conversation to database: {}", e);
+            }
         }
     }
 
