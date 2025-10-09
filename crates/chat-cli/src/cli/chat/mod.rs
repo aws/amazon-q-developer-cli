@@ -1,4 +1,5 @@
 use crate::theme::StyledText;
+use crate::util::ui::should_send_structured_message;
 pub mod cli;
 mod consts;
 pub mod context;
@@ -41,10 +42,16 @@ use std::time::{
 
 use amzn_codewhisperer_client::types::SubscriptionStatus;
 use chat_cli_ui::conduit::{
+    ConduitError,
     ControlEnd,
     DestinationStderr,
     DestinationStdout,
     get_legacy_conduits,
+};
+use chat_cli_ui::protocol::{
+    Event,
+    ToolCallRejection,
+    ToolCallStart,
 };
 use clap::{
     Args,
@@ -492,6 +499,8 @@ pub enum ChatError {
     CompactHistoryFailure,
     #[error("Failed to swap to agent: {0}")]
     AgentSwapError(eyre::Report),
+    #[error(transparent)]
+    Conduit(#[from] ConduitError),
 }
 
 impl ChatError {
@@ -509,6 +518,7 @@ impl ChatError {
             ChatError::NonInteractiveToolApproval => None,
             ChatError::CompactHistoryFailure => None,
             ChatError::AgentSwapError(_) => None,
+            ChatError::Conduit(_) => None,
         }
     }
 }
@@ -528,6 +538,7 @@ impl ReasonCode for ChatError {
             ChatError::NonInteractiveToolApproval => "NonInteractiveToolApproval".to_string(),
             ChatError::CompactHistoryFailure => "CompactHistoryFailure".to_string(),
             ChatError::AgentSwapError(_) => "AgentSwapError".to_string(),
+            ChatError::Conduit(_) => "ConduitError".to_string(),
         }
     }
 }
@@ -609,12 +620,14 @@ impl ChatSession {
         // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
 
-        let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) = get_legacy_conduits();
+        let should_send_structured_msg = should_send_structured_message(os);
+        let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
+            get_legacy_conduits(should_send_structured_msg);
 
         tokio::task::spawn_blocking(move || {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(stderr, stdout) {
+            if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });
@@ -2200,18 +2213,26 @@ impl ChatSession {
                     acc
                 });
 
-                execute!(
-                    self.stderr,
-                    StyledText::error_fg(),
-                    style::Print("Command "),
-                    StyledText::warning_fg(),
-                    style::Print(&tool.name),
-                    StyledText::error_fg(),
-                    style::Print(" is rejected because it matches one or more rules on the denied list:"),
-                    style::Print(formatted_set),
-                    style::Print("\n"),
-                    StyledText::reset(),
-                )?;
+                if self.stderr.should_send_structured_event {
+                    execute!(
+                        self.stderr,
+                        StyledText::error_fg(),
+                        style::Print("Command "),
+                        StyledText::warning_fg(),
+                        style::Print(&tool.name),
+                        StyledText::error_fg(),
+                        style::Print(" is rejected because it matches one or more rules on the denied list:"),
+                        style::Print(formatted_set),
+                        style::Print("\n"),
+                        StyledText::reset(),
+                    )?;
+                } else {
+                    let event = ToolCallRejection {
+                        tool_call_id: tool.id.clone(),
+                        reason: formatted_set,
+                    };
+                    self.stderr.send(Event::ToolCallRejection(event))?;
+                }
 
                 return Ok(ChatState::HandleInput {
                     input: format!(
@@ -3243,34 +3264,49 @@ impl ChatSession {
     async fn print_tool_description(&mut self, os: &Os, tool_index: usize, trusted: bool) -> Result<(), ChatError> {
         let tool_use = &self.tool_uses[tool_index];
 
-        queue!(
-            self.stdout,
-            StyledText::emphasis_fg(),
-            style::Print(format!(
-                "🛠️  Using tool: {}{}",
-                tool_use.tool.display_name(),
-                if trusted { " (trusted)".dark_green() } else { "".reset() }
-            )),
-            StyledText::reset(),
-        )?;
-        if let Tool::Custom(ref tool) = tool_use.tool {
+        if !self.stderr.should_send_structured_event {
             queue!(
                 self.stdout,
-                StyledText::reset(),
-                style::Print(" from mcp server "),
                 StyledText::emphasis_fg(),
-                style::Print(&tool.server_name),
+                style::Print(format!(
+                    "🛠️  Using tool: {}{}",
+                    tool_use.tool.display_name(),
+                    if trusted { " (trusted)".dark_green() } else { "".reset() }
+                )),
                 StyledText::reset(),
             )?;
-        }
+            if let Tool::Custom(ref tool) = tool_use.tool {
+                queue!(
+                    self.stdout,
+                    StyledText::reset(),
+                    style::Print(" from mcp server "),
+                    StyledText::emphasis_fg(),
+                    style::Print(&tool.server_name),
+                    StyledText::reset(),
+                )?;
+            }
 
-        execute!(
-            self.stdout,
-            style::Print("\n"),
-            style::Print(CONTINUATION_LINE),
-            style::Print("\n"),
-            style::Print(TOOL_BULLET)
-        )?;
+            execute!(
+                self.stdout,
+                style::Print("\n"),
+                style::Print(CONTINUATION_LINE),
+                style::Print("\n"),
+                style::Print(TOOL_BULLET)
+            )?;
+        } else {
+            let tool_call_start = ToolCallStart {
+                tool_call_id: tool_use.id.clone(),
+                tool_call_name: tool_use.name.clone(),
+                mcp_server_name: if let Tool::Custom(ref tool) = tool_use.tool {
+                    Some(tool.server_name.clone())
+                } else {
+                    None
+                },
+                is_trusted: trusted,
+                parent_message_id: None,
+            };
+            self.stdout.send(Event::ToolCallStart(tool_call_start))?;
+        }
 
         tool_use
             .tool

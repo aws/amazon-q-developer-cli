@@ -1,13 +1,29 @@
 use std::io::Write as _;
 use std::marker::PhantomData;
 
-use crossterm::execute;
-use crossterm::style::Print;
+use crossterm::style::{
+    self,
+    Print,
+    Stylize,
+};
+use crossterm::{
+    execute,
+    queue,
+};
 
+use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
     Event,
     LegacyPassThroughOutput,
+    ToolCallStart,
 };
+
+const TOOL_BULLET: &str = " ● ";
+const CONTINUATION_LINE: &str = " ⋮ ";
+const PURPOSE_ARROW: &str = " ↳ ";
+const SUCCESS_TICK: &str = " ✓ ";
+const ERROR_EXCLAMATION: &str = " ❗ ";
+const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {
@@ -39,6 +55,7 @@ impl ViewEnd {
     /// This blocks the current thread and consumes the [ViewEnd]
     pub fn into_legacy_mode(
         self,
+        theme_source: impl ThemeSource,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
@@ -140,50 +157,59 @@ impl ViewEnd {
                     );
                 },
                 Event::ToolCallStart(tool_call_start) => {
-                    let parent_info = tool_call_start
-                        .parent_message_id
-                        .as_ref()
-                        .map(|p| format!(" (Parent: {})", p))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
+                    let ToolCallStart {
+                        tool_call_name,
+                        is_trusted,
+                        mcp_server_name,
+                        ..
+                    } = tool_call_start;
+
+                    queue!(
+                        stdout,
+                        theme_source.emphasis_fg(),
                         Print(format!(
-                            "Tool call started - ID: {}, Tool: {}{}\n",
-                            tool_call_start.tool_call_id, tool_call_start.tool_call_name, parent_info
-                        ))
-                    );
+                            "🛠️  Using tool: {}{}",
+                            tool_call_name,
+                            if is_trusted {
+                                " (trusted)".dark_green()
+                            } else {
+                                "".reset()
+                            }
+                        )),
+                        theme_source.reset(),
+                    )?;
+
+                    if let Some(server_name) = mcp_server_name {
+                        queue!(
+                            stdout,
+                            theme_source.reset(),
+                            Print(" from mcp server "),
+                            theme_source.emphasis_fg(),
+                            Print(&server_name),
+                            theme_source.reset(),
+                        )?;
+                    }
+
+                    execute!(
+                        stdout,
+                        Print("\n"),
+                        Print(CONTINUATION_LINE),
+                        Print("\n"),
+                        Print(TOOL_BULLET)
+                    )?;
                 },
                 Event::ToolCallArgs(tool_call_args) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Tool call args ({}): {}\n",
-                            tool_call_args.tool_call_id, tool_call_args.delta
-                        ))
-                    );
+                    if let serde_json::Value::String(content) = tool_call_args.delta {
+                        execute!(stdout, style::Print(content))?;
+                    } else {
+                        execute!(stdout, style::Print(tool_call_args.delta))?;
+                    }
                 },
-                Event::ToolCallEnd(tool_call_end) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Tool call ended - ID: {}\n", tool_call_end.tool_call_id))
-                    );
+                Event::ToolCallEnd(_tool_call_end) => {
+                    // noop for now
                 },
-                Event::ToolCallResult(tool_call_result) => {
-                    let role_info = tool_call_result
-                        .role
-                        .as_ref()
-                        .map(|r| format!(" Role: {:?}", r))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Tool call result - Message: {}, Tool: {}{}\nContent: {}\n",
-                            tool_call_result.message_id,
-                            tool_call_result.tool_call_id,
-                            role_info,
-                            tool_call_result.content
-                        ))
-                    );
+                Event::ToolCallResult(_tool_call_result) => {
+                    // noop for now (currently we don't show the tool call results to users)
                 },
                 Event::StateSnapshot(state_snapshot) => {
                     let _ = execute!(
@@ -307,6 +333,7 @@ impl ViewEnd {
                         ))
                     );
                 },
+                Event::ToolCallRejection(tool_call_rejection) => todo!(),
             }
         }
 
@@ -330,6 +357,10 @@ pub struct ControlEnd<T> {
     pub current_event: Option<Event>,
     /// Used by the control to send state changes to the view
     pub sender: std::sync::mpsc::Sender<Event>,
+    /// Flag indicating whether structured events should be sent through the conduit.
+    /// When true, the control end will send structured event data in addition to
+    /// raw pass-through content, enabling richer communication between layers.
+    pub should_send_structured_event: bool,
     /// Phantom data to specify the destination type for pass-through operations.
     /// This allows the type system to track whether this ControlEnd is configured
     /// for stdout or stderr output without runtime overhead.
@@ -341,6 +372,7 @@ impl<T> Clone for ControlEnd<T> {
         Self {
             current_event: self.current_event.clone(),
             sender: self.sender.clone(),
+            should_send_structured_event: self.should_send_structured_event,
             pass_through_destination: PhantomData,
         }
     }
@@ -365,6 +397,7 @@ impl ControlEnd<DestinationStderr> {
     pub fn as_stdout(&self) -> ControlEnd<DestinationStdout> {
         ControlEnd {
             current_event: self.current_event.clone(),
+            should_send_structured_event: self.should_send_structured_event,
             sender: self.sender.clone(),
             pass_through_destination: PhantomData,
         }
@@ -375,6 +408,7 @@ impl ControlEnd<DestinationStdout> {
     pub fn as_stderr(&self) -> ControlEnd<DestinationStderr> {
         ControlEnd {
             current_event: self.current_event.clone(),
+            should_send_structured_event: self.should_send_structured_event,
             sender: self.sender.clone(),
             pass_through_destination: PhantomData,
         }
@@ -447,10 +481,15 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
     }
 }
 
-/// Creates a set of legacy conduits for communication between view and control layers.
+/// Creates a set of legacy conduits forcommunication between view and control layers.
 ///
 /// This function establishes the communication channels needed for the legacy mode operation,
 /// where the view layer and control layer can exchange events and byte data.
+///
+/// # Parameters
+///
+/// - `should_send_structured_event`: Flag indicating whether structured events should be sent
+///   through the conduit
 ///
 /// # Returns
 ///
@@ -463,9 +502,11 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
 /// # Example
 ///
 /// ```rust
-/// let (view_end, input_receiver, stderr_control, stdout_control) = get_legacy_conduits();
+/// let (view_end, input_receiver, stderr_control, stdout_control) = get_legacy_conduits(true);
 /// ```
-pub fn get_legacy_conduits() -> (
+pub fn get_legacy_conduits(
+    should_send_structured_event: bool,
+) -> (
     ViewEnd,
     InputReceiver,
     ControlEnd<DestinationStderr>,
@@ -482,11 +523,13 @@ pub fn get_legacy_conduits() -> (
         byte_rx,
         ControlEnd {
             current_event: None,
+            should_send_structured_event,
             sender: state_tx.clone(),
             pass_through_destination: PhantomData,
         },
         ControlEnd {
             current_event: None,
+            should_send_structured_event,
             sender: state_tx,
             pass_through_destination: PhantomData,
         },

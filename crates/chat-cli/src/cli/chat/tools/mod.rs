@@ -21,6 +21,14 @@ use std::path::{
     PathBuf,
 };
 
+use chat_cli_ui::conduit::{
+    ControlEnd,
+    DestinationStdout,
+};
+use chat_cli_ui::protocol::{
+    Event,
+    ToolCallArgs,
+};
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -159,20 +167,51 @@ impl Tool {
     }
 
     /// Queues up a tool's intention in a human readable format
-    pub async fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
-        match self {
-            Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
-            Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
-            Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
-            Tool::UseAws(use_aws) => use_aws.queue_description(output),
-            Tool::Custom(custom_tool) => custom_tool.queue_description(output),
-            Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
-            Tool::Introspect(_) => Introspect::queue_description(output),
-            Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
-            Tool::Thinking(thinking) => thinking.queue_description(output),
-            Tool::Todo(_) => Ok(()),
-            Tool::Delegate(delegate) => delegate.queue_description(output),
-        }
+    pub async fn queue_description(&self, os: &Os, output: &mut ControlEnd<DestinationStdout>) -> Result<()> {
+        if output.should_send_structured_event {
+            let mut buf = Vec::<u8>::new();
+
+            match self {
+                Tool::FsRead(fs_read) => fs_read.queue_description(os, &mut buf).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(os, &mut buf),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(&mut buf),
+                Tool::UseAws(use_aws) => use_aws.queue_description(&mut buf),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(&mut buf),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(&mut buf),
+                Tool::Introspect(_) => Introspect::queue_description(&mut buf),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(os, &mut buf).await,
+                Tool::Thinking(thinking) => thinking.queue_description(&mut buf),
+                Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(&mut buf),
+            }?;
+
+            let tool_call_args = ToolCallArgs {
+                // We'll ignore this for now
+                tool_call_id: Default::default(),
+                delta: {
+                    let sanitized = strip_ansi_escapes::strip_str(String::from_utf8_lossy(&buf));
+                    serde_json::Value::String(sanitized)
+                },
+            };
+
+            output.send(Event::ToolCallArgs(tool_call_args))?;
+        } else {
+            match self {
+                Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
+                Tool::UseAws(use_aws) => use_aws.queue_description(output),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(output),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
+                Tool::Introspect(_) => Introspect::queue_description(output),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
+                Tool::Thinking(thinking) => thinking.queue_description(output),
+                Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(output),
+            }?;
+        };
+
+        Ok(())
     }
 
     /// Validates the tool with the arguments supplied

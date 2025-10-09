@@ -135,6 +135,9 @@ pub struct ToolCallStart {
     pub tool_call_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_message_id: Option<String>,
+    // bespoke fields
+    pub mcp_server_name: Option<String>,
+    pub is_trusted: bool,
 }
 
 /// Represents a chunk of argument data for a tool call
@@ -161,6 +164,14 @@ pub struct ToolCallResult {
     pub content: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub role: Option<MessageRole>,
+}
+
+/// Signifies a rejection to a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallRejection {
+    pub tool_call_id: String,
+    pub reason: String,
 }
 
 // ============================================================================
@@ -345,6 +356,8 @@ pub enum Event {
     ToolCallArgs(ToolCallArgs),
     ToolCallEnd(ToolCallEnd),
     ToolCallResult(ToolCallResult),
+    // bespoke variant
+    ToolCallRejection(ToolCallRejection),
 
     // State Management Events
     StateSnapshot(StateSnapshot),
@@ -354,6 +367,7 @@ pub enum Event {
     // Special Events
     Raw(Raw),
     Custom(Custom),
+    // bespoke variant
     LegacyPassThrough(LegacyPassThroughOutput),
 
     // Draft Events - Activity Events
@@ -394,6 +408,7 @@ impl Event {
             Event::ToolCallArgs(_) => "toolCallArgs",
             Event::ToolCallEnd(_) => "toolCallEnd",
             Event::ToolCallResult(_) => "toolCallResult",
+            Event::ToolCallRejection(_) => "toolCallRejection",
 
             // State Management Events
             Event::StateSnapshot(_) => "stateSnapshot",
