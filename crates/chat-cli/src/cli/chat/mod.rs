@@ -96,6 +96,10 @@ use parser::{
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use spinners::{
     Spinner,
     Spinners,
@@ -560,9 +564,9 @@ impl From<parser::RecvError> for ChatError {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserTurnMetadata {
-    pub continuation_id: String,
+    continuation_id: String,
     /// [RequestMetadata] about the ongoing operation.
     requests: Vec<RequestMetadata>,
 }
@@ -573,6 +577,7 @@ impl Default for UserTurnMetadata {
     }
 }
 
+/// Enum used to store metadata about user turns
 impl UserTurnMetadata {
     pub fn new() -> Self {
         Self {
@@ -583,10 +588,6 @@ impl UserTurnMetadata {
 
     pub fn continuation_id(&self) -> &str {
         &self.continuation_id
-    }
-
-    pub fn push_request(&mut self, request: RequestMetadata) {
-        self.requests.push(request);
     }
 
     pub fn add_request(&mut self, request: RequestMetadata) {
@@ -637,8 +638,6 @@ pub struct ChatSession {
     /// Used to track the time taken from initially prompting the user to tool execute
     /// completion.
     tool_turn_start_time: Option<Instant>,
-    /// [RequestMetadata] about the ongoing operation.
-    user_turn_request_metadata: UserTurnMetadata,
     /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
     tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
     /// State used to keep track of tool use relation
@@ -752,7 +751,6 @@ impl ChatSession {
             spinner: None,
             conversation,
             tool_uses: vec![],
-            user_turn_request_metadata: UserTurnMetadata::new(),
             pending_tool_index: None,
             tool_turn_start_time: None,
             tool_use_telemetry_events: HashMap::new(),
@@ -824,7 +822,7 @@ impl ChatSession {
                         // Wait for handle_response to finish handling the ctrlc.
                         tokio::time::sleep(Duration::from_millis(5)).await;
                         if let Some(request_metadata) = request_metadata.lock().await.take() {
-                            self.user_turn_request_metadata.add_request(request_metadata);
+                            self.conversation.user_turn_metadata.add_request(request_metadata);
                         }
                         self.send_chat_telemetry(os, TelemetryResult::Cancelled, None, None, None, true).await;
                         Err(ChatError::Interrupted { tool_uses: None })
@@ -1395,7 +1393,7 @@ impl ChatSession {
                 // Wait for handle_response to finish handling the ctrlc.
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 if let Some(request_metadata) = request_metadata.lock().await.take() {
-                    self.user_turn_request_metadata.push_request(request_metadata);
+                    self.conversation.user_turn_metadata.add_request(request_metadata);
                 }
                 self.send_chat_telemetry(
                     os,
@@ -1540,7 +1538,9 @@ impl ChatSession {
                         message,
                         request_metadata,
                     })) => {
-                        self.user_turn_request_metadata.add_request(request_metadata.clone());
+                        self.conversation
+                            .user_turn_metadata
+                            .add_request(request_metadata.clone());
                         break (message.content().to_string(), request_metadata);
                     },
                     Some(Ok(_)) => (),
@@ -1549,7 +1549,8 @@ impl ChatSession {
                             self.failed_request_ids.push(request_id.clone());
                         };
 
-                        self.user_turn_request_metadata
+                        self.conversation
+                            .user_turn_metadata
                             .add_request(err.request_metadata.clone());
 
                         let (reason, reason_desc) = get_error_reason(&err);
@@ -1686,7 +1687,7 @@ impl ChatSession {
                 // Wait for handle_response to finish handling the ctrlc.
                 tokio::time::sleep(Duration::from_millis(5)).await;
                 if let Some(request_metadata) = request_metadata.lock().await.take() {
-                    self.user_turn_request_metadata.push_request(request_metadata);
+                    self.conversation.user_turn_metadata.add_request(request_metadata);
                 }
                 self.send_chat_telemetry(
                     os,
@@ -1788,7 +1789,9 @@ impl ChatSession {
                         message,
                         request_metadata,
                     })) => {
-                        self.user_turn_request_metadata.push_request(request_metadata.clone());
+                        self.conversation
+                            .user_turn_metadata
+                            .add_request(request_metadata.clone());
                         break (message.content().to_string(), request_metadata);
                     },
                     Some(Ok(_)) => (),
@@ -1797,8 +1800,9 @@ impl ChatSession {
                             self.failed_request_ids.push(request_id.clone());
                         }
 
-                        self.user_turn_request_metadata
-                            .push_request(err.request_metadata.clone());
+                        self.conversation
+                            .user_turn_metadata
+                            .add_request(err.request_metadata.clone());
 
                         let (reason, reason_desc) = get_error_reason(&err);
                         self.send_chat_telemetry(
@@ -2191,7 +2195,7 @@ impl ChatSession {
                 self.conversation.set_next_user_message(user_input).await;
             }
             // For tool approval responses (y/n/t), preserve active turn
-            let preserve_turn = is_simple_tool_interaction(&input_trimmed);
+            let preserve_turn = is_tool_permission_interaction(&input_trimmed);
             if !preserve_turn {
                 self.reset_user_turn();
             }
@@ -2740,7 +2744,7 @@ impl ChatSession {
                                 error!(?request_id, ?message, "Encountered an unexpected model response");
                             }
                             self.conversation.push_assistant_message(os, message, Some(rm.clone()));
-                            self.user_turn_request_metadata.push_request(rm);
+                            self.conversation.user_turn_metadata.add_request(rm);
                             ended = true;
                         },
                     }
@@ -2750,8 +2754,9 @@ impl ChatSession {
                         self.failed_request_ids.push(request_id.clone());
                     };
 
-                    self.user_turn_request_metadata
-                        .push_request(recv_error.request_metadata.clone());
+                    self.conversation
+                        .user_turn_metadata
+                        .add_request(recv_error.request_metadata.clone());
                     let (reason, reason_desc) = get_error_reason(&recv_error);
                     let status_code = recv_error.status_code();
 
@@ -2967,14 +2972,12 @@ impl ChatSession {
 
                 // Display continuation ID if available and debug mode is enabled
                 if std::env::var_os("Q_SHOW_CONTINUATION_IDS").is_some() {
-                    if let Some(continuation_id) = self.conversation.current_continuation_id() {
-                        queue!(
-                            self.stdout,
-                            style::SetForegroundColor(Color::DarkGrey),
-                            style::Print(format!("({})\n", continuation_id)),
-                            style::SetForegroundColor(Color::Reset)
-                        )?;
-                    }
+                    queue!(
+                        self.stdout,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print(format!("({})\n", self.conversation.current_continuation_id())),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
                 }
 
                 for (i, citation) in &state.citations {
@@ -3458,13 +3461,8 @@ impl ChatSession {
     /// This should *always* be called whenever a new user prompt is sent to the backend. Note
     /// that includes tool use rejections.
     fn reset_user_turn(&mut self) {
-        info!(?self.user_turn_request_metadata, "Resetting the current user turn");
-        self.user_turn_request_metadata = UserTurnMetadata::new();
-        // Keeps track of current continuation id.
-        // Maintained in conversation state for convenience
-        // as it needs to be propagated all way till the API.
-        self.conversation
-            .set_current_continuation_id(self.user_turn_request_metadata.continuation_id().into());
+        info!(?self.conversation.user_turn_metadata, "Resetting the current user turn");
+        self.conversation.user_turn_metadata = UserTurnMetadata::new();
     }
 
     /// Sends an "codewhispererterminal_addChatMessage" telemetry event.
@@ -3488,7 +3486,7 @@ impl ChatSession {
         is_end_turn: bool,
     ) {
         // Get metadata for the most recent request.
-        let md = self.user_turn_request_metadata.last_request();
+        let md = self.conversation.user_turn_metadata.last_request();
         let conversation_id = self.conversation.conversation_id().to_owned();
         let data = ChatAddedMessageParams {
             request_id: md.as_ref().and_then(|md| md.request_id.clone()),
@@ -3525,7 +3523,7 @@ impl ChatSession {
             .ok();
 
         if is_end_turn {
-            let mds = &self.user_turn_request_metadata;
+            let mds = &self.conversation.user_turn_metadata;
 
             // Get the user turn duration.
             let start_time = mds.first_request().map(|md| md.request_start_timestamp_ms);
@@ -3569,7 +3567,7 @@ impl ChatSession {
         reason_desc: Option<String>,
         status_code: Option<u16>,
     ) {
-        let md = self.user_turn_request_metadata.last_request();
+        let md = self.conversation.user_turn_metadata.last_request();
         os.telemetry
             .send_response_error(
                 &os.database,
@@ -3758,7 +3756,7 @@ fn is_reject_response(input: &str) -> bool {
 
 /// Check if input is any simple tool interaction response (y/Y/n/N/t/T)
 /// These responses should preserve continuation ID
-fn is_simple_tool_interaction(input: &str) -> bool {
+fn is_tool_permission_interaction(input: &str) -> bool {
     is_trust_response(input) || is_accept_response(input) || is_reject_response(input)
 }
 

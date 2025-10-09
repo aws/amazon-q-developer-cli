@@ -28,6 +28,7 @@ use tracing::{
     warn,
 };
 
+use super::UserTurnMetadata;
 use super::cli::compact::CompactStrategy;
 use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
@@ -149,8 +150,9 @@ pub struct ConversationState {
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tangent_state: Option<ConversationCheckpoint>,
-    /// Keeps track of current conversation id.
-    current_continuation_id: Option<String>,
+    /// Metadata about the ongoing user turn operation
+    #[serde(default)]
+    pub user_turn_metadata: UserTurnMetadata,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,7 +216,7 @@ impl ConversationState {
             checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
-            current_continuation_id: None,
+            user_turn_metadata: UserTurnMetadata::new(),
         }
     }
 
@@ -381,12 +383,8 @@ impl ConversationState {
         self.next_message = None;
     }
 
-    pub fn set_current_continuation_id(&mut self, continuation_id: String) {
-        self.current_continuation_id = Some(continuation_id);
-    }
-
-    pub fn current_continuation_id(&self) -> Option<&str> {
-        self.current_continuation_id.as_deref()
+    pub fn current_continuation_id(&self) -> &str {
+        self.user_turn_metadata.continuation_id()
     }
 
     pub async fn set_next_user_message(&mut self, input: String) {
@@ -625,7 +623,7 @@ impl ConversationState {
             dropped_context_files,
             tools: &self.tools,
             model_id: self.model_info.as_ref().map(|m| m.model_id.as_str()),
-            continuation_id: self.current_continuation_id.as_deref(),
+            continuation_id: Some(self.user_turn_metadata.continuation_id()),
         })
     }
 
@@ -731,7 +729,7 @@ impl ConversationState {
                 .unwrap_or(UserMessage::new_prompt(summary_content, None)) // should not happen
                 .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
             history: Some(flatten_history(history.iter())),
-            agent_continuation_id: self.current_continuation_id.clone(),
+            agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
 
@@ -790,7 +788,7 @@ Return only the JSON configuration, no additional text.",
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
             history: Some(flatten_history(history.iter())),
-            agent_continuation_id: self.current_continuation_id.clone(),
+            agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
 
