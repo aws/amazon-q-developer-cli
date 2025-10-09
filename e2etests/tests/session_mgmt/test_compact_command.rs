@@ -9,7 +9,7 @@ fn test_compact_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
      
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -125,7 +125,7 @@ fn test_compact_truncate_true_command() -> Result<(), Box<dyn std::error::Error>
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
      
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -165,7 +165,7 @@ fn test_compact_truncate_false_command() -> Result<(), Box<dyn std::error::Error
     let session = q_chat_helper::get_chat_session();
      let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
      
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -204,14 +204,14 @@ fn test_show_summary() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is DL?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -251,14 +251,14 @@ fn test_max_message_truncate_true() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is DL?")?;
+    let response = chat.execute_command("What is DL explain in 100 chrectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -301,14 +301,14 @@ fn test_max_message_truncate_false() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is DL?")?;
+    let response = chat.execute_command("What is DL explain in 100 chrectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -348,14 +348,14 @@ fn test_max_message_length_invalid() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is DL?")?;
+    let response = chat.execute_command("What is DL explain in 100 chrectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -389,14 +389,14 @@ fn test_compact_messages_to_exclude_command() -> Result<(), Box<dyn std::error::
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
      
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is fibonacci?")?;
+    let response = chat.execute_command("What is fibonacci explain in 100 charectors?")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -436,14 +436,14 @@ fn test_compact_messages_to_exclude_show_sumary_command() -> Result<(), Box<dyn 
 
     chat.execute_command("/clear")?;
     chat.execute_command("y")?;
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command("What is AWS explain 100 chaarectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
 
-    let response = chat.execute_command("What is fibonacci?")?;
+    let response = chat.execute_command("What is fibonacci explain in 100 charectors")?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

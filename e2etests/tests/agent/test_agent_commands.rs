@@ -131,7 +131,7 @@ fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
     
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    let create_response = chat.execute_command(&format!("/agent create --name {}", agent_name))?;
+    chat.execute_command(&format!("/agent create --name {}", agent_name))?;
     
     let save_response = chat.execute_command(":wq")?;
     
