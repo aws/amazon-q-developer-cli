@@ -1,4 +1,7 @@
 use rmcp::model::{
+    CreateElicitationRequestParam,
+    CreateElicitationResult,
+    ElicitationAction,
     ListPromptsResult,
     ListResourceTemplatesResult,
     ListResourcesResult,
@@ -57,6 +60,13 @@ pub trait Messenger: std::fmt::Debug + Send + Sync + 'static {
     /// This function is used to deliver OAuth links that users need to visit for authentication
     async fn send_oauth_link(&self, link: String) -> MessengerResult;
 
+    /// Handles an elicitation request from an MCP server
+    /// This function presents the elicitation request to the user and returns their response
+    async fn handle_elicitation_request(
+        &self,
+        request: CreateElicitationRequestParam,
+    ) -> core::result::Result<CreateElicitationResult, MessengerError>;
+
     /// Signals to the orchestrator that a server has started initializing
     async fn send_init_msg(&self) -> MessengerResult;
 
@@ -113,6 +123,17 @@ impl Messenger for NullMessenger {
 
     async fn send_oauth_link(&self, _link: String) -> MessengerResult {
         Ok(())
+    }
+
+    async fn handle_elicitation_request(
+        &self,
+        _request: CreateElicitationRequestParam,
+    ) -> core::result::Result<CreateElicitationResult, MessengerError> {
+        // Default implementation declines all elicitation requests
+        Ok(CreateElicitationResult {
+            action: ElicitationAction::Decline,
+            content: None,
+        })
     }
 
     async fn send_init_msg(&self) -> MessengerResult {

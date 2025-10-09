@@ -1268,6 +1268,286 @@ fn spawn_display_task(
     }
 }
 
+async fn handle_elicitation(
+    server_name: &str, 
+    request: rmcp::model::CreateElicitationRequestParam
+) -> rmcp::model::CreateElicitationResult {
+    use tokio::signal;
+    use tokio::select;
+    
+    let ctrl_c = signal::ctrl_c();
+    
+    select! {
+        result = handle_elicitation_ui(server_name, request) => result,
+        _ = ctrl_c => rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        }
+    }
+}
+
+async fn handle_elicitation_ui(
+    server_name: &str,
+    request: rmcp::model::CreateElicitationRequestParam,
+) -> rmcp::model::CreateElicitationResult {
+    use std::io::Write;
+    use crossterm::{execute, style};
+    use tokio::io::{AsyncBufReadExt, BufReader};
+    
+    // Validate schema before proceeding
+    if let Err(_) = validate_elicitation_schema(&serde_json::Value::Object(request.requested_schema.clone())) {
+        eprintln!("Error: Invalid schema provided by MCP server {}", server_name);
+        return rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        };
+    }
+    
+    // Display server identification and request message
+    if let Err(e) = execute!(
+        std::io::stdout(),
+        style::Print("\nMCP server "),
+        style::SetForegroundColor(crossterm::style::Color::Magenta),
+        style::Print(server_name),
+        style::SetForegroundColor(crossterm::style::Color::Reset),
+        style::Print(" is requesting information\n")
+    ) {
+        eprintln!("Error displaying elicitation request: {}", e);
+        return rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        };
+    }
+    
+    println!("{}", request.message);
+    println!();
+
+    let mut content = std::collections::HashMap::new();
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin);
+
+    // Handle property input with validation
+    if let Some(properties) = request.requested_schema.get("properties").and_then(|p| p.as_object()) {
+        for (key, property) in properties {
+            print!("  {}: ", key);
+            if let Err(e) = std::io::stdout().flush() {
+                eprintln!("Error flushing stdout: {}", e);
+                return rmcp::model::CreateElicitationResult {
+                    action: rmcp::model::ElicitationAction::Cancel,
+                    content: None,
+                };
+            }
+
+            let mut input = String::new();
+            if let Err(e) = reader.read_line(&mut input).await {
+                eprintln!("Error reading user input: {}", e);
+                return rmcp::model::CreateElicitationResult {
+                    action: rmcp::model::ElicitationAction::Cancel,
+                    content: None,
+                };
+            }
+            let input = input.trim();
+
+            if !input.is_empty() {
+                // Validate input against property schema
+                match validate_property_input(input, property) {
+                    Ok(validated_value) => {
+                        content.insert(key.clone(), validated_value);
+                    },
+                    Err(e) => {
+                        eprintln!("Invalid input for {}: {}", key, e);
+                        return rmcp::model::CreateElicitationResult {
+                            action: rmcp::model::ElicitationAction::Cancel,
+                            content: None,
+                        };
+                    }
+                }
+            }
+        }
+    }
+
+    // Display confirmation prompt
+    if let Err(e) = execute!(
+        std::io::stdout(),
+        style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+        style::Print("\nSubmit this information? ["),
+        style::SetForegroundColor(crossterm::style::Color::Green),
+        style::Print("y"),
+        style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+        style::Print("/"),
+        style::SetForegroundColor(crossterm::style::Color::Green),
+        style::Print("n"),
+        style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+        style::Print("/"),
+        style::SetForegroundColor(crossterm::style::Color::Green),
+        style::Print("c"),
+        style::SetForegroundColor(crossterm::style::Color::DarkGrey),
+        style::Print("]: "),
+        style::SetForegroundColor(crossterm::style::Color::Reset),
+    ) {
+        eprintln!("Error displaying confirmation prompt: {}", e);
+        return rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        };
+    }
+
+    if let Err(e) = std::io::stdout().flush() {
+        eprintln!("Error flushing stdout: {}", e);
+        return rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        };
+    }
+
+    let mut confirmation = String::new();
+    if let Err(e) = reader.read_line(&mut confirmation).await {
+        eprintln!("Error reading confirmation: {}", e);
+        return rmcp::model::CreateElicitationResult {
+            action: rmcp::model::ElicitationAction::Cancel,
+            content: None,
+        };
+    }
+
+    let action = match confirmation.trim().to_lowercase().as_str() {
+        "y" | "yes" => rmcp::model::ElicitationAction::Accept,
+        "n" | "no" => rmcp::model::ElicitationAction::Decline,
+        "c" | "cancel" => rmcp::model::ElicitationAction::Cancel,
+        "" => rmcp::model::ElicitationAction::Cancel,
+        _ => rmcp::model::ElicitationAction::Cancel,
+    };
+
+    let content_value = if matches!(action, rmcp::model::ElicitationAction::Accept) {
+        match serde_json::to_value(content) {
+            Ok(value) => Some(value),
+            Err(e) => {
+                eprintln!("Error serializing content: {}", e);
+                return rmcp::model::CreateElicitationResult {
+                    action: rmcp::model::ElicitationAction::Cancel,
+                    content: None,
+                };
+            }
+        }
+    } else {
+        None
+    };
+
+    rmcp::model::CreateElicitationResult {
+        action,
+        content: content_value,
+    }
+}
+
+fn validate_elicitation_schema(schema: &serde_json::Value) -> Result<(), String> {
+    // Basic schema validation for MCP elicitation
+    if !schema.is_object() {
+        return Err("Schema must be an object".to_string());
+    }
+    
+    let schema_obj = schema.as_object().unwrap();
+    
+    // Check for required properties field
+    if !schema_obj.contains_key("properties") {
+        return Err("Schema must contain 'properties' field".to_string());
+    }
+    
+    let properties = schema_obj.get("properties")
+        .and_then(|p| p.as_object())
+        .ok_or("Properties must be an object")?;
+    
+    // Validate each property follows MCP restrictions
+    for (key, property) in properties {
+        validate_property_schema(key, property)?;
+    }
+    
+    Ok(())
+}
+
+fn validate_property_schema(key: &str, property: &serde_json::Value) -> Result<(), String> {
+    let prop_obj = property.as_object()
+        .ok_or_else(|| format!("Property '{}' must be an object", key))?;
+    
+    // Check for valid type
+    if let Some(type_val) = prop_obj.get("type") {
+        let type_str = type_val.as_str()
+            .ok_or_else(|| format!("Property '{}' type must be a string", key))?;
+        
+        match type_str {
+            "string" | "number" | "integer" | "boolean" => {},
+            _ => return Err(format!("Property '{}' has unsupported type '{}'", key, type_str)),
+        }
+    }
+    
+    Ok(())
+}
+
+fn validate_property_input(input: &str, property: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let prop_obj = property.as_object()
+        .ok_or("Property must be an object")?;
+    
+    let type_str = prop_obj.get("type")
+        .and_then(|t| t.as_str())
+        .unwrap_or("string");
+    
+    match type_str {
+        "string" => {
+            // Validate string format if specified
+            if let Some(format) = prop_obj.get("format").and_then(|f| f.as_str()) {
+                validate_string_format(input, format)?;
+            }
+            Ok(serde_json::Value::String(input.to_string()))
+        },
+        "number" => {
+            input.parse::<f64>()
+                .map(|n| serde_json::Value::Number(serde_json::Number::from_f64(n).unwrap()))
+                .map_err(|_| "Invalid number format".to_string())
+        },
+        "integer" => {
+            input.parse::<i64>()
+                .map(|n| serde_json::Value::Number(serde_json::Number::from(n)))
+                .map_err(|_| "Invalid integer format".to_string())
+        },
+        "boolean" => {
+            match input.to_lowercase().as_str() {
+                "true" | "yes" | "1" => Ok(serde_json::Value::Bool(true)),
+                "false" | "no" | "0" => Ok(serde_json::Value::Bool(false)),
+                _ => Err("Invalid boolean format (use true/false, yes/no, or 1/0)".to_string()),
+            }
+        },
+        _ => Ok(serde_json::Value::String(input.to_string())),
+    }
+}
+
+fn validate_string_format(input: &str, format: &str) -> Result<(), String> {
+    match format {
+        "email" => {
+            if !input.contains('@') || !input.contains('.') {
+                return Err("Invalid email format".to_string());
+            }
+        },
+        "uri" => {
+            if !input.starts_with("http://") && !input.starts_with("https://") {
+                return Err("Invalid URI format (must start with http:// or https://)".to_string());
+            }
+        },
+        "date" => {
+            // Basic date validation (YYYY-MM-DD)
+            if input.len() != 10 || input.chars().nth(4) != Some('-') || input.chars().nth(7) != Some('-') {
+                return Err("Invalid date format (use YYYY-MM-DD)".to_string());
+            }
+        },
+        "date-time" => {
+            // Basic datetime validation
+            if !input.contains('T') {
+                return Err("Invalid date-time format (use ISO 8601)".to_string());
+            }
+        },
+        _ => {}, // Unknown formats are allowed but not validated
+    }
+    Ok(())
+}
+
+
 /// This function spawns the orchestrator task that has the following responsibilities:
 /// - Listens for server driven events (see [UpdateEventMessage] for a list of current applicable
 ///   events). These are things such as tool list (because we fetch tools in the background), prompt
@@ -1710,6 +1990,12 @@ fn spawn_orchestrator_task(
                     }
                     prompts.retain(|_, bundles| !bundles.is_empty());
                     has_new_stuff.store(true, Ordering::Release);
+                },
+                UpdateEventMessage::ElicitationRequest { server_name, request, response_sender } => {
+                    tokio::spawn(async move {
+                        let result = handle_elicitation(&server_name, request).await;
+                        let _ = response_sender.send(result);
+                    });
                 },
             }
         }
