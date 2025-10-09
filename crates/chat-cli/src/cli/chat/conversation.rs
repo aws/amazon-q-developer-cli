@@ -28,7 +28,6 @@ use tracing::{
     warn,
 };
 
-use super::UserTurnMetadata;
 use super::cli::compact::CompactStrategy;
 use super::cli::hooks::HookOutput;
 use super::cli::model::context_window_tokens;
@@ -101,6 +100,57 @@ pub struct HistoryEntry {
 pub struct McpServerInfo {
     pub name: String,
     pub config: CustomToolConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserTurnMetadata {
+    continuation_id: String,
+    /// [RequestMetadata] about the ongoing operation.
+    requests: Vec<RequestMetadata>,
+}
+
+impl Default for UserTurnMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Enum used to store metadata about user turns
+impl UserTurnMetadata {
+    pub fn new() -> Self {
+        Self {
+            continuation_id: uuid::Uuid::new_v4().to_string(),
+            requests: vec![],
+        }
+    }
+
+    pub fn continuation_id(&self) -> &str {
+        &self.continuation_id
+    }
+
+    pub fn add_request(&mut self, request: RequestMetadata) {
+        self.requests.push(request);
+    }
+
+    pub fn first_request(&self) -> Option<RequestMetadata> {
+        self.requests.first().cloned()
+    }
+
+    pub fn last_request(&self) -> Option<RequestMetadata> {
+        self.requests.last().cloned()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RequestMetadata> {
+        self.requests.iter()
+    }
+
+    pub fn first(&self) -> Option<&RequestMetadata> {
+        self.requests.first()
+    }
+
+    pub fn last(&self) -> Option<&RequestMetadata> {
+        self.requests.last()
+    }
 }
 
 /// Tracks state related to an ongoing conversation.
