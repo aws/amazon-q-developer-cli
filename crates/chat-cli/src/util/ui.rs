@@ -6,9 +6,15 @@ use crossterm::style::{
     Attribute,
 };
 use eyre::Result;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::cli::feed::Feed;
 use crate::constants::ui_text;
+use crate::database::settings::Setting;
+use crate::os::Os;
 use crate::theme::StyledText;
 
 /// Render changelog content from feed.json with manual formatting
@@ -150,4 +156,19 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
         }
     }
     Ok(())
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UiMode {
+    #[default]
+    Structured,
+    Passthrough,
+    New,
+}
+
+pub fn should_send_structured_message(os: &Os) -> bool {
+    let ui_mode = os.database.settings.get_string(Setting::UiMode);
+
+    ui_mode.as_deref().is_some_and(|mode| mode == "structured")
 }
