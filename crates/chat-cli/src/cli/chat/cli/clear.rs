@@ -1,7 +1,6 @@
 use clap::Args;
 use crossterm::style::{
     self,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -14,6 +13,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::theme::StyledText;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -24,20 +24,20 @@ impl ClearArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         execute!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(
                 "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
             ),
             style::Print("["),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print("y"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("/"),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print("n"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("]:\n\n"),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             cursor::Show,
         )?;
 
@@ -60,9 +60,9 @@ impl ClearArgs {
 
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("\nConversation history cleared.\n\n"),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
         }
 

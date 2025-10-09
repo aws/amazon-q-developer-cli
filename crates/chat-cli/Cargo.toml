@@ -118,6 +118,7 @@ whoami.workspace = true
 winnow.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
+zip.workspace = true
 rmcp.workspace = true
 
 [target.'cfg(unix)'.dependencies]

@@ -13,13 +13,13 @@ use aws_smithy_types::config_bag::{
     Storable,
     StoreReplace,
 };
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
 };
 
 use crate::api_client::MAX_RETRY_DELAY_DURATION;
+use crate::theme::StyledText;
 
 #[derive(Debug, Clone)]
 pub struct DelayTrackingInterceptor {
@@ -39,9 +39,9 @@ impl DelayTrackingInterceptor {
         let mut stderr = std::io::stderr();
         let _ = execute!(
             stderr,
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("\nWARNING: "),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print(message),
             style::Print("\n")
         );

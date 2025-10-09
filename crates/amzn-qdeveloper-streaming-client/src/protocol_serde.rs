@@ -95,6 +95,10 @@ pub(crate) mod shape_message_metadata_event;
 
 pub(crate) mod shape_metadata_event;
 
+pub(crate) mod shape_metering_event;
+
+pub(crate) mod shape_reasoning_content_event;
+
 pub(crate) mod shape_supplementary_web_links_event;
 
 pub(crate) mod shape_tool_result_event;
@@ -118,6 +122,8 @@ pub(crate) mod shape_image_block;
 pub(crate) mod shape_intent_map;
 
 pub(crate) mod shape_interaction_component_entry_list;
+
+pub(crate) mod shape_reasoning_content;
 
 pub(crate) mod shape_reference;
 
@@ -154,6 +160,8 @@ pub(crate) mod shape_image_source;
 pub(crate) mod shape_intent_data;
 
 pub(crate) mod shape_interaction_component_entry;
+
+pub(crate) mod shape_reasoning_text;
 
 pub(crate) mod shape_shell_state;
 

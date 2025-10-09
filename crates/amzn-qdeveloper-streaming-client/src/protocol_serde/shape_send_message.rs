@@ -47,67 +47,6 @@ pub fn de_send_message_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "ServiceQuotaExceededError" => crate::operation::send_message::SendMessageError::ServiceQuotaExceededError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
-                output = crate::protocol_serde::shape_service_quota_exceeded_error::de_service_quota_exceeded_error_json_err(_response_body, output)
-                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::service_quota_exceeded_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
-            };
-            tmp
-        }),
-        "ThrottlingError" => crate::operation::send_message::SendMessageError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
-                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
-            };
-            tmp
-        }),
-        "DryRunOperationException" => {
-            crate::operation::send_message::SendMessageError::DryRunOperationError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::DryRunOperationErrorBuilder::default();
-                    output = crate::protocol_serde::shape_dry_run_operation_exception::de_dry_run_operation_exception_json_err(_response_body, output)
-                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
-                    let output = output.meta(generic);
-                    output.build()
-                };
-                if tmp.message.is_none() {
-                    tmp.message = _error_message;
-                }
-                tmp
-            })
-        },
-        "ValidationError" => crate::operation::send_message::SendMessageError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
-                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
-            };
-            tmp
-        }),
         "AccessDeniedError" => crate::operation::send_message::SendMessageError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -142,6 +81,23 @@ pub fn de_send_message_http_error(
             };
             tmp
         }),
+        "DryRunOperationException" => {
+            crate::operation::send_message::SendMessageError::DryRunOperationError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::DryRunOperationErrorBuilder::default();
+                    output = crate::protocol_serde::shape_dry_run_operation_exception::de_dry_run_operation_exception_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                    let output = output.meta(generic);
+                    output.build()
+                };
+                if tmp.message.is_none() {
+                    tmp.message = _error_message;
+                }
+                tmp
+            })
+        },
         "InternalServerError" => crate::operation::send_message::SendMessageError::InternalServerError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -168,6 +124,50 @@ pub fn de_send_message_http_error(
                     .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
                 let output = output.meta(generic);
                 crate::serde_util::resource_not_found_exception_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
+            };
+            tmp
+        }),
+        "ServiceQuotaExceededError" => crate::operation::send_message::SendMessageError::ServiceQuotaExceededError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                output = crate::protocol_serde::shape_service_quota_exceeded_error::de_service_quota_exceeded_error_json_err(_response_body, output)
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::service_quota_exceeded_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingError" => crate::operation::send_message::SendMessageError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
+                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::send_message::SendMessageError::unhandled)?
+            };
+            tmp
+        }),
+        "ValidationError" => crate::operation::send_message::SendMessageError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
+                        .map_err(crate::operation::send_message::SendMessageError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_error_correct_errors(output)
                     .build()
                     .map_err(crate::operation::send_message::SendMessageError::unhandled)?
             };

@@ -4,13 +4,9 @@ use clap::Subcommand;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
-use semantic_search_client::{
-    OperationStatus,
-    SystemStatus,
-};
+use semantic_search_client::SystemStatus;
 
 use crate::cli::chat::tools::sanitize_path_tool_arg;
 use crate::cli::chat::{
@@ -23,15 +19,21 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::knowledge_store::KnowledgeStore;
 
 /// Knowledge base management commands
 #[derive(Clone, Debug, PartialEq, Eq, Subcommand)]
 pub enum KnowledgeSubcommand {
-    /// Display the knowledge base contents
+    /// Display the knowledge base contents and background operations
     Show,
     /// Add a file or directory to knowledge base
     Add {
+        /// Name for the knowledge base entry
+        #[arg(long, short = 'n')]
+        name: String,
+        /// Path to file or directory to add
+        #[arg(long, short = 'p')]
         path: String,
         /// Include patterns (e.g., `**/*.ts`, `**/*.md`)
         #[arg(long, action = clap::ArgAction::Append)]
@@ -50,8 +52,6 @@ pub enum KnowledgeSubcommand {
     Update { path: String },
     /// Remove all knowledge base entries
     Clear,
-    /// Show background operation status
-    Status,
     /// Cancel a background operation
     Cancel {
         /// Operation ID to cancel (optional - cancels most recent if not provided)
@@ -88,11 +88,11 @@ impl KnowledgeSubcommand {
     fn write_feature_disabled_message(session: &mut ChatSession) -> Result<(), std::io::Error> {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("\nKnowledge tool is disabled. Enable it with: q settings chat.enableKnowledge true\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("💡 Your knowledge base data is preserved and will be available when re-enabled.\n\n"),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
     }
 
@@ -116,15 +116,15 @@ impl KnowledgeSubcommand {
                 }
             },
             KnowledgeSubcommand::Add {
+                name,
                 path,
                 include,
                 exclude,
                 index_type,
-            } => Self::handle_add(os, session, path, include, exclude, index_type).await,
+            } => Self::handle_add(os, session, name, path, include, exclude, index_type).await,
             KnowledgeSubcommand::Remove { path } => Self::handle_remove(os, session, path).await,
             KnowledgeSubcommand::Update { path } => Self::handle_update(os, session, path).await,
             KnowledgeSubcommand::Clear => Self::handle_clear(os, session).await,
-            KnowledgeSubcommand::Status => Self::handle_status(os, session).await,
             KnowledgeSubcommand::Cancel { operation_id } => {
                 Self::handle_cancel(os, session, operation_id.as_deref()).await
             },
@@ -139,33 +139,50 @@ impl KnowledgeSubcommand {
             queue!(
                 session.stderr,
                 style::SetAttribute(crossterm::style::Attribute::Bold),
-                style::SetForegroundColor(Color::Magenta),
+                StyledText::emphasis_fg(),
                 style::Print(format!("👤 Agent ({}):\n", agent)),
-                style::SetAttribute(crossterm::style::Attribute::Reset),
+                StyledText::reset_attributes(),
             )?;
 
             match KnowledgeStore::get_async_instance(os, Self::get_agent(session)).await {
                 Ok(store) => {
                     let store = store.lock().await;
                     let contexts = store.get_all().await.unwrap_or_default();
+                    let status_data = store.get_status_data().await.ok();
 
-                    if contexts.is_empty() {
+                    // Show contexts if any exist
+                    if !contexts.is_empty() {
+                        Self::format_knowledge_entries_with_indent(session, &contexts, "    ")?;
+                    }
+
+                    // Show operations if any exist
+                    if let Some(status) = &status_data {
+                        if !status.operations.is_empty() {
+                            let formatted_status = Self::format_status_display(status);
+                            if !formatted_status.is_empty() {
+                                queue!(session.stderr, style::Print(format!("{}\n", formatted_status)))?;
+                            }
+                        }
+                    }
+
+                    // Only show <none> if both contexts and operations are empty
+                    if contexts.is_empty()
+                        && (status_data.is_none() || status_data.as_ref().unwrap().operations.is_empty())
+                    {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("    <none>\n\n"),
-                            style::SetForegroundColor(Color::Reset)
+                            StyledText::reset(),
                         )?;
-                    } else {
-                        Self::format_knowledge_entries_with_indent(session, &contexts, "    ")?;
                     }
                 },
                 Err(_) => {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("    <none>\n\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 },
             }
@@ -185,39 +202,41 @@ impl KnowledgeSubcommand {
                 session.stderr,
                 style::Print(format!("{}📂 ", indent)),
                 style::SetAttribute(style::Attribute::Bold),
-                style::SetForegroundColor(Color::Grey),
+                StyledText::secondary_fg(),
                 style::Print(&ctx.name),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(format!(" ({})", &ctx.id[..8])),
-                style::SetAttribute(style::Attribute::Reset),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset_attributes(),
+                StyledText::reset(),
                 style::Print("\n")
             )?;
 
-            // Description line with original description
-            queue!(
-                session.stderr,
-                style::Print(format!("{}   ", indent)),
-                style::SetForegroundColor(Color::Grey),
-                style::Print(format!("{}\n", ctx.description)),
-                style::SetForegroundColor(Color::Reset)
-            )?;
+            // Path line if available (matching operation format)
+            if let Some(source_path) = &ctx.source_path {
+                queue!(
+                    session.stderr,
+                    style::Print(format!("{}   ", indent)),
+                    StyledText::secondary_fg(),
+                    style::Print(format!("{}\n", source_path)),
+                    StyledText::reset(),
+                )?;
+            }
 
             // Stats line with improved colors
             queue!(
                 session.stderr,
                 style::Print(format!("{}   ", indent)),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(format!("{} items", ctx.item_count)),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print(ctx.embedding_type.description()),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(format!("{}", ctx.updated_at.format("%m/%d %H:%M"))),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n\n")
             )?;
         }
@@ -237,6 +256,7 @@ impl KnowledgeSubcommand {
     async fn handle_add(
         os: &Os,
         session: &mut ChatSession,
+        name: &str,
         path: &str,
         include_patterns: &[String],
         exclude_patterns: &[String],
@@ -276,7 +296,7 @@ impl KnowledgeSubcommand {
                     .with_exclude_patterns(exclude)
                     .with_embedding_type(embedding_type_resolved);
 
-                match store.add(path, &sanitized_path.clone(), options).await {
+                match store.add(name, &sanitized_path.clone(), options).await {
                     Ok(message) => OperationResult::Info(message),
                     Err(e) => {
                         if e.contains("Invalid include pattern") || e.contains("Invalid exclude pattern") {
@@ -396,116 +416,52 @@ impl KnowledgeSubcommand {
         }
     }
 
-    /// Handle status operation
-    async fn handle_status(os: &Os, session: &ChatSession) -> OperationResult {
-        let agent = Self::get_agent(session);
-        let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
-            Ok(store) => store,
-            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
-        };
-        let store = async_knowledge_store.lock().await;
-
-        match store.get_status_data().await {
-            Ok(status_data) => {
-                let formatted_status = Self::format_status_display(&status_data);
-                OperationResult::Info(formatted_status)
-            },
-            Err(e) => OperationResult::Error(format!("Failed to get status: {}", e)),
-        }
-    }
-
     /// Format status data for display (UI rendering responsibility)
     fn format_status_display(status: &SystemStatus) -> String {
-        let mut status_lines = Vec::new();
-
-        // Show knowledge base summary
-        status_lines.push(format!(
-            "📚 Total knowledge base entries: {} ({} persistent, {} volatile)",
-            status.total_contexts, status.persistent_contexts, status.volatile_contexts
-        ));
-
         if status.operations.is_empty() {
-            status_lines.push("✅ No active operations".to_string());
-            return status_lines.join("\n");
+            return String::new(); // No operations, no output
         }
 
-        status_lines.push("📊 Active Operations:".to_string());
-        status_lines.push(format!(
-            "  📈 Queue Status: {} active, {} waiting (max {} concurrent)",
-            status.active_count, status.waiting_count, status.max_concurrent
-        ));
-
+        let mut output = String::new();
         for op in &status.operations {
-            let formatted_operation = Self::format_operation_display(op);
-            status_lines.push(formatted_operation);
-        }
+            let operation_desc = op.operation_type.display_name();
 
-        status_lines.join("\n")
-    }
+            // Main entry line with operation name and ID (like knowledge entries)
+            output.push_str(&format!("    🔄 {} ({})\n", operation_desc, &op.short_id));
 
-    /// Format a single operation for display
-    fn format_operation_display(op: &OperationStatus) -> String {
-        let elapsed = op.started_at.elapsed().unwrap_or_default();
+            // Description/path line (indented like knowledge entries)
+            // Use actual path from operation type if available, otherwise use message
+            let description = match &op.operation_type {
+                semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
+                semantic_search_client::OperationType::Clearing => op.message.clone(),
+            };
+            output.push_str(&format!("       {}\n", description));
 
-        let (status_icon, status_info) = if op.is_cancelled {
-            ("🛑", "Cancelled".to_string())
-        } else if op.is_failed {
-            ("❌", op.message.clone())
-        } else if op.is_waiting {
-            ("⏳", op.message.clone())
-        } else if Self::should_show_progress_bar(op.current, op.total) {
-            ("🔄", Self::create_progress_bar(op.current, op.total, &op.message))
-        } else {
-            ("🔄", op.message.clone())
-        };
-
-        let operation_desc = op.operation_type.display_name();
-
-        // Format with conditional elapsed time and ETA
-        if op.is_cancelled || op.is_failed {
-            format!(
-                "  {} {} | {}\n    {}",
-                status_icon, op.short_id, operation_desc, status_info
-            )
-        } else {
-            let mut time_info = format!("Elapsed: {}s", elapsed.as_secs());
-
-            if let Some(eta) = op.eta {
-                time_info.push_str(&format!(" | ETA: {}s", eta.as_secs()));
+            // Status/progress line with ETA if available
+            if op.is_cancelled {
+                output.push_str("       Cancelled\n");
+            } else if op.is_failed {
+                output.push_str("       Failed\n");
+            } else if op.is_waiting {
+                output.push_str("       Waiting\n");
+            } else if Self::should_show_progress_bar(op.current, op.total) {
+                let percentage = (op.current as f64 / op.total as f64 * 100.0) as u8;
+                if let Some(eta) = op.eta {
+                    output.push_str(&format!("       {}% • ETA: {}s\n", percentage, eta.as_secs()));
+                } else {
+                    output.push_str(&format!("       {}%\n", percentage));
+                }
+            } else {
+                output.push_str("       In progress\n");
             }
-
-            format!(
-                "  {} {} | {}\n    {} | {}",
-                status_icon, op.short_id, operation_desc, status_info, time_info
-            )
         }
+
+        output.trim_end().to_string() // Remove trailing newline
     }
 
     /// Check if progress bar should be shown
     fn should_show_progress_bar(current: u64, total: u64) -> bool {
         total > 0 && current <= total
-    }
-
-    /// Create progress bar display
-    fn create_progress_bar(current: u64, total: u64, message: &str) -> String {
-        if total == 0 {
-            return message.to_string();
-        }
-
-        let percentage = (current as f64 / total as f64 * 100.0) as u8;
-        let filled = (current as f64 / total as f64 * 30.0) as usize;
-        let empty = 30 - filled;
-
-        let mut bar = String::new();
-        bar.push_str(&"█".repeat(filled));
-        if filled < 30 && current < total {
-            bar.push('▓');
-            bar.push_str(&"░".repeat(empty.saturating_sub(1)));
-        } else {
-            bar.push_str(&"░".repeat(empty));
-        }
-
-        format!("{} {}% ({}/{}) {}", bar, percentage, current, total, message)
     }
 
     /// Handle cancel operation
@@ -542,9 +498,9 @@ impl KnowledgeSubcommand {
             OperationResult::Success(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
             OperationResult::Info(msg) => {
@@ -552,7 +508,7 @@ impl KnowledgeSubcommand {
                     queue!(
                         session.stderr,
                         style::Print(format!("\n{}\n\n", msg)),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 }
                 Ok(())
@@ -560,17 +516,17 @@ impl KnowledgeSubcommand {
             OperationResult::Warning(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
             OperationResult::Error(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("\nError: {}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
         }
@@ -583,7 +539,6 @@ impl KnowledgeSubcommand {
             KnowledgeSubcommand::Remove { .. } => "remove",
             KnowledgeSubcommand::Update { .. } => "update",
             KnowledgeSubcommand::Clear => "clear",
-            KnowledgeSubcommand::Status => "status",
             KnowledgeSubcommand::Cancel { .. } => "cancel",
         }
     }
@@ -595,7 +550,7 @@ mod tests {
 
     use super::*;
 
-    #[derive(Parser)]
+    #[derive(Parser, Debug)]
     #[command(name = "test")]
     struct TestCli {
         #[command(subcommand)]
@@ -608,6 +563,9 @@ mod tests {
         let result = TestCli::try_parse_from([
             "test",
             "add",
+            "--name",
+            "my-project",
+            "--path",
             "/some/path",
             "--include",
             "*.rs",
@@ -623,9 +581,14 @@ mod tests {
         let cli = result.unwrap();
 
         if let KnowledgeSubcommand::Add {
-            path, include, exclude, ..
+            name,
+            path,
+            include,
+            exclude,
+            ..
         } = cli.knowledge
         {
+            assert_eq!(name, "my-project");
             assert_eq!(path, "/some/path");
             assert_eq!(include, vec!["*.rs", "**/*.md"]);
             assert_eq!(exclude, vec!["node_modules/**", "target/**"]);
@@ -650,14 +613,19 @@ mod tests {
     #[test]
     fn test_empty_patterns_allowed() {
         // Test that commands work without any patterns
-        let result = TestCli::try_parse_from(["test", "add", "/some/path"]);
+        let result = TestCli::try_parse_from(["test", "add", "--name", "my-project", "--path", "/some/path"]);
         assert!(result.is_ok());
 
         let cli = result.unwrap();
         if let KnowledgeSubcommand::Add {
-            path, include, exclude, ..
+            name,
+            path,
+            include,
+            exclude,
+            ..
         } = cli.knowledge
         {
+            assert_eq!(name, "my-project");
             assert_eq!(path, "/some/path");
             assert!(include.is_empty());
             assert!(exclude.is_empty());
@@ -672,6 +640,9 @@ mod tests {
         let result = TestCli::try_parse_from([
             "test",
             "add",
+            "--name",
+            "my-project",
+            "--path",
             "/some/path",
             "--include",
             "*.rs",
@@ -692,11 +663,30 @@ mod tests {
     }
 
     #[test]
+    fn test_add_command_with_name_and_path() {
+        // Test that add command accepts both name and path parameters
+        let result = TestCli::try_parse_from(["test", "add", "--name", "my-project", "--path", "/path/to/project"]);
+
+        assert!(result.is_ok());
+        let cli = result.unwrap();
+
+        if let KnowledgeSubcommand::Add { name, path, .. } = cli.knowledge {
+            assert_eq!(name, "my-project");
+            assert_eq!(path, "/path/to/project");
+        } else {
+            panic!("Expected Add subcommand");
+        }
+    }
+
+    #[test]
     fn test_multiple_exclude_patterns() {
         // Test multiple exclude patterns
         let result = TestCli::try_parse_from([
             "test",
             "add",
+            "--name",
+            "my-project",
+            "--path",
             "/some/path",
             "--exclude",
             "node_modules/**",

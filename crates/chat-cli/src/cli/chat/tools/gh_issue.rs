@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 use std::io::Write;
 
-use crossterm::style::Color;
 use crossterm::{
     queue,
     style,
@@ -18,6 +17,7 @@ use super::super::util::issue::IssueCreator;
 use super::InvokeOutput;
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct GhIssue {
@@ -190,9 +190,9 @@ impl GhIssue {
         Ok(queue!(
             output,
             style::Print("I will prepare a github issue with our conversation history.\n\n"),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(format!("Title: {}\n", &self.title)),
-            style::ResetColor
+            StyledText::reset(),
         )?)
     }
 

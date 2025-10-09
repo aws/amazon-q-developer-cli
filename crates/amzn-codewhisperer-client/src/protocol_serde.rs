@@ -476,6 +476,8 @@ pub(crate) mod shape_notifications_feature;
 
 pub(crate) mod shape_progress_updates;
 
+pub(crate) mod shape_reasoning_content;
+
 pub(crate) mod shape_span;
 
 pub(crate) mod shape_sso_identity_details;
@@ -505,6 +507,8 @@ pub(crate) mod shape_env_state;
 pub(crate) mod shape_git_state;
 
 pub(crate) mod shape_image_source;
+
+pub(crate) mod shape_reasoning_text;
 
 pub(crate) mod shape_shell_state;
 
