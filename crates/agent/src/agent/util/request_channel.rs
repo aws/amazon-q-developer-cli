@@ -101,4 +101,3 @@ where
     let (tx, rx) = mpsc::channel(16);
     (RequestSender::new(tx), rx)
 }
-

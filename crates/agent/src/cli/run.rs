@@ -1,18 +1,6 @@
 use std::io::Write as _;
 use std::process::ExitCode;
 
-use clap::Args;
-use eyre::{
-    Result,
-    bail,
-};
-use serde::{
-    Deserialize,
-    Serialize,
-};
-use tokio::io::AsyncWriteExt;
-use tracing::warn;
-
 use agent::agent::Agent;
 use agent::agent::agent_config::load_agents;
 use agent::agent::agent_loop::protocol::{
@@ -26,6 +14,17 @@ use agent::agent::protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
 };
+use clap::Args;
+use eyre::{
+    Result,
+    bail,
+};
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use tokio::io::AsyncWriteExt;
+use tracing::warn;
 
 // use crate::chat::{
 //     ActiveState,
@@ -101,8 +100,10 @@ impl RunArgs {
 
             // Check for exit conditions
             match &evt {
-                AgentEvent::AgentLoop(evt) => if let AgentLoopEventKind::UserTurnEnd(_) = &evt.kind {
-                    break;
+                AgentEvent::AgentLoop(evt) => {
+                    if let AgentLoopEventKind::UserTurnEnd(_) = &evt.kind {
+                        break;
+                    }
                 },
                 AgentEvent::RequestError(loop_error) => bail!("agent encountered an error: {:?}", loop_error),
                 AgentEvent::ApprovalRequest { id, tool_use, context } => {
