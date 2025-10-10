@@ -336,6 +336,7 @@ Available hook triggers:
 - `userPromptSubmit`: Triggered when the user submits a message.
 - `preToolUse`: Triggered before a tool is executed. Can block the tool use.
 - `postToolUse`: Triggered after a tool is executed.
+- `stop`: Triggered when the assistant finishes responding.
 
 ## UseLegacyMcpJson Field
 

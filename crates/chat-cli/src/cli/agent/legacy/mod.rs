@@ -18,6 +18,7 @@ use super::{
 use crate::cli::agent::hook::Hook;
 use crate::cli::agent::legacy::context::LegacyContextConfig;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 
 /// Performs the migration from legacy profile configuration to agent configuration if it hasn't
@@ -110,10 +111,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             .interact_on_opt(&dialoguer::console::Term::stdout())
         {
             Ok(sel) => {
-                let _ = crossterm::execute!(
-                    std::io::stdout(),
-                    crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-                );
+                let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
                 sel
             },
             // Ctrl‑C -> Err(Interrupted)
@@ -214,7 +212,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
     for agent in &mut new_agents {
         let content = agent.to_str_pretty()?;
         if let Some(path) = agent.path.as_ref() {
-            info!("Agent {} peristed in path {}", agent.name, path.to_string_lossy());
+            info!("Agent {} persisted in path {}", agent.name, path.to_string_lossy());
             os.fs.write(path, content).await?;
         } else {
             warn!(

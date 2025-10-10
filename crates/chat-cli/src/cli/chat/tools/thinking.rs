@@ -3,7 +3,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use serde::Deserialize;
@@ -12,8 +11,12 @@ use super::{
     InvokeOutput,
     OutputKind,
 };
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// The Think tool allows the model to reason through complex problems during response generation.
 /// It provides a dedicated space for the model to process information from tool call results,
@@ -30,7 +33,7 @@ pub struct Thinking {
 impl Thinking {
     /// Checks if the thinking feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
-        os.database.settings.get_bool(Setting::EnabledThinking).unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::Thinking)
     }
 
     /// Queues up a description of the think tool for the user
@@ -40,9 +43,9 @@ impl Thinking {
             // Show a preview of the thought that will be displayed
             queue!(
                 output,
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print("I'll share my reasoning process: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print(&self.thought),
                 style::Print("\n")
             )?;

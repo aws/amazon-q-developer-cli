@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 pub mod cli;
 mod consts;
 pub mod context;
@@ -13,6 +14,7 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
+use crate::constants::ui_text;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -54,7 +56,6 @@ pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
     Attribute,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -106,6 +107,7 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
+use tools::delegate::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
     NATIVE_TOOLS,
@@ -156,6 +158,14 @@ use crate::cli::chat::cli::prompts::{
 };
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
+use crate::constants::{
+    error_messages,
+    tips,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::core::{
@@ -177,27 +187,6 @@ use crate::util::{
     directories,
     ui,
 };
-
-const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
-2. Wait until next month when your limit automatically resets." };
-
-pub const EXTRA_HELP: &str = color_print::cstr! {"
-<cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. \nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
-
-<cyan,em>Tips:</cyan,em>
-<em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>         <black!>Insert new-line to provide multi-line prompt</black!>
-                    <black!>Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
-                    <black!>Use Tab to select multiple items</black!>
-                    <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
-<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
-                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
-<em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
-                    <black!>Change using: q settings chat.skimCommandKey x</black!>
-"};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum WrapMode {
@@ -271,13 +260,13 @@ impl ChatArgs {
         {
             execute!(
                 stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("WARNING: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("--profile is deprecated, use "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("--agent"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print(" instead\n")
             )?;
         }
@@ -334,17 +323,17 @@ impl ChatArgs {
                     if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
                         let _ = queue!(
                             stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("WARNING: "),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print("--trust-tools arg for custom tool "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(tool),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print(" needs to be prepended with "),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("@{MCPSERVERNAME}/"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print("\n"),
                         );
                     }
@@ -393,13 +382,13 @@ impl ChatArgs {
             } else {
                 let _ = execute!(
                     stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("WARNING: "),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("Agent specifies model '"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(agent_model),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("' which is not available. Falling back to configured defaults.\n"),
                 );
                 fallback_model_id()
@@ -446,78 +435,22 @@ impl ChatArgs {
     }
 }
 
-const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
-    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
- ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
- ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
- ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
- ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
- ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
- ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
-
-const SMALL_SCREEN_WELCOME_TEXT: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
-const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
-
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
-// Only show the model-related tip for now to make users aware of this feature.
-const ROTATING_TIPS: [&str; 20] = [
-    color_print::cstr! {"You can resume the last conversation from your current directory by launching with
-    <green!>q chat --resume</green!>"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding.
-    Just run <green!>q settings chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can use
-    <green!>/editor</green!> to edit your prompt with a vim-like experience"},
-    color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-    color_print::cstr! {"Get notified whenever Q CLI finishes responding. Just run <green!>q settings
-    chat.enableNotifications true</green!>"},
-    color_print::cstr! {"You can execute bash commands by typing
-    <green!>!</green!> followed by the command"},
-    color_print::cstr! {"Q can use tools without asking for
-    confirmation every time. Give <green!>/tools trust</green!> a try"},
-    color_print::cstr! {"You can
-    programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks
-    help</green!>"},
-    color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation
-    history with its summary to free up the context space"},
-    color_print::cstr! {"If you want to file an issue
-    to the Q CLI team, just tell me, or run <green!>q issue</green!>"},
-    color_print::cstr! {"You can enable
-    custom tools with <green!>MCP servers</green!>. Learn more with /help"},
-    color_print::cstr! {"You can
-    specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in
-    int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use
-    /tools to see pending servers."},
-    color_print::cstr! {"You can see the server load status as well as any
-    warnings or errors associated with <green!>/mcp</green!>"},
-    color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
-    color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
-    color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
-    color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
-    color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
-    color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
-    color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
-];
-
 const GREETING_BREAK_POINT: usize = 80;
 
-const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
-const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
-<green!>ctrl + j</green!> new lines
-<green!>ctrl + s</green!> fuzzy search
-</black!>"};
-
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
-const TRUST_ALL_TEXT: &str = color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>
-\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"};
+fn trust_all_text() -> String {
+    ui_text::trust_all_warning()
+}
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
 const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
+const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 /// Enum used to denote the origin of a tool use event
 enum ToolUseStatus {
@@ -697,9 +630,9 @@ impl ChatSession {
                     if agents.switch(profile).is_err() {
                         execute!(
                             stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error"),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!(
                                 ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                             ))
@@ -898,9 +831,9 @@ impl ChatSession {
                 // their context.
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Your conversation is too large to continue.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print(format!(
                         "• Run {} to compact your conversation. See {} for compaction options\n",
                         "/compact".green(),
@@ -908,7 +841,7 @@ impl ChatSession {
                     )),
                     style::Print(format!("• Run {} to analyze your context usage\n", "/usage".green())),
                     style::Print(format!("• Run {} to reset your conversation state\n", "/clear".green())),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print("\n\n"),
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
@@ -925,11 +858,11 @@ impl ChatSession {
                     {
                         execute!(
                             self.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("The conversation history has overflowed.\n"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print(format!("• Run {} to compact your conversation\n", "/compact".green())),
-                            style::SetAttribute(Attribute::Reset),
+                            StyledText::reset_attributes(),
                             style::Print("\n\n"),
                         )?;
                         ("The conversation history has overflowed", eyre!(err), false)
@@ -950,9 +883,9 @@ impl ChatSession {
 
                         execute!(
                             self.stdout,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("The context window has overflowed, summarizing the history..."),
-                            style::SetAttribute(Attribute::Reset),
+                            StyledText::reset_attributes(),
                             style::Print("\n\n"),
                         )?;
 
@@ -968,25 +901,26 @@ impl ChatSession {
                     execute!(
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::Red),
-                        style::Print(" ⚠️  Amazon Q rate limit reached:\n"),
+                        StyledText::error_fg(),
+                        style::Print(error_messages::RATE_LIMIT_PREFIX),
+                        style::Print("\n"),
                         style::Print(format!("    {}\n\n", err.clone())),
-                        style::SetAttribute(Attribute::Reset),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset_attributes(),
+                        StyledText::reset(),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::ModelOverloadedError { request_id, .. } => {
                     if self.interactive {
                         execute!(
                             self.stderr,
                             style::SetAttribute(Attribute::Bold),
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(
                                 "\nThe model you've selected is temporarily unavailable. Please select a different model.\n"
                             ),
-                            style::SetAttribute(Attribute::Reset),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset_attributes(),
+                            StyledText::reset(),
                         )?;
 
                         if let Some(id) = request_id {
@@ -1013,33 +947,33 @@ impl ChatSession {
                     execute!(
                         self.stderr,
                         style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::Red),
-                        style::Print("Amazon Q is having trouble responding right now:\n"),
+                        StyledText::error_fg(),
+                        style::Print(format!("{}:\n", error_messages::TROUBLE_RESPONDING)),
                         style::Print(format!("    {}\n", err.clone())),
-                        style::SetAttribute(Attribute::Reset),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset_attributes(),
+                        StyledText::reset(),
                     )?;
-                    ("Amazon Q is having trouble responding right now", eyre!(err), false)
+                    (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
                 ApiClientError::MonthlyLimitReached { .. } => {
                     let subscription_status = get_subscription_status(os).await;
                     if subscription_status.is_err() {
                         execute!(
                             self.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(format!(
                                 "Unable to verify subscription status: {}\n\n",
                                 subscription_status.as_ref().err().unwrap()
                             )),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
 
                     execute!(
                         self.stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("Monthly request limit reached"),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
 
                     let limits_text = format!(
@@ -1052,21 +986,21 @@ impl ChatSession {
                     {
                         execute!(
                             self.stderr,
-                            style::Print(format!("\n\n{LIMIT_REACHED_TEXT} {limits_text}")),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            style::Print(format!("\n\n{} {limits_text}", ui_text::limit_reached_text())),
+                            StyledText::secondary_fg(),
                             style::Print("\n\nUse "),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("/subscribe"),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print(" to upgrade your subscription.\n\n"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     } else {
                         execute!(
                             self.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(format!(" - {limits_text}\n\n")),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
 
@@ -1076,17 +1010,9 @@ impl ChatSession {
 
                     return Ok(());
                 },
-                _ => (
-                    "Amazon Q is having trouble responding right now",
-                    Report::from(err),
-                    true,
-                ),
+                _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
             },
-            _ => (
-                "Amazon Q is having trouble responding right now",
-                Report::from(err),
-                true,
-            ),
+            _ => (error_messages::TROUBLE_RESPONDING, Report::from(err), true),
         };
 
         if display_err_message {
@@ -1096,7 +1022,7 @@ impl ChatSession {
             queue!(
                 self.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
             )?;
 
             let text = re.replace_all(&format!("{}: {:?}\n", context, report), "").into_owned();
@@ -1104,11 +1030,7 @@ impl ChatSession {
             queue!(self.stderr, style::Print(&text),)?;
             self.conversation.append_transcript(text);
 
-            execute!(
-                self.stderr,
-                style::SetAttribute(Attribute::Reset),
-                style::SetForegroundColor(Color::Reset),
-            )?;
+            execute!(self.stderr, StyledText::reset_attributes(), StyledText::reset(),)?;
         }
 
         self.conversation.enforce_conversation_invariants();
@@ -1151,6 +1073,14 @@ impl ChatSession {
 
         Ok(())
     }
+
+    /// Reload built-in tools to reflect experiment changes while preserving MCP tools
+    pub async fn reload_builtin_tools(&mut self, os: &mut Os) -> Result<(), ChatError> {
+        self.conversation
+            .reload_builtin_tools(os, &mut self.stderr)
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to update tool spec: {e}").into()))
+    }
 }
 
 impl Drop for ChatSession {
@@ -1162,8 +1092,8 @@ impl Drop for ChatSession {
         execute!(
             self.stderr,
             cursor::MoveToColumn(0),
-            style::SetAttribute(Attribute::Reset),
-            style::ResetColor,
+            StyledText::reset_attributes(),
+            StyledText::reset(),
             cursor::Show
         )
         .ok();
@@ -1252,16 +1182,17 @@ impl ChatSession {
             .unwrap_or(true)
         {
             let welcome_text = match self.existing_conversation {
-                true => RESUME_TEXT,
+                true => ui_text::resume_text(),
                 false => match is_small_screen {
-                    true => SMALL_SCREEN_WELCOME_TEXT,
-                    false => WELCOME_TEXT,
+                    true => ui_text::small_screen_welcome(),
+                    false => ui_text::welcome_text(),
                 },
             };
 
-            execute!(self.stderr, style::Print(welcome_text), style::Print("\n\n"),)?;
+            execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
 
-            let tip = ROTATING_TIPS[usize::try_from(rand::random::<u32>()).unwrap_or(0) % ROTATING_TIPS.len()];
+            let rotating_tips = tips::get_rotating_tips();
+            let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
             if is_small_screen {
                 // If the screen is small, print the tip in a single line
                 execute!(
@@ -1276,16 +1207,16 @@ impl ChatSession {
                     "Did you know?",
                     tip,
                     GREETING_BREAK_POINT,
-                    Color::DarkGrey,
+                    crate::theme::theme().ui.secondary_text,
                 )?;
             }
 
             execute!(
                 self.stderr,
                 style::Print("\n"),
-                style::Print(match is_small_screen {
-                    true => SMALL_SCREEN_POPULAR_SHORTCUTS,
-                    false => POPULAR_SHORTCUTS,
+                style::Print(&match is_small_screen {
+                    true => ui_text::small_screen_popular_shortcuts(),
+                    false => ui_text::popular_shortcuts(),
                 }),
                 style::Print("\n"),
                 style::Print(
@@ -1294,7 +1225,7 @@ impl ChatSession {
                         .dark_grey()
                 )
             )?;
-            execute!(self.stderr, style::Print("\n"), style::SetForegroundColor(Color::Reset))?;
+            execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
         }
 
         // Check if we should show the whats-new announcement
@@ -1304,7 +1235,8 @@ impl ChatSession {
             queue!(
                 self.stderr,
                 style::Print(format!(
-                    "{}{TRUST_ALL_TEXT}\n\n",
+                    "{}{}\n\n",
+                    trust_all_text(),
                     if !is_small_screen { "\n" } else { "" }
                 ))
             )?;
@@ -1322,21 +1254,16 @@ impl ChatSession {
                 let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(format!("🤖 You are chatting with {}\n", display_name)),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n")
                 )?;
             }
         }
 
         // Initialize capturing if possible
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledCheckpoint)
-            .unwrap_or(false)
-        {
+        if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
             let path = get_shadow_repo_dir(os, self.conversation.conversation_id().to_string())?;
             let start = std::time::Instant::now();
             let checkpoint_manager = match CheckpointManager::auto_init(os, &path, self.conversation.history()).await {
@@ -1430,9 +1357,9 @@ impl ChatSession {
         if self.conversation.history().is_empty() {
             execute!(
                 self.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\nConversation too short to compact.\n\n"),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
 
             return Ok(ChatState::PromptUser {
@@ -1446,9 +1373,9 @@ impl ChatSession {
                 self.stderr,
                 terminal::Clear(terminal::ClearType::CurrentLine),
                 cursor::MoveToColumn(0),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Truncating large messages..."),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
                 style::Print("\n\n"),
             )?;
         }
@@ -1480,7 +1407,7 @@ impl ChatSession {
                         self.stderr,
                         terminal::Clear(terminal::ClearType::CurrentLine),
                         cursor::MoveToColumn(0),
-                        style::SetAttribute(Attribute::Reset)
+                        StyledText::reset_attributes()
                     )?;
                 }
 
@@ -1601,9 +1528,9 @@ impl ChatSession {
         {
             execute!(
                 self.stderr,
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("✔ Conversation history has been compacted successfully!\n\n"),
-                style::SetForegroundColor(Color::DarkGrey)
+                StyledText::secondary_fg()
             )?;
 
             let mut output = Vec::new();
@@ -1623,14 +1550,14 @@ impl ChatSession {
                 execute!(
                     self.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&border),
                     style::Print("\n"),
                     style::SetAttribute(Attribute::Bold),
                     style::Print("                       CONVERSATION SUMMARY"),
                     style::Print("\n"),
                     style::Print(&border),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print("\n\n"),
                 )?;
 
@@ -1638,7 +1565,7 @@ impl ChatSession {
                     output,
                     style::Print(&summary),
                     style::Print("\n\n"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print("The conversation history has been replaced with this summary.\n"),
                     style::Print("It contains all important details from previous interactions.\n"),
                 )?;
@@ -1648,7 +1575,7 @@ impl ChatSession {
                     self.stderr,
                     style::Print(&border),
                     style::Print("\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
             }
         }
@@ -1722,9 +1649,9 @@ impl ChatSession {
         if agent_name.trim().is_empty() || agent_description.trim().is_empty() {
             execute!(
                 self.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\nAgent name and description cannot be empty.\n\n"),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
 
             return Ok(ChatState::PromptUser {
@@ -1778,7 +1705,7 @@ impl ChatSession {
                         self.stderr,
                         terminal::Clear(terminal::ClearType::CurrentLine),
                         cursor::MoveToColumn(0),
-                        style::SetAttribute(Attribute::Reset)
+                        StyledText::reset_attributes()
                     )?;
                 }
                 return Err(err);
@@ -1839,9 +1766,9 @@ impl ChatSession {
             Err(_) => {
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("✗ The LLM did not generate a valid agent configuration. Please try again.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1860,9 +1787,9 @@ impl ChatSession {
             Err(err) => {
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("✗ Invalid edited configuration: {}\n\n", err)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1874,21 +1801,21 @@ impl ChatSession {
         if let Err(err) = save_agent_config(os, &final_agent_config, agent_name, is_global).await {
             execute!(
                 self.stderr,
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print(format!("✗ Failed to save agent config: {}\n\n", err)),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
             return Err(err);
         }
 
         execute!(
             self.stderr,
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(format!(
                 "✓ Agent '{}' has been created and saved successfully!\n",
                 agent_name
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )?;
 
         Ok(ChatState::PromptUser {
@@ -1912,25 +1839,25 @@ impl ChatSession {
         if show_tool_use_confirmation_dialog {
             execute!(
                 self.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("\nAllow this action? Use '"),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("t"),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("' to trust (always allow) this tool for the session. ["),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("y"),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("/"),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("n"),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("/"),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("t"),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("]:\n\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
         }
 
@@ -1955,11 +1882,7 @@ impl ChatSession {
                 .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
         }
 
-        execute!(
-            self.stderr,
-            style::SetForegroundColor(Color::Reset),
-            style::SetAttribute(Attribute::Reset)
-        )?;
+        execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
         let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
@@ -2018,9 +1941,9 @@ impl ChatSession {
                         Err(err) => {
                             queue!(
                                 self.stderr,
-                                style::SetForegroundColor(Color::Red),
+                                StyledText::error_fg(),
                                 style::Print(format!("\nFailed to execute command: {}\n", err)),
-                                style::SetForegroundColor(Color::Reset)
+                                StyledText::reset(),
                             )?;
                             let _ = self
                                 .send_slash_command_telemetry(
@@ -2103,18 +2026,18 @@ impl ChatSession {
                     if !status.success() {
                         queue!(
                             self.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(format!("Self exited with status: {}\n", status)),
-                            style::SetForegroundColor(Color::Reset)
+                            StyledText::reset(),
                         )?;
                     }
                 },
                 Err(e) => {
                     queue!(
                         self.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!("\nFailed to execute command: {}\n", e)),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 },
             }
@@ -2125,12 +2048,7 @@ impl ChatSession {
         } else {
             // Track the message for checkpoint descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
                     if !manager.message_locked && self.pending_tool_index.is_none() {
@@ -2206,8 +2124,8 @@ impl ChatSession {
                 .await?;
             self.send_tool_use_telemetry(os).await;
 
-            queue!(self.stderr, style::SetForegroundColor(Color::Magenta))?;
-            queue!(self.stderr, style::SetForegroundColor(Color::Reset))?;
+            queue!(self.stderr, StyledText::emphasis_fg())?;
+            queue!(self.stderr, StyledText::reset())?;
             queue!(self.stderr, cursor::Hide)?;
 
             if self.interactive {
@@ -2220,11 +2138,7 @@ impl ChatSession {
 
     async fn tool_use_execute(&mut self, os: &mut Os) -> Result<ChatState, ChatError> {
         // Check if we should auto-enter tangent mode for introspect tool
-        if os
-            .database
-            .settings
-            .get_bool(Setting::EnabledTangentMode)
-            .unwrap_or(false)
+        if ExperimentManager::is_enabled(os, ExperimentName::TangentMode)
             && os
                 .database
                 .settings
@@ -2271,15 +2185,15 @@ impl ChatSession {
 
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Command "),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(&tool.name),
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(" is rejected because it matches one or more rules on the denied list:"),
                     style::Print(formatted_set),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
 
                 return Ok(ChatState::HandleInput {
@@ -2349,7 +2263,7 @@ impl ChatSession {
                     os,
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
-                    self.conversation.agents.get_active(),
+                    &self.conversation.agents,
                 )
                 .await;
 
@@ -2365,13 +2279,10 @@ impl ChatSession {
 
             // Handle checkpoint after tool execution - store tag for later display
             let checkpoint_tag: Option<String> = {
-                let enabled = os
-                    .database
-                    .settings
-                    .get_bool(Setting::EnabledCheckpoint)
-                    .unwrap_or(false)
-                    && !self.conversation.is_in_tangent_mode();
-                if invoke_result.is_err() || !enabled {
+                if invoke_result.is_err()
+                    || !ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+                    || self.conversation.is_in_tangent_mode()
+                {
                     None
                 }
                 // Take manager out temporarily to avoid borrow conflicts
@@ -2382,17 +2293,17 @@ impl ChatSession {
                         Err(e) => {
                             execute!(
                                 self.stderr,
-                                style::SetForegroundColor(Color::Yellow),
+                                StyledText::warning_fg(),
                                 style::Print(format!("Could not check if uncommitted changes exist: {e}\n")),
                                 style::Print("Saving anyways...\n"),
-                                style::SetForegroundColor(Color::Reset),
+                                StyledText::reset(),
                             )?;
                             true
                         },
                     };
                     let tag = if has_changes {
                         // Generate tag for this tool use
-                        let tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
+                        let tool_tag = format!("{}.{}", manager.current_turn + 1, manager.tools_in_turn + 1);
 
                         // Get tool summary for commit message
                         let is_fs_read = matches!(&tool.tool, Tool::FsRead(_));
@@ -2405,9 +2316,9 @@ impl ChatSession {
                             }
                         };
 
-                        // Create checkpoint
+                        // Create tool checkpoint
                         if let Err(e) = manager.create_checkpoint(
-                            &tag,
+                            &tool_tag,
                             &description,
                             &self.conversation.history().clone(),
                             false,
@@ -2417,7 +2328,23 @@ impl ChatSession {
                             None
                         } else {
                             manager.tools_in_turn += 1;
-                            Some(tag)
+
+                            // Also update/create the turn checkpoint to point to latest state
+                            // This is important so that we create turn-checkpoints even when tools are aborted
+                            let turn_tag = format!("{}", manager.current_turn + 1);
+                            let turn_description = "Turn in progress".to_string();
+
+                            if let Err(e) = manager.create_checkpoint(
+                                &turn_tag,
+                                &turn_description,
+                                &self.conversation.history().clone(),
+                                true,
+                                None,
+                            ) {
+                                debug!("Failed to update turn checkpoint: {}", e);
+                            }
+
+                            Some(tool_tag)
                         }
                     } else {
                         None
@@ -2469,19 +2396,19 @@ impl ChatSession {
                         self.stdout,
                         style::Print(CONTINUATION_LINE),
                         style::Print("\n"),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(" ● Completed in {}s", tool_time)),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                     if let Some(tag) = checkpoint_tag {
                         execute!(
                             self.stdout,
-                            style::SetForegroundColor(Color::Blue),
+                            StyledText::info_fg(),
                             style::SetAttribute(Attribute::Bold),
                             style::Print(format!(" [{tag}]")),
-                            style::SetForegroundColor(Color::Reset),
-                            style::SetAttribute(Attribute::Reset),
+                            StyledText::reset(),
+                            StyledText::reset_attributes(),
                         )?;
                     }
                     execute!(self.stdout, style::Print("\n\n"))?;
@@ -2531,12 +2458,12 @@ impl ChatSession {
                         style::Print(CONTINUATION_LINE),
                         style::Print("\n"),
                         style::SetAttribute(Attribute::Bold),
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!(" ● Execution failed after {}s:\n", tool_time)),
-                        style::SetAttribute(Attribute::Reset),
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::reset_attributes(),
+                        StyledText::error_fg(),
                         style::Print(&err),
-                        style::SetAttribute(Attribute::Reset),
+                        StyledText::reset_attributes(),
                         style::Print("\n\n"),
                     )?;
 
@@ -2612,8 +2539,8 @@ impl ChatSession {
             self.conversation.add_tool_results_with_images(tool_results, images);
             execute!(
                 self.stderr,
-                style::SetAttribute(Attribute::Reset),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset_attributes(),
+                StyledText::reset(),
                 style::Print("\n")
             )?;
         } else {
@@ -2621,7 +2548,7 @@ impl ChatSession {
         }
 
         execute!(self.stderr, cursor::Hide)?;
-        execute!(self.stderr, style::Print("\n"), style::SetAttribute(Attribute::Reset))?;
+        execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
@@ -2681,7 +2608,7 @@ impl ChatSession {
             drop(self.spinner.take());
             queue!(
                 self.stderr,
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 cursor::MoveToColumn(0),
                 cursor::Show,
                 terminal::Clear(terminal::ClearType::CurrentLine),
@@ -2704,9 +2631,9 @@ impl ChatSession {
                             if !response_prefix_printed && !text.trim().is_empty() {
                                 queue!(
                                     self.stdout,
-                                    style::SetForegroundColor(Color::Green),
+                                    StyledText::success_fg(),
                                     style::Print("> "),
-                                    style::SetForegroundColor(Color::Reset)
+                                    StyledText::reset(),
                                 )?;
                                 response_prefix_printed = true;
                             }
@@ -2863,12 +2790,12 @@ impl ChatSession {
                             let _ = queue!(
                                 self.stdout,
                                 style::Print("\n\n"),
-                                style::SetForegroundColor(Color::Yellow),
+                                StyledText::warning_fg(),
                                 style::Print(format!(
                                     "Tool validation failed: {}\n Retrying the request...",
                                     error_message
                                 )),
-                                style::ResetColor,
+                                StyledText::reset(),
                                 style::Print("\n"),
                             );
                             self.conversation.add_tool_results(tool_results);
@@ -2957,18 +2884,18 @@ impl ChatSession {
                     play_notification_bell(tool_uses.is_empty());
                 }
 
-                queue!(self.stderr, style::ResetColor, style::SetAttribute(Attribute::Reset))?;
+                queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
                 execute!(self.stdout, style::Print("\n"))?;
 
                 for (i, citation) in &state.citations {
                     queue!(
                         self.stdout,
                         style::Print("\n"),
-                        style::SetForegroundColor(Color::Blue),
+                        StyledText::info_fg(),
                         style::Print(format!("[^{i}]: ")),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print(format!("{citation}\n")),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 }
 
@@ -2984,12 +2911,7 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             // Create turn checkpoint if tools were used
-            if os
-                .database
-                .settings
-                .get_bool(Setting::EnabledCheckpoint)
-                .unwrap_or(false)
-                && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
             {
                 if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
                     if manager.tools_in_turn > 0 {
@@ -3013,28 +2935,28 @@ impl ChatSession {
                         ) {
                             execute!(
                                 self.stderr,
-                                style::SetForegroundColor(Color::Yellow),
+                                StyledText::warning_fg(),
                                 style::Print(format!("⚠️ Could not create automatic checkpoint: {}\n\n", e)),
-                                style::SetForegroundColor(Color::Reset),
+                                StyledText::reset(),
                             )?;
                         } else {
                             execute!(
                                 self.stderr,
-                                style::SetForegroundColor(Color::Blue),
+                                StyledText::info_fg(),
                                 style::SetAttribute(Attribute::Bold),
                                 style::Print(format!("✓ Created checkpoint {}\n\n", tag)),
-                                style::SetForegroundColor(Color::Reset),
-                                style::SetAttribute(Attribute::Reset),
+                                StyledText::reset(),
+                                StyledText::reset_attributes(),
                             )?;
                         }
 
                         // Reset for next turn
                         manager.tools_in_turn = 0;
-                        manager.message_locked = false; // Unlock for next turn
                     } else {
                         // Clear pending message even if no tools were used
                         manager.pending_user_message = None;
                     }
+                    manager.message_locked = false; // Unlock for next turn
 
                     // Put manager back
                     self.conversation.checkpoint_manager = Some(manager);
@@ -3043,6 +2965,19 @@ impl ChatSession {
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
+
+            // Run Stop hooks when the assistant finishes responding
+            if let Some(cm) = self.conversation.context_manager.as_mut() {
+                let _ = cm
+                    .run_hooks(
+                        crate::cli::agent::hook::HookTrigger::Stop,
+                        &mut std::io::stderr(),
+                        os,
+                        None,
+                        None,
+                    )
+                    .await;
+            }
 
             Ok(ChatState::PromptUser {
                 skip_printing_tools: false,
@@ -3113,7 +3048,7 @@ impl ChatSession {
                 self.stderr,
                 style::SetAttribute(Attribute::Bold),
                 style::Print("Tool validation failed: "),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
             )?;
             for tool_result in &tool_results {
                 for block in &tool_result.content {
@@ -3128,9 +3063,9 @@ impl ChatSession {
                         queue!(
                             self.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(format!("{}\n", content)),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
                 }
@@ -3210,9 +3145,9 @@ impl ChatSession {
                         queue!(
                             self.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(format!("{}\n", content)),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
                 }
@@ -3290,22 +3225,22 @@ impl ChatSession {
 
         queue!(
             self.stdout,
-            style::SetForegroundColor(Color::Magenta),
+            StyledText::emphasis_fg(),
             style::Print(format!(
                 "🛠️  Using tool: {}{}",
                 tool_use.tool.display_name(),
                 if trusted { " (trusted)".dark_green() } else { "".reset() }
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )?;
         if let Tool::Custom(ref tool) = tool_use.tool {
             queue!(
                 self.stdout,
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print(" from mcp server "),
-                style::SetForegroundColor(Color::Magenta),
+                StyledText::emphasis_fg(),
                 style::Print(&tool.server_name),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
         }
 
@@ -3364,19 +3299,21 @@ impl ChatSession {
         let tangent_mode = self.conversation.is_in_tangent_mode();
 
         // Check if context usage indicator is enabled
-        let usage_percentage = if os
-            .database
-            .settings
-            .get_bool(crate::database::settings::Setting::EnabledContextUsageIndicator)
-            .unwrap_or(false)
-        {
+        let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
             use crate::cli::chat::cli::usage::get_total_usage_percentage;
             get_total_usage_percentage(self, os).await.ok()
         } else {
             None
         };
 
-        prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage)
+        let mut generated_prompt =
+            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
+            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -3408,14 +3345,14 @@ impl ChatSession {
                 // Memory constraint warning with gentler wording
                 execute!(
                     self.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::SetAttribute(Attribute::Bold),
                     style::Print("\n⚠️ This conversation is getting lengthy.\n"),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print(
                         "To ensure continued smooth operation, please use /compact to summarize the conversation.\n\n"
                     ),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
             },
             TokenWarningLevel::None => {

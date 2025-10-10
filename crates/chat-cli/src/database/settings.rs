@@ -47,6 +47,9 @@ pub enum Setting {
     EnabledTangentMode,
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
     TangentModeKey,
+    #[strum(message = "Key binding for delegate command (single character)")]
+    DelegateModeKey,
+
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
     #[strum(message = "Show greeting message on chat start (boolean)")]
@@ -83,6 +86,8 @@ pub enum Setting {
     EnabledTodoList,
     #[strum(message = "Enable the checkpoint feature (boolean)")]
     EnabledCheckpoint,
+    #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
+    EnabledDelegate,
 }
 
 impl AsRef<str> for Setting {
@@ -103,6 +108,8 @@ impl AsRef<str> for Setting {
             Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
+            Self::DelegateModeKey => "chat.delegateModeKey",
+
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
             Self::ApiTimeout => "api.timeout",
@@ -121,6 +128,7 @@ impl AsRef<str> for Setting {
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
+            Self::EnabledDelegate => "chat.enableDelegate",
         }
     }
 }
@@ -151,6 +159,7 @@ impl TryFrom<&str> for Setting {
             "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
+
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
             "api.timeout" => Ok(Self::ApiTimeout),

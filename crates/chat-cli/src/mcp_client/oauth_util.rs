@@ -15,22 +15,28 @@ use hyper::body::Bytes;
 use hyper::server::conn::http1;
 use hyper_util::rt::TokioIo;
 use reqwest::Client;
-use rmcp::serde_json;
+use rmcp::service::{
+    DynService,
+    ServiceExt,
+};
 use rmcp::transport::auth::{
     AuthClient,
     OAuthClientConfig,
     OAuthState,
     OAuthTokenResponse,
 };
-use rmcp::transport::streamable_http_client::{
-    StreamableHttpClientTransportConfig,
-    StreamableHttpClientWorker,
-};
+use rmcp::transport::sse_client::SseClientConfig;
+use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
 use rmcp::transport::{
     AuthorizationManager,
     AuthorizationSession,
+    SseClientTransport,
     StreamableHttpClientTransport,
-    WorkerTransport,
+};
+use rmcp::{
+    RoleClient,
+    Service,
+    serde_json,
 };
 use serde::{
     Deserialize,
@@ -68,6 +74,8 @@ pub enum OauthUtilError {
     Serde(#[from] serde_json::Error),
     #[error("Missing authorization manager")]
     MissingAuthorizationManager,
+    #[error("Missing auth client when token refresh is needed")]
+    MissingAuthClient,
     #[error(transparent)]
     OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
     #[error(transparent)]
@@ -80,6 +88,10 @@ pub enum OauthUtilError {
     MalformDirectory,
     #[error("Missing credential")]
     MissingCredentials,
+    #[error("Failed to create a running service after running through all fallbacks: {0}")]
+    ServiceNotObtained(String),
+    #[error("{0}")]
+    SseTransport(String),
 }
 
 /// A guard that automatically cancels the cancellation token when dropped.
@@ -93,6 +105,14 @@ impl Drop for LoopBackDropGuard {
     fn drop(&mut self) {
         self.cancellation_token.cancel();
     }
+}
+
+/// OAuth Authorization Server metadata for endpoint discovery
+#[derive(Clone, Serialize, Deserialize, Debug)]
+pub struct OAuthMeta {
+    pub authorization_endpoint: String,
+    pub token_endpoint: String,
+    pub registration_endpoint: Option<String>,
 }
 
 /// This is modeled after [OAuthClientConfig]
@@ -149,93 +169,281 @@ impl AuthClientWrapper {
     }
 }
 
-/// HTTP transport wrapper that handles both authenticated and non-authenticated MCP connections.
-///
-/// This enum provides two variants for different authentication scenarios:
-/// - `WithAuth`: Used when the MCP server requires OAuth authentication, containing both the
-///   transport worker and an auth client guard that manages credential persistence
-/// - `WithoutAuth`: Used for servers that don't require authentication, containing only the basic
-///   transport worker
-///
-/// The appropriate variant is automatically selected based on the server's response to
-/// an initial probe request during transport creation.
-pub enum HttpTransport {
-    WithAuth(
-        (
-            WorkerTransport<StreamableHttpClientWorker<AuthClient<Client>>>,
-            AuthClientWrapper,
-        ),
-    ),
-    WithoutAuth(WorkerTransport<StreamableHttpClientWorker<Client>>),
-}
-
 pub fn get_default_scopes() -> &'static [&'static str] {
     &["openid", "email", "profile", "offline_access"]
 }
 
-pub async fn get_http_transport(
-    os: &Os,
-    url: &str,
-    timeout: u64,
-    scopes: &[String],
-    headers: &HashMap<String, String>,
-    auth_client: Option<AuthClient<Client>>,
-    messenger: &dyn Messenger,
-) -> Result<HttpTransport, OauthUtilError> {
-    let cred_dir = get_mcp_auth_dir(os)?;
-    let url = Url::from_str(url)?;
-    let key = compute_key(&url);
-    let cred_full_path = cred_dir.join(format!("{key}.token.json"));
-    let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
+enum TransportType {
+    Http,
+    Sse,
+}
 
-    let mut client_builder = reqwest::ClientBuilder::new().timeout(std::time::Duration::from_millis(timeout));
-    if !headers.is_empty() {
-        let headers = HeaderMap::try_from(headers).map_err(|e| OauthUtilError::Http(e.to_string()))?;
-        client_builder = client_builder.default_headers(headers);
-    };
-    let reqwest_client = client_builder.build()?;
+enum HttpServiceBuilderState {
+    AttemptConnection(TransportType, bool),
+    FailedBecauseTokenMightBeExpired,
+    Exhausted,
+}
 
-    // The probe request, like all other request, should adhere to the standards as per https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
-    let mut probe_request = reqwest_client.post(url.clone());
-    probe_request = probe_request.header("Accept", "application/json, text/event-stream");
-    let probe_resp = probe_request.send().await?;
-    match probe_resp.status() {
-        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-            let auth_client = match auth_client {
-                Some(auth_client) => auth_client,
-                None => {
-                    let am = get_auth_manager(
-                        url.clone(),
-                        cred_full_path.clone(),
-                        reg_full_path.clone(),
-                        scopes,
-                        messenger,
-                    )
-                    .await?;
-                    AuthClient::new(reqwest_client, am)
+pub type HttpRunningService = (
+    rmcp::service::RunningService<RoleClient, Box<dyn DynService<RoleClient>>>,
+    Option<AuthClientWrapper>,
+);
+
+pub struct HttpServiceBuilder<'a> {
+    pub server_name: &'a str,
+    pub os: &'a Os,
+    pub url: &'a str,
+    pub timeout: u64,
+    pub scopes: &'a [String],
+    pub headers: &'a HashMap<String, String>,
+    pub messenger: &'a dyn Messenger,
+}
+
+impl<'a> HttpServiceBuilder<'a> {
+    pub fn new(
+        server_name: &'a str,
+        os: &'a Os,
+        url: &'a str,
+        timeout: u64,
+        scopes: &'a [String],
+        headers: &'a HashMap<String, String>,
+        messenger: &'a dyn Messenger,
+    ) -> Self {
+        Self {
+            server_name,
+            os,
+            url,
+            timeout,
+            scopes,
+            headers,
+            messenger,
+        }
+    }
+
+    pub async fn try_build<S: Service<RoleClient> + Clone>(
+        self,
+        service: &S,
+    ) -> Result<HttpRunningService, OauthUtilError> {
+        let HttpServiceBuilder {
+            server_name,
+            os,
+            url,
+            timeout,
+            scopes,
+            headers,
+            messenger,
+        } = self;
+
+        let mut state = HttpServiceBuilderState::AttemptConnection(TransportType::Http, false);
+        let cred_dir = get_mcp_auth_dir(os)?;
+        let url = Url::from_str(url)?;
+        let key = compute_key(&url);
+        let cred_full_path = cred_dir.join(format!("{key}.token.json"));
+        let reg_full_path = cred_dir.join(format!("{key}.registration.json"));
+        let mut auth_client = None::<AuthClient<Client>>;
+
+        let mut client_builder = reqwest::ClientBuilder::new().timeout(std::time::Duration::from_millis(timeout));
+        if !headers.is_empty() {
+            let headers = HeaderMap::try_from(headers).map_err(|e| OauthUtilError::Http(e.to_string()))?;
+            client_builder = client_builder.default_headers(headers);
+        };
+        let reqwest_client = client_builder.build()?;
+
+        // The probe request, like all other request, should adhere to the standards as per https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
+        let probe_resp = reqwest_client
+            .post(url.clone())
+            .header("Accept", "application/json, text/event-stream")
+            .send()
+            .await;
+        let is_probe_err = probe_resp.is_err();
+        let is_status_401_or_403 = probe_resp
+            .as_ref()
+            .is_ok_and(|resp| resp.status() == StatusCode::UNAUTHORIZED || resp.status() == StatusCode::FORBIDDEN);
+
+        let contains_auth_header = probe_resp.is_ok_and(|resp| {
+            resp.headers().get("www-authenticate").is_some_and(|v| {
+                let value_as_str = v.to_str();
+                if let Ok(value) = value_as_str {
+                    value.to_lowercase().contains("bearer")
+                } else {
+                    false
+                }
+            })
+        });
+        let needs_auth = is_probe_err || is_status_401_or_403 || contains_auth_header;
+
+        // Here we attempt the following in the order they are presented:
+        // 1. Build transport, first assume http on attempt one, sse on attempt two
+        //   - If it fails and it needs auth, attempt to refresh token (#2)
+        //   - If it fails and it does not need auth OR if it fails after a refresh, attempt sse (#3)
+        // 2. Refresh token, go back to #1
+        // 3. Attempt sse
+        //   - If it fails, abort (because at this point we have run out of things to try, note that
+        //     refreshing of token is agnostic to the type of transport)
+        loop {
+            match state {
+                HttpServiceBuilderState::AttemptConnection(transport_type, has_refreshed) => {
+                    if needs_auth {
+                        let ac = match auth_client {
+                            Some(ref auth_client) => auth_client.clone(),
+                            None => {
+                                let am = get_auth_manager(
+                                    url.clone(),
+                                    cred_full_path.clone(),
+                                    reg_full_path.clone(),
+                                    scopes,
+                                    messenger,
+                                )
+                                .await?;
+
+                                let ac = AuthClient::new(reqwest_client.clone(), am);
+                                auth_client.replace(ac.clone());
+                                ac
+                            },
+                        };
+
+                        match transport_type {
+                            TransportType::Http => {
+                                let transport = StreamableHttpClientTransport::with_client(
+                                    ac.clone(),
+                                    StreamableHttpClientTransportConfig {
+                                        uri: url.as_str().into(),
+                                        allow_stateless: true,
+                                        ..Default::default()
+                                    },
+                                );
+
+                                match service.clone().into_dyn().serve(transport).await {
+                                    Ok(service) => {
+                                        let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                                        return Ok((service, Some(auth_client_wrapper)));
+                                    },
+                                    Err(e) => {
+                                        if !has_refreshed {
+                                            error!(
+                                                "## mcp: http handshake attempt failed for {server_name}: {:?}. Attempting to refresh token",
+                                                e
+                                            );
+                                            // first we'll try refreshing the token
+                                            state = HttpServiceBuilderState::FailedBecauseTokenMightBeExpired;
+                                        } else {
+                                            error!(
+                                                "## mcp: http handshake attempt failed for {server_name}: {:?}. Attempting sse",
+                                                e
+                                            );
+                                            state =
+                                                HttpServiceBuilderState::AttemptConnection(TransportType::Sse, true);
+                                        }
+                                    },
+                                }
+                            },
+                            TransportType::Sse => {
+                                let transport = SseClientTransport::start_with_client(ac.clone(), SseClientConfig {
+                                    sse_endpoint: url.as_str().into(),
+                                    ..Default::default()
+                                })
+                                .await
+                                .map_err(|e| OauthUtilError::SseTransport(e.to_string()))?;
+
+                                match service.clone().into_dyn().serve(transport).await {
+                                    Ok(service) => {
+                                        let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                                        return Ok((service, Some(auth_client_wrapper)));
+                                    },
+                                    Err(e) => {
+                                        // at this point we would have already tried refreshing
+                                        // we are out of things to try and should just fail
+                                        error!(
+                                            "## mcp: sse handshake attempted failed for {server_name}: {:?}. Aborting",
+                                            e
+                                        );
+                                        state = HttpServiceBuilderState::Exhausted;
+                                    },
+                                }
+                            },
+                        }
+                    } else {
+                        info!(
+                            "## mcp: No OAuth endpoints discovered for {server_name}, using unauthenticated transport"
+                        );
+
+                        match transport_type {
+                            TransportType::Http => {
+                                info!("## mcp: attempting open http handshake for {server_name}");
+                                let transport = StreamableHttpClientTransport::with_client(
+                                    reqwest_client.clone(),
+                                    StreamableHttpClientTransportConfig {
+                                        uri: url.as_str().into(),
+                                        allow_stateless: true,
+                                        ..Default::default()
+                                    },
+                                );
+
+                                match service.clone().into_dyn().serve(transport).await {
+                                    Ok(service) => return Ok((service, None)),
+                                    Err(e) => {
+                                        error!(
+                                            "## mcp: open http handshake attempted failed for {server_name}: {:?}. Attempting sse",
+                                            e
+                                        );
+                                        state = HttpServiceBuilderState::AttemptConnection(TransportType::Sse, false);
+                                    },
+                                }
+                            },
+                            TransportType::Sse => {
+                                info!("## mcp: attempting open sse handshake for {server_name}");
+                                let transport =
+                                    SseClientTransport::start_with_client(reqwest_client.clone(), SseClientConfig {
+                                        sse_endpoint: url.as_str().into(),
+                                        ..Default::default()
+                                    })
+                                    .await
+                                    .map_err(|e| OauthUtilError::SseTransport(e.to_string()))?;
+
+                                match service.clone().into_dyn().serve(transport).await {
+                                    Ok(service) => return Ok((service, None)),
+                                    Err(e) => {
+                                        error!(
+                                            "## mcp: open sse handshake attempted failed for {server_name}: {:?}. Aborting",
+                                            e
+                                        );
+                                        state = HttpServiceBuilderState::Exhausted;
+                                    },
+                                }
+                            },
+                        }
+                    }
                 },
-            };
-            let transport =
-                StreamableHttpClientTransport::with_client(auth_client.clone(), StreamableHttpClientTransportConfig {
-                    uri: url.as_str().into(),
-                    allow_stateless: true,
-                    ..Default::default()
-                });
+                HttpServiceBuilderState::FailedBecauseTokenMightBeExpired => {
+                    let auth_client_ref = auth_client.as_ref().ok_or(OauthUtilError::MissingAuthClient)?;
+                    let auth_client_wrapper = AuthClientWrapper::new(cred_full_path.clone(), auth_client_ref.clone());
+                    let refresh_res = auth_client_wrapper.refresh_token().await;
 
-            let auth_dg = AuthClientWrapper::new(cred_full_path, auth_client);
+                    if let Err(e) = refresh_res {
+                        error!("## mcp: token refresh attempt failed: {:?}", e);
+                        info!("Retry for http transport failed {e}. Possible reauth needed");
+                        // This could be because the refresh token is expired, in which
+                        // case we would need to have user go through the auth flow
+                        // again. We do this by deleting the cred
+                        // and discarding the client to trigger a full auth flow
+                        if cred_full_path.is_file() {
+                            tokio::fs::remove_file(&cred_full_path).await?;
+                        }
 
-            Ok(HttpTransport::WithAuth((transport, auth_dg)))
-        },
-        _ => {
-            let transport =
-                StreamableHttpClientTransport::with_client(reqwest_client, StreamableHttpClientTransportConfig {
-                    uri: url.as_str().into(),
-                    allow_stateless: true,
-                    ..Default::default()
-                });
+                        // we'll also need to remove the auth client to force a reauth when we go
+                        // back to attempt the first step again
+                        auth_client.take();
+                    }
 
-            Ok(HttpTransport::WithoutAuth(transport))
-        },
+                    state = HttpServiceBuilderState::AttemptConnection(TransportType::Http, true);
+                },
+                HttpServiceBuilderState::Exhausted => {
+                    return Err(OauthUtilError::ServiceNotObtained(
+                        "Max number of retries exhausted".to_string(),
+                    ));
+                },
+            }
+        }
     }
 }
 
@@ -305,7 +513,7 @@ async fn get_auth_manager_impl(
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
     let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
-    let (tx, rx) = tokio::sync::oneshot::channel::<String>();
+    let (tx, rx) = tokio::sync::oneshot::channel::<(String, String)>();
 
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
@@ -318,8 +526,8 @@ async fn get_auth_manager_impl(
     let auth_url = oauth_state.get_authorization_url().await?;
     _ = messenger.send_oauth_link(auth_url).await;
 
-    let auth_code = rx.await?;
-    oauth_state.handle_callback(&auth_code).await?;
+    let (auth_code, csrf_token) = rx.await?;
+    oauth_state.handle_callback(&auth_code, &csrf_token).await?;
     let am = oauth_state
         .into_authorization_manager()
         .ok_or(OauthUtilError::MissingAuthorizationManager)?;
@@ -408,13 +616,14 @@ fn get_stub_credentials() -> Result<OAuthTokenResponse, serde_json::Error> {
 }
 
 async fn make_svc(
-    one_shot_sender: Sender<String>,
+    one_shot_sender: Sender<(String, String)>,
     socket_addr: SocketAddr,
     cancellation_token: CancellationToken,
 ) -> Result<(SocketAddr, LoopBackDropGuard), OauthUtilError> {
+    type AuthCodeSender = Sender<(String, String)>;
     #[derive(Clone, Debug)]
     struct LoopBackForSendingAuthCode {
-        one_shot_sender: Arc<std::sync::Mutex<Option<Sender<String>>>>,
+        one_shot_sender: Arc<std::sync::Mutex<Option<AuthCodeSender>>>,
     }
 
     #[derive(Debug, thiserror::Error)]
@@ -423,8 +632,8 @@ async fn make_svc(
         Poison(String),
         #[error(transparent)]
         Http(#[from] http::Error),
-        #[error("Failed to send auth code: {0}")]
-        Send(String),
+        #[error("Failed to send auth code")]
+        Send((String, String)),
     }
 
     fn mk_response(s: String) -> Result<Response<Full<Bytes>>, LoopBackError> {
@@ -459,13 +668,14 @@ async fn make_svc(
                 };
 
                 let code = params.get("code").cloned().unwrap_or_default();
+                let state = params.get("state").cloned().unwrap_or_default();
                 if let Some(sender) = self_clone
                     .one_shot_sender
                     .lock()
                     .map_err(|e| LoopBackError::Poison(e.to_string()))?
                     .take()
                 {
-                    sender.send(code).map_err(LoopBackError::Send)?;
+                    sender.send((code, state)).map_err(LoopBackError::Send)?;
                 }
 
                 resp

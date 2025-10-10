@@ -52,6 +52,51 @@ pub fn de_generate_assistant_response_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
+        "AccessDeniedError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(
+                        crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                    )?;
+                    let output = output.meta(generic);
+                    crate::serde_util::access_denied_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "InternalServerError" => {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp =
+                    {
+                        #[allow(unused_mut)]
+                        let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                        output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
+                            _response_body,
+                            output,
+                        )
+                        .map_err(
+                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
+                        )?;
+                        let output = output.meta(generic);
+                        crate::serde_util::internal_server_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
+                    };
+                tmp
+            })
+        },
         "ServiceQuotaExceededError" => {
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceQuotaExceededError({
                 #[allow(unused_mut)]
@@ -132,51 +177,6 @@ pub fn de_generate_assistant_response_http_error(
                             crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
                         )?
                 };
-                tmp
-            })
-        },
-        "AccessDeniedError" => {
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(
-                        crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
-                    )?;
-                    let output = output.meta(generic);
-                    crate::serde_util::access_denied_error_correct_errors(output)
-                        .build()
-                        .map_err(
-                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
-                        )?
-                };
-                tmp
-            })
-        },
-        "InternalServerError" => {
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp =
-                    {
-                        #[allow(unused_mut)]
-                        let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                        output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
-                            _response_body,
-                            output,
-                        )
-                        .map_err(
-                            crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled,
-                        )?;
-                        let output = output.meta(generic);
-                        crate::serde_util::internal_server_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::generate_assistant_response::GenerateAssistantResponseError::unhandled)?
-                    };
                 tmp
             })
         },

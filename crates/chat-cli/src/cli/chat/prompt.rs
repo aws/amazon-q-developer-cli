@@ -46,6 +46,10 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
@@ -97,21 +101,24 @@ pub const COMMANDS: &[&str] = &[
     "/save",
     "/load",
     "/subscribe",
-    "/todos",
-    "/todos resume",
-    "/todos clear-finished",
-    "/todos view",
-    "/todos delete",
 ];
+
+/// Generate dynamic command list including experiment-based commands when enabled
+pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
+    let mut commands = COMMANDS.to_vec();
+    commands.extend(ExperimentManager::get_commands(os));
+    commands.sort();
+    commands
+}
 
 pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
 pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
 
 /// Complete commands that start with a slash
-fn complete_command(word: &str, start: usize) -> (usize, Vec<String>) {
+fn complete_command(commands: Vec<&'static str>, word: &str, start: usize) -> (usize, Vec<String>) {
     (
         start,
-        COMMANDS
+        commands
             .iter()
             .filter(|p| p.starts_with(word))
             .map(|s| (*s).to_owned())
@@ -219,13 +226,19 @@ impl PromptCompleter {
 pub struct ChatCompleter {
     path_completer: PathCompleter,
     prompt_completer: PromptCompleter,
+    available_commands: Vec<&'static str>,
 }
 
 impl ChatCompleter {
-    fn new(sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Self {
+    fn new(
+        sender: PromptQuerySender,
+        receiver: PromptQueryResponseReceiver,
+        available_commands: Vec<&'static str>,
+    ) -> Self {
         Self {
             path_completer: PathCompleter::new(),
             prompt_completer: PromptCompleter::new(sender, receiver),
+            available_commands,
         }
     }
 }
@@ -237,13 +250,13 @@ impl Completer for ChatCompleter {
         &self,
         line: &str,
         pos: usize,
-        _os: &Context<'_>,
+        _ctx: &Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>), ReadlineError> {
         let (start, word) = extract_word(line, pos, None, |c| c.is_space());
 
         // Handle command completion
         if word.starts_with('/') {
-            return Ok(complete_command(word, start));
+            return Ok(complete_command(self.available_commands.clone(), word, start));
         }
 
         if line.starts_with('@') {
@@ -256,7 +269,7 @@ impl Completer for ChatCompleter {
         }
 
         // Handle file path completion as fallback
-        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _os) {
+        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _ctx) {
             if !completions.is_empty() {
                 return Ok((pos, completions));
             }
@@ -272,14 +285,16 @@ pub struct ChatHinter {
     /// Whether history-based hints are enabled
     history_hints_enabled: bool,
     history_path: PathBuf,
+    available_commands: Vec<&'static str>,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new(history_hints_enabled: bool, history_path: PathBuf) -> Self {
+    pub fn new(history_hints_enabled: bool, history_path: PathBuf, available_commands: Vec<&'static str>) -> Self {
         Self {
             history_hints_enabled,
             history_path,
+            available_commands,
         }
     }
 
@@ -296,7 +311,8 @@ impl ChatHinter {
 
         // If line starts with a slash, try to find a command hint
         if line.starts_with('/') {
-            return COMMANDS
+            return self
+                .available_commands
                 .iter()
                 .find(|cmd| cmd.starts_with(line))
                 .map(|cmd| cmd[line.len()..].to_string());
@@ -397,42 +413,47 @@ impl Highlighter for ChatHelper {
     }
 
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        use crossterm::style::Stylize;
+        use crate::theme::StyledText;
 
         // Parse the plain text prompt to extract profile and warning information
         // and apply colors using crossterm's ANSI escape codes
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add profile part if present (cyan)
+            // Add notifier part if present (info blue)
+            if let Some(notifier) = components.delegate_notifier {
+                result.push_str(&StyledText::info(&format!("[{}]\n", notifier)));
+            }
+
+            // Add profile part if present (profile indicator cyan)
             if let Some(profile) = components.profile {
-                result.push_str(&format!("[{}] ", profile).cyan().to_string());
+                result.push_str(&StyledText::profile(&format!("[{}] ", profile)));
             }
 
             // Add percentage part if present (colored by usage level)
             if let Some(percentage) = components.usage_percentage {
                 let colored_percentage = if percentage < 50.0 {
-                    format!("{}% ", percentage as u32).green()
+                    StyledText::usage_low(&format!("{}% ", percentage as u32))
                 } else if percentage < 90.0 {
-                    format!("{}% ", percentage as u32).yellow()
+                    StyledText::usage_medium(&format!("{}% ", percentage as u32))
                 } else {
-                    format!("{}% ", percentage as u32).red()
+                    StyledText::usage_high(&format!("{}% ", percentage as u32))
                 };
-                result.push_str(&colored_percentage.to_string());
+                result.push_str(&colored_percentage);
             }
 
-            // Add tangent indicator if present (yellow)
+            // Add tangent indicator if present (tangent yellow)
             if components.tangent_mode {
-                result.push_str(&"↯ ".yellow().to_string());
+                result.push_str(&StyledText::tangent("↯ "));
             }
 
-            // Add warning symbol if present (red)
+            // Add warning symbol if present (error red)
             if components.warning {
-                result.push_str(&"!".red().to_string());
+                result.push_str(&StyledText::error("!"));
             }
 
-            // Add the prompt symbol (magenta)
-            result.push_str(&"> ".magenta().to_string());
+            // Add the prompt symbol (prompt magenta)
+            result.push_str(&StyledText::prompt("> "));
 
             Cow::Owned(result)
         } else {
@@ -465,9 +486,12 @@ pub fn rl(
 
     let history_path = chat_cli_bash_history_path(os)?;
 
+    // Generate available commands based on enabled experiments
+    let available_commands = get_available_commands(os);
+
     let h = ChatHelper {
-        completer: ChatCompleter::new(sender, receiver),
-        hinter: ChatHinter::new(history_hints_enabled, history_path),
+        completer: ChatCompleter::new(sender, receiver, available_commands.clone()),
+        hinter: ChatHinter::new(history_hints_enabled, history_path, available_commands),
         validator: MultiLineValidator,
     };
 
@@ -479,6 +503,18 @@ pub fn rl(
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
             eprintln!("Warning: Failed to load history: {}", e);
         }
+    }
+
+    // Add custom keybinding for Ctrl+D to open delegate command (configurable)
+    if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+        if let Some(key) = os.database.settings.get_string(Setting::DelegateModeKey) {
+            if key.len() == 1 {
+                rl.bind_sequence(
+                    KeyEvent(KeyCode::Char(key.chars().next().unwrap()), Modifiers::CTRL),
+                    EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+                );
+            }
+        };
     }
 
     // Add custom keybinding for Alt+Enter to insert a newline
@@ -518,26 +554,31 @@ pub fn rl(
 
 #[cfg(test)]
 mod tests {
-    use crossterm::style::Stylize;
     use rustyline::highlight::Highlighter;
     use rustyline::history::DefaultHistory;
 
     use super::*;
+    use crate::cli::experiment::experiment_manager::ExperimentName;
+    use crate::theme::StyledText;
 
-    #[test]
-    fn test_chat_completer_command_completion() {
+    #[tokio::test]
+    async fn test_chat_completer_command_completion() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver, available_commands);
         let line = "/h";
         let pos = 2; // Position at the end of "/h"
 
         // Create a mock context with empty history
         let empty_history = DefaultHistory::new();
-        let os = Context::new(&empty_history);
+        let ctx = Context::new(&empty_history);
 
         // Get completions
-        let (start, completions) = completer.complete(line, pos, &os).unwrap();
+        let (start, completions) = completer.complete(line, pos, &ctx).unwrap();
 
         // Verify start position
         assert_eq!(start, 0);
@@ -546,80 +587,122 @@ mod tests {
         assert!(completions.contains(&"/help".to_string()));
     }
 
-    #[test]
-    fn test_chat_completer_no_completion() {
+    #[tokio::test]
+    async fn test_chat_completer_no_completion() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let completer = ChatCompleter::new(prompt_request_sender, prompt_response_receiver, available_commands);
         let line = "Hello, how are you?";
         let pos = line.len();
 
         // Create a mock context with empty history
         let empty_history = DefaultHistory::new();
-        let os = Context::new(&empty_history);
+        let ctx = Context::new(&empty_history);
 
         // Get completions
-        let (_, completions) = completer.complete(line, pos, &os).unwrap();
+        let (_, completions) = completer.complete(line, pos, &ctx).unwrap();
 
         // Verify no completions are returned for regular text
         assert!(completions.is_empty());
     }
 
-    #[test]
-    fn test_highlight_prompt_basic() {
+    #[tokio::test]
+    async fn test_highlight_prompt_basic() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
         // Test basic prompt highlighting
         let highlighted = helper.highlight_prompt("> ", true);
 
-        assert_eq!(highlighted, "> ".magenta().to_string());
+        assert_eq!(highlighted, StyledText::prompt("> "));
     }
 
-    #[test]
-    fn test_highlight_prompt_with_warning() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_warning() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
         // Test warning prompt highlighting
         let highlighted = helper.highlight_prompt("!> ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::error("!"), StyledText::prompt("> "))
+        );
     }
 
-    #[test]
-    fn test_highlight_prompt_with_profile() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_profile() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
         // Test profile prompt highlighting
         let highlighted = helper.highlight_prompt("[test-profile] > ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "[test-profile] ".cyan(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::profile("[test-profile] "), StyledText::prompt("> "))
+        );
     }
 
-    #[test]
-    fn test_highlight_prompt_with_profile_and_warning() {
+    #[tokio::test]
+    async fn test_highlight_prompt_with_profile_and_warning() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -628,17 +711,30 @@ mod tests {
         // Should have cyan profile + red warning + cyan bold prompt
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
         );
     }
 
-    #[test]
-    fn test_highlight_prompt_invalid_format() {
+    #[tokio::test]
+    async fn test_highlight_prompt_invalid_format() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(5);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -648,43 +744,78 @@ mod tests {
         assert_eq!(highlighted, invalid_prompt);
     }
 
-    #[test]
-    fn test_highlight_prompt_tangent_mode() {
+    #[tokio::test]
+    async fn test_highlight_prompt_tangent_mode() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
         // Test tangent mode prompt highlighting - ↯ yellow, > magenta
         let highlighted = helper.highlight_prompt("↯ > ", true);
-        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::tangent("↯ "), StyledText::prompt("> "))
+        );
     }
 
-    #[test]
-    fn test_highlight_prompt_tangent_mode_with_warning() {
+    #[tokio::test]
+    async fn test_highlight_prompt_tangent_mode_with_warning() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
         // Test tangent mode with warning - ↯ yellow, ! red, > magenta
         let highlighted = helper.highlight_prompt("↯ !> ", true);
-        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!(
+                "{}{}{}",
+                StyledText::tangent("↯ "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
+        );
     }
 
-    #[test]
-    fn test_highlight_prompt_profile_with_tangent_mode() {
+    #[tokio::test]
+    async fn test_highlight_prompt_profile_with_tangent_mode() {
         let (prompt_request_sender, _) = tokio::sync::broadcast::channel::<PromptQuery>(1);
         let (_, prompt_response_receiver) = tokio::sync::broadcast::channel::<PromptQueryResult>(1);
+
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
         let helper = ChatHelper {
-            completer: ChatCompleter::new(prompt_request_sender, prompt_response_receiver),
-            hinter: ChatHinter::new(true, PathBuf::new()),
+            completer: ChatCompleter::new(
+                prompt_request_sender,
+                prompt_response_receiver,
+                available_commands.clone(),
+            ),
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
             validator: MultiLineValidator,
         };
 
@@ -692,13 +823,21 @@ mod tests {
         let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::tangent("↯ "),
+                StyledText::prompt("> ")
+            )
         );
     }
 
-    #[test]
-    fn test_chat_hinter_command_hint() {
-        let hinter = ChatHinter::new(true, PathBuf::new());
+    #[tokio::test]
+    async fn test_chat_hinter_command_hint() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let hinter = ChatHinter::new(true, PathBuf::new(), available_commands);
 
         // Test hint for a command
         let line = "/he";
@@ -726,9 +865,12 @@ mod tests {
         assert_eq!(hint, None);
     }
 
-    #[test]
-    fn test_chat_hinter_history_hint_disabled() {
-        let hinter = ChatHinter::new(false, PathBuf::new());
+    #[tokio::test]
+    async fn test_chat_hinter_history_hint_disabled() {
+        // Create a mock Os for testing
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+        let hinter = ChatHinter::new(false, PathBuf::new(), available_commands);
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";
@@ -766,5 +908,51 @@ mod tests {
                 panic!("Ctrl+{} appears to be overridden (found existing binding)", key);
             }
         }
+    }
+
+    #[tokio::test]
+    async fn test_experiment_based_command_completion() {
+        // Test that experimental commands are included when experiments are enabled
+        let mock_os = crate::os::Os::new().await.unwrap();
+        let available_commands = get_available_commands(&mock_os);
+
+        // Check if experimental commands are included based on experiment status
+        let knowledge_enabled = ExperimentManager::is_enabled(&mock_os, ExperimentName::Knowledge);
+        let checkpoint_enabled = ExperimentManager::is_enabled(&mock_os, ExperimentName::Checkpoint);
+        let todolist_enabled = ExperimentManager::is_enabled(&mock_os, ExperimentName::TodoList);
+        let tangent_enabled = ExperimentManager::is_enabled(&mock_os, ExperimentName::TangentMode);
+
+        if knowledge_enabled {
+            assert!(available_commands.contains(&"/knowledge"));
+            assert!(available_commands.contains(&"/knowledge help"));
+        } else {
+            assert!(!available_commands.contains(&"/knowledge"));
+        }
+
+        if checkpoint_enabled {
+            assert!(available_commands.contains(&"/checkpoint"));
+            assert!(available_commands.contains(&"/checkpoint help"));
+        } else {
+            assert!(!available_commands.contains(&"/checkpoint"));
+        }
+
+        if todolist_enabled {
+            assert!(available_commands.contains(&"/todos"));
+            assert!(available_commands.contains(&"/todos help"));
+        } else {
+            assert!(!available_commands.contains(&"/todos"));
+        }
+
+        if tangent_enabled {
+            assert!(available_commands.contains(&"/tangent"));
+            assert!(available_commands.contains(&"/tangent tail"));
+        } else {
+            assert!(!available_commands.contains(&"/tangent"));
+        }
+
+        // Base commands should always be available
+        assert!(available_commands.contains(&"/help"));
+        assert!(available_commands.contains(&"/clear"));
+        assert!(available_commands.contains(&"/quit"));
     }
 }

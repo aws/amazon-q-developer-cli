@@ -12,10 +12,66 @@
     },
     {
       "type": "release",
-      "date": "2025-09-26",
-      "version": "1.16.3",
-      "title": "Version 1.16.3",
+      "date": "2025-10-03",
+      "version": "1.18.0",
+      "title": "Version 1.18.0",
       "changes": [
+        {
+          "type": "added",
+          "description": "[Experimental] Agent delegate tool - [#3073](https://github.com/aws/amazon-q-developer-cli/pull/3073)"
+        },
+        {
+          "type": "added",
+          "description": "Stop hook functionality - [#3070](https://github.com/aws/amazon-q-developer-cli/pull/3070)"
+        },
+        {
+          "type": "added",
+          "description": "Unified show and status commands for knowledge - [#3052](https://github.com/aws/amazon-q-developer-cli/pull/3052)"
+        },
+        {
+          "type": "added",
+          "description": "/logdump command - [#2539](https://github.com/aws/amazon-q-developer-cli/pull/2539)"
+        },
+        {
+          "type": "added",
+          "description": "Experiment manager functionality - [#3054](https://github.com/aws/amazon-q-developer-cli/pull/3054)"
+        },
+        {
+          "type": "fixed",
+          "description": "MCP prompts with no arguments - [#3018](https://github.com/aws/amazon-q-developer-cli/pull/3018)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-30",
+      "version": "1.17.1",
+      "title": "Version 1.17.1",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Model description under /model command - [#3057](https://github.com/aws/amazon-q-developer-cli/pull/3057)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-09-29",
+      "version": "1.17.0",
+      "title": "Version 1.17.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "SSE support for MCP - [#2995](https://github.com/aws/amazon-q-developer-cli/pull/2995)"
+        },
+        {
+          "type": "fixed",
+          "description": "Reloads only the built-in tools only for /experiment - [#3012](https://github.com/aws/amazon-q-developer-cli/pull/3012)"
+        },
+        {
+          "type": "added",
+          "description": "Add a `/reply` command - [#2680](https://github.com/aws/amazon-q-developer-cli/pull/2680)"
+        },
         {
           "type": "added",
           "description": "[Experimental] Adds checkpointing functionality using Git CLI commands - [#2896](https://github.com/aws/amazon-q-developer-cli/pull/2896)"
@@ -54,7 +110,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Add support for preToolUse and postToolUse hook -  [#2875](https://github.com/aws/amazon-q-developer-cli/pull/2875)"
+          "description": "Add support for preToolUse and postToolUse hook - [#2875](https://github.com/aws/amazon-q-developer-cli/pull/2875)"
         },
         {
           "type": "added",

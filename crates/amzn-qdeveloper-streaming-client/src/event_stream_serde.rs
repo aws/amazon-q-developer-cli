@@ -184,6 +184,21 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::types::ChatResponseStream::AssistantResponseEvent(parsed),
                     ))
                 },
+                "reasoningContentEvent" => {
+                    let parsed =
+                        crate::protocol_serde::shape_reasoning_content_event::de_reasoning_content_event_payload(
+                            &message.payload()[..],
+                        )
+                        .map_err(|err| {
+                            ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                                "failed to unmarshall ReasoningContentEvent: {}",
+                                err
+                            ))
+                        })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::ReasoningContentEvent(parsed),
+                    ))
+                },
                 "dryRunSucceedEvent" => Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
                     crate::types::ChatResponseStream::DryRunSucceedEvent(
                         crate::types::DryRunSucceedEvent::builder().build(),
@@ -306,6 +321,19 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
                         crate::types::ChatResponseStream::MetadataEvent(parsed),
+                    ))
+                },
+                "meteringEvent" => {
+                    let parsed =
+                        crate::protocol_serde::shape_metering_event::de_metering_event_payload(&message.payload()[..])
+                            .map_err(|err| {
+                                ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                                    "failed to unmarshall MeteringEvent: {}",
+                                    err
+                                ))
+                            })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::MeteringEvent(parsed),
                     ))
                 },
                 "citationEvent" => {

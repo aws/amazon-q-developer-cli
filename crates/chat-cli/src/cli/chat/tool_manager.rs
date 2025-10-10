@@ -71,6 +71,7 @@ use crate::cli::chat::server_messenger::{
     UpdateEventMessage,
 };
 use crate::cli::chat::tools::custom_tool::CustomTool;
+use crate::cli::chat::tools::delegate::Delegate;
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -95,6 +96,7 @@ use crate::mcp_client::{
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
@@ -300,15 +302,15 @@ impl ToolManagerBuilder {
                 if server_name == "builtin" {
                     let _ = queue!(
                         output,
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print("✗ Invalid server name "),
-                        style::SetForegroundColor(style::Color::Blue),
+                        StyledText::info_fg(),
                         style::Print(&server_name),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(". Server name cannot contain reserved word "),
-                        style::SetForegroundColor(style::Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("builtin"),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(" (it is used to denote native tools)\n")
                     );
                     false
@@ -727,6 +729,9 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
+            if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
+                tool_specs.remove("delegate");
+            }
 
             #[cfg(windows)]
             {
@@ -873,6 +878,7 @@ impl ToolManager {
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
+            "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.
@@ -1008,6 +1014,35 @@ impl ToolManager {
         }
     }
 
+    #[inline]
+    fn process_prompt_arguments(
+        schema: &Option<Vec<rmcp::model::PromptArgument>>,
+        arguments: &Option<Vec<String>>,
+    ) -> Option<serde_json::Map<String, serde_json::Value>> {
+        match (schema, arguments) {
+            // No schema defined - pass None
+            (None, _) => None,
+            // Schema exists but no user values - pass empty map for MCP server
+            (Some(_schema), None) => Some(serde_json::Map::new()),
+            // Schema exists with user values - process normally
+            (Some(schema), Some(value)) => {
+                let params = schema.iter().zip(value.iter()).fold(
+                    HashMap::<String, String>::new(),
+                    |mut acc, (prompt_get_arg, value)| {
+                        acc.insert(prompt_get_arg.name.clone(), value.clone());
+                        acc
+                    },
+                );
+                Some(
+                    params
+                        .into_iter()
+                        .map(|(k, v)| (k, serde_json::Value::String(v)))
+                        .collect(),
+                )
+            },
+        }
+    }
+
     pub async fn get_prompt(
         &mut self,
         name: String,
@@ -1080,23 +1115,8 @@ impl ToolManager {
                     let server_name = &bundle.server_name;
                     let client = self.clients.get_mut(server_name).ok_or(GetPromptError::MissingClient)?;
                     let PromptBundle { prompt_get, .. } = bundle;
-                    let arguments = if let (Some(schema), Some(value)) = (&prompt_get.arguments, &arguments) {
-                        let params = schema.iter().zip(value.iter()).fold(
-                            HashMap::<String, String>::new(),
-                            |mut acc, (prompt_get_arg, value)| {
-                                acc.insert(prompt_get_arg.name.clone(), value.clone());
-                                acc
-                            },
-                        );
-                        Some(
-                            params
-                                .into_iter()
-                                .map(|(k, v)| (k, serde_json::Value::String(v)))
-                                .collect(),
-                        )
-                    } else {
-                        None
-                    };
+
+                    let arguments = Self::process_prompt_arguments(&prompt_get.arguments, &arguments);
 
                     let params = GetPromptRequestParam {
                         name: prompt_name.clone(),
@@ -1881,15 +1901,15 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
 fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Green),
+        StyledText::success_fg(),
         style::Print("✓ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" loaded in "),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!("{time_taken} s\n")),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -1901,39 +1921,29 @@ fn queue_init_message(
     output: &mut impl Write,
 ) -> eyre::Result<()> {
     if total == complete {
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Green),
-            style::Print("✓"),
-            style::ResetColor,
-        )?;
+        queue!(output, StyledText::success_fg(), style::Print("✓"), StyledText::reset(),)?;
     } else if total == complete + failed {
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Red),
-            style::Print("✗"),
-            style::ResetColor,
-        )?;
+        queue!(output, StyledText::error_fg(), style::Print("✗"), StyledText::reset(),)?;
     } else {
         queue!(output, style::Print(SPINNER_CHARS[spinner_logo_idx]))?;
     }
     queue!(
         output,
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(format!(" {}", complete)),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(format!("{} ", total)),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("mcp servers initialized."),
     )?;
     if total > complete + failed {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Blue),
+            StyledText::info_fg(),
             style::Print(" ctrl-c "),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print("to start chatting now")
         )?;
     }
@@ -1949,33 +1959,33 @@ fn queue_failure_message(
     use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Red),
+        StyledText::error_fg(),
         style::Print("✗ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" has failed to load after"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!(" {time} s")),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n - "),
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
             " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
         )),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
 fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" requires OAuth authentication. Use /mcp to see the auth link\n"),
     )?)
 }
@@ -1983,15 +1993,15 @@ fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> 
 fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" requires OAuth authentication. Follow this link to proceed: \n"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n")
     )?)
 }
@@ -1999,31 +2009,31 @@ fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut im
 fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" has loaded in"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!(" {time} s")),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" with the following warning:\n"),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
 fn queue_disabled_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::DarkGrey),
+        StyledText::secondary_fg(),
         style::Print("○ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" is disabled\n"),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -2035,21 +2045,21 @@ fn queue_incomplete_load_message(
 ) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠"),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(format!(" {}", complete)),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(format!("{} ", total)),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("mcp servers initialized."),
-        style::ResetColor,
+        StyledText::reset(),
         // We expect the message start with a newline
         style::Print(" Servers still loading:"),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -2113,6 +2123,8 @@ mod tests {
         let prompt = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
             description: Some("Test description".to_string()),
+            title: None,
+            icons: None,
             arguments: None,
         };
 
@@ -2126,7 +2138,7 @@ mod tests {
             prompt_get: prompt,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test finding specific server
         let found = bundles.iter().find(|b| b.server_name == "server1");
@@ -2157,5 +2169,36 @@ mod tests {
 
         assert_eq!(params.name, "test-prompt"); // Not "example-server/test-prompt"
         assert_eq!(server_name, Some("example-server".to_string()));
+    }
+
+    #[test]
+    fn test_process_prompt_arguments() {
+        use rmcp::model::PromptArgument;
+
+        // Test Case 1: No schema - should return None
+        let no_schema: Option<Vec<PromptArgument>> = None;
+        let no_user_args: Option<Vec<String>> = None;
+        let result = ToolManager::process_prompt_arguments(&no_schema, &no_user_args);
+        assert_eq!(result, None);
+
+        // Test Case 2: Schema exists but no user args - should return empty map
+        let optional_schema = Some(vec![PromptArgument {
+            name: "optional_param".to_string(),
+            description: Some("An optional parameter".to_string()),
+            title: None,
+            required: Some(false),
+        }]);
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &no_user_args);
+        assert_eq!(result, Some(serde_json::Map::new()));
+
+        // Test Case 3: Schema with user args - should process normally
+        let user_args = Some(vec!["test_value".to_string()]);
+        let result = ToolManager::process_prompt_arguments(&optional_schema, &user_args);
+        let mut expected_map = serde_json::Map::new();
+        expected_map.insert(
+            "optional_param".to_string(),
+            serde_json::Value::String("test_value".to_string()),
+        );
+        assert_eq!(result, Some(expected_map));
     }
 }

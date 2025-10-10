@@ -2,8 +2,6 @@ use clap::Subcommand;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
 };
 
 use crate::cli::ConversationState;
@@ -13,6 +11,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Commands for persisting and loading conversation state
 #[deny(missing_docs)]
@@ -42,9 +41,9 @@ impl PersistSubcommand {
                     Err(err) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(format!("\nFailed to {} {}: {}\n\n", $name, $path, &err)),
-                            style::SetAttribute(Attribute::Reset)
+                            StyledText::reset_attributes()
                         )?;
 
                         return Ok(ChatState::PromptUser {
@@ -61,12 +60,12 @@ impl PersistSubcommand {
                 if os.fs.exists(&path) && !force {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!(
                             "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
                             &path
                         )),
-                        style::SetAttribute(Attribute::Reset)
+                        StyledText::reset_attributes()
                     )?;
                     return Ok(ChatState::PromptUser {
                         skip_printing_tools: true,
@@ -76,9 +75,9 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n✔ Exported conversation state to {}\n\n", &path)),
-                    style::SetAttribute(Attribute::Reset)
+                    StyledText::reset_attributes()
                 )?;
             },
             Self::Load { path } => {
@@ -112,9 +111,9 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
-                    style::SetAttribute(Attribute::Reset)
+                    StyledText::reset_attributes()
                 )?;
             },
         }

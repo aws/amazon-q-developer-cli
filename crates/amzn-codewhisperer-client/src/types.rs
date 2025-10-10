@@ -125,6 +125,8 @@ pub use crate::types::_profile_type::ProfileType;
 pub use crate::types::_programming_language::ProgrammingLanguage;
 pub use crate::types::_prompt_logging::PromptLogging;
 pub use crate::types::_range::Range;
+pub use crate::types::_reasoning_content::ReasoningContent;
+pub use crate::types::_reasoning_text::ReasoningText;
 pub use crate::types::_recommendations_with_references_preference::RecommendationsWithReferencesPreference;
 pub use crate::types::_reference::Reference;
 pub use crate::types::_reference_tracker_configuration::ReferenceTrackerConfiguration;
@@ -475,6 +477,10 @@ mod _programming_language;
 mod _prompt_logging;
 
 mod _range;
+
+mod _reasoning_content;
+
+mod _reasoning_text;
 
 mod _recommendations_with_references_preference;
 

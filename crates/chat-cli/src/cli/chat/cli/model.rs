@@ -2,7 +2,6 @@ use amzn_codewhisperer_client::types::Model;
 use clap::Args;
 use crossterm::style::{
     self,
-    Color,
 };
 use crossterm::{
     execute,
@@ -21,12 +20,16 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ModelInfo {
     /// Display name
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model_name: Option<String>,
+    /// Description of the model
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Actual model id to send in the API
     pub model_id: String,
     /// Size of the model's context window, in tokens
@@ -42,6 +45,7 @@ impl ModelInfo {
             .map_or(default_context_window(), |tokens| tokens as usize);
         Self {
             model_id: model.model_id().to_string(),
+            description: model.description.clone(),
             model_name: model.model_name().map(|s| s.to_string()),
             context_window_tokens,
         }
@@ -51,6 +55,7 @@ impl ModelInfo {
     pub fn from_id(model_id: String) -> Self {
         Self {
             model_id,
+            description: None,
             model_name: None,
             context_window_tokens: 200_000,
         }
@@ -58,6 +63,12 @@ impl ModelInfo {
 
     pub fn display_name(&self) -> &str {
         self.model_name.as_deref().unwrap_or(&self.model_id)
+    }
+
+    pub fn description(&self) -> Option<&str> {
+        self.description
+            .as_deref()
+            .and_then(|d| if d.is_empty() { None } else { Some(d) })
     }
 }
 
@@ -82,9 +93,9 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
     if models.is_empty() {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("No models available\n"),
-            style::ResetColor
+            StyledText::reset(),
         )?;
         return Ok(None);
     }
@@ -95,10 +106,17 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         .iter()
         .map(|model| {
             let display_name = model.display_name();
+            let description = model.description();
             if Some(model.model_id.as_str()) == active_model_id {
-                format!("{} (active)", display_name)
+                if let Some(desc) = description {
+                    format!("{} (active) | {}", display_name, desc)
+                } else {
+                    format!("{} (active)", display_name)
+                }
+            } else if let Some(desc) = description {
+                format!("{} | {}", display_name, desc)
             } else {
-                display_name.to_owned()
+                display_name.to_string()
             }
         })
         .collect();
@@ -110,10 +128,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
         Ok(sel) => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-            );
+            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
             sel
         },
         // Ctrl‑C -> Err(Interrupted)
@@ -121,7 +136,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         Err(e) => return Err(ChatError::Custom(format!("Failed to choose model: {e}").into())),
     };
 
-    queue!(session.stderr, style::ResetColor)?;
+    queue!(session.stderr, StyledText::reset())?;
 
     if let Some(index) = selection {
         let selected = models[index].clone();
@@ -132,13 +147,13 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             session.stderr,
             style::Print("\n"),
             style::Print(format!(" Using {}\n\n", display_name)),
-            style::ResetColor,
-            style::SetForegroundColor(Color::Reset),
-            style::SetBackgroundColor(Color::Reset),
+            StyledText::reset(),
+            StyledText::reset(),
+            StyledText::reset(),
         )?;
     }
 
-    execute!(session.stderr, style::ResetColor)?;
+    execute!(session.stderr, StyledText::reset())?;
 
     Ok(Some(ChatState::PromptUser {
         skip_printing_tools: false,
@@ -194,11 +209,13 @@ fn get_fallback_models() -> Vec<ModelInfo> {
         ModelInfo {
             model_name: Some("claude-sonnet-4".to_string()),
             model_id: "claude-sonnet-4".to_string(),
+            description: None,
             context_window_tokens: 200_000,
         },
         ModelInfo {
             model_name: Some("claude-3.7-sonnet".to_string()),
             model_id: "claude-3.7-sonnet".to_string(),
+            description: None,
             context_window_tokens: 200_000,
         },
     ]

@@ -4,11 +4,12 @@ use crossterm::execute;
 use crossterm::style::{
     self,
     Attribute,
-    Color,
 };
 use eyre::Result;
 
 use crate::cli::feed::Feed;
+use crate::constants::ui_text;
+use crate::theme::StyledText;
 
 /// Render changelog content from feed.json with manual formatting
 pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
@@ -21,32 +22,35 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
     execute!(output, style::Print("\n"))?;
 
     // Title
-    execute!(
-        output,
-        style::SetForegroundColor(Color::Magenta),
-        style::SetAttribute(Attribute::Bold),
-        style::Print("What's New in Amazon Q CLI\n\n"),
-        style::SetAttribute(Attribute::Reset),
-        style::SetForegroundColor(Color::Reset),
-    )?;
+    execute!(output, style::Print(ui_text::changelog_header()),)?;
 
     // Render recent entries
     for entry in recent_entries {
         // Show version header
         execute!(
             output,
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::SetAttribute(Attribute::Bold),
             style::Print(format!("## {} ({})\n", entry.version, entry.date)),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset_attributes(),
+            StyledText::reset(),
         )?;
 
-        for change in &entry.changes {
-            // Process **bold** syntax and remove PR links
+        let mut sorted_changes = entry.changes.clone();
+        sorted_changes.sort_by(|a, b| a.change_type.cmp(&b.change_type));
+
+        for change in &sorted_changes {
             let cleaned_description = clean_pr_links(&change.description);
             let processed_description = process_bold_text(&cleaned_description);
-            execute!(output, style::Print("• "))?;
+            let capitalized_type = capitalize_first_word(&change.change_type);
+            execute!(output, style::Print("• ["))?;
+            execute!(
+                output,
+                StyledText::emphasis_fg(),
+                style::Print(&capitalized_type),
+                StyledText::reset(),
+            )?;
+            execute!(output, style::Print("] "))?;
             print_with_bold(output, &processed_description)?;
             execute!(output, style::Print("\n"))?;
         }
@@ -58,6 +62,19 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
         style::Print("\nRun `/changelog` anytime to see the latest updates and features!\n\n")
     )?;
     Ok(())
+}
+
+/// Capitalizes the first character of a string.
+fn capitalize_first_word(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => {
+            let mut result = first.to_uppercase().collect::<String>();
+            result.push_str(chars.as_str());
+            result
+        },
+    }
 }
 
 /// Removes PR links and numbers from changelog descriptions to improve readability.
@@ -126,7 +143,7 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
                 output,
                 style::SetAttribute(Attribute::Bold),
                 style::Print(text),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
             )?;
         } else {
             execute!(output, style::Print(text))?;

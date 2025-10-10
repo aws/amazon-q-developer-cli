@@ -162,25 +162,6 @@ impl KnowledgeStore {
             .and_then(|name| name.to_str())
             .unwrap_or(DEFAULT_AGENT_NAME);
 
-        // Migrate from legacy ~/.semantic_search
-        let old_flat_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".semantic_search");
-
-        if old_flat_dir.exists() && !agent_dir.exists() {
-            if let Some(parent) = agent_dir.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            if std::fs::rename(&old_flat_dir, agent_dir).is_ok() {
-                println!(
-                    "✅ Migrated knowledge base from {} to {}",
-                    old_flat_dir.display(),
-                    agent_dir.display()
-                );
-                return true;
-            }
-        }
-
         // Migrate from knowledge_bases root - get file list first to avoid recursion
         if let Some(kb_root) = agent_dir.parent() {
             if kb_root.exists() {

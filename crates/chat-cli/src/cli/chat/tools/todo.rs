@@ -24,8 +24,12 @@ use serde::{
 };
 
 use super::InvokeOutput;
-use crate::database::settings::Setting;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, Default, Serialize, Deserialize, Clone)]
 pub struct Task {
@@ -93,19 +97,15 @@ fn queue_next_without_newline(output: &mut impl Write, task: String, completed: 
     if completed {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Green),
+            StyledText::success_fg(),
             style::Print("[x] "),
             style::SetAttribute(style::Attribute::Italic),
-            style::SetForegroundColor(style::Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(task),
             style::SetAttribute(style::Attribute::NoItalic),
         )?;
     } else {
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Reset),
-            style::Print(format!("[ ] {task}")),
-        )?;
+        queue!(output, StyledText::reset(), style::Print(format!("[ ] {task}")),)?;
     }
     Ok(())
 }
@@ -216,16 +216,16 @@ pub enum TodoList {
 impl TodoList {
     /// Checks if todo lists are enabled
     pub fn is_enabled(os: &Os) -> bool {
-        os.database.settings.get_bool(Setting::EnabledTodoList).unwrap_or(false)
+        ExperimentManager::is_enabled(os, ExperimentName::TodoList)
     }
 
     pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
         if !Self::is_enabled(os) {
             queue!(
                 output,
-                style::SetForegroundColor(style::Color::Red),
+                StyledText::error_fg(),
                 style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true"),
-                style::SetForegroundColor(style::Color::Reset)
+                StyledText::reset(),
             )?;
             return Ok(InvokeOutput {
                 output: super::OutputKind::Text("Todo lists are disabled.".to_string()),

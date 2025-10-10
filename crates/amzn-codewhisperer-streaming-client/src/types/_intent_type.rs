@@ -12,6 +12,7 @@
 /// ```text
 /// # let intenttype = unimplemented!();
 /// match intenttype {
+///     IntentType::Artifact => { /* ... */ },
 ///     IntentType::Deeplinks => { /* ... */ },
 ///     IntentType::GlueSensei => { /* ... */ },
 ///     IntentType::ResourceData => { /* ... */ },
@@ -50,6 +51,8 @@
 )]
 pub enum IntentType {
     #[allow(missing_docs)] // documentation missing in model
+    Artifact,
+    #[allow(missing_docs)] // documentation missing in model
     Deeplinks,
     #[allow(missing_docs)] // documentation missing in model
     GlueSensei,
@@ -66,6 +69,7 @@ pub enum IntentType {
 impl ::std::convert::From<&str> for IntentType {
     fn from(s: &str) -> Self {
         match s {
+            "ARTIFACT" => IntentType::Artifact,
             "DEEPLINKS" => IntentType::Deeplinks,
             "GLUE_SENSEI" => IntentType::GlueSensei,
             "RESOURCE_DATA" => IntentType::ResourceData,
@@ -87,6 +91,7 @@ impl IntentType {
     /// Returns the `&str` value of the enum member.
     pub fn as_str(&self) -> &str {
         match self {
+            IntentType::Artifact => "ARTIFACT",
             IntentType::Deeplinks => "DEEPLINKS",
             IntentType::GlueSensei => "GLUE_SENSEI",
             IntentType::ResourceData => "RESOURCE_DATA",
@@ -97,7 +102,7 @@ impl IntentType {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["DEEPLINKS", "GLUE_SENSEI", "RESOURCE_DATA", "SUPPORT"]
+        &["ARTIFACT", "DEEPLINKS", "GLUE_SENSEI", "RESOURCE_DATA", "SUPPORT"]
     }
 }
 impl ::std::convert::AsRef<str> for IntentType {
@@ -120,6 +125,7 @@ impl IntentType {
 impl ::std::fmt::Display for IntentType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
+            IntentType::Artifact => write!(f, "ARTIFACT"),
             IntentType::Deeplinks => write!(f, "DEEPLINKS"),
             IntentType::GlueSensei => write!(f, "GLUE_SENSEI"),
             IntentType::ResourceData => write!(f, "RESOURCE_DATA"),

@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
@@ -7,6 +8,7 @@ pub mod editor;
 pub mod experiment;
 pub mod hooks;
 pub mod knowledge;
+pub mod logdump;
 pub mod mcp;
 pub mod model;
 pub mod persist;
@@ -28,6 +30,7 @@ use editor::EditorArgs;
 use experiment::ExperimentArgs;
 use hooks::HooksArgs;
 use knowledge::KnowledgeSubcommand;
+use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
 use persist::PersistSubcommand;
@@ -46,14 +49,14 @@ use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
-    EXTRA_HELP,
 };
 use crate::cli::issue;
+use crate::constants::ui_text;
 use crate::os::Os;
 
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
-#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
+#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help())]
 pub enum SlashCommand {
     /// Quit the application
     #[command(aliases = ["q", "exit"])]
@@ -83,6 +86,8 @@ pub enum SlashCommand {
     Tools(ToolsArgs),
     /// Create a new Github issue or make a feature request
     Issue(issue::IssueArgs),
+    /// Create a zip file with logs for support investigation
+    Logdump(LogdumpArgs),
     /// View changelog for Amazon Q CLI
     #[command(name = "changelog")]
     Changelog(ChangelogArgs),
@@ -104,11 +109,16 @@ pub enum SlashCommand {
     /// chat.enableTangentMode true"
     #[command(hide = true)]
     Tangent(TangentArgs),
+    /// Make conversations persistent
     #[command(flatten)]
     Persist(PersistSubcommand),
     // #[command(flatten)]
     // Root(RootSubcommand),
-    #[command(subcommand)]
+    #[command(
+        about = "(Beta) Manage workspace checkpoints (init, list, restore, expand, diff, clean)\nExperimental features may be changed or removed at any time",
+        hide = true,
+        subcommand
+    )]
     Checkpoint(CheckpointSubcommand),
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
@@ -128,16 +138,16 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),
                     style::Print("\n"),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 Ok(ChatState::PromptUser {
@@ -159,6 +169,7 @@ impl SlashCommand {
                     skip_printing_tools: true,
                 })
             },
+            Self::Logdump(args) => args.execute(session).await,
             Self::Changelog(args) => args.execute(session).await,
             Self::Prompts(args) => args.execute(os, session).await,
             Self::Hooks(args) => args.execute(session).await,
@@ -196,6 +207,7 @@ impl SlashCommand {
             Self::Compact(_) => "compact",
             Self::Tools(_) => "tools",
             Self::Issue(_) => "issue",
+            Self::Logdump(_) => "logdump",
             Self::Changelog(_) => "changelog",
             Self::Prompts(_) => "prompts",
             Self::Hooks(_) => "hooks",

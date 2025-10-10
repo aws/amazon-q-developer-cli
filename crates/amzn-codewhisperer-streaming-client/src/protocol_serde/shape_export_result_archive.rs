@@ -47,36 +47,6 @@ pub fn de_export_result_archive_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "ThrottlingError" => crate::operation::export_result_archive::ExportResultArchiveError::ThrottlingError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
-                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::throttling_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
-            };
-            tmp
-        }),
-        "ValidationError" => crate::operation::export_result_archive::ExportResultArchiveError::ValidationError({
-            #[allow(unused_mut)]
-            let mut tmp = {
-                #[allow(unused_mut)]
-                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
-                output =
-                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
-                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
-                let output = output.meta(generic);
-                crate::serde_util::validation_error_correct_errors(output)
-                    .build()
-                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
-            };
-            tmp
-        }),
         "AccessDeniedError" => crate::operation::export_result_archive::ExportResultArchiveError::AccessDeniedError({
             #[allow(unused_mut)]
             let mut tmp = {
@@ -146,6 +116,36 @@ pub fn de_export_result_archive_http_error(
                 tmp
             })
         },
+        "ThrottlingError" => crate::operation::export_result_archive::ExportResultArchiveError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
+            };
+            tmp
+        }),
+        "ValidationError" => crate::operation::export_result_archive::ExportResultArchiveError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
+                        .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::export_result_archive::ExportResultArchiveError::unhandled)?
+            };
+            tmp
+        }),
         _ => crate::operation::export_result_archive::ExportResultArchiveError::generic(generic),
     })
 }

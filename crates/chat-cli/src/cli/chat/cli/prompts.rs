@@ -16,7 +16,6 @@ use clap::{
 use crossterm::style::{
     self,
     Attribute,
-    Color,
 };
 use crossterm::{
     execute,
@@ -41,6 +40,7 @@ use crate::cli::chat::{
 };
 use crate::mcp_client::McpClientError;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories::{
     chat_global_prompts_dir,
     chat_local_prompts_dir,
@@ -336,13 +336,13 @@ fn handle_mcp_invalid_params_error(
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("Error: Invalid arguments for prompt '"),
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::brand_fg(),
             style::Print(name),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("':\n"),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
 
         for error in &all_errors {
@@ -351,11 +351,11 @@ fn handle_mcp_invalid_params_error(
                 queue!(
                     session.stderr,
                     style::Print("  - "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&param_name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(": "),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print(&error.message),
                     style::Print("\n"),
                 )?;
@@ -363,7 +363,7 @@ fn handle_mcp_invalid_params_error(
                 queue!(
                     session.stderr,
                     style::Print("  - "),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print(&error.message),
                     style::Print("\n"),
                 )?;
@@ -373,11 +373,11 @@ fn handle_mcp_invalid_params_error(
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("Use '/prompts details "),
             style::Print(name),
             style::Print("' for usage information."),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n"),
         )?;
 
@@ -387,15 +387,15 @@ fn handle_mcp_invalid_params_error(
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("Error: Invalid arguments for prompt '"),
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::brand_fg(),
             style::Print(name),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("'. Use '/prompts details "),
             style::Print(name),
             style::Print("' for usage information."),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n"),
         )?;
         execute!(session.stderr)?;
@@ -422,10 +422,10 @@ fn handle_mcp_internal_error(name: &str, error_str: &str, session: &mut ChatSess
                     queue!(
                         session.stderr,
                         style::Print("\n"),
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print("Error: "),
                         style::Print(message),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                         style::Print("\n"),
                     )?;
 
@@ -450,13 +450,13 @@ fn handle_mcp_internal_error(name: &str, error_str: &str, session: &mut ChatSess
     queue!(
         session.stderr,
         style::Print("\n"),
-        style::SetForegroundColor(Color::Red),
+        StyledText::error_fg(),
         style::Print("Error: MCP server internal error while processing prompt '"),
-        style::SetForegroundColor(Color::Cyan),
+        StyledText::brand_fg(),
         style::Print(name),
-        style::SetForegroundColor(Color::Red),
+        StyledText::error_fg(),
         style::Print("'."),
-        style::SetForegroundColor(Color::Reset),
+        StyledText::reset(),
         style::Print("\n"),
     )?;
     execute!(session.stderr)?;
@@ -475,11 +475,11 @@ fn display_missing_args_error(
     queue!(
         session.stderr,
         style::Print("\n"),
-        style::SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("Error: Missing required arguments for prompt "),
-        style::SetForegroundColor(Color::Cyan),
+        StyledText::brand_fg(),
         style::Print(prompt_name),
-        style::SetForegroundColor(Color::Reset),
+        StyledText::reset(),
         style::Print("\n\n"),
     )?;
 
@@ -500,7 +500,7 @@ fn display_missing_args_error(
                 queue!(
                     session.stderr,
                     style::Print("Usage: "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print("@"),
                     style::Print(prompt_name),
                 )?;
@@ -522,11 +522,7 @@ fn display_missing_args_error(
                     )?;
                 }
 
-                queue!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Reset),
-                    style::Print("\n"),
-                )?;
+                queue!(session.stderr, StyledText::reset(), style::Print("\n"),)?;
 
                 if !args.is_empty() {
                     queue!(session.stderr, style::Print("\nArguments:\n"),)?;
@@ -536,11 +532,11 @@ fn display_missing_args_error(
                         queue!(
                             session.stderr,
                             style::Print("  "),
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("(required) "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(&arg.name),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                         if let Some(desc) = &arg.description {
                             if !desc.trim().is_empty() {
@@ -555,11 +551,11 @@ fn display_missing_args_error(
                         queue!(
                             session.stderr,
                             style::Print("  "),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("(optional) "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(&arg.name),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                         if let Some(desc) = &arg.description {
                             if !desc.trim().is_empty() {
@@ -662,13 +658,13 @@ impl PromptsArgs {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Usage: "),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("You can use a prompt by typing "),
             style::SetAttribute(Attribute::Bold),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print("'@<prompt name> [...args]'"),
-            style::SetForegroundColor(Color::Reset),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset(),
+            StyledText::reset_attributes(),
             style::Print("\n\n"),
         )?;
 
@@ -678,21 +674,21 @@ impl PromptsArgs {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Prompt"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print({
                 let padding = description_pos.saturating_sub(UnicodeWidthStr::width("Prompt"));
                 " ".repeat(padding)
             }),
             style::SetAttribute(Attribute::Bold),
             style::Print("Description"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print({
                 let padding = arguments_pos.saturating_sub(description_pos + UnicodeWidthStr::width("Description"));
                 " ".repeat(padding)
             }),
             style::SetAttribute(Attribute::Bold),
             style::Print("Arguments (* = required)"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
             style::Print(format!("{}\n", "▔".repeat(terminal_width))),
         )?;
@@ -736,7 +732,7 @@ impl PromptsArgs {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::Print("Global (.aws/amazonq/prompts):"),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
                 for name in &global_prompts {
@@ -753,7 +749,7 @@ impl PromptsArgs {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     style::Print("Local (.amazonq/prompts):"),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
                 for name in &local_prompts {
@@ -762,9 +758,9 @@ impl PromptsArgs {
                     if has_global_version {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print(" (overrides global)"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
 
@@ -784,7 +780,7 @@ impl PromptsArgs {
                 style::SetAttribute(Attribute::Bold),
                 style::Print(server_name),
                 style::Print(" (MCP):"),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
                 style::Print("\n"),
             )?;
 
@@ -802,9 +798,9 @@ impl PromptsArgs {
                 queue!(
                     session.stderr,
                     style::Print(" ".repeat(description_padding)),
-                    style::SetForegroundColor(Color::DarkGrey),
+                    StyledText::secondary_fg(),
                     style::Print(&truncated_desc),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
 
                 // Print arguments if they exist
@@ -817,12 +813,12 @@ impl PromptsArgs {
                         for (i, arg) in args.iter().enumerate() {
                             queue!(
                                 session.stderr,
-                                style::SetForegroundColor(Color::DarkGrey),
+                                StyledText::secondary_fg(),
                                 style::Print(match arg.required {
                                     Some(true) => format!("{}*", arg.name),
                                     _ => arg.name.clone(),
                                 }),
-                                style::SetForegroundColor(Color::Reset),
+                                StyledText::reset(),
                                 style::Print(if i < args.len() - 1 { ", " } else { "" }),
                             )?;
                         }
@@ -866,7 +862,7 @@ pub enum PromptsSubcommand {
         /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
-    /// Create a new prompt
+    /// Create a new local prompt
     Create {
         /// Name of the prompt to create
         #[arg(short = 'n', long)]
@@ -878,7 +874,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Edit an existing prompt
+    /// Edit an existing local prompt
     Edit {
         /// Name of the prompt to edit
         name: String,
@@ -886,7 +882,7 @@ pub enum PromptsSubcommand {
         #[arg(long)]
         global: bool,
     },
-    /// Remove an existing prompt
+    /// Remove an existing local prompt
     Remove {
         /// Name of the prompt to remove
         name: String,
@@ -930,17 +926,17 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("' exist. Showing file-based prompt.\n"),
                     style::Print("To see MCP prompt, specify server: "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print("/prompts details <server>/"),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
                 execute!(session.stderr)?;
@@ -981,17 +977,17 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(" not found. Use "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print("/prompts list"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(" to see available prompts.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
             },
             1 => {
@@ -1008,15 +1004,15 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(" is ambiguous. Use one of the following:"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(alt_msg),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
             },
         }
@@ -1037,7 +1033,7 @@ impl PromptsSubcommand {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Prompt Details"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
             style::Print("▔".repeat(terminal_width)),
             style::Print("\n\n"),
@@ -1048,12 +1044,12 @@ impl PromptsSubcommand {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("Name: "),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print(&prompt.name),
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Server: "),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print(&bundle.server_name),
             style::Print("\n\n"),
         )?;
@@ -1063,7 +1059,7 @@ impl PromptsSubcommand {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("Description:"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
         )?;
 
@@ -1081,9 +1077,9 @@ impl PromptsSubcommand {
             _ => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::DarkGrey),
+                    StyledText::secondary_fg(),
                     style::Print("  (no description available)"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
             },
@@ -1095,8 +1091,8 @@ impl PromptsSubcommand {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Usage: "),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::reset_attributes(),
+            StyledText::brand_fg(),
             style::Print("@"),
             style::Print(&prompt.name),
         )?;
@@ -1124,11 +1120,7 @@ impl PromptsSubcommand {
             }
         }
 
-        queue!(
-            session.stderr,
-            style::SetForegroundColor(Color::Reset),
-            style::Print("\n"),
-        )?;
+        queue!(session.stderr, StyledText::reset(), style::Print("\n"),)?;
 
         // Display arguments
         queue!(
@@ -1136,7 +1128,7 @@ impl PromptsSubcommand {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Arguments:"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
         )?;
 
@@ -1144,9 +1136,9 @@ impl PromptsSubcommand {
             if args.is_empty() {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::DarkGrey),
+                    StyledText::secondary_fg(),
                     style::Print("  (no arguments)"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
             } else {
@@ -1158,11 +1150,11 @@ impl PromptsSubcommand {
                     queue!(
                         session.stderr,
                         style::Print("  "),
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print("(required) "),
-                        style::SetForegroundColor(Color::Cyan),
+                        StyledText::brand_fg(),
                         style::Print(&arg.name),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
 
                     // Show argument description if available
@@ -1180,11 +1172,11 @@ impl PromptsSubcommand {
                     queue!(
                         session.stderr,
                         style::Print("  "),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("(optional) "),
-                        style::SetForegroundColor(Color::Cyan),
+                        StyledText::brand_fg(),
                         style::Print(&arg.name),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
 
                     // Show argument description if available
@@ -1200,9 +1192,9 @@ impl PromptsSubcommand {
         } else {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("  (no arguments)"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n"),
             )?;
         }
@@ -1224,7 +1216,7 @@ impl PromptsSubcommand {
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Prompt Details"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
             style::Print("▔".repeat(terminal_width)),
             style::Print("\n\n"),
@@ -1235,15 +1227,15 @@ impl PromptsSubcommand {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("Name: "),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print(name),
             style::Print("\n"),
             style::SetAttribute(Attribute::Bold),
             style::Print("Source: "),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::reset_attributes(),
+            StyledText::secondary_fg(),
             style::Print(source.display().to_string()),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n\n"),
         )?;
 
@@ -1252,11 +1244,11 @@ impl PromptsSubcommand {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("Usage: "),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::Green),
+            StyledText::reset_attributes(),
+            StyledText::success_fg(),
             style::Print("@"),
             style::Print(name),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n\n"),
         )?;
 
@@ -1265,7 +1257,7 @@ impl PromptsSubcommand {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("Content Preview:"),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
         )?;
 
@@ -1274,10 +1266,10 @@ impl PromptsSubcommand {
         for line in preview_lines {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("  "),
                 style::Print(line),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n"),
             )?;
         }
@@ -1285,11 +1277,11 @@ impl PromptsSubcommand {
         if lines.len() > 5 {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("  ... ("),
                 style::Print((lines.len() - 5).to_string()),
                 style::Print(" more lines)"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n"),
             )?;
         }
@@ -1317,17 +1309,17 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("⚠ Warning: Both file-based and MCP prompts named '"),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("' exist. Using file-based prompt.\n"),
                     style::Print("To use MCP prompt, specify server: "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print("@<server>/"),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
                 )?;
                 execute!(session.stderr)?;
@@ -1369,32 +1361,32 @@ impl PromptsSubcommand {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("Prompt "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(prompt_name),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(" is ambiguous. Use one of the following "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(alt_msg),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     },
                     GetPromptError::PromptNotFound(prompt_name) => {
                         queue!(
                             session.stderr,
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("Prompt "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(prompt_name),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(" not found. Use "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print("/prompts list"),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(" to see available prompts.\n"),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     },
                     GetPromptError::McpClient(_) | GetPromptError::Service(_) => {
@@ -1418,14 +1410,14 @@ impl PromptsSubcommand {
                             queue!(
                                 session.stderr,
                                 style::Print("\n"),
-                                style::SetForegroundColor(Color::Yellow),
+                                StyledText::warning_fg(),
                                 style::Print("Error: Failed to execute prompt "),
-                                style::SetForegroundColor(Color::Cyan),
+                                StyledText::brand_fg(),
                                 style::Print(&name),
-                                style::SetForegroundColor(Color::Yellow),
+                                StyledText::warning_fg(),
                                 style::Print(". "),
                                 style::Print(&error_str),
-                                style::SetForegroundColor(Color::Reset),
+                                StyledText::reset(),
                                 style::Print("\n"),
                             )?;
                             execute!(session.stderr)?;
@@ -1462,13 +1454,13 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print("❌ Invalid prompt name: "),
                 style::Print(validation_error),
                 style::Print("\n"),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("Valid names contain only letters, numbers, hyphens, and underscores (1-50 characters)\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1484,15 +1476,15 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Prompt "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" already exists in "),
                 style::Print(location),
                 style::Print(" directory. Use "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print("/prompts edit "),
                 style::Print(&name),
                 if global {
@@ -1500,9 +1492,9 @@ impl PromptsSubcommand {
                 } else {
                     style::Print("")
                 },
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" to modify it.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1530,17 +1522,17 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("⚠ Warning: A "),
                 style::Print(existing_scope),
                 style::Print(" prompt named '"),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("' already exists.\n"),
                 style::Print(override_message),
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
 
             // Flush stderr to ensure the warning is displayed before asking for input
@@ -1553,9 +1545,9 @@ impl PromptsSubcommand {
                     queue!(
                         session.stderr,
                         style::Print("\n"),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print("✓ Prompt creation cancelled.\n"),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                     return Ok(ChatState::PromptUser {
                         skip_printing_tools: true,
@@ -1567,9 +1559,9 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("✓ Prompt creation cancelled.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1594,17 +1586,17 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("✓ Created "),
                     style::Print(location),
                     style::Print(" prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(" at "),
-                    style::SetForegroundColor(Color::DarkGrey),
+                    StyledText::secondary_fg(),
                     style::Print(target_prompt.path.display().to_string()),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n\n"),
                 )?;
             },
@@ -1624,9 +1616,9 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("Opening editor to create prompt content...\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
 
                 // Try to open the editor
@@ -1635,32 +1627,32 @@ impl PromptsSubcommand {
                         let location = if global { "global" } else { "local" };
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print("✓ Created "),
                             style::Print(location),
                             style::Print(" prompt "),
-                            style::SetForegroundColor(Color::Cyan),
+                            StyledText::brand_fg(),
                             style::Print(&name),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print(" at "),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print(target_prompt.path.display().to_string()),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print("\n\n"),
                         )?;
                     },
                     Err(err) => {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error opening editor: "),
                             style::Print(err.to_string()),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print("\n"),
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("Tip: You can edit this file directly: "),
                             style::Print(target_prompt.path.display().to_string()),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                             style::Print("\n\n"),
                         )?;
                     },
@@ -1684,11 +1676,11 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print("❌ Invalid prompt name: "),
                 style::Print(validation_error),
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1704,13 +1696,13 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Global prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(" not found.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1724,26 +1716,26 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Local prompt "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" not found, but global version exists.\n"),
                 style::Print("Use "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print("/prompts edit "),
                 style::Print(&name),
                 style::Print(" --global"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" to edit the global version, or\n"),
                 style::Print("use "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print("/prompts create "),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" to create a local override.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1752,13 +1744,13 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Prompt "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" not found.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1769,18 +1761,18 @@ impl PromptsSubcommand {
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print("Opening editor for "),
             style::Print(location),
             style::Print(" prompt: "),
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::brand_fg(),
             style::Print(&name),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("File: "),
             style::Print(target_prompt.path.display().to_string()),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n\n"),
         )?;
 
@@ -1789,23 +1781,23 @@ impl PromptsSubcommand {
             Ok(()) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("✓ Prompt edited successfully.\n\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
             },
             Err(err) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error opening editor: "),
                     style::Print(err.to_string()),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::DarkGrey),
+                    StyledText::secondary_fg(),
                     style::Print("Tip: You can edit this file directly: "),
                     style::Print(target_prompt.path.display().to_string()),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n\n"),
                 )?;
             },
@@ -1831,13 +1823,13 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("Global prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(" not found.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1850,20 +1842,20 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Local prompt "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" not found, but global version exists.\n"),
                 style::Print("Use "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print("/prompts remove "),
                 style::Print(&name),
                 style::Print(" --global"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" to remove the global version.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1872,13 +1864,13 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("Prompt "),
-                style::SetForegroundColor(Color::Cyan),
+                StyledText::brand_fg(),
                 style::Print(&name),
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print(" not found.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1891,18 +1883,18 @@ impl PromptsSubcommand {
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("⚠ Warning: This will permanently remove the "),
             style::Print(location),
             style::Print(" prompt '"),
-            style::SetForegroundColor(Color::Cyan),
+            StyledText::brand_fg(),
             style::Print(&name),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("'.\n"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("File: "),
             style::Print(target_prompt.path.display().to_string()),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n"),
         )?;
 
@@ -1916,9 +1908,9 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("✓ Removal cancelled.\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
@@ -1930,9 +1922,9 @@ impl PromptsSubcommand {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("✓ Removal cancelled.\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -1945,25 +1937,25 @@ impl PromptsSubcommand {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("✓ Removed "),
                     style::Print(location),
                     style::Print(" prompt "),
-                    style::SetForegroundColor(Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(&name),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(" successfully.\n\n"),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
             },
             Err(err) => {
                 queue!(
                     session.stderr,
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error deleting prompt: "),
                     style::Print(err.to_string()),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                     style::Print("\n\n"),
                 )?;
             },
@@ -2021,9 +2013,9 @@ fn display_prompt_content(
         if !content.trim().is_empty() {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(content),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n"),
             )?;
         }
@@ -2041,9 +2033,9 @@ fn display_file_prompt_content(_prompt_name: &str, content: &str, session: &mut 
     if !content.trim().is_empty() {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(content),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print("\n"),
         )?;
     }
@@ -2462,14 +2454,18 @@ mod tests {
         let prompt1 = rmcp::model::Prompt {
             name: "test_prompt".to_string(),
             description: Some("Test description".to_string()),
+            title: Some("Test Prompt".to_string()),
+            icons: None,
             arguments: Some(vec![
                 PromptArgument {
                     name: "arg1".to_string(),
                     description: Some("First argument".to_string()),
+                    title: Some("Argument 1".to_string()),
                     required: Some(true),
                 },
                 PromptArgument {
                     name: "arg2".to_string(),
+                    title: Some("Argument 2".to_string()),
                     description: None,
                     required: Some(false),
                 },

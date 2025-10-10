@@ -11,7 +11,6 @@ use clap::{
     Args,
     ValueEnum,
 };
-use crossterm::style::Stylize;
 use crossterm::{
     execute,
     style,
@@ -36,6 +35,7 @@ use crate::cli::chat::tools::custom_tool::{
     default_timeout,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
@@ -307,7 +307,7 @@ impl ListArgs {
             writeln!(output)?;
             writeln!(output, "{}:\n", scope_display(&scope))?;
             for (agent_name, cfg_opt, _) in agents {
-                writeln!(output, "  {}", agent_name.bold())?;
+                writeln!(output, "  {}", StyledText::emphasis(&agent_name))?;
                 match cfg_opt {
                     Some(cfg) if !cfg.mcp_servers.is_empty() => {
                         // Sorting servers by name since HashMap is unordered, and having a bunch

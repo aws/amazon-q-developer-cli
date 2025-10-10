@@ -2,8 +2,6 @@ use clap::Args;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
 };
 use uuid::Uuid;
 
@@ -12,6 +10,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::theme::StyledText;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -34,9 +33,9 @@ impl EditorArgs {
             Err(err) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("\nError opening editor: {}\n\n", err)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 return Ok(ChatState::PromptUser {
@@ -49,9 +48,9 @@ impl EditorArgs {
             true => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("\nEmpty content from editor, not submitting.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 ChatState::PromptUser {
@@ -61,18 +60,18 @@ impl EditorArgs {
             false => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("\nContent loaded from editor. Submitting prompt...\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 // Display the content as if the user typed it
                 execute!(
                     session.stderr,
-                    style::SetAttribute(Attribute::Reset),
-                    style::SetForegroundColor(Color::Magenta),
+                    StyledText::reset_attributes(),
+                    StyledText::emphasis_fg(),
                     style::Print("> "),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print(&content),
                     style::Print("\n")
                 )?;

@@ -1,9 +1,16 @@
 use clap::Args;
 use crossterm::execute;
-use crossterm::style::{self, Color};
+use crossterm::style::{
+    self,
+};
 
 use super::editor::open_editor;
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
+use crate::theme::StyledText;
 
 /// Arguments to the `/reply` command.
 #[deny(missing_docs)]
@@ -32,9 +39,9 @@ impl ReplyArgs {
             None => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("\nNo assistant message found to reply to.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 return Ok(ChatState::PromptUser {
@@ -48,9 +55,9 @@ impl ReplyArgs {
             Err(err) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("\nError opening editor: {}\n\n", err)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 return Ok(ChatState::PromptUser {
@@ -64,9 +71,9 @@ impl ReplyArgs {
                 true => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("\nNo changes made in editor, not submitting.\n\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
 
                     ChatState::PromptUser {
@@ -76,18 +83,18 @@ impl ReplyArgs {
                 false => {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print("\nContent loaded from editor. Submitting prompt...\n\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
 
                     // Display the content as if the user typed it
                     execute!(
                         session.stderr,
-                        style::SetAttribute(style::Attribute::Reset),
-                        style::SetForegroundColor(Color::Magenta),
+                        StyledText::reset_attributes(),
+                        StyledText::emphasis_fg(),
                         style::Print("> "),
-                        style::SetAttribute(style::Attribute::Reset),
+                        StyledText::reset_attributes(),
                         style::Print(&content),
                         style::Print("\n")
                     )?;
