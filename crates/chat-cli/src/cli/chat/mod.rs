@@ -1889,6 +1889,27 @@ impl ChatSession {
             None => return Ok(ChatState::Exit),
         };
 
+        // Check if there's a pending clipboard paste from Ctrl+V
+        let pasted_paths = self.input_source.take_clipboard_pastes();
+        if !pasted_paths.is_empty() {
+            // Check if the input contains image markers
+            let image_marker_regex = regex::Regex::new(r"\[Image #\d+\]").unwrap();
+            if image_marker_regex.is_match(&user_input) {
+                // Join all paths with spaces for processing
+                let paths_str = pasted_paths
+                    .iter()
+                    .map(|p| p.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                // Reset the counter for next message
+                self.input_source.reset_paste_count();
+
+                // Return HandleInput with all paths to automatically process the images
+                return Ok(ChatState::HandleInput { input: paths_str });
+            }
+        }
+
         self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
     }
