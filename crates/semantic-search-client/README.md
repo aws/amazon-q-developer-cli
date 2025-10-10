@@ -14,7 +14,7 @@ Rust library for managing semantic memory contexts with multiple index types (BM
 - **Vector Embeddings**: Generate high-quality text embeddings for semantic similarity search
 - **Multi-Platform Support**: Works on macOS, Windows, and Linux with optimized backends
 - **Hardware Acceleration**: Uses Metal on macOS and optimized backends on other platforms
-- **File Processing**: Process various file types including text, markdown, JSON, and code
+- **File Processing**: Process various file types including text, markdown, JSON, code, and PDF documents
 - **Persistent Storage**: Save contexts to disk for long-term storage and retrieval
 - **Background Processing**: Non-blocking indexing with progress tracking and cancellation
 - **Parallel Processing**: Efficiently process large directories with parallel execution
@@ -400,6 +400,59 @@ let client = SemanticSearchClient::with_embedding_type(
     EmbeddingType::BM25,
 )?;
 ```
+
+## Supported File Types
+
+The semantic search client automatically detects and processes various file types:
+
+### Text-Based Files
+- **Plain Text**: `.txt`, configuration files (`.ini`, `.conf`, `.cfg`, `.properties`, `.env`)
+- **Markdown**: `.md`, `.markdown`, `.mdx`
+- **Data Files**: `.json`, `.csv`, `.tsv`
+- **Documentation**: `.rtf`, `.tex`, `.rst`
+- **Log Files**: `.log`
+- **Web Markup**: `.svg` (text-based)
+
+### Code Files
+- **Rust**: `.rs`
+- **Python**: `.py`
+- **JavaScript/TypeScript**: `.js`, `.jsx`, `.ts`, `.tsx`
+- **Java**: `.java`
+- **C/C++**: `.c`, `.cpp`, `.h`, `.hpp`
+- **Go**: `.go`
+- **Ruby**: `.rb`
+- **PHP**: `.php`
+- **Swift**: `.swift`
+- **Kotlin**: `.kt`, `.kts`
+- **C#**: `.cs`
+- **Shell Scripts**: `.sh`, `.bash`, `.zsh`
+- **Web Technologies**: `.html`, `.htm`, `.xml`, `.css`, `.scss`, `.sass`, `.less`
+- **Database**: `.sql`
+- **Configuration**: `.yaml`, `.yml`, `.toml`
+
+### Document Files
+- **PDF Documents**: `.pdf` - Extracts text content for semantic search
+
+### Special Files
+Files without extensions are handled based on their names:
+- **Project Files**: `Dockerfile`, `Makefile`, `LICENSE`, `CHANGELOG`, `README`
+- **Hidden Config Files**: `.gitignore`, `.env`, `.dockerignore`
+
+### Processing Behavior
+- **Text-based files** are chunked into smaller segments for better search granularity
+- **PDF files** have their text content extracted and then chunked
+- **Code files** include language metadata for enhanced search context
+- **Unknown file types** are indexed by path only (no content extraction)
+
+### PDF Support
+PDF processing uses the `pdf-extract` crate to extract text content:
+- Supports most standard PDF documents
+- Handles text-based PDFs (not scanned images)
+- Extracted text is chunked like other text files
+- Maintains file metadata for search context
+
+**Note**: For scanned PDFs or complex layouts, consider using OCR preprocessing or alternative PDF processing tools.
+
 ```
 
 ### Parallel Processing
