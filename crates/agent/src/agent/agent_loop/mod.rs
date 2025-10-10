@@ -23,7 +23,6 @@ use protocol::{
     StreamMetadata,
     UserTurnMetadata,
 };
-use rand::seq::IndexedRandom;
 use serde::{
     Deserialize,
     Serialize,
@@ -77,10 +76,6 @@ impl AgentLoopId {
             rand: rand::random::<u32>(),
         }
     }
-
-    pub fn agent_id(&self) -> &AgentId {
-        &self.agent_id
-    }
 }
 
 impl std::fmt::Display for AgentLoopId {
@@ -88,23 +83,6 @@ impl std::fmt::Display for AgentLoopId {
         write!(f, "{}/{}", self.agent_id, self.rand)
     }
 }
-
-// impl FromStr for AgentLoopId {
-//     type Err = String;
-//
-//     fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
-//         match s.find("/") {
-//             Some(i) => Ok(Self {
-//                 agent_id: s[..i].to_string(),
-//                 rand: match s[i + 1..].to_string().parse() {
-//                     Ok(v) => v,
-//                     Err(_) => return Err(s.to_string()),
-//                 },
-//             }),
-//             None => Err(s.to_string()),
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, strum::Display, strum::EnumString)]
 #[serde(rename_all = "camelCase")]
@@ -126,14 +104,6 @@ pub enum LoopState {
     Errored,
 }
 
-// #[derive(Debug)]
-// struct StreamRequest {
-//     model: Box<dyn AgentLoopModel>,
-//     messages: Vec<Message>,
-//     tool_specs: Option<Vec<ToolSpec>>,
-//     system_prompt: Option<String>,
-// }
-
 /// Tracks the execution of a user turn, ending when either the model returns a response with no
 /// tool uses, or a non-retryable error is encountered.
 pub struct AgentLoop {
@@ -147,6 +117,7 @@ pub struct AgentLoop {
     cancel_token: CancellationToken,
 
     /// The current response stream future being received along with it's associated parse state
+    #[allow(clippy::type_complexity)]
     curr_stream: Option<(
         StreamParseState,
         Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send>>,
@@ -201,7 +172,6 @@ impl AgentLoop {
     /// the spawned task.
     pub fn spawn(mut self) -> AgentLoopHandle {
         let id_clone = self.id.clone();
-        let cancel_token_clone = self.cancel_token.clone();
         let loop_event_rx = self.loop_event_rx.take().expect("loop_event_rx should exist");
         let loop_req_tx = self.loop_req_tx.take().expect("loop_req_tx should exist");
         let handle = tokio::spawn(async move {
@@ -209,7 +179,7 @@ impl AgentLoop {
             self.run().await;
             info!("agent loop end");
         });
-        AgentLoopHandle::new(id_clone, loop_req_tx, loop_event_rx, cancel_token_clone, handle)
+        AgentLoopHandle::new(id_clone, loop_req_tx, loop_event_rx, handle)
     }
 
     async fn run(mut self) {
@@ -348,15 +318,6 @@ impl AgentLoop {
                 }
 
                 Ok(AgentLoopResponse::Metadata(metadata))
-            },
-
-            AgentLoopRequest::GetPendingToolUses => {
-                if self.execution_state != LoopState::PendingToolUseResults {
-                    return Ok(AgentLoopResponse::PendingToolUses(None));
-                }
-                let tool_uses = self.stream_states.last().map(|s| s.tool_uses.clone());
-                debug_assert!(tool_uses.as_ref().is_some_and(|v| !v.is_empty()));
-                Ok(AgentLoopResponse::PendingToolUses(tool_uses))
             },
         }
     }
@@ -648,8 +609,6 @@ pub struct AgentLoopHandle {
     /// Sender for sending requests to the agent loop
     sender: RequestSender<AgentLoopRequest, AgentLoopResponse, AgentLoopResponseError>,
     loop_event_rx: mpsc::Receiver<AgentLoopEventKind>,
-    /// A [CancellationToken] used for gracefully closing the agent loop.
-    cancel_token: CancellationToken,
     /// The [JoinHandle] to the task executing the agent loop.
     handle: JoinHandle<()>,
 }
@@ -659,14 +618,12 @@ impl AgentLoopHandle {
         id: AgentLoopId,
         sender: RequestSender<AgentLoopRequest, AgentLoopResponse, AgentLoopResponseError>,
         loop_event_rx: mpsc::Receiver<AgentLoopEventKind>,
-        cancel_token: CancellationToken,
         handle: JoinHandle<()>,
     ) -> Self {
         Self {
             id,
             sender,
             loop_event_rx,
-            cancel_token,
             handle,
         }
     }
@@ -674,19 +631,6 @@ impl AgentLoopHandle {
     /// Identifier for the loop.
     pub fn id(&self) -> &AgentLoopId {
         &self.id
-    }
-
-    /// Id of the agent this loop was created for.
-    pub fn agent_id(&self) -> &AgentId {
-        self.id.agent_id()
-    }
-
-    pub fn clone_weak(&self) -> AgentLoopWeakHandle {
-        AgentLoopWeakHandle {
-            id: self.id.clone(),
-            sender: self.sender.clone(),
-            cancel_token: self.cancel_token.clone(),
-        }
     }
 
     pub async fn recv(&mut self) -> Option<AgentLoopEventKind> {
@@ -722,21 +666,6 @@ impl AgentLoopHandle {
         }
     }
 
-    pub async fn get_pending_tool_uses(&self) -> Result<Option<Vec<ToolUseBlock>>, AgentLoopResponseError> {
-        match self
-            .sender
-            .send_recv(AgentLoopRequest::GetPendingToolUses)
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
-        {
-            AgentLoopResponse::PendingToolUses(v) => Ok(v),
-            other => Err(AgentLoopResponseError::Custom(format!(
-                "unknown response getting stream metadata: {:?}",
-                other,
-            ))),
-        }
-    }
-
     /// Ends the agent loop
     pub async fn close(&self) -> Result<UserTurnMetadata, AgentLoopResponseError> {
         match self
@@ -758,107 +687,5 @@ impl Drop for AgentLoopHandle {
     fn drop(&mut self) {
         debug!(?self.id, "agent loop handle has dropped, aborting");
         self.handle.abort();
-    }
-}
-
-/// A weak handle to an executing agent loop.
-///
-/// Where [AgentLoopHandle] can receive agent loop events and abort the task on drop,
-/// [AgentLoopWeakHandle] is only used for sending messages to the agent loop.
-#[derive(Debug, Clone)]
-pub struct AgentLoopWeakHandle {
-    id: AgentLoopId,
-    sender: RequestSender<AgentLoopRequest, AgentLoopResponse, AgentLoopResponseError>,
-    cancel_token: CancellationToken,
-}
-
-impl AgentLoopWeakHandle {
-    pub async fn send_request<M: AgentLoopModel>(
-        &self,
-        model: M,
-        args: SendRequestArgs,
-    ) -> Result<AgentLoopResponse, AgentLoopResponseError> {
-        self.sender
-            .send_recv(AgentLoopRequest::SendRequest {
-                model: Box::new(model),
-                args,
-            })
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))
-    }
-
-    pub async fn get_loop_state(&self) -> Result<LoopState, AgentLoopResponseError> {
-        match self
-            .sender
-            .send_recv(AgentLoopRequest::GetExecutionState)
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
-        {
-            AgentLoopResponse::ExecutionState(state) => Ok(state),
-            other => Err(AgentLoopResponseError::Custom(format!(
-                "unknown response getting execution state: {:?}",
-                other,
-            ))),
-        }
-    }
-
-    pub async fn get_pending_tool_uses(&self) -> Result<Option<Vec<ToolUseBlock>>, AgentLoopResponseError> {
-        match self
-            .sender
-            .send_recv(AgentLoopRequest::GetPendingToolUses)
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
-        {
-            AgentLoopResponse::PendingToolUses(v) => Ok(v),
-            other => Err(AgentLoopResponseError::Custom(format!(
-                "unknown response getting stream metadata: {:?}",
-                other,
-            ))),
-        }
-    }
-
-    /// Ends the agent loop
-    pub async fn close(&self) -> Result<UserTurnMetadata, AgentLoopResponseError> {
-        match self
-            .sender
-            .send_recv(AgentLoopRequest::Close)
-            .await
-            .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
-        {
-            AgentLoopResponse::Metadata(md) => Ok(md),
-            other => Err(AgentLoopResponseError::Custom(format!(
-                "unknown response getting execution state: {:?}",
-                other,
-            ))),
-        }
-    }
-
-    /// Cancel the executing loop for graceful shutdown.
-    fn cancel(&self) {
-        self.cancel_token.cancel();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use super::*;
-    use crate::api_client::error::{
-        ConverseStreamError,
-        ConverseStreamErrorKind,
-    };
-
-    #[test]
-    fn test_other_stream_err_downcasting() {
-        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
-            ConverseStreamErrorKind::ModelOverloadedError,
-            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
-                                                                     * required */
-        )));
-        assert!(
-            err.as_rts_error()
-                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
-        );
     }
 }

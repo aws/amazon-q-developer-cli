@@ -9,14 +9,8 @@ use std::time::{
     SystemTime,
 };
 
-use aws_types::request_id::RequestId;
 use eyre::Result;
-use futures::{
-    FutureExt,
-    Stream,
-    StreamExt,
-};
-use rand::seq::IndexedRandom;
+use futures::Stream;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -653,15 +647,23 @@ enum RecvError {
 
 #[cfg(test)]
 mod tests {
+    use tokio_stream::StreamExt as _;
+
     use super::*;
     use crate::agent::agent_loop::types::ContentBlock;
+    use crate::agent::util::is_integ_test;
 
     /// Manual test to verify cancellation succeeds in a timely manner.
     #[tokio::test]
-    async fn test_rts_cancel() {
+    async fn integ_test_rts_cancel() {
+        if !is_integ_test() {
+            return;
+        }
+
         let rts = RtsModel::new(ApiClient::new().await.unwrap(), "test".to_string(), None);
         let cancel_token = CancellationToken::new();
         let token_clone = cancel_token.clone();
+        let (tx, mut rx) = mpsc::channel(8);
         tokio::spawn(async move {
             let mut stream = rts.stream(
                 vec![Message::new(
@@ -676,16 +678,44 @@ mod tests {
                 token_clone,
             );
             while let Some(ev) = stream.next().await {
-                println!("{:?}", ev);
+                let _ = tx.send(ev).await;
             }
         });
 
-        tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-        let now = Instant::now();
-        println!("cancelling");
-        cancel_token.cancel();
-        println!("cancelled: {}s", now.elapsed().as_secs_f32());
-        println!("sleeping for 1s before exiting");
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        // Assertion logic here is:
+        // 1. Loop until we start receiving content
+        // 2. Once content is received, cancel the stream
+        // 3. Assert that we receive a metadata stream event, and then immediately followed by an
+        //    Interrupted error. These events should be received almost immediately after cancelling.
+        let mut was_cancelled = false;
+        let mut cancelled_time = None;
+        loop {
+            let ev = rx.recv().await.expect("should not fail");
+            if let Ok(StreamEvent::ContentBlockDelta(_)) = ev {
+                if was_cancelled {
+                    continue;
+                }
+                // We received content, so time to interrupt the stream.
+                cancel_token.cancel();
+                was_cancelled = true;
+                cancelled_time = Some(Instant::now());
+            }
+            if let Ok(StreamEvent::Metadata(_)) = ev {
+                // Next event should be an interrupted error.
+                let ev = rx.recv().await.expect("should have another event after metadata");
+                let err = ev.unwrap_err();
+                assert!(matches!(err.kind, StreamErrorKind::Interrupted));
+                let elapsed = cancelled_time.unwrap().elapsed();
+                assert!(
+                    elapsed.as_millis() < 25,
+                    "stream should have been interrupted in a timely manner, instead took: {}ms",
+                    elapsed.as_millis()
+                );
+                break;
+            }
+        }
+        if !was_cancelled {
+            panic!("stream was never cancelled");
+        }
     }
 }

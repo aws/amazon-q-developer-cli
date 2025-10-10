@@ -1,4 +1,6 @@
-use std::{borrow::Cow, sync::Arc, time::Duration};
+use std::borrow::Cow;
+use std::sync::Arc;
+use std::time::Duration;
 
 use chrono::{
     DateTime,
@@ -11,7 +13,10 @@ use serde::{
 use serde_json::Map;
 use uuid::Uuid;
 
-use crate::api_client::error::{ApiClientError, ConverseStreamError};
+use crate::api_client::error::{
+    ApiClientError,
+    ConverseStreamError,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -429,4 +434,23 @@ pub struct MetadataUsage {
 pub struct MetadataService {
     pub request_id: Option<String>,
     pub status_code: Option<u16>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::api_client::error::ConverseStreamErrorKind;
+
+    #[test]
+    fn test_other_stream_err_downcasting() {
+        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
+            ConverseStreamErrorKind::ModelOverloadedError,
+            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
+                                                                     * required */
+        )));
+        assert!(
+            err.as_rts_error()
+                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
+        );
+    }
 }

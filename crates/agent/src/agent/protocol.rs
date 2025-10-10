@@ -22,6 +22,7 @@ use super::tools::ToolKind;
 use super::types::AgentSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentEvent {
     /// Agent has finished initialization, and is ready to receive requests
     Initialized,
@@ -129,6 +130,7 @@ pub enum InputItem {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum AgentResponse {
     Success,
     Snapshot(AgentSnapshot),

@@ -42,13 +42,6 @@ pub enum Models {
 }
 
 impl Models {
-    pub fn supported_model(&self) -> SupportedModel {
-        match self {
-            Models::Rts(_) => SupportedModel::Rts,
-            Models::Test(_) => SupportedModel::Test,
-        }
-    }
-
     pub fn state(&self) -> ModelsState {
         match self {
             Models::Rts(v) => ModelsState::Rts {
@@ -79,17 +72,6 @@ impl Default for ModelsState {
     }
 }
 
-/// Identifier for the models we support.
-///
-/// TODO - probably not required, use [ModelsState] instead
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::Display, strum::EnumString)]
-#[serde(rename_all = "camelCase")]
-#[strum(serialize_all = "camelCase")]
-pub enum SupportedModel {
-    Rts,
-    Test,
-}
-
 impl Model for Models {
     fn stream(
         &self,
@@ -100,7 +82,7 @@ impl Model for Models {
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
         match self {
             Models::Rts(rts_model) => rts_model.stream(messages, tool_specs, system_prompt, cancel_token),
-            Models::Test(test_model) => todo!(),
+            Models::Test(test_model) => test_model.stream(messages, tool_specs, system_prompt, cancel_token),
         }
     }
 }
@@ -111,5 +93,17 @@ pub struct TestModel {}
 impl TestModel {
     pub fn new() -> Self {
         Self {}
+    }
+}
+
+impl Model for TestModel {
+    fn stream(
+        &self,
+        messages: Vec<Message>,
+        tool_specs: Option<Vec<ToolSpec>>,
+        system_prompt: Option<String>,
+        cancel_token: CancellationToken,
+    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
+        todo!()
     }
 }

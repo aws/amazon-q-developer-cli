@@ -60,7 +60,6 @@ use agent_loop::{
     AgentLoopId,
     LoopState,
 };
-use bstr::ByteSlice as _;
 use chrono::Utc;
 use consts::{
     MAX_RESOURCE_FILE_LENGTH,
@@ -102,7 +101,6 @@ use task_executor::{
     ToolExecutorResult,
     ToolFuture,
 };
-use tokio::io::AsyncReadExt as _;
 use tokio::sync::{
     broadcast,
     mpsc,
@@ -132,8 +130,8 @@ use types::{
     ConversationState,
 };
 use util::path::canonicalize_path;
-use util::request_channel::new_request_channel;
 use util::read_file_with_max_limit;
+use util::request_channel::new_request_channel;
 use uuid::Uuid;
 
 use crate::agent::consts::{
@@ -239,9 +237,19 @@ pub struct Agent {
     /// The backend/model provider
     model: Models,
 
+    /// Configuration settings to alter agent behavior.
     settings: AgentSettings,
 
+    /// Cached result when creating a tool spec for sending to the backend.
+    ///
+    /// Required since we may perform transformations on the tool names and descriptions that are
+    /// sent to the model.
     cached_tool_specs: Option<SanitizedToolSpecs>,
+    /// Cached result of loading all MCP configs according to the agent config during
+    /// initialization.
+    ///
+    /// Done for simplicity and to avoid rereading global MCP config files every time we process a
+    /// request.
     cached_mcp_configs: LoadedMcpServerConfigs,
 }
 
@@ -664,7 +672,6 @@ impl Agent {
     }
 
     async fn handle_agent_loop_event(&mut self, evt: Option<AgentLoopEventKind>) -> Result<(), AgentError> {
-        // debug!(?handle, ?evt, "handling new agent loop event");
         debug!(?evt, "handling new agent loop event");
         let loop_id = self.agent_loop_handle()?.id().clone();
 
@@ -674,10 +681,6 @@ impl Agent {
             self.agent_loop = None;
             return Ok(());
         };
-
-        // // Otherwise, the loop is still executing a turn - add back.
-        // let loop_id = handle.id().clone();
-        // self.agent_loop = Some(handle);
 
         match &evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
@@ -1425,15 +1428,15 @@ impl Agent {
             ToolKind::BuiltIn(built_in) => match built_in {
                 BuiltInTool::FileRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::FileWrite(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
-                BuiltInTool::Grep(t) => Ok(()),
-                BuiltInTool::Ls(t) => Ok(()),
-                BuiltInTool::Mkdir(t) => Ok(()),
-                BuiltInTool::ExecuteCmd(t) => Ok(()),
-                BuiltInTool::Introspect(t) => Ok(()),
+                BuiltInTool::Grep(_) => Ok(()),
+                BuiltInTool::Ls(_) => Ok(()),
+                BuiltInTool::Mkdir(_) => Ok(()),
+                BuiltInTool::ExecuteCmd(_) => Ok(()),
+                BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::SpawnSubagent => Ok(()),
-                BuiltInTool::ImageRead(t) => Ok(()),
+                BuiltInTool::ImageRead(_) => Ok(()),
             },
-            ToolKind::Mcp(t) => Ok(()),
+            ToolKind::Mcp(_) => Ok(()),
         }
     }
 
@@ -1525,11 +1528,11 @@ impl Agent {
                     })
                 },
                 BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute().await }),
-                BuiltInTool::ImageRead(t) => todo!(),
-                BuiltInTool::Introspect(t) => todo!(),
-                BuiltInTool::Grep(t) => todo!(),
-                BuiltInTool::Ls(t) => todo!(),
-                BuiltInTool::Mkdir(t) => todo!(),
+                BuiltInTool::ImageRead(_) => todo!(),
+                BuiltInTool::Introspect(_) => todo!(),
+                BuiltInTool::Grep(_) => todo!(),
+                BuiltInTool::Ls(_) => todo!(),
+                BuiltInTool::Mkdir(_) => todo!(),
                 BuiltInTool::SpawnSubagent => todo!(),
             },
             ToolKind::Mcp(t) => {
@@ -2028,6 +2031,7 @@ pub struct ExecutingHooks {
     ///
     /// Also contains tool context used for the hook execution, if available - used to potentially
     /// block tool execution.
+    #[allow(clippy::type_complexity)]
     hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, ToolKind)>, Option<HookResult>)>,
     /// Stage of execution.
     ///

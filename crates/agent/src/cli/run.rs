@@ -13,13 +13,13 @@ use serde::{
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
 
-use crate::agent::Agent;
-use crate::agent::agent_config::load_agents;
-use crate::agent::agent_loop::protocol::{
+use agent::agent::Agent;
+use agent::agent::agent_config::load_agents;
+use agent::agent::agent_loop::protocol::{
     AgentLoopEventKind,
     UserTurnMetadata,
 };
-use crate::agent::protocol::{
+use agent::agent::protocol::{
     AgentEvent,
     ApprovalResult,
     InputItem,

@@ -151,8 +151,6 @@ pub enum ToolParseErrorKind {
     SchemaFailure(String),
     #[error("The tool arguments failed validation: {}", .0)]
     InvalidArgs(String),
-    #[error("The tool name could not be resolved: {}", .0)]
-    AmbiguousToolName(String),
     #[error("An unexpected error occurred parsing the tools: {}", .0)]
     Other(#[from] AgentError),
 }

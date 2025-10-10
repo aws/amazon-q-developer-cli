@@ -61,19 +61,19 @@ pub fn evaluate_tool_permission(
                     _ => Ok(PermissionEvalResult::Allow),
                 }
             },
-            BuiltInTool::Grep(v) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::Ls(v) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::Mkdir(v) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::ImageRead(v) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::ExecuteCmd(v) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::Introspect(v) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Grep(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Ls(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Mkdir(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::ImageRead(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::ExecuteCmd(_) => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::SpawnSubagent => Ok(PermissionEvalResult::Allow),
         },
-        ToolKind::Mcp(mcp) => Ok(PermissionEvalResult::Allow),
+        ToolKind::Mcp(_) => Ok(PermissionEvalResult::Allow),
     }
 }
 
-fn canonicalize_paths(paths: &Vec<String>) -> Vec<String> {
+fn canonicalize_paths(paths: &[String]) -> Vec<String> {
     paths
         .iter()
         .filter_map(|p| canonicalize_path(p).ok())

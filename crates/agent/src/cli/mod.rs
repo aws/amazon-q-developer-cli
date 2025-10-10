@@ -13,10 +13,6 @@ use eyre::{
     Context,
     Result,
 };
-use futures::{
-    FutureExt,
-    StreamExt,
-};
 use run::RunArgs;
 use tracing::Level;
 use tracing_appender::non_blocking::{

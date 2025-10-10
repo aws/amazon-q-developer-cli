@@ -24,7 +24,6 @@ use super::{
     InvalidToolUse,
     LoopState,
 };
-use crate::agent::types::AgentId;
 
 #[derive(Debug)]
 pub enum AgentLoopRequest {
@@ -33,7 +32,6 @@ pub enum AgentLoopRequest {
         model: Box<dyn AgentLoopModel>,
         args: SendRequestArgs,
     },
-    GetPendingToolUses,
     /// Ends the agent loop
     Close,
 }
@@ -92,11 +90,6 @@ pub struct AgentLoopEvent {
 impl AgentLoopEvent {
     pub fn new(id: AgentLoopId, kind: AgentLoopEventKind) -> Self {
         Self { id, kind }
-    }
-
-    /// Id of the agent this loop event is associated with
-    pub fn agent_id(&self) -> &AgentId {
-        self.id.agent_id()
     }
 }
 
