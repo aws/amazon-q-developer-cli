@@ -50,14 +50,53 @@ impl UseAws {
         !READONLY_OPS.iter().any(|op| self.operation_name.starts_with(op))
     }
 
-    pub async fn invoke(&self, os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
+    /// Extract profile name from agent's toolsSettings.use_aws.profile_name configuration.
+    ///
+    /// This allows agents to specify a default AWS profile that will be used
+    /// for all AWS CLI commands when no explicit profile_name is provided in the tool call.
+    ///
+    /// Example agent configuration:
+    /// ```json
+    /// {
+    ///   "toolsSettings": {
+    ///     "use_aws": {
+    ///       "profile_name": "my-aws-profile"
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    fn extract_agent_profile(agent: Option<&Agent>) -> Option<String> {
+        agent.and_then(|a| {
+            a.tools_settings.get("use_aws").and_then(|settings| {
+                serde_json::from_value::<serde_json::Value>(settings.clone())
+                    .ok()
+                    .and_then(|v| v.get("profile_name")?.as_str().map(|s| s.to_string()))
+            })
+        })
+    }
+
+    /// Execute AWS CLI command with profile selection based on priority order.
+    /// The agent parameter is used to extract default profile from toolsSettings.
+    pub async fn invoke(&self, os: &Os, _updates: impl Write, agent: Option<&Agent>) -> Result<InvokeOutput> {
         let mut command = tokio::process::Command::new("aws");
 
         // Set up environment variables with user agent metadata for CloudTrail tracking
         let env_vars = env_vars_with_user_agent(os);
 
         command.envs(env_vars).arg("--region").arg(&self.region);
-        if let Some(profile_name) = self.profile_name.as_deref() {
+
+        // AWS profile selection priority:
+        // 1. Explicit profile_name parameter in the tool call
+        // 2. Agent's toolsSettings.use_aws.profile_name configuration
+        // 3. AWS_PROFILE environment variable (AWS CLI default behavior)
+        // 4. "default" profile (AWS CLI default behavior)
+        let agent_profile = Self::extract_agent_profile(agent);
+        let env_profile = std::env::var("AWS_PROFILE").ok();
+        let profile_to_use = self.profile_name.as_deref()
+            .or_else(|| agent_profile.as_deref())
+            .or_else(|| env_profile.as_deref());
+
+        if let Some(profile_name) = profile_to_use {
             command.arg("--profile").arg(profile_name);
         }
         command.arg(&self.service_name).arg(&self.operation_name);
@@ -114,7 +153,9 @@ impl UseAws {
         }
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    /// Display AWS CLI command description with resolved profile information.
+    /// The agent parameter is used to show which profile will be used from toolsSettings.
+    pub fn queue_description(&self, output: &mut impl Write, agent: Option<&Agent>) -> Result<()> {
         queue!(
             output,
             style::Print("Running aws cli command:\n\n"),
@@ -135,8 +176,17 @@ impl UseAws {
             }
         }
 
-        if let Some(ref profile_name) = self.profile_name {
+        // Show the actual profile that will be used (following the same priority order as invoke method)
+        let agent_profile = Self::extract_agent_profile(agent);
+        let env_profile = std::env::var("AWS_PROFILE").ok();
+        let profile_to_use = self.profile_name.as_deref()
+            .or_else(|| agent_profile.as_deref())
+            .or_else(|| env_profile.as_deref());
+
+        if let Some(profile_name) = profile_to_use {
             queue!(output, style::Print(format!("Profile name: {}\n", profile_name)))?;
+        } else {
+            queue!(output, style::Print("Profile name: default (AWS CLI default)\n"))?;
         }
 
         queue!(output, style::Print(format!("Region: {}", self.region)))?;
@@ -304,7 +354,7 @@ mod tests {
         assert!(
             serde_json::from_value::<UseAws>(v)
                 .unwrap()
-                .invoke(&os, &mut std::io::stdout())
+                .invoke(&os, &mut std::io::stdout(), None)
                 .await
                 .is_err()
         );
@@ -325,7 +375,7 @@ mod tests {
         });
         let out = serde_json::from_value::<UseAws>(v)
             .unwrap()
-            .invoke(&os, &mut std::io::stdout())
+            .invoke(&os, &mut std::io::stdout(), None)
             .await
             .unwrap();
 
@@ -505,4 +555,5 @@ mod tests {
         // Should deny even read-only operations on denied services
         assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
     }
+
 }
