@@ -23,7 +23,11 @@ use crate::util::directories::logs_dir;
 
 /// Arguments for the logdump command that collects logs for support investigation
 #[derive(Debug, PartialEq, Args)]
-pub struct LogdumpArgs;
+pub struct LogdumpArgs {
+    /// Include MCP logs
+    #[arg(long)]
+    pub mcp: bool,
+}
 
 impl LogdumpArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
@@ -73,8 +77,13 @@ impl LogdumpArgs {
         let mut zip = ZipWriter::new(file);
         let mut log_count = 0;
 
-        // Only collect qchat.log (keeping current implementation logic)
+        // Collect qchat.log
         log_count += Self::collect_qchat_log(&mut zip, &logs_dir)?;
+
+        // Collect mcp.log if --mcp flag is set
+        if self.mcp {
+            log_count += Self::collect_mcp_log(&mut zip, &logs_dir)?;
+        }
 
         zip.finish()?;
         Ok(log_count)
@@ -87,6 +96,17 @@ impl LogdumpArgs {
         let qchat_log_path = logs_dir.join("qchat.log");
         if qchat_log_path.exists() {
             return Self::add_log_file_to_zip(&qchat_log_path, zip, "logs");
+        }
+        Ok(0)
+    }
+
+    fn collect_mcp_log(
+        zip: &mut ZipWriter<std::fs::File>,
+        logs_dir: &Path,
+    ) -> Result<usize, Box<dyn std::error::Error>> {
+        let mcp_log_path = logs_dir.join("mcp.log");
+        if mcp_log_path.exists() {
+            return Self::add_log_file_to_zip(&mcp_log_path, zip, "logs");
         }
         Ok(0)
     }
@@ -126,7 +146,7 @@ mod tests {
         let logs_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&logs_dir).unwrap();
 
-        let logdump = LogdumpArgs;
+        let logdump = LogdumpArgs { mcp: false };
 
         // Create the zip file (even if no logs are found, it should create an empty zip)
         let result = logdump.create_log_dump(&zip_path, logs_dir).await;
@@ -144,7 +164,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_logdump_includes_qchat_log_when_present() {
+    async fn test_logdump_includes_qchat_log() {
         let temp_dir = TempDir::new().unwrap();
         let zip_path = temp_dir.path().join("test-logs.zip");
         let logs_dir = temp_dir.path().join("logs");
@@ -154,7 +174,7 @@ mod tests {
         let qchat_log_path = logs_dir.join("qchat.log");
         fs::write(&qchat_log_path, "test log content").unwrap();
 
-        let logdump = LogdumpArgs;
+        let logdump = LogdumpArgs { mcp: false };
 
         let result = logdump.create_log_dump(&zip_path, logs_dir).await;
 
@@ -172,5 +192,47 @@ mod tests {
         let mut contents = String::new();
         std::io::Read::read_to_string(&mut log_file, &mut contents).unwrap();
         assert_eq!(contents, "test log content");
+    }
+
+    #[tokio::test]
+    async fn test_logdump_includes_qchat_log_with_mcp_log() {
+        let temp_dir = TempDir::new().unwrap();
+        let zip_path = temp_dir.path().join("test-logs.zip");
+        let logs_dir = temp_dir.path().join("logs");
+        fs::create_dir_all(&logs_dir).unwrap();
+
+        // Create test log files
+        let qchat_log_path = logs_dir.join("qchat.log");
+        fs::write(&qchat_log_path, "qchat log content").unwrap();
+        let mcp_log_path = logs_dir.join("mcp.log");
+        fs::write(&mcp_log_path, "mcp log content").unwrap();
+
+        let logdump = LogdumpArgs { mcp: true };
+
+        let result = logdump.create_log_dump(&zip_path, logs_dir).await;
+
+        // The function should succeed and include 2 log files
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 2);
+        assert!(zip_path.exists());
+
+        // Verify the zip contains both log files
+        let file = fs::File::open(&zip_path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert_eq!(archive.len(), 2);
+
+        {
+            let mut qchat_file = archive.by_name("logs/qchat.log").unwrap();
+            let mut qchat_contents = String::new();
+            std::io::Read::read_to_string(&mut qchat_file, &mut qchat_contents).unwrap();
+            assert_eq!(qchat_contents, "qchat log content");
+        }
+
+        {
+            let mut mcp_file = archive.by_name("logs/mcp.log").unwrap();
+            let mut mcp_contents = String::new();
+            std::io::Read::read_to_string(&mut mcp_file, &mut mcp_contents).unwrap();
+            assert_eq!(mcp_contents, "mcp log content");
+        }
     }
 }
