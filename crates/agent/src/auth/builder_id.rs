@@ -31,7 +31,6 @@ use aws_sdk_ssooidc::config::{
 };
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenOutput;
-use aws_sdk_ssooidc::operation::register_client::RegisterClientOutput;
 use aws_smithy_async::rt::sleep::TokioSleep;
 use aws_smithy_runtime_api::client::identity::http::Token;
 use aws_smithy_runtime_api::client::identity::{
@@ -41,29 +40,24 @@ use aws_smithy_runtime_api::client::identity::{
 };
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
-use eyre::{
-    Result,
-    eyre,
-};
+use eyre::Result;
 use time::OffsetDateTime;
 use tracing::{
     debug,
     error,
-    info,
     trace,
     warn,
 };
 
+use crate::agent::util::is_integ_test;
 use crate::api_client::stalled_stream_protection_config;
 use crate::auth::AuthError;
 use crate::auth::consts::*;
-use crate::auth::scope::is_scopes;
 use crate::aws_common::app_name;
 use crate::database::{
     Database,
     Secret,
 };
-use crate::agent::util::is_integ_test;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -114,22 +108,6 @@ pub struct DeviceRegistration {
 impl DeviceRegistration {
     const SECRET_KEY: &'static str = "codewhisperer:odic:device-registration";
 
-    pub fn from_output(
-        output: RegisterClientOutput,
-        region: &Region,
-        oauth_flow: OAuthFlow,
-        scopes: Vec<String>,
-    ) -> Self {
-        Self {
-            client_id: output.client_id.unwrap_or_default(),
-            client_secret: output.client_secret.unwrap_or_default().into(),
-            client_secret_expires_at: time::OffsetDateTime::from_unix_timestamp(output.client_secret_expires_at).ok(),
-            region: region.to_string(),
-            oauth_flow,
-            scopes: Some(scopes),
-        }
-    }
-
     /// Loads the OIDC registered client from the secret store, deleting it if it is expired.
     async fn load_from_secret_store(database: &Database, region: &Region) -> Result<Option<Self>, AuthError> {
         trace!(?region, "loading device registration from secret store");
@@ -162,57 +140,6 @@ impl DeviceRegistration {
 
         Ok(None)
     }
-
-    /// Loads the client saved in the secret store if available, otherwise registers a new client
-    /// and saves it in the secret store.
-    pub async fn init_device_code_registration(
-        database: &Database,
-        client: &Client,
-        region: &Region,
-    ) -> Result<Self, AuthError> {
-        match Self::load_from_secret_store(database, region).await {
-            Ok(Some(registration)) if registration.oauth_flow == OAuthFlow::DeviceCode => match &registration.scopes {
-                Some(scopes) if is_scopes(scopes) => return Ok(registration),
-                _ => warn!("Invalid scopes in device registration, ignoring"),
-            },
-            // If it doesn't exist or is for another OAuth flow,
-            // then continue with creating a new one.
-            Ok(None | Some(_)) => {},
-            Err(err) => {
-                error!(?err, "Failed to read device registration from keychain");
-            },
-        };
-
-        let mut register = client
-            .register_client()
-            .client_name(CLIENT_NAME)
-            .client_type(CLIENT_TYPE);
-        for scope in SCOPES {
-            register = register.scopes(*scope);
-        }
-        let output = register.send().await?;
-
-        let device_registration = Self::from_output(
-            output,
-            region,
-            OAuthFlow::DeviceCode,
-            SCOPES.iter().map(|s| (*s).to_owned()).collect(),
-        );
-
-        if let Err(err) = device_registration.save(database).await {
-            error!(?err, "Failed to write device registration to keychain");
-        }
-
-        Ok(device_registration)
-    }
-
-    /// Saves to the passed secret store.
-    pub async fn save(&self, secret_store: &Database) -> Result<(), AuthError> {
-        secret_store
-            .set_secret(Self::SECRET_KEY, &serde_json::to_string(&self)?)
-            .await?;
-        Ok(())
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -231,47 +158,6 @@ pub struct StartDeviceAuthorizationResponse {
     pub interval: i32,
     pub region: String,
     pub start_url: String,
-}
-
-/// Init a builder id request
-pub async fn start_device_authorization(
-    database: &Database,
-    start_url: Option<String>,
-    region: Option<String>,
-) -> Result<StartDeviceAuthorizationResponse, AuthError> {
-    let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(region.clone());
-
-    let DeviceRegistration {
-        client_id,
-        client_secret,
-        ..
-    } = DeviceRegistration::init_device_code_registration(database, &client, &region).await?;
-
-    let output = client
-        .start_device_authorization()
-        .client_id(&client_id)
-        .client_secret(&client_secret.0)
-        .start_url(start_url.as_deref().unwrap_or(START_URL))
-        .send()
-        .await?;
-
-    Ok(StartDeviceAuthorizationResponse {
-        device_code: output.device_code.unwrap_or_default(),
-        user_code: output.user_code.unwrap_or_default(),
-        verification_uri: output.verification_uri.unwrap_or_default(),
-        verification_uri_complete: output.verification_uri_complete.unwrap_or_default(),
-        expires_in: output.expires_in,
-        interval: output.interval,
-        region: region.to_string(),
-        start_url: start_url.unwrap_or_else(|| START_URL.to_owned()),
-    })
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TokenType {
-    BuilderId,
-    IamIdentityCenter,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -471,125 +357,11 @@ impl BuilderIdToken {
         }
     }
 
-    pub fn token_type(&self) -> TokenType {
-        match &self.start_url {
-            Some(url) if url == START_URL => TokenType::BuilderId,
-            None => TokenType::BuilderId,
-            Some(_) => TokenType::IamIdentityCenter,
-        }
-    }
-
     /// Check if the token is for the internal amzn start URL (`https://amzn.awsapps.com/start`),
     /// this implies the user will use midway for private specs
     #[allow(dead_code)]
     pub fn is_amzn_user(&self) -> bool {
         matches!(&self.start_url, Some(url) if url == AMZN_START_URL)
-    }
-}
-
-pub enum PollCreateToken {
-    Pending,
-    Complete,
-    Error(AuthError),
-}
-
-/// Poll for the create token response
-pub async fn poll_create_token(
-    database: &Database,
-    device_code: String,
-    start_url: Option<String>,
-    region: Option<String>,
-) -> PollCreateToken {
-    let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
-    let client = client(region.clone());
-
-    let DeviceRegistration {
-        client_id,
-        client_secret,
-        scopes,
-        ..
-    } = match DeviceRegistration::init_device_code_registration(database, &client, &region).await {
-        Ok(res) => res,
-        Err(err) => {
-            return PollCreateToken::Error(err);
-        },
-    };
-
-    match client
-        .create_token()
-        .grant_type(DEVICE_GRANT_TYPE)
-        .device_code(device_code)
-        .client_id(client_id)
-        .client_secret(client_secret.0)
-        .send()
-        .await
-    {
-        Ok(output) => {
-            let token: BuilderIdToken =
-                BuilderIdToken::from_output(output, region, start_url, OAuthFlow::DeviceCode, scopes);
-
-            if let Err(err) = token.save(database).await {
-                error!(?err, "Failed to store builder id token");
-            };
-
-            PollCreateToken::Complete
-        },
-        Err(SdkError::ServiceError(service_error)) if service_error.err().is_authorization_pending_exception() => {
-            PollCreateToken::Pending
-        },
-        Err(err) => {
-            error!(?err, "Failed to poll for builder id token");
-            PollCreateToken::Error(err.into())
-        },
-    }
-}
-
-pub async fn is_logged_in(database: &Database) -> bool {
-    // Check for BuilderId if not using Sigv4
-    if std::env::var("AMAZON_Q_SIGV4").is_ok_and(|v| !v.is_empty()) {
-        debug!("logged in using sigv4 credentials");
-        return true;
-    }
-
-    match BuilderIdToken::load(database).await {
-        Ok(Some(_)) => true,
-        Ok(None) => {
-            info!("not logged in - no valid token found");
-            false
-        },
-        Err(err) => {
-            warn!(?err, "failed to try to load a builder id token");
-            false
-        },
-    }
-}
-
-pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
-    let Ok(secret_store) = Database::new().await else {
-        return Ok(());
-    };
-
-    let (builder_res, device_res) = tokio::join!(
-        secret_store.delete_secret(BuilderIdToken::SECRET_KEY),
-        secret_store.delete_secret(DeviceRegistration::SECRET_KEY),
-    );
-
-    let profile_res = database.unset_auth_profile();
-
-    builder_res?;
-    device_res?;
-    profile_res?;
-
-    Ok(())
-}
-
-pub async fn get_start_url_and_region(database: &Database) -> (Option<String>, Option<String>) {
-    // NOTE: Database provides direct methods to access the start_url and region, but they are not
-    // guaranteed to be up to date in the chat session. Example: login is changed mid-chat session.
-    let token = BuilderIdToken::load(database).await;
-    match token {
-        Ok(Some(t)) => (t.start_url, t.region),
-        _ => (None, None),
     }
 }
 
@@ -614,18 +386,6 @@ impl ResolveIdentity for BearerResolver {
         }))
     }
 }
-
-pub async fn is_idc_user(database: &Database) -> Result<bool> {
-    if cfg!(test) {
-        return Ok(false);
-    }
-    if let Ok(Some(token)) = BuilderIdToken::load(database).await {
-        Ok(token.token_type() == TokenType::IamIdentityCenter)
-    } else {
-        Err(eyre!("No auth token found - is the user signed in?"))
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -658,17 +418,5 @@ mod tests {
 
         token.expires_at = time::OffsetDateTime::now_utc() - time::Duration::seconds(60);
         assert!(token.is_expired());
-    }
-
-    #[test]
-    fn test_token_type() {
-        let mut token = BuilderIdToken::test();
-        assert_eq!(token.token_type(), TokenType::BuilderId);
-
-        token.start_url = None;
-        assert_eq!(token.token_type(), TokenType::BuilderId);
-
-        token.start_url = Some("https://amzn.awsapps.com/start".into());
-        assert_eq!(token.token_type(), TokenType::IamIdentityCenter);
     }
 }

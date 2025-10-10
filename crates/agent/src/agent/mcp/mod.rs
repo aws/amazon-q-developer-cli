@@ -2,6 +2,11 @@ mod service;
 
 use std::collections::HashMap;
 use std::process::Stdio;
+use std::sync::Arc;
+use std::time::{
+    Duration,
+    Instant,
+};
 
 use futures::stream::FuturesUnordered;
 use rmcp::model::{
@@ -30,6 +35,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use serde_json::Value;
 use tokio::io::AsyncReadExt as _;
 use tokio::process::{
     ChildStderr,
@@ -48,14 +54,11 @@ use tracing::{
     warn,
 };
 
-use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolSpec;
 use super::util::request_channel::{
     RequestReceiver,
     new_request_channel,
 };
-// use crate::chat::EventSender;
-use crate::agent::agent_config::AgentConfig;
 use crate::agent::agent_config::definitions::{
     LocalMcpServerConfig,
     McpServerConfig,
@@ -66,11 +69,6 @@ use crate::agent::util::request_channel::{
     RequestSender,
     respond,
 };
-
-enum McpClient {
-    Pending,
-    Ready,
-}
 
 #[derive(Debug)]
 struct McpServerActorHandle {
@@ -113,32 +111,83 @@ impl McpServerActorHandle {
             ))),
         }
     }
+
+    pub async fn execute_tool(
+        &self,
+        name: String,
+        args: Option<serde_json::Map<String, Value>>,
+    ) -> Result<oneshot::Receiver<ExecuteToolResult>, McpServerActorError> {
+        match self
+            .sender
+            .send_recv(McpServerActorRequest::ExecuteTool { name, args })
+            .await
+            .unwrap_or(Err(McpServerActorError::Channel))?
+        {
+            McpServerActorResponse::ExecuteTool(rx) => Ok(rx),
+            other => Err(McpServerActorError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerActorRequest {
     GetTools,
     GetPrompts,
+    ExecuteTool {
+        name: String,
+        args: Option<serde_json::Map<String, Value>>,
+    },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug)]
 enum McpServerActorResponse {
     Tools(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
-    Unknown,
+    ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
-enum McpServerActorError {
+pub enum McpServerActorError {
+    #[error("An error occurred with the service: {}", .message)]
+    Service {
+        message: String,
+        #[serde(skip)]
+        #[source]
+        source: Option<Arc<ServiceError>>,
+    },
     #[error("The channel has closed")]
     Channel,
     #[error("{}", .0)]
     Custom(String),
 }
 
+impl From<ServiceError> for McpServerActorError {
+    fn from(value: ServiceError) -> Self {
+        Self::Service {
+            message: value.to_string(),
+            source: Some(Arc::new(value)),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerActorEvent {
-    Initialized,
+    /// The MCP server has launched successfully
+    Initialized {
+        /// Time taken to launch the server
+        serve_duration: Duration,
+        /// Time taken to list all tools.
+        ///
+        /// None if the server does not support tools, or there was an error fetching tools.
+        list_tools_duration: Option<Duration>,
+        /// Time taken to list all prompts
+        ///
+        /// None if the server does not support prompts, or there was an error fetching prompts.
+        list_prompts_duration: Option<Duration>,
+    },
     /// The MCP server failed to initialize successfully
     InitializeError(String),
 }
@@ -156,7 +205,13 @@ struct McpServerActor {
     /// Handle to an MCP server
     service_handle: RunningMcpService,
 
+    /// Monotonically increasing id for tool executions
+    curr_tool_execution_id: u32,
+    executing_tools: HashMap<u32, oneshot::Sender<ExecuteToolResult>>,
+
+    /// Receiver for actor requests
     req_rx: RequestReceiver<McpServerActorRequest, McpServerActorResponse, McpServerActorError>,
+    /// Sender for actor events
     event_tx: mpsc::Sender<McpServerActorEvent>,
     message_tx: mpsc::Sender<McpMessage>,
     message_rx: mpsc::Receiver<McpMessage>,
@@ -189,25 +244,31 @@ impl McpServerActor {
             .launch()
             .await
         {
-            Ok(service_handle) => {
+            Ok((service_handle, launch_md)) => {
                 let s = Self {
                     server_name,
                     config,
-                    tools: vec![],
-                    prompts: vec![],
+                    tools: launch_md.tools.unwrap_or_default(),
+                    prompts: launch_md.prompts.unwrap_or_default(),
                     service_handle,
                     req_rx,
                     event_tx,
                     message_tx,
                     message_rx,
+                    curr_tool_execution_id: Default::default(),
+                    executing_tools: Default::default(),
                 };
-                let _ = s.event_tx.send(McpServerActorEvent::Initialized).await;
-                s.refresh_tools();
-                s.refresh_prompts();
+                let _ = s
+                    .event_tx
+                    .send(McpServerActorEvent::Initialized {
+                        serve_duration: launch_md.serve_time_taken,
+                        list_tools_duration: launch_md.list_tools_duration,
+                        list_prompts_duration: launch_md.list_prompts_duration,
+                    })
+                    .await;
                 s.main_loop().await;
             },
             Err(err) => {
-                // todo - how to handle error here?
                 let _ = event_tx
                     .send(McpServerActorEvent::InitializeError(err.to_string()))
                     .await;
@@ -237,14 +298,36 @@ impl McpServerActor {
         &mut self,
         req: McpServerActorRequest,
     ) -> Result<McpServerActorResponse, McpServerActorError> {
-        debug!(?req, "MCP actor received new request");
+        debug!(?self.server_name, ?req, "MCP actor received new request");
         match req {
             McpServerActorRequest::GetTools => Ok(McpServerActorResponse::Tools(self.tools.clone())),
             McpServerActorRequest::GetPrompts => Ok(McpServerActorResponse::Prompts(self.prompts.clone())),
+            McpServerActorRequest::ExecuteTool { name, args } => {
+                let (tx, rx) = oneshot::channel();
+                self.curr_tool_execution_id = self.curr_tool_execution_id.wrapping_add(1);
+                let request_id = self.curr_tool_execution_id;
+                let service_handle = self.service_handle.clone();
+                let message_tx = self.message_tx.clone();
+                tokio::spawn(async move {
+                    let result = service_handle
+                        .call_tool(CallToolRequestParam {
+                            name: name.into(),
+                            arguments: args,
+                        })
+                        .await
+                        .map_err(McpServerActorError::from);
+                    let _ = message_tx
+                        .send(McpMessage::ExecuteToolResult { request_id, result })
+                        .await;
+                });
+                self.executing_tools.insert(self.curr_tool_execution_id, tx);
+                Ok(McpServerActorResponse::ExecuteTool(rx))
+            },
         }
     }
 
     async fn handle_mcp_message(&mut self, msg: Option<McpMessage>) {
+        debug!(?self.server_name, ?msg, "MCP actor received new message");
         let Some(msg) = msg else {
             warn!("MCP message receiver has closed");
             return;
@@ -260,6 +343,18 @@ impl McpServerActor {
                 Ok(prompts) => self.prompts = prompts.into_iter().map(Into::into).collect(),
                 Err(err) => {
                     error!(?err, "failed to list prompts");
+                },
+            },
+            McpMessage::ExecuteToolResult { request_id, result } => match self.executing_tools.remove(&request_id) {
+                Some(tx) => {
+                    let _ = tx.send(result);
+                },
+                None => {
+                    warn!(
+                        ?request_id,
+                        ?result,
+                        "received an execute tool result for an execution that does not exist"
+                    );
                 },
             },
         }
@@ -291,6 +386,7 @@ impl McpServerActor {
 enum McpMessage {
     ToolsResult(Result<Vec<RmcpTool>, ServiceError>),
     PromptsResult(Result<Vec<RmcpPrompt>, ServiceError>),
+    ExecuteToolResult { request_id: u32, result: ExecuteToolResult },
 }
 
 /// Represents a handle to a running MCP server.
@@ -353,6 +449,8 @@ impl RunningMcpService {
 
 /// Wrapper around rmcp service types to enable cloning.
 ///
+/// # Context
+///
 /// This exists because [rmcp::service::RunningService] is not directly cloneable as it is a
 /// pointer type to `Peer<C>`. This enum allows us to hold either the original service or its
 /// peer representation, enabling cloning by converting the original service to a peer when needed.
@@ -408,7 +506,9 @@ impl McpService {
         }
     }
 
-    async fn launch(self) -> eyre::Result<RunningMcpService> {
+    /// Launches the provided MCP server, returning a client handle to the server for sending
+    /// requests.
+    async fn launch(self) -> eyre::Result<(RunningMcpService, LaunchMetadata)> {
         match &self.config {
             McpServerConfig::Local(config) => {
                 let cmd = expand_path(&config.command)?;
@@ -427,12 +527,76 @@ impl McpService {
                 });
                 let (process, stderr) = TokioChildProcess::builder(cmd).stderr(Stdio::piped()).spawn().unwrap();
                 let server_name = self.server_name.clone();
-                info!(?server_name, "About to serve");
-                let r = self.serve(process).await.unwrap();
-                info!(?server_name, "Serve completed successfully");
-                Ok(RunningMcpService::new(server_name, r, stderr))
+
+                let start_time = Instant::now();
+                info!(?server_name, "Launching MCP server");
+                let service = self.serve(process).await?;
+                let serve_time_taken = start_time.elapsed();
+                info!(?serve_time_taken, ?server_name, "MCP server launched successfully");
+
+                let launch_md = match service.peer_info() {
+                    Some(info) => {
+                        debug!(?server_name, ?info, "peer info found");
+
+                        // Fetch tools, if we can
+                        let (tools, list_tools_duration) = if info.capabilities.tools.is_some() {
+                            let start_time = Instant::now();
+                            match service.list_all_tools().await {
+                                Ok(tools) => (
+                                    Some(tools.into_iter().map(Into::into).collect()),
+                                    Some(start_time.elapsed()),
+                                ),
+                                Err(err) => {
+                                    error!(?err, "failed to list tools during server initialization");
+                                    (None, None)
+                                },
+                            }
+                        } else {
+                            (None, None)
+                        };
+
+                        // Fetch prompts, if we can
+                        let (prompts, list_prompts_duration) = if info.capabilities.prompts.is_some() {
+                            let start_time = Instant::now();
+                            match service.list_all_prompts().await {
+                                Ok(prompts) => (
+                                    Some(prompts.into_iter().map(Into::into).collect()),
+                                    Some(start_time.elapsed()),
+                                ),
+                                Err(err) => {
+                                    error!(?err, "failed to list prompts during server initialization");
+                                    (None, None)
+                                },
+                            }
+                        } else {
+                            (None, None)
+                        };
+
+                        LaunchMetadata {
+                            serve_time_taken,
+                            tools,
+                            list_tools_duration,
+                            prompts,
+                            list_prompts_duration,
+                        }
+                    },
+                    None => {
+                        warn!(?server_name, "no peer info found");
+                        LaunchMetadata {
+                            serve_time_taken,
+                            tools: None,
+                            list_tools_duration: None,
+                            prompts: None,
+                            list_prompts_duration: None,
+                        }
+                    },
+                };
+
+                Ok((RunningMcpService::new(server_name, service, stderr), launch_md))
             },
-            McpServerConfig::StreamableHTTP(config) => todo!(),
+            McpServerConfig::StreamableHTTP(config) => {
+                eyre::bail!("not supported");
+            },
         }
     }
 }
@@ -441,7 +605,7 @@ impl rmcp::Service<RoleClient> for McpService {
     async fn handle_request(
         &self,
         request: <rmcp::RoleClient as rmcp::service::ServiceRole>::PeerReq,
-        context: rmcp::service::RequestContext<RoleClient>,
+        _context: rmcp::service::RequestContext<RoleClient>,
     ) -> Result<<RoleClient as rmcp::service::ServiceRole>::Resp, rmcp::ErrorData> {
         match request {
             ServerRequest::PingRequest(_) => Ok(ClientResult::empty(())),
@@ -464,7 +628,12 @@ impl rmcp::Service<RoleClient> for McpService {
     ) -> Result<(), rmcp::ErrorData> {
         match notification {
             ServerNotification::ToolListChangedNotification(_) => {
-                let tools = context.peer.list_all_tools().await.unwrap();
+                let tools = context.peer.list_all_tools().await;
+                let _ = self.message_tx.send(McpMessage::ToolsResult(tools)).await;
+            },
+            ServerNotification::PromptListChangedNotification(_) => {
+                let prompts = context.peer.list_all_prompts().await;
+                let _ = self.message_tx.send(McpMessage::PromptsResult(prompts)).await;
             },
             ServerNotification::LoggingMessageNotification(notif) => {
                 let level = notif.params.level;
@@ -488,7 +657,6 @@ impl rmcp::Service<RoleClient> for McpService {
                     },
                 }
             },
-            ServerNotification::PromptListChangedNotification(_) => {},
             // TODO: support these
             ServerNotification::CancelledNotification(_) => (),
             ServerNotification::ResourceUpdatedNotification(_) => (),
@@ -510,6 +678,16 @@ impl rmcp::Service<RoleClient> for McpService {
             },
         }
     }
+}
+
+/// Metadata about a successfully launched MCP server.
+#[derive(Debug, Clone)]
+pub struct LaunchMetadata {
+    serve_time_taken: Duration,
+    tools: Option<Vec<ToolSpec>>,
+    list_tools_duration: Option<Duration>,
+    prompts: Option<Vec<Prompt>>,
+    list_prompts_duration: Option<Duration>,
 }
 
 async fn test_rmcp(config: LocalMcpServerConfig) {
@@ -597,24 +775,65 @@ impl McpManagerHandle {
         Self { sender }
     }
 
-    pub async fn launch_server(&self, name: String, config: McpServerConfig) -> Result<(), McpManagerError> {
+    pub async fn launch_server(
+        &self,
+        name: String,
+        config: McpServerConfig,
+    ) -> Result<oneshot::Receiver<LaunchServerResult>, McpManagerError> {
         match self
             .sender
-            .send_recv(McpManagerRequest::LaunchServer { name, config })
+            .send_recv(McpManagerRequest::LaunchServer {
+                server_name: name,
+                config,
+            })
             .await
             .unwrap_or(Err(McpManagerError::Channel))?
         {
-            McpManagerResponse::ToolSpecs(tool_specs) => todo!(),
-            McpManagerResponse::LaunchServer(receiver) => todo!(),
+            McpManagerResponse::LaunchServer(rx) => Ok(rx),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
         }
     }
 
-    pub async fn get_tool_specs(&self, config: AgentConfig) -> Vec<ToolSpec> {
-        Vec::new()
+    pub async fn get_tool_specs(&self, server_name: String) -> Result<Vec<ToolSpec>, McpManagerError> {
+        match self
+            .sender
+            .send_recv(McpManagerRequest::GetToolSpecs { server_name })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::ToolSpecs(v) => Ok(v),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
+        }
     }
 
-    pub async fn generate_tool_spec(&self, name: &CanonicalToolName) -> Result<ToolSpec, McpManagerError> {
-        todo!()
+    pub async fn execute_tool(
+        &self,
+        server_name: String,
+        tool_name: String,
+        args: Option<serde_json::Map<String, Value>>,
+    ) -> Result<oneshot::Receiver<ExecuteToolResult>, McpManagerError> {
+        match self
+            .sender
+            .send_recv(McpManagerRequest::ExecuteTool {
+                server_name,
+                tool_name,
+                args,
+            })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::ExecuteTool(rx) => Ok(rx),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
+        }
     }
 }
 
@@ -696,7 +915,10 @@ impl McpManager {
     ) -> Result<McpManagerResponse, McpManagerError> {
         debug!(?req, "tool manager received new request");
         match req {
-            McpManagerRequest::LaunchServer { name, config } => {
+            McpManagerRequest::LaunchServer {
+                server_name: name,
+                config,
+            } => {
                 if self.initializing_servers.contains_key(&name) {
                     return Err(McpManagerError::ServerCurrentlyInitializing { name });
                 } else if self.servers.contains_key(&name) {
@@ -707,10 +929,20 @@ impl McpManager {
                 self.initializing_servers.insert(name, (handle, tx));
                 Ok(McpManagerResponse::LaunchServer(rx))
             },
-            McpManagerRequest::GetToolSpecs { config } => {
-                todo!();
+            McpManagerRequest::GetToolSpecs { server_name: name } => match self.servers.get(&name) {
+                Some(handle) => Ok(McpManagerResponse::ToolSpecs(handle.get_tool_specs().await?)),
+                None => Err(McpManagerError::ServerNotInitialized { name }),
             },
-            McpManagerRequest::RefreshMcpServers => todo!(),
+            McpManagerRequest::ExecuteTool {
+                server_name,
+                tool_name,
+                args,
+            } => match self.servers.get(&server_name) {
+                Some(handle) => Ok(McpManagerResponse::ExecuteTool(
+                    handle.execute_tool(tool_name, args).await?,
+                )),
+                None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
+            },
         }
     }
 
@@ -737,7 +969,7 @@ impl McpManager {
 
         // First event from an initializing server should only be either of these Initialize variants.
         match evt {
-            McpServerActorEvent::Initialized => {
+            McpServerActorEvent::Initialized { .. } => {
                 let _ = tx.send(Ok(()));
                 self.servers.insert(server_name, handle);
             },
@@ -753,32 +985,43 @@ impl McpManager {
 pub enum McpManagerRequest {
     LaunchServer {
         /// Identifier for the server
-        name: String,
+        server_name: String,
         /// Config to use
         config: McpServerConfig,
     },
-    /// Gets a valid tool specification according to the given agent config.
     GetToolSpecs {
-        /// The agent config to use when generating the tool specs.
-        config: AgentConfig,
+        /// Server name
+        server_name: String,
     },
-    RefreshMcpServers,
+    ExecuteTool {
+        server_name: String,
+        tool_name: String,
+        args: Option<serde_json::Map<String, Value>>,
+    },
 }
 
 #[derive(Debug)]
 pub enum McpManagerResponse {
     LaunchServer(oneshot::Receiver<LaunchServerResult>),
     ToolSpecs(Vec<ToolSpec>),
+    ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
+    Unknown,
 }
+
+pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;
 
 type LaunchServerResult = Result<(), McpManagerError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
 pub enum McpManagerError {
+    #[error("Server with the name {} is not initialized", .name)]
+    ServerNotInitialized { name: String },
     #[error("Server with the name {} is currently initializing", .name)]
     ServerCurrentlyInitializing { name: String },
     #[error("Server with the name {} has already launched", .name)]
     ServerAlreadyLaunched { name: String },
+    #[error(transparent)]
+    McpActor(#[from] McpServerActorError),
     #[error("The channel has closed")]
     Channel,
     #[error("{}", .0)]

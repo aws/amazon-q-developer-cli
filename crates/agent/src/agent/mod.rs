@@ -11,19 +11,18 @@ pub mod types;
 pub mod util;
 
 use std::collections::{
+    BTreeMap,
     HashMap,
     HashSet,
     VecDeque,
 };
-use std::os::unix::fs::MetadataExt as _;
-use std::path::Path;
 
+use agent_config::LoadedMcpServerConfigs;
 use agent_config::definitions::{
     Config,
     HookConfig,
     HookTrigger,
 };
-use agent_config::load_mcp_configs;
 use agent_config::parse::{
     CanonicalToolName,
     Resource,
@@ -63,6 +62,13 @@ use agent_loop::{
 };
 use bstr::ByteSlice as _;
 use chrono::Utc;
+use consts::{
+    MAX_RESOURCE_FILE_LENGTH,
+    MAX_TOOL_NAME_LEN,
+    MAX_TOOL_SPEC_DESCRIPTION_LEN,
+    RTS_VALID_TOOL_NAME_REGEX,
+};
+use futures::stream::FuturesUnordered;
 use mcp::McpManager;
 use permissions::evaluate_tool_permission;
 use protocol::{
@@ -76,6 +82,7 @@ use protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
 };
+use regex::Regex;
 use rts::RtsModel;
 use serde::{
     Deserialize,
@@ -95,19 +102,25 @@ use task_executor::{
     ToolExecutorResult,
     ToolFuture,
 };
-use tokio::io::{
-    AsyncReadExt as _,
-    BufReader,
-};
+use tokio::io::AsyncReadExt as _;
 use tokio::sync::{
     broadcast,
+    mpsc,
     oneshot,
 };
+use tokio::time::Instant;
+use tokio_stream::StreamExt as _;
 use tokio_util::sync::CancellationToken;
-use tools::ToolExecutionOutputItem;
+use tools::mcp::McpTool;
+use tools::{
+    ToolExecutionError,
+    ToolExecutionOutput,
+    ToolExecutionOutputItem,
+};
 use tracing::{
     debug,
     error,
+    info,
     trace,
     warn,
 };
@@ -120,7 +133,7 @@ use types::{
 };
 use util::path::canonicalize_path;
 use util::request_channel::new_request_channel;
-use util::truncate_safe_in_place;
+use util::read_file_with_max_limit;
 use uuid::Uuid;
 
 use crate::agent::consts::{
@@ -133,10 +146,6 @@ use crate::agent::tools::{
     ToolKind,
     ToolState,
     built_in_tool_names,
-};
-use crate::agent::util::error::{
-    ErrorContext as _,
-    UtilError,
 };
 use crate::agent::util::glob::{
     find_matches,
@@ -231,6 +240,9 @@ pub struct Agent {
     model: Models,
 
     settings: AgentSettings,
+
+    cached_tool_specs: Option<SanitizedToolSpecs>,
+    cached_mcp_configs: LoadedMcpServerConfigs,
 }
 
 impl Agent {
@@ -251,6 +263,7 @@ impl Agent {
         let (agent_event_tx, agent_event_rx) = broadcast::channel(64);
 
         let agent_config = snapshot.agent_config;
+        let cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(&agent_config).await;
         let task_executor = TaskExecutor::new();
 
         let model = match snapshot.model_state {
@@ -280,6 +293,8 @@ impl Agent {
             agent_spawn_hooks: Default::default(),
             model,
             settings: snapshot.settings,
+            cached_tool_specs: None,
+            cached_mcp_configs,
         })
     }
 
@@ -296,15 +311,77 @@ impl Agent {
     /// TODO - do initialization logic depending on execution state
     async fn initialize(&mut self) {
         // Initialize MCP servers, waiting with timeout.
-        match load_mcp_configs(&self.agent_config).await {
-            Ok(res) => {
-                for config in res.configs {
-                    self.mcp_manager_handle.launch_server(config.name, config.config).await;
+        {
+            if !self.cached_mcp_configs.overridden_configs.is_empty() {
+                warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
+            }
+
+            let mut results = FuturesUnordered::new();
+            for config in &self.cached_mcp_configs.configs {
+                let Ok(rx) = self
+                    .mcp_manager_handle
+                    .launch_server(config.name.clone(), config.config.clone())
+                    .await
+                else {
+                    warn!(?config.name, "failed to launch MCP config, skipping");
+                    continue;
+                };
+                let name = config.name.clone();
+                results.push(async move { (name, rx.await) });
+            }
+
+            // Continually loop through the receivers until all have completed.
+            let mut launched_servers = Vec::new();
+            let (success_tx, mut success_rx) = mpsc::channel(8);
+            let mut failed_servers = Vec::new();
+            let (failed_tx, mut failed_rx) = mpsc::channel(8);
+            let init_results_handle = tokio::spawn(async move {
+                while let Some((name, res)) = results.next().await {
+                    debug!(?name, ?res, "received result from LaunchServer request");
+                    let Ok(res) = res else {
+                        warn!(?name, "channel unexpectedly dropped during MCP initialization");
+                        let _ = failed_tx.send(name).await;
+                        continue;
+                    };
+                    match res {
+                        Ok(_) => {
+                            let _ = success_tx.send(name).await;
+                        },
+                        Err(err) => {
+                            error!(?name, ?err, "failed to launch MCP server");
+                            let _ = failed_tx.send(name).await;
+                        },
+                    }
                 }
-            },
-            Err(err) => {
-                error!(?err, "failed to load MCP configs for agent");
-            },
+            });
+
+            let timeout_at = Instant::now() + self.settings.mcp_init_timeout;
+            loop {
+                tokio::select! {
+                    name = success_rx.recv() => {
+                        let Some(name) = name else {
+                            // If None is returned in either success/failed receivers, then the
+                            // senders have dropped, meaning initialization has completed.
+                            break;
+                        };
+                        debug!(?name, "MCP server successfully initialized");
+                        launched_servers.push(name);
+                    },
+                    name = failed_rx.recv() => {
+                        let Some(name) = name else {
+                            break;
+                        };
+                        warn!(?name, "MCP server failed initialization");
+                        failed_servers.push(name);
+                    },
+                    _ = tokio::time::sleep_until(timeout_at) => {
+                        warn!("timed out before all MCP servers could be initialized");
+                        break;
+                    },
+                }
+            }
+            info!(?launched_servers, ?failed_servers, "MCP server initialization finished");
+            init_results_handle.abort();
         }
 
         // Next, run agent spawn hooks.
@@ -806,7 +883,7 @@ impl Agent {
     /// The returned conversation history will:
     /// 1. Have context messages prepended to the start of the message history
     /// 2. Have conversation history invariants enforced, mutating messages as required
-    async fn format_request(&self) -> Result<SendRequestArgs, AgentError> {
+    async fn format_request(&mut self) -> Result<SendRequestArgs, AgentError> {
         let mut messages = VecDeque::from(self.conversation_state.messages.clone());
         let mut tool_spec = self.make_tool_spec().await?;
         enforce_conversation_invariants(&mut messages, &mut tool_spec);
@@ -846,6 +923,9 @@ impl Agent {
             resources.iter().map(|r| &r.content),
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
         );
+        if content.is_empty() {
+            return vec![];
+        }
         let user_msg = Message::new(Role::User, vec![ContentBlock::Text(content)], None);
         let assistant_msg = Message::new(
             Role::Assistant,
@@ -1168,22 +1248,23 @@ impl Agent {
         }
     }
 
-    async fn make_tool_spec(&self) -> Result<Vec<ToolSpec>, AgentError> {
+    async fn make_tool_spec(&mut self) -> Result<Vec<ToolSpec>, AgentError> {
         let tool_names = self.get_tool_names().await?;
-
-        let mut tool_specs = Vec::new();
-        for name in tool_names {
-            match &name {
-                CanonicalToolName::BuiltIn(name) => tool_specs.push(BuiltInTool::generate_tool_spec(name)),
-                name @ CanonicalToolName::Mcp { server_name, tool_name } => {
-                    tool_specs.push(self.mcp_manager_handle.generate_tool_spec(name).await?);
-                },
-                CanonicalToolName::Agent { agent_name } => {
-                    // TODO: generate tool spec from agent config
-                },
+        let mut mcp_server_tool_specs = HashMap::new();
+        for name in &tool_names {
+            if let CanonicalToolName::Mcp { server_name, .. } = name {
+                if !mcp_server_tool_specs.contains_key(server_name) {
+                    let Ok(tools) = self.mcp_manager_handle.get_tool_specs(server_name.clone()).await else {
+                        continue;
+                    };
+                    mcp_server_tool_specs.insert(server_name.clone(), tools);
+                }
             }
         }
 
+        let sanitized_specs = sanitize_tool_specs(tool_names, mcp_server_tool_specs, self.agent_config.tool_aliases());
+        let tool_specs = sanitized_specs.tool_specs();
+        self.cached_tool_specs = Some(sanitized_specs);
         Ok(tool_specs)
     }
 
@@ -1203,6 +1284,15 @@ impl Agent {
                         for built_in in &built_in_tool_names {
                             tool_names.insert(built_in.clone());
                         }
+
+                        for config in &self.cached_mcp_configs.configs {
+                            let Ok(specs) = self.mcp_manager_handle.get_tool_specs(config.name.clone()).await else {
+                                continue;
+                            };
+                            for spec in specs {
+                                tool_names.insert(CanonicalToolName::from_mcp_parts(config.name.clone(), spec.name));
+                            }
+                        }
                     },
                     ToolNameKind::McpFullName { .. } => {
                         if let Ok(tn) = tool_name.parse() {
@@ -1211,9 +1301,24 @@ impl Agent {
                     },
                     ToolNameKind::McpServer { server_name } => {
                         // get all tools from the mcp server
+                        let Ok(specs) = self.mcp_manager_handle.get_tool_specs(server_name.to_string()).await else {
+                            continue;
+                        };
+                        for spec in specs {
+                            tool_names.insert(CanonicalToolName::from_mcp_parts(server_name.to_string(), spec.name));
+                        }
                     },
                     ToolNameKind::McpGlob { server_name, glob_part } => {
                         // match only tools for the server name
+                        let Ok(specs) = self.mcp_manager_handle.get_tool_specs(server_name.to_string()).await else {
+                            continue;
+                        };
+                        for spec in specs {
+                            if matches_any_pattern([glob_part], &spec.name) {
+                                tool_names
+                                    .insert(CanonicalToolName::from_mcp_parts(server_name.to_string(), spec.name));
+                            }
+                        }
                     },
                     ToolNameKind::BuiltInGlob(glob) => {
                         let built_ins = built_in_tool_names.iter().map(|tn| tn.tool_name());
@@ -1254,10 +1359,19 @@ impl Agent {
 
         // Next, parse tool from the name.
         for tool_use in tool_uses {
-            let canonical_tool_name = match self.resolve_tool_name(&tool_use.name).await {
-                Ok(n) => n,
-                Err(err) => {
-                    parse_errors.push(ToolParseError::new(tool_use, err));
+            let canonical_tool_name = match &self.cached_tool_specs {
+                Some(specs) => match specs.tool_map.get(&tool_use.name) {
+                    Some(spec) => spec.canonical_name.clone(),
+                    None => {
+                        parse_errors.push(ToolParseError::new(
+                            tool_use.clone(),
+                            ToolParseErrorKind::NameDoesNotExist(tool_use.name),
+                        ));
+                        continue;
+                    },
+                },
+                None => {
+                    // should never happen
                     continue;
                 },
             };
@@ -1279,38 +1393,6 @@ impl Agent {
         (tools, parse_errors)
     }
 
-    /// Returns a canonicalized tool name for a given agent
-    ///
-    /// # Arguments
-    ///
-    /// - `tool_name` - the name of the tool as returned by the model
-    async fn resolve_tool_name(&self, tool_name: &str) -> Result<CanonicalToolName, ToolParseErrorKind> {
-        // TODO
-        // Resolve any tool name transformations, if required
-
-        // Resolve any aliases, if required
-        let config = self.get_agent_config().await;
-        let aliases = config.tool_aliases();
-        let tool_name = match aliases.iter().find(|(_, v)| *v == tool_name) {
-            Some((canon_name, _)) => canon_name,
-            None => tool_name,
-        };
-
-        // Afterwards, we should have a canonical tool name.
-        let canon_tool_name = match tool_name.parse() {
-            Ok(tn) => tn,
-            // this should never happen
-            Err(err) => return Err(ToolParseErrorKind::AmbiguousToolName(err)),
-        };
-
-        let tool_names = self.get_tool_names().await?;
-        if !tool_names.contains(&canon_tool_name) {
-            Err(ToolParseErrorKind::NameDoesNotExist(tool_name.to_string()))
-        } else {
-            Ok(canon_tool_name)
-        }
-    }
-
     async fn parse_tool(
         &self,
         name: &CanonicalToolName,
@@ -1321,8 +1403,20 @@ impl Agent {
                 Ok(tool) => Ok(ToolKind::BuiltIn(tool)),
                 Err(err) => Err(err),
             },
-            CanonicalToolName::Mcp { server_name, tool_name } => todo!(),
-            CanonicalToolName::Agent { agent_name } => todo!(),
+            CanonicalToolName::Mcp { server_name, tool_name } => match args.as_object() {
+                Some(params) => Ok(ToolKind::Mcp(McpTool {
+                    tool_name: tool_name.clone(),
+                    server_name: server_name.clone(),
+                    params: Some(params.clone()),
+                })),
+                None => Err(ToolParseErrorKind::InvalidArgs(format!(
+                    "Arguments must be an object, instead found {:?}",
+                    args
+                ))),
+            },
+            CanonicalToolName::Agent { .. } => Err(ToolParseErrorKind::Other(AgentError::Custom(
+                "Unimplemented".to_string(),
+            ))),
         }
     }
 
@@ -1346,7 +1440,11 @@ impl Agent {
     async fn evaluate_tool_permission(&mut self, tool: &ToolKind) -> Result<PermissionEvalResult, AgentError> {
         let config = self.get_agent_config().await;
         let allowed_tools = config.allowed_tools();
-        match evaluate_tool_permission(allowed_tools, config.tool_settings(), tool) {
+        match evaluate_tool_permission(
+            allowed_tools,
+            &config.tool_settings().cloned().unwrap_or_default(),
+            tool,
+        ) {
             Ok(res) => Ok(res),
             Err(err) => {
                 warn!(?err, "failed to evaluate tool permission");
@@ -1364,7 +1462,7 @@ impl Agent {
         let mut needs_approval_res = HashMap::new();
         for tool_use_id in &needs_approval {
             debug_assert!(
-                tools.iter().find(|(b, _)| &b.tool_use_id == tool_use_id).is_some(),
+                tools.iter().any(|(b, _)| &b.tool_use_id == tool_use_id),
                 "unexpected tool use id requiring approval: tools: {:?} needs_approval: {:?}",
                 tools,
                 needs_approval
@@ -1434,7 +1532,36 @@ impl Agent {
                 BuiltInTool::Mkdir(t) => todo!(),
                 BuiltInTool::SpawnSubagent => todo!(),
             },
-            ToolKind::Mcp(t) => todo!(),
+            ToolKind::Mcp(t) => {
+                let mcp_tool = t.clone();
+                let rx = self
+                    .mcp_manager_handle
+                    .execute_tool(t.server_name, t.tool_name, t.params)
+                    .await?;
+                Box::pin(async move {
+                    let Ok(res) = rx.await else {
+                        return Err(ToolExecutionError::Custom("channel dropped".to_string()));
+                    };
+                    match res {
+                        Ok(resp) => {
+                            if resp.is_error.is_none_or(|v| !v) {
+                                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
+                                    serde_json::json!(resp),
+                                )]))
+                            } else {
+                                warn!(?mcp_tool, "Tool call failed");
+                                Ok(ToolExecutionOutput::new(vec![ToolExecutionOutputItem::Json(
+                                    serde_json::json!(resp),
+                                )]))
+                            }
+                        },
+                        Err(err) => Err(ToolExecutionError::Custom(format!(
+                            "failed to send call tool request to the MCP server: {}",
+                            err
+                        ))),
+                    }
+                })
+            },
         };
 
         self.task_executor
@@ -1486,6 +1613,196 @@ impl Agent {
         self.send_request().await?;
         self.set_active_state(ActiveState::ExecutingRequest).await;
         Ok(())
+    }
+}
+
+/// Categorizes different types of tool name validation failures according to the requirements by
+/// the RTS API.
+#[derive(Debug, Clone)]
+struct ToolValidationError {
+    mcp_server_name: String,
+    tool_spec: ToolSpec,
+    kind: ToolValidationErrorKind,
+}
+
+impl ToolValidationError {
+    fn new(mcp_server_name: String, tool_spec: ToolSpec, kind: ToolValidationErrorKind) -> Self {
+        Self {
+            mcp_server_name,
+            tool_spec,
+            kind,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+enum ToolValidationErrorKind {
+    OutOfSpecName { transformed_name: String },
+    EmptyName,
+    NameTooLong,
+    IllegalChar(String),
+    EmptyDescription,
+    DescriptionTooLong,
+    NameCollision(CanonicalToolName),
+}
+
+#[derive(Debug, Clone)]
+struct SanitizedToolSpecs {
+    /// Mapping from a transformed tool name to the canonical tool name and corresponding tool
+    /// spec.
+    tool_map: HashMap<String, SanitizedToolSpec>,
+    /// Tool specs that could not be included due to failed validations.
+    filtered_specs: Vec<ToolValidationError>,
+    /// Tool specs that are included in [Self::tool_map] but underwent transformations in order to
+    /// conform to the validation requirements.
+    warnings: Vec<ToolValidationError>,
+}
+
+impl SanitizedToolSpecs {
+    fn tool_specs(&self) -> Vec<ToolSpec> {
+        self.tool_map.values().map(|v| v.tool_spec.clone()).collect()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct SanitizedToolSpec {
+    canonical_name: CanonicalToolName,
+    tool_spec: ToolSpec,
+}
+
+fn sanitize_tool_specs(
+    canonical_names: Vec<CanonicalToolName>,
+    mcp: HashMap<String, Vec<ToolSpec>>,
+    aliases: &HashMap<String, String>,
+) -> SanitizedToolSpecs {
+    // Mapping from tool names as presented to the model, to a sanitized tool spec that won't cause
+    // validation errors.
+    let mut tool_map = HashMap::new();
+
+    // Tool names for mcp servers.
+    // Use a BTreeMap to ensure we process MCP servers in a deterministic order.
+    let mut mcp_tool_names = BTreeMap::new();
+
+    for name in canonical_names {
+        match &name {
+            canon_name @ CanonicalToolName::BuiltIn(name) => {
+                tool_map.insert(name.as_ref().to_string(), SanitizedToolSpec {
+                    canonical_name: canon_name.clone(),
+                    tool_spec: BuiltInTool::generate_tool_spec(name),
+                });
+            },
+            CanonicalToolName::Mcp { server_name, tool_name } => {
+                // MCP tools will be processed below
+                mcp_tool_names
+                    .entry(server_name.clone())
+                    .or_insert_with(HashSet::new)
+                    .insert(tool_name.clone());
+            },
+            CanonicalToolName::Agent { agent_name } => {
+                // TODO: generate tool spec from agent config
+            },
+        }
+    }
+
+    // Then, add each server's tools, filtering only the tools that are requested.
+    let mut filtered_specs = Vec::new();
+    let mut warnings = Vec::new();
+    let tool_name_regex = Regex::new(RTS_VALID_TOOL_NAME_REGEX).expect("should compile");
+    for (server_name, tool_names) in mcp_tool_names {
+        let Some(all_tool_specs) = mcp.get(&server_name) else {
+            continue;
+        };
+
+        let mut tool_specs = all_tool_specs.clone();
+        tool_specs.retain(|t| tool_names.contains(&t.name));
+
+        // Process MCP tool names to conform to the backend API requirements.
+        //
+        // Tools are subjected to the following validations:
+        // 1. ^[a-zA-Z][a-zA-Z0-9_]*$,
+        // 2. less than 64 characters in length
+        // 3. a non-empty description
+        for mut spec in tool_specs {
+            let canonical_name = CanonicalToolName::from_mcp_parts(server_name.clone(), spec.name.clone());
+            let full_name = canonical_name.as_full_name();
+            let mut is_regex_mismatch = false;
+
+            // First, resolve alias if exists.
+            let name = aliases.get(full_name.as_ref()).cloned().unwrap_or(spec.name.clone());
+
+            // Then, sanitize if required.
+            let sanitized_name = if !tool_name_regex.is_match(&name) {
+                is_regex_mismatch = true;
+                name.chars()
+                    .filter(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || *c == '_' || *c == '-')
+                    .collect::<String>()
+            } else {
+                name
+            };
+            // Ensure first char is alphabetic.
+            let sanitized_name = match sanitized_name.chars().next() {
+                Some(c) if c.is_ascii_alphabetic() => sanitized_name,
+                Some(_) => format!("a{}", sanitized_name),
+                _ => {
+                    filtered_specs.push(ToolValidationError::new(
+                        server_name.clone(),
+                        spec.clone(),
+                        ToolValidationErrorKind::EmptyName,
+                    ));
+                    continue;
+                },
+            };
+
+            // Perform final validations against the sanitized name.
+            if sanitized_name.len() > MAX_TOOL_NAME_LEN {
+                filtered_specs.push(ToolValidationError::new(
+                    server_name.clone(),
+                    spec.clone(),
+                    ToolValidationErrorKind::NameTooLong,
+                ));
+            } else if spec.description.is_empty() {
+                filtered_specs.push(ToolValidationError::new(
+                    server_name.clone(),
+                    spec.clone(),
+                    ToolValidationErrorKind::EmptyDescription,
+                ));
+            } else if let Some(n) = tool_map.get(sanitized_name.as_str()) {
+                filtered_specs.push(ToolValidationError::new(
+                    server_name.clone(),
+                    spec.clone(),
+                    ToolValidationErrorKind::NameCollision(n.canonical_name.clone()),
+                ));
+            } else {
+                if spec.description.len() > MAX_TOOL_SPEC_DESCRIPTION_LEN {
+                    warnings.push(ToolValidationError::new(
+                        server_name.clone(),
+                        spec.clone(),
+                        ToolValidationErrorKind::DescriptionTooLong,
+                    ));
+                }
+                if is_regex_mismatch {
+                    warnings.push(ToolValidationError::new(
+                        server_name.clone(),
+                        spec.clone(),
+                        ToolValidationErrorKind::OutOfSpecName {
+                            transformed_name: sanitized_name.clone(),
+                        },
+                    ));
+                }
+                spec.name = sanitized_name.clone();
+                spec.description.truncate(MAX_TOOL_SPEC_DESCRIPTION_LEN);
+                tool_map.insert(sanitized_name, SanitizedToolSpec {
+                    canonical_name,
+                    tool_spec: spec,
+                });
+            }
+        }
+    }
+
+    SanitizedToolSpecs {
+        tool_map,
+        filtered_specs,
+        warnings,
     }
 }
 
@@ -1643,52 +1960,6 @@ where
     return_val
 }
 
-const MAX_RESOURCE_FILE_LENGTH: u64 = 1024 * 10;
-
-/// Reads a file to a maximum file length, returning the content and number of bytes truncated. If
-/// the file has to be truncated, content is suffixed with `truncated_suffix`.
-///
-/// The returned content length is guaranteed to not be greater than `max_file_length`.
-async fn read_file_with_max_limit(
-    path: impl AsRef<Path>,
-    max_file_length: u64,
-    truncated_suffix: impl AsRef<str>,
-) -> Result<(String, u64), UtilError> {
-    let path = path.as_ref();
-    let suffix = truncated_suffix.as_ref();
-    let file = tokio::fs::File::open(path)
-        .await
-        .with_context(|| format!("Failed to open file at '{}'", path.to_string_lossy()))?;
-    let md = file
-        .metadata()
-        .await
-        .with_context(|| format!("Failed to query file metadata at '{}'", path.to_string_lossy()))?;
-
-    let truncated_amount = if md.size() > max_file_length {
-        // Edge case check to ensure the suffix is less than max file length.
-        if suffix.len() as u64 > max_file_length {
-            return Ok((String::new(), md.size()));
-        }
-        md.size() - max_file_length + suffix.len() as u64
-    } else {
-        0
-    };
-
-    // Read only the max supported length.
-    let mut reader = BufReader::new(file).take(max_file_length);
-    let mut content = Vec::new();
-    reader
-        .read_to_end(&mut content)
-        .await
-        .with_context(|| format!("Failed to read from file at '{}'", path.to_string_lossy()))?;
-
-    // Truncate content safely.
-    let mut content = content.to_str_lossy().to_string();
-    truncate_safe_in_place(&mut content, max_file_length as usize, suffix);
-
-    Ok((content, truncated_amount))
-}
-
 fn hook_matches_tool(config: &HookConfig, tool: &ToolKind) -> bool {
     let Some(matcher) = config.matcher() else {
         // No matcher -> hook runs for all tools.
@@ -1797,5 +2068,29 @@ mod tests {
     async fn test_collect_resources() {
         let r = collect_resources(vec!["file://AGENTS.md"]).await;
         println!("{:?}", r);
+    }
+
+    #[tokio::test]
+    async fn test_agent() {
+        let _ = tracing_subscriber::fmt::try_init();
+
+        let path = "/Users/bskiser/.aws/amazonq/cli-agents/idk.json";
+        let contents = tokio::fs::read_to_string(path).await.unwrap();
+        let cfg: Config = serde_json::from_str(&contents).unwrap();
+        let mut agent = Agent::from_config(cfg).await.unwrap().spawn();
+        let init_res = agent.recv().await.unwrap();
+        println!("Init res: {:?}", init_res);
+
+        agent
+            .send_prompt(SendPromptArgs {
+                content: vec![InputItem::Text("what tools do you have?".to_string())],
+            })
+            .await
+            .unwrap();
+
+        loop {
+            let res = agent.recv().await.unwrap();
+            println!("res: {:?}", res);
+        }
     }
 }

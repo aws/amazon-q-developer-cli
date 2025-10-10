@@ -13,7 +13,8 @@ use crate::agent::consts::BUILTIN_VIBER_AGENT_NAME;
 use crate::agent::tools::BuiltInToolName;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "specVersion")]
+// #[serde(tag = "specVersion")]
+#[serde(untagged)]
 pub enum Config {
     #[serde(rename = "2025_08_22")]
     V2025_08_22(AgentConfigV2025_08_22),
@@ -50,9 +51,9 @@ impl Config {
         }
     }
 
-    pub fn tool_settings(&self) -> &ToolSettings {
+    pub fn tool_settings(&self) -> Option<&ToolSettings> {
         match self {
-            Config::V2025_08_22(a) => &a.tool_settings,
+            Config::V2025_08_22(a) => a.tool_settings.as_ref(),
         }
     }
 
@@ -74,9 +75,9 @@ impl Config {
         }
     }
 
-    pub fn mcp_servers(&self) -> Option<&McpServers> {
+    pub fn mcp_servers(&self) -> &HashMap<String, McpServerConfig> {
         match self {
-            Config::V2025_08_22(a) => a.mcp_servers.as_ref(),
+            Config::V2025_08_22(a) => &a.mcp_servers,
         }
     }
 
@@ -120,9 +121,10 @@ pub struct AgentConfigV2025_08_22 {
     pub tool_aliases: HashMap<String, String>,
     /// Settings for specific tools
     #[serde(default)]
-    pub tool_settings: ToolSettings,
+    pub tool_settings: Option<ToolSettings>,
     /// A JSON schema specification describing the arguments for when this agent is invoked as a
     /// tool.
+    #[serde(default)]
     pub tool_schema: Option<InputSchema>,
 
     /// Hooks to add additional context
@@ -132,12 +134,13 @@ pub struct AgentConfigV2025_08_22 {
     ///
     /// TODO: unimplemented
     #[serde(skip)]
+    #[allow(dead_code)]
     pub model_preferences: Option<ModelPreferences>,
 
     // mcp
     /// Configuration for Model Context Protocol (MCP) servers
     #[serde(default)]
-    pub mcp_servers: Option<McpServers>,
+    pub mcp_servers: HashMap<String, McpServerConfig>,
     /// Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent
     ///
     /// You can reference tools brought in by these servers as just as you would with the servers
@@ -198,6 +201,7 @@ pub struct FileWriteSettings {
 
 /// This mirrors claude's config set up.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct McpServers {
     pub mcp_servers: HashMap<String, McpServerConfig>,
 }

@@ -1,8 +1,19 @@
 use std::collections::HashMap;
 use std::env::VarError;
+use std::os::unix::fs::MetadataExt as _;
+use std::path::Path;
 
+use bstr::ByteSlice as _;
 use consts::env_var::CLI_IS_INTEG_TEST;
+use error::{
+    ErrorContext as _,
+    UtilError,
+};
 use regex::Regex;
+use tokio::io::{
+    AsyncReadExt as _,
+    BufReader,
+};
 
 pub mod consts;
 pub mod directories;
@@ -67,6 +78,50 @@ pub fn truncate_safe_in_place(s: &mut String, max_bytes: usize, suffix: &str) {
     let end = truncate_safe(s, max_bytes - suffix.len()).len();
     s.replace_range(end..s.len(), suffix);
     s.truncate(max_bytes);
+}
+
+/// Reads a file to a maximum file length, returning the content and number of bytes truncated. If
+/// the file has to be truncated, content is suffixed with `truncated_suffix`.
+///
+/// The returned content length is guaranteed to not be greater than `max_file_length`.
+pub async fn read_file_with_max_limit(
+    path: impl AsRef<Path>,
+    max_file_length: u64,
+    truncated_suffix: impl AsRef<str>,
+) -> Result<(String, u64), UtilError> {
+    let path = path.as_ref();
+    let suffix = truncated_suffix.as_ref();
+    let file = tokio::fs::File::open(path)
+        .await
+        .with_context(|| format!("Failed to open file at '{}'", path.to_string_lossy()))?;
+    let md = file
+        .metadata()
+        .await
+        .with_context(|| format!("Failed to query file metadata at '{}'", path.to_string_lossy()))?;
+
+    let truncated_amount = if md.size() > max_file_length {
+        // Edge case check to ensure the suffix is less than max file length.
+        if suffix.len() as u64 > max_file_length {
+            return Ok((String::new(), md.size()));
+        }
+        md.size() - max_file_length + suffix.len() as u64
+    } else {
+        0
+    };
+
+    // Read only the max supported length.
+    let mut reader = BufReader::new(file).take(max_file_length);
+    let mut content = Vec::new();
+    reader
+        .read_to_end(&mut content)
+        .await
+        .with_context(|| format!("Failed to read from file at '{}'", path.to_string_lossy()))?;
+
+    // Truncate content safely.
+    let mut content = content.to_str_lossy().to_string();
+    truncate_safe_in_place(&mut content, max_file_length as usize, suffix);
+
+    Ok((content, truncated_amount))
 }
 
 pub fn is_integ_test() -> bool {

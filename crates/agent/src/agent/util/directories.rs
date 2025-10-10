@@ -62,7 +62,12 @@ pub fn local_agents_path() -> Result<PathBuf> {
     Ok(env::current_dir()
         .context("unable to get the current directory")?
         .join(format!(".{}", AWS_DIR_NAME))
-        .join("agents"))
+        .join("cli-agents"))
+}
+
+/// Path to the directory containing global agent configs.
+pub fn global_agents_path() -> Result<PathBuf> {
+    Ok(home_dir()?.join(".aws").join(AWS_DIR_NAME).join("cli-agents"))
 }
 
 /// Legacy workspace MCP server config path

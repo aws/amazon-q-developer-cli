@@ -1,17 +1,11 @@
 pub mod builder_id;
 mod consts;
-pub mod pkce;
 mod scope;
 
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;
 use aws_sdk_ssooidc::operation::register_client::RegisterClientError;
 use aws_sdk_ssooidc::operation::start_device_authorization::StartDeviceAuthorizationError;
-pub use builder_id::{
-    is_logged_in,
-    logout,
-};
-pub use consts::START_URL;
 use thiserror::Error;
 
 use crate::agent::util::error::UtilError;
@@ -36,14 +30,6 @@ pub enum AuthError {
     Util(#[from] UtilError),
     #[error("No token")]
     NoToken,
-    #[error("OAuth state mismatch. Actual: {} | Expected: {}", .actual, .expected)]
-    OAuthStateMismatch { actual: String, expected: String },
-    #[error("Timeout waiting for authentication to complete")]
-    OAuthTimeout,
-    #[error("No code received on redirect")]
-    OAuthMissingCode,
-    #[error("OAuth error: {0}")]
-    OAuthCustomError(String),
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {

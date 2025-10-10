@@ -22,7 +22,7 @@ use grep::Grep;
 use image_read::ImageRead;
 use introspect::Introspect;
 use ls::Ls;
-use mcp::Mcp;
+use mcp::McpTool;
 use mkdir::Mkdir;
 use schemars::JsonSchema;
 use serde::{
@@ -113,7 +113,7 @@ pub struct Tool {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolKind {
     BuiltIn(BuiltInTool),
-    Mcp(Mcp),
+    Mcp(McpTool),
 }
 
 impl ToolKind {
