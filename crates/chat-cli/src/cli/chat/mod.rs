@@ -3,6 +3,7 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod custom_spinner;
 mod input_source;
 mod message;
 mod parse;
@@ -39,6 +40,12 @@ use std::time::{
 };
 
 use amzn_codewhisperer_client::types::SubscriptionStatus;
+use chat_cli_ui::conduit::{
+    ControlEnd,
+    DestinationStderr,
+    DestinationStdout,
+    get_legacy_conduits,
+};
 use clap::{
     Args,
     CommandFactory,
@@ -65,6 +72,7 @@ use crossterm::{
     style,
     terminal,
 };
+use custom_spinner::Spinners;
 use eyre::{
     Report,
     Result,
@@ -89,10 +97,6 @@ use parser::{
 };
 use regex::Regex;
 use rmcp::model::PromptMessage;
-use spinners::{
-    Spinner,
-    Spinners,
-};
 use thiserror::Error;
 use time::OffsetDateTime;
 use token_counter::TokenCounter;
@@ -250,7 +254,6 @@ impl ChatArgs {
             }
         }
 
-        let stdout = std::io::stdout();
         let mut stderr = std::io::stderr();
 
         let args: Vec<String> = std::env::args().collect();
@@ -413,8 +416,6 @@ impl ChatArgs {
 
         ChatSession::new(
             os,
-            stdout,
-            stderr,
             &conversation_id,
             agents,
             input,
@@ -551,16 +552,16 @@ impl From<parser::RecvError> for ChatError {
 
 pub struct ChatSession {
     /// For output read by humans and machine
-    pub stdout: std::io::Stdout,
+    pub stdout: ControlEnd<DestinationStdout>,
     /// For display output, only read by humans
-    pub stderr: std::io::Stderr,
+    pub stderr: ControlEnd<DestinationStderr>,
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
-    spinner: Option<Spinner>,
+    spinner: Option<Spinners>,
     /// [ConversationState].
     conversation: ConversationState,
     /// Tool uses requested by the model that are actively being handled.
@@ -592,8 +593,6 @@ impl ChatSession {
     #[allow(clippy::too_many_arguments)]
     pub async fn new(
         os: &mut Os,
-        stdout: std::io::Stdout,
-        mut stderr: std::io::Stderr,
         conversation_id: &str,
         mut agents: Agents,
         mut input: Option<String>,
@@ -614,6 +613,16 @@ impl ChatSession {
             .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
             .flatten();
 
+        let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) = get_legacy_conduits();
+
+        tokio::task::spawn_blocking(move || {
+            let stderr = std::io::stderr();
+            let stdout = std::io::stdout();
+            if let Err(e) = view_end.into_legacy_mode(stderr, stdout) {
+                error!("Conduit view end legacy mode exited: {:?}", e);
+            }
+        });
+
         // Only restore conversations where there were actual messages.
         // Prevents edge case where user clears conversation then exits without chatting.
         let conversation = match resume_conversation
@@ -629,7 +638,7 @@ impl ChatSession {
                 if let Some(profile) = cs.current_profile() {
                     if agents.switch(profile).is_err() {
                         execute!(
-                            stderr,
+                            control_end_stderr,
                             StyledText::error_fg(),
                             style::Print("Error"),
                             StyledText::reset(),
@@ -678,8 +687,8 @@ impl ChatSession {
         });
 
         Ok(Self {
-            stdout,
-            stderr,
+            stdout: control_end_stdout,
+            stderr: control_end_stderr,
             initial_input: input,
             existing_conversation,
             input_source,
@@ -1085,10 +1094,6 @@ impl ChatSession {
 
 impl Drop for ChatSession {
     fn drop(&mut self) {
-        if let Some(spinner) = &mut self.spinner {
-            spinner.stop();
-        }
-
         execute!(
             self.stderr,
             cursor::MoveToColumn(0),
@@ -1387,7 +1392,7 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
+            self.spinner = Some(Spinners::new("Creating summary...".to_string()));
         }
 
         let mut response = match self
@@ -1682,10 +1687,10 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinner::new(
-                Spinners::Dots,
-                format!("Generating agent config for '{}'...", agent_name),
-            ));
+            self.spinner = Some(Spinners::new(format!(
+                "Generating agent config for '{}'...",
+                agent_name
+            )));
         }
 
         let mut response = match self
@@ -2129,7 +2134,7 @@ impl ChatSession {
             queue!(self.stderr, cursor::Hide)?;
 
             if self.interactive {
-                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+                self.spinner = Some(Spinners::new("Thinking...".to_owned()));
             }
 
             Ok(ChatState::HandleResponseStream(conv_state))
@@ -2550,7 +2555,7 @@ impl ChatSession {
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+            self.spinner = Some(Spinners::new("Thinking...".to_string()));
         }
 
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
@@ -2619,6 +2624,7 @@ impl ChatSession {
             match rx.recv().await {
                 Some(Ok(msg_event)) => {
                     trace!("Consumed: {:?}", msg_event);
+
                     match msg_event {
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
@@ -2697,7 +2703,7 @@ impl ChatSession {
                             );
 
                             execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
+                            self.spinner = Some(Spinners::new("Dividing up the work...".to_string()));
 
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -2844,6 +2850,8 @@ impl ChatSession {
                 )?;
             }
 
+            info!("## control end: buf: {:?}", buf);
+
             // Print the response for normal cases
             loop {
                 let input = Partial::new(&buf[offset..]);
@@ -2869,7 +2877,7 @@ impl ChatSession {
             if tool_name_being_recvd.is_some() {
                 queue!(self.stderr, cursor::Hide)?;
                 if self.interactive {
-                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
+                    self.spinner = Some(Spinners::new("Thinking...".to_string()));
                 }
             }
 
@@ -3186,7 +3194,7 @@ impl ChatSession {
         }
 
         if self.interactive {
-            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
+            self.spinner = Some(Spinners::new("Thinking...".to_owned()));
         }
 
         Ok(ChatState::HandleResponseStream(
@@ -3596,7 +3604,7 @@ async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus
 
 async fn get_subscription_status_with_spinner(
     os: &mut Os,
-    output: &mut impl Write,
+    output: &mut (impl Write + Clone + Send + Sync + 'static),
 ) -> Result<ActualSubscriptionStatus> {
     return with_spinner(output, "Checking subscription status...", || async {
         get_subscription_status(os).await
@@ -3604,24 +3612,26 @@ async fn get_subscription_status_with_spinner(
     .await;
 }
 
-pub async fn with_spinner<T, E, F, Fut>(output: &mut impl std::io::Write, spinner_text: &str, f: F) -> Result<T, E>
+pub async fn with_spinner<T, E, F, Fut, S: std::io::Write + Clone + Send + Sync + 'static>(
+    output: &mut S,
+    spinner_text: &str,
+    f: F,
+) -> Result<T, E>
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<T, E>>,
 {
     queue!(output, cursor::Hide,).ok();
-    let spinner = Some(Spinner::new(Spinners::Dots, spinner_text.to_owned()));
+    let spinner = Spinners::new(spinner_text.to_owned());
 
     let result = f().await;
 
-    if let Some(mut s) = spinner {
-        s.stop();
-        let _ = queue!(
-            output,
-            terminal::Clear(terminal::ClearType::CurrentLine),
-            cursor::MoveToColumn(0),
-        );
-    }
+    drop(spinner);
+    let _ = queue!(
+        output,
+        terminal::Clear(terminal::ClearType::CurrentLine),
+        cursor::MoveToColumn(0),
+    );
 
     result
 }
@@ -3643,6 +3653,31 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
     }
 
     None
+}
+
+// Helper method to save the agent config to file
+async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+    let config_dir = if is_global {
+        directories::chat_global_agent_path(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
+    } else {
+        directories::chat_local_agent_dir(os)
+            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
+    };
+
+    tokio::fs::create_dir_all(&config_dir)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
+
+    let config_file = config_dir.join(format!("{}.json", agent_name));
+    let config_json = serde_json::to_string_pretty(config)
+        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
+
+    tokio::fs::write(&config_file, config_json)
+        .await
+        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -3707,8 +3742,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -3837,8 +3870,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -3944,8 +3975,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4022,8 +4051,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4080,8 +4107,6 @@ mod tests {
             .expect("Tools failed to load");
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None,
@@ -4185,8 +4210,6 @@ mod tests {
         // Test that PreToolUse hook runs
         ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "fake_conv_id",
             agents,
             None, // No initial input
@@ -4321,8 +4344,6 @@ mod tests {
         // Run chat session - hook should block tool execution
         let result = ChatSession::new(
             &mut os,
-            std::io::stdout(),
-            std::io::stderr(),
             "test_conv_id",
             agents,
             None,
@@ -4364,29 +4385,4 @@ mod tests {
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
     }
-}
-
-// Helper method to save the agent config to file
-async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
-    let config_dir = if is_global {
-        directories::chat_global_agent_path(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
-    } else {
-        directories::chat_local_agent_dir(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
-    };
-
-    tokio::fs::create_dir_all(&config_dir)
-        .await
-        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
-
-    let config_file = config_dir.join(format!("{}.json", agent_name));
-    let config_json = serde_json::to_string_pretty(config)
-        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
-
-    tokio::fs::write(&config_file, config_json)
-        .await
-        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
-
-    Ok(())
 }

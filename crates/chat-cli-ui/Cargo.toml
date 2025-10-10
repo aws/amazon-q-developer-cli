@@ -1,0 +1,40 @@
+[package]
+name = "chat-cli-ui"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tracing.workspace = true
+tracing-appender.workspace = true
+tracing-subscriber.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+crossterm.workspace = true
+tokio.workspace = true
+eyre.workspace = true
+tokio-util.workspace = true
+futures.workspace = true
+ratatui = "0.29.0"
+
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+skim.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
+security-framework.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows.workspace = true
+winreg.workspace = true
