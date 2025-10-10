@@ -1,0 +1,44 @@
+[package]
+name = "q-cli-e2e-tests"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+expectrl = "0.7"
+regex = "1.0"
+
+[features]
+core_session = ["help", "quit", "clear", "changelog"] # Core Session Commands (/help, /quit, /clear, /changelog)
+help = [] # Help Command (/help)
+quit = [] # Quit Command (/quit)
+clear = [] # Clear Command (/clear)
+changelog = [] # Changelog Command (/changelog)
+
+tools = [] # Tools Command (/tools)
+agent = [] # Agent Commands (/agent list, /agent create, etc.)
+context = [] # Context Commands (/context show, /context add, etc.)
+save_load = [] # Save/Load Commands (/save, /load, help)
+model = [] # Model Commands (/model, /model --help)
+
+session_mgmt = ["compact", "usage"] # Session Management Commands (/compact, /usage, help)
+compact = [] # Compact Commands
+usage = [] # Usage Commands
+
+integration = ["subscribe", "hooks", "editor", "issue_reporting"] # Integration Commands (/subscribe, /hooks, /editor, /issue help)
+subscribe = [] # Subscribe Commands
+hooks = [] # Hooks Commands
+editor = [] # Editor Commands
+issue_reporting = [] # Issue Reporting Commands
+
+mcp = [] # MCP Commands (/mcp, /mcp --help)
+ai_prompts = [] # AI Prompts ("What is AWS?", "Hello")
+
+q_subcommand = [] # Q SubCommand (q chat, q doctor, q translate)
+
+todos = []  # todos command
+experiment=[] # experiment command
+
+regression = [] # Regression Tests
+sanity = [] # Sanity Tests - Quick smoke tests for basic functionality
