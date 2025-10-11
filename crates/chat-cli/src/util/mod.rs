@@ -1,5 +1,6 @@
 pub mod consts;
 pub mod directories;
+pub mod file_uri;
 pub mod editor;
 pub mod knowledge_store;
 pub mod open;
