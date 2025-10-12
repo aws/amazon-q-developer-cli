@@ -3269,6 +3269,8 @@ impl ChatSession {
             .await
             .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
+        self.stdout.flush()?;
+
         Ok(())
     }
 
