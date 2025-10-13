@@ -18,6 +18,12 @@ pub struct Spinners {
 
 impl Spinners {
     pub fn new(message: String) -> Self {
+        // Hide the cursor when starting the spinner
+        let _ = execute!(
+            std::io::stderr(),
+            cursor::Hide
+        );
+
         let pb = ProgressBar::new_spinner();
         pb.set_style(
             ProgressStyle::default_spinner()
@@ -57,6 +63,7 @@ impl Drop for Spinners {
             cursor::MoveToColumn(0),
             terminal::Clear(terminal::ClearType::CurrentLine),
             style::Print("\n"),
+            cursor::Show
         );
     }
 }
