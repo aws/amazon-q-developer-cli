@@ -14,7 +14,6 @@ use clap::{
     Args,
     Subcommand,
 };
-use crossterm::style::Stylize;
 use dialoguer::Select;
 use eyre::{
     Result,
@@ -37,11 +36,13 @@ use crate::auth::builder_id::{
     start_device_authorization,
 };
 use crate::auth::pkce::start_pkce_authorization;
+use crate::constants::PRODUCT_NAME;
 use crate::os::Os;
 use crate::telemetry::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
+use crate::theme::StyledText;
 use crate::util::spinner::{
     Spinner,
     SpinnerComponent,
@@ -49,7 +50,6 @@ use crate::util::spinner::{
 use crate::util::system_info::is_remote;
 use crate::util::{
     CLI_BINARY_NAME,
-    PRODUCT_NAME,
     choose,
     input,
 };
@@ -79,7 +79,7 @@ impl LoginArgs {
         if crate::auth::is_logged_in(&mut os.database).await {
             eyre::bail!(
                 "Already logged in, please logout with {} first",
-                format!("{CLI_BINARY_NAME} logout").magenta()
+                StyledText::command(&format!("{CLI_BINARY_NAME} logout"))
             );
         }
 
@@ -179,7 +179,7 @@ pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     eprintln!("You are now logged out");
     eprintln!(
         "Run {} to log back in to {PRODUCT_NAME}",
-        format!("{CLI_BINARY_NAME} login").magenta()
+        StyledText::command(&format!("{CLI_BINARY_NAME} login"))
     );
 
     Ok(ExitCode::SUCCESS)
@@ -283,7 +283,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
 
     println!();
     println!("Confirm the following code in the browser");
-    println!("Code: {}", device_auth.user_code.bold());
+    println!("Code: {}", StyledText::emphasis(&device_auth.user_code));
     println!();
 
     let print_open_url = || println!("Open this URL: {}", device_auth.verification_uri_complete);

@@ -19,10 +19,7 @@ use std::path::{
     PathBuf,
 };
 
-use crossterm::style::{
-    Color,
-    Stylize as _,
-};
+use crossterm::style::Stylize as _;
 use crossterm::{
     execute,
     queue,
@@ -65,6 +62,7 @@ use crate::cli::agent::hook::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::{
     self,
     MCP_SERVER_TOOL_DELIMITER,
@@ -232,13 +230,13 @@ impl Agent {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
                         output,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("WARNING: "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print("MCP server '"),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(name),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(
                             "' is already configured in agent config. Skipping duplicate from legacy mcp.json.\n"
                         )
@@ -455,10 +453,10 @@ impl Agents {
         if !mcp_enabled {
             let _ = execute!(
                 output,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             );
         }
@@ -517,9 +515,9 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(e),
                             style::Print("\n"),
                         );
@@ -555,9 +553,9 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(e),
                             style::Print("\n"),
                         );
@@ -625,13 +623,13 @@ impl Agents {
             if local_names.contains(name) {
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("WARNING: "),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("Agent conflict for "),
-                    style::SetForegroundColor(style::Color::Green),
+                    StyledText::success_fg(),
                     style::Print(name),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(". Using workspace version.\n")
                 );
                 false
@@ -655,15 +653,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!(
                         ": no agent with name {} found. Falling back to user specified default",
                         name
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 );
             }
 
@@ -673,15 +671,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!(
                         ": user defined default {} not found. Falling back to in-memory default",
                         user_set_default
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 );
             }
 
@@ -739,17 +737,17 @@ impl Agents {
                         let name = &agent.name;
                         let _ = execute!(
                             output,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("WARNING "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print("Agent config "),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print(name),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(" is malformed at "),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(&e.instance_path),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!(": {e}\n")),
                         );
                     }
@@ -892,17 +890,17 @@ pub fn queue_permission_override_warning(
 ) -> Result<(), std::io::Error> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("WARNING: "),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("You have trusted "),
-        style::SetForegroundColor(Color::Green),
+        StyledText::success_fg(),
         style::Print(tool_name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" tool, which overrides the toolsSettings: "),
-        style::SetForegroundColor(Color::Cyan),
+        StyledText::brand_fg(),
         style::Print(overridden_settings),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n"),
     )?)
 }

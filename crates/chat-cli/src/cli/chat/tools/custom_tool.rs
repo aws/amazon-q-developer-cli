@@ -27,6 +27,7 @@ use crate::mcp_client::{
     oauth_util,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -46,6 +47,15 @@ impl Default for TransportType {
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+pub struct OAuthConfig {
+    /// Custom redirect URI for OAuth flow (e.g., "127.0.0.1:7778")
+    /// If not specified, a random available port will be assigned by the OS
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub redirect_uri: Option<String>,
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
     /// The transport type to use for communication with the MCP server
     #[serde(default)]
@@ -59,6 +69,9 @@ pub struct CustomToolConfig {
     /// Scopes with which oauth is done
     #[serde(default = "get_default_scopes")]
     pub oauth_scopes: Vec<String>,
+    /// OAuth configuration for this server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
     /// The command string used to initialize the mcp server
     #[serde(default)]
     pub command: String,
@@ -137,9 +150,9 @@ impl CustomTool {
         queue!(
             output,
             style::Print("Running "),
-            style::SetForegroundColor(style::Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.name),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
         if let Some(params) = &self.params {
             let params = match serde_json::to_string_pretty(params) {
@@ -155,7 +168,7 @@ impl CustomTool {
                 style::Print(" with the param:\n"),
                 style::Print(params),
                 style::Print("\n"),
-                style::ResetColor,
+                StyledText::reset(),
             )?;
         } else {
             queue!(output, style::Print("\n"))?;

@@ -3,6 +3,7 @@ use crate::cli::agent::DEFAULT_AGENT_NAME;
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]
 pub struct PromptComponents {
+    pub delegate_notifier: Option<String>,
     pub profile: Option<String>,
     pub warning: bool,
     pub tangent_mode: bool,
@@ -12,11 +13,26 @@ pub struct PromptComponents {
 /// Parse prompt components from a plain text prompt
 pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
     // Expected format: "[agent] 6% !> " or "> " or "!> " or "[agent] ↯ > " or "6% ↯ > " etc.
+    let mut delegate_notifier = None::<String>;
     let mut profile = None;
     let mut warning = false;
     let mut tangent_mode = false;
     let mut usage_percentage = None;
     let mut remaining = prompt.trim();
+
+    // Check for delegate notifier first
+    if let Some(start) = remaining.find('[') {
+        if let Some(end) = remaining.find(']') {
+            if start < end {
+                let content = &remaining[start + 1..end];
+                // Only set profile if it's not "BACKGROUND TASK READY" or if it doesn't end with newline
+                if content == "BACKGROUND TASK READY" && remaining[end + 1..].starts_with('\n') {
+                    delegate_notifier = Some(content.to_string());
+                    remaining = remaining[end + 1..].trim_start();
+                }
+            }
+        }
+    }
 
     // Check for agent pattern [agent] first
     if let Some(start) = remaining.find('[') {
@@ -55,6 +71,7 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
     // Should end with "> " for both normal and tangent mode
     if remaining.trim_end() == ">" {
         Some(PromptComponents {
+            delegate_notifier,
             profile,
             warning,
             tangent_mode,

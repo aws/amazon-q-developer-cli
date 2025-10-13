@@ -6,6 +6,7 @@ use clap::{
     Args,
     Subcommand,
 };
+use crossterm::style::Stylize;
 use eyre::{
     Result,
     WrapErr,
@@ -37,7 +38,7 @@ pub enum SettingsSubcommands {
 #[derive(Clone, Debug, Args, PartialEq, Eq)]
 #[command(subcommand_negates_reqs = true)]
 #[command(args_conflicts_with_subcommands = true)]
-#[command(group(ArgGroup::new("vals").requires("key").args(&["value", "delete", "format"])))]
+#[command(group(ArgGroup::new("vals").requires("key").args(&["value", "format"])))]
 pub struct SettingsArgs {
     #[command(subcommand)]
     cmd: Option<SettingsSubcommands>,
@@ -45,7 +46,7 @@ pub struct SettingsArgs {
     key: Option<String>,
     /// value
     value: Option<String>,
-    /// Delete a value
+    /// Delete a key (No value needed)
     #[arg(long, short)]
     delete: bool,
     /// Format of the output
@@ -87,11 +88,26 @@ impl SettingsArgs {
             },
             None => {
                 let Some(key) = &self.key else {
+                    if self.delete {
+                        return Err(eyre::eyre!(
+                            "the argument {} requires a {}\n Usage: q settings {} {}",
+                            "'--delete'".yellow(),
+                            "<KEY>".green(),
+                            "--delete".yellow(),
+                            "<KEY>".green()
+                        ));
+                    }
                     return Ok(ExitCode::SUCCESS);
                 };
 
                 let key = Setting::try_from(key.as_str())?;
                 match (&self.value, self.delete) {
+                    (Some(_), true) => Err(eyre::eyre!(
+                        "the argument {} cannot be used with {}\n Usage: q settings {} {key}",
+                        "'--delete'".yellow(),
+                        "'[VALUE]'".yellow(),
+                        "--delete".yellow()
+                    )),
                     (None, false) => match os.database.settings.get(key) {
                         Some(value) => {
                             match self.format {
@@ -147,9 +163,34 @@ impl SettingsArgs {
 
                         Ok(ExitCode::SUCCESS)
                     },
-                    _ => Ok(ExitCode::SUCCESS),
                 }
             },
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_delete_with_value_error() {
+        let mut os = Os::new().await.unwrap();
+
+        let settings_args = SettingsArgs {
+            cmd: None,
+            key: Some("chat.defaultAgent".to_string()),
+            value: Some("test_value".to_string()),
+            delete: true,
+            format: OutputFormat::Plain,
+        };
+
+        let result = settings_args.execute(&mut os).await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("the argument"));
+        assert!(error_msg.contains("--delete"));
+        assert!(error_msg.contains("Usage:"));
     }
 }

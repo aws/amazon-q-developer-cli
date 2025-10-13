@@ -5,12 +5,22 @@
 pub struct UsageBreakdown {
     /// The resource or dimension being billed, e.g. VIBE or SPEC
     pub resource_type: ::std::option::Option<crate::types::ResourceType>,
+    /// Human-friendly display name of this resource
+    pub display_name: ::std::option::Option<::std::string::String>,
+    /// Human-friendly display name of this resource in plural
+    pub display_name_plural: ::std::option::Option<::std::string::String>,
     /// Current usage count for the billing period
     pub current_usage: i32,
+    /// Current usage count for the billing period with Precision
+    pub current_usage_with_precision: ::std::option::Option<f64>,
     /// Current overages count for the billing period
     pub current_overages: i32,
+    /// Current overages count for the billing period with Precision
+    pub current_overages_with_precision: ::std::option::Option<f64>,
     /// Usage limit based on subscription tier
     pub usage_limit: i32,
+    /// Usage limit based on subscription tier with Precision
+    pub usage_limit_with_precision: ::std::option::Option<f64>,
     /// Unit of measurement for the resource, e.g. INVOCATIONS
     pub unit: ::std::option::Option<::std::string::String>,
     /// Total overage charges
@@ -23,6 +33,9 @@ pub struct UsageBreakdown {
     pub next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     /// The maximum amount of usage allowed beyond the included quota in a billing period
     pub overage_cap: ::std::option::Option<i32>,
+    /// The maximum amount of usage allowed beyond the included quota in a billing period with
+    /// Precision
+    pub overage_cap_with_precision: ::std::option::Option<f64>,
     /// User's free trial info
     pub free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
 }
@@ -32,9 +45,24 @@ impl UsageBreakdown {
         self.resource_type.as_ref()
     }
 
+    /// Human-friendly display name of this resource
+    pub fn display_name(&self) -> ::std::option::Option<&str> {
+        self.display_name.as_deref()
+    }
+
+    /// Human-friendly display name of this resource in plural
+    pub fn display_name_plural(&self) -> ::std::option::Option<&str> {
+        self.display_name_plural.as_deref()
+    }
+
     /// Current usage count for the billing period
     pub fn current_usage(&self) -> i32 {
         self.current_usage
+    }
+
+    /// Current usage count for the billing period with Precision
+    pub fn current_usage_with_precision(&self) -> ::std::option::Option<f64> {
+        self.current_usage_with_precision
     }
 
     /// Current overages count for the billing period
@@ -42,9 +70,19 @@ impl UsageBreakdown {
         self.current_overages
     }
 
+    /// Current overages count for the billing period with Precision
+    pub fn current_overages_with_precision(&self) -> ::std::option::Option<f64> {
+        self.current_overages_with_precision
+    }
+
     /// Usage limit based on subscription tier
     pub fn usage_limit(&self) -> i32 {
         self.usage_limit
+    }
+
+    /// Usage limit based on subscription tier with Precision
+    pub fn usage_limit_with_precision(&self) -> ::std::option::Option<f64> {
+        self.usage_limit_with_precision
     }
 
     /// Unit of measurement for the resource, e.g. INVOCATIONS
@@ -77,6 +115,12 @@ impl UsageBreakdown {
         self.overage_cap
     }
 
+    /// The maximum amount of usage allowed beyond the included quota in a billing period with
+    /// Precision
+    pub fn overage_cap_with_precision(&self) -> ::std::option::Option<f64> {
+        self.overage_cap_with_precision
+    }
+
     /// User's free trial info
     pub fn free_trial_info(&self) -> ::std::option::Option<&crate::types::FreeTrialInfo> {
         self.free_trial_info.as_ref()
@@ -95,15 +139,21 @@ impl UsageBreakdown {
 #[non_exhaustive]
 pub struct UsageBreakdownBuilder {
     pub(crate) resource_type: ::std::option::Option<crate::types::ResourceType>,
+    pub(crate) display_name: ::std::option::Option<::std::string::String>,
+    pub(crate) display_name_plural: ::std::option::Option<::std::string::String>,
     pub(crate) current_usage: ::std::option::Option<i32>,
+    pub(crate) current_usage_with_precision: ::std::option::Option<f64>,
     pub(crate) current_overages: ::std::option::Option<i32>,
+    pub(crate) current_overages_with_precision: ::std::option::Option<f64>,
     pub(crate) usage_limit: ::std::option::Option<i32>,
+    pub(crate) usage_limit_with_precision: ::std::option::Option<f64>,
     pub(crate) unit: ::std::option::Option<::std::string::String>,
     pub(crate) overage_charges: ::std::option::Option<f64>,
     pub(crate) currency: ::std::option::Option<crate::types::Currency>,
     pub(crate) overage_rate: ::std::option::Option<f64>,
     pub(crate) next_date_reset: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) overage_cap: ::std::option::Option<i32>,
+    pub(crate) overage_cap_with_precision: ::std::option::Option<f64>,
     pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
 }
 impl UsageBreakdownBuilder {
@@ -124,6 +174,40 @@ impl UsageBreakdownBuilder {
         &self.resource_type
     }
 
+    /// Human-friendly display name of this resource
+    pub fn display_name(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.display_name = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Human-friendly display name of this resource
+    pub fn set_display_name(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.display_name = input;
+        self
+    }
+
+    /// Human-friendly display name of this resource
+    pub fn get_display_name(&self) -> &::std::option::Option<::std::string::String> {
+        &self.display_name
+    }
+
+    /// Human-friendly display name of this resource in plural
+    pub fn display_name_plural(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.display_name_plural = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    /// Human-friendly display name of this resource in plural
+    pub fn set_display_name_plural(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.display_name_plural = input;
+        self
+    }
+
+    /// Human-friendly display name of this resource in plural
+    pub fn get_display_name_plural(&self) -> &::std::option::Option<::std::string::String> {
+        &self.display_name_plural
+    }
+
     /// Current usage count for the billing period
     /// This field is required.
     pub fn current_usage(mut self, input: i32) -> Self {
@@ -140,6 +224,23 @@ impl UsageBreakdownBuilder {
     /// Current usage count for the billing period
     pub fn get_current_usage(&self) -> &::std::option::Option<i32> {
         &self.current_usage
+    }
+
+    /// Current usage count for the billing period with Precision
+    pub fn current_usage_with_precision(mut self, input: f64) -> Self {
+        self.current_usage_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Current usage count for the billing period with Precision
+    pub fn set_current_usage_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.current_usage_with_precision = input;
+        self
+    }
+
+    /// Current usage count for the billing period with Precision
+    pub fn get_current_usage_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.current_usage_with_precision
     }
 
     /// Current overages count for the billing period
@@ -160,6 +261,23 @@ impl UsageBreakdownBuilder {
         &self.current_overages
     }
 
+    /// Current overages count for the billing period with Precision
+    pub fn current_overages_with_precision(mut self, input: f64) -> Self {
+        self.current_overages_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Current overages count for the billing period with Precision
+    pub fn set_current_overages_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.current_overages_with_precision = input;
+        self
+    }
+
+    /// Current overages count for the billing period with Precision
+    pub fn get_current_overages_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.current_overages_with_precision
+    }
+
     /// Usage limit based on subscription tier
     /// This field is required.
     pub fn usage_limit(mut self, input: i32) -> Self {
@@ -176,6 +294,23 @@ impl UsageBreakdownBuilder {
     /// Usage limit based on subscription tier
     pub fn get_usage_limit(&self) -> &::std::option::Option<i32> {
         &self.usage_limit
+    }
+
+    /// Usage limit based on subscription tier with Precision
+    pub fn usage_limit_with_precision(mut self, input: f64) -> Self {
+        self.usage_limit_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Usage limit based on subscription tier with Precision
+    pub fn set_usage_limit_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.usage_limit_with_precision = input;
+        self
+    }
+
+    /// Usage limit based on subscription tier with Precision
+    pub fn get_usage_limit_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.usage_limit_with_precision
     }
 
     /// Unit of measurement for the resource, e.g. INVOCATIONS
@@ -282,6 +417,26 @@ impl UsageBreakdownBuilder {
         &self.overage_cap
     }
 
+    /// The maximum amount of usage allowed beyond the included quota in a billing period with
+    /// Precision
+    pub fn overage_cap_with_precision(mut self, input: f64) -> Self {
+        self.overage_cap_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// The maximum amount of usage allowed beyond the included quota in a billing period with
+    /// Precision
+    pub fn set_overage_cap_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.overage_cap_with_precision = input;
+        self
+    }
+
+    /// The maximum amount of usage allowed beyond the included quota in a billing period with
+    /// Precision
+    pub fn get_overage_cap_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.overage_cap_with_precision
+    }
+
     /// User's free trial info
     pub fn free_trial_info(mut self, input: crate::types::FreeTrialInfo) -> Self {
         self.free_trial_info = ::std::option::Option::Some(input);
@@ -311,24 +466,29 @@ impl UsageBreakdownBuilder {
     ) -> ::std::result::Result<crate::types::UsageBreakdown, ::aws_smithy_types::error::operation::BuildError> {
         ::std::result::Result::Ok(crate::types::UsageBreakdown {
             resource_type: self.resource_type,
+            display_name: self.display_name,
+            display_name_plural: self.display_name_plural,
             current_usage: self.current_usage.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "current_usage",
                     "current_usage was not specified but it is required when building UsageBreakdown",
                 )
             })?,
+            current_usage_with_precision: self.current_usage_with_precision,
             current_overages: self.current_overages.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "current_overages",
                     "current_overages was not specified but it is required when building UsageBreakdown",
                 )
             })?,
+            current_overages_with_precision: self.current_overages_with_precision,
             usage_limit: self.usage_limit.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
                     "usage_limit",
                     "usage_limit was not specified but it is required when building UsageBreakdown",
                 )
             })?,
+            usage_limit_with_precision: self.usage_limit_with_precision,
             unit: self.unit,
             overage_charges: self.overage_charges.ok_or_else(|| {
                 ::aws_smithy_types::error::operation::BuildError::missing_field(
@@ -345,6 +505,7 @@ impl UsageBreakdownBuilder {
             overage_rate: self.overage_rate,
             next_date_reset: self.next_date_reset,
             overage_cap: self.overage_cap,
+            overage_cap_with_precision: self.overage_cap_with_precision,
             free_trial_info: self.free_trial_info,
         })
     }

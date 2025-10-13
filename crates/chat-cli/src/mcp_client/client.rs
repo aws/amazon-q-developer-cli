@@ -453,6 +453,7 @@ impl McpClientService {
                     url,
                     headers,
                     oauth_scopes: scopes,
+                    oauth,
                     timeout,
                     ..
                 } = &self.config;
