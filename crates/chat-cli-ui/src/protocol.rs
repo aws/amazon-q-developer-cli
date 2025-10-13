@@ -101,7 +101,7 @@ pub struct TextMessageStart {
 #[serde(rename_all = "camelCase")]
 pub struct TextMessageContent {
     pub message_id: String,
-    pub delta: String,
+    pub delta: Vec<u8>,
 }
 
 /// Signals the end of a text message

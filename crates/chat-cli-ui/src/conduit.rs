@@ -20,10 +20,6 @@ use crate::protocol::{
 
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
-const PURPOSE_ARROW: &str = " ↳ ";
-const SUCCESS_TICK: &str = " ✓ ";
-const ERROR_EXCLAMATION: &str = " ❗ ";
-const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {
@@ -71,91 +67,23 @@ impl ViewEnd {
                         stdout.flush()?;
                     },
                 },
-                Event::RunStarted(run_started) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Run started - Thread: {}, Run: {}\n",
-                            run_started.thread_id, run_started.run_id
-                        ))
-                    );
-                },
-                Event::RunFinished(run_finished) => {
-                    let result_info = run_finished
-                        .result
-                        .as_ref()
-                        .map(|r| format!(" with result: {:?}", r))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Run finished - Thread: {}, Run: {}{}\n",
-                            run_finished.thread_id, run_finished.run_id, result_info
-                        ))
-                    );
-                },
-                Event::RunError(run_error) => {
-                    let code_info = run_error
-                        .code
-                        .as_ref()
-                        .map(|c| format!(" (Code: {})", c))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Run error{}: {}\n", code_info, run_error.message))
-                    );
-                },
-                Event::StepStarted(step_started) => {
-                    let _ = execute!(stderr, Print(format!("Step started: {}\n", step_started.step_name)));
-                },
-                Event::StepFinished(step_finished) => {
-                    let _ = execute!(stderr, Print(format!("Step finished: {}\n", step_finished.step_name)));
-                },
-                Event::TextMessageStart(text_message_start) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Text message started - ID: {}, Role: {:?}\n",
-                            text_message_start.message_id, text_message_start.role
-                        ))
-                    );
+                Event::RunStarted(_run_started) => {},
+                Event::RunFinished(_run_finished) => {},
+                Event::RunError(_run_error) => {},
+                Event::StepStarted(_step_started) => {},
+                Event::StepFinished(_step_finished) => {},
+                Event::TextMessageStart(_text_message_start) => {
+                    queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
                 },
                 Event::TextMessageContent(text_message_content) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Text content ({}): {}\n",
-                            text_message_content.message_id, text_message_content.delta
-                        ))
-                    );
+                    stdout.write_all(&text_message_content.delta)?;
+                    stdout.flush()?;
                 },
-                Event::TextMessageEnd(text_message_end) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Text message ended - ID: {}\n", text_message_end.message_id))
-                    );
+                Event::TextMessageEnd(_text_message_end) => {
+                    queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
+                    execute!(stdout, style::Print("\n"))?;
                 },
-                Event::TextMessageChunk(text_message_chunk) => {
-                    let message_id = text_message_chunk
-                        .message_id
-                        .as_ref()
-                        .map(|id| format!(" ID: {}", id))
-                        .unwrap_or_default();
-                    let role = text_message_chunk
-                        .role
-                        .as_ref()
-                        .map(|r| format!(" Role: {:?}", r))
-                        .unwrap_or_default();
-                    let delta = text_message_chunk
-                        .delta
-                        .as_ref()
-                        .map(|d| format!(" Content: {}", d))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Text message chunk{}{}{}\n", message_id, role, delta))
-                    );
-                },
+                Event::TextMessageChunk(_text_message_chunk) => {},
                 Event::ToolCallStart(tool_call_start) => {
                     let ToolCallStart {
                         tool_call_name,
@@ -211,128 +139,20 @@ impl ViewEnd {
                 Event::ToolCallResult(_tool_call_result) => {
                     // noop for now (currently we don't show the tool call results to users)
                 },
-                Event::StateSnapshot(state_snapshot) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("State snapshot: {:?}\n", state_snapshot.snapshot))
-                    );
-                },
-                Event::StateDelta(state_delta) => {
-                    let _ = execute!(stderr, Print(format!("State delta: {:?}\n", state_delta.delta)));
-                },
-                Event::MessagesSnapshot(messages_snapshot) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Messages snapshot: {} messages\n",
-                            messages_snapshot.messages.len()
-                        ))
-                    );
-                },
-                Event::Raw(raw) => {
-                    let source_info = raw.source.as_ref().map(|s| format!(" from {}", s)).unwrap_or_default();
-                    let _ = execute!(stderr, Print(format!("Raw event{}: {:?}\n", source_info, raw.event)));
-                },
-                Event::Custom(custom) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Custom event - Name: {}, Value: {:?}\n",
-                            custom.name, custom.value
-                        ))
-                    );
-                },
-                Event::ActivitySnapshotEvent(activity_snapshot_event) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Activity snapshot - Message: {}, Type: {}, Content: {:?}\n",
-                            activity_snapshot_event.message_id,
-                            activity_snapshot_event.activity_type,
-                            activity_snapshot_event.content
-                        ))
-                    );
-                },
-                Event::ActivityDeltaEvent(activity_delta_event) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Activity delta - Message: {}, Type: {}, Patch: {:?}\n",
-                            activity_delta_event.message_id,
-                            activity_delta_event.activity_type,
-                            activity_delta_event.patch
-                        ))
-                    );
-                },
-                Event::ReasoningStart(reasoning_start) => {
-                    if let Some(info) = reasoning_start.encrypted_content.as_deref() {
-                        let _ = execute!(
-                            stderr,
-                            Print(format!(
-                                "Reasoning started - Message: {}{}\n",
-                                reasoning_start.message_id, info
-                            ))
-                        );
-                    }
-                },
-                Event::ReasoningMessageStart(reasoning_message_start) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Reasoning message started - ID: {}, Role: {:?}\n",
-                            reasoning_message_start.message_id, reasoning_message_start.role
-                        ))
-                    );
-                },
-                Event::ReasoningMessageContent(reasoning_message_content) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Reasoning content ({}): {}\n",
-                            reasoning_message_content.message_id, reasoning_message_content.delta
-                        ))
-                    );
-                },
-                Event::ReasoningMessageEnd(reasoning_message_end) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Reasoning message ended - ID: {}\n",
-                            reasoning_message_end.message_id
-                        ))
-                    );
-                },
-                Event::ReasoningMessageChunk(reasoning_message_chunk) => {
-                    let message_id = reasoning_message_chunk
-                        .message_id
-                        .as_ref()
-                        .map(|id| format!(" ID: {}", id))
-                        .unwrap_or_default();
-                    let delta = reasoning_message_chunk
-                        .delta
-                        .as_ref()
-                        .map(|d| format!(" Content: {}", d))
-                        .unwrap_or_default();
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Reasoning message chunk{}{}\n", message_id, delta))
-                    );
-                },
-                Event::ReasoningEnd(reasoning_end) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!("Reasoning ended - Message: {}\n", reasoning_end.message_id))
-                    );
-                },
-                Event::MetaEvent(meta_event) => {
-                    let _ = execute!(
-                        stderr,
-                        Print(format!(
-                            "Meta event - Type: {}, Payload: {:?}\n",
-                            meta_event.meta_type, meta_event.payload
-                        ))
-                    );
-                },
+                Event::StateSnapshot(_state_snapshot) => {},
+                Event::StateDelta(_state_delta) => {},
+                Event::MessagesSnapshot(_messages_snapshot) => {},
+                Event::Raw(_raw) => {},
+                Event::Custom(_custom) => {},
+                Event::ActivitySnapshotEvent(_activity_snapshot_event) => {},
+                Event::ActivityDeltaEvent(_activity_delta_event) => {},
+                Event::ReasoningStart(_reasoning_start) => {},
+                Event::ReasoningMessageStart(_reasoning_message_start) => {},
+                Event::ReasoningMessageContent(_reasoning_message_content) => {},
+                Event::ReasoningMessageEnd(_reasoning_message_end) => {},
+                Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
+                Event::ReasoningEnd(_reasoning_end) => {},
+                Event::MetaEvent(_meta_event) => {},
                 Event::ToolCallRejection(tool_call_rejection) => todo!(),
             }
         }
@@ -437,14 +257,11 @@ impl std::io::Write for ControlEnd<DestinationStderr> {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let current_state =
-            self.current_event
-                .take()
-                .unwrap_or(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
-                    Default::default(),
-                )));
-
-        self.sender.send(current_state).map_err(std::io::Error::other)
+        if let Some(current_state) = self.current_event.take() {
+            self.sender.send(current_state).map_err(std::io::Error::other)
+        } else {
+            Ok(())
+        }
     }
 }
 
@@ -470,14 +287,11 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
     }
 
     fn flush(&mut self) -> std::io::Result<()> {
-        let current_state =
-            self.current_event
-                .take()
-                .unwrap_or(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
-                    Default::default(),
-                )));
-
-        self.sender.send(current_state).map_err(std::io::Error::other)
+        if let Some(current_state) = self.current_event.take() {
+            self.sender.send(current_state).map_err(std::io::Error::other)
+        } else {
+            Ok(())
+        }
     }
 }
 

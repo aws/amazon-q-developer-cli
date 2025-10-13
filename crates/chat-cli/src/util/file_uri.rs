@@ -1,5 +1,8 @@
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use eyre::Result;
 use thiserror::Error;
@@ -18,7 +21,8 @@ pub enum FileUriError {
 ///
 /// # Arguments
 /// * `uri` - The file:// URI to resolve
-/// * `base_path` - Base path for resolving relative URIs (typically the agent config file directory)
+/// * `base_path` - Base path for resolving relative URIs (typically the agent config file
+///   directory)
 ///
 /// # Returns
 /// The content of the file as a String
@@ -56,18 +60,19 @@ pub fn resolve_file_uri(uri: &str, base_path: &Path) -> Result<String, FileUriEr
     }
 
     // Read the file content
-    fs::read_to_string(&resolved_path)
-        .map_err(|source| FileUriError::ReadError {
-            path: resolved_path,
-            source
-        })
+    fs::read_to_string(&resolved_path).map_err(|source| FileUriError::ReadError {
+        path: resolved_path,
+        source,
+    })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_invalid_uri_format() {

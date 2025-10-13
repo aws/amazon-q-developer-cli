@@ -458,7 +458,8 @@ impl McpClientService {
                     ..
                 } = &self.config;
 
-                let http_service_builder = HttpServiceBuilder::new(url, os, url, *timeout, scopes, headers, oauth, messenger);
+                let http_service_builder =
+                    HttpServiceBuilder::new(url, os, url, *timeout, scopes, headers, oauth, messenger);
 
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 

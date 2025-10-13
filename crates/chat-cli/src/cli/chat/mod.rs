@@ -50,6 +50,10 @@ use chat_cli_ui::conduit::{
 };
 use chat_cli_ui::protocol::{
     Event,
+    MessageRole,
+    TextMessageContent,
+    TextMessageEnd,
+    TextMessageStart,
     ToolCallRejection,
     ToolCallStart,
 };
@@ -825,11 +829,6 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
-                self.stderr,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                cursor::MoveToColumn(0),
-            )?;
         }
 
         let (context, report, display_err_message) = match err {
@@ -1416,7 +1415,6 @@ impl ChatSession {
             .await?;
 
         if self.interactive {
-            execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinners::new("Creating summary...".to_string()));
         }
 
@@ -1433,12 +1431,6 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
-                    execute!(
-                        self.stderr,
-                        terminal::Clear(terminal::ClearType::CurrentLine),
-                        cursor::MoveToColumn(0),
-                        StyledText::reset_attributes()
-                    )?;
                 }
 
                 // If the request fails due to context window overflow, then we'll see if it's
@@ -1536,12 +1528,6 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
-                self.stderr,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                cursor::MoveToColumn(0),
-                cursor::Show
-            )?;
         }
 
         self.conversation
@@ -1731,12 +1717,6 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
-                    execute!(
-                        self.stderr,
-                        terminal::Clear(terminal::ClearType::CurrentLine),
-                        cursor::MoveToColumn(0),
-                        StyledText::reset_attributes()
-                    )?;
                 }
                 return Err(err);
             },
@@ -1783,12 +1763,6 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
-                self.stderr,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                cursor::MoveToColumn(0),
-                cursor::Show
-            )?;
         }
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
@@ -2305,15 +2279,9 @@ impl ChatSession {
                 )
                 .await;
 
-            if self.spinner.is_some() {
-                queue!(
-                    self.stderr,
-                    terminal::Clear(terminal::ClearType::CurrentLine),
-                    cursor::MoveToColumn(0),
-                    cursor::Show
-                )?;
+            if let Some(spinner) = self.spinner.take() {
+                drop(spinner);
             }
-            execute!(self.stdout, style::Print("\n"))?;
 
             // Handle checkpoint after tool execution - store tag for later display
             let checkpoint_tag: Option<String> = {
@@ -2644,13 +2612,6 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
-            queue!(
-                self.stderr,
-                StyledText::reset(),
-                cursor::MoveToColumn(0),
-                cursor::Show,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-            )?;
         }
 
         loop {
@@ -2666,27 +2627,33 @@ impl ChatSession {
                             tool_name_being_recvd = Some(name);
                         },
                         parser::ResponseEvent::AssistantText(text) => {
-                            // Add Q response prefix before the first assistant text.
-                            if !response_prefix_printed && !text.trim().is_empty() {
-                                queue!(
-                                    self.stdout,
-                                    StyledText::success_fg(),
-                                    style::Print("> "),
-                                    StyledText::reset(),
-                                )?;
-                                response_prefix_printed = true;
+                            if self.stdout.should_send_structured_event {
+                                if !response_prefix_printed && !text.trim().is_empty() {
+                                    let msg_start = TextMessageStart {
+                                        message_id: request_id.clone().unwrap_or_default(),
+                                        role: MessageRole::Assistant,
+                                    };
+
+                                    self.stdout.send(Event::TextMessageStart(msg_start))?;
+                                    response_prefix_printed = true;
+                                }
+                            } else {
+                                // Add Q response prefix before the first assistant text.
+                                if !response_prefix_printed && !text.trim().is_empty() {
+                                    queue!(
+                                        self.stdout,
+                                        StyledText::success_fg(),
+                                        style::Print("> "),
+                                        StyledText::reset(),
+                                    )?;
+                                    response_prefix_printed = true;
+                                }
                             }
                             buf.push_str(&text);
                         },
                         parser::ResponseEvent::ToolUse(tool_use) => {
                             if self.spinner.is_some() {
                                 drop(self.spinner.take());
-                                queue!(
-                                    self.stderr,
-                                    terminal::Clear(terminal::ClearType::CurrentLine),
-                                    cursor::MoveToColumn(0),
-                                    cursor::Show
-                                )?;
                             }
                             tool_uses.push(tool_use);
                             tool_name_being_recvd = None;
@@ -2875,30 +2842,48 @@ impl ChatSession {
 
             if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
                 drop(self.spinner.take());
-                queue!(
-                    self.stderr,
-                    terminal::Clear(terminal::ClearType::CurrentLine),
-                    cursor::MoveToColumn(0),
-                    cursor::Show
-                )?;
             }
 
             info!("## control end: buf: {:?}", buf);
 
+            let mut temp_buf = Vec::<u8>::new();
+
             // Print the response for normal cases
             loop {
                 let input = Partial::new(&buf[offset..]);
-                match interpret_markdown(input, &mut self.stdout, &mut state) {
-                    Ok(parsed) => {
-                        offset += parsed.offset_from(&input);
-                        self.stdout.flush()?;
-                        state.newline = state.set_newline;
-                        state.set_newline = false;
-                    },
-                    Err(err) => match err.into_inner() {
-                        Some(err) => return Err(ChatError::Custom(err.to_string().into())),
-                        None => break, // Data was incomplete
-                    },
+                if self.stdout.should_send_structured_event {
+                    match interpret_markdown(input, &mut temp_buf, &mut state) {
+                        Ok(parsed) => {
+                            offset += parsed.offset_from(&input);
+                            temp_buf.flush()?;
+
+                            let text_msg_content = TextMessageContent {
+                                message_id: request_id.clone().unwrap_or_default(),
+                                delta: std::mem::take(&mut temp_buf),
+                            };
+                            self.stdout.send(Event::TextMessageContent(text_msg_content))?;
+
+                            state.newline = state.set_newline;
+                            state.set_newline = false;
+                        },
+                        Err(err) => match err.into_inner() {
+                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
+                            None => break, // Data was incomplete
+                        },
+                    }
+                } else {
+                    match interpret_markdown(input, &mut self.stdout, &mut state) {
+                        Ok(parsed) => {
+                            offset += parsed.offset_from(&input);
+                            self.stdout.flush()?;
+                            state.newline = state.set_newline;
+                            state.set_newline = false;
+                        },
+                        Err(err) => match err.into_inner() {
+                            Some(err) => return Err(ChatError::Custom(err.to_string().into())),
+                            None => break, // Data was incomplete
+                        },
+                    }
                 }
 
                 // TODO: We should buffer output based on how much we have to parse, not as a constant
@@ -2925,8 +2910,14 @@ impl ChatSession {
                     play_notification_bell(tool_uses.is_empty());
                 }
 
-                queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
-                execute!(self.stdout, style::Print("\n"))?;
+                if self.stderr.should_send_structured_event {
+                    self.stderr.send(Event::TextMessageEnd(TextMessageEnd {
+                        message_id: request_id.clone().unwrap_or_default(),
+                    }))?;
+                } else {
+                    queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
+                    execute!(self.stdout, style::Print("\n"))?;
+                }
 
                 for (i, citation) in &state.citations {
                     queue!(

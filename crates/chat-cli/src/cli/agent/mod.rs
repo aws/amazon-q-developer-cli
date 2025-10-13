@@ -92,7 +92,11 @@ pub enum AgentConfigError {
     #[error("File URI not found: {uri} (resolved to {path})")]
     FileUriNotFound { uri: String, path: PathBuf },
     #[error("Failed to read file URI: {uri} (resolved to {path}): {error}")]
-    FileUriReadError { uri: String, path: PathBuf, error: std::io::Error },
+    FileUriReadError {
+        uri: String,
+        path: PathBuf,
+        error: std::io::Error,
+    },
     #[error("Invalid file URI format: {uri}")]
     InvalidFileUri { uri: String },
 }
@@ -314,26 +318,24 @@ impl Agent {
                         Ok(content) => Ok(Some(content)),
                         Err(file_uri::FileUriError::InvalidUri { uri }) => {
                             Err(AgentConfigError::InvalidFileUri { uri })
-                        }
-                        Err(file_uri::FileUriError::FileNotFound { path }) => {
-                            Err(AgentConfigError::FileUriNotFound {
-                                uri: prompt_str.clone(),
-                                path
-                            })
-                        }
+                        },
+                        Err(file_uri::FileUriError::FileNotFound { path }) => Err(AgentConfigError::FileUriNotFound {
+                            uri: prompt_str.clone(),
+                            path,
+                        }),
                         Err(file_uri::FileUriError::ReadError { path, source }) => {
                             Err(AgentConfigError::FileUriReadError {
                                 uri: prompt_str.clone(),
                                 path,
-                                error: source
+                                error: source,
                             })
-                        }
+                        },
                     }
                 } else {
                     // Return the prompt as-is for backward compatibility
                     Ok(Some(prompt_str.clone()))
                 }
-            }
+            },
         }
     }
 
@@ -990,8 +992,9 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use serde_json::json;
     use std::fs;
+
+    use serde_json::json;
     use tempfile::TempDir;
 
     use super::*;

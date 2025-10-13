@@ -10,6 +10,8 @@ use indicatif::{
 };
 use tokio_util::sync::CancellationToken;
 
+use crate::theme::StyledText;
+
 const SPINNER_CHARS: &str = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
 pub struct Spinners {
@@ -19,10 +21,7 @@ pub struct Spinners {
 impl Spinners {
     pub fn new(message: String) -> Self {
         // Hide the cursor when starting the spinner
-        let _ = execute!(
-            std::io::stderr(),
-            cursor::Hide
-        );
+        let _ = execute!(std::io::stderr(), style::Print("\n"), cursor::Hide);
 
         let pb = ProgressBar::new_spinner();
         pb.set_style(
@@ -60,9 +59,9 @@ impl Drop for Spinners {
         self.cancellation_token.cancel();
         let _ = execute!(
             std::io::stderr(),
-            cursor::MoveToColumn(0),
             terminal::Clear(terminal::ClearType::CurrentLine),
-            style::Print("\n"),
+            cursor::MoveToColumn(0),
+            StyledText::reset_attributes(),
             cursor::Show
         );
     }
