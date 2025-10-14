@@ -13,8 +13,9 @@ ctor = "0.2"
 
 
 [features]
-core_session = ["help", "quit", "clear", "changelog"] # Core Session Commands (/help, /quit, /clear, /changelog)
+core_session = ["help","tangent", "quit", "clear", "changelog"] # Core Session Commands (/help,/tangent, /quit, /clear, /changelog)
 help = [] # Help Command (/help)
+tangent = [] # Tangent Command (/tangent)
 quit = [] # Quit Command (/quit)
 clear = [] # Clear Command (/clear)
 changelog = [] # Changelog Command (/changelog)

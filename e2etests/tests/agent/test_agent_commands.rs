@@ -1,7 +1,7 @@
 use q_cli_e2e_tests::q_chat_helper;
 
-/// Tests the /agent command without subcommands to display help information
-/// Verifies agent management description, usage, available subcommands, and options
+// Tests the /agent command without subcommands to display help information
+//Verifies agent management description, usage, available subcommands, and options
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
@@ -478,3 +478,49 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
    
     Ok(())
 }
+
+/// Tests the /agent generate command to generate agent responses
+/// Verifies agent generation process and response validation
+#[test]
+#[cfg(all(feature = "agent", feature = "sanity"))]
+fn test_agent_z_generate_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing /agent generate command... | Description: Tests the <code> /agent generate</code> command to generate agent responses. Verifies agent generation process and response validation");
+    
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    
+    // Start the command and wait for name prompt
+    let response1 = chat.execute_command("/agent generate")?;
+    // Wait longer for the prompt to fully appear
+    std::thread::sleep(std::time::Duration::from_secs(5));
+
+    // Send agent name after prompt appears
+    chat.send_key_input("test-agent\r")?;
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    
+    // Send description after description prompt appears
+    chat.send_key_input("description\r")?;  // Shorter to avoid truncation
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    
+    // Wait for scope menu, then select Local (Enter)
+    chat.send_key_input("\r")?;
+    std::thread::sleep(std::time::Duration::from_secs(5));
+    
+    // Wait for MCP menu, then confirm (Enter)
+    let final_response = chat.send_key_input("\r")?;
+   println!("📝 Agent generate response: {} bytes", final_response);
+       assert!(
+        final_response.contains("has been created and saved successfully") || 
+        final_response.contains("Generating agent config") ||
+        final_response.contains("Agent 'test-agent'"),
+        "Expected agent creation success message or generation progress. Got: {}", 
+        final_response
+    );
+    // Cleanup
+    let _ = chat.execute_command("/agent delete test-agent");
+    
+    drop(chat);
+    Ok(())
+}
+
+
