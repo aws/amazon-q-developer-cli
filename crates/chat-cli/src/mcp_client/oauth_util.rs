@@ -201,6 +201,7 @@ pub struct HttpServiceBuilder<'a> {
 }
 
 impl<'a> HttpServiceBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         server_name: &'a str,
         os: &'a Os,
@@ -527,7 +528,7 @@ async fn get_auth_manager_impl(
         .and_then(|cfg| cfg.redirect_uri.as_ref())
         .and_then(|uri| {
             // Parse port from redirect_uri like "127.0.0.1:7778" or ":7778"
-            uri.split(':').last().and_then(|p| p.parse::<u16>().ok())
+            uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok())
         })
         .unwrap_or(0); // Port 0 = OS assigns random available port
 

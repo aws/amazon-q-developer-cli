@@ -171,6 +171,7 @@ pub struct ToolCallResult {
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallRejection {
     pub tool_call_id: String,
+    pub name: String,
     pub reason: String,
 }
 

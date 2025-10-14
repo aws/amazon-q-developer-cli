@@ -2203,6 +2203,7 @@ impl ChatSession {
                 } else {
                     let event = ToolCallRejection {
                         tool_call_id: tool.id.clone(),
+                        name: tool.name.clone(),
                         reason: formatted_set,
                     };
                     self.stderr.send(Event::ToolCallRejection(event))?;
@@ -2227,7 +2228,10 @@ impl ChatSession {
 
             // TODO: Control flow is hacky here because of borrow rules
             let _ = tool;
+
             self.print_tool_description(os, i, allowed).await?;
+            self.stdout.flush()?;
+
             let tool = &mut self.tool_uses[i];
 
             if allowed {
@@ -3255,7 +3259,20 @@ impl ChatSession {
     async fn print_tool_description(&mut self, os: &Os, tool_index: usize, trusted: bool) -> Result<(), ChatError> {
         let tool_use = &self.tool_uses[tool_index];
 
-        if !self.stderr.should_send_structured_event {
+        if self.stderr.should_send_structured_event {
+            let tool_call_start = ToolCallStart {
+                tool_call_id: tool_use.id.clone(),
+                tool_call_name: tool_use.name.clone(),
+                mcp_server_name: if let Tool::Custom(ref tool) = tool_use.tool {
+                    Some(tool.server_name.clone())
+                } else {
+                    None
+                },
+                is_trusted: trusted,
+                parent_message_id: None,
+            };
+            self.stdout.send(Event::ToolCallStart(tool_call_start))?;
+        } else {
             queue!(
                 self.stdout,
                 StyledText::emphasis_fg(),
@@ -3284,19 +3301,6 @@ impl ChatSession {
                 style::Print("\n"),
                 style::Print(TOOL_BULLET)
             )?;
-        } else {
-            let tool_call_start = ToolCallStart {
-                tool_call_id: tool_use.id.clone(),
-                tool_call_name: tool_use.name.clone(),
-                mcp_server_name: if let Tool::Custom(ref tool) = tool_use.tool {
-                    Some(tool.server_name.clone())
-                } else {
-                    None
-                },
-                is_trusted: trusted,
-                parent_message_id: None,
-            };
-            self.stdout.send(Event::ToolCallStart(tool_call_start))?;
         }
 
         tool_use

@@ -15,6 +15,7 @@ use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
     Event,
     LegacyPassThroughOutput,
+    ToolCallRejection,
     ToolCallStart,
 };
 
@@ -153,7 +154,22 @@ impl ViewEnd {
                 Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
                 Event::ReasoningEnd(_reasoning_end) => {},
                 Event::MetaEvent(_meta_event) => {},
-                Event::ToolCallRejection(tool_call_rejection) => todo!(),
+                Event::ToolCallRejection(tool_call_rejection) => {
+                    let ToolCallRejection { reason, name, .. } = tool_call_rejection;
+
+                    execute!(
+                        stderr,
+                        theme_source.error_fg(),
+                        Print("Command "),
+                        theme_source.warning_fg(),
+                        Print(name),
+                        theme_source.error_fg(),
+                        Print(" is rejected because it matches one or more rules on the denied list:"),
+                        Print(reason),
+                        Print("\n"),
+                        theme_source.reset(),
+                    )?;
+                },
             }
         }
 
