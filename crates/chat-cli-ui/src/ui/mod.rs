@@ -1,3 +1,6 @@
-mod action;
+pub mod action;
 mod components;
-mod tui;
+pub mod config;
+pub mod tui;
+
+pub use components::*;

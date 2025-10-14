@@ -12,7 +12,6 @@ use crossterm::cursor;
 use crossterm::event::{
     Event as CrosstermEvent,
     KeyEvent,
-    KeyEventKind,
     MouseEvent,
 };
 use crossterm::terminal::{
@@ -108,10 +107,8 @@ impl Tui {
                       Some(Ok(evt)) => {
                         match evt {
                           CrosstermEvent::Key(key) => {
-                            if key.kind == KeyEventKind::Press {
-                              if let Err(e) = event_tx_clone.send(Event::Key(key)) {
-                                  error!("Error sending event: {:?}", e);
-                              }
+                            if let Err(e) = event_tx_clone.send(Event::Key(key)) {
+                                error!("Error sending event: {:?}", e);
                             }
                           },
                           CrosstermEvent::Mouse(mouse) => {

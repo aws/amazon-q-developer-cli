@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use crossterm::event::{
-    Event,
     KeyEvent,
     MouseEvent,
 };
@@ -10,10 +9,15 @@ use ratatui::layout::Rect;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::action::Action;
+use super::tui::Event;
 
 mod app;
+mod input_bar;
 
-pub trait Component {
+pub use app::*;
+pub use input_bar::*;
+
+pub trait Component: Send + Sync + 'static {
     #[allow(unused_variables)]
     fn register_action_handler(&mut self, tx: UnboundedSender<Action>) -> Result<()> {
         Ok(())
@@ -21,10 +25,10 @@ pub trait Component {
     fn init(&mut self) -> Result<()> {
         Ok(())
     }
-    fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
+    fn handle_events(&mut self, event: Event) -> Result<Option<Action>> {
         let r = match event {
-            Some(Event::Key(key_event)) => self.handle_key_events(key_event)?,
-            Some(Event::Mouse(mouse_event)) => self.handle_mouse_events(mouse_event)?,
+            Event::Key(key_event) => self.handle_key_events(key_event)?,
+            Event::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
             _ => None,
         };
         Ok(r)

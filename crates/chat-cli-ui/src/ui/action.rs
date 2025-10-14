@@ -1,7 +1,16 @@
 #![allow(dead_code)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+use serde::{
+    Deserialize,
+    Serialize,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
-    Quit,
     Tick,
-    Noop,
+    Render,
+    Resize(u16, u16),
+    Quit,
+    ClearScreen,
+    Error(String),
+    Help,
 }
