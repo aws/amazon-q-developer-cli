@@ -13,12 +13,13 @@ ctor = "0.2"
 
 
 [features]
-core_session = ["help","tangent", "quit", "clear", "changelog"] # Core Session Commands (/help,/tangent, /quit, /clear, /changelog)
+core_session = ["help","tangent", "quit", "clear", "changelog","introspect"] # Core Session Commands (/help,/tangent, /quit, /clear, /changelog,introspect)
 help = [] # Help Command (/help)
 tangent = [] # Tangent Command (/tangent)
 quit = [] # Quit Command (/quit)
 clear = [] # Clear Command (/clear)
 changelog = [] # Changelog Command (/changelog)
+introspect = [] # Introspect Command (introspect)
 
 tools = [] # Tools Command (/tools)
 agent = [] # Agent Commands (/agent list, /agent create, etc.)
