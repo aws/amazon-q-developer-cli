@@ -72,9 +72,9 @@ impl ExecuteCommand {
         };
         const DANGEROUS_PATTERNS: &[&str] = &["<(", "$(", "`", ">", "&&", "||", "&", ";", "$", "\n", "\r", "IFS"];
 
-        if args
+        if DANGEROUS_PATTERNS
             .iter()
-            .any(|arg| DANGEROUS_PATTERNS.iter().any(|p| arg.contains(p)))
+            .any(|p| contains_but_not_ends_with(&self.command, p))
         {
             return true;
         }
@@ -109,13 +109,27 @@ impl ExecuteCommand {
                 Some(cmd)
                     if cmd == "find"
                         && cmd_args.iter().any(|arg| {
-                            arg.contains("-exec") // includes -execdir
-                                || arg.contains("-delete")
-                                || arg.contains("-ok") // includes -okdir
-                                || arg.contains("-fprint") // includes -fprint0 and -fprintf
+                            arg.contains("-delete")
+                        || arg.contains("-ok") // includes -okdir
+                        || arg.contains("-fprint") // includes -fprint0 and -fprintf
                         }) =>
                 {
                     return true;
+                },
+                // Check -exec commands separately to allow readonly commands
+                Some(cmd) if cmd == "find" && cmd_args.iter().any(|arg| arg.contains("-exec")) => {
+                    // Find all -exec arguments and check if ANY command is non-readonly
+                    for (i, arg) in cmd_args.iter().enumerate() {
+                        if arg == "-exec" || arg == "-execdir" {
+                            // Check if there's a next argument (the command to execute)
+                            if let Some(exec_cmd) = cmd_args.get(i + 1) {
+                                if !READONLY_COMMANDS.contains(&exec_cmd.as_str()) {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                    return false;
                 },
                 Some(cmd) => {
                     // Special casing for `grep`. -P flag for perl regexp has RCE issues, apparently
@@ -268,12 +282,67 @@ pub fn format_output(output: &str, max_size: usize) -> String {
     )
 }
 
+fn contains_but_not_ends_with(target: &str, pattern: &str) -> bool {
+    if let Some(pos) = target.find(pattern) {
+        pos + pattern.len() < target.len()
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
 
     use super::*;
     use crate::cli::agent::ToolSettingTarget;
+
+    #[test]
+    fn test_contains_but_not_ends_with() {
+        let test_cases = &[
+            // Semicolon tests
+            ("find . -exec cat {} \\; -exec grep pattern {} \\;", ";", true),
+            ("echo hello; echo world", ";", true),
+            ("echo hello", ";", false),
+            ("echo hello;", ";", false),
+            // Pipe tests
+            ("echo hello | grep world", "|", true),
+            ("echo hello|grep world", "|", true),
+            ("< input.txt wc -l", "<", true),
+            ("echo hello|", "|", false),
+            // Ampersand tests
+            ("echo hello & echo world", "&", true),
+            ("echo hello&echo world", "&", true),
+            ("&echo hello", "&", true),
+            ("echo hello&", "&", false),
+            // Greater than tests
+            ("echo hello > file.txt", ">", true),
+            ("echo hello>file.txt", ">", true),
+            ("> out.txt echo hello", ">", true),
+            ("echo hello>", ">", false),
+            // Less than tests
+            ("cat < input.txt", "<", true),
+            ("cat<input.txt", "<", true),
+            ("cat input.txt<", "<", false),
+            // Dollar sign tests
+            ("echo $HOME test", "$", true),
+            ("echo test$HOME", "$", true),
+            ("echo test$", "$", false),
+            ("$(date)", "$", true),
+            ("${HOME}", "$", true),
+        ];
+
+        for (target, pattern, expected) in test_cases {
+            assert_eq!(
+                contains_but_not_ends_with(target, pattern),
+                *expected,
+                "expected contains_in_middle('{}', '{}') to be {}",
+                target,
+                pattern,
+                expected
+            );
+        }
+    }
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -326,6 +395,16 @@ mod tests {
             ),
             ("find important-dir/ -name '*.txt'", false),
             (r#"find / -fprintf "/path/to/file" <data-to-write> -quit"#, true),
+            // `find` with readonly -exec commands (should be allowed)
+            ("find . -name '*.rs' -exec grep -l pattern {} \\;", false),
+            ("find . -type f -exec cat {} \\;", false),
+            ("find . -type f -exec rm {} \\;", true),
+            ("find . -name '*.txt' -exec head {} \\;", false),
+            ("find . -type f -exec ls -l {} \\;", false),
+            // Multiple -exec commands - mixed readonly and non-readonly
+            ("find . -exec cat {} \\; -exec rm {} \\;", true),
+            ("find . -exec ls {} \\; -exec touch newfile \\;", true),
+            ("find . -exec grep pattern {} \\; -exec chmod 755 {} \\;", true),
             (r"find . -${t}exec touch asdf \{\} +", true),
             (r"find . -${t:=exec} touch asdf2 \{\} +", true),
             (r#"find /tmp -name "*"  -exe$9c touch /tmp/find_result {} +"#, true),
