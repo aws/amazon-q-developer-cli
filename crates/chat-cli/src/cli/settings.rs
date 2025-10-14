@@ -14,6 +14,7 @@ use eyre::{
 };
 use globset::Glob;
 use serde_json::json;
+use strum::IntoEnumIterator;
 
 use super::OutputFormat;
 use crate::database::settings::Setting;
@@ -24,7 +25,7 @@ use crate::util::directories;
 pub enum SettingsSubcommands {
     /// Open the settings file
     Open,
-    /// List all the settings
+    /// List all available settings with their descriptions and current values
     All {
         /// Format of the output
         #[arg(long, short, value_enum, default_value_t)]
@@ -54,6 +55,104 @@ pub struct SettingsArgs {
     format: OutputFormat,
 }
 
+#[derive(Debug)]
+struct SettingInfo {
+    /// Setting key
+    key: String,
+    /// Setting description
+    description: String,
+    /// Current setting value
+    current_value: Option<serde_json::Value>,
+}
+
+/// Print internal state table dump (hidden debug feature)
+fn print_state_dump(os: &Os, format: OutputFormat) -> Result<()> {
+    let settings = os.database.get_all_entries()?;
+    match format {
+        OutputFormat::Plain => {
+            for (key, value) in settings {
+                println!("{key} = {value}");
+            }
+        },
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string(&settings)?);
+        },
+        OutputFormat::JsonPretty => {
+            println!("{}", serde_json::to_string_pretty(&settings)?);
+        },
+    }
+    Ok(())
+}
+
+/// Collect all settings with their metadata and current values
+fn collect_settings(os: &Os) -> Vec<SettingInfo> {
+    use strum::EnumMessage;
+
+    Setting::iter()
+        .map(|setting| {
+            let key = setting.as_ref().to_string();
+            let description = setting.get_message().unwrap_or("No description").to_string();
+            let current_value = os.database.settings.get(setting).cloned();
+
+            SettingInfo {
+                key,
+                description,
+                current_value,
+            }
+        })
+        .collect()
+}
+
+/// Print settings list in plain text format with colors
+fn print_settings_plain(settings: &[SettingInfo]) {
+    for setting in settings {
+        println!("{}", setting.key.as_str().cyan().bold());
+        println!("  Description: {}", setting.description);
+        match &setting.current_value {
+            Some(value) => println!("  Current: {}", value.to_string().green()),
+            None => println!("  Current: {}", "not set".dim()),
+        }
+        println!();
+    }
+}
+
+/// Print settings list in JSON or JSON Pretty format
+fn print_settings_json(settings: &[SettingInfo], pretty: bool) -> Result<()> {
+    let settings_list: Vec<_> = settings
+        .iter()
+        .map(|s| {
+            json!({
+                "key": s.key,
+                "description": s.description,
+                "current_value": s.current_value,
+            })
+        })
+        .collect();
+
+    let output = if pretty {
+        serde_json::to_string_pretty(&settings_list)?
+    } else {
+        serde_json::to_string(&settings_list)?
+    };
+
+    println!("{}", output);
+    Ok(())
+}
+
+/// Print all available settings with descriptions and current values
+fn print_settings_list(os: &Os, format: OutputFormat) -> Result<()> {
+    let settings = collect_settings(os);
+
+    match format {
+        OutputFormat::Plain => {
+            print_settings_plain(&settings);
+            Ok(())
+        },
+        OutputFormat::Json => print_settings_json(&settings, false),
+        OutputFormat::JsonPretty => print_settings_json(&settings, true),
+    }
+}
+
 impl SettingsArgs {
     pub async fn execute(&self, os: &mut Os) -> Result<ExitCode> {
         match self.cmd {
@@ -67,23 +166,11 @@ impl SettingsArgs {
                 }
             },
             Some(SettingsSubcommands::All { format, state }) => {
-                let settings = match state {
-                    true => os.database.get_all_entries()?,
-                    false => os.database.settings.map().clone(),
-                };
-
-                match format {
-                    OutputFormat::Plain => {
-                        for (key, value) in settings {
-                            println!("{key} = {value}");
-                        }
-                    },
-                    OutputFormat::Json => println!("{}", serde_json::to_string(&settings)?),
-                    OutputFormat::JsonPretty => {
-                        println!("{}", serde_json::to_string_pretty(&settings)?);
-                    },
+                if state {
+                    print_state_dump(os, format)?;
+                } else {
+                    print_settings_list(os, format)?;
                 }
-
                 Ok(ExitCode::SUCCESS)
             },
             None => {
