@@ -94,13 +94,6 @@ Use the `--agent` flag to specify an agent for a particular session:
 q chat --agent specialized-agent
 ```
 
-### Create a Custom Default
-You can create your own "default" agent by placing an agent file with the name `q_cli_default` in either:
-- `.amazonq/cli-agents/` (local)
-- `~/.aws/amazonq/cli-agents/` (global)
-
-This will override the built-in default agent configuration.
-
 ## Best Practices
 
 1. **Set a user default**: Configure a default agent that matches your typical workflow
