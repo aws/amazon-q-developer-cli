@@ -25,7 +25,20 @@ use crate::util::directories;
 pub enum SettingsSubcommands {
     /// Open the settings file
     Open,
-    /// List all available settings with their descriptions and current values
+    /// List settings
+    List {
+        /// Show all available settings
+        #[arg(long)]
+        all: bool,
+        /// Format of the output
+        #[arg(long, short, value_enum, default_value_t)]
+        format: OutputFormat,
+        /// Whether or not we want to modify state instead
+        #[arg(long, short, hide = true)]
+        state: bool,
+    },
+    /// List configured  settings
+    #[command(hide = true)]
     All {
         /// Format of the output
         #[arg(long, short, value_enum, default_value_t)]
@@ -63,6 +76,25 @@ struct SettingInfo {
     description: String,
     /// Current setting value
     current_value: Option<serde_json::Value>,
+}
+
+/// Print configured settings
+fn print_configured_settings(os: &Os, format: OutputFormat) -> Result<()> {
+    let settings = os.database.settings.map().clone();
+    match format {
+        OutputFormat::Plain => {
+            for (key, value) in settings {
+                println!("{key} = {value}");
+            }
+        },
+        OutputFormat::Json => {
+            println!("{}", serde_json::to_string(&settings)?);
+        },
+        OutputFormat::JsonPretty => {
+            println!("{}", serde_json::to_string_pretty(&settings)?);
+        },
+    }
+    Ok(())
 }
 
 /// Print internal state table dump (hidden debug feature)
@@ -139,8 +171,8 @@ fn print_settings_json(settings: &[SettingInfo], pretty: bool) -> Result<()> {
     Ok(())
 }
 
-/// Print all available settings with descriptions and current values
-fn print_settings_list(os: &Os, format: OutputFormat) -> Result<()> {
+/// Print all available settings
+fn print_all_settings(os: &Os, format: OutputFormat) -> Result<()> {
     let settings = collect_settings(os);
 
     match format {
@@ -165,11 +197,22 @@ impl SettingsArgs {
                     bail!("The EDITOR environment variable is not set")
                 }
             },
+            Some(SettingsSubcommands::List { all, format, state }) => {
+                if state {
+                    print_state_dump(os, format)?;
+                } else if all {
+                    print_all_settings(os, format)?;
+                } else {
+                    print_configured_settings(os, format)?;
+                }
+                Ok(ExitCode::SUCCESS)
+            },
             Some(SettingsSubcommands::All { format, state }) => {
+                // Deprecated: redirect to List behavior for backward compatibility
                 if state {
                     print_state_dump(os, format)?;
                 } else {
-                    print_settings_list(os, format)?;
+                    print_configured_settings(os, format)?;
                 }
                 Ok(ExitCode::SUCCESS)
             },
