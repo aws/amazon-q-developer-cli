@@ -16,6 +16,7 @@ default = []
 wayland = ["arboard/wayland-data-control"]
 
 [dependencies]
+chardetng = "0.1"
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true

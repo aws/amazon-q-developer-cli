@@ -2,6 +2,7 @@ use std::collections::VecDeque;
 use std::fs::Metadata;
 use std::io::Write;
 
+use chardetng::EncodingDetector;
 use crossterm::queue;
 use crossterm::style::{
     self,
@@ -501,9 +502,20 @@ impl FsLine {
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         debug!(?path, "Reading");
+
+        // Read raw bytes from file
         let file_bytes = os.fs.read(&path).await?;
-        let file_content = String::from_utf8_lossy(&file_bytes);
-        let file_content = sanitize_unicode_tags(&file_content);
+
+        // Detect encoding
+        let mut detector = EncodingDetector::new();
+        detector.feed(&file_bytes, true);
+        let encoding = detector.guess(None, true);
+
+        // Decode to UTF-8
+        let (decoded, _, _) = encoding.decode(&file_bytes);
+        let file_content = sanitize_unicode_tags(&decoded);
+
+        // Count lines and calculate range
         let line_count = file_content.lines().count();
         let (start, end) = (
             convert_negative_index(line_count, self.start_line()),
@@ -1107,12 +1119,7 @@ mod tests {
             .unwrap();
 
         if let OutputKind::Text(text) = output.output {
-            assert!(text.contains('�'), "Binary data should contain replacement characters");
-            assert_eq!(text.chars().count(), 8, "Should have 8 replacement characters");
-            assert!(
-                text.chars().all(|c| c == '�'),
-                "All characters should be replacement characters"
-            );
+            assert_eq!(text.trim(), "ﳽ\u{fafb}\u{f8f9}");
         } else {
             panic!("expected text output");
         }
@@ -1140,11 +1147,7 @@ mod tests {
 
         if let OutputKind::Text(text) = output.output {
             // Latin-1 byte 233 (é) is invalid UTF-8, so it becomes a replacement character
-            assert!(text.starts_with("caf"), "Should start with 'caf'");
-            assert!(
-                text.contains('�'),
-                "Should contain replacement character for invalid UTF-8"
-            );
+            assert!(text.starts_with("café"), "Should start with 'café'");
         } else {
             panic!("expected text output");
         }
@@ -1237,12 +1240,7 @@ mod tests {
             .unwrap();
 
         if let OutputKind::Text(text) = output.output {
-            assert!(text.contains("Text with"), "Should contain readable text");
-            assert!(text.contains("smart quotes"), "Should contain readable text");
-            assert!(
-                text.contains('�'),
-                "Should contain replacement characters for invalid UTF-8"
-            );
+            assert_eq!(text.trim(), "Text with “smart quotes”");
         } else {
             panic!("expected text output");
         }
@@ -1307,7 +1305,6 @@ mod tests {
             .unwrap();
 
         if let OutputKind::Text(text) = output.output {
-            assert_eq!(text.chars().count(), 3, "Should have 3 replacement characters");
             assert!(text.chars().all(|c| c == '�'), "Should be all replacement characters");
         } else {
             panic!("expected text output");
