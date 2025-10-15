@@ -287,7 +287,7 @@ impl PkceRegistration {
         Self::recv_code_with_extra_accepts(listener, expected_state, 0).await
     }
 
-    // NEW: extended version that accepts N extra connections to serve /index.html again
+    // extended version that accepts N extra connections to serve /index.html again
     pub async fn recv_code_with_extra_accepts(
         listener: tokio::net::TcpListener,
         expected_state: String,
@@ -426,7 +426,7 @@ impl PkceHttpService {
             }
         }
 
-        Self::redirect_to_index(&host, "")
+        Self::redirect_to_index(&host, "?success=true")
     }
 
     fn redirect_to_index(host: &str, query_params: &str) -> Result<ServiceResponse, AuthError> {

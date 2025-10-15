@@ -3,6 +3,7 @@ mod consts;
 pub mod pkce;
 mod scope;
 
+pub mod portal;
 pub mod social;
 use aws_sdk_ssooidc::config::{
     ConfigBag,
@@ -68,11 +69,7 @@ pub enum AuthError {
     #[error(
         "Authentication failed: The identity provider denied access. Please ensure you grant all required permissions."
     )]
-    SocialAuthProviderDeniedAccess,
-    #[error("Authentication failed: The identity provider reported an error: {0}")]
     SocialAuthProviderFailure(String),
-    #[error("Invalid access code. Please check your invitation code and try again.")]
-    SocialInvalidInvitationCode,
 }
 
 impl From<aws_sdk_ssooidc::Error> for AuthError {

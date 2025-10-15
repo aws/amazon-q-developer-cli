@@ -210,6 +210,7 @@ impl DeviceRegistration {
         secret_store
             .set_secret(Self::SECRET_KEY, &serde_json::to_string(&self)?)
             .await?;
+        info!("save builderid token");
         Ok(())
     }
 }
