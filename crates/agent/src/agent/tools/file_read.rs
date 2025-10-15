@@ -1,7 +1,6 @@
 use std::path::PathBuf;
 
 use futures::StreamExt;
-use rand::seq::IndexedRandom;
 use schemars::{
     JsonSchema,
     schema_for,
@@ -51,12 +50,6 @@ FEATURES:
 LIMITATIONS:
 - Maximum file size is 250KB
 - Cannot display binary files or images
-- Images can be identified but not displayed
-
-TIPS:
-- Use with Glob tool to first find files you want to view
-- For code exploration, first use Grep to find relevant files, then View to examine them
-- When viewing large files, use the offset parameter to read specific sections
 "#;
 
 // TODO - migrate from JsonSchema, it's not very configurable and prone to breaking changes in the
@@ -144,9 +137,7 @@ impl FileReadOp {
     async fn execute(&self) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
         let path = PathBuf::from(canonicalize_path(&self.path).map_err(|e| ToolExecutionError::Custom(e.to_string()))?);
 
-        // TODO: add image reading
         // add line numbers
-        // add extra truncated context
         let file_lines = LinesStream::new(
             BufReader::new(
                 fs::File::open(&path)
@@ -157,11 +148,13 @@ impl FileReadOp {
         );
         let mut file_lines = file_lines.enumerate().skip(self.offset.unwrap_or_default() as usize);
 
+        let mut is_truncated = false;
         let mut content = Vec::new();
         while let Some((i, line)) = file_lines.next().await {
             match line {
                 Ok(l) => {
                     if content.len() as u32 > MAX_READ_SIZE {
+                        is_truncated = true;
                         break;
                     }
                     content.push(l);
@@ -172,7 +165,10 @@ impl FileReadOp {
             }
         }
 
-        let content = content.join("\n");
+        let mut content = content.join("\n");
+        if is_truncated {
+            content.push_str("...truncated");
+        }
         Ok(ToolExecutionOutputItem::Text(content))
     }
 }

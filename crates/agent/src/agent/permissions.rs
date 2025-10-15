@@ -27,50 +27,79 @@ pub fn evaluate_tool_permission(
 
     match tool {
         ToolKind::BuiltIn(built_in) => match built_in {
-            BuiltInTool::FileRead(file_read) => {
-                let allowed_paths = canonicalize_paths(&settings.file_read.allowed_paths);
-                let denied_paths = canonicalize_paths(&settings.file_read.denied_paths);
-                let mut ask = false;
-                for op in &file_read.ops {
-                    let path = canonicalize_path(&op.path)?;
-                    match evaluate_permission_for_path(path, allowed_paths.iter(), denied_paths.iter()) {
-                        PermissionCheckResult::Denied(items) => {
-                            return Ok(PermissionEvalResult::Deny {
-                                reason: items.join(", "),
-                            });
-                        },
-                        PermissionCheckResult::Ask => ask = true,
-                        PermissionCheckResult::Allow => (),
-                    }
-                }
-                Ok(if ask && !is_allowed {
-                    PermissionEvalResult::Ask
-                } else {
-                    PermissionEvalResult::Allow
-                })
-            },
-            BuiltInTool::FileWrite(file_write) => {
-                let allowed_paths = canonicalize_paths(&settings.file_read.allowed_paths);
-                let denied_paths = canonicalize_paths(&settings.file_read.denied_paths);
-                let path = canonicalize_path(file_write.path())?;
-                match evaluate_permission_for_path(path, allowed_paths.iter(), denied_paths.iter()) {
-                    PermissionCheckResult::Denied(items) => Ok(PermissionEvalResult::Deny {
-                        reason: items.join(", "),
-                    }),
-                    PermissionCheckResult::Ask if !is_allowed => Ok(PermissionEvalResult::Ask),
-                    _ => Ok(PermissionEvalResult::Allow),
-                }
-            },
+            BuiltInTool::FileRead(file_read) => evaluate_permission_for_paths(
+                &settings.file_read.allowed_paths,
+                &settings.file_read.denied_paths,
+                file_read.ops.iter().map(|op| &op.path),
+                is_allowed,
+            ),
+            BuiltInTool::FileWrite(file_write) => evaluate_permission_for_paths(
+                &settings.file_write.allowed_paths,
+                &settings.file_write.denied_paths,
+                [file_write.path()],
+                is_allowed,
+            ),
+
+            // Reuse the same settings for fs read
+            BuiltInTool::Ls(ls) => evaluate_permission_for_paths(
+                &settings.file_write.allowed_paths,
+                &settings.file_write.denied_paths,
+                [&ls.path],
+                is_allowed,
+            ),
+            BuiltInTool::ImageRead(image_read) => evaluate_permission_for_paths(
+                &settings.file_write.allowed_paths,
+                &settings.file_write.denied_paths,
+                &image_read.paths,
+                is_allowed,
+            ),
             BuiltInTool::Grep(_) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::Ls(_) => Ok(PermissionEvalResult::Allow),
+
+            // Reuse the same settings for fs write
             BuiltInTool::Mkdir(_) => Ok(PermissionEvalResult::Allow),
-            BuiltInTool::ImageRead(_) => Ok(PermissionEvalResult::Allow),
+
             BuiltInTool::ExecuteCmd(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::SpawnSubagent => Ok(PermissionEvalResult::Allow),
         },
-        ToolKind::Mcp(_) => Ok(PermissionEvalResult::Allow),
+        ToolKind::Mcp(_) => Ok(if is_allowed {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
+        }),
     }
+}
+
+fn evaluate_permission_for_paths<T, U>(
+    allowed_paths: &[String],
+    denied_paths: &[String],
+    paths_to_check: T,
+    is_allowed: bool,
+) -> Result<PermissionEvalResult, UtilError>
+where
+    T: IntoIterator<Item = U>,
+    U: AsRef<str>,
+{
+    let allowed_paths = canonicalize_paths(allowed_paths);
+    let denied_paths = canonicalize_paths(denied_paths);
+    let mut ask = false;
+    for path in paths_to_check {
+        let path = canonicalize_path(path)?;
+        match evaluate_permission_for_path(path, allowed_paths.iter(), denied_paths.iter()) {
+            PermissionCheckResult::Denied(items) => {
+                return Ok(PermissionEvalResult::Deny {
+                    reason: items.join(", "),
+                });
+            },
+            PermissionCheckResult::Ask => ask = true,
+            PermissionCheckResult::Allow => (),
+        }
+    }
+    Ok(if ask && !is_allowed {
+        PermissionEvalResult::Ask
+    } else {
+        PermissionEvalResult::Allow
+    })
 }
 
 fn canonicalize_paths(paths: &[String]) -> Vec<String> {

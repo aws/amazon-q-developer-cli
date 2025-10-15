@@ -40,7 +40,7 @@ use crate::agent::agent_loop::types::{
     ToolSpec,
 };
 
-fn generate_tool_spec<T>() -> ToolSpec
+fn generate_tool_spec_from_json_schema<T>() -> ToolSpec
 where
     T: JsonSchema + BuiltInToolTrait,
 {
@@ -66,7 +66,7 @@ where
     }
 }
 
-fn generate_tool_spec_correct_way<T>() -> ToolSpec
+fn generate_tool_spec_from_trait<T>() -> ToolSpec
 where
     T: BuiltInToolTrait,
 {
@@ -96,6 +96,8 @@ pub enum BuiltInToolName {
     FileRead,
     FileWrite,
     ExecuteCmd,
+    ImageRead,
+    Ls,
 }
 
 trait BuiltInToolTrait {
@@ -186,14 +188,22 @@ impl BuiltInTool {
             BuiltInToolName::ExecuteCmd => serde_json::from_value::<ExecuteCmd>(args)
                 .map(Self::ExecuteCmd)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::ImageRead => serde_json::from_value::<ImageRead>(args)
+                .map(Self::ImageRead)
+                .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Ls => serde_json::from_value::<Ls>(args)
+                .map(Self::Ls)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
     pub fn generate_tool_spec(name: &BuiltInToolName) -> ToolSpec {
         match name {
-            BuiltInToolName::FileRead => generate_tool_spec::<FileRead>(),
-            BuiltInToolName::FileWrite => generate_tool_spec_correct_way::<FileWrite>(),
-            BuiltInToolName::ExecuteCmd => generate_tool_spec_correct_way::<ExecuteCmd>(),
+            BuiltInToolName::FileRead => generate_tool_spec_from_json_schema::<FileRead>(),
+            BuiltInToolName::FileWrite => generate_tool_spec_from_trait::<FileWrite>(),
+            BuiltInToolName::ExecuteCmd => generate_tool_spec_from_trait::<ExecuteCmd>(),
+            BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
+            BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
         }
     }
 
@@ -201,13 +211,13 @@ impl BuiltInTool {
         match self {
             BuiltInTool::FileRead(_) => BuiltInToolName::FileRead,
             BuiltInTool::FileWrite(_) => BuiltInToolName::FileWrite,
-            BuiltInTool::Grep(_) => todo!(),
-            BuiltInTool::Ls(_) => todo!(),
-            BuiltInTool::Mkdir(_) => todo!(),
-            BuiltInTool::ImageRead(_) => todo!(),
+            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Ls(_) => BuiltInToolName::Ls,
+            BuiltInTool::Mkdir(_) => panic!("unimplemented"),
+            BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
-            BuiltInTool::Introspect(_) => todo!(),
-            BuiltInTool::SpawnSubagent => todo!(),
+            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
 
@@ -215,13 +225,13 @@ impl BuiltInTool {
         match self {
             BuiltInTool::FileRead(_) => BuiltInToolName::FileRead.into(),
             BuiltInTool::FileWrite(_) => BuiltInToolName::FileWrite.into(),
-            BuiltInTool::Grep(_) => todo!(),
-            BuiltInTool::Ls(_) => todo!(),
-            BuiltInTool::Mkdir(_) => todo!(),
-            BuiltInTool::ImageRead(_) => todo!(),
+            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Ls(_) => BuiltInToolName::Ls.into(),
+            BuiltInTool::Mkdir(_) => panic!("unimplemented"),
+            BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
-            BuiltInTool::Introspect(_) => todo!(),
-            BuiltInTool::SpawnSubagent => todo!(),
+            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
 }
@@ -265,6 +275,12 @@ pub enum ToolExecutionOutputItem {
     Text(String),
     Json(serde_json::Value),
     Image(ImageBlock),
+}
+
+impl From<String> for ToolExecutionOutputItem {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
 }
 
 /// Persistent state required by tools during execution

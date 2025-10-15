@@ -253,6 +253,12 @@ pub enum ContentBlock {
     Image(ImageBlock),
 }
 
+impl From<String> for ContentBlock {
+    fn from(value: String) -> Self {
+        Self::Text(value)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub struct ImageBlock {
@@ -260,11 +266,12 @@ pub struct ImageBlock {
     pub source: ImageSource,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, strum::EnumString, strum::Display)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum ImageFormat {
     Gif,
+    #[serde(alias = "jpg")]
     Jpeg,
     Png,
     Webp,
@@ -438,8 +445,20 @@ pub struct MetadataService {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
     use crate::api_client::error::ConverseStreamErrorKind;
+
+    macro_rules! test_ser_deser {
+        ($ty:ident, $variant:expr, $text:expr) => {
+            let quoted = format!("\"{}\"", $text);
+            assert_eq!(quoted, serde_json::to_string(&$variant).unwrap());
+            assert_eq!($variant, serde_json::from_str(&quoted).unwrap());
+            assert_eq!($variant, $ty::from_str($text).unwrap());
+            assert_eq!($text, $variant.to_string());
+        };
+    }
 
     #[test]
     fn test_other_stream_err_downcasting() {
@@ -452,5 +471,14 @@ mod tests {
             err.as_rts_error()
                 .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
         );
+    }
+
+    #[test]
+    fn test_image_format_ser_deser() {
+        test_ser_deser!(ImageFormat, ImageFormat::Gif, "gif");
+        test_ser_deser!(ImageFormat, ImageFormat::Png, "png");
+        test_ser_deser!(ImageFormat, ImageFormat::Webp, "webp");
+        test_ser_deser!(ImageFormat, ImageFormat::Jpeg, "jpeg");
+        assert_eq!(ImageFormat::from_str("jpg").unwrap(), ImageFormat::Jpeg);
     }
 }

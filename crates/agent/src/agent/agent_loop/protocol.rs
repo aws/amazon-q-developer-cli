@@ -111,6 +111,13 @@ pub enum AgentLoopEventKind {
     /// A valid tool use was received
     ToolUse(ToolUseBlock),
     /// A single request/response stream has completed processing.
+    ///
+    /// When emitted, the agent loop is in either of the states:
+    /// 1. User turn is ongoing (due to tool uses or a stream error), and the loop is ready to
+    ///    receive a new request.
+    /// 2. User turn has ended, in which case a [AgentLoopEventKind::UserTurnEnd] event is emitted
+    ///    afterwards. The loop is still able to receive new requests which will continue the user
+    ///    turn.
     ResponseStreamEnd {
         /// The result of having parsed the entire stream.
         ///
@@ -120,12 +127,13 @@ pub enum AgentLoopEventKind {
         /// Metadata about the stream.
         metadata: StreamMetadata,
     },
-    /// The agent loop has changed states
-    LoopStateChange { from: LoopState, to: LoopState },
     /// Metadata for the entire user turn.
     ///
-    /// This is the last event that the agent loop will emit.
+    /// This is the last event that the agent loop will emit, unless another request is sent that
+    /// continues the turn.
     UserTurnEnd(UserTurnMetadata),
+    /// The agent loop has changed states
+    LoopStateChange { from: LoopState, to: LoopState },
     /// Low level event. Generally only useful for [AgentLoop].
     StreamEvent(StreamEvent),
     /// Low level event. Generally only useful for [AgentLoop].

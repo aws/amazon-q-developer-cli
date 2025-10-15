@@ -166,7 +166,7 @@ impl Default for AgentConfigV2025_08_22 {
             name: BUILTIN_VIBER_AGENT_NAME.to_string(),
             description: Some("The default agent for Q CLI".to_string()),
             system_prompt: Some("You are Q, an expert programmer dedicated to becoming the greatest vibe-coding assistant in the world.".to_string()),
-            tools: vec![BuiltInToolName::FileRead.to_string(), BuiltInToolName::FileWrite.to_string()],
+            tools: vec!["@builtin".to_string()],
             tool_settings: Default::default(),
             tool_aliases: Default::default(),
             tool_schema: Default::default(),
@@ -195,8 +195,8 @@ pub struct FileReadSettings {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct FileWriteSettings {
-    allowed_paths: Vec<String>,
-    denied_paths: Vec<String>,
+    pub allowed_paths: Vec<String>,
+    pub denied_paths: Vec<String>,
 }
 
 /// This mirrors claude's config set up.

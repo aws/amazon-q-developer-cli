@@ -110,12 +110,31 @@ pub struct CompactionSnapshot {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationSummary {
     /// Identifier for the summary
-    pub id: String,
+    pub id: Uuid,
     /// Conversation summary content
     pub content: String,
+    /// The conversation that was summarized
+    pub summarized_state: ConversationState,
     /// Timestamp for when the summary was generated
     #[serde(with = "chrono::serde::ts_seconds_option")]
     pub timestamp: Option<DateTime<Utc>>,
+}
+
+impl ConversationSummary {
+    pub fn new(content: String, summarized_state: ConversationState, timestamp: Option<DateTime<Utc>>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            content,
+            summarized_state,
+            timestamp,
+        }
+    }
+}
+
+impl AsRef<str> for ConversationSummary {
+    fn as_ref(&self) -> &str {
+        &self.content
+    }
 }
 
 /// Settings to modify the runtime behavior of the agent.
@@ -157,6 +176,12 @@ impl ConversationState {
     }
 }
 
+impl Default for ConversationState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ConversationMetadata {
     /// History of user turns
@@ -169,6 +194,12 @@ pub struct ConversationMetadata {
     ///
     /// This is equivalent to user_turn_start_request for the first request of a user turn
     pub last_request: Option<SendRequestArgs>,
+}
+
+impl ConversationMetadata {
+    pub fn latest_summary(&self) -> Option<&ConversationSummary> {
+        self.summaries.last()
+    }
 }
 
 /// Unique identifier of an agent instance within a session.

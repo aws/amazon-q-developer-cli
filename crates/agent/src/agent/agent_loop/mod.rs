@@ -90,17 +90,22 @@ impl std::fmt::Display for AgentLoopId {
 pub enum LoopState {
     #[default]
     Idle,
-    /// A request is currently being sent to the model
+    /// A request is currently being sent to the model.
+    ///
+    /// The loop is unable to handle new requests while in this state.
     SendingRequest,
-    /// A model response is currently being consumed
+    /// A model response is currently being consumed.
+    ///
+    /// The loop is unable to handle new requests while in this state.
     ConsumingResponse,
-    /// The loop is waiting for tool use result(s) to be provided
+    /// The loop is waiting for tool use result(s) to be provided.
     PendingToolUseResults,
     /// The agent loop has completed all processing, and no pending work is left to do.
     ///
-    /// This is the final state of the loop - no further requests can be made.
+    /// This is generally the final state of the loop. If another request is sent, then the user
+    /// turn will be continued for another cycle.
     UserTurnEnded,
-    /// An error occurred that requires manual intervention
+    /// An error occurred that requires manual intervention.
     Errored,
 }
 
@@ -176,13 +181,13 @@ impl AgentLoop {
         let loop_req_tx = self.loop_req_tx.take().expect("loop_req_tx should exist");
         let handle = tokio::spawn(async move {
             info!("agent loop start");
-            self.run().await;
+            self.main_loop().await;
             info!("agent loop end");
         });
         AgentLoopHandle::new(id_clone, loop_req_tx, loop_event_rx, handle)
     }
 
-    async fn run(mut self) {
+    async fn main_loop(mut self) {
         loop {
             tokio::select! {
                 // Branch for handling agent loop messages
@@ -261,11 +266,11 @@ impl AgentLoop {
 
                 // Ensure we are in a state that can handle a new request.
                 match self.execution_state {
-                    LoopState::Idle | LoopState::PendingToolUseResults => {},
-                    LoopState::UserTurnEnded => {
-                        // TODO - custom message?
-                        return Err(AgentLoopResponseError::AgentLoopExited);
-                    },
+                    LoopState::Idle | LoopState::Errored | LoopState::PendingToolUseResults => {},
+                    LoopState::UserTurnEnded => {},
+                    // LoopState::UserTurnEnded => {
+                    //     return Err(AgentLoopResponseError::AgentLoopExited);
+                    // },
                     other => {
                         error!(
                             ?other,

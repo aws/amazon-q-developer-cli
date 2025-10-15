@@ -70,6 +70,7 @@ dependencies = [
  "hyper 1.6.0",
  "hyper-util",
  "insta",
+ "libc",
  "mockito",
  "objc2 0.5.2",
  "objc2-app-kit 0.2.2",
@@ -96,6 +97,7 @@ dependencies = [
  "shellexpand",
  "strum 0.27.2",
  "syntect",
+ "sysinfo",
  "textwrap",
  "thiserror 2.0.14",
  "time",
@@ -110,6 +112,7 @@ dependencies = [
  "url",
  "uuid",
  "webpki-roots 0.26.8",
+ "whoami",
 ]
 
 [[package]]

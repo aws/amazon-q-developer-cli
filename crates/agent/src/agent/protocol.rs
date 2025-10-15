@@ -68,6 +68,8 @@ pub enum AgentRequest {
     SendApprovalResult(SendApprovalResultArgs),
     /// Creates a serializable snapshot of the agent's current state
     CreateSnapshot,
+    /// Compact the conversation history
+    Compact,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -100,7 +100,7 @@ impl FileWrite {
         }
     }
 
-    pub fn canonical_path(&self) -> Result<PathBuf, String> {
+    fn canonical_path(&self) -> Result<PathBuf, String> {
         Ok(PathBuf::from(
             canonicalize_path(self.path()).map_err(|e| e.to_string())?,
         ))
@@ -113,7 +113,6 @@ impl FileWrite {
             errors.push("Path must not be empty".to_string());
         }
 
-        let path = self.canonical_path();
         match &self {
             FileWrite::Create(_) => (),
             FileWrite::StrReplace(_) => {

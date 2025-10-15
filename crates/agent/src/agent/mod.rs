@@ -1,5 +1,6 @@
 pub mod agent_config;
 pub mod agent_loop;
+mod compact;
 pub mod consts;
 pub mod mcp;
 mod permissions;
@@ -47,6 +48,7 @@ use agent_loop::types::{
     ContentBlock,
     Message,
     Role,
+    StreamError,
     StreamErrorKind,
     ToolResultBlock,
     ToolResultContentBlock,
@@ -61,6 +63,11 @@ use agent_loop::{
     LoopState,
 };
 use chrono::Utc;
+use compact::{
+    CompactStrategy,
+    CompactingState,
+    create_summary_prompt,
+};
 use consts::{
     MAX_RESOURCE_FILE_LENGTH,
     MAX_TOOL_NAME_LEN,
@@ -128,6 +135,7 @@ use types::{
     AgentSnapshot,
     ConversationMetadata,
     ConversationState,
+    ConversationSummary,
 };
 use util::path::canonicalize_path;
 use util::read_file_with_max_limit;
@@ -441,7 +449,6 @@ impl Agent {
                         None => std::future::pending().await,
                     }
                 } => {
-                    // let (handle, evt) = res;
                     let evt = res;
                     if let Err(e) = self.handle_agent_loop_event(evt).await {
                         error!(?e, "failed to handle agent loop event");
@@ -534,6 +541,10 @@ impl Agent {
             AgentRequest::Interrupt => self.handle_interrupt().await,
             AgentRequest::SendApprovalResult(args) => self.handle_approval_result(args).await,
             AgentRequest::CreateSnapshot => Ok(AgentResponse::Snapshot(self.create_snapshot())),
+            AgentRequest::Compact => {
+                self.compact_history().await?;
+                Ok(AgentResponse::Success)
+            },
         }
     }
 
@@ -544,6 +555,15 @@ impl Agent {
             | ActiveState::Errored(_)
             | ActiveState::ExecutingRequest
             | ActiveState::WaitingForApproval { .. } => {},
+            ActiveState::Compacting(_) => {
+                // Compact is special - agent is executing in a different context,
+                if let Some(mut handle) = self.agent_loop.take() {
+                    let _ = handle.close().await;
+                    while handle.recv().await.is_some() {}
+                }
+                self.set_active_state(ActiveState::Idle).await;
+                return Ok(AgentResponse::Success);
+            },
             ActiveState::ExecutingHooks(executing_hooks) => {
                 for id in executing_hooks.hooks.keys() {
                     self.task_executor.cancel_hook_execution(id);
@@ -656,7 +676,8 @@ impl Agent {
             self.conversation_state
                 .messages
                 .push(Message::new(Role::User, content, Some(Utc::now())));
-            self.send_request().await?;
+            let args = self.format_request().await;
+            self.send_request(args).await?;
             self.set_active_state(ActiveState::ExecutingRequest).await;
             return Ok(AgentResponse::Success);
         }
@@ -681,6 +702,59 @@ impl Agent {
             self.agent_loop = None;
             return Ok(());
         };
+
+        // If compacting, then we require some special override logic:
+        if let ActiveState::Compacting(state) = &self.execution_state.active_state {
+            if let AgentLoopEventKind::UserTurnEnd(metadata) = &evt {
+                debug_assert!(
+                    metadata.result.is_some(),
+                    "loop should always have a result when compacting"
+                );
+                let Some(result) = metadata.result.as_ref() else {
+                    warn!(?metadata, "did not receive a result while compacting");
+                    return Ok(());
+                };
+                match result {
+                    Ok(msg) => {
+                        let content = msg
+                            .content
+                            .clone()
+                            .into_iter()
+                            .filter_map(|c| match c {
+                                ContentBlock::Text(t) => Some(t),
+                                _ => None,
+                            })
+                            .collect();
+                        let summary =
+                            ConversationSummary::new(content, self.conversation_state.clone(), Some(Utc::now()));
+                        self.conversation_metadata.summaries.push(summary);
+                        self.conversation_state.messages = vec![];
+
+                        // Continue the user turn if we need to.
+                        // Note: we return early so that we do not emit a UserTurnEnd event
+                        // since we don't consider compaction to end the user turn in this
+                        // instance.
+                        if let Some(prev_msg) = &state.last_user_message {
+                            self.conversation_state.messages.push(prev_msg.clone());
+                            let req = self.format_request().await;
+                            self.send_request(req).await?;
+                            self.set_active_state(ActiveState::ExecutingRequest).await;
+                            return Ok(());
+                        }
+                    },
+                    Err(err) => {
+                        self.set_active_state(ActiveState::Errored(err.clone().into())).await;
+                        let _ = self.agent_event_tx.send(AgentEvent::RequestError(err.clone()));
+                    },
+                }
+            }
+
+            let _ = self
+                .agent_event_tx
+                .send(AgentEvent::AgentLoop(AgentLoopEvent { id: loop_id, kind: evt }));
+
+            return Ok(());
+        }
 
         match &evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
@@ -771,7 +845,8 @@ impl Agent {
                         timestamp: Some(Utc::now()),
                     });
 
-                self.send_request().await?;
+                let args = self.format_request().await;
+                self.send_request(args).await?;
             },
             LoopError::Stream(stream_err) => match &stream_err.kind {
                 StreamErrorKind::StreamTimeout { .. } => {
@@ -791,15 +866,19 @@ impl Agent {
                         )],
                         timestamp: Some(Utc::now()),
                     });
-                    self.send_request().await?;
+
+                    let args = self.format_request().await;
+                    self.send_request(args).await?;
                 },
                 StreamErrorKind::Interrupted => {
                     // nothing to do
                 },
+                StreamErrorKind::ContextWindowOverflow => {
+                    self.handle_context_window_overflow(stream_err).await?;
+                },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
                 | StreamErrorKind::Throttling
-                | StreamErrorKind::ContextWindowOverflow
                 | StreamErrorKind::Other(_) => {
                     self.set_active_state(ActiveState::Errored(err.clone().into())).await;
                     let _ = self.agent_event_tx.send(AgentEvent::RequestError(err.clone()));
@@ -815,7 +894,10 @@ impl Agent {
         match self.active_state() {
             ActiveState::Idle | ActiveState::Errored(_) => (),
             ActiveState::WaitingForApproval { .. } => (),
-            ActiveState::ExecutingRequest | ActiveState::ExecutingHooks(_) | ActiveState::ExecutingTools { .. } => {
+            ActiveState::ExecutingRequest
+            | ActiveState::ExecutingHooks(_)
+            | ActiveState::ExecutingTools { .. }
+            | ActiveState::Compacting(_) => {
                 return Err(AgentError::NotIdle);
             },
         }
@@ -873,7 +955,8 @@ impl Agent {
         let loop_id = AgentLoopId::new(self.id.clone());
         let cancel_token = CancellationToken::new();
         self.agent_loop = Some(AgentLoop::new(loop_id.clone(), cancel_token).spawn());
-        self.send_request()
+        let args = self.format_request().await;
+        self.send_request(args)
             .await
             .expect("first agent loop request should never fail");
         self.set_active_state(ActiveState::ExecutingRequest).await;
@@ -886,59 +969,25 @@ impl Agent {
     /// The returned conversation history will:
     /// 1. Have context messages prepended to the start of the message history
     /// 2. Have conversation history invariants enforced, mutating messages as required
-    async fn format_request(&mut self) -> Result<SendRequestArgs, AgentError> {
-        let mut messages = VecDeque::from(self.conversation_state.messages.clone());
-        let mut tool_spec = self.make_tool_spec().await?;
-        enforce_conversation_invariants(&mut messages, &mut tool_spec);
-
-        let ctx_messages = self.create_context_messages().await;
-        for msg in ctx_messages.into_iter().rev() {
-            messages.push_front(msg);
-        }
-
-        Ok(SendRequestArgs::new(
-            messages.into(),
-            if tool_spec.is_empty() { None } else { Some(tool_spec) },
-            self.agent_config.system_prompt().map(String::from),
-        ))
+    async fn format_request(&mut self) -> SendRequestArgs {
+        format_request(
+            VecDeque::from(self.conversation_state.messages.clone()),
+            self.make_tool_spec().await,
+            &self.agent_config,
+            &self.conversation_metadata,
+            self.agent_spawn_hooks.iter().map(|(_, c)| c),
+        )
+        .await
     }
 
-    async fn send_request(&mut self) -> Result<AgentLoopResponse, AgentError> {
+    async fn send_request(&mut self, request_args: SendRequestArgs) -> Result<AgentLoopResponse, AgentError> {
         let model = self.model.clone();
-        let request_args = self.format_request().await?;
         let res = self
             .agent_loop_handle()?
             .send_request(model, request_args.clone())
             .await?;
         let _ = self.agent_event_tx.send(AgentEvent::RequestSent(request_args));
         Ok(res)
-    }
-
-    async fn create_context_messages(&self) -> Vec<Message> {
-        let config = self.get_agent_config().await;
-        let summary = self.conversation_metadata.summaries.last().map(|s| s.content.as_str());
-        let system_prompt = self.get_agent_config().await.system_prompt();
-        let resources = collect_resources(config.resources()).await;
-
-        let content = format_user_context_message(
-            summary,
-            system_prompt,
-            resources.iter().map(|r| &r.content),
-            self.agent_spawn_hooks.iter().map(|(_, c)| c),
-        );
-        if content.is_empty() {
-            return vec![];
-        }
-        let user_msg = Message::new(Role::User, vec![ContentBlock::Text(content)], None);
-        let assistant_msg = Message::new(
-            Role::Assistant,
-            vec![ContentBlock::Text(
-                "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
-            )],
-            None,
-        );
-
-        vec![user_msg, assistant_msg]
     }
 
     /// Entrypoint for handling tool uses returned by the model.
@@ -962,7 +1011,8 @@ impl Agent {
             self.conversation_state
                 .messages
                 .push(Message::new(Role::User, content, Some(Utc::now())));
-            self.send_request().await?;
+            let args = self.format_request().await;
+            self.send_request(args).await?;
             return Ok(());
         }
 
@@ -999,7 +1049,8 @@ impl Agent {
             self.conversation_state
                 .messages
                 .push(Message::new(Role::User, content, Some(Utc::now())));
-            self.send_request().await?;
+            let args = self.format_request().await;
+            self.send_request(args).await?;
             return Ok(());
         }
 
@@ -1229,7 +1280,8 @@ impl Agent {
                     self.conversation_state
                         .messages
                         .push(Message::new(Role::User, content, Some(Utc::now())));
-                    self.send_request().await?;
+                    let args = self.format_request().await;
+                    self.send_request(args).await?;
                     return Ok(());
                 }
 
@@ -1251,8 +1303,8 @@ impl Agent {
         }
     }
 
-    async fn make_tool_spec(&mut self) -> Result<Vec<ToolSpec>, AgentError> {
-        let tool_names = self.get_tool_names().await?;
+    async fn make_tool_spec(&mut self) -> Vec<ToolSpec> {
+        let tool_names = self.get_tool_names().await;
         let mut mcp_server_tool_specs = HashMap::new();
         for name in &tool_names {
             if let CanonicalToolName::Mcp { server_name, .. } = name {
@@ -1266,13 +1318,19 @@ impl Agent {
         }
 
         let sanitized_specs = sanitize_tool_specs(tool_names, mcp_server_tool_specs, self.agent_config.tool_aliases());
+        if !sanitized_specs.transformed_tool_specs.is_empty() {
+            warn!(?sanitized_specs.transformed_tool_specs, "some tool specs were transformed");
+        }
+        if !sanitized_specs.filtered_specs.is_empty() {
+            warn!(?sanitized_specs.filtered_specs, "filtered some tool specs");
+        }
         let tool_specs = sanitized_specs.tool_specs();
         self.cached_tool_specs = Some(sanitized_specs);
-        Ok(tool_specs)
+        tool_specs
     }
 
     /// Returns the name of all tools available to the given agent.
-    async fn get_tool_names(&self) -> Result<Vec<CanonicalToolName>, AgentError> {
+    async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
         let mut tool_names = HashSet::new();
         let built_in_tool_names = built_in_tool_names();
         let config = self.get_agent_config().await;
@@ -1349,7 +1407,7 @@ impl Agent {
             }
         }
 
-        Ok(tool_names.into_iter().collect())
+        tool_names.into_iter().collect()
     }
 
     /// Parses tool use blocks into concrete tools, returning those that failed to be parsed.
@@ -1429,12 +1487,12 @@ impl Agent {
                 BuiltInTool::FileRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::FileWrite(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Grep(_) => Ok(()),
-                BuiltInTool::Ls(_) => Ok(()),
+                BuiltInTool::Ls(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Mkdir(_) => Ok(()),
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
                 BuiltInTool::SpawnSubagent => Ok(()),
-                BuiltInTool::ImageRead(_) => Ok(()),
+                BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
             },
             ToolKind::Mcp(_) => Ok(()),
         }
@@ -1528,12 +1586,12 @@ impl Agent {
                     })
                 },
                 BuiltInTool::ExecuteCmd(t) => Box::pin(async move { t.execute().await }),
-                BuiltInTool::ImageRead(_) => todo!(),
-                BuiltInTool::Introspect(_) => todo!(),
-                BuiltInTool::Grep(_) => todo!(),
-                BuiltInTool::Ls(_) => todo!(),
-                BuiltInTool::Mkdir(_) => todo!(),
-                BuiltInTool::SpawnSubagent => todo!(),
+                BuiltInTool::ImageRead(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::Introspect(_) => panic!("unimplemented"),
+                BuiltInTool::Grep(_) => panic!("unimplemented"),
+                BuiltInTool::Ls(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::Mkdir(_) => panic!("unimplemented"),
+                BuiltInTool::SpawnSubagent => panic!("unimplemented"),
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();
@@ -1612,11 +1670,149 @@ impl Agent {
         self.conversation_state
             .messages
             .push(Message::new(Role::User, content, Some(Utc::now())));
-
-        self.send_request().await?;
+        let args = self.format_request().await;
+        self.send_request(args).await?;
         self.set_active_state(ActiveState::ExecutingRequest).await;
         Ok(())
     }
+
+    /// Handler for [StreamErrorKind::ContextWindowOverflow] errors.
+    async fn handle_context_window_overflow(&mut self, err: &StreamError) -> Result<(), AgentError> {
+        if !self.settings.auto_compact {
+            let loop_err: LoopError = err.clone().into();
+            self.set_active_state(ActiveState::Errored(loop_err.clone().into()))
+                .await;
+            let _ = self.agent_event_tx.send(AgentEvent::RequestError(loop_err));
+            return Ok(());
+        }
+
+        self.compact_history().await
+    }
+
+    async fn compact_history(&mut self) -> Result<(), AgentError> {
+        if self.conversation_state.messages.is_empty() {
+            return Err(AgentError::Custom("Cannot compact an empty conversation".to_string()));
+        }
+
+        // Construct a request to summarize the conversation
+        let prompt = create_summary_prompt(None, self.conversation_metadata.latest_summary());
+        let mut messages = VecDeque::from(self.conversation_state.messages.clone());
+        // Check if the last message is from the user - if so, then we know this caused the context
+        // window overflow.
+        let mut last_user_message = None;
+        if messages.back().is_some_and(|m| m.role == Role::User) {
+            last_user_message = messages.pop_back();
+        }
+
+        // Push the summarize prompt
+        messages.push_back(Message::new(Role::User, vec![prompt.into()], Some(Utc::now())));
+
+        let req = format_request(
+            messages,
+            vec![],
+            &self.agent_config,
+            &self.conversation_metadata,
+            self.agent_spawn_hooks.iter().map(|(_, c)| c),
+        )
+        .await;
+
+        // Create a new agent loop if required.
+        if self.agent_loop.is_none() {
+            let loop_id = AgentLoopId::new(self.id.clone());
+            let cancel_token = CancellationToken::new();
+            self.agent_loop = Some(AgentLoop::new(loop_id.clone(), cancel_token).spawn());
+        }
+
+        self.set_active_state(ActiveState::Compacting(CompactingState {
+            last_user_message,
+            strategy: CompactStrategy::default(),
+            conversation: self.conversation_state.clone(),
+        }))
+        .await;
+
+        self.send_request(req).await?;
+        Ok(())
+    }
+}
+
+/// Creates a request structure for sending to the model.
+///
+/// Internally, this function will:
+/// 1. Create context messages according to what is configured in the agent config and agent spawn
+///    hook content.
+/// 2. Modify the message history to align with conversation invariants enforced by the backend.
+async fn format_request<T, U>(
+    mut messages: VecDeque<Message>,
+    mut tool_spec: Vec<ToolSpec>,
+    agent_config: &Config,
+    conversation_md: &ConversationMetadata,
+    agent_spawn_hooks: T,
+) -> SendRequestArgs
+where
+    T: IntoIterator<Item = U>,
+    U: AsRef<str>,
+{
+    enforce_conversation_invariants(&mut messages, &mut tool_spec);
+
+    let ctx_messages = create_context_messages(agent_config, conversation_md, agent_spawn_hooks).await;
+    for msg in ctx_messages.into_iter().rev() {
+        messages.push_front(msg);
+    }
+
+    SendRequestArgs::new(
+        messages.into(),
+        if tool_spec.is_empty() { None } else { Some(tool_spec) },
+        agent_config.system_prompt().map(String::from),
+    )
+}
+
+/// Creates context messages using the provided arguments.
+///
+/// # Background
+///
+/// **Context messages** are fake user/assistant messages inserted at the beginning of a
+/// conversation that contains global context (think: content that would otherwise go in the system
+/// prompt).
+///
+/// The content included in these messages includes:
+/// - Resources from the agent config
+/// - The `prompt` field from the agent config
+/// - Conversation start hooks
+/// - Latest conversation summary from compaction
+///
+/// We use context messages since the API does not allow any system prompt parameterization.
+async fn create_context_messages<T, U>(
+    agent_config: &Config,
+    conversation_md: &ConversationMetadata,
+    agent_spawn_hooks: T,
+) -> Vec<Message>
+where
+    T: IntoIterator<Item = U>,
+    U: AsRef<str>,
+{
+    let summary = conversation_md.summaries.last().map(|s| s.content.as_str());
+    let system_prompt = agent_config.system_prompt();
+    let resources = collect_resources(agent_config.resources()).await;
+
+    let content = format_user_context_message(
+        summary,
+        system_prompt,
+        resources.iter().map(|r| &r.content),
+        agent_spawn_hooks,
+    );
+    if content.is_empty() {
+        return vec![];
+    }
+    let user_msg = Message::new(Role::User, vec![ContentBlock::Text(content)], None);
+    let assistant_msg = Message::new(
+            Role::Assistant,
+            vec![ContentBlock::Text(
+                "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
+            )],
+            None,
+        );
+
+    vec![user_msg, assistant_msg]
 }
 
 /// Categorizes different types of tool name validation failures according to the requirements by
@@ -1643,12 +1839,20 @@ enum ToolValidationErrorKind {
     OutOfSpecName { transformed_name: String },
     EmptyName,
     NameTooLong,
-    IllegalChar(String),
     EmptyDescription,
     DescriptionTooLong,
     NameCollision(CanonicalToolName),
 }
 
+/// Represents a set of tool specs that conforms to the backend validations.
+///
+/// # Background
+///
+/// MCP servers can return invalid tool specifications according to the backend validations (e.g.,
+/// names too long, invalid name format, empty description, and so on).
+///
+/// Therefore, we need to perform some transformations on the tool name and resulting tool spec
+/// before sending it to the backend.
 #[derive(Debug, Clone)]
 struct SanitizedToolSpecs {
     /// Mapping from a transformed tool name to the canonical tool name and corresponding tool
@@ -1658,7 +1862,7 @@ struct SanitizedToolSpecs {
     filtered_specs: Vec<ToolValidationError>,
     /// Tool specs that are included in [Self::tool_map] but underwent transformations in order to
     /// conform to the validation requirements.
-    warnings: Vec<ToolValidationError>,
+    transformed_tool_specs: Vec<ToolValidationError>,
 }
 
 impl SanitizedToolSpecs {
@@ -1667,6 +1871,9 @@ impl SanitizedToolSpecs {
     }
 }
 
+/// Represents a tool spec that conforms to the backend validations.
+///
+/// See [SanitizedToolSpecs] for more background.
 #[derive(Debug, Clone)]
 struct SanitizedToolSpec {
     canonical_name: CanonicalToolName,
@@ -1701,7 +1908,7 @@ fn sanitize_tool_specs(
                     .or_insert_with(HashSet::new)
                     .insert(tool_name.clone());
             },
-            CanonicalToolName::Agent { agent_name } => {
+            CanonicalToolName::Agent { .. } => {
                 // TODO: generate tool spec from agent config
             },
         }
@@ -1805,11 +2012,11 @@ fn sanitize_tool_specs(
     SanitizedToolSpecs {
         tool_map,
         filtered_specs,
-        warnings,
+        transformed_tool_specs: warnings,
     }
 }
 
-fn format_user_context_message<T, U, S>(
+fn format_user_context_message<T, U, S, V>(
     summary: Option<&str>,
     system_prompt: Option<&str>,
     resources: T,
@@ -1817,8 +2024,9 @@ fn format_user_context_message<T, U, S>(
 ) -> String
 where
     T: IntoIterator<Item = S>,
-    U: IntoIterator<Item = S>,
+    U: IntoIterator<Item = V>,
     S: AsRef<str>,
+    V: AsRef<str>,
 {
     let mut context_content = String::new();
     if let Some(v) = summary {
@@ -1992,6 +2200,7 @@ fn hook_matches_tool(config: &HookConfig, tool: &ToolKind) -> bool {
     }
 }
 
+/// Contains data related to the agent's current state of execution.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExecutionState {
@@ -1999,11 +2208,13 @@ pub struct ExecutionState {
     pub executing_subagents: HashMap<AgentId, Option<String>>,
 }
 
+/// Represents the agent's current state of execution.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ActiveState {
     #[default]
     Idle,
+    /// Agent has encountered an error.
     Errored(AgentError),
     /// Agent is waiting for approval to execute tool uses
     WaitingForApproval {
@@ -2012,9 +2223,9 @@ pub enum ActiveState {
         /// Map from a tool use id to the approval result and tool to execute
         needs_approval: HashMap<String, Option<ApprovalResult>>,
     },
-    /// Agent is currently executing hooks
+    /// Agent is executing hooks
     ExecutingHooks(ExecutingHooks),
-    /// Agent is currently handling a prompt
+    /// Agent is handling a prompt
     ///
     /// The agent is not able to receive new prompts while in this state
     ExecutingRequest,
@@ -2022,6 +2233,10 @@ pub enum ActiveState {
     ExecutingTools {
         tools: HashMap<ToolExecutionId, ((ToolUseBlock, ToolKind), Option<ToolExecutorResult>)>,
     },
+    /// Agent is summarizing the conversation history.
+    ///
+    /// The agent is not able to receive new prompts while in this state.
+    Compacting(CompactingState),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2033,10 +2248,7 @@ pub struct ExecutingHooks {
     /// block tool execution.
     #[allow(clippy::type_complexity)]
     hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, ToolKind)>, Option<HookResult>)>,
-    /// Stage of execution.
-    ///
-    /// This is how we track what needs to be done post hook execution, e.g. send a prompt or run a
-    /// tool.
+    /// See [HookStage].
     stage: HookStage,
 }
 
