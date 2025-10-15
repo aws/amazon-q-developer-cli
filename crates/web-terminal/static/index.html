@@ -1,0 +1,688 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Q webchat</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Courier New', monospace;
+            background-color: #0c0c0c;
+            color: #ffffff;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .terminal-container {
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-color: #0c0c0c;
+        }
+
+        .terminal-header {
+            background-color: #1e1e1e;
+            padding: 8px 15px;
+            border-bottom: 1px solid #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 12px;
+        }
+
+        .terminal-title {
+            color: #cccccc;
+            font-size: 12px;
+            font-weight: normal;
+        }
+
+        .connection-status {
+            margin-left: auto;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        .connected {
+            background-color: #ff8c00;
+            color: #000;
+        }
+
+        .disconnected {
+            background-color: #ff5f57;
+            color: #fff;
+        }
+
+        .connecting {
+            background-color: #ffbd2e;
+            color: #000;
+        }
+
+        .terminal-content {
+            flex: 1;
+            padding: 15px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.4;
+            background-color: #0c0c0c;
+            position: relative;
+            padding-bottom: 80px; /* Space for search bar */
+        }
+
+        .conversation-entry {
+            margin-bottom: 10px;
+            padding-bottom: 5px;
+        }
+
+        .conversation-entry:last-child {
+            border-bottom: none;
+        }
+
+        .user-input {
+            color: #4CAF50;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+
+        .user-input::before {
+            content: "You: ";
+            color: #4CAF50;
+        }
+
+        .ai-response {
+            color: #cccccc;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-left: 0;
+            line-height: 1.2;
+            margin-bottom: 0;
+        }
+
+        .status-message {
+            color: #888;
+            font-style: italic;
+            margin: 10px 0;
+        }
+
+        .error-text {
+            color: #ff6b6b;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            margin-left: 0;
+        }
+
+        .search-container {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background-color: #1e1e1e;
+            border-top: 1px solid #333;
+            padding: 15px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .search-input {
+            flex: 1;
+            background-color: #0c0c0c;
+            border: 1px solid #333;
+            border-radius: 6px;
+            color: #ffffff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            padding: 12px 15px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-input:focus {
+            border-color: #ff8c00;
+        }
+
+        .search-input::placeholder {
+            color: #666;
+        }
+
+        .send-button {
+            background-color: #ff8c00;
+            border: none;
+            border-radius: 6px;
+            color: #000;
+            font-weight: bold;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover {
+            background-color: #e67e00;
+        }
+
+        .send-button:disabled {
+            background-color: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        /* Scrollbar styling */
+        .terminal-content::-webkit-scrollbar {
+            width: 8px;
+        }
+
+        .terminal-content::-webkit-scrollbar-track {
+            background: #1e1e1e;
+        }
+
+        .terminal-content::-webkit-scrollbar-thumb {
+            background: #555;
+            border-radius: 4px;
+        }
+
+        .terminal-content::-webkit-scrollbar-thumb:hover {
+            background: #777;
+        }
+
+        /* Cursor animation */
+        @keyframes blink {
+            0%, 50% { opacity: 1; }
+            51%, 100% { opacity: 0; }
+        }
+
+        .cursor {
+            animation: blink 1s infinite;
+            background-color: #ffffff;
+            width: 8px;
+            height: 16px;
+            display: inline-block;
+            margin-left: 2px;
+        }
+
+        /* Hide input when disabled */
+        .terminal-input:disabled {
+            display: none;
+        }
+
+        .session-ended {
+            color: #ff6b6b;
+            font-style: italic;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="terminal-container">
+        <div class="terminal-header">
+            <div class="terminal-title">Amazon Q webchat</div>
+            <div id="connectionStatus" class="connection-status connecting">Connecting...</div>
+        </div>
+
+        <div id="terminalContent" class="terminal-content">
+            <!-- ASCII Art Banner -->
+            <div class="ai-response" style="color: #4CAF50; font-family: monospace; white-space: pre; margin-bottom: 10px;">    ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
+ ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
+ ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
+ ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
+ ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
+ ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
+ ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</div>
+            <div class="ai-response" style="color: #4CAF50; margin-bottom: 15px;">Welcome to Amazon Q webchat!</div>
+            <div class="ai-response" style="color: #cccccc; margin-bottom: 15px;">Ask me anything using the search bar below. I can help with AWS services, coding, troubleshooting, and more.</div>
+            <!-- Conversation entries will be added here dynamically -->
+        </div>
+
+        <div class="search-container">
+            <input type="text" id="searchInput" class="search-input" placeholder="Ask Amazon Q anything..." autocomplete="off" spellcheck="false">
+            <button id="sendButton" class="send-button">Send</button>
+        </div>
+    </div>
+
+    <script>
+        class WebTerminal {
+            constructor() {
+                this.socket = null;
+                this.content = document.getElementById('terminalContent');
+                this.searchInput = document.getElementById('searchInput');
+                this.sendButton = document.getElementById('sendButton');
+                this.status = document.getElementById('connectionStatus');
+                this.commandHistory = [];
+                this.historyIndex = -1;
+                this.currentCommand = '';
+                this.waitingForResponse = false;
+                this.startupPhase = true; // Track if we're still in startup phase
+
+                this.connect();
+                this.setupEventListeners();
+            }
+
+            connect() {
+                const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+                this.updateStatus('connecting', 'Connecting...');
+
+                this.socket = new WebSocket(wsUrl);
+
+                this.socket.onopen = () => {
+                    this.updateStatus('connected', 'Connected');
+                    this.searchInput.focus();
+                };
+
+                this.socket.onmessage = (event) => {
+                    try {
+                        const message = JSON.parse(event.data);
+                        this.handleMessage(message);
+                    } catch (e) {
+                        console.error('Failed to parse message:', e);
+                    }
+                };
+
+                this.socket.onclose = () => {
+                    this.updateStatus('disconnected', 'Disconnected');
+                    // Attempt to reconnect after 3 seconds
+                    setTimeout(() => this.connect(), 3000);
+                };
+
+                this.socket.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    this.updateStatus('disconnected', 'Connection Error');
+                };
+            }
+
+            updateStatus(status, text) {
+                this.status.className = `connection-status ${status}`;
+                this.status.textContent = text;
+            }
+
+            handleMessage(message) {
+                switch (message.type) {
+                    case 'output':
+                        this.handleOutput(message.data);
+                        break;
+                    case 'error':
+                        this.addErrorMessage(message.data);
+                        this.enableInput();
+                        break;
+                    case 'exit':
+                        this.handleExit();
+                        break;
+                }
+            }
+
+            handleOutput(data) {
+                // Clean up MCP server initialization messages
+                const cleanedData = this.cleanMCPMessage(data);
+
+                // Skip if message was completely filtered out
+                if (!cleanedData) {
+                    return;
+                }
+
+                // Check if output contains 'Allow this action' - special handling
+                if (cleanedData.includes('Allow this action')) {
+                    this.addPermissionPrompt(cleanedData);
+                    this.enableInput();
+                    return;
+                }
+
+                // Check if this is a prompt (ends with $ )
+                if (cleanedData.match(/.*\$ $/)) {
+                    // If we're in startup phase, filter out shell prompts
+                    if (this.startupPhase) {
+                        return; // Skip shell prompts during startup
+                    }
+                    // After startup, ignore prompts in search bar mode
+                    this.enableInput();
+                    return;
+                }
+
+                // If we get meaningful content, we're past startup phase
+                if (cleanedData.trim() !== '' && !this.isStartupMessage(cleanedData)) {
+                    this.startupPhase = false;
+                }
+
+                if (cleanedData.trim() !== '') {
+                    // Add AI response to conversation
+                    this.addAIResponse(cleanedData);
+                }
+
+                this.enableInput();
+                this.scrollToBottom();
+            }
+
+            isStartupMessage(data) {
+                // Check if this is still a startup/initialization message
+                const startupPatterns = [
+                    /connected to mcp/i,
+                    /loading/i,
+                    /initializing/i,
+                    /starting/i,
+                    /server/i,
+                    /mcp/i
+                ];
+
+                return startupPatterns.some(pattern => pattern.test(data));
+            }
+
+            cleanMCPMessage(data) {
+                // Remove non-ASCII characters (keep only printable ASCII)
+                let cleaned = data.replace(/[^\x20-\x7E\n\r\t]/g, '');
+
+                // Remove excessive newlines (more than 2 consecutive)
+                cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+
+                // Remove leading/trailing whitespace
+                cleaned = cleaned.trim();
+
+                // Filter out pure numeric strings or very short meaningless strings
+                if (/^\d+$/.test(cleaned) || cleaned.length < 3) {
+                    return null; // Filter out completely
+                }
+
+                // During startup, be more aggressive about filtering numeric/garbage strings
+                if (this.startupPhase) {
+                    // Filter strings that are mostly numbers with some non-letters
+                    if (/^\d{4,}/.test(cleaned)) { // 4+ consecutive digits at start
+                        return null;
+                    }
+                    
+                    // Filter strings with high ratio of numbers to letters
+                    const digitCount = (cleaned.match(/\d/g) || []).length;
+                    const letterCount = (cleaned.match(/[a-zA-Z]/g) || []).length;
+                    if (digitCount > letterCount && digitCount > 3) {
+                        return null;
+                    }
+                    
+                    // Filter out [Q] messages during startup
+                    if (/\[Q\]/i.test(cleaned)) {
+                        return null;
+                    }
+                    
+                    // Filter out other Q-related startup messages
+                    if (/^\[.*Q.*\]/i.test(cleaned)) {
+                        return null;
+                    }
+                }
+
+                // Filter out shell prompts (both during startup and after responses)
+                if (this.isShellPrompt(cleaned)) {
+                    return null; // Filter out completely
+                }
+
+                // Remove timestamp patterns at the beginning
+                cleaned = cleaned.replace(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s]*\s*/, '');
+
+                // Remove debug/log level prefixes but keep the message
+                cleaned = cleaned.replace(/^(DEBUG|INFO|WARN|ERROR):\s*/i, '');
+
+                return cleaned.trim();
+            }
+
+            isShellPrompt(data) {
+                // Detect various shell prompt patterns
+                const shellPromptPatterns = [
+                    /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+.*\[Q\].*\$\s*$/,  // username@hostname [Q] $
+                    /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+.*\$\s*$/,         // username@hostname $
+                    /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+.*>\s*$/,          // username@hostname >
+                    /^[a-zA-Z0-9_-]+@[a-zA-Z0-9_.-]+.*#\s*$/,          // username@hostname #
+                    /^\$\s*$/,                                          // Just $
+                    /^.*\$\s*Q-Chat>\s*$/,                              // Our custom prompt
+                    /^.*\$\s*$/                                         // Any path ending with $
+                ];
+
+                return shellPromptPatterns.some(pattern => pattern.test(data.trim()));
+            }
+
+            addConversationEntry(userInput, aiResponse = null, isError = false) {
+                const entry = document.createElement('div');
+                entry.className = 'conversation-entry';
+
+                // Add user input
+                const userDiv = document.createElement('div');
+                userDiv.className = 'user-input';
+                userDiv.textContent = userInput;
+                entry.appendChild(userDiv);
+
+                // Add AI response if provided
+                if (aiResponse) {
+                    const aiDiv = document.createElement('div');
+                    aiDiv.className = isError ? 'error-text' : 'ai-response';
+                    aiDiv.textContent = aiResponse;
+                    entry.appendChild(aiDiv);
+                }
+
+                this.content.appendChild(entry);
+                this.scrollToBottom();
+
+                return entry;
+            }
+
+            addAIResponse(response) {
+                // Find the last conversation entry and add response to it
+                const lastEntry = this.content.querySelector('.conversation-entry:last-child');
+                if (lastEntry && !lastEntry.querySelector('.ai-response, .error-text')) {
+                    const aiDiv = document.createElement('div');
+                    aiDiv.className = 'ai-response';
+                    // Remove trailing newlines and extra whitespace
+                    aiDiv.textContent = response.replace(/\n+$/, '').replace(/\n\n+/g, '\n');
+                    lastEntry.appendChild(aiDiv);
+                } else {
+                    // Create new entry with just AI response (shouldn't normally happen)
+                    const entry = document.createElement('div');
+                    entry.className = 'conversation-entry';
+
+                    const aiDiv = document.createElement('div');
+                    aiDiv.className = 'ai-response';
+                    // Remove trailing newlines and extra whitespace
+                    aiDiv.textContent = response.replace(/\n+$/, '').replace(/\n\n+/g, '\n');
+                    entry.appendChild(aiDiv);
+
+                    this.content.appendChild(entry);
+                }
+
+                this.scrollToBottom();
+            }
+
+            addErrorMessage(error) {
+                const lastEntry = this.content.querySelector('.conversation-entry:last-child');
+                if (lastEntry && !lastEntry.querySelector('.ai-response, .error-text')) {
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-text';
+                    errorDiv.textContent = error;
+                    lastEntry.appendChild(errorDiv);
+                } else {
+                    // Create new entry with just error
+                    const entry = document.createElement('div');
+                    entry.className = 'conversation-entry';
+
+                    const errorDiv = document.createElement('div');
+                    errorDiv.className = 'error-text';
+                    errorDiv.textContent = error;
+                    entry.appendChild(errorDiv);
+
+                    this.content.appendChild(entry);
+                }
+
+                this.scrollToBottom();
+            }
+
+            addPermissionPrompt(prompt) {
+                // Add permission prompt as a special AI response
+                const entry = document.createElement('div');
+                entry.className = 'conversation-entry';
+
+                const promptDiv = document.createElement('div');
+                promptDiv.className = 'ai-response';
+                promptDiv.textContent = prompt;
+                entry.appendChild(promptDiv);
+
+                this.content.appendChild(entry);
+                this.searchInput.placeholder = "Type your response (y/n)...";
+                this.scrollToBottom();
+            }
+
+            addStatusMessage(message) {
+                const statusDiv = document.createElement('div');
+                statusDiv.className = 'status-message';
+                statusDiv.textContent = message;
+
+                // Add to last conversation entry if it exists
+                const lastEntry = this.content.querySelector('.conversation-entry:last-child');
+                if (lastEntry) {
+                    lastEntry.appendChild(statusDiv);
+                } else {
+                    this.content.appendChild(statusDiv);
+                }
+
+                this.scrollToBottom();
+            }
+
+            setupEventListeners() {
+                // Search input event listeners
+                this.searchInput.addEventListener('keydown', (e) => {
+                    switch (e.key) {
+                        case 'Enter':
+                            e.preventDefault();
+                            this.executeCommand();
+                            break;
+                        case 'ArrowUp':
+                            e.preventDefault();
+                            this.navigateHistory(-1);
+                            break;
+                        case 'ArrowDown':
+                            e.preventDefault();
+                            this.navigateHistory(1);
+                            break;
+                    }
+                });
+
+                // Send button click
+                this.sendButton.addEventListener('click', () => {
+                    this.executeCommand();
+                });
+
+                // Keep input focused
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.search-container')) {
+                        this.searchInput.focus();
+                    }
+                });
+
+                // Handle window resize
+                window.addEventListener('resize', () => {
+                    this.scrollToBottom();
+                });
+            }
+
+            executeCommand() {
+                const command = this.searchInput.value.trim();
+
+                if (!command || this.waitingForResponse) return;
+
+                // Add to history
+                if (command) {
+                    this.commandHistory.push(command);
+                    if (this.commandHistory.length > 1000) {
+                        this.commandHistory.shift();
+                    }
+                }
+
+                this.historyIndex = -1;
+                this.currentCommand = '';
+
+                // Create conversation entry with user input
+                const entry = this.addConversationEntry(command);
+
+                // Add status message
+                this.addStatusMessage('Sending to Q...');
+
+                // Clear input and disable
+                this.searchInput.value = '';
+                this.disableInput();
+
+                // Send command to server
+                this.sendCommand(command);
+
+                this.scrollToBottom();
+            }
+
+            sendCommand(command) {
+                if (this.socket && this.socket.readyState === WebSocket.OPEN) {
+                    const message = {
+                        type: 'command',
+                        data: command
+                    };
+                    this.socket.send(JSON.stringify(message));
+                }
+            }
+
+            navigateHistory(direction) {
+                if (this.commandHistory.length === 0) return;
+
+                // Save current input if we're at the bottom
+                if (this.historyIndex === -1) {
+                    this.currentCommand = this.searchInput.value;
+                }
+
+                this.historyIndex += direction;
+
+                // Clamp to valid range
+                if (this.historyIndex < -1) {
+                    this.historyIndex = -1;
+                } else if (this.historyIndex >= this.commandHistory.length) {
+                    this.historyIndex = this.commandHistory.length - 1;
+                }
+
+                // Update input
+                if (this.historyIndex === -1) {
+                    this.searchInput.value = this.currentCommand;
+                } else {
+                    this.searchInput.value = this.commandHistory[this.commandHistory.length - 1 - this.historyIndex];
+                }
+
+                // Move cursor to end
+                this.searchInput.setSelectionRange(this.searchInput.value.length, this.searchInput.value.length);
+            }
+
+            disableInput() {
+                this.waitingForResponse = true;
+                this.searchInput.disabled = true;
+                this.sendButton.disabled = true;
+                this.searchInput.placeholder = "Waiting for response...";
+            }
+
+            enableInput() {
+                this.waitingForResponse = false;
+                this.searchInput.disabled = false;
+                this.sendButton.disabled = false;
+                this.searchInput.placeholder = "Ask Amazon Q anything...";
+                this.searchInput.focus();
+            }
+
+            handleExit() {
+                this.addStatusMessage('Session ended.');
+                this.searchInput.disabled = true;
+                this.sendButton.disabled = true;
+            }
+
+            scrollToBottom() {
+                this.content.scrollTop = this.content.scrollHeight;
+            }
+        }
+
+        // Initialize terminal when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new WebTerminal();
+        });
+    </script>
+</body>
+</html>
