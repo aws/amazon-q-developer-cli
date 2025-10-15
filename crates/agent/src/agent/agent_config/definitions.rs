@@ -88,7 +88,6 @@ impl Config {
     }
 }
 
-// TODO: use default implementation as an orchestrator agent
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
@@ -176,7 +175,7 @@ impl Default for AgentConfigV2025_08_22 {
             use_legacy_mcp_json: false,
 
             resources: Default::default(),
-            allowed_tools: Default::default(),
+            allowed_tools: HashSet::from([BuiltInToolName::FileRead.to_string()]),
         }
     }
 }
@@ -382,6 +381,6 @@ mod tests {
             "description": "The orchestrator agent",
         });
 
-        let agent: Config = serde_json::from_value(agent).unwrap();
+        let _: Config = serde_json::from_value(agent).unwrap();
     }
 }

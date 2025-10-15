@@ -322,7 +322,7 @@ impl AgentLoop {
                     self.loop_event_tx.send(ev).await.ok();
                 }
 
-                Ok(AgentLoopResponse::Metadata(metadata))
+                Ok(AgentLoopResponse::Metadata(Box::new(metadata)))
             },
         }
     }
@@ -679,7 +679,7 @@ impl AgentLoopHandle {
             .await
             .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
         {
-            AgentLoopResponse::Metadata(md) => Ok(md),
+            AgentLoopResponse::Metadata(md) => Ok(*md),
             other => Err(AgentLoopResponseError::Custom(format!(
                 "unknown response getting execution state: {:?}",
                 other,

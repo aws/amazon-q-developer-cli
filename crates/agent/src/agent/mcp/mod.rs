@@ -1,6 +1,6 @@
 mod actor;
 mod service;
-mod types;
+pub mod types;
 
 use std::collections::HashMap;
 
@@ -24,6 +24,7 @@ use tracing::{
     error,
     warn,
 };
+use types::Prompt;
 
 use super::agent_loop::types::ToolSpec;
 use super::util::request_channel::{
@@ -77,6 +78,21 @@ impl McpManagerHandle {
             .unwrap_or(Err(McpManagerError::Channel))?
         {
             McpManagerResponse::ToolSpecs(v) => Ok(v),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
+        }
+    }
+
+    pub async fn get_prompts(&self, server_name: String) -> Result<Vec<Prompt>, McpManagerError> {
+        match self
+            .sender
+            .send_recv(McpManagerRequest::GetPrompts { server_name })
+            .await
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::Prompts(v) => Ok(v),
             other => Err(McpManagerError::Custom(format!(
                 "received unexpected response: {:?}",
                 other
@@ -201,9 +217,13 @@ impl McpManager {
                 self.initializing_servers.insert(name, (handle, tx));
                 Ok(McpManagerResponse::LaunchServer(rx))
             },
-            McpManagerRequest::GetToolSpecs { server_name: name } => match self.servers.get(&name) {
+            McpManagerRequest::GetToolSpecs { server_name } => match self.servers.get(&server_name) {
                 Some(handle) => Ok(McpManagerResponse::ToolSpecs(handle.get_tool_specs().await?)),
-                None => Err(McpManagerError::ServerNotInitialized { name }),
+                None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
+            },
+            McpManagerRequest::GetPrompts { server_name } => match self.servers.get(&server_name) {
+                Some(handle) => Ok(McpManagerResponse::Prompts(handle.get_prompts().await?)),
+                None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
             },
             McpManagerRequest::ExecuteTool {
                 server_name,
@@ -253,6 +273,12 @@ impl McpManager {
     }
 }
 
+impl Default for McpManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum McpManagerRequest {
     LaunchServer {
@@ -262,7 +288,9 @@ pub enum McpManagerRequest {
         config: McpServerConfig,
     },
     GetToolSpecs {
-        /// Server name
+        server_name: String,
+    },
+    GetPrompts {
         server_name: String,
     },
     ExecuteTool {
@@ -276,6 +304,7 @@ pub enum McpManagerRequest {
 pub enum McpManagerResponse {
     LaunchServer(oneshot::Receiver<LaunchServerResult>),
     ToolSpecs(Vec<ToolSpec>),
+    Prompts(Vec<Prompt>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
 }
 
@@ -297,49 +326,4 @@ pub enum McpManagerError {
     Channel,
     #[error("{}", .0)]
     Custom(String),
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    const MCP_CONFIG: &str = r#"
-{
-    "mcpServers": {
-        "amazon-internal-mcp-server": {
-            "command": "amzn-mcp",
-            "args": [],
-            "env": {}
-        },
-        "aws-knowledge-mcp-server": {
-            "type": "http",
-            "url": "https://knowledge-mcp.global.api.aws"
-        },
-        "github": {
-            "type": "http",
-            "url": "https://api.githubcopilot.com/mcp/"
-        }
-    }
-}
-"#;
-
-    const LOCAL_CONFIG: &str = r#"
-{
-    "command": "amzn-mcp",
-    "args": [],
-    "env": {}
-}
-"#;
-
-    #[tokio::test]
-    async fn test_mcp_actor() {
-        let mut handle = McpServerActor::spawn("Amazon MCP".to_string(), serde_json::from_str(LOCAL_CONFIG).unwrap());
-        let res = handle.recv().await;
-        println!("Got res: {:?}", res);
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let tools = handle.get_tool_specs().await;
-        println!("Got tools: {:?}", tools);
-        let prompts = handle.get_prompts().await;
-        println!("Got prompts: {:?}", prompts);
-    }
 }

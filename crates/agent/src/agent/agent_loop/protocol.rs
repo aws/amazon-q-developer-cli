@@ -59,7 +59,7 @@ pub enum AgentLoopResponse {
     ExecutionState(LoopState),
     StreamMetadata(Vec<StreamMetadata>),
     PendingToolUses(Option<Vec<ToolUseBlock>>),
-    Metadata(UserTurnMetadata),
+    Metadata(Box<UserTurnMetadata>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]

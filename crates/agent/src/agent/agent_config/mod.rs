@@ -49,6 +49,7 @@ use crate::agent::util::error::{
 #[derive(Debug, Clone)]
 pub struct AgentConfig {
     /// Where the config was sourced from
+    #[allow(dead_code)]
     source: ConfigSource,
     /// The actual config content
     config: Config,
@@ -260,7 +261,7 @@ async fn load_agents_from_dir(
 #[derive(Debug, Clone)]
 pub struct LoadedMcpServerConfig {
     /// The name (aka id) to associate with the config
-    pub name: String,
+    pub server_name: String,
     /// The mcp server config
     pub config: McpServerConfig,
     /// Where the config originated from
@@ -268,8 +269,12 @@ pub struct LoadedMcpServerConfig {
 }
 
 impl LoadedMcpServerConfig {
-    fn new(name: String, config: McpServerConfig, source: McpServerConfigSource) -> Self {
-        Self { name, config, source }
+    fn new(server_name: String, config: McpServerConfig, source: McpServerConfigSource) -> Self {
+        Self {
+            server_name,
+            config,
+            source,
+        }
     }
 }
 
@@ -303,8 +308,12 @@ impl LoadedMcpServerConfigs {
         if config.use_legacy_mcp_json() {
             let mut push_configs = |mcp_servers: McpServers, source: McpServerConfigSource| {
                 for (name, config) in mcp_servers.mcp_servers {
-                    let config = LoadedMcpServerConfig { name, config, source };
-                    if configs.iter().any(|c| c.name == config.name) {
+                    let config = LoadedMcpServerConfig {
+                        server_name: name,
+                        config,
+                        source,
+                    };
+                    if configs.iter().any(|c| c.server_name == config.server_name) {
                         overwritten_configs.push(config);
                     } else {
                         configs.push(config);
@@ -335,6 +344,10 @@ impl LoadedMcpServerConfigs {
             configs,
             overridden_configs: overwritten_configs,
         }
+    }
+
+    pub fn server_names(&self) -> Vec<String> {
+        self.configs.iter().map(|c| c.server_name.clone()).collect()
     }
 }
 

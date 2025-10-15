@@ -154,7 +154,7 @@ impl McpService {
 
                 Ok((RunningMcpService::new(server_name, service, stderr), launch_md))
             },
-            McpServerConfig::StreamableHTTP(config) => {
+            McpServerConfig::StreamableHTTP(_) => {
                 eyre::bail!("not supported");
             },
         }
@@ -189,11 +189,11 @@ impl rmcp::Service<RoleClient> for McpService {
         match notification {
             ServerNotification::ToolListChangedNotification(_) => {
                 let tools = context.peer.list_all_tools().await;
-                let _ = self.message_tx.send(McpMessage::ToolsResult(tools)).await;
+                let _ = self.message_tx.send(McpMessage::Tools(tools)).await;
             },
             ServerNotification::PromptListChangedNotification(_) => {
                 let prompts = context.peer.list_all_prompts().await;
-                let _ = self.message_tx.send(McpMessage::PromptsResult(prompts)).await;
+                let _ = self.message_tx.send(McpMessage::Prompts(prompts)).await;
             },
             ServerNotification::LoggingMessageNotification(notif) => {
                 let level = notif.params.level;

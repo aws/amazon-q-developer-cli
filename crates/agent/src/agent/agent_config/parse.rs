@@ -1,3 +1,5 @@
+//! Utilities for semantic parsing of agent config values
+
 use std::borrow::Cow;
 use std::str::FromStr;
 
@@ -6,14 +8,7 @@ use crate::agent::protocol::AgentError;
 use crate::agent::tools::BuiltInToolName;
 use crate::agent::util::path::canonicalize_path;
 
-#[derive(Debug, Clone)]
-pub struct Resource {
-    /// Exact value from the config this resource was taken from
-    pub config_value: String,
-    /// Resource content
-    pub content: String,
-}
-
+/// Represents a value from the `resources` array in the agent config.
 pub enum ResourceKind<'a> {
     File { original: &'a str, file_path: &'a str },
     FileGlob { original: &'a str, pattern: glob::Pattern },
@@ -22,7 +17,7 @@ pub enum ResourceKind<'a> {
 impl<'a> ResourceKind<'a> {
     pub fn parse(value: &'a str) -> Result<Self, String> {
         if !value.starts_with("file://") {
-            return Err("Only file schemes are supported now".to_string());
+            return Err("Only file schemes are currently supported".to_string());
         }
 
         let file_path = value.trim_start_matches("file://");

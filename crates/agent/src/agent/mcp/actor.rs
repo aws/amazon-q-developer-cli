@@ -41,14 +41,14 @@ use crate::agent::util::request_channel::{
 /// Represents a message from an MCP server to the client.
 #[derive(Debug)]
 pub enum McpMessage {
-    ToolsResult(Result<Vec<RmcpTool>, ServiceError>),
-    PromptsResult(Result<Vec<RmcpPrompt>, ServiceError>),
-    ExecuteToolResult { request_id: u32, result: ExecuteToolResult },
+    Tools(Result<Vec<RmcpTool>, ServiceError>),
+    Prompts(Result<Vec<RmcpPrompt>, ServiceError>),
+    ExecuteTool { request_id: u32, result: ExecuteToolResult },
 }
 
 #[derive(Debug)]
 pub struct McpServerActorHandle {
-    server_name: String,
+    _server_name: String,
     sender: RequestSender<McpServerActorRequest, McpServerActorResponse, McpServerActorError>,
     event_rx: mpsc::Receiver<McpServerActorEvent>,
 }
@@ -172,8 +172,8 @@ pub enum McpServerActorEvent {
 pub struct McpServerActor {
     /// Name of the MCP server
     server_name: String,
-    /// Config the server was launched with
-    config: McpServerConfig,
+    /// Config the server was launched with. Kept for debug purposes.
+    _config: McpServerConfig,
     /// Tools
     tools: Vec<ToolSpec>,
     /// Prompts
@@ -203,7 +203,7 @@ impl McpServerActor {
         tokio::spawn(async move { Self::launch(server_name_clone, config, req_rx, event_tx).await });
 
         McpServerActorHandle {
-            server_name,
+            _server_name: server_name,
             sender: req_tx,
             event_rx,
         }
@@ -223,7 +223,7 @@ impl McpServerActor {
             Ok((service_handle, launch_md)) => {
                 let s = Self {
                     server_name,
-                    config,
+                    _config: config,
                     tools: launch_md.tools.unwrap_or_default(),
                     prompts: launch_md.prompts.unwrap_or_default(),
                     service_handle,
@@ -292,9 +292,7 @@ impl McpServerActor {
                         })
                         .await
                         .map_err(McpServerActorError::from);
-                    let _ = message_tx
-                        .send(McpMessage::ExecuteToolResult { request_id, result })
-                        .await;
+                    let _ = message_tx.send(McpMessage::ExecuteTool { request_id, result }).await;
                 });
                 self.executing_tools.insert(self.curr_tool_execution_id, tx);
                 Ok(McpServerActorResponse::ExecuteTool(rx))
@@ -309,19 +307,19 @@ impl McpServerActor {
             return;
         };
         match msg {
-            McpMessage::ToolsResult(res) => match res {
+            McpMessage::Tools(res) => match res {
                 Ok(tools) => self.tools = tools.into_iter().map(Into::into).collect(),
                 Err(err) => {
                     error!(?err, "failed to list tools");
                 },
             },
-            McpMessage::PromptsResult(res) => match res {
+            McpMessage::Prompts(res) => match res {
                 Ok(prompts) => self.prompts = prompts.into_iter().map(Into::into).collect(),
                 Err(err) => {
                     error!(?err, "failed to list prompts");
                 },
             },
-            McpMessage::ExecuteToolResult { request_id, result } => match self.executing_tools.remove(&request_id) {
+            McpMessage::ExecuteTool { request_id, result } => match self.executing_tools.remove(&request_id) {
                 Some(tx) => {
                     let _ = tx.send(result);
                 },
@@ -337,22 +335,24 @@ impl McpServerActor {
     }
 
     /// Asynchronously fetch all tools
+    #[allow(dead_code)]
     fn refresh_tools(&self) {
         let service_handle = self.service_handle.clone();
         let tx = self.message_tx.clone();
         tokio::spawn(async move {
             let res = service_handle.list_tools().await;
-            let _ = tx.send(McpMessage::ToolsResult(res)).await;
+            let _ = tx.send(McpMessage::Tools(res)).await;
         });
     }
 
     /// Asynchronously fetch all prompts
+    #[allow(dead_code)]
     fn refresh_prompts(&self) {
         let service_handle = self.service_handle.clone();
         let tx = self.message_tx.clone();
         tokio::spawn(async move {
             let res = service_handle.list_prompts().await;
-            let _ = tx.send(McpMessage::PromptsResult(res)).await;
+            let _ = tx.send(McpMessage::Prompts(res)).await;
         });
     }
 }

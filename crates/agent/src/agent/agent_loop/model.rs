@@ -87,23 +87,23 @@ impl Model for Models {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct TestModel {}
 
 impl TestModel {
     pub fn new() -> Self {
-        Self {}
+        Self::default()
     }
 }
 
 impl Model for TestModel {
     fn stream(
         &self,
-        messages: Vec<Message>,
-        tool_specs: Option<Vec<ToolSpec>>,
-        system_prompt: Option<String>,
-        cancel_token: CancellationToken,
+        _messages: Vec<Message>,
+        _tool_specs: Option<Vec<ToolSpec>>,
+        _system_prompt: Option<String>,
+        _cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
-        todo!()
+        panic!("unimplemented")
     }
 }

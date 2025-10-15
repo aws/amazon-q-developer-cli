@@ -157,7 +157,7 @@ impl ToolKind {
                 BuiltInTool::FileWrite(fw) => fw.make_context().await.ok().map(ToolContext::FileWrite),
                 _ => None,
             },
-            ToolKind::Mcp(mcp) => None,
+            ToolKind::Mcp(_) => None,
         }
     }
 }

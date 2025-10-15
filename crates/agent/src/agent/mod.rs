@@ -7,12 +7,12 @@ mod permissions;
 pub mod protocol;
 pub mod rts;
 pub mod task_executor;
+mod tool_utils;
 pub mod tools;
 pub mod types;
 pub mod util;
 
 use std::collections::{
-    BTreeMap,
     HashMap,
     HashSet,
     VecDeque,
@@ -26,7 +26,6 @@ use agent_config::definitions::{
 };
 use agent_config::parse::{
     CanonicalToolName,
-    Resource,
     ResourceKind,
     ToolNameKind,
     ToolParseError,
@@ -68,12 +67,7 @@ use compact::{
     CompactingState,
     create_summary_prompt,
 };
-use consts::{
-    MAX_RESOURCE_FILE_LENGTH,
-    MAX_TOOL_NAME_LEN,
-    MAX_TOOL_SPEC_DESCRIPTION_LEN,
-    RTS_VALID_TOOL_NAME_REGEX,
-};
+use consts::MAX_RESOURCE_FILE_LENGTH;
 use futures::stream::FuturesUnordered;
 use mcp::McpManager;
 use permissions::evaluate_tool_permission;
@@ -88,7 +82,6 @@ use protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
 };
-use regex::Regex;
 use rts::RtsModel;
 use serde::{
     Deserialize,
@@ -116,6 +109,10 @@ use tokio::sync::{
 use tokio::time::Instant;
 use tokio_stream::StreamExt as _;
 use tokio_util::sync::CancellationToken;
+use tool_utils::{
+    SanitizedToolSpecs,
+    sanitize_tool_specs,
+};
 use tools::mcp::McpTool;
 use tools::{
     ToolExecutionError,
@@ -336,13 +333,13 @@ impl Agent {
             for config in &self.cached_mcp_configs.configs {
                 let Ok(rx) = self
                     .mcp_manager_handle
-                    .launch_server(config.name.clone(), config.config.clone())
+                    .launch_server(config.server_name.clone(), config.config.clone())
                     .await
                 else {
-                    warn!(?config.name, "failed to launch MCP config, skipping");
+                    warn!(?config.server_name, "failed to launch MCP config, skipping");
                     continue;
                 };
-                let name = config.name.clone();
+                let name = config.server_name.clone();
                 results.push(async move { (name, rx.await) });
             }
 
@@ -544,6 +541,20 @@ impl Agent {
             AgentRequest::Compact => {
                 self.compact_history().await?;
                 Ok(AgentResponse::Success)
+            },
+            AgentRequest::GetMcpPrompts => {
+                let mut response = HashMap::new();
+                for server_name in self.cached_mcp_configs.server_names() {
+                    match self.mcp_manager_handle.get_prompts(server_name.clone()).await {
+                        Ok(p) => {
+                            response.insert(server_name, p);
+                        },
+                        Err(err) => {
+                            warn!(server_name, ?err, "failed to get prompts from server");
+                        },
+                    }
+                }
+                Ok(AgentResponse::McpPrompts(response))
             },
         }
     }
@@ -991,6 +1002,14 @@ impl Agent {
     }
 
     /// Entrypoint for handling tool uses returned by the model.
+    ///
+    /// The process for handling tool uses follows the pipeline:
+    /// 1. *Parse tools* - If any fail parsing, return errors back to the model.
+    /// 2. *Evaluate permissions* - If any are denied, return the denied reasons back to the model.
+    /// 3. *Run preToolUse hooks, if any* - If a hook rejects a tool use, return back to the model.
+    /// 4. *Request approvals, if required* - If a tool use is denied by the user, return back to
+    ///    the model.
+    /// 5. *Execute tools*
     async fn handle_tool_uses(&mut self, tool_uses: Vec<ToolUseBlock>) -> Result<(), AgentError> {
         debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest));
 
@@ -1318,11 +1337,11 @@ impl Agent {
         }
 
         let sanitized_specs = sanitize_tool_specs(tool_names, mcp_server_tool_specs, self.agent_config.tool_aliases());
-        if !sanitized_specs.transformed_tool_specs.is_empty() {
-            warn!(?sanitized_specs.transformed_tool_specs, "some tool specs were transformed");
+        if !sanitized_specs.transformed_tool_specs().is_empty() {
+            warn!(transformed_tool_spec = ?sanitized_specs.transformed_tool_specs(), "some tool specs were transformed");
         }
-        if !sanitized_specs.filtered_specs.is_empty() {
-            warn!(?sanitized_specs.filtered_specs, "filtered some tool specs");
+        if !sanitized_specs.filtered_specs().is_empty() {
+            warn!(filtered_specs = ?sanitized_specs.filtered_specs(), "filtered some tool specs");
         }
         let tool_specs = sanitized_specs.tool_specs();
         self.cached_tool_specs = Some(sanitized_specs);
@@ -1347,11 +1366,13 @@ impl Agent {
                         }
 
                         for config in &self.cached_mcp_configs.configs {
-                            let Ok(specs) = self.mcp_manager_handle.get_tool_specs(config.name.clone()).await else {
+                            let Ok(specs) = self.mcp_manager_handle.get_tool_specs(config.server_name.clone()).await
+                            else {
                                 continue;
                             };
                             for spec in specs {
-                                tool_names.insert(CanonicalToolName::from_mcp_parts(config.name.clone(), spec.name));
+                                tool_names
+                                    .insert(CanonicalToolName::from_mcp_parts(config.server_name.clone(), spec.name));
                             }
                         }
                     },
@@ -1421,8 +1442,8 @@ impl Agent {
         // Next, parse tool from the name.
         for tool_use in tool_uses {
             let canonical_tool_name = match &self.cached_tool_specs {
-                Some(specs) => match specs.tool_map.get(&tool_use.name) {
-                    Some(spec) => spec.canonical_name.clone(),
+                Some(specs) => match specs.tool_map().get(&tool_use.name) {
+                    Some(spec) => spec.canonical_name().clone(),
                     None => {
                         parse_errors.push(ToolParseError::new(
                             tool_use.clone(),
@@ -1815,207 +1836,6 @@ where
     vec![user_msg, assistant_msg]
 }
 
-/// Categorizes different types of tool name validation failures according to the requirements by
-/// the RTS API.
-#[derive(Debug, Clone)]
-struct ToolValidationError {
-    mcp_server_name: String,
-    tool_spec: ToolSpec,
-    kind: ToolValidationErrorKind,
-}
-
-impl ToolValidationError {
-    fn new(mcp_server_name: String, tool_spec: ToolSpec, kind: ToolValidationErrorKind) -> Self {
-        Self {
-            mcp_server_name,
-            tool_spec,
-            kind,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-enum ToolValidationErrorKind {
-    OutOfSpecName { transformed_name: String },
-    EmptyName,
-    NameTooLong,
-    EmptyDescription,
-    DescriptionTooLong,
-    NameCollision(CanonicalToolName),
-}
-
-/// Represents a set of tool specs that conforms to the backend validations.
-///
-/// # Background
-///
-/// MCP servers can return invalid tool specifications according to the backend validations (e.g.,
-/// names too long, invalid name format, empty description, and so on).
-///
-/// Therefore, we need to perform some transformations on the tool name and resulting tool spec
-/// before sending it to the backend.
-#[derive(Debug, Clone)]
-struct SanitizedToolSpecs {
-    /// Mapping from a transformed tool name to the canonical tool name and corresponding tool
-    /// spec.
-    tool_map: HashMap<String, SanitizedToolSpec>,
-    /// Tool specs that could not be included due to failed validations.
-    filtered_specs: Vec<ToolValidationError>,
-    /// Tool specs that are included in [Self::tool_map] but underwent transformations in order to
-    /// conform to the validation requirements.
-    transformed_tool_specs: Vec<ToolValidationError>,
-}
-
-impl SanitizedToolSpecs {
-    fn tool_specs(&self) -> Vec<ToolSpec> {
-        self.tool_map.values().map(|v| v.tool_spec.clone()).collect()
-    }
-}
-
-/// Represents a tool spec that conforms to the backend validations.
-///
-/// See [SanitizedToolSpecs] for more background.
-#[derive(Debug, Clone)]
-struct SanitizedToolSpec {
-    canonical_name: CanonicalToolName,
-    tool_spec: ToolSpec,
-}
-
-fn sanitize_tool_specs(
-    canonical_names: Vec<CanonicalToolName>,
-    mcp: HashMap<String, Vec<ToolSpec>>,
-    aliases: &HashMap<String, String>,
-) -> SanitizedToolSpecs {
-    // Mapping from tool names as presented to the model, to a sanitized tool spec that won't cause
-    // validation errors.
-    let mut tool_map = HashMap::new();
-
-    // Tool names for mcp servers.
-    // Use a BTreeMap to ensure we process MCP servers in a deterministic order.
-    let mut mcp_tool_names = BTreeMap::new();
-
-    for name in canonical_names {
-        match &name {
-            canon_name @ CanonicalToolName::BuiltIn(name) => {
-                tool_map.insert(name.as_ref().to_string(), SanitizedToolSpec {
-                    canonical_name: canon_name.clone(),
-                    tool_spec: BuiltInTool::generate_tool_spec(name),
-                });
-            },
-            CanonicalToolName::Mcp { server_name, tool_name } => {
-                // MCP tools will be processed below
-                mcp_tool_names
-                    .entry(server_name.clone())
-                    .or_insert_with(HashSet::new)
-                    .insert(tool_name.clone());
-            },
-            CanonicalToolName::Agent { .. } => {
-                // TODO: generate tool spec from agent config
-            },
-        }
-    }
-
-    // Then, add each server's tools, filtering only the tools that are requested.
-    let mut filtered_specs = Vec::new();
-    let mut warnings = Vec::new();
-    let tool_name_regex = Regex::new(RTS_VALID_TOOL_NAME_REGEX).expect("should compile");
-    for (server_name, tool_names) in mcp_tool_names {
-        let Some(all_tool_specs) = mcp.get(&server_name) else {
-            continue;
-        };
-
-        let mut tool_specs = all_tool_specs.clone();
-        tool_specs.retain(|t| tool_names.contains(&t.name));
-
-        // Process MCP tool names to conform to the backend API requirements.
-        //
-        // Tools are subjected to the following validations:
-        // 1. ^[a-zA-Z][a-zA-Z0-9_]*$,
-        // 2. less than 64 characters in length
-        // 3. a non-empty description
-        for mut spec in tool_specs {
-            let canonical_name = CanonicalToolName::from_mcp_parts(server_name.clone(), spec.name.clone());
-            let full_name = canonical_name.as_full_name();
-            let mut is_regex_mismatch = false;
-
-            // First, resolve alias if exists.
-            let name = aliases.get(full_name.as_ref()).cloned().unwrap_or(spec.name.clone());
-
-            // Then, sanitize if required.
-            let sanitized_name = if !tool_name_regex.is_match(&name) {
-                is_regex_mismatch = true;
-                name.chars()
-                    .filter(|c| c.is_ascii_alphabetic() || c.is_ascii_digit() || *c == '_' || *c == '-')
-                    .collect::<String>()
-            } else {
-                name
-            };
-            // Ensure first char is alphabetic.
-            let sanitized_name = match sanitized_name.chars().next() {
-                Some(c) if c.is_ascii_alphabetic() => sanitized_name,
-                Some(_) => format!("a{}", sanitized_name),
-                _ => {
-                    filtered_specs.push(ToolValidationError::new(
-                        server_name.clone(),
-                        spec.clone(),
-                        ToolValidationErrorKind::EmptyName,
-                    ));
-                    continue;
-                },
-            };
-
-            // Perform final validations against the sanitized name.
-            if sanitized_name.len() > MAX_TOOL_NAME_LEN {
-                filtered_specs.push(ToolValidationError::new(
-                    server_name.clone(),
-                    spec.clone(),
-                    ToolValidationErrorKind::NameTooLong,
-                ));
-            } else if spec.description.is_empty() {
-                filtered_specs.push(ToolValidationError::new(
-                    server_name.clone(),
-                    spec.clone(),
-                    ToolValidationErrorKind::EmptyDescription,
-                ));
-            } else if let Some(n) = tool_map.get(sanitized_name.as_str()) {
-                filtered_specs.push(ToolValidationError::new(
-                    server_name.clone(),
-                    spec.clone(),
-                    ToolValidationErrorKind::NameCollision(n.canonical_name.clone()),
-                ));
-            } else {
-                if spec.description.len() > MAX_TOOL_SPEC_DESCRIPTION_LEN {
-                    warnings.push(ToolValidationError::new(
-                        server_name.clone(),
-                        spec.clone(),
-                        ToolValidationErrorKind::DescriptionTooLong,
-                    ));
-                }
-                if is_regex_mismatch {
-                    warnings.push(ToolValidationError::new(
-                        server_name.clone(),
-                        spec.clone(),
-                        ToolValidationErrorKind::OutOfSpecName {
-                            transformed_name: sanitized_name.clone(),
-                        },
-                    ));
-                }
-                spec.name = sanitized_name.clone();
-                spec.description.truncate(MAX_TOOL_SPEC_DESCRIPTION_LEN);
-                tool_map.insert(sanitized_name, SanitizedToolSpec {
-                    canonical_name,
-                    tool_spec: spec,
-                });
-            }
-        }
-    }
-
-    SanitizedToolSpecs {
-        tool_map,
-        filtered_specs,
-        transformed_tool_specs: warnings,
-    }
-}
-
 fn format_user_context_message<T, U, S, V>(
     summary: Option<&str>,
     system_prompt: Option<&str>,
@@ -2116,6 +1936,15 @@ fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut
             input_schema: serde_json::from_str(r#"{"type": "object", "properties": {}, "required": [] }"#).unwrap(),
         });
     }
+}
+
+#[derive(Debug, Clone)]
+struct Resource {
+    /// Exact value from the config this resource was taken from
+    #[allow(dead_code)]
+    config_value: String,
+    /// Resource content
+    content: String,
 }
 
 async fn collect_resources<T, U>(resources: T) -> Vec<Resource>

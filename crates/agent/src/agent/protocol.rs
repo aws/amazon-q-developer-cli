@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{
     Deserialize,
     Serialize,
@@ -17,6 +19,7 @@ use super::agent_loop::types::{
     ToolUseBlock,
 };
 use super::mcp::McpManagerError;
+use super::mcp::types::Prompt;
 use super::task_executor::TaskExecutorEvent;
 use super::tools::ToolKind;
 use super::types::AgentSnapshot;
@@ -70,6 +73,7 @@ pub enum AgentRequest {
     CreateSnapshot,
     /// Compact the conversation history
     Compact,
+    GetMcpPrompts,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -136,6 +140,7 @@ pub enum InputItem {
 pub enum AgentResponse {
     Success,
     Snapshot(AgentSnapshot),
+    McpPrompts(HashMap<String, Vec<Prompt>>),
     Unknown,
 }
 

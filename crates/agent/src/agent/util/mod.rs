@@ -1,3 +1,11 @@
+pub mod consts;
+pub mod directories;
+pub mod error;
+pub mod glob;
+pub mod path;
+pub mod providers;
+pub mod request_channel;
+
 use std::collections::HashMap;
 use std::env::VarError;
 use std::os::unix::fs::MetadataExt as _;
@@ -14,13 +22,6 @@ use tokio::io::{
     AsyncReadExt as _,
     BufReader,
 };
-
-pub mod consts;
-pub mod directories;
-pub mod error;
-pub mod glob;
-pub mod path;
-pub mod request_channel;
 
 pub fn expand_env_vars(env_vars: &mut HashMap<String, String>) {
     let env_provider = |input: &str| Ok(std::env::var(input).ok());
