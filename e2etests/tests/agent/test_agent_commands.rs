@@ -158,7 +158,7 @@ fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
     let save_edit = chat.execute_command(":wq")?;
     
     println!("📝 Edit save response: {} bytes", save_edit.len());
-    println!("📝 EDIT SAVE RESPONSE:"); 
+    println!("📝 EDIT SAVE RESPONSE:");
     println!("{}", save_edit);
     println!("📝 END EDIT SAVE RESPONSE");
 
@@ -484,44 +484,49 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
 /// Verifies agent generation process and response validation
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
-fn test_agent_z_generate_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent generate command... | Description: Tests the <code> /agent generate</code> command to generate agent responses. Verifies agent generation process and response validation");
-    
+fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing /agent generate command... | Description: Tests the /agent generate command with vi editor interaction");
+
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    
-    // Start the command and wait for name prompt
-    let response1 = chat.execute_command("/agent generate")?;
-    // Wait longer for the prompt to fully appear
-    std::thread::sleep(std::time::Duration::from_secs(5));
 
-    // Send agent name after prompt appears
+    // Start the generate command
+    chat.execute_command("/agent generate")?;
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Enter agent name
     chat.send_key_input("test-agent\r")?;
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    
-    // Send description after description prompt appears
-    chat.send_key_input("description\r")?;  // Shorter to avoid truncation
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    
-    // Wait for scope menu, then select Local (Enter)
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Enter description
+    chat.send_key_input("Test agent description\r")?;
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Select scope (Enter for default)
     chat.send_key_input("\r")?;
-    std::thread::sleep(std::time::Duration::from_secs(5));
-    
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
     // Wait for MCP menu, then confirm (Enter)
     let final_response = chat.send_key_input("\r")?;
-   println!("📝 Agent generate response: {} bytes", final_response);
-       assert!(
-        final_response.contains("has been created and saved successfully") || 
-        final_response.contains("Generating agent config") ||
-        final_response.contains("Agent 'test-agent'"),
-        "Expected agent creation success message or generation progress. Got: {}", 
-        final_response
+    std::thread::sleep(std::time::Duration::from_secs(2));
+
+    // Handle vi editor opening - enter insert mode and add content
+    chat.send_key_input("i")?; // Enter insert mode
+   // chat.send_key_input("Test system instructions for the agent")?;
+    chat.send_key_input("\u{1b}")?; // ESC to exit insert mode
+
+    std::thread::sleep(std::time::Duration::from_secs(3));
+
+    // Get final response
+    let final_response = chat.execute_command(":wq")?;
+    println!("📝 Final response: {}", final_response);
+
+    assert!(
+        final_response.contains("has been created and saved successfully") ||
+            final_response.contains("Generating agent config") ||
+            final_response.contains("Agent 'test-agent'"),
+        "Expected agent creation confirmation"
     );
-    // Cleanup
-    let _ = chat.execute_command("/agent delete test-agent");
-    
     drop(chat);
     Ok(())
 }
-
-
