@@ -269,6 +269,9 @@ impl std::io::Write for ControlEnd<DestinationStderr> {
             .insert_content(buf)
             .map_err(|_e| std::io::Error::other("Error inserting content"))?;
 
+        // By default stderr is unbuffered (the content is flushed immediately)
+        self.flush()?;
+
         Ok(buf.len())
     }
 
@@ -283,21 +286,57 @@ impl std::io::Write for ControlEnd<DestinationStderr> {
 
 impl std::io::Write for ControlEnd<DestinationStdout> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        if self.current_event.is_none() {
-            self.current_event
-                .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
-                    Default::default(),
-                )));
+        // By default stdout is line buffered, so we'll delimit the incoming buffer with new line
+        // and flush accordingly.
+        let mut start = 0_usize;
+        let mut end = 0_usize;
+        while end < buf.len() {
+            let Some(byte) = buf.get(end) else {
+                break;
+            };
+
+            if byte == &10 || byte == &13 {
+                if self.current_event.is_none() {
+                    self.current_event
+                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                            Default::default(),
+                        )));
+                }
+
+                let current_event = self
+                    .current_event
+                    .as_mut()
+                    .ok_or(std::io::Error::other("No event set"))?;
+
+                current_event
+                    .insert_content(&buf[start..=end])
+                    .map_err(std::io::Error::other)?;
+
+                self.flush()?;
+
+                start = end + 1;
+            }
+
+            end += 1;
         }
 
-        let current_event = self
-            .current_event
-            .as_mut()
-            .ok_or(std::io::Error::other("No event set"))?;
+        if start < end {
+            if self.current_event.is_none() {
+                self.current_event
+                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                        Default::default(),
+                    )));
+            }
 
-        current_event
-            .insert_content(buf)
-            .map_err(|_e| std::io::Error::other("Error inserting content"))?;
+            let current_event = self
+                .current_event
+                .as_mut()
+                .ok_or(std::io::Error::other("No event set"))?;
+
+            current_event
+                .insert_content(&buf[start..end])
+                .map_err(std::io::Error::other)?;
+        }
 
         Ok(buf.len())
     }
@@ -311,7 +350,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
     }
 }
 
-/// Creates a set of legacy conduits forcommunication between view and control layers.
+/// Creates a set of legacy conduits for communication between view and control layers.
 ///
 /// This function establishes the communication channels needed for the legacy mode operation,
 /// where the view layer and control layer can exchange events and byte data.
