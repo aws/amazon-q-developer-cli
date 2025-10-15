@@ -3265,7 +3265,7 @@ impl ChatSession {
 
         tool_use
             .tool
-            .queue_description(os, &mut self.stdout)
+            .queue_description(os, &mut self.stdout, self.conversation.agents.get_active())
             .await
             .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
