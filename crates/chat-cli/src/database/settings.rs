@@ -88,6 +88,12 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Default license type for authentication (string)")]
+    AuthDefaultLicense,
+    #[strum(message = "Default region for authentication (string)")]
+    AuthDefaultRegion,
+    #[strum(message = "Default identity provider URL for authentication (string)")]
+    AuthDefaultIdentityProvider,
 }
 
 impl AsRef<str> for Setting {
@@ -129,6 +135,9 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::AuthDefaultLicense => "auth.defaultLicense",
+            Self::AuthDefaultRegion => "auth.defaultRegion",
+            Self::AuthDefaultIdentityProvider => "auth.defaultIdentityProvider",
         }
     }
 }
@@ -178,6 +187,10 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "chat.enableDelegate" => Ok(Self::EnabledDelegate),
+            "auth.defaultLicense" => Ok(Self::AuthDefaultLicense),
+            "auth.defaultRegion" => Ok(Self::AuthDefaultRegion),
+            "auth.defaultIdentityProvider" => Ok(Self::AuthDefaultIdentityProvider),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }

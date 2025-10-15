@@ -91,6 +91,21 @@ impl LoginArgs {
                     // If license is specified and --identity-provider and --region are specified,
                     // the license is determined to be pro
                     AuthMethod::IdentityCenter
+                } else if let Some(default_license) = os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultLicense) {
+                    // Use default license from settings
+                    match default_license.as_str() {
+                        "free" => AuthMethod::BuilderId,
+                        "pro" => AuthMethod::IdentityCenter,
+                        _ => {
+                            // Invalid default, prompt user
+                            let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
+                            let i = match choose("Select login method", &options)? {
+                                Some(i) => i,
+                                None => bail!("No login method selected"),
+                            };
+                            options[i]
+                        }
+                    }
                 } else {
                     // --license is not specified, prompt the user to choose
                     let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
@@ -110,11 +125,15 @@ impl LoginArgs {
                     AuthMethod::IdentityCenter => {
                         let default_start_url = match self.identity_provider {
                             Some(start_url) => Some(start_url),
-                            None => os.database.get_start_url()?,
+                            None => os.database.get_start_url()?.or_else(|| {
+                                os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultIdentityProvider)
+                            }),
                         };
                         let default_region = match self.region {
                             Some(region) => Some(region),
-                            None => os.database.get_idc_region()?,
+                            None => os.database.get_idc_region()?.or_else(|| {
+                                os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion)
+                            }),
                         };
 
                         let start_url = input("Enter Start URL", default_start_url.as_deref())?;
