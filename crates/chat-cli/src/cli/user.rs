@@ -123,32 +123,29 @@ impl LoginArgs {
                 let (start_url, region) = match login_method {
                     AuthMethod::BuilderId => (None, None),
                     AuthMethod::IdentityCenter => {
-                        // Priority: 1. CLI arg > 2. Explicit default setting > 3. Previously used value
-                        let start_url = match self.identity_provider {
+                        // Priority: 1. CLI arg > 2. Explicit default setting
+                        // 3. Previously used value is shown as prompt default (requires Enter)
+                        let previous_start_url = os.database.get_start_url()?;
+                        let resolved_start_url = resolve_auth_value(
+                            self.identity_provider,
+                            os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultIdentityProvider),
+                        );
+
+                        let start_url = match resolved_start_url {
                             Some(url) => url,
-                            None => {
-                                match os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultIdentityProvider) {
-                                    Some(default_url) => default_url,
-                                    None => {
-                                        let fallback = os.database.get_start_url()?.or(None);
-                                        input("Enter Start URL", fallback.as_deref())?
-                                    }
-                                }
-                            }
+                            None => input("Enter Start URL", previous_start_url.as_deref())?,
                         };
 
-                        let region = match self.region {
+                        let previous_region = os.database.get_idc_region()?;
+                        let resolved_region = resolve_auth_value(
+                            self.region,
+                            os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion),
+                        );
+
+                        let region = match resolved_region {
                             Some(r) => r,
-                            None => {
-                                match os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion) {
-                                    Some(default_region) => default_region,
-                                    None => {
-                                        let fallback = os.database.get_idc_region()?.or(None);
-                                        input("Enter Region", fallback.as_deref())?.trim().to_string()
-                                    }
-                                }
-                            }
-                        };
+                            None => input("Enter Region", previous_region.as_deref())?,
+                        }.trim().to_string();
 
                         let _ = os.database.set_start_url(start_url.clone());
                         let _ = os.database.set_idc_region(region.clone());
@@ -453,4 +450,48 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
     }
 
     Ok(())
+}
+
+
+/// Resolves authentication value with priority: CLI arg > explicit default
+fn resolve_auth_value(
+    cli_arg: Option<String>,
+    explicit_default: Option<String>,
+) -> Option<String> {
+    cli_arg.or(explicit_default)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cli_arg_takes_precedence() {
+        let result = resolve_auth_value(
+            Some("cli".to_string()),
+            Some("default".to_string()),
+        );
+        assert_eq!(result, Some("cli".to_string()));
+    }
+
+    #[test]
+    fn test_explicit_default_when_no_cli_arg() {
+        let result = resolve_auth_value(
+            None,
+            Some("default".to_string()),
+        );
+        assert_eq!(result, Some("default".to_string()));
+    }
+
+    #[test]
+    fn test_no_value_returns_none() {
+        let result = resolve_auth_value(None, None);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn test_cli_arg_only() {
+        let result = resolve_auth_value(Some("cli".to_string()), None);
+        assert_eq!(result, Some("cli".to_string()));
+    }
 }
