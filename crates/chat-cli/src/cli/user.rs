@@ -132,18 +132,25 @@ impl LoginArgs {
                         );
 
                         let start_url = match resolved_start_url {
-                            Some(url) => url,
+                            Some(url) => {
+                                println!("Using Start URL: {}", url);
+                                url
+                            },
                             None => input("Enter Start URL", previous_start_url.as_deref())?,
                         };
 
                         let previous_region = os.database.get_idc_region()?;
+                        
                         let resolved_region = resolve_auth_value(
                             self.region,
                             os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion),
                         );
 
                         let region = match resolved_region {
-                            Some(r) => r,
+                            Some(r) => {
+                                println!("Using Region: {}", r);
+                                r
+                            },
                             None => input("Enter Region", previous_region.as_deref())?,
                         }.trim().to_string();
 
