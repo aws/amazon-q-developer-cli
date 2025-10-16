@@ -8,7 +8,6 @@ use amzn_codewhisperer_streaming_client::types::error::ChatResponseStreamError a
 use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError as QDeveloperSendMessageError;
 use amzn_qdeveloper_streaming_client::types::error::ChatResponseStreamError as QDeveloperChatResponseStreamError;
 use aws_credential_types::provider::error::CredentialsError;
-use aws_sdk_ssooidc::error::ProvideErrorMetadata;
 use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
 pub use aws_smithy_runtime_api::client::result::SdkError;
 use aws_smithy_runtime_api::http::Response;
@@ -182,12 +181,6 @@ impl ApiClientError {
 //     }
 // }
 
-fn sdk_error_code<T: ProvideErrorMetadata, R>(e: &SdkError<T, R>) -> String {
-    e.as_service_error()
-        .and_then(|se| se.meta().code().map(str::to_string))
-        .unwrap_or_else(|| e.to_string())
-}
-
 fn sdk_status_code<E>(e: &SdkError<E, Response>) -> Option<u16> {
     e.raw_response().map(|res| res.status().as_u16())
 }
@@ -198,16 +191,11 @@ mod tests {
 
     use aws_smithy_runtime_api::http::Response;
     use aws_smithy_types::body::SdkBody;
-    use aws_smithy_types::event_stream::Message;
 
     use super::*;
 
     fn response() -> Response {
         Response::new(500.try_into().unwrap(), SdkBody::empty())
-    }
-
-    fn raw_message() -> RawMessage {
-        RawMessage::Decoded(Message::new(b"<payload>".to_vec()))
     }
 
     fn all_errors() -> Vec<ApiClientError> {

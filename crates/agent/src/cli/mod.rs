@@ -1,9 +1,7 @@
-pub mod chat;
 mod run;
 
 use std::process::ExitCode;
 
-use chat::ChatArgs;
 use clap::{
     ArgAction,
     Parser,
@@ -14,7 +12,6 @@ use eyre::{
     Result,
 };
 use run::RunArgs;
-use tracing::Level;
 use tracing_appender::non_blocking::{
     NonBlocking,
     WorkerGuard,
@@ -41,27 +38,14 @@ pub struct CliArgs {
 
 impl CliArgs {
     pub async fn execute(self) -> Result<ExitCode> {
-        let _guard = self.setup_logging().context("failed to initialize logging")?;
+        let _guard = Self::setup_logging().context("failed to initialize logging")?;
 
         let subcommand = self.subcommand.unwrap_or_default();
 
         subcommand.execute().await
     }
 
-    fn setup_logging(&self) -> Result<WorkerGuard> {
-        let log_level = match self.verbose > 0 {
-            true => Some(
-                match self.verbose {
-                    1 => Level::WARN,
-                    2 => Level::INFO,
-                    3 => Level::DEBUG,
-                    _ => Level::TRACE,
-                }
-                .to_string(),
-            ),
-            false => None,
-        };
-
+    fn setup_logging() -> Result<WorkerGuard> {
         let env_filter = EnvFilter::try_from_default_env().unwrap_or_default();
         let (non_blocking, _file_guard) = NonBlocking::new(RollingFileAppender::new(Rotation::NEVER, ".", "chat.log"));
         let file_layer = tracing_subscriber::fmt::layer().with_writer(non_blocking);
@@ -75,8 +59,6 @@ impl CliArgs {
 
 #[derive(Debug, Clone, Subcommand)]
 pub enum RootSubcommand {
-    /// TUI Chat Interface
-    Chat(ChatArgs),
     /// Run a single prompt
     Run(RunArgs),
 }
@@ -84,7 +66,6 @@ pub enum RootSubcommand {
 impl RootSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
         match self {
-            RootSubcommand::Chat(chat_args) => chat_args.execute().await,
             RootSubcommand::Run(run_args) => run_args.execute().await,
         }
     }
@@ -92,6 +73,6 @@ impl RootSubcommand {
 
 impl Default for RootSubcommand {
     fn default() -> Self {
-        Self::Chat(Default::default())
+        Self::Run(Default::default())
     }
 }

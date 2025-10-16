@@ -23,22 +23,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tokio::io::AsyncWriteExt;
 use tracing::warn;
-
-// use crate::chat::{
-//     ActiveState,
-//     ApprovalResult,
-//     InputItem,
-//     SendApprovalResultArgs,
-//     SendPromptArgs,
-//     Session,
-//     SessionBuilder,
-//     SessionEvent,
-//     SessionEventKind,
-//     SessionInitWarning,
-//     SessionNotification,
-// };
 
 #[derive(Debug, Clone, Default, Args)]
 pub struct RunArgs {
@@ -106,7 +91,7 @@ impl RunArgs {
                     }
                 },
                 AgentEvent::RequestError(loop_error) => bail!("agent encountered an error: {:?}", loop_error),
-                AgentEvent::ApprovalRequest { id, tool_use, context } => {
+                AgentEvent::ApprovalRequest { id, tool_use, .. } => {
                     if !self.dangerously_trust_all_tools {
                         bail!("Tool approval is required: {:?}", tool_use);
                     } else {
@@ -137,7 +122,7 @@ impl RunArgs {
                     match &evt.kind {
                         AgentLoopEventKind::AssistantText(text) => {
                             print!("{}", text);
-                            std::io::stdout().flush();
+                            let _ = std::io::stdout().flush();
                         },
                         AgentLoopEventKind::ToolUse(tool_use) => {
                             print!("\n{}\n", serde_json::to_string_pretty(tool_use).expect("does not fail"));

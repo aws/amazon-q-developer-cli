@@ -1,6 +1,5 @@
 pub mod builder_id;
 mod consts;
-mod scope;
 
 use aws_sdk_ssooidc::error::SdkError;
 use aws_sdk_ssooidc::operation::create_token::CreateTokenError;

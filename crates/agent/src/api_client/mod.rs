@@ -7,14 +7,8 @@ pub mod request;
 mod retry_classifier;
 pub mod send_message_output;
 
-use std::sync::{
-    Arc,
-    RwLock,
-};
 use std::time::Duration;
 
-use amzn_codewhisperer_client::Client as CodewhispererClient;
-use amzn_codewhisperer_client::types::Model;
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
 use amzn_qdeveloper_streaming_client::types::Origin;
@@ -46,31 +40,13 @@ use crate::aws_common::{
     behavior_version,
 };
 
-pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
-
 const DEFAULT_TIMEOUT_DURATION: Duration = Duration::from_secs(60 * 5);
-
-#[derive(Clone, Debug)]
-pub struct ModelListResult {
-    pub models: Vec<Model>,
-    pub default_model: Model,
-}
-
-impl From<ModelListResult> for (Vec<Model>, Model) {
-    fn from(v: ModelListResult) -> Self {
-        (v.models, v.default_model)
-    }
-}
-
-type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
 
 #[derive(Clone)]
 pub struct ApiClient {
-    client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
     sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     profile: Option<AuthProfile>,
-    model_cache: ModelCache,
 }
 
 impl std::fmt::Debug for ApiClient {
@@ -93,7 +69,6 @@ impl std::fmt::Debug for ApiClient {
                 },
             )
             .field("profile", &self.profile)
-            .field("model_cache", &self.model_cache)
             .finish()
     }
 }
@@ -116,17 +91,6 @@ impl ApiClient {
             .retry_config(retry_config())
             .load()
             .await;
-
-        let client = CodewhispererClient::from_conf(
-            amzn_codewhisperer_client::config::Builder::from(&bearer_sdk_config)
-                .http_client(crate::aws_common::http_client::client())
-                // .interceptor(OptOutInterceptor::new(database))
-                .interceptor(UserAgentOverrideInterceptor::new())
-                .bearer_token_resolver(BearerResolver)
-                .app_name(app_name())
-                .endpoint_url(endpoint.url())
-                .build(),
-        );
 
         // If SIGV4_AUTH_ENABLED is true, use Q developer client
         let mut streaming_client = None;
@@ -177,20 +141,11 @@ impl ApiClient {
         }
 
         let profile = None;
-        // let profile = match database.get_auth_profile() {
-        //     Ok(profile) => profile,
-        //     Err(err) => {
-        //         error!("Failed to get auth profile: {err}");
-        //         None
-        //     },
-        // };
 
         Ok(Self {
-            client,
             streaming_client,
             sigv4_streaming_client,
             profile,
-            model_cache: Arc::new(RwLock::new(None)),
         })
     }
 
@@ -205,8 +160,6 @@ impl ApiClient {
             user_input_message,
             history,
         } = conversation;
-
-        let model_id_opt: Option<String> = user_input_message.model_id.clone();
 
         if let Some(client) = &self.streaming_client {
             let conversation_state = amzn_codewhisperer_streaming_client::types::ConversationState::builder()
