@@ -3,6 +3,12 @@ use std::path::PathBuf;
 
 use super::directories;
 
+/// A trait for accessing system and process context (env vars, home dir, current working dir,
+/// etc.).
+pub trait SystemProvider: EnvProvider + HomeProvider + CwdProvider {}
+
+impl<T> SystemProvider for T where T: EnvProvider + HomeProvider + CwdProvider {}
+
 /// A trait for accessing environment variables.
 ///
 /// This provides unit tests the capability to fake system context.
@@ -36,84 +42,22 @@ pub trait CwdProvider {
 
 /// Provides real implementations for [EnvProvider], [HomeProvider], and [CwdProvider].
 #[derive(Clone, Copy)]
-pub struct SystemProvider;
+pub struct RealProvider;
 
-impl EnvProvider for SystemProvider {
+impl EnvProvider for RealProvider {
     fn var(&self, input: &str) -> Result<String, VarError> {
         std::env::var(input)
     }
 }
 
-impl HomeProvider for SystemProvider {
+impl HomeProvider for RealProvider {
     fn home(&self) -> Option<PathBuf> {
         directories::home_dir().ok()
     }
 }
 
-impl CwdProvider for SystemProvider {
+impl CwdProvider for RealProvider {
     fn cwd(&self) -> Result<PathBuf, std::io::Error> {
         std::env::current_dir()
-    }
-}
-
-#[cfg(test)]
-#[derive(Debug, Clone)]
-pub struct TestSystem {
-    env: std::collections::HashMap<String, String>,
-    home: Option<PathBuf>,
-    cwd: Option<PathBuf>,
-}
-
-#[cfg(test)]
-impl TestSystem {
-    pub fn new() -> Self {
-        let mut env = std::collections::HashMap::new();
-        env.insert("HOME".to_string(), "/home/testuser".to_string());
-        Self {
-            env,
-            home: Some(PathBuf::from("/home/testuser")),
-            cwd: Some(PathBuf::from("/home/testuser")),
-        }
-    }
-
-    pub fn with_var(mut self, key: impl AsRef<str>, value: impl AsRef<str>) -> Self {
-        self.env.insert(key.as_ref().to_string(), value.as_ref().to_string());
-        self
-    }
-
-    pub fn with_cwd(mut self, cwd: impl AsRef<std::path::Path>) -> Self {
-        self.cwd = Some(PathBuf::from(cwd.as_ref()));
-        self
-    }
-}
-
-#[cfg(test)]
-impl Default for TestSystem {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-impl EnvProvider for TestSystem {
-    fn var(&self, input: &str) -> Result<String, VarError> {
-        self.env.get(input).cloned().ok_or(VarError::NotPresent)
-    }
-}
-
-#[cfg(test)]
-impl HomeProvider for TestSystem {
-    fn home(&self) -> Option<PathBuf> {
-        self.home.as_ref().cloned()
-    }
-}
-
-#[cfg(test)]
-impl CwdProvider for TestSystem {
-    fn cwd(&self) -> Result<PathBuf, std::io::Error> {
-        self.cwd.as_ref().cloned().ok_or(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            eyre::eyre!("not found"),
-        ))
     }
 }

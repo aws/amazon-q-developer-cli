@@ -49,6 +49,10 @@ FEATURES:
 LIMITATIONS:
 - Maximum file size is 250KB
 - Cannot display binary files or images
+
+TIPS:
+- Read multiple files in one go if you know you want to read more than one file
+- Dont use limit and offset for small files
 "#;
 
 // TODO - migrate from JsonSchema, it's not very configurable and prone to breaking changes in the

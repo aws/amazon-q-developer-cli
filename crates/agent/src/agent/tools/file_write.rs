@@ -44,25 +44,25 @@ const FS_WRITE_SCHEMA: &str = r#"
             "type": "string",
             "enum": [
                 "create",
-                "str_replace",
+                "strReplace",
                 "insert"
             ],
-            "description": "The commands to run. Allowed options are: `create`, `str_replace`, `insert`"
+            "description": "The commands to run. Allowed options are: `create`, `strReplace`, `insert`"
         },
         "content": {
             "description": "Required parameter of `create` and `insert` commands.",
             "type": "string"
         },
-        "insert_line": {
+        "insertLine": {
             "description": "Optional parameter of `insert` command. Line is 0-indexed. `content` will be inserted at the provided line. If not provided, content will be inserted at the end of the file on a new line, inserting a newline at the end of the file if it is missing.",
             "type": "integer"
         },
-        "new_str": {
-            "description": "Required parameter of `str_replace` command containing the new string.",
+        "newStr": {
+            "description": "Required parameter of `strReplace` command containing the new string.",
             "type": "string"
         },
-        "old_str": {
-            "description": "Required parameter of `str_replace` command containing the string in `path` to replace.",
+        "oldStr": {
+            "description": "Required parameter of `strReplace` command containing the string in `path` to replace.",
             "type": "string"
         },
         "path": {

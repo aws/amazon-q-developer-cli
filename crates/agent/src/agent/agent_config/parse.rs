@@ -6,9 +6,14 @@ use std::str::FromStr;
 use crate::agent::agent_loop::types::ToolUseBlock;
 use crate::agent::protocol::AgentError;
 use crate::agent::tools::BuiltInToolName;
-use crate::agent::util::path::canonicalize_path;
+use crate::agent::util::path::canonicalize_path_impl;
+use crate::agent::util::providers::{
+    RealProvider,
+    SystemProvider,
+};
 
 /// Represents a value from the `resources` array in the agent config.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResourceKind<'a> {
     File { original: &'a str, file_path: &'a str },
     FileGlob { original: &'a str, pattern: glob::Pattern },
@@ -16,13 +21,18 @@ pub enum ResourceKind<'a> {
 
 impl<'a> ResourceKind<'a> {
     pub fn parse(value: &'a str) -> Result<Self, String> {
+        let sys = RealProvider;
+        Self::parse_impl(value, &sys)
+    }
+
+    fn parse_impl(value: &'a str, sys: &impl SystemProvider) -> Result<Self, String> {
         if !value.starts_with("file://") {
             return Err("Only file schemes are currently supported".to_string());
         }
 
         let file_path = value.trim_start_matches("file://");
         if file_path.contains('*') || file_path.contains('?') {
-            let canon = canonicalize_path(file_path)
+            let canon = canonicalize_path_impl(file_path, sys, sys, sys)
                 .map_err(|err| format!("Failed to canonicalize path for {}: {}", file_path, err))?;
             let pattern = glob::Pattern::new(canon.as_str())
                 .map_err(|err| format!("Failed to create glob for {}: {}", canon, err))?;
@@ -242,5 +252,39 @@ impl FromStr for CanonicalToolName {
             },
             Err(err) => Err(err),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::util::test::TestSystem;
+
+    #[test]
+    fn test_resource_kind_parse_nonfile() {
+        assert!(
+            ResourceKind::parse("https://google.com").is_err(),
+            "non-file scheme should be an error"
+        );
+    }
+
+    #[test]
+    fn test_resource_kind_parse_file_scheme() {
+        let sys = TestSystem::new();
+
+        let resource = "file://project/README.md";
+        assert_eq!(ResourceKind::parse_impl(resource, &sys).unwrap(), ResourceKind::File {
+            original: resource,
+            file_path: "project/README.md"
+        });
+
+        let resource = "file://~/project/**/*.rs";
+        assert_eq!(
+            ResourceKind::parse_impl(resource, &sys).unwrap(),
+            ResourceKind::FileGlob {
+                original: resource,
+                pattern: glob::Pattern::new("/home/testuser/project/**/*.rs").unwrap()
+            }
+        );
     }
 }

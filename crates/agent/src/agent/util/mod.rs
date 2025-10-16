@@ -5,6 +5,8 @@ pub mod glob;
 pub mod path;
 pub mod providers;
 pub mod request_channel;
+#[cfg(test)]
+pub mod test;
 
 use std::collections::HashMap;
 use std::env::VarError;
@@ -100,6 +102,15 @@ pub async fn read_file_with_max_limit(
         .await
         .with_context(|| format!("Failed to query file metadata at '{}'", path.to_string_lossy()))?;
 
+    // Read only the max supported length.
+    let mut reader = BufReader::new(file).take(max_file_length);
+    let mut content = Vec::new();
+    reader
+        .read_to_end(&mut content)
+        .await
+        .with_context(|| format!("Failed to read from file at '{}'", path.to_string_lossy()))?;
+    let mut content = content.to_str_lossy().to_string();
+
     let truncated_amount = if md.size() > max_file_length {
         // Edge case check to ensure the suffix is less than max file length.
         if suffix.len() as u64 > max_file_length {
@@ -110,18 +121,11 @@ pub async fn read_file_with_max_limit(
         0
     };
 
-    // Read only the max supported length.
-    let mut reader = BufReader::new(file).take(max_file_length);
-    let mut content = Vec::new();
-    reader
-        .read_to_end(&mut content)
-        .await
-        .with_context(|| format!("Failed to read from file at '{}'", path.to_string_lossy()))?;
+    if truncated_amount == 0 {
+        return Ok((content, 0));
+    }
 
-    // Truncate content safely.
-    let mut content = content.to_str_lossy().to_string();
-    truncate_safe_in_place(&mut content, max_file_length as usize, suffix);
-
+    content.replace_range((content.len().saturating_sub(suffix.len())).., suffix);
     Ok((content, truncated_amount))
 }
 
@@ -132,6 +136,7 @@ pub fn is_integ_test() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::util::test::TestDir;
 
     #[test]
     fn test_truncate_safe() {
@@ -184,5 +189,27 @@ mod tests {
 
         assert_eq!(env_vars.get("KEY1").unwrap(), "Value is test_value");
         assert_eq!(env_vars.get("KEY2").unwrap(), "No substitution");
+    }
+
+    #[tokio::test]
+    async fn test_read_file_with_max_limit() {
+        // Test file with 30 bytes in length
+        let test_file = "123456789\n".repeat(3);
+        let d = TestDir::new().with_file(("test.txt", &test_file)).await;
+
+        // Test not truncated
+        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 100, "...").await.unwrap();
+        assert_eq!(content, test_file);
+        assert_eq!(bytes_truncated, 0);
+
+        // Test truncated
+        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 10, "...").await.unwrap();
+        assert_eq!(content, "1234567...");
+        assert_eq!(bytes_truncated, 23);
+
+        // Test suffix greater than max length
+        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 1, "...").await.unwrap();
+        assert_eq!(content, "");
+        assert_eq!(bytes_truncated, 30);
     }
 }

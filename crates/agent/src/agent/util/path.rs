@@ -12,12 +12,12 @@ use super::providers::{
     CwdProvider,
     EnvProvider,
     HomeProvider,
-    SystemProvider,
+    RealProvider,
 };
 
 /// Performs tilde and environment variable expansion on the provided input.
 pub fn expand_path(input: &str) -> Result<Cow<'_, str>, UtilError> {
-    let sys = SystemProvider;
+    let sys = RealProvider;
     Ok(shellexpand::full_with_context(
         input,
         sys.shellexpand_home(),
@@ -32,7 +32,7 @@ pub fn expand_path(input: &str) -> Result<Cow<'_, str>, UtilError> {
 /// - Performs env var expansion
 /// - Resolves `.` and `..` path components
 pub fn canonicalize_path(path: impl AsRef<str>) -> Result<String, UtilError> {
-    let sys = SystemProvider;
+    let sys = RealProvider;
     canonicalize_path_impl(path, &sys, &sys, &sys)
 }
 
@@ -97,7 +97,7 @@ fn normalize_path(path: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::providers::TestSystem;
+    use crate::agent::util::test::TestSystem;
 
     #[test]
     fn test_canonicalize_path() {

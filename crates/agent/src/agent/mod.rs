@@ -2104,3 +2104,11 @@ pub enum HookStage {
     /// Hooks after executing tool uses
     PostToolUse { tool_results: Vec<ToolExecutorResult> },
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_collect_resources() {}
+}
