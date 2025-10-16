@@ -5,7 +5,7 @@ use q_cli_e2e_tests::q_chat_helper;
 #[cfg(all(feature = "core_session", feature = "sanity"))]
 fn test_tangent_command() -> Result<(), Box<dyn std::error::Error>> {
 
-println!("\n🔍 Testing tangent ... | Description: Tests the /tangent command.");
+println!("\n🔍 Testing tangent ... | Description: Tests the <code> /tangent </code> command.");
     let session =q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     

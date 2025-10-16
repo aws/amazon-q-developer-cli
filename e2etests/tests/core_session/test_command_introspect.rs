@@ -6,7 +6,7 @@ use q_cli_e2e_tests::q_chat_helper;
 #[cfg(all(feature = "core_session", feature = "sanity"))]
 fn test_introspect_command() -> Result<(), Box<dyn std::error::Error>> {
 
-    println!("\n🔍 Testing introspect command... | Description: Tests the introspect command.");
+    println!("\n🔍 Testing introspect command... | Description: Tests the <code> introspect </code> command.");
 
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());

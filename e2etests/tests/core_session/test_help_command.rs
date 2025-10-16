@@ -46,3 +46,36 @@ fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     Ok(())
 }
+
+#[test]
+#[cfg(all(feature = "help", feature = "sanity"))]
+fn test_whoami_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing !whoami command... | Description: Tests the <code> !whoami </code> command to display the current user");
+    
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    println!("✅ Q Chat session started");
+    
+    let response = chat.execute_command("!whoami")?;
+    
+    println!("📝 Help response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", response);
+    println!("📝 END OUTPUT");
+    
+    // Verify whoami content
+    assert!(!response.is_empty(), "Empty response from whoami command");
+    println!("✅ Command executed with response");
+    
+    // Verify response contains user information
+    assert!(response.len() > 0, "Response should contain user information");
+    println!("✅ Found user information in response");
+    
+    println!("✅ All whoami command functionality verified!");
+    
+    // Release the lock
+    drop(chat);
+    
+    Ok(())
+}

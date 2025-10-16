@@ -485,7 +485,7 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
 #[test]
 #[cfg(all(feature = "agent", feature = "sanity"))]
 fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /agent generate command... | Description: Tests the /agent generate command with vi editor interaction");
+    println!("\n🔍 Testing /agent generate command... | Description: Tests the <code> /agent generate</code>command with vi editor interaction");
 
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
