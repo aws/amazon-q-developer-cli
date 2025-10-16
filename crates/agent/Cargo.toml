@@ -49,7 +49,6 @@ pin-project-lite = "0.2.16"
 r2d2.workspace = true
 r2d2_sqlite.workspace = true
 rand.workspace = true
-ratatui = "0.29.0"
 regex.workspace = true
 reqwest.workspace = true
 rmcp = { version = "0.8.0", features = ["client", "transport-async-rw", "transport-child-process", "transport-io"] }
@@ -74,7 +73,6 @@ tokio-util.workspace = true
 tracing.workspace = true
 tracing-appender = "0.2.3"
 tracing-subscriber.workspace = true
-tui-textarea = "0.7.0"
 url.workspace = true
 uuid.workspace = true
 webpki-roots.workspace = true

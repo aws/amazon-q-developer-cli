@@ -453,11 +453,13 @@ impl McpClientService {
                     url,
                     headers,
                     oauth_scopes: scopes,
+                    oauth,
                     timeout,
                     ..
                 } = &self.config;
 
-                let http_service_builder = HttpServiceBuilder::new(url, os, url, *timeout, scopes, headers, messenger);
+                let http_service_builder =
+                    HttpServiceBuilder::new(url, os, url, *timeout, scopes, headers, oauth, messenger);
 
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 

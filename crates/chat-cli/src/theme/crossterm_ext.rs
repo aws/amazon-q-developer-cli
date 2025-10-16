@@ -1,4 +1,5 @@
 //! Crossterm extensions for the theme system
+use chat_cli_ui::legacy_ui_util::ThemeSource;
 use crossterm::style::{
     Attribute,
     Color,
@@ -163,6 +164,100 @@ impl StyledText {
     /// Reset attributes
     pub fn reset_attributes() -> SetAttribute {
         SetAttribute(Attribute::Reset)
+    }
+}
+
+impl ThemeSource for StyledText {
+    fn error(&self, text: &str) -> String {
+        StyledText::error(text)
+    }
+
+    fn info(&self, text: &str) -> String {
+        StyledText::info(text)
+    }
+
+    fn emphasis(&self, text: &str) -> String {
+        StyledText::emphasis(text)
+    }
+
+    fn command(&self, text: &str) -> String {
+        StyledText::command(text)
+    }
+
+    fn prompt(&self, text: &str) -> String {
+        StyledText::prompt(text)
+    }
+
+    fn profile(&self, text: &str) -> String {
+        StyledText::profile(text)
+    }
+
+    fn tangent(&self, text: &str) -> String {
+        StyledText::tangent(text)
+    }
+
+    fn usage_low(&self, text: &str) -> String {
+        StyledText::usage_low(text)
+    }
+
+    fn usage_medium(&self, text: &str) -> String {
+        StyledText::usage_medium(text)
+    }
+
+    fn usage_high(&self, text: &str) -> String {
+        StyledText::usage_high(text)
+    }
+
+    fn brand(&self, text: &str) -> String {
+        StyledText::brand(text)
+    }
+
+    fn primary(&self, text: &str) -> String {
+        StyledText::primary(text)
+    }
+
+    fn secondary(&self, text: &str) -> String {
+        StyledText::secondary(text)
+    }
+
+    fn success(&self, text: &str) -> String {
+        StyledText::success(text)
+    }
+
+    fn error_fg(&self) -> SetForegroundColor {
+        StyledText::error_fg()
+    }
+
+    fn warning_fg(&self) -> SetForegroundColor {
+        StyledText::warning_fg()
+    }
+
+    fn success_fg(&self) -> SetForegroundColor {
+        StyledText::success_fg()
+    }
+
+    fn info_fg(&self) -> SetForegroundColor {
+        StyledText::info_fg()
+    }
+
+    fn brand_fg(&self) -> SetForegroundColor {
+        StyledText::brand_fg()
+    }
+
+    fn secondary_fg(&self) -> SetForegroundColor {
+        StyledText::secondary_fg()
+    }
+
+    fn emphasis_fg(&self) -> SetForegroundColor {
+        StyledText::emphasis_fg()
+    }
+
+    fn reset(&self) -> ResetColor {
+        StyledText::reset()
+    }
+
+    fn reset_attributes(&self) -> SetAttribute {
+        StyledText::reset_attributes()
     }
 }
 

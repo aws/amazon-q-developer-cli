@@ -196,10 +196,12 @@ pub struct HttpServiceBuilder<'a> {
     pub timeout: u64,
     pub scopes: &'a [String],
     pub headers: &'a HashMap<String, String>,
+    pub oauth_config: &'a Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     pub messenger: &'a dyn Messenger,
 }
 
 impl<'a> HttpServiceBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         server_name: &'a str,
         os: &'a Os,
@@ -207,6 +209,7 @@ impl<'a> HttpServiceBuilder<'a> {
         timeout: u64,
         scopes: &'a [String],
         headers: &'a HashMap<String, String>,
+        oauth_config: &'a Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
         messenger: &'a dyn Messenger,
     ) -> Self {
         Self {
@@ -216,6 +219,7 @@ impl<'a> HttpServiceBuilder<'a> {
             timeout,
             scopes,
             headers,
+            oauth_config,
             messenger,
         }
     }
@@ -231,6 +235,7 @@ impl<'a> HttpServiceBuilder<'a> {
             timeout,
             scopes,
             headers,
+            oauth_config,
             messenger,
         } = self;
 
@@ -292,7 +297,9 @@ impl<'a> HttpServiceBuilder<'a> {
                                     cred_full_path.clone(),
                                     reg_full_path.clone(),
                                     scopes,
+                                    oauth_config,
                                     messenger,
+                                    os,
                                 )
                                 .await?;
 
@@ -452,7 +459,9 @@ async fn get_auth_manager(
     cred_full_path: PathBuf,
     reg_full_path: PathBuf,
     scopes: &[String],
+    oauth_config: &Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     messenger: &dyn Messenger,
+    os: &Os,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
@@ -474,7 +483,7 @@ async fn get_auth_manager(
         _ => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, messenger).await?;
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, oauth_config, messenger, os).await?;
 
             // Client registration is done in [start_authorization]
             // If we have gotten past that point that means we have the info to persist the
@@ -509,9 +518,21 @@ async fn get_auth_manager(
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     scopes: &[String],
+    oauth_config: &Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     messenger: &dyn Messenger,
+    _os: &Os,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
-    let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    // Get port from per-server oauth config, or use 0 for random port assignment
+    let port = oauth_config
+        .as_ref()
+        .and_then(|cfg| cfg.redirect_uri.as_ref())
+        .and_then(|uri| {
+            // Parse port from redirect_uri like "127.0.0.1:7778" or ":7778"
+            uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok())
+        })
+        .unwrap_or(0); // Port 0 = OS assigns random available port
+
+    let socket_addr = SocketAddr::from(([127, 0, 0, 1], port));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<(String, String)>();
 

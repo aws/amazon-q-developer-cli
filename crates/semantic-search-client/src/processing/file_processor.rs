@@ -39,6 +39,9 @@ pub fn get_file_type(path: &Path) -> FileType {
         // Documentation formats
         Some("rtf" | "tex" | "rst") => FileType::Text,
 
+        // PDF files
+        Some("pdf") => FileType::Pdf,
+
         // Web and markup formats (text-based)
         Some("svg") => FileType::Text,
 
@@ -113,15 +116,30 @@ pub fn process_file_with_config(
     }
 
     let file_type = get_file_type(path);
-    let content = fs::read_to_string(path).map_err(|e| {
-        SemanticSearchError::IoError(std::io::Error::new(
-            e.kind(),
-            format!("Failed to read file {}: {}", path.display(), e),
-        ))
-    })?;
+
+    let content = match file_type {
+        FileType::Pdf => {
+            // Extract text from PDF
+            pdf_extract::extract_text(path).map_err(|e| {
+                SemanticSearchError::IoError(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Failed to extract text from PDF {}: {}", path.display(), e),
+                ))
+            })?
+        },
+        _ => {
+            // Read as text file
+            fs::read_to_string(path).map_err(|e| {
+                SemanticSearchError::IoError(std::io::Error::new(
+                    e.kind(),
+                    format!("Failed to read file {}: {}", path.display(), e),
+                ))
+            })?
+        },
+    };
 
     match file_type {
-        FileType::Text | FileType::Markdown | FileType::Code | FileType::Json => {
+        FileType::Text | FileType::Markdown | FileType::Code | FileType::Json | FileType::Pdf => {
             // For text-based files (including JSON), chunk the content and create multiple data points
             // Use the configured chunk size and overlap
             let chunks = chunk_text(&content, chunk_size, chunk_overlap);
@@ -262,7 +280,7 @@ mod tests {
             ("notes.TXT", FileType::Text),
             // Unknown files
             ("image.png", FileType::Unknown),
-            ("document.pdf", FileType::Unknown),
+            ("document.pdf", FileType::Pdf),
             ("binary.exe", FileType::Unknown),
             ("unknown_file", FileType::Unknown),
         ];
@@ -281,9 +299,14 @@ mod tests {
     fn test_unknown_file_types() {
         // Binary files and unsupported formats
         assert_eq!(get_file_type(&PathBuf::from("image.png")), FileType::Unknown);
-        assert_eq!(get_file_type(&PathBuf::from("document.pdf")), FileType::Unknown);
         assert_eq!(get_file_type(&PathBuf::from("archive.zip")), FileType::Unknown);
         assert_eq!(get_file_type(&PathBuf::from("binary.exe")), FileType::Unknown);
         assert_eq!(get_file_type(&PathBuf::from("data.db")), FileType::Unknown);
+    }
+
+    #[test]
+    fn test_pdf_file_type() {
+        assert_eq!(get_file_type(&PathBuf::from("document.pdf")), FileType::Pdf);
+        assert_eq!(get_file_type(&PathBuf::from("report.PDF")), FileType::Pdf);
     }
 }

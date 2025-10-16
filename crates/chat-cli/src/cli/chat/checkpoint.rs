@@ -27,6 +27,7 @@ use serde::{
 };
 use tracing::debug;
 
+use super::util::truncate_safe;
 use crate::cli::ConversationState;
 use crate::cli::chat::conversation::HistoryEntry;
 use crate::os::Os;
@@ -370,7 +371,7 @@ pub fn truncate_message(s: &str, max_len: usize) -> String {
         return s.to_string();
     }
 
-    let truncated = &s[..max_len];
+    let truncated = truncate_safe(s, max_len);
     if let Some(pos) = truncated.rfind(' ') {
         format!("{}...", &truncated[..pos])
     } else {
