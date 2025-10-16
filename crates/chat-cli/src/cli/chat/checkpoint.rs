@@ -27,8 +27,8 @@ use serde::{
 };
 use tracing::debug;
 
-use crate::cli::ConversationState;
 use super::util::truncate_safe;
+use crate::cli::ConversationState;
 use crate::cli::chat::conversation::HistoryEntry;
 use crate::os::Os;
 
