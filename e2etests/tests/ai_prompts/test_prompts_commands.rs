@@ -135,7 +135,7 @@ fn test_prompts_list_command() -> Result<(), Box<dyn std::error::Error>> {
 #[test]
 #[cfg(all(feature = "ai_prompts", feature = "sanity"))]
 fn test_prompts_get_command() -> Result<(), Box<dyn std::error::Error>> {
-    println!("\n🔍 Testing /prompts get command... | Description: Tests the <code> /prompts get <promptName> command to display all the contents of a selected prompt");
+    println!("\n🔍 Testing /prompts get command... | Description: Tests the /prompts get promptName command to display all the contents of a selected prompt");
 
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap();
