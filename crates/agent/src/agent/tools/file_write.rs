@@ -143,7 +143,7 @@ impl FileWrite {
         })
     }
 
-    pub async fn execute(&self, state: Option<&mut FileWriteState>) -> ToolExecutionResult {
+    pub async fn execute(&self, _state: Option<&mut FileWriteState>) -> ToolExecutionResult {
         let path = self.canonical_path().map_err(ToolExecutionError::Custom)?;
 
         match &self {
@@ -247,10 +247,8 @@ pub struct Insert {
 }
 
 impl Insert {
-    async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
-        let path = path.as_ref();
-
-        Ok(())
+    async fn execute(&self, _path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
+        panic!("unimplemented")
     }
 }
 

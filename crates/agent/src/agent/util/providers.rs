@@ -88,6 +88,13 @@ impl TestSystem {
 }
 
 #[cfg(test)]
+impl Default for TestSystem {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
 impl EnvProvider for TestSystem {
     fn var(&self, input: &str) -> Result<String, VarError> {
         self.env.get(input).cloned().ok_or(VarError::NotPresent)

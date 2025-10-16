@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use serde::{
     Deserialize,
     Serialize,
@@ -34,6 +36,12 @@ const GREP_SCHEMA: &str = r#"
     ]
 }
 "#;
+
+// impl BuiltInToolTrait for Grep {
+//     const DESCRIPTION: &str = GREP_TOOL_DESCRIPTION;
+//     const INPUT_SCHEMA: &str = GREP_SCHEMA;
+//     const NAME: BuiltInToolName = BuiltInToolName::Grep;
+// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Grep {

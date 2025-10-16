@@ -18,6 +18,7 @@ use super::tools::BuiltInTool;
 /// Categorizes different types of tool name validation failures according to the requirements by
 /// the RTS API.
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // TODO
 pub struct ToolValidationError {
     mcp_server_name: String,
     tool_spec: ToolSpec,
@@ -34,14 +35,18 @@ impl ToolValidationError {
     }
 }
 
+// TODO - remove dead code. Keeping for debug purposes
 #[derive(Debug, Clone)]
 pub enum ToolValidationErrorKind {
-    OutOfSpecName { transformed_name: String },
+    OutOfSpecName {
+        #[allow(dead_code)]
+        transformed_name: String,
+    },
     EmptyName,
     NameTooLong,
     EmptyDescription,
     DescriptionTooLong,
-    NameCollision(CanonicalToolName),
+    NameCollision(#[allow(dead_code)] CanonicalToolName),
 }
 
 /// Represents a set of tool specs that conforms to backend validations.
@@ -113,9 +118,9 @@ impl SanitizedToolSpec {
 ///
 /// - `canonical_names` - List of tool names to include in the generated tool specs
 /// - `mcp_tool_specs` - Map from an MCP server name to a list of tool specs as returned by the
-/// server
+///   server
 /// - `aliases` - Map from a canonical tool name to an aliased name. This refers to the `aliases`
-/// field in the agent config
+///   field in the agent config
 pub fn sanitize_tool_specs(
     canonical_names: Vec<CanonicalToolName>,
     mcp_tool_specs: HashMap<String, Vec<ToolSpec>>,

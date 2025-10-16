@@ -2104,38 +2104,3 @@ pub enum HookStage {
     /// Hooks after executing tool uses
     PostToolUse { tool_results: Vec<ToolExecutorResult> },
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_collect_resources() {
-        let r = collect_resources(vec!["file://AGENTS.md"]).await;
-        println!("{:?}", r);
-    }
-
-    #[tokio::test]
-    async fn test_agent() {
-        let _ = tracing_subscriber::fmt::try_init();
-
-        let path = "/Users/bskiser/.aws/amazonq/cli-agents/idk.json";
-        let contents = tokio::fs::read_to_string(path).await.unwrap();
-        let cfg: Config = serde_json::from_str(&contents).unwrap();
-        let mut agent = Agent::from_config(cfg).await.unwrap().spawn();
-        let init_res = agent.recv().await.unwrap();
-        println!("Init res: {:?}", init_res);
-
-        agent
-            .send_prompt(SendPromptArgs {
-                content: vec![InputItem::Text("what tools do you have?".to_string())],
-            })
-            .await
-            .unwrap();
-
-        loop {
-            let res = agent.recv().await.unwrap();
-            println!("res: {:?}", res);
-        }
-    }
-}

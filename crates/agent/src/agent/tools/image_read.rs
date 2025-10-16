@@ -66,7 +66,7 @@ impl ImageRead {
         let paths = self.processed_paths()?;
         let mut errors = Vec::new();
         for path in &paths {
-            if !is_supported_image_type(&path) {
+            if !is_supported_image_type(path) {
                 errors.push(format!("'{}' is not a supported image type", path.to_string_lossy()));
                 continue;
             }
@@ -122,8 +122,7 @@ impl ImageRead {
     fn processed_paths(&self) -> Result<Vec<PathBuf>, String> {
         let mut paths = Vec::new();
         for path in &self.paths {
-            let path =
-                canonicalize_path(path).map_err(|e| format!("failed to process path {}: {}", path, e.to_string()))?;
+            let path = canonicalize_path(path).map_err(|e| format!("failed to process path {}: {}", path, e))?;
             let path = pre_process_image_path(&path);
             paths.push(PathBuf::from(path));
         }

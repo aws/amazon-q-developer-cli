@@ -6,9 +6,12 @@ use std::sync::Arc;
 use std::time::{
     Duration,
     Instant,
-    SystemTime,
 };
 
+use chrono::{
+    DateTime,
+    Utc,
+};
 use eyre::Result;
 use futures::Stream;
 use tokio::sync::mpsc;
@@ -111,7 +114,7 @@ impl RtsModel {
         };
 
         let request_start_time = Instant::now();
-        let request_start_time_sys = SystemTime::now();
+        let request_start_time_sys = Utc::now();
         let token_clone = cancel_token.clone();
         let result = tokio::select! {
             _ = token_clone.cancelled() => {
@@ -144,7 +147,7 @@ impl RtsModel {
         tx: mpsc::Sender<std::result::Result<StreamEvent, StreamError>>,
         token: CancellationToken,
         request_start_time: Instant,
-        request_start_time_sys: SystemTime,
+        request_start_time_sys: DateTime<Utc>,
     ) {
         match res {
             Ok(output) => {
@@ -335,35 +338,7 @@ impl Model for RtsModel {
                 .await;
         });
 
-        Box::pin(RtsDropWrapper {
-            receiver_stream: ReceiverStream::new(rx),
-            cancel_token,
-        })
-    }
-}
-
-#[derive(Debug)]
-struct RtsDropWrapper {
-    receiver_stream: ReceiverStream<Result<StreamEvent, StreamError>>,
-    cancel_token: CancellationToken,
-}
-
-impl Stream for RtsDropWrapper {
-    type Item = Result<StreamEvent, StreamError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut std::task::Context<'_>) -> std::task::Poll<Option<Self::Item>> {
-        Pin::new(&mut self.receiver_stream).poll_next(cx)
-    }
-}
-
-impl Drop for RtsDropWrapper {
-    fn drop(&mut self) {
-        // TODO - I don't think RtsDropWrapper is really required here.
-        //
-        // Cancelling is already handled by agent_loop correctly (when AgentLoop is dropped, the
-        // cancel token will call cancel)
-        // debug!("rts stream dropped, cancelling");
-        // self.cancel_token.cancel();
+        Box::pin(ReceiverStream::new(rx))
     }
 }
 
@@ -393,7 +368,7 @@ struct ResponseParser {
     /// Time immediately before sending the request.
     request_start_time: Instant,
     /// Time immediately before sending the request, as a [SystemTime].
-    request_start_time_sys: SystemTime,
+    request_start_time_sys: DateTime<Utc>,
     time_to_first_chunk: Option<Duration>,
     time_between_chunks: Vec<Duration>,
     /// Total size (in bytes) of the response received so far.
@@ -407,7 +382,7 @@ impl ResponseParser {
         cancel_token: CancellationToken,
         request_id: Option<String>,
         request_start_time: Instant,
-        request_start_time_sys: SystemTime,
+        request_start_time_sys: DateTime<Utc>,
     ) -> Self {
         Self {
             response,
@@ -621,6 +596,8 @@ impl ResponseParser {
     fn make_metadata(&self) -> StreamEvent {
         StreamEvent::Metadata(MetadataEvent {
             metrics: Some(MetadataMetrics {
+                request_start_time: self.request_start_time_sys,
+                request_end_time: Utc::now(),
                 time_to_first_chunk: self.time_to_first_chunk,
                 time_between_chunks: if self.time_between_chunks.is_empty() {
                     None

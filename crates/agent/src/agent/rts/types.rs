@@ -40,25 +40,6 @@ impl From<ToolUseBlock> for model::ToolUse {
     }
 }
 
-// impl From<ToolResultBlock> for model::ToolResult {
-//     fn from(v: ToolResultBlock) -> Self {
-//         Self {
-//             tool_use_id: v.tool_use_id,
-//             content: v.content.into_iter().map(Into::into).collect(),
-//             status: v.status.into(),
-//         }
-//     }
-// }
-
-// impl From<ToolResultContentBlock> for model::ToolResultContentBlock {
-//     fn from(v: ToolResultContentBlock) -> Self {
-//         match v {
-//             ToolResultContentBlock::Text(t) => Self::Text(t),
-//             ToolResultContentBlock::Json(v) => Self::Json(serde_value_to_document(v)),
-//         }
-//     }
-// }
-
 impl From<ToolResultStatus> for model::ToolResultStatus {
     fn from(value: ToolResultStatus) -> Self {
         match value {

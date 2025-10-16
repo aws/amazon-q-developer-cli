@@ -216,7 +216,7 @@ impl TaskExecutor {
                     }
                 });
             },
-            HookConfig::Tool(tool) => (),
+            HookConfig::Tool(_) => (),
         };
 
         let start_time = Utc::now();
@@ -282,6 +282,12 @@ impl TaskExecutor {
     }
 }
 
+impl Default for TaskExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug)]
 pub enum ExecuteRequest {
     Tool(StartToolExecution),
@@ -336,6 +342,7 @@ struct ExecutingHook {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum TaskExecutorEvent {
     /// A tool has started executing
     ToolExecutionStart(ToolExecutionStartEvent),
@@ -406,6 +413,7 @@ impl ToolExecutionId {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(clippy::large_enum_variant)]
 pub enum ExecutorResult {
     Tool(ToolExecutorResult),
     Hook(HookExecutorResult),
@@ -505,7 +513,7 @@ impl HookResult {
     pub fn is_success(&self) -> bool {
         match self {
             HookResult::Command(res) => res.as_ref().is_ok_and(|r| r.exit_code == 0),
-            HookResult::Tool { .. } => todo!(),
+            HookResult::Tool { .. } => panic!("unimplemented"),
         }
     }
 
@@ -516,7 +524,6 @@ impl HookResult {
     pub fn output(&self) -> Option<&str> {
         match self {
             HookResult::Command(Ok(CommandResult { output, .. })) => Some(output),
-            HookResult::Tool { output } => todo!(),
             _ => None,
         }
     }
@@ -668,9 +675,6 @@ fn sanitize_user_prompt(input: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::types::AgentId;
-
-    const TEST_AGENT_NAME: &str = "test_agent";
 
     const TEST_COMMAND_HOOK: &str = r#"
 {
@@ -678,8 +682,8 @@ mod tests {
 }
 "#;
 
-    async fn run_with_timeout<T: Future>(fut: T) {
-        match tokio::time::timeout(std::time::Duration::from_millis(500), fut).await {
+    async fn run_with_timeout<T: Future>(timeout: Duration, fut: T) {
+        match tokio::time::timeout(timeout, fut).await {
             Ok(_) => (),
             Err(e) => panic!("Future failed to resolve within timeout: {}", e),
         }
@@ -687,25 +691,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_hook_execution() {
-        let mut bg = TaskExecutor::new();
+        let mut executor = TaskExecutor::new();
 
-        let agent_id = AgentId::new(TEST_AGENT_NAME.to_string());
-        bg.start_hook_execution(StartHookExecution {
-            id: HookExecutionId {
-                hook: Hook {
-                    trigger: HookTrigger::UserPromptSubmit,
-                    config: serde_json::from_str(TEST_COMMAND_HOOK).unwrap(),
+        executor
+            .start_hook_execution(StartHookExecution {
+                id: HookExecutionId {
+                    hook: Hook {
+                        trigger: HookTrigger::UserPromptSubmit,
+                        config: serde_json::from_str(TEST_COMMAND_HOOK).unwrap(),
+                    },
+                    tool_context: None,
                 },
-                tool_context: None,
-            },
-            prompt: None,
-        })
-        .await;
+                prompt: None,
+            })
+            .await;
 
-        run_with_timeout(async move {
+        run_with_timeout(Duration::from_millis(100), async move {
             let mut event_buf = Vec::new();
             loop {
-                bg.recv_next(&mut event_buf).await;
+                executor.recv_next(&mut event_buf).await;
+                // Check if we get a "hello world" successful hook execution.
                 if event_buf.iter().any(|ev| match ev {
                     TaskExecutorEvent::HookExecutionEnd(HookExecutionEndEvent { result, .. }) => {
                         let HookExecutorResult::Completed { result, .. } = result else {
@@ -720,9 +725,9 @@ mod tests {
                     },
                     _ => false,
                 }) {
+                    // Hook succeeded with expected output, break.
                     break;
                 }
-                println!("{:?}", event_buf);
                 event_buf.drain(..);
             }
         })

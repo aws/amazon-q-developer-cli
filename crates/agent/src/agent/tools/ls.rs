@@ -189,7 +189,7 @@ impl Ls {
                 if entry.metadata.is_dir() {
                     // Exclude the directory from being searched if it is a commonly ignored
                     // directory.
-                    if matches_any_pattern(&IGNORE_PATTERNS, &entry.path.to_string_lossy()) {
+                    if matches_any_pattern(IGNORE_PATTERNS, entry.path.to_string_lossy()) {
                         continue;
                     }
                     dir_queue.push_back((entry.path.clone(), depth + 1));

@@ -5,8 +5,6 @@ use std::collections::HashMap;
 use std::process::Stdio;
 
 use bstr::ByteSlice as _;
-use futures::StreamExt;
-use rand::seq::IndexedRandom;
 use schemars::{
     JsonSchema,
     schema_for,

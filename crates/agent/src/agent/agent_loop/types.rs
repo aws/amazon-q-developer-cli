@@ -272,6 +272,7 @@ pub struct ImageBlock {
 pub enum ImageFormat {
     Gif,
     #[serde(alias = "jpg")]
+    #[strum(serialize = "jpeg", serialize = "jpg")]
     Jpeg,
     Png,
     Webp,
@@ -422,6 +423,8 @@ pub struct MetadataEvent {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MetadataMetrics {
+    pub request_start_time: DateTime<Utc>,
+    pub request_end_time: DateTime<Utc>,
     pub time_to_first_chunk: Option<Duration>,
     pub time_between_chunks: Option<Vec<Duration>>,
     pub response_stream_len: u32,
@@ -479,6 +482,11 @@ mod tests {
         test_ser_deser!(ImageFormat, ImageFormat::Png, "png");
         test_ser_deser!(ImageFormat, ImageFormat::Webp, "webp");
         test_ser_deser!(ImageFormat, ImageFormat::Jpeg, "jpeg");
-        assert_eq!(ImageFormat::from_str("jpg").unwrap(), ImageFormat::Jpeg);
+        assert_eq!(
+            ImageFormat::from_str("jpg").unwrap(),
+            ImageFormat::Jpeg,
+            "expected 'jpg' to parse to {}",
+            ImageFormat::Jpeg
+        );
     }
 }

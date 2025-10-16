@@ -28,13 +28,13 @@ pub trait Model {
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>>;
 }
 
-/// Required for defining [Model] with a [Box<dyn Model>] for [AgentLoopRequest].
+/// Required for defining [Model] with a [Box<dyn Model>] for [super::AgentLoopRequest].
 pub trait AgentLoopModel: Model + std::fmt::Debug + Send + Sync + 'static {}
 
 // Helper blanket impl
 impl<T> AgentLoopModel for T where T: Model + std::fmt::Debug + Send + Sync + 'static {}
 
-/// The supporte
+/// The supported backends
 #[derive(Debug, Clone)]
 pub enum Models {
     Rts(RtsModel),
