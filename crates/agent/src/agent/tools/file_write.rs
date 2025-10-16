@@ -3,11 +3,11 @@ use std::path::{
     PathBuf,
 };
 
-use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
 };
+use syntect::util::LinesWithEndings;
 
 use super::{
     BuiltInToolName,
@@ -17,8 +17,8 @@ use super::{
 };
 use crate::agent::util::path::canonicalize_path;
 
-const FILE_WRITE_TOOL_DESCRIPTION: &str = r#"
-A tool for creating and editing files.
+const FS_WRITE_TOOL_DESCRIPTION: &str = r#"
+A tool for creating and editing text files.
 
 WHEN TO USE THIS TOOL:
 - Use when you need to create a new file, or modify an existing file
@@ -33,9 +33,10 @@ HOW TO USE:
 
 TIPS:
 - Read the file first before making modifications to ensure you have the most up-to-date version of the file.
+- To append content to the end of a file, use `insert` with no `insert_line`
 "#;
 
-const FILE_WRITE_SCHEMA: &str = r#"
+const FS_WRITE_SCHEMA: &str = r#"
 {
     "type": "object",
     "properties": {
@@ -53,7 +54,7 @@ const FILE_WRITE_SCHEMA: &str = r#"
             "type": "string"
         },
         "insert_line": {
-            "description": "Required parameter of `insert` command. The `content` will be inserted AFTER the line `insert_line` of `path`.",
+            "description": "Optional parameter of `insert` command. Line is 0-indexed. `content` will be inserted at the provided line. If not provided, content will be inserted at the end of the file on a new line, inserting a newline at the end of the file if it is missing.",
             "type": "integer"
         },
         "new_str": {
@@ -76,27 +77,38 @@ const FILE_WRITE_SCHEMA: &str = r#"
 }
 "#;
 
-impl BuiltInToolTrait for FileWrite {
-    const DESCRIPTION: &str = FILE_WRITE_TOOL_DESCRIPTION;
-    const INPUT_SCHEMA: &str = FILE_WRITE_SCHEMA;
-    const NAME: BuiltInToolName = BuiltInToolName::FileWrite;
+#[cfg(unix)]
+const NEWLINE: &str = "\n";
+
+impl BuiltInToolTrait for FsWrite {
+    fn name() -> BuiltInToolName {
+        BuiltInToolName::FsWrite
+    }
+
+    fn description() -> std::borrow::Cow<'static, str> {
+        FS_WRITE_TOOL_DESCRIPTION.into()
+    }
+
+    fn input_schema() -> std::borrow::Cow<'static, str> {
+        FS_WRITE_SCHEMA.into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[serde(tag = "command")]
-pub enum FileWrite {
+pub enum FsWrite {
     Create(FileCreate),
     StrReplace(StrReplace),
     Insert(Insert),
 }
 
-impl FileWrite {
+impl FsWrite {
     pub fn path(&self) -> &str {
         match self {
-            FileWrite::Create(v) => &v.path,
-            FileWrite::StrReplace(v) => &v.path,
-            FileWrite::Insert(v) => &v.path,
+            FsWrite::Create(v) => &v.path,
+            FsWrite::StrReplace(v) => &v.path,
+            FsWrite::Insert(v) => &v.path,
         }
     }
 
@@ -114,15 +126,15 @@ impl FileWrite {
         }
 
         match &self {
-            FileWrite::Create(_) => (),
-            FileWrite::StrReplace(_) => {
+            FsWrite::Create(_) => (),
+            FsWrite::StrReplace(_) => {
                 if !self.canonical_path()?.exists() {
                     errors.push(
                         "The provided path must exist in order to replace or insert contents into it".to_string(),
                     );
                 }
             },
-            FileWrite::Insert(v) => {
+            FsWrite::Insert(v) => {
                 if v.content.is_empty() {
                     errors.push("Content to insert must not be empty".to_string());
                 }
@@ -136,35 +148,27 @@ impl FileWrite {
         }
     }
 
-    pub async fn make_context(&self) -> eyre::Result<FileWriteContext> {
+    pub async fn make_context(&self) -> eyre::Result<FsWriteContext> {
         // TODO - return file diff context
-        Ok(FileWriteContext {
+        Ok(FsWriteContext {
             path: self.path().to_string(),
         })
     }
 
-    pub async fn execute(&self, _state: Option<&mut FileWriteState>) -> ToolExecutionResult {
+    pub async fn execute(&self, _state: Option<&mut FsWriteState>) -> ToolExecutionResult {
         let path = self.canonical_path().map_err(ToolExecutionError::Custom)?;
 
         match &self {
-            FileWrite::Create(v) => v.execute(path).await?,
-            FileWrite::StrReplace(v) => v.execute(path).await?,
-            FileWrite::Insert(v) => v.execute(path).await?,
+            FsWrite::Create(v) => v.execute(path).await?,
+            FsWrite::StrReplace(v) => v.execute(path).await?,
+            FsWrite::Insert(v) => v.execute(path).await?,
         }
 
         Ok(Default::default())
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub enum FileWriteOp {
-    Create(FileCreate),
-    StrReplace(StrReplace),
-    Insert(Insert),
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCreate {
     path: String,
     content: String,
@@ -190,7 +194,7 @@ impl FileCreate {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StrReplace {
     path: String,
@@ -238,7 +242,7 @@ impl StrReplace {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Insert {
     path: String,
@@ -247,20 +251,53 @@ pub struct Insert {
 }
 
 impl Insert {
-    async fn execute(&self, _path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
-        panic!("unimplemented")
+    async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
+        let path = path.as_ref();
+
+        let mut file = tokio::fs::read_to_string(path)
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("failed to read {}", path.to_string_lossy()), e))?;
+
+        let line_count = file.lines().count() as u32;
+
+        if let Some(insert_line) = self.insert_line {
+            let insert_line = insert_line.clamp(0, line_count);
+
+            // Get the index to insert at.
+            let mut i = 0;
+            for line in LinesWithEndings::from(&file).take(insert_line as usize) {
+                i += line.len();
+            }
+
+            let mut content = self.content.clone();
+            if !content.ends_with(NEWLINE) {
+                content.push_str(NEWLINE);
+            }
+            file.insert_str(i, &content);
+        } else {
+            if !file.ends_with(NEWLINE) {
+                file.push_str(NEWLINE);
+            }
+            file.push_str(&self.content);
+        }
+
+        tokio::fs::write(path, file)
+            .await
+            .map_err(|e| ToolExecutionError::io(format!("failed to write to {}", path.to_string_lossy()), e))?;
+
+        Ok(())
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FileWriteContext {
+pub struct FsWriteContext {
     path: String,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct FileWriteState {
+pub struct FsWriteState {
     pub line_tracker: FileLineTracker,
 }
 

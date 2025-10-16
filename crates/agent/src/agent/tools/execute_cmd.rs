@@ -64,9 +64,17 @@ const EXECUTE_CMD_SCHEMA: &str = r#"
 "#;
 
 impl BuiltInToolTrait for ExecuteCmd {
-    const DESCRIPTION: &str = EXECUTE_CMD_TOOL_DESCRIPTION;
-    const INPUT_SCHEMA: &str = EXECUTE_CMD_SCHEMA;
-    const NAME: BuiltInToolName = BuiltInToolName::ExecuteCmd;
+    fn name() -> BuiltInToolName {
+        BuiltInToolName::ExecuteCmd
+    }
+
+    fn description() -> std::borrow::Cow<'static, str> {
+        EXECUTE_CMD_TOOL_DESCRIPTION.into()
+    }
+
+    fn input_schema() -> std::borrow::Cow<'static, str> {
+        EXECUTE_CMD_SCHEMA.into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

@@ -28,7 +28,7 @@ use crate::agent::util::path::canonicalize_path;
 
 const MAX_READ_SIZE: u32 = 250 * 1024;
 
-const FILE_READ_TOOL_DESCRIPTION: &str = r#"
+const FS_READ_TOOL_DESCRIPTION: &str = r#"
 A tool for viewing file contents.
 
 WHEN TO USE THIS TOOL:
@@ -43,7 +43,6 @@ HOW TO USE:
 - Do not use this for directories, use the ls tool instead
 
 FEATURES:
-- Displays file contents with line numbers for easy reference
 - Can read from any position in a file using the offset parameter
 - Handles large files by limiting the number of lines read
 
@@ -54,21 +53,29 @@ LIMITATIONS:
 
 // TODO - migrate from JsonSchema, it's not very configurable and prone to breaking changes in the
 // generated structure.
-const FILE_READ_SCHEMA: &str = "";
+const FS_READ_SCHEMA: &str = "";
 
-impl BuiltInToolTrait for FileRead {
-    const DESCRIPTION: &str = FILE_READ_TOOL_DESCRIPTION;
-    const INPUT_SCHEMA: &str = FILE_READ_SCHEMA;
-    const NAME: BuiltInToolName = BuiltInToolName::FileRead;
+impl BuiltInToolTrait for FsRead {
+    fn name() -> BuiltInToolName {
+        BuiltInToolName::FsRead
+    }
+
+    fn description() -> std::borrow::Cow<'static, str> {
+        FS_READ_TOOL_DESCRIPTION.into()
+    }
+
+    fn input_schema() -> std::borrow::Cow<'static, str> {
+        FS_READ_SCHEMA.into()
+    }
 }
 
 /// A tool for reading files
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct FileRead {
-    pub ops: Vec<FileReadOp>,
+pub struct FsRead {
+    pub ops: Vec<FsReadOp>,
 }
 
-impl FileRead {
+impl FsRead {
     pub fn tool_schema() -> serde_json::Value {
         let schema = schema_for!(Self);
         serde_json::to_value(schema).expect("creating tool schema should not fail")
@@ -124,7 +131,7 @@ impl FileRead {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct FileReadOp {
+pub struct FsReadOp {
     /// Path to the file
     pub path: String,
     /// Number of lines to read
@@ -133,7 +140,7 @@ pub struct FileReadOp {
     pub offset: Option<u32>,
 }
 
-impl FileReadOp {
+impl FsReadOp {
     async fn execute(&self) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
         let path = PathBuf::from(canonicalize_path(&self.path).map_err(|e| ToolExecutionError::Custom(e.to_string()))?);
 
@@ -182,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_file_read_tool_schema() {
-        let schema = FileRead::tool_schema();
+        let schema = FsRead::tool_schema();
         println!("{}", serde_json::to_string_pretty(&schema).unwrap());
     }
 }

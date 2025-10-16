@@ -9,14 +9,15 @@ pub mod mcp;
 pub mod mkdir;
 pub mod rm;
 
+use std::borrow::Cow;
 use std::sync::Arc;
 
 use execute_cmd::ExecuteCmd;
-use file_read::FileRead;
+use file_read::FsRead;
 use file_write::{
-    FileWrite,
-    FileWriteContext,
-    FileWriteState,
+    FsWrite,
+    FsWriteContext,
+    FsWriteState,
 };
 use grep::Grep;
 use image_read::ImageRead;
@@ -60,8 +61,8 @@ where
     input_schema.remove("description");
 
     ToolSpec {
-        name: T::NAME.to_string(),
-        description: T::DESCRIPTION.to_string(),
+        name: T::name().to_string(),
+        description: T::description().to_string(),
         input_schema,
     }
 }
@@ -71,9 +72,10 @@ where
     T: BuiltInToolTrait,
 {
     ToolSpec {
-        name: T::NAME.to_string(),
-        description: T::DESCRIPTION.to_string(),
-        input_schema: serde_json::from_str(T::INPUT_SCHEMA).expect("built-in tool specs should not fail"),
+        name: T::name().to_string(),
+        description: T::description().to_string(),
+        input_schema: serde_json::from_str(T::input_schema().to_string().as_str())
+            .expect("built-in tool specs should not fail"),
     }
 }
 
@@ -93,17 +95,17 @@ where
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum BuiltInToolName {
-    FileRead,
-    FileWrite,
+    FsRead,
+    FsWrite,
     ExecuteCmd,
     ImageRead,
     Ls,
 }
 
 trait BuiltInToolTrait {
-    const NAME: BuiltInToolName;
-    const DESCRIPTION: &str;
-    const INPUT_SCHEMA: &str;
+    fn name() -> BuiltInToolName;
+    fn description() -> Cow<'static, str>;
+    fn input_schema() -> Cow<'static, str>;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -164,8 +166,8 @@ impl ToolKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BuiltInTool {
-    FileRead(FileRead),
-    FileWrite(FileWrite),
+    FileRead(FsRead),
+    FileWrite(FsWrite),
     Grep(Grep),
     Ls(Ls),
     Mkdir(Mkdir),
@@ -179,10 +181,10 @@ pub enum BuiltInTool {
 impl BuiltInTool {
     pub fn from_parts(name: &BuiltInToolName, args: serde_json::Value) -> Result<Self, ToolParseErrorKind> {
         match name {
-            BuiltInToolName::FileRead => serde_json::from_value::<FileRead>(args)
+            BuiltInToolName::FsRead => serde_json::from_value::<FsRead>(args)
                 .map(Self::FileRead)
                 .map_err(ToolParseErrorKind::schema_failure),
-            BuiltInToolName::FileWrite => serde_json::from_value::<FileWrite>(args)
+            BuiltInToolName::FsWrite => serde_json::from_value::<FsWrite>(args)
                 .map(Self::FileWrite)
                 .map_err(ToolParseErrorKind::schema_failure),
             BuiltInToolName::ExecuteCmd => serde_json::from_value::<ExecuteCmd>(args)
@@ -199,8 +201,8 @@ impl BuiltInTool {
 
     pub fn generate_tool_spec(name: &BuiltInToolName) -> ToolSpec {
         match name {
-            BuiltInToolName::FileRead => generate_tool_spec_from_json_schema::<FileRead>(),
-            BuiltInToolName::FileWrite => generate_tool_spec_from_trait::<FileWrite>(),
+            BuiltInToolName::FsRead => generate_tool_spec_from_json_schema::<FsRead>(),
+            BuiltInToolName::FsWrite => generate_tool_spec_from_trait::<FsWrite>(),
             BuiltInToolName::ExecuteCmd => generate_tool_spec_from_trait::<ExecuteCmd>(),
             BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
             BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
@@ -209,8 +211,8 @@ impl BuiltInTool {
 
     pub fn tool_name(&self) -> BuiltInToolName {
         match self {
-            BuiltInTool::FileRead(_) => BuiltInToolName::FileRead,
-            BuiltInTool::FileWrite(_) => BuiltInToolName::FileWrite,
+            BuiltInTool::FileRead(_) => BuiltInToolName::FsRead,
+            BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite,
             BuiltInTool::Grep(_) => panic!("unimplemented"),
             BuiltInTool::Ls(_) => BuiltInToolName::Ls,
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
@@ -223,8 +225,8 @@ impl BuiltInTool {
 
     pub fn canonical_tool_name(&self) -> CanonicalToolName {
         match self {
-            BuiltInTool::FileRead(_) => BuiltInToolName::FileRead.into(),
-            BuiltInTool::FileWrite(_) => BuiltInToolName::FileWrite.into(),
+            BuiltInTool::FileRead(_) => BuiltInToolName::FsRead.into(),
+            BuiltInTool::FileWrite(_) => BuiltInToolName::FsWrite.into(),
             BuiltInTool::Grep(_) => panic!("unimplemented"),
             BuiltInTool::Ls(_) => BuiltInToolName::Ls.into(),
             BuiltInTool::Mkdir(_) => panic!("unimplemented"),
@@ -243,7 +245,7 @@ pub fn built_in_tool_names() -> Vec<CanonicalToolName> {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ToolContext {
     FileRead,
-    FileWrite(FileWriteContext),
+    FileWrite(FsWriteContext),
 }
 
 /// The result of a tool use execution.
@@ -286,7 +288,7 @@ impl From<String> for ToolExecutionOutputItem {
 /// Persistent state required by tools during execution
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ToolState {
-    pub file_write: Option<FileWriteState>,
+    pub file_write: Option<FsWriteState>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

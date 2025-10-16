@@ -9,6 +9,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use strum::IntoEnumIterator;
 
 use super::{
     BuiltInToolName,
@@ -28,6 +29,19 @@ use crate::agent::util::path::canonicalize_path;
 
 const IMAGE_READ_TOOL_DESCRIPTION: &str = r#"
 A tool for reading images.
+
+WHEN TO USE THIS TOOL:
+- Use when you want to read a file that you know is a supported image
+
+HOW TO USE:
+- Provide a list of paths to images you want to read
+
+FEATURES:
+- Able to read the following image formats: {IMAGE_FORMATS}
+- Can read multiple images in one go
+
+LIMITATIONS:
+- Maximum supported image size is 10 MB
 "#;
 
 const IMAGE_READ_SCHEMA: &str = r#"
@@ -50,9 +64,25 @@ const IMAGE_READ_SCHEMA: &str = r#"
 "#;
 
 impl BuiltInToolTrait for ImageRead {
-    const DESCRIPTION: &str = IMAGE_READ_TOOL_DESCRIPTION;
-    const INPUT_SCHEMA: &str = IMAGE_READ_SCHEMA;
-    const NAME: BuiltInToolName = BuiltInToolName::ImageRead;
+    fn name() -> BuiltInToolName {
+        BuiltInToolName::ImageRead
+    }
+
+    fn description() -> std::borrow::Cow<'static, str> {
+        make_tool_description().into()
+    }
+
+    fn input_schema() -> std::borrow::Cow<'static, str> {
+        IMAGE_READ_SCHEMA.into()
+    }
+}
+
+fn make_tool_description() -> String {
+    let supported_formats = ImageFormat::iter()
+        .map(|v| v.to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    IMAGE_READ_TOOL_DESCRIPTION.replace("{IMAGE_FORMATS}", &supported_formats)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

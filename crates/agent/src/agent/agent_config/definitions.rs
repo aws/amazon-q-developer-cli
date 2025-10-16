@@ -175,7 +175,7 @@ impl Default for AgentConfigV2025_08_22 {
             use_legacy_mcp_json: false,
 
             resources: Default::default(),
-            allowed_tools: HashSet::from([BuiltInToolName::FileRead.to_string()]),
+            allowed_tools: HashSet::from([BuiltInToolName::FsRead.to_string()]),
         }
     }
 }

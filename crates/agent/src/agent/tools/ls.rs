@@ -81,9 +81,17 @@ const MAX_LS_ENTRIES: usize = 1000;
 const MAX_ENTRY_COUNT_PER_DIR: usize = 10_000;
 
 impl BuiltInToolTrait for Ls {
-    const DESCRIPTION: &str = LS_TOOL_DESCRIPTION;
-    const INPUT_SCHEMA: &str = LS_SCHEMA;
-    const NAME: BuiltInToolName = BuiltInToolName::Ls;
+    fn name() -> BuiltInToolName {
+        BuiltInToolName::Ls
+    }
+
+    fn description() -> std::borrow::Cow<'static, str> {
+        LS_TOOL_DESCRIPTION.into()
+    }
+
+    fn input_schema() -> std::borrow::Cow<'static, str> {
+        LS_SCHEMA.into()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
