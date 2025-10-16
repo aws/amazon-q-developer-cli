@@ -191,7 +191,7 @@ impl RtsModel {
         tool_specs: Option<Vec<ToolSpec>>,
         _system_prompt: Option<String>,
     ) -> Result<ConversationState, String> {
-        debug!(?messages, ?tool_specs, "creating converation state");
+        debug!(?messages, ?tool_specs, "creating conversation state");
         let tools = tool_specs.map(|v| {
             v.into_iter()
                 .map(Into::<ToolSpecification>::into)
