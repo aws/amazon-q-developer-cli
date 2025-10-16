@@ -14,6 +14,7 @@ use hyper::{
     Response,
 };
 use hyper_util::rt::TokioIo;
+use rand::Rng;
 use serde::Deserialize;
 use tokio::net::TcpListener;
 use tracing::{
@@ -61,10 +62,11 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
     // PKCE params for portal + social token exchange
     let verifier = generate_code_verifier();
     let challenge = generate_code_challenge(&verifier);
-    let state = rand::random::<[u8; 16]>()
-        .iter()
-        .map(|b| format!("{:02x}", b))
-        .collect::<String>();
+    let state = rand::rng()
+        .sample_iter(rand::distr::Alphanumeric)
+        .take(10)
+        .collect::<Vec<_>>();
+    let state = String::from_utf8(state).unwrap_or("state".to_string());
 
     let listener = bind_allowed_port(CALLBACK_PORTS)
         .await

@@ -20,7 +20,7 @@ use aws_smithy_runtime_api::client::identity::{
     ResolveIdentity,
 };
 pub use builder_id::{
-    is_logged_in,
+    is_builder_id_logged_in,
     logout,
 };
 pub use consts::START_URL;

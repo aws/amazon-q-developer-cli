@@ -156,51 +156,23 @@
                 const params = new URLSearchParams(window.location.search)
 
                 const error = params.get('error')
-                const success = params.get('success');
                 if (error) {
                     showErrorMessage(error)
                     return
                 }
 
+                const productName = 'KIRO CLI'
+                document.getElementById(
+                    'approvalMessage'
+                ).innerText = `${productName} have been given requested permissions`
+                document.getElementById(
+                    'footerText'
+                ).innerText = `You can close this window and start using ${productName}`
 
-                // Only show success message if explicitly marked as successful
-                // This prevents showing success when token exchange might still fail
-                if (success === 'true') {
-                    const productName = 'KIRO CLI';
-                    document.getElementById('approvalMessage').innerText = 
-                        `${productName} has been granted given requested permissions.`;
-                    document.getElementById('footerText').innerText = 
-                        `You can close this window and start using ${productName}`;
-                } else {
-                    // Show neutral "processing" message
-                    document.getElementById('approvalMessage').innerText = 
-                        'Processing authentication...';
-                    document.getElementById('footerText').innerText = 
-                        'You can close this window and check the terminal for results.';
-                }
-
-                function showErrorMessage(errorParam) {
-                    document.getElementById('approved-auth').classList.add('hidden');
-                    document.getElementById('denied-auth').classList.remove('hidden');
-
-                    // Map error codes to user-friendly messages
-                    let errorMessage = '';
-                    let retryMessage = 'You can close this window and try again.';
-
-                    const decodedError = decodeURIComponent(errorParam);
-
-                    if (decodedError === 'access_denied' || decodedError.includes('denied')) {
-                        errorMessage = 'You cancelled the authentication or denied access. Kiro CLI requires the requested permissions to function properly.';
-                    } else if (decodedError.includes('invalid') || decodedError.includes('invitation')) {
-                        errorMessage = 'Invalid access code. Please check your invitation code and try again.';
-                    } else if (decodedError.includes('timeout')) {
-                        errorMessage = 'Authentication timed out. Please try again.';
-                    } else {
-                        errorMessage = `Authentication error: ${decodedError}`;
-                    }
-
-                    document.getElementById('errorMessage').innerText = errorMessage;
-                    document.getElementById('retryText').innerText = retryMessage;
+                function showErrorMessage(errorText) {
+                    document.getElementById('approved-auth').classList.add('hidden')
+                    document.getElementById('denied-auth').classList.remove('hidden')
+                    document.getElementById('errorMessage').innerText = errorText
                 }
             }
         </script>

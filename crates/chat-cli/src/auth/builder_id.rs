@@ -544,7 +544,7 @@ pub async fn poll_create_token(
     }
 }
 
-pub async fn is_logged_in(database: &mut Database) -> bool {
+pub async fn is_builder_id_logged_in(database: &mut Database) -> bool {
     // Check for BuilderId if not using Sigv4
     if std::env::var("AMAZON_Q_SIGV4").is_ok_and(|v| !v.is_empty()) {
         debug!("logged in using sigv4 credentials");

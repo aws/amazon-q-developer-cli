@@ -43,6 +43,7 @@ use crate::auth::portal::{
 };
 use crate::auth::social::SocialProvider;
 use crate::constants::PRODUCT_NAME;
+use crate::database::Database;
 use crate::os::Os;
 use crate::telemetry::{
     QProfileSwitchIntent,
@@ -85,9 +86,7 @@ pub struct LoginArgs {
 
 impl LoginArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        if crate::auth::is_logged_in(&mut os.database).await
-            || crate::auth::social::is_social_logged_in(&os.database).await
-        {
+        if is_logged_in(&mut os.database).await {
             eyre::bail!(
                 "Already logged in, please logout with {} first",
                 format!("{CLI_BINARY_NAME} logout").magenta()
@@ -97,31 +96,33 @@ impl LoginArgs {
         let is_remote_env = is_remote() || self.use_device_flow;
 
         if !is_remote_env {
-            // LOCAL ENVIRONMENT: Always use unified auth portal
+            // LOCAL ENVIRONMENT: Ignore all CLI flags and always use unified auth portal
             info!("Using unified auth portal for login");
 
             let mut pre_portal_spinner = Spinner::new(vec![
                 SpinnerComponent::Spinner,
                 SpinnerComponent::Text(" Opening auth portal and logging in...".into()),
             ]);
-            // Ignore all CLI flags and use unified portal
             match start_unified_auth(&mut os.database).await? {
                 PortalResult::Social(provider) => {
                     pre_portal_spinner.stop_with_message(format!("Logged in with {}", provider));
-                    let _ = os.telemetry.send_user_logged_in(&os.database, Some(provider)).await;
+                    os.telemetry.send_user_logged_in(None, None, Some(provider)).ok();
                     return Ok(ExitCode::SUCCESS);
                 },
                 PortalResult::Internal { issuer_uri } => {
                     pre_portal_spinner.stop();
-                    // EXACTLY samke with original PKCE path: this registers client + completes auth.
+                    // EXACTLY same with original PKCE path: this registers client + completes auth.
                     let (client, registration) = start_pkce_authorization(Some(issuer_uri.clone()), None).await?;
 
                     match crate::util::open::open_url_async(&registration.url).await {
+                        // If it succeeded, finish PKCE.
                         Ok(()) => {
                             let mut spinner = Spinner::new(vec![
                                 SpinnerComponent::Spinner,
                                 SpinnerComponent::Text(" Logging in...".into()),
                             ]);
+                            let issuer_url = registration.issuer_url().to_string();
+                            let region = registration.region().to_string();
                             let ctrl_c_stream = ctrl_c();
                             tokio::select! {
                                 res = registration.finish(&client, Some(&mut os.database)) => res?,
@@ -130,11 +131,15 @@ impl LoginArgs {
                                     exit(1);
                                 },
                             }
-                            let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
+                            os.telemetry
+                                .send_user_logged_in(Some(issuer_url), Some(region), None)
+                                .ok();
                             spinner.stop_with_message("Logged in".into());
                         },
+                        // If we are unable to open the link with the browser, then fallback to
+                        // the device code flow.
                         Err(err) => {
-                            // Fallback: device flow with issuer
+                            // Try device code flow.
                             error!(%err, "Failed to open URL with browser, falling back to device code flow");
                             try_device_authorization(os, Some(issuer_uri.clone()), None).await?;
                         },
@@ -158,9 +163,11 @@ impl LoginArgs {
                 Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
                 None => {
                     if self.identity_provider.is_some() && self.region.is_some() {
+                        // If license is specified and --identity-provider and --region are specified,
+                        // the license is determined to be pro
                         AuthMethod::IdentityCenter
                     } else {
-                        // Show menu for remote
+                        // --license is not specified, prompt the user to choose for remote
                         let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
                         let prompt = "Select login method (Social login not available in remote environment)";
                         let i = match choose(prompt, &options)? {
@@ -196,7 +203,6 @@ impl LoginArgs {
                         },
                     };
 
-                    // Existing BuilderId/IDC flow
                     // Remote machine won't be able to handle browser opening and redirects,
                     // hence always use device code flow.
                     try_device_authorization(os, start_url.clone(), region.clone()).await?;
@@ -225,6 +231,12 @@ pub async fn logout(os: &mut Os) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
+pub async fn is_logged_in(db: &mut Database) -> bool {
+    if crate::auth::is_builder_id_logged_in(db).await {
+        return true;
+    }
+    crate::auth::social::is_social_logged_in(&*db).await
+}
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct WhoamiArgs {
     /// Output format to use
@@ -234,7 +246,40 @@ pub struct WhoamiArgs {
 
 impl WhoamiArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        // Check for social login token first
+        // Check for BuilderId/IDC token
+        if let Ok(Some(token)) = BuilderIdToken::load(&os.database).await {
+            self.format.print(
+                || match token.token_type() {
+                    TokenType::BuilderId => "Logged in with Builder ID".into(),
+                    TokenType::IamIdentityCenter => {
+                        format!(
+                            "Logged in with IAM Identity Center ({})",
+                            token.start_url.as_ref().unwrap()
+                        )
+                    },
+                },
+                || {
+                    json!({
+                        "accountType": match token.token_type() {
+                            TokenType::BuilderId => "BuilderId",
+                            TokenType::IamIdentityCenter => "IamIdentityCenter",
+                        },
+                        "startUrl": token.start_url,
+                        "region": token.region,
+                    })
+                },
+            );
+
+            if matches!(token.token_type(), TokenType::IamIdentityCenter) {
+                if let Ok(Some(profile)) = os.database.get_auth_profile() {
+                    color_print::cprintln!("\n<em>Profile:</em>\n{}\n{}\n", profile.profile_name, profile.arn);
+                }
+            }
+
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        // Check for social login token
         if let Ok(Some(social_token)) = crate::auth::social::SocialToken::load(&os.database).await {
             self.format.print(
                 || format!("Logged in with {}", social_token.provider),
@@ -248,52 +293,14 @@ impl WhoamiArgs {
             return Ok(ExitCode::SUCCESS);
         }
 
-        // Check for BuilderId/IDC token
-        let builder_id = BuilderIdToken::load(&os.database).await;
-
-        match builder_id {
-            Ok(Some(token)) => {
-                self.format.print(
-                    || match token.token_type() {
-                        TokenType::BuilderId => "Logged in with Builder ID".into(),
-                        TokenType::IamIdentityCenter => {
-                            format!(
-                                "Logged in with IAM Identity Center ({})",
-                                token.start_url.as_ref().unwrap()
-                            )
-                        },
-                    },
-                    || {
-                        json!({
-                            "accountType": match token.token_type() {
-                                TokenType::BuilderId => "BuilderId",
-                                TokenType::IamIdentityCenter => "IamIdentityCenter",
-                            },
-                            "startUrl": token.start_url,
-                            "region": token.region,
-                        })
-                    },
-                );
-
-                if matches!(token.token_type(), TokenType::IamIdentityCenter) {
-                    if let Ok(Some(profile)) = os.database.get_auth_profile() {
-                        color_print::cprintln!("\n<em>Profile:</em>\n{}\n{}\n", profile.profile_name, profile.arn);
-                    }
-                }
-
-                Ok(ExitCode::SUCCESS)
-            },
-            _ => {
-                self.format.print(|| "Not logged in", || json!({ "account": null }));
-                Ok(ExitCode::FAILURE)
-            },
-        }
+        self.format.print(|| "Not logged in", || json!({ "account": null }));
+        Ok(ExitCode::FAILURE)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum LicenseType {
-    /// Free license (Builder ID or Social login)
+    /// Free license (Builder ID)
     Free,
     /// Pro license with Identity Center
     Pro,
@@ -374,7 +381,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                let _ = os.telemetry.send_user_logged_in(&os.database, None).await;
+                os.telemetry.send_user_logged_in(start_url, region, None).ok();
                 spinner.stop_with_message("Logged in".into());
                 break;
             },

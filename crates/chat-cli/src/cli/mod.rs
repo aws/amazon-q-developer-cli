@@ -48,6 +48,7 @@ use crate::cli::mcp::McpSubcommand;
 use crate::cli::user::{
     LoginArgs,
     WhoamiArgs,
+    is_logged_in,
 };
 use crate::logging::{
     LogArgs,
@@ -138,10 +139,7 @@ impl RootSubcommand {
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
-        if self.requires_auth()
-            && !crate::auth::is_logged_in(&mut os.database).await
-                & !crate::auth::social::is_social_logged_in(&os.database).await
-        {
+        if self.requires_auth() && !is_logged_in(&mut os.database).await {
             bail!(
                 "You are not logged in, please log in with {}",
                 format!("{CLI_BINARY_NAME} login").bold()
@@ -236,10 +234,7 @@ impl Cli {
             },
             log_to_stdout: std::env::var_os("Q_LOG_STDOUT").is_some() || self.verbose > 0,
             log_file_path: match subcommand {
-                RootSubcommand::Chat { .. }
-                | RootSubcommand::Login { .. }
-                | RootSubcommand::Whoami { .. }
-                | RootSubcommand::Logout => Some(logs_dir().expect("home dir must be set").join("qchat.log")),
+                RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("qchat.log")),
                 _ => None,
             },
             delete_old_log_file: false,

@@ -21,7 +21,6 @@
 
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::Arc;
 use std::time::Duration;
 
 pub use aws_sdk_ssooidc::client::Client;
@@ -283,83 +282,50 @@ impl PkceRegistration {
         Ok(())
     }
 
-    async fn recv_code(listener: tokio::net::TcpListener, expected_state: String) -> Result<String, AuthError> {
-        Self::recv_code_with_extra_accepts(listener, expected_state, 0).await
-    }
-
-    // extended version that accepts N extra connections to serve /index.html again
-    pub async fn recv_code_with_extra_accepts(
-        listener: tokio::net::TcpListener,
-        expected_state: String,
-        extra_accepts: usize,
-    ) -> Result<String, AuthError> {
-        // Channel for delivering (code, state) from any served connection
+    async fn recv_code(listener: TcpListener, expected_state: String) -> Result<String, AuthError> {
         let (code_tx, mut code_rx) = tokio::sync::mpsc::channel::<Result<(String, String), AuthError>>(1);
-        let code_tx_arc = Arc::new(code_tx);
-
-        // Host used by the service to 302 -> /index.html
+        let (stream, _) = listener.accept().await?;
+        let stream = TokioIo::new(stream); // Wrapper to implement Hyper IO traits for Tokio types.
         let host = listener.local_addr()?.to_string();
-
-        // Serve multiple connections to handle both /oauth/callback and /index.html
-        // Keep the behavior as close as possible to the previous version:
-        // first connection is typically the callback, but we allow extra accepts
-        // (callback + potential error redirect + index.html).
-        let max_accepts = 1 + extra_accepts;
-        let server_handle = tokio::spawn({
-            let code_tx_arc = code_tx_arc.clone();
-            let host = host.clone();
-            async move {
-                for _ in 0..max_accepts {
-                    if let Ok((stream, _)) = listener.accept().await {
-                        let stream = TokioIo::new(stream);
-                        let service = PkceHttpService {
-                            code_tx: code_tx_arc.clone(),
-                            host: host.clone(),
-                        };
-                        tokio::spawn(async move {
-                            if let Err(err) = http1::Builder::new().serve_connection(stream, service).await {
-                                debug!(?err, "Error serving connection");
-                            }
-                        });
-                    } else {
-                        // Accept error; break to avoid a tight loop
-                        break;
-                    }
-                }
+        tokio::spawn(async move {
+            if let Err(err) = http1::Builder::new()
+                .serve_connection(stream, PkceHttpService {
+                    code_tx: std::sync::Arc::new(code_tx),
+                    host,
+                })
+                .await
+            {
+                error!(?err, "Error occurred serving the connection");
             }
         });
-
-        // Wait for authorization code (or an error) with the same timeout semantics
-        let result = tokio::select! {
-            msg = code_rx.recv() => {
-                match msg {
-                    Some(Ok((code, state))) => {
-                        debug!(code = "<redacted>", state, "Received code and state");
-                        if state != expected_state {
-                            Err(AuthError::OAuthStateMismatch {
-                                actual: state,
-                                expected: expected_state,
-                            })
-                        } else {
-                            Ok(code)
-                        }
-                    }
-                    Some(Err(e)) => Err(e),
-                    None => Err(AuthError::OAuthMissingCode),
+        match code_rx.recv().await {
+            Some(Ok((code, state))) => {
+                debug!(code = "<redacted>", state, "Received code and state");
+                if state != expected_state {
+                    return Err(AuthError::OAuthStateMismatch {
+                        actual: state,
+                        expected: expected_state,
+                    });
                 }
-            }
-            _ = tokio::time::sleep(DEFAULT_AUTHORIZATION_TIMEOUT) => {
-                Err(AuthError::OAuthTimeout)
-            }
-        };
+                // Give time for the user to be redirected to index.html.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Ok(code)
+            },
+            Some(Err(err)) => {
+                // Give time for the user to be redirected to index.html.
+                tokio::time::sleep(Duration::from_millis(200)).await;
+                Err(err)
+            },
+            None => Err(AuthError::OAuthMissingCode),
+        }
+    }
 
-        // Small grace period so the browser can load /index.html after the 302
-        tokio::time::sleep(Duration::from_millis(200)).await;
+    pub fn issuer_url(&self) -> &str {
+        &self.issuer_url
+    }
 
-        // Let the server task finish (best-effort)
-        let _ = tokio::time::timeout(Duration::from_secs(2), server_handle).await;
-
-        result
+    pub fn region(&self) -> &Region {
+        &self.region
     }
 }
 
@@ -426,7 +392,7 @@ impl PkceHttpService {
             }
         }
 
-        Self::redirect_to_index(&host, "?success=true")
+        Self::redirect_to_index(&host, "")
     }
 
     fn redirect_to_index(host: &str, query_params: &str) -> Result<ServiceResponse, AuthError> {

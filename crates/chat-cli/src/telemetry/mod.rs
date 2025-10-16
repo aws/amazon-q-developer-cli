@@ -232,15 +232,22 @@ impl TelemetryThread {
         Ok(())
     }
 
-    pub async fn send_user_logged_in(
+    pub fn send_user_logged_in(
         &self,
-        database: &Database,
+        start_url: Option<String>,
+        sso_region: Option<String>,
         provider: Option<SocialProvider>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::UserLoggedIn {
             social_provider: provider.map(|p| p.to_string()),
         });
-        set_event_metadata(database, &mut telemetry_event).await;
+        if let Some(url) = start_url {
+            telemetry_event.set_start_url(url);
+        }
+        if let Some(region) = sso_region {
+            telemetry_event.set_sso_region(region);
+        }
+
         Ok(self.tx.send(telemetry_event)?)
     }
 
@@ -799,7 +806,7 @@ mod test {
         let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();
-        let _ = thread.send_user_logged_in(&database, None).await;
+        thread.send_user_logged_in(None, None, None).ok();
         drop(thread);
 
         assert!(!logs_contain("ERROR"));
@@ -818,7 +825,7 @@ mod test {
             .await
             .unwrap();
 
-        let _ = thread.send_user_logged_in(&database, None).await;
+        thread.send_user_logged_in(None, None, None).ok();
         thread
             .send_cli_subcommand_executed(&database, &RootSubcommand::Version { changelog: None })
             .await
