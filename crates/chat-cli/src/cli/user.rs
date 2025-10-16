@@ -123,21 +123,32 @@ impl LoginArgs {
                 let (start_url, region) = match login_method {
                     AuthMethod::BuilderId => (None, None),
                     AuthMethod::IdentityCenter => {
-                        let default_start_url = match self.identity_provider {
-                            Some(start_url) => Some(start_url),
-                            None => os.database.get_start_url()?.or_else(|| {
-                                os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultIdentityProvider)
-                            }),
-                        };
-                        let default_region = match self.region {
-                            Some(region) => Some(region),
-                            None => os.database.get_idc_region()?.or_else(|| {
-                                os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion)
-                            }),
+                        // Priority: 1. CLI arg > 2. Explicit default setting > 3. Previously used value
+                        let start_url = match self.identity_provider {
+                            Some(url) => url,
+                            None => {
+                                match os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultIdentityProvider) {
+                                    Some(default_url) => default_url,
+                                    None => {
+                                        let fallback = os.database.get_start_url()?.or(None);
+                                        input("Enter Start URL", fallback.as_deref())?
+                                    }
+                                }
+                            }
                         };
 
-                        let start_url = input("Enter Start URL", default_start_url.as_deref())?;
-                        let region = input("Enter Region", default_region.as_deref())?.trim().to_string();
+                        let region = match self.region {
+                            Some(r) => r,
+                            None => {
+                                match os.database.settings.get_string(crate::database::settings::Setting::AuthDefaultRegion) {
+                                    Some(default_region) => default_region,
+                                    None => {
+                                        let fallback = os.database.get_idc_region()?.or(None);
+                                        input("Enter Region", fallback.as_deref())?.trim().to_string()
+                                    }
+                                }
+                            }
+                        };
 
                         let _ = os.database.set_start_url(start_url.clone());
                         let _ = os.database.set_idc_region(region.clone());
