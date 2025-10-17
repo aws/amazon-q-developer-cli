@@ -464,7 +464,8 @@ impl McpClientService {
                     *value = substitute_env_vars(value, &os.env);
                 }
 
-                let http_service_builder = HttpServiceBuilder::new(url, os, url, *timeout, scopes, &processed_headers, messenger);
+                let http_service_builder =
+                    HttpServiceBuilder::new(url, os, url, *timeout, scopes, &processed_headers, oauth, messenger);
 
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 
@@ -700,7 +701,10 @@ mod tests {
         }
 
         // Verify environment variables were substituted
-        assert_eq!(processed_headers.get("Authorization").unwrap(), "Bearer github_pat_test123");
+        assert_eq!(
+            processed_headers.get("Authorization").unwrap(),
+            "Bearer github_pat_test123"
+        );
         assert_eq!(processed_headers.get("X-API-Key").unwrap(), "secret_key_456");
         assert_eq!(processed_headers.get("Content-Type").unwrap(), "application/json");
     }
