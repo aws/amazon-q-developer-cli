@@ -272,7 +272,7 @@ pub mod tips {
                 StyledText::command("MCP servers")
             ),
             format!(
-                "You can specify wait time (in ms) for mcp server loading with {}. Servers that takes longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
+                "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
                 StyledText::command("q settings mcp.initTimeout {timeout in int}")
             ),
             format!(
