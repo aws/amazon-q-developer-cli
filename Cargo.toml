@@ -118,7 +118,7 @@ tracing = { version = "0.1.40", features = ["log"] }
 tracing-appender = "0.2.2"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter", "fmt", "parking_lot", "time"] }
 tracing-test = "0.2.4"
-typed-path = "0.11.0"
+typed-path = "0.12.0"
 unicode-width = "0.2.0"
 url = "2.5.4"
 uuid = { version = "1.15.1", features = ["v4", "serde"] }
