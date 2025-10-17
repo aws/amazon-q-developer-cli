@@ -95,14 +95,15 @@
             // Make canvas responsive
             var container = canvas.parentElement;
             canvas.width = container.offsetWidth - 40;
-            canvas.height = 300;
+            canvas.height = 400;
             
             var ctx = canvas.getContext('2d');
             var width = canvas.width;
             var height = canvas.height;
             var padding = 50;
+            var bottomPadding = 120; // Extra space for slanted labels
             var chartWidth = width - 2 * padding;
-            var chartHeight = height - 2 * padding;
+            var chartHeight = height - padding - bottomPadding;
             
             // Sample data - this should be replaced with actual feature data
             var features = {feature_names};
@@ -112,6 +113,7 @@
             if (!features || features.length === 0) return;
             
             var maxTests = Math.max(...totalTests);
+            var maxY = Math.ceil(maxTests / 5) * 5; // Extend Y-axis to next multiple of 5
             var barWidth = Math.min(60, chartWidth / (features.length * 2.2));
             
             // Calculate actual chart width and center it
@@ -125,9 +127,9 @@
             ctx.lineWidth = 2;
             ctx.beginPath();
             ctx.moveTo(chartStartX, padding);
-            ctx.lineTo(chartStartX, height - padding);
+            ctx.lineTo(chartStartX, height - bottomPadding);
             var xAxisEnd = chartStartX + actualChartWidth;
-            ctx.lineTo(xAxisEnd, height - padding);
+            ctx.lineTo(xAxisEnd, height - bottomPadding);
             ctx.stroke();
             
             // Draw bars
@@ -135,30 +137,40 @@
                 var x = chartStartX + (i * 2 + 0.5) * barWidth;
                 
                 // Total tests bar (blue) - wider
-                var totalHeight = (totalTests[i] / maxTests) * chartHeight;
+                var totalHeight = (totalTests[i] / maxY) * chartHeight;
                 ctx.fillStyle = '#007bff';
-                ctx.fillRect(x, height - padding - totalHeight, barWidth * 0.7, totalHeight);
+                ctx.fillRect(x, height - bottomPadding - totalHeight, barWidth * 0.7, totalHeight);
                 
                 // Passed tests bar (green) - with gap
-                var passedHeight = (passedTests[i] / maxTests) * chartHeight;
+                var passedHeight = (passedTests[i] / maxY) * chartHeight;
                 ctx.fillStyle = '#28a745';
-                ctx.fillRect(x + barWidth * 0.8, height - padding - passedHeight, barWidth * 0.7, passedHeight);
+                ctx.fillRect(x + barWidth * 0.8, height - bottomPadding - passedHeight, barWidth * 0.7, passedHeight);
                 
-                // Feature labels
+                // Feature labels (slanted) - last char at bottom, extending upward
                 ctx.fillStyle = '#333';
-                ctx.font = '12px Arial';
-                ctx.textAlign = 'center';
+                ctx.font = '14px Arial';
                 var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                ctx.fillText(featureName, x + barWidth * 0.75, height - padding + 15);
+                
+                // Calculate text width to position last character at bar center
+                var textWidth = ctx.measureText(featureName).width;
+                var cos45 = Math.cos(Math.PI / 4);
+                var sin45 = Math.sin(Math.PI / 4);
+                
+                ctx.save();
+                // Position so last character ends at bar center bottom
+                ctx.translate(x + barWidth * 0.75 - textWidth * cos45, height - bottomPadding + 15 + textWidth * sin45);
+                ctx.rotate(-Math.PI / 4); // -45 degrees (forward slash)
+                ctx.textAlign = 'start';
+                ctx.fillText(featureName, 0, 0);
+                ctx.restore();
             }}
             
-            // Y-axis labels
+            // Y-axis labels (multiples of 5)
             ctx.fillStyle = '#333';
-            ctx.font = '12px Arial';
+            ctx.font = '14px Arial';
             ctx.textAlign = 'right';
-            var steps = Math.max(1, maxTests);
-            for (var i = 0; i <= steps; i += 2) {{
-                var y = height - padding - (i / steps) * chartHeight;
+            for (var i = 0; i <= maxY; i += 5) {{
+                var y = height - bottomPadding - (i / maxY) * chartHeight;
                 ctx.fillText(i, chartStartX - 10, y + 4);
             }}
             
@@ -191,12 +203,12 @@
                 // Check if mouse is over any bar
                 for (var i = 0; i < features.length; i++) {{
                     var x = chartStartX + (i * 2 + 0.5) * barWidth;
-                    var totalHeight = (totalTests[i] / maxTests) * chartHeight;
-                    var passedHeight = (passedTests[i] / maxTests) * chartHeight;
+                    var totalHeight = (totalTests[i] / maxY) * chartHeight;
+                    var passedHeight = (passedTests[i] / maxY) * chartHeight;
                     
                     // Check total tests bar
                     if (mouseX >= x && mouseX <= x + barWidth * 0.7 && 
-                        mouseY >= height - padding - totalHeight && mouseY <= height - padding) {{
+                        mouseY >= height - bottomPadding - totalHeight && mouseY <= height - bottomPadding) {{
                         var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                         tooltip.innerHTML = featureName + ': ' + totalTests[i] + ' total tests';
                         tooltip.style.left = (e.pageX + 10) + 'px';
@@ -208,7 +220,7 @@
                     
                     // Check passed tests bar
                     if (mouseX >= x + barWidth * 0.8 && mouseX <= x + barWidth * 1.5 && 
-                        mouseY >= height - padding - passedHeight && mouseY <= height - padding) {{
+                        mouseY >= height - bottomPadding - passedHeight && mouseY <= height - bottomPadding) {{
                         var featureName = features[i].replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                         tooltip.innerHTML = featureName + ': ' + passedTests[i] + ' passed tests';
                         tooltip.style.left = (e.pageX + 10) + 'px';
