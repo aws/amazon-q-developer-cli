@@ -601,6 +601,10 @@ impl ChatResponseStream {
             ChatResponseStream::Unknown => 0,
         }
     }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for ChatResponseStream {

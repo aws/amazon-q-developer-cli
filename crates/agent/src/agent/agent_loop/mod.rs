@@ -3,6 +3,7 @@ pub mod protocol;
 pub mod types;
 
 use std::pin::Pin;
+use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
@@ -236,6 +237,7 @@ impl AgentLoop {
                         } else {
                             // For successful streams with no tool uses, this always ends a user turn.
                             loop_events.push(self.set_execution_state(LoopState::UserTurnEnded));
+                            self.loop_end_time = Some(Instant::now());
                             loop_events.push(AgentLoopEventKind::UserTurnEnd(self.make_user_turn_metadata()));
                         }
                     } else {
@@ -268,9 +270,6 @@ impl AgentLoop {
                 match self.execution_state {
                     LoopState::Idle | LoopState::Errored | LoopState::PendingToolUseResults => {},
                     LoopState::UserTurnEnded => {},
-                    // LoopState::UserTurnEnded => {
-                    //     return Err(AgentLoopResponseError::AgentLoopExited);
-                    // },
                     other => {
                         error!(
                             ?other,
@@ -314,6 +313,7 @@ impl AgentLoop {
                     self.stream_states.push(parse_state);
                 }
 
+                self.loop_end_time = Some(Instant::now());
                 let metadata = self.make_user_turn_metadata();
                 buf.push(self.set_execution_state(LoopState::UserTurnEnded));
                 buf.push(AgentLoopEventKind::UserTurnEnd(metadata.clone()));
@@ -642,16 +642,13 @@ impl AgentLoopHandle {
         self.loop_event_rx.recv().await
     }
 
-    pub async fn send_request<M: Model>(
+    pub async fn send_request(
         &mut self,
-        model: M,
+        model: Arc<dyn Model>,
         args: SendRequestArgs,
     ) -> Result<AgentLoopResponse, AgentLoopResponseError> {
         self.sender
-            .send_recv(AgentLoopRequest::SendRequest {
-                model: Box::new(model),
-                args,
-            })
+            .send_recv(AgentLoopRequest::SendRequest { model, args })
             .await
             .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))
     }

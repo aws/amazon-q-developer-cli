@@ -1,18 +1,29 @@
 use std::io::Write as _;
 use std::process::ExitCode;
+use std::sync::Arc;
 
-use agent::agent::Agent;
-use agent::agent::agent_config::load_agents;
-use agent::agent::agent_loop::protocol::{
+use agent::agent_config::load_agents;
+use agent::agent_loop::protocol::{
     AgentLoopEventKind,
-    UserTurnMetadata,
+    EndReason,
 };
-use agent::agent::protocol::{
+use agent::api_client::ApiClient;
+use agent::mcp::McpManager;
+use agent::protocol::{
     AgentEvent,
     ApprovalResult,
     InputItem,
     SendApprovalResultArgs,
     SendPromptArgs,
+};
+use agent::rts::{
+    RtsModel,
+    RtsModelState,
+};
+use agent::types::AgentSnapshot;
+use agent::{
+    Agent,
+    AgentHandle,
 };
 use clap::Args;
 use eyre::{
@@ -23,7 +34,11 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tracing::warn;
+use tracing::{
+    error,
+    info,
+    warn,
+};
 
 #[derive(Debug, Clone, Default, Args)]
 pub struct RunArgs {
@@ -48,21 +63,50 @@ pub struct RunArgs {
 
 impl RunArgs {
     pub async fn execute(self) -> Result<ExitCode> {
-        let initial_prompt = self.prompt.join(" ");
+        // TODO - implement resume. For now, just use a new default snapshot every time.
+        let mut snapshot = AgentSnapshot::default();
 
-        let (configs, _) = load_agents().await?;
-        let mut agent = match &self.agent {
-            Some(name) => {
-                if let Some(cfg) = configs.iter().find(|c| c.name() == name.as_str()) {
-                    Agent::from_config(cfg.config().clone()).await?.spawn()
-                } else {
-                    warn!(?name, "unable to find agent with name");
-                    Agent::new_default().await?.spawn()
-                }
-            },
-            _ => Agent::new_default().await?.spawn(),
+        // Create the RTS model
+        let model = {
+            let rts_state: RtsModelState = snapshot
+                .model_state
+                .as_ref()
+                .and_then(|s| {
+                    serde_json::from_value(s.clone())
+                        .map_err(|err| error!(?err, ?s, "failed to deserialize RTS state"))
+                        .ok()
+                })
+                .unwrap_or({
+                    let state = RtsModelState::new();
+                    info!(?state.conversation_id, "generated new conversation id");
+                    state
+                });
+            Arc::new(RtsModel::new(
+                ApiClient::new().await?,
+                rts_state.conversation_id,
+                rts_state.model_id,
+            ))
         };
 
+        // Override the agent config if a custom agent name was provided.
+        if let Some(name) = &self.agent {
+            let (configs, _) = load_agents().await?;
+            if let Some(cfg) = configs.into_iter().find(|c| c.name() == name.as_str()) {
+                snapshot.agent_config = cfg.config().clone();
+            } else {
+                bail!("unable to find agent with name: {}", name);
+            }
+        };
+
+        let agent = Agent::new(snapshot, model, McpManager::new().spawn()).await?.spawn();
+
+        self.main_loop(agent).await
+    }
+
+    async fn main_loop(&self, mut agent: AgentHandle) -> Result<ExitCode> {
+        let initial_prompt = self.prompt.join(" ");
+
+        // First, wait for agent initialization
         while let Ok(evt) = agent.recv().await {
             if matches!(evt, AgentEvent::Initialized) {
                 break;
@@ -75,6 +119,10 @@ impl RunArgs {
             })
             .await?;
 
+        // Holds the final result of the user turn.
+        #[allow(unused_assignments)]
+        let mut user_turn_metadata = None;
+
         loop {
             let Ok(evt) = agent.recv().await else {
                 bail!("channel closed");
@@ -86,7 +134,8 @@ impl RunArgs {
             // Check for exit conditions
             match &evt {
                 AgentEvent::AgentLoop(evt) => {
-                    if let AgentLoopEventKind::UserTurnEnd(_) = &evt.kind {
+                    if let AgentLoopEventKind::UserTurnEnd(metadata) = &evt.kind {
+                        user_turn_metadata = Some(metadata.clone());
                         break;
                     }
                 },
@@ -108,15 +157,26 @@ impl RunArgs {
             }
         }
 
+        if self.output_format == Some(OutputFormat::Json) {
+            let md = user_turn_metadata.expect("user turn metadata should exist");
+            let is_error = md.end_reason != EndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
+            let result = md.result.and_then(|r| r.ok().map(|m| m.text()));
+
+            let output = JsonOutput {
+                result,
+                is_error,
+                number_of_requests: md.total_request_count,
+                number_of_cycles: md.number_of_cycles,
+                duration_ms: md.turn_duration.map(|d| d.as_millis() as u32).unwrap_or_default(),
+            };
+            println!("{}", serde_json::to_string(&output)?);
+        }
+
         Ok(ExitCode::SUCCESS)
     }
 
-    fn output_format(&self) -> OutputFormat {
-        self.output_format.unwrap_or(OutputFormat::Text)
-    }
-
     async fn handle_output_format_printing(&self, evt: &AgentEvent) -> Result<()> {
-        match self.output_format() {
+        match self.output_format.unwrap_or(OutputFormat::Text) {
             OutputFormat::Text => {
                 if let AgentEvent::AgentLoop(evt) = &evt {
                     match &evt.kind {
@@ -151,7 +211,7 @@ impl RunArgs {
     }
 }
 
-#[derive(Debug, Copy, Clone, Serialize, Deserialize, strum::EnumString)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Serialize, Deserialize, strum::EnumString)]
 #[strum(serialize_all = "kebab-case")]
 enum OutputFormat {
     Text,
@@ -161,6 +221,16 @@ enum OutputFormat {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonOutput {
-    result: String,
-    metadata: UserTurnMetadata,
+    /// Whether or not the user turn completed successfully
+    is_error: bool,
+    /// Text from the final message, if available
+    result: Option<String>,
+    /// The number of requests sent to the model
+    number_of_requests: u32,
+    /// The number of tool use / tool result pairs in the turn
+    ///
+    /// This could be less than the number of requests in the case of retries
+    number_of_cycles: u32,
+    /// Duration of the turn, in milliseconds
+    duration_ms: u32,
 }

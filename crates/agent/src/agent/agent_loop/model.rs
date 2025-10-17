@@ -27,6 +27,14 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         system_prompt: Option<String>,
         cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>>;
+
+    /// Dump serializable state required by the model implementation.
+    ///
+    /// This is intended to provide the ability to save and restore state
+    /// associated with an implementation, useful for restoring a previous conversation.
+    fn state(&self) -> Option<serde_json::Value> {
+        None
+    }
 }
 
 /// The supported backends

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::{
@@ -29,7 +30,7 @@ use super::{
 pub enum AgentLoopRequest {
     GetExecutionState,
     SendRequest {
-        model: Box<dyn Model>,
+        model: Arc<dyn Model>,
         args: SendRequestArgs,
     },
     /// Ends the agent loop
@@ -212,7 +213,7 @@ pub struct UserTurnMetadata {
 }
 
 /// The reason why a user turn ended
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EndReason {
     /// Loop ended before handling any requests
     DidNotRun,

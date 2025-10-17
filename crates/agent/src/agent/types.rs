@@ -17,17 +17,27 @@ use super::agent_loop::protocol::{
     UserTurnMetadata,
 };
 use super::agent_loop::types::Message;
+use super::consts::DEFAULT_AGENT_NAME;
 use crate::agent::ExecutionState;
 use crate::agent::agent_config::definitions::Config;
-use crate::agent::agent_loop::model::ModelsState;
 use crate::agent::tools::ToolState;
 
 /// A point-in-time snapshot of an agent's state.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+///
+/// This includes all serializable state associated with an executing agent, for example:
+///
+/// * The agent config
+/// * Conversation history
+/// * State of execution (ie, is the agent idle, executing hooks, receiving a response from the
+///   model, etc.)
+/// * Agent settings
+///
+/// and so on.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct AgentSnapshot {
     /// Agent id
     pub id: AgentId,
-    /// In-memory modifications to the agent's original config
+    /// Agent config
     pub agent_config: Config,
     /// Agent conversation state
     pub conversation_state: ConversationState,
@@ -37,8 +47,8 @@ pub struct AgentSnapshot {
     pub compaction_snapshots: Vec<CompactionSnapshot>,
     /// Agent execution state
     pub execution_state: ExecutionState,
-    /// The model used with the agent
-    pub model_state: ModelsState,
+    /// State associated with the model implementation used by the agent
+    pub model_state: Option<serde_json::Value>,
     /// Persistent state required by tools during the conversation
     pub tool_state: ToolState,
     /// Agent settings
@@ -236,6 +246,16 @@ impl AgentId {
     /// Name of the agent, as written in the agent config
     pub fn name(&self) -> &str {
         &self.name
+    }
+}
+
+impl Default for AgentId {
+    fn default() -> Self {
+        Self {
+            name: DEFAULT_AGENT_NAME.to_string(),
+            parent_id: Default::default(),
+            rand: Default::default(),
+        }
     }
 }
 

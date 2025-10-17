@@ -32,7 +32,6 @@ HOW TO USE:
 - Use `insert` to insert content at a specific line, or append content to the end of a file.
 
 TIPS:
-- Read the file first before making modifications to ensure you have the most up-to-date version of the file.
 - To append content to the end of a file, use `insert` with no `insert_line`
 "#;
 

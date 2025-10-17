@@ -27,7 +27,9 @@ use super::types::AgentSnapshot;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum AgentEvent {
-    /// Agent has finished initialization, and is ready to receive requests
+    /// Agent has finished initialization, and is ready to receive requests.
+    ///
+    /// This is the first event that the agent will emit.
     Initialized,
     /// Events associated with the agent loop.
     ///

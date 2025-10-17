@@ -17,6 +17,7 @@ use std::collections::{
     HashSet,
     VecDeque,
 };
+use std::sync::Arc;
 
 use agent_config::LoadedMcpServerConfigs;
 use agent_config::definitions::{
@@ -31,11 +32,7 @@ use agent_config::parse::{
     ToolParseError,
     ToolParseErrorKind,
 };
-use agent_loop::model::{
-    Models,
-    ModelsState,
-    TestModel,
-};
+use agent_loop::model::Model;
 use agent_loop::protocol::{
     AgentLoopEvent,
     AgentLoopEventKind,
@@ -69,7 +66,6 @@ use compact::{
 };
 use consts::MAX_RESOURCE_FILE_LENGTH;
 use futures::stream::FuturesUnordered;
-use mcp::McpManager;
 use permissions::evaluate_tool_permission;
 use protocol::{
     AgentError,
@@ -82,7 +78,6 @@ use protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
 };
-use rts::RtsModel;
 use serde::{
     Deserialize,
     Serialize,
@@ -135,9 +130,9 @@ use types::{
     ConversationSummary,
 };
 use util::path::canonicalize_path;
+use util::providers::SystemProvider;
 use util::read_file_with_max_limit;
 use util::request_channel::new_request_channel;
-use uuid::Uuid;
 
 use crate::agent::consts::{
     DUMMY_TOOL_NAME,
@@ -159,7 +154,6 @@ use crate::agent::util::request_channel::{
     RequestSender,
     respond,
 };
-use crate::api_client::ApiClient;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
@@ -240,10 +234,12 @@ pub struct Agent {
     agent_spawn_hooks: Vec<(HookConfig, String)>,
 
     /// The backend/model provider
-    model: Models,
+    model: Arc<dyn Model>,
 
     /// Configuration settings to alter agent behavior.
     settings: AgentSettings,
+
+    sys_ctx: Option<Box<dyn SystemProvider>>,
 
     /// Cached result when creating a tool spec for sending to the backend.
     ///
@@ -259,18 +255,20 @@ pub struct Agent {
 }
 
 impl Agent {
-    pub async fn new_default() -> eyre::Result<Agent> {
-        let mcp_manager_handle = McpManager::new().spawn();
-        Self::init(AgentSnapshot::new_built_in_agent(), mcp_manager_handle).await
-    }
-
-    pub async fn from_config(config: Config) -> eyre::Result<Agent> {
-        let mcp_manager_handle = McpManager::new().spawn();
-        let snapshot = AgentSnapshot::new_empty(config);
-        Self::init(snapshot, mcp_manager_handle).await
-    }
-
-    pub async fn init(snapshot: AgentSnapshot, mcp_manager_handle: McpManagerHandle) -> eyre::Result<Agent> {
+    /// Creates an agent using the given initial state.
+    ///
+    /// To actually initialize the agent and begin interacting with it, call [Agent::spawn].
+    ///
+    /// # Arguments
+    ///
+    /// * `snapshot` - Agent state to initialize with
+    /// * `model` - The backend implementation to use
+    /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
+    pub async fn new(
+        snapshot: AgentSnapshot,
+        model: Arc<dyn Model>,
+        mcp_manager_handle: McpManagerHandle,
+    ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
         let (agent_event_tx, agent_event_rx) = broadcast::channel(64);
@@ -278,18 +276,6 @@ impl Agent {
         let agent_config = snapshot.agent_config;
         let cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(&agent_config).await;
         let task_executor = TaskExecutor::new();
-
-        let model = match snapshot.model_state {
-            ModelsState::Rts {
-                conversation_id,
-                model_id,
-            } => Models::Rts(RtsModel::new(
-                ApiClient::new().await?,
-                conversation_id.clone().unwrap_or(Uuid::new_v4().to_string()),
-                model_id.clone(),
-            )),
-            ModelsState::Test => Models::Test(TestModel::new()),
-        };
 
         Ok(Self {
             id: snapshot.id,
@@ -308,9 +294,16 @@ impl Agent {
             settings: snapshot.settings,
             cached_tool_specs: None,
             cached_mcp_configs,
+            sys_ctx: None,
         })
     }
 
+    pub fn set_sys_provider(&mut self, provider: impl SystemProvider) {
+        self.sys_ctx = Some(Box::new(provider));
+    }
+
+    /// Starts the agent task, returning a handle from which messages can be sent and events can be
+    /// received.
     pub fn spawn(mut self) -> AgentHandle {
         let (tx, rx) = new_request_channel();
         let event_rx = self.agent_event_rx.take().expect("should exist");
@@ -992,7 +985,7 @@ impl Agent {
     }
 
     async fn send_request(&mut self, request_args: SendRequestArgs) -> Result<AgentLoopResponse, AgentError> {
-        let model = self.model.clone();
+        let model = Arc::clone(&self.model);
         let res = self
             .agent_loop_handle()?
             .send_request(model, request_args.clone())

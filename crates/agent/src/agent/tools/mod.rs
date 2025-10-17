@@ -1,6 +1,6 @@
 pub mod execute_cmd;
-pub mod file_read;
-pub mod file_write;
+pub mod fs_read;
+pub mod fs_write;
 pub mod grep;
 pub mod image_read;
 pub mod introspect;
@@ -13,8 +13,8 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 use execute_cmd::ExecuteCmd;
-use file_read::FsRead;
-use file_write::{
+use fs_read::FsRead;
+use fs_write::{
     FsWrite,
     FsWriteContext,
     FsWriteState,

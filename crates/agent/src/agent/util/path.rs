@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::env::VarError;
 use std::path::{
     Path,
     PathBuf,
@@ -15,13 +16,23 @@ use super::providers::{
     RealProvider,
 };
 
+/// Helper for [shellexpand::full_with_context]
+fn shellexpand_home<H: HomeProvider>(provider: &H) -> impl Fn() -> Option<String> {
+    || HomeProvider::home(provider).map(|h| h.to_string_lossy().to_string())
+}
+
+/// Helper for [shellexpand::full_with_context]
+fn shellexpand_context<E: EnvProvider>(provider: &E) -> impl Fn(&str) -> Result<Option<String>, VarError> {
+    |input: &str| Ok(EnvProvider::var(provider, input).ok())
+}
+
 /// Performs tilde and environment variable expansion on the provided input.
 pub fn expand_path(input: &str) -> Result<Cow<'_, str>, UtilError> {
     let sys = RealProvider;
     Ok(shellexpand::full_with_context(
         input,
-        sys.shellexpand_home(),
-        sys.shellexpand_context(),
+        shellexpand_home(&sys),
+        shellexpand_context(&sys),
     )?)
 }
 
@@ -49,8 +60,8 @@ where
 {
     let expanded = shellexpand::full_with_context(
         path.as_ref(),
-        home_provider.shellexpand_home(),
-        env_provider.shellexpand_context(),
+        shellexpand_home(home_provider),
+        shellexpand_context(env_provider),
     )?;
     let path_buf = if !expanded.starts_with("/") {
         // Convert relative paths to absolute paths

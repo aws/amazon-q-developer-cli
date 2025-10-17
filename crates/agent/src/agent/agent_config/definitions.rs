@@ -9,7 +9,8 @@ use serde::{
     Serialize,
 };
 
-use crate::agent::consts::BUILTIN_VIBER_AGENT_NAME;
+use super::types::ResourcePath;
+use crate::agent::consts::DEFAULT_AGENT_NAME;
 use crate::agent::tools::BuiltInToolName;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -69,9 +70,10 @@ impl Config {
         }
     }
 
-    pub fn resources(&self) -> &Vec<String> {
+    // pub fn resources(&self) -> &[impl AsRef<str>] {
+    pub fn resources(&self) -> &[impl AsRef<str>] {
         match self {
-            Config::V2025_08_22(a) => &a.resources,
+            Config::V2025_08_22(a) => a.resources.as_slice(),
         }
     }
 
@@ -150,7 +152,7 @@ pub struct AgentConfigV2025_08_22 {
     // context files
     /// Files to include in the agent's context
     #[serde(default)]
-    pub resources: Vec<String>,
+    pub resources: Vec<ResourcePath>,
 
     // permissioning stuff
     /// List of tools the agent is explicitly allowed to use
@@ -162,9 +164,9 @@ impl Default for AgentConfigV2025_08_22 {
     fn default() -> Self {
         Self {
             schema: default_schema(),
-            name: BUILTIN_VIBER_AGENT_NAME.to_string(),
+            name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("The default agent for Q CLI".to_string()),
-            system_prompt: Some("You are Q, an expert programmer dedicated to becoming the greatest vibe-coding assistant in the world.".to_string()),
+            system_prompt: None,
             tools: vec!["@builtin".to_string()],
             tool_settings: Default::default(),
             tool_aliases: Default::default(),
@@ -174,7 +176,16 @@ impl Default for AgentConfigV2025_08_22 {
             mcp_servers: Default::default(),
             use_legacy_mcp_json: false,
 
-            resources: Default::default(),
+            resources: vec![
+                "file://AmazonQ.md",
+                "file://AGENTS.md",
+                "file://README.md",
+                "file://.amazonq/rules/**/*.md",
+            ]
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>(),
+
             allowed_tools: HashSet::from([BuiltInToolName::FsRead.to_string()]),
         }
     }

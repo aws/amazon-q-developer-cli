@@ -1,5 +1,6 @@
 pub mod definitions;
 pub mod parse;
+pub mod types;
 
 use std::collections::{
     HashMap,
@@ -43,11 +44,11 @@ use crate::agent::util::error::{
     UtilError,
 };
 
-/// Represents an agent config
+/// Represents an agent config.
 ///
-/// Wraps [Config] along with some metadata
+/// Basically just wraps [Config] along with some metadata.
 #[derive(Debug, Clone)]
-pub struct AgentConfig {
+pub struct LoadedAgentConfig {
     /// Where the config was sourced from
     #[allow(dead_code)]
     source: ConfigSource,
@@ -55,7 +56,7 @@ pub struct AgentConfig {
     config: Config,
 }
 
-impl AgentConfig {
+impl LoadedAgentConfig {
     pub fn config(&self) -> &Config {
         &self.config
     }
@@ -84,7 +85,7 @@ impl AgentConfig {
         self.config.hooks()
     }
 
-    pub fn resources(&self) -> &Vec<String> {
+    pub fn resources(&self) -> &[impl AsRef<str>] {
         self.config.resources()
     }
 }
@@ -103,7 +104,7 @@ pub enum ConfigSource {
     BuiltIn,
 }
 
-impl Default for AgentConfig {
+impl Default for LoadedAgentConfig {
     fn default() -> Self {
         Self {
             source: ConfigSource::BuiltIn,
@@ -112,7 +113,7 @@ impl Default for AgentConfig {
     }
 }
 
-impl AgentConfig {
+impl LoadedAgentConfig {
     pub fn system_prompt(&self) -> Option<&str> {
         self.config.system_prompt()
     }
@@ -136,7 +137,7 @@ impl From<UtilError> for AgentConfigError {
     }
 }
 
-pub async fn load_agents() -> Result<(Vec<AgentConfig>, Vec<AgentConfigError>)> {
+pub async fn load_agents() -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>)> {
     let mut agent_configs = Vec::new();
     let mut invalid_agents = Vec::new();
     match load_workspace_agents().await {
@@ -148,7 +149,7 @@ pub async fn load_agents() -> Result<(Vec<AgentConfig>, Vec<AgentConfigError>)> 
             agent_configs.append(
                 &mut valid
                     .into_iter()
-                    .map(|(path, config)| AgentConfig {
+                    .map(|(path, config)| LoadedAgentConfig {
                         source: ConfigSource::Workspace { path },
                         config,
                     })
@@ -169,7 +170,7 @@ pub async fn load_agents() -> Result<(Vec<AgentConfig>, Vec<AgentConfigError>)> 
             agent_configs.append(
                 &mut valid
                     .into_iter()
-                    .map(|(path, config)| AgentConfig {
+                    .map(|(path, config)| LoadedAgentConfig {
                         source: ConfigSource::Global { path },
                         config,
                     })
@@ -182,7 +183,7 @@ pub async fn load_agents() -> Result<(Vec<AgentConfig>, Vec<AgentConfigError>)> 
     };
 
     // Always include the default agent as a fallback.
-    agent_configs.push(AgentConfig::default());
+    agent_configs.push(LoadedAgentConfig::default());
 
     info!(?agent_configs, "loaded agent config");
 

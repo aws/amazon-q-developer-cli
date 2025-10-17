@@ -14,6 +14,10 @@ use chrono::{
 };
 use eyre::Result;
 use futures::Stream;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::sync::CancellationToken;
@@ -25,6 +29,7 @@ use tracing::{
     warn,
 };
 use util::serde_value_to_document;
+use uuid::Uuid;
 
 use super::agent_loop::model::Model;
 use super::agent_loop::types::{
@@ -67,15 +72,16 @@ use crate::api_client::{
     model as rts,
 };
 
+/// A [Model] implementation using the RTS backend.
 #[derive(Debug, Clone)]
 pub struct RtsModel {
     client: ApiClient,
-    conversation_id: String,
+    conversation_id: Uuid,
     model_id: Option<String>,
 }
 
 impl RtsModel {
-    pub fn new(client: ApiClient, conversation_id: String, model_id: Option<String>) -> Self {
+    pub fn new(client: ApiClient, conversation_id: Uuid, model_id: Option<String>) -> Self {
         Self {
             client,
             conversation_id,
@@ -83,7 +89,7 @@ impl RtsModel {
         }
     }
 
-    pub fn conversation_id(&self) -> &str {
+    pub fn conversation_id(&self) -> &Uuid {
         &self.conversation_id
     }
 
@@ -260,7 +266,7 @@ impl RtsModel {
             .collect();
 
         Ok(ConversationState {
-            conversation_id: Some(self.conversation_id.clone()),
+            conversation_id: Some(self.conversation_id.to_string()),
             user_input_message,
             history: Some(history),
         })
@@ -339,6 +345,28 @@ impl Model for RtsModel {
         });
 
         Box::pin(ReceiverStream::new(rx))
+    }
+}
+
+/// Contains only the serializable data associated with [RtsModel].
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RtsModelState {
+    pub conversation_id: Uuid,
+    pub model_id: Option<String>,
+}
+
+impl RtsModelState {
+    pub fn new() -> Self {
+        Self {
+            conversation_id: Uuid::new_v4(),
+            model_id: None,
+        }
+    }
+}
+
+impl Default for RtsModelState {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -637,7 +665,7 @@ mod tests {
             return;
         }
 
-        let rts = RtsModel::new(ApiClient::new().await.unwrap(), "test".to_string(), None);
+        let rts = RtsModel::new(ApiClient::new().await.unwrap(), Uuid::new_v4(), None);
         let cancel_token = CancellationToken::new();
         let token_clone = cancel_token.clone();
         let (tx, mut rx) = mpsc::channel(8);
