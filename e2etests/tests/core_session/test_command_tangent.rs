@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 
 // Test the tangent command.
