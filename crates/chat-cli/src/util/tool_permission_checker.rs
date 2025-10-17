@@ -5,21 +5,43 @@ use tracing::debug;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
+const BUILT_IN_PREFIX: &str = "@builtin";
+const BUILT_IN_PREFIX_WITH_SLASH: &str = "@builtin/";
+
 /// Checks if a tool is allowed based on the agent's allowed_tools configuration.
 /// This function handles both native tools and MCP tools with wildcard pattern support.
 pub fn is_tool_in_allowlist(allowed_tools: &HashSet<String>, tool_name: &str, server_name: Option<&str>) -> bool {
-    let filter_patterns = |predicate: fn(&str) -> bool| -> HashSet<String> {
+    let filter_patterns = |predicate: fn(&str) -> bool| -> HashSet<&str> {
         allowed_tools
             .iter()
             .filter(|pattern| predicate(pattern))
-            .cloned()
+            .map(String::as_str)
             .collect()
     };
 
     match server_name {
         // Native tool
         None => {
-            let patterns = filter_patterns(|p| !p.starts_with('@'));
+            for name in allowed_tools {
+                if name
+                    .strip_prefix(BUILT_IN_PREFIX)
+                    .is_some_and(|n| n.is_empty() || n == "/" || n == "/*")
+                {
+                    return true;
+                }
+            }
+
+            let patterns = allowed_tools
+                .iter()
+                .filter_map(|p| {
+                    if !p.starts_with('@') {
+                        Some(p.as_str())
+                    } else {
+                        p.strip_prefix(BUILT_IN_PREFIX_WITH_SLASH)
+                    }
+                })
+                .collect::<HashSet<_>>();
+
             debug!("Native patterns: {:?}", patterns);
             let result = matches_any_pattern(&patterns, tool_name);
             debug!("Native tool '{}' permission check result: {}", tool_name, result);
@@ -78,5 +100,31 @@ mod tests {
         assert!(is_tool_in_allowlist(&allowed, "tool", Some("quip-server")));
         assert!(is_tool_in_allowlist(&allowed, "read_file", Some("git")));
         assert!(!is_tool_in_allowlist(&allowed, "write_file", Some("git")));
+    }
+
+    #[test]
+    fn test_builtin_namespace() {
+        let mut allowed = HashSet::new();
+        allowed.insert("@builtin".to_string());
+        allowed.insert("@builtin/".to_string());
+        allowed.insert("@builtin/*".to_string());
+
+        // @builtin should allow all native tools
+        assert!(is_tool_in_allowlist(&allowed, "fs_read", None));
+
+        // But should not allow MCP tools
+        assert!(!is_tool_in_allowlist(&allowed, "tool", Some("server")));
+
+        allowed.clear();
+        allowed.insert("@builtin/fs_read".to_string());
+
+        assert!(is_tool_in_allowlist(&allowed, "fs_read", None));
+        assert!(!is_tool_in_allowlist(&allowed, "fs_write", None));
+
+        allowed.clear();
+        allowed.insert("@builtin/fs_*".to_string());
+
+        assert!(is_tool_in_allowlist(&allowed, "fs_read", None));
+        assert!(is_tool_in_allowlist(&allowed, "fs_write", None));
     }
 }

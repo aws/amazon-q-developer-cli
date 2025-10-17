@@ -76,7 +76,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
 
                     // Use matches_any_pattern for both MCP and built-in tools
                     let mut patterns = std::collections::HashSet::new();
-                    patterns.insert(pattern.clone());
+                    patterns.insert(pattern.as_str());
                     matches_any_pattern(&patterns, tool_name)
                 },
             }

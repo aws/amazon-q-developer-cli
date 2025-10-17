@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use globset::Glob;
 
 /// Check if a string matches any pattern in a set of patterns
-pub fn matches_any_pattern(patterns: &HashSet<String>, text: &str) -> bool {
+pub fn matches_any_pattern(patterns: &HashSet<&str>, text: &str) -> bool {
     patterns.iter().any(|pattern| {
         // Exact match first
-        if pattern == text {
+        if *pattern == text {
             return true;
         }
 
@@ -30,7 +30,7 @@ mod tests {
     #[test]
     fn test_exact_match() {
         let mut patterns = HashSet::new();
-        patterns.insert("fs_read".to_string());
+        patterns.insert("fs_read");
 
         assert!(matches_any_pattern(&patterns, "fs_read"));
         assert!(!matches_any_pattern(&patterns, "fs_write"));
@@ -39,7 +39,7 @@ mod tests {
     #[test]
     fn test_wildcard_patterns() {
         let mut patterns = HashSet::new();
-        patterns.insert("fs_*".to_string());
+        patterns.insert("fs_*");
 
         assert!(matches_any_pattern(&patterns, "fs_read"));
         assert!(matches_any_pattern(&patterns, "fs_write"));
@@ -49,7 +49,7 @@ mod tests {
     #[test]
     fn test_mcp_patterns() {
         let mut patterns = HashSet::new();
-        patterns.insert("@mcp-server/*".to_string());
+        patterns.insert("@mcp-server/*");
 
         assert!(matches_any_pattern(&patterns, "@mcp-server/tool1"));
         assert!(matches_any_pattern(&patterns, "@mcp-server/tool2"));
@@ -59,7 +59,7 @@ mod tests {
     #[test]
     fn test_question_mark_wildcard() {
         let mut patterns = HashSet::new();
-        patterns.insert("fs_?ead".to_string());
+        patterns.insert("fs_?ead");
 
         assert!(matches_any_pattern(&patterns, "fs_read"));
         assert!(!matches_any_pattern(&patterns, "fs_write"));

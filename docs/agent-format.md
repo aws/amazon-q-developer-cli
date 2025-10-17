@@ -212,6 +212,8 @@ The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`
 - **Server pattern**: `"@*-mcp/read_*"` → matches `@git-mcp/read_file`, `@db-mcp/read_data`
 - **Any tool from pattern servers**: `"@git-*/*"` → matches any tool from servers matching `git-*`
 
+Optionally, you can also prefix native tools with the namespace `@builtin`.
+
 ### Examples
 
 ```json
@@ -226,6 +228,7 @@ The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`
     "fs_*",                    // All filesystem tools
     "execute_*",               // All execute tools
     "*_test",                  // Any tool ending in _test
+    @builtin,                // All native tools
     
     // MCP tool wildcards
     "@server/api_*",           // All API tools from server
