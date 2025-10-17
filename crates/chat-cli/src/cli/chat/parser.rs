@@ -21,8 +21,7 @@ use tracing::{
     debug,
     error,
     info,
-    trace,
-    warn,
+    trace
 };
 
 use super::message::{
@@ -38,6 +37,7 @@ use crate::api_client::{
     ApiClient,
     ApiClientError,
 };
+use crate::cli::chat::token_counter::TokenCounter;
 use crate::telemetry::ReasonCode;
 use crate::telemetry::core::{
     ChatConversationType,
@@ -322,6 +322,14 @@ struct ResponseParser {
     received_response_size: usize,
     time_to_first_chunk: Option<Duration>,
     time_between_chunks: Vec<Duration>,
+
+    // Token tracking fields
+    /// Total tokens generated in the response so far
+    total_tokens: usize,
+    /// Time when first token was received
+    first_token_time: Option<Instant>,
+    /// Incremental token counts with timestamps (duration from request start in ms, token count)
+    token_timestamps: Vec<(u64, usize)>,
 }
 
 impl ResponseParser {
@@ -355,6 +363,9 @@ impl ResponseParser {
             received_response_size: 0,
             time_to_first_chunk: None,
             time_between_chunks: Vec::new(),
+            total_tokens: 0,
+            first_token_time: None,
+            token_timestamps: Vec::new(),
             request_metadata,
             cancel_token,
         }
@@ -401,6 +412,7 @@ impl ResponseParser {
             match self.peek().await? {
                 Some(ChatResponseStream::CodeReferenceEvent(_)) => (),
                 _ => {
+                    self.track_tokens(&content);
                     self.assistant_text.push_str(&content);
                     return Ok(ResponseEvent::AssistantText(content));
                 },
@@ -411,6 +423,7 @@ impl ResponseParser {
             match self.next().await {
                 Ok(Some(output)) => match output {
                     ChatResponseStream::AssistantResponseEvent { content } => {
+                        self.track_tokens(&content);
                         self.assistant_text.push_str(&content);
                         return Ok(ResponseEvent::AssistantText(content));
                     },
@@ -473,6 +486,7 @@ impl ResponseParser {
         while let Some(ChatResponseStream::ToolUseEvent { .. }) = self.peek().await? {
             if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
                 if let Some(i) = input {
+                    self.track_tokens(&i);
                     tool_string.push_str(&i);
                 }
                 if let Some(true) = stop {
@@ -611,11 +625,25 @@ impl ResponseParser {
                         ChatResponseStream::AssistantResponseEvent { content } => {
                             self.received_response_size += content.len();
                         },
+                        ChatResponseStream::CodeEvent { content } => {
+                            self.received_response_size += content.len();
+                        },
                         ChatResponseStream::ToolUseEvent { input, .. } => {
                             self.received_response_size += input.as_ref().map(String::len).unwrap_or_default();
                         },
-                        _ => {
-                            warn!(?r, "received unexpected event from the response stream");
+                        ChatResponseStream::InvalidStateEvent { reason, message } => {
+                            self.received_response_size += reason.len() + message.len();
+                        },
+                        // These events don't contribute to response size but are expected
+                        ChatResponseStream::CodeReferenceEvent(_)
+                        | ChatResponseStream::FollowupPromptEvent(_)
+                        | ChatResponseStream::IntentsEvent(_)
+                        | ChatResponseStream::MessageMetadataEvent { .. }
+                        | ChatResponseStream::SupplementaryWebLinksEvent(_) => {
+                            // No content to track for response size
+                        },
+                        ChatResponseStream::Unknown => {
+                            // Unknown events are expected and don't contribute to response size
                         },
                     }
                 }
@@ -641,6 +669,23 @@ impl ResponseParser {
         }
     }
 
+    /// Track tokens for the given content and record timing information
+    fn track_tokens(&mut self, content: &str) {
+        let token_count = TokenCounter::count_tokens(content);
+        self.total_tokens += token_count;
+
+        let now = Instant::now();
+
+        // Record first token time if this is the first content
+        if self.first_token_time.is_none() && token_count > 0 {
+            self.first_token_time = Some(now);
+        }
+
+        // Record timestamp with cumulative token count
+        let elapsed_ms = now.duration_since(self.request_start_time).as_millis() as u64;
+        self.token_timestamps.push((elapsed_ms, self.total_tokens));
+    }
+
     fn make_metadata(&self, chat_conversation_type: Option<ChatConversationType>) -> RequestMetadata {
         RequestMetadata {
             request_id: self.response.request_id().map(String::from),
@@ -661,6 +706,15 @@ impl ResponseParser {
                 .map(|t| (t.id.clone(), t.name.clone()))
                 .collect::<_>(),
             model_id: self.model_id.clone(),
+            token_metrics: Some(TokenMetrics {
+                total_tokens: self.total_tokens,
+                prompt_tokens: self.user_prompt_length / TokenCounter::TOKEN_TO_CHAR_RATIO,
+                time_to_first_token_ms: self
+                    .first_token_time
+                    .map(|t| t.duration_since(self.request_start_time).as_millis() as u64),
+                time_to_last_token_ms: self.token_timestamps.last().map(|(timestamp, _)| *timestamp),
+                token_timestamps: self.token_timestamps.clone(),
+            }),
         }
     }
 }
@@ -683,6 +737,33 @@ pub enum ResponseEvent {
         /// Metadata for the request stream.
         request_metadata: RequestMetadata,
     },
+}
+
+/// Token count metrics for performance calculation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TokenMetrics {
+    /// Total tokens generated in the response
+    pub total_tokens: usize,
+    /// Tokens in the prompt/input
+    pub prompt_tokens: usize,
+    /// Duration from request start to first token (in milliseconds)
+    pub time_to_first_token_ms: Option<u64>,
+    /// Duration from request start to last token (in milliseconds)
+    pub time_to_last_token_ms: Option<u64>,
+    /// Incremental token counts with timing (duration from request start in ms, token count)
+    pub token_timestamps: Vec<(u64, usize)>,
+}
+
+impl Default for TokenMetrics {
+    fn default() -> Self {
+        Self {
+            total_tokens: 0,
+            prompt_tokens: 0,
+            time_to_first_token_ms: None,
+            time_to_last_token_ms: None,
+            token_timestamps: Vec::new(),
+        }
+    }
 }
 
 /// Metadata about the sent request and associated response stream.
@@ -712,6 +793,8 @@ pub struct RequestMetadata {
     pub model_id: Option<String>,
     /// Meta tags for the request.
     pub message_meta_tags: Vec<MessageMetaTag>,
+    /// Token count metrics for performance calculation
+    pub token_metrics: Option<TokenMetrics>,
 }
 
 fn system_time_to_unix_ms(time: SystemTime) -> u64 {
