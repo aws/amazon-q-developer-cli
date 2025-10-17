@@ -32,6 +32,11 @@ pub mod q_chat_helper {
 
         /// Execute a command (like /help, /tools) and return the response
         pub fn execute_command(&mut self, command: &str) -> Result<String, Error> {
+            self.execute_command_with_timeout(command, None)
+        }
+        
+        /// Execute a command with custom timeout
+        pub fn execute_command_with_timeout(&mut self, command: &str, timeout_ms: Option<u64>) -> Result<String, Error> {
             // Type command character by character with delays (for autocomplete)
             for &byte in command.as_bytes() {
                 self.session.write_all(&[byte])?;
@@ -43,7 +48,7 @@ pub mod q_chat_helper {
             self.session.write_all(&[0x0D])?;
             self.session.flush()?;
             
-            self.read_response()
+            self.read_response(timeout_ms)
         }
         
         /// Send a regular chat prompt (like "What is AWS?") and return the response
@@ -95,7 +100,8 @@ pub mod q_chat_helper {
             Ok(combined)
         }
         
-        fn read_response(&mut self) -> Result<String, Error> {
+        fn read_response(&mut self, timeout_ms: Option<u64>) -> Result<String, Error> {
+            let timeout = timeout_ms.unwrap_or(6000);
             let mut total_content = String::new();
             
             for _ in 0..15 {
@@ -107,12 +113,12 @@ pub mod q_chat_helper {
                     },
                     Ok(_) => {
                         // No more data, but wait a bit more in case there's more coming
-                        std::thread::sleep(Duration::from_millis(6000));
+                        std::thread::sleep(Duration::from_millis(timeout));
                         if total_content.len() > 0 { break; }
                     },
                     Err(_) => break,
                 }
-                std::thread::sleep(Duration::from_millis(6000));
+                std::thread::sleep(Duration::from_millis(timeout));
             }
             
             Ok(total_content)
@@ -120,10 +126,15 @@ pub mod q_chat_helper {
         
         /// Send key input (like arrow keys, Enter, etc.)
         pub fn send_key_input(&mut self, key_sequence: &str) -> Result<String, Error> {
+            self.send_key_input_with_timeout(key_sequence, None)
+        }
+        
+        /// Send key input with custom timeout
+        pub fn send_key_input_with_timeout(&mut self, key_sequence: &str, timeout_ms: Option<u64>) -> Result<String, Error> {
             self.session.write_all(key_sequence.as_bytes())?;
             self.session.flush()?;
             std::thread::sleep(Duration::from_millis(200));
-            self.read_response()
+            self.read_response(timeout_ms)
         }
         
         /// Quit the Q Chat session

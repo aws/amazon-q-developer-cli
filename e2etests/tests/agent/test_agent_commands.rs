@@ -489,10 +489,11 @@ fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
 
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    // Start the generate command
-    chat.execute_command("/agent generate")?;
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    
+    // Start the command and wait for name prompt
+    let _response1 = chat.execute_command_with_timeout("/agent generate", Some(20000))?;
+    // Wait longer for the prompt to fully appear
+    std::thread::sleep(std::time::Duration::from_secs(5));
 
     // Enter agent name
     chat.send_key_input("test-agent\r")?;
@@ -529,4 +530,5 @@ fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
     );
     drop(chat);
     Ok(())
+
 }
