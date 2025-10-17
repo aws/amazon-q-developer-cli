@@ -1,4 +1,6 @@
 use rmcp::model::{
+    CreateElicitationRequestParam,
+    CreateElicitationResult,
     ListPromptsResult,
     ListResourceTemplatesResult,
     ListResourcesResult,
@@ -13,6 +15,7 @@ use tokio::sync::mpsc::{
     Sender,
     channel,
 };
+use tokio::sync::oneshot;
 
 use crate::mcp_client::messenger::{
     Messenger,
@@ -53,6 +56,11 @@ pub enum UpdateEventMessage {
     },
     Deinit {
         server_name: String,
+    },
+    ElicitationRequest {
+        server_name: String,
+        request: CreateElicitationRequestParam,
+        response_sender: tokio::sync::oneshot::Sender<CreateElicitationResult>,
     },
 }
 
@@ -177,6 +185,24 @@ impl Messenger for ServerMessenger {
         tokio::spawn(async move {
             let _ = sender.send(UpdateEventMessage::Deinit { server_name }).await;
         });
+    }
+
+    async fn handle_elicitation_request(
+        &self,
+        request: CreateElicitationRequestParam,
+    ) -> core::result::Result<CreateElicitationResult, MessengerError> {
+        let (response_sender, response_receiver) = oneshot::channel();
+        
+        let sender = self.update_event_sender.clone();
+        let server_name = self.server_name.clone();
+        
+        sender.send(UpdateEventMessage::ElicitationRequest {
+            server_name,
+            request,
+            response_sender,
+        }).await.map_err(|e| MessengerError::Custom(e.to_string()))?;
+        
+        response_receiver.await.map_err(|e| MessengerError::Custom(e.to_string()))
     }
 
     fn duplicate(&self) -> Box<dyn Messenger> {
