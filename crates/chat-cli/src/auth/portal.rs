@@ -36,6 +36,7 @@ use crate::database::{
     Database,
     Secret,
 };
+use crate::util::system_info::is_mwinit_available;
 
 const AUTH_PORTAL_URL: &str = "https://gamma.app.kiro.aws.dev/signin";
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(600);
@@ -46,13 +47,14 @@ struct AuthPortalCallback {
     login_option: String,
     code: Option<String>,
     issuer_uri: Option<String>,
+    sso_region: Option<String>,
     state: String,
     path: String,
 }
 
 pub enum PortalResult {
     Social(SocialProvider),
-    Internal { issuer_uri: String },
+    Internal { issuer_uri: String, idc_region: String },
 }
 
 /// Local-only: open unified portal and handle single callback
@@ -80,13 +82,15 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
     // this base.
     let redirect_base = format!("http://localhost:{}", port);
     info!(%port, %redirect_base, "Unified auth portal listening (base) for callback");
+    let is_internal = is_mwinit_available();
 
     let auth_url = format!(
-        "{}?state={}&code_challenge={}&code_challenge_method=S256&redirect_uri={}&redirect_from=kirocli",
+        "{}?state={}&code_challenge={}&code_challenge_method=S256&redirect_uri={}{internal}&redirect_from=kirocli",
         AUTH_PORTAL_URL,
         state,
         challenge,
-        urlencoding::encode(&redirect_base)
+        urlencoding::encode(&redirect_base),
+        internal = if is_internal { "&from_amazon_internal=true" } else { "" },
     );
 
     crate::util::open::open_url_async(&auth_url)
@@ -118,8 +122,14 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
             let issuer_uri = callback
                 .issuer_uri
                 .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_uri for internal auth".into()))?;
-            // DO NOT register here. Let caller run start_pkce_authorization(issuer_uri).
-            Ok(PortalResult::Internal { issuer_uri })
+            let sso_region = callback
+                .sso_region
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing sso_region for internal auth".into()))?;
+            // DO NOT register here. Let caller run start_pkce_authorization(issuer_uri, sso_region).
+            Ok(PortalResult::Internal {
+                issuer_uri,
+                idc_region: sso_region,
+            })
         },
         other => Err(AuthError::OAuthCustomError(format!("Unknown login_option: {}", other))),
     }
@@ -192,6 +202,7 @@ impl Service<Request<Incoming>> for AuthCallbackService {
                     login_option: query_params.get("login_option").cloned().unwrap_or_default(),
                     code: query_params.get("code").cloned(),
                     issuer_uri: query_params.get("issuer_uri").cloned(),
+                    sso_region: query_params.get("idc_region").cloned(),
                     state: query_params.get("state").cloned().unwrap_or_default(),
                     path: path.to_string(),
                 };

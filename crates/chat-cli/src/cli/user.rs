@@ -109,10 +109,11 @@ impl LoginArgs {
                     os.telemetry.send_user_logged_in(None, None, Some(provider)).ok();
                     return Ok(ExitCode::SUCCESS);
                 },
-                PortalResult::Internal { issuer_uri } => {
+                PortalResult::Internal { issuer_uri, idc_region } => {
                     pre_portal_spinner.stop();
                     // EXACTLY same with original PKCE path: this registers client + completes auth.
-                    let (client, registration) = start_pkce_authorization(Some(issuer_uri.clone()), None).await?;
+                    let (client, registration) =
+                        start_pkce_authorization(Some(issuer_uri.clone()), Some(idc_region.clone())).await?;
 
                     match crate::util::open::open_url_async(&registration.url).await {
                         // If it succeeded, finish PKCE.
@@ -141,7 +142,7 @@ impl LoginArgs {
                         Err(err) => {
                             // Try device code flow.
                             error!(%err, "Failed to open URL with browser, falling back to device code flow");
-                            try_device_authorization(os, Some(issuer_uri.clone()), None).await?;
+                            try_device_authorization(os, Some(issuer_uri.clone()), Some(idc_region.clone())).await?;
                         },
                     }
                 },
