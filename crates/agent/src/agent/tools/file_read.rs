@@ -148,7 +148,7 @@ impl FsReadOp {
     async fn execute(&self) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
         let path = PathBuf::from(canonicalize_path(&self.path).map_err(|e| ToolExecutionError::Custom(e.to_string()))?);
 
-        // add line numbers
+        // TODO: add line numbers
         let file_lines = LinesStream::new(
             BufReader::new(
                 fs::File::open(&path)
@@ -157,7 +157,10 @@ impl FsReadOp {
             )
             .lines(),
         );
-        let mut file_lines = file_lines.enumerate().skip(self.offset.unwrap_or_default() as usize);
+        let mut file_lines = file_lines
+            .enumerate()
+            .skip(self.offset.unwrap_or_default() as usize)
+            .take(self.limit.unwrap_or(u32::MAX) as usize);
 
         let mut is_truncated = false;
         let mut content = Vec::new();
@@ -190,10 +193,100 @@ pub struct FileReadContext {}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::util::test::TestDir;
 
-    #[test]
-    fn test_file_read_tool_schema() {
-        let schema = FsRead::tool_schema();
-        println!("{}", serde_json::to_string_pretty(&schema).unwrap());
+    #[tokio::test]
+    async fn test_fs_read_single_file() {
+        let test_dir = TestDir::new().with_file(("test.txt", "line1\nline2\nline3")).await;
+
+        let tool = FsRead {
+            ops: vec![FsReadOp {
+                path: test_dir.path("test.txt").to_string_lossy().to_string(),
+                limit: None,
+                offset: None,
+            }],
+        };
+
+        assert!(tool.validate().await.is_ok());
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 1);
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert_eq!(content, "line1\nline2\nline3");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_with_offset_and_limit() {
+        let test_dir = TestDir::new()
+            .with_file(("test.txt", "line1\nline2\nline3\nline4\nline5"))
+            .await;
+
+        let tool = FsRead {
+            ops: vec![FsReadOp {
+                path: test_dir.path("test.txt").to_string_lossy().to_string(),
+                limit: Some(2),
+                offset: Some(1),
+            }],
+        };
+
+        let result = tool.execute().await.unwrap();
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert_eq!(content, "line2\nline3");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_multiple_files() {
+        let test_dir = TestDir::new()
+            .with_file(("file1.txt", "content1"))
+            .await
+            .with_file(("file2.txt", "content2"))
+            .await;
+
+        let tool = FsRead {
+            ops: vec![
+                FsReadOp {
+                    path: test_dir.path("file1.txt").to_string_lossy().to_string(),
+                    limit: None,
+                    offset: None,
+                },
+                FsReadOp {
+                    path: test_dir.path("file2.txt").to_string_lossy().to_string(),
+                    limit: None,
+                    offset: None,
+                },
+            ],
+        };
+
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_validate_nonexistent_file() {
+        let tool = FsRead {
+            ops: vec![FsReadOp {
+                path: "/nonexistent/file.txt".to_string(),
+                limit: None,
+                offset: None,
+            }],
+        };
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fs_read_validate_directory_path() {
+        let test_dir = TestDir::new();
+
+        let tool = FsRead {
+            ops: vec![FsReadOp {
+                path: test_dir.path("").to_string_lossy().to_string(),
+                limit: None,
+                offset: None,
+            }],
+        };
+
+        assert!(tool.validate().await.is_err());
     }
 }

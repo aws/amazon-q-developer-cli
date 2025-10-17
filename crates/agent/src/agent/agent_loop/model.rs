@@ -18,7 +18,8 @@ use crate::agent::rts::RtsModel;
 /// Represents a backend implementation for a converse stream compatible API.
 ///
 /// **Important** - implementations should be cancel safe
-pub trait Model {
+pub trait Model: std::fmt::Debug + Send + Sync + 'static {
+    /// Sends a conversation to a model, returning a stream of events as the response.
     fn stream(
         &self,
         messages: Vec<Message>,
@@ -27,12 +28,6 @@ pub trait Model {
         cancel_token: CancellationToken,
     ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>>;
 }
-
-/// Required for defining [Model] with a [Box<dyn Model>] for [super::AgentLoopRequest].
-pub trait AgentLoopModel: Model + std::fmt::Debug + Send + Sync + 'static {}
-
-// Helper blanket impl
-impl<T> AgentLoopModel for T where T: Model + std::fmt::Debug + Send + Sync + 'static {}
 
 /// The supported backends
 #[derive(Debug, Clone)]

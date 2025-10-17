@@ -345,6 +345,7 @@ fn format_mode(mode: u32) -> [char; 9] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agent::util::test::TestDir;
 
     #[test]
     #[cfg(unix)]
@@ -358,5 +359,98 @@ mod tests {
         assert_mode!(0o700, "rwx------");
         assert_mode!(0o744, "rwxr--r--");
         assert_mode!(0o641, "rw-r----x");
+    }
+
+    #[tokio::test]
+    async fn test_ls_basic_directory() {
+        let test_dir = TestDir::new()
+            .with_file(("file1.txt", "content1"))
+            .await
+            .with_file(("file2.txt", "content2"))
+            .await;
+
+        let tool = Ls {
+            path: test_dir.path("").to_string_lossy().to_string(),
+            depth: None,
+            ignore: None,
+        };
+
+        assert!(tool.validate().await.is_ok());
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 1);
+
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("file1.txt"));
+            assert!(content.contains("file2.txt"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_recursive() {
+        let test_dir = TestDir::new()
+            .with_file(("root.txt", "root"))
+            .await
+            .with_file(("subdir/nested.txt", "nested"))
+            .await;
+
+        let tool = Ls {
+            path: test_dir.path("").to_string_lossy().to_string(),
+            depth: Some(1),
+            ignore: None,
+        };
+
+        let result = tool.execute().await.unwrap();
+
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("root.txt"));
+            assert!(content.contains("subdir"));
+            assert!(content.contains("nested.txt"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_with_ignore_patterns() {
+        let test_dir = TestDir::new()
+            .with_file(("keep.txt", "keep"))
+            .await
+            .with_file(("ignore.log", "ignore"))
+            .await;
+
+        let tool = Ls {
+            path: test_dir.path("").to_string_lossy().to_string(),
+            depth: None,
+            ignore: Some(vec!["*.log".to_string()]),
+        };
+
+        let result = tool.execute().await.unwrap();
+
+        if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
+            assert!(content.contains("keep.txt"));
+            assert!(!content.contains("ignore.log"));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ls_validate_nonexistent_directory() {
+        let tool = Ls {
+            path: "/nonexistent/directory".to_string(),
+            depth: None,
+            ignore: None,
+        };
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_ls_validate_file_not_directory() {
+        let test_dir = TestDir::new().with_file(("file.txt", "content")).await;
+
+        let tool = Ls {
+            path: test_dir.path("file.txt").to_string_lossy().to_string(),
+            depth: None,
+            ignore: None,
+        };
+
+        assert!(tool.validate().await.is_err());
     }
 }

@@ -81,7 +81,7 @@ impl RunArgs {
             };
 
             // First, print output
-            self.handle_output(&evt).await?;
+            self.handle_output_format_printing(&evt).await?;
 
             // Check for exit conditions
             match &evt {
@@ -115,7 +115,7 @@ impl RunArgs {
         self.output_format.unwrap_or(OutputFormat::Text)
     }
 
-    async fn handle_output(&self, evt: &AgentEvent) -> Result<()> {
+    async fn handle_output_format_printing(&self, evt: &AgentEvent) -> Result<()> {
         match self.output_format() {
             OutputFormat::Text => {
                 if let AgentEvent::AgentLoop(evt) = &evt {
@@ -133,7 +133,20 @@ impl RunArgs {
                 Ok(())
             },
             OutputFormat::Json => Ok(()), // output will be dealt with after exiting the main loop
-            OutputFormat::JsonStreaming => Ok(()),
+            OutputFormat::JsonStreaming => {
+                if let AgentEvent::AgentLoop(evt) = &evt {
+                    match &evt.kind {
+                        AgentLoopEventKind::StreamEvent(stream_event) => {
+                            println!("{}", serde_json::to_string(stream_event)?);
+                        },
+                        AgentLoopEventKind::StreamError(stream_error) => {
+                            println!("{}", serde_json::to_string(stream_error)?);
+                        },
+                        _ => (),
+                    }
+                }
+                Ok(())
+            },
         }
     }
 }

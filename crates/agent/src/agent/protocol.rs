@@ -29,13 +29,18 @@ use super::types::AgentSnapshot;
 pub enum AgentEvent {
     /// Agent has finished initialization, and is ready to receive requests
     Initialized,
-    /// Events associated with the agent loop
+    /// Events associated with the agent loop.
+    ///
+    /// These events contain information about the model's response, including:
+    /// - Text content
+    /// - Tool uses
+    /// - Metadata about a response stream, and about a complete user turn
     AgentLoop(AgentLoopEvent),
     /// The exact request sent to the backend
     RequestSent(SendRequestArgs),
     /// An unknown error occurred with the model backend that could not be handled by the agent.
     RequestError(LoopError),
-    /// An agent has changed state.
+    /// The agent has changed state.
     StateChange { from: ExecutionState, to: ExecutionState },
     /// A tool use was requested by the model, and the permission was evaluated
     ToolPermissionEvalResult {

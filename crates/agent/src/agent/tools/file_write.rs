@@ -342,3 +342,141 @@ impl FileLineTracker {
         (self.lines_added_by_agent + self.lines_removed_by_agent) as isize
     }
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::util::test::TestDir;
+
+    #[tokio::test]
+    async fn test_create_file() {
+        let test_dir = TestDir::new();
+        let tool = FsWrite::Create(FileCreate {
+            path: test_dir.path("new.txt").to_string_lossy().to_string(),
+            content: "hello world".to_string(),
+        });
+
+        assert!(tool.validate().await.is_ok());
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("new.txt")).await.unwrap();
+        assert_eq!(content, "hello world");
+    }
+
+    #[tokio::test]
+    async fn test_create_file_with_parent_dirs() {
+        let test_dir = TestDir::new();
+        let tool = FsWrite::Create(FileCreate {
+            path: test_dir.path("nested/dir/file.txt").to_string_lossy().to_string(),
+            content: "nested content".to_string(),
+        });
+
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("nested/dir/file.txt"))
+            .await
+            .unwrap();
+        assert_eq!(content, "nested content");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_single_occurrence() {
+        let test_dir = TestDir::new().with_file(("test.txt", "hello world")).await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_dir.path("test.txt").to_string_lossy().to_string(),
+            old_str: "world".to_string(),
+            new_str: "rust".to_string(),
+            replace_all: false,
+        });
+
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("test.txt")).await.unwrap();
+        assert_eq!(content, "hello rust");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_multiple_occurrences() {
+        let test_dir = TestDir::new().with_file(("test.txt", "foo bar foo")).await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_dir.path("test.txt").to_string_lossy().to_string(),
+            old_str: "foo".to_string(),
+            new_str: "baz".to_string(),
+            replace_all: true,
+        });
+
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("test.txt")).await.unwrap();
+        assert_eq!(content, "baz bar baz");
+    }
+
+    #[tokio::test]
+    async fn test_str_replace_no_match() {
+        let test_dir = TestDir::new().with_file(("test.txt", "hello world")).await;
+
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: test_dir.path("test.txt").to_string_lossy().to_string(),
+            old_str: "missing".to_string(),
+            new_str: "replacement".to_string(),
+            replace_all: false,
+        });
+
+        assert!(tool.execute(None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_insert_at_line() {
+        let test_dir = TestDir::new().with_file(("test.txt", "line1\nline2\nline3")).await;
+
+        let tool = FsWrite::Insert(Insert {
+            path: test_dir.path("test.txt").to_string_lossy().to_string(),
+            content: "inserted".to_string(),
+            insert_line: Some(1),
+        });
+
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("test.txt")).await.unwrap();
+        assert_eq!(content, "line1\ninserted\nline2\nline3");
+    }
+
+    #[tokio::test]
+    async fn test_insert_append() {
+        let test_dir = TestDir::new().with_file(("test.txt", "existing")).await;
+
+        let tool = FsWrite::Insert(Insert {
+            path: test_dir.path("test.txt").to_string_lossy().to_string(),
+            content: "appended".to_string(),
+            insert_line: None,
+        });
+
+        assert!(tool.execute(None).await.is_ok());
+
+        let content = tokio::fs::read_to_string(test_dir.path("test.txt")).await.unwrap();
+        assert_eq!(content, "existing\nappended");
+    }
+
+    #[tokio::test]
+    async fn test_fs_write_validate_empty_path() {
+        let tool = FsWrite::Create(FileCreate {
+            path: "".to_string(),
+            content: "content".to_string(),
+        });
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_fs_write_validate_nonexistent_file_for_replace() {
+        let tool = FsWrite::StrReplace(StrReplace {
+            path: "/nonexistent/file.txt".to_string(),
+            old_str: "old".to_string(),
+            new_str: "new".to_string(),
+            replace_all: false,
+        });
+
+        assert!(tool.validate().await.is_err());
+    }
+}

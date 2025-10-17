@@ -226,3 +226,122 @@ pub fn is_supported_image_type(path: impl AsRef<Path>) -> bool {
     path.extension()
         .is_some_and(|ext| ImageFormat::from_str(ext.to_string_lossy().to_lowercase().as_str()).is_ok())
 }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::agent::util::test::TestDir;
+
+    // Create a minimal valid PNG for testing
+    fn create_test_png() -> Vec<u8> {
+        // Minimal 1x1 PNG
+        vec![
+            0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // PNG signature
+            0x00, 0x00, 0x00, 0x0d, // IHDR chunk length
+            0x49, 0x48, 0x44, 0x52, // IHDR
+            0x00, 0x00, 0x00, 0x01, // width: 1
+            0x00, 0x00, 0x00, 0x01, // height: 1
+            0x08, 0x02, 0x00, 0x00, 0x00, // bit depth, color type, compression, filter, interlace
+            0x90, 0x77, 0x53, 0xde, // CRC
+            0x00, 0x00, 0x00, 0x0c, // IDAT chunk length
+            0x49, 0x44, 0x41, 0x54, // IDAT
+            0x08, 0x99, 0x01, 0x01, 0x00, 0x00, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, // compressed data
+            0x02, 0x00, 0x01, 0x00, // CRC
+            0x00, 0x00, 0x00, 0x00, // IEND chunk length
+            0x49, 0x45, 0x4e, 0x44, // IEND
+            0xae, 0x42, 0x60, 0x82, // CRC
+        ]
+    }
+
+    #[tokio::test]
+    async fn test_read_valid_image() {
+        let test_dir = TestDir::new().with_file(("test.png", create_test_png())).await;
+
+        let tool = ImageRead {
+            paths: vec![test_dir.path("test.png").to_string_lossy().to_string()],
+        };
+
+        assert!(tool.validate().await.is_ok());
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 1);
+
+        if let ToolExecutionOutputItem::Image(image) = &result.items[0] {
+            assert_eq!(image.format, ImageFormat::Png);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_read_multiple_images() {
+        let test_dir = TestDir::new()
+            .with_file(("image1.png", create_test_png()))
+            .await
+            .with_file(("image2.png", create_test_png()))
+            .await;
+
+        let tool = ImageRead {
+            paths: vec![
+                test_dir.path("image1.png").to_string_lossy().to_string(),
+                test_dir.path("image2.png").to_string_lossy().to_string(),
+            ],
+        };
+
+        let result = tool.execute().await.unwrap();
+        assert_eq!(result.items.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_validate_unsupported_format() {
+        let test_dir = TestDir::new().with_file(("test.txt", "not an image")).await;
+
+        let tool = ImageRead {
+            paths: vec![test_dir.path("test.txt").to_string_lossy().to_string()],
+        };
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_nonexistent_file() {
+        let tool = ImageRead {
+            paths: vec!["/nonexistent/image.png".to_string()],
+        };
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_validate_directory_path() {
+        let test_dir = TestDir::new();
+
+        let tool = ImageRead {
+            paths: vec![test_dir.path("").to_string_lossy().to_string()],
+        };
+
+        assert!(tool.validate().await.is_err());
+    }
+
+    #[test]
+    fn test_is_supported_image_type() {
+        assert!(is_supported_image_type("test.png"));
+        assert!(is_supported_image_type("test.jpg"));
+        assert!(is_supported_image_type("test.jpeg"));
+        assert!(is_supported_image_type("test.gif"));
+        assert!(is_supported_image_type("test.webp"));
+        assert!(!is_supported_image_type("test.txt"));
+        assert!(!is_supported_image_type("test"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_pre_process_image_path_macos() {
+        let input = "/path/Screenshot 2025-03-13 at 1.46.32 PM.png";
+        let expected = "/path/Screenshot 2025-03-13 at 1.46.32\u{202F}PM.png";
+        assert_eq!(pre_process_image_path(input), expected);
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_pre_process_image_path_non_macos() {
+        let input = "/path/Screenshot 2025-03-13 at 1.46.32 PM.png";
+        assert_eq!(pre_process_image_path(input), input);
+    }
+}

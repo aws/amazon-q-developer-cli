@@ -11,7 +11,7 @@ use futures::{
     Stream,
     StreamExt,
 };
-use model::AgentLoopModel;
+use model::Model;
 use protocol::{
     AgentLoopEventKind,
     AgentLoopRequest,
@@ -642,7 +642,7 @@ impl AgentLoopHandle {
         self.loop_event_rx.recv().await
     }
 
-    pub async fn send_request<M: AgentLoopModel>(
+    pub async fn send_request<M: Model>(
         &mut self,
         model: M,
         args: SendRequestArgs,

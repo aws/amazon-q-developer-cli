@@ -10,7 +10,7 @@ use serde::{
 };
 use tokio::sync::mpsc;
 
-use super::model::AgentLoopModel;
+use super::model::Model;
 use super::types::{
     Message,
     MetadataEvent,
@@ -29,7 +29,7 @@ use super::{
 pub enum AgentLoopRequest {
     GetExecutionState,
     SendRequest {
-        model: Box<dyn AgentLoopModel>,
+        model: Box<dyn Model>,
         args: SendRequestArgs,
     },
     /// Ends the agent loop
@@ -135,8 +135,14 @@ pub enum AgentLoopEventKind {
     /// The agent loop has changed states
     LoopStateChange { from: LoopState, to: LoopState },
     /// Low level event. Generally only useful for [AgentLoop].
+    ///
+    /// This reflects the exact event the agent loop parses from a [Model::stream] response as part
+    /// of executing a user turn.
     StreamEvent(StreamEvent),
     /// Low level event. Generally only useful for [AgentLoop].
+    ///
+    /// This reflects the exact event the agent loop parses from a [Model::stream] response as part
+    /// of executing a user turn.
     StreamError(StreamError),
 }
 
