@@ -289,7 +289,7 @@ impl UserMessage {
 
     /// Returns a formatted [String] containing [Self::additional_context], [Self::timestamp], and
     /// [Self::prompt].
-    fn content_with_context(&self) -> String {
+    pub fn content_with_context(&self) -> String {
         let mut content = String::new();
 
         if let Some(ts) = self.timestamp {

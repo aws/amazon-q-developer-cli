@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Q CLI - Web UI</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <h2>Workers</h2>
+                <button id="new-worker-button" class="btn-new">+ New</button>
+            </div>
+            <div id="worker-list" class="worker-list"></div>
+        </aside>
+        
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="content-header">
+                <h1 id="worker-title">Q CLI - Web UI</h1>
+                <div id="connection-status" class="connection-status"></div>
+            </header>
+            
+            <div id="conversation" class="conversation"></div>
+            
+            <div class="input-area">
+                <textarea id="prompt-input" placeholder="Type your message..." rows="3"></textarea>
+                <button id="send-button" class="btn-send">Send</button>
+                <button id="cancel-button" class="btn-cancel" style="display: none;">Cancel</button>
+            </div>
+        </main>
+    </div>
+    
+    <!-- New Worker Dialog -->
+    <div id="new-worker-dialog" class="dialog" style="display: none;">
+        <div class="dialog-content">
+            <h2>Create New Worker</h2>
+            <form id="new-worker-form">
+                <label>
+                    Worker Name (optional):
+                    <input type="text" id="worker-name-input" placeholder="auto-generated">
+                </label>
+                <label>
+                    Agent Name:
+                    <input type="text" id="worker-agent-input" placeholder="default" required>
+                </label>
+                <label>
+                    Working Directory (optional):
+                    <input type="text" id="worker-workdir-input" placeholder="~/">
+                </label>
+                <div class="dialog-buttons">
+                    <button type="submit" id="create-worker-button" class="btn-primary">Create</button>
+                    <button type="button" id="cancel-dialog-button" class="btn-secondary">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="app.js"></script>
+</body>
+</html>

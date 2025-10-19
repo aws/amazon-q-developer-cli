@@ -27,6 +27,7 @@ async-trait.workspace = true
 aws-config.workspace = true
 aws-credential-types.workspace = true
 aws-runtime.workspace = true
+aws-sdk-bedrockruntime = "1.106.0"
 aws-sdk-cognitoidentity.workspace = true
 aws-sdk-ssooidc.workspace = true
 aws-smithy-async.workspace = true
@@ -103,6 +104,9 @@ time.workspace = true
 tokio.workspace = true
 tokio-tungstenite.workspace = true
 tokio-util.workspace = true
+axum = { version = "0.7", features = ["ws"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["fs", "cors"] }
 toml.workspace = true
 tracing.workspace = true
 tracing-appender.workspace = true

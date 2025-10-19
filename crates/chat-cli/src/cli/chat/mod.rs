@@ -6,7 +6,7 @@ pub mod context;
 mod conversation;
 mod custom_spinner;
 mod input_source;
-mod message;
+pub mod message;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
@@ -15,6 +15,8 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+pub mod agent_env_ui;
+pub mod web_server;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 use crate::constants::ui_text;
 #[cfg(unix)]
@@ -66,7 +68,6 @@ use clap::{
 use cli::compact::CompactStrategy;
 use cli::hooks::ToolContext;
 use cli::model::{
-    find_model,
     get_available_models,
     select_model,
 };
@@ -87,7 +88,6 @@ use custom_spinner::Spinners;
 use eyre::{
     Report,
     Result,
-    bail,
     eyre,
 };
 use input_source::InputSource;
@@ -116,16 +116,10 @@ use tokio::sync::{
     Mutex,
     broadcast,
 };
-use tool_manager::{
-    PromptQuery,
-    PromptQueryResult,
-    ToolManager,
-    ToolManagerBuilder,
-};
+use tool_manager::ToolManager;
 use tools::delegate::status_all_agents;
 use tools::gh_issue::GhIssueContext;
 use tools::{
-    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
@@ -184,7 +178,6 @@ use crate::constants::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::telemetry::core::{
-    AgentConfigInitArgs,
     ChatAddedMessageParams,
     ChatConversationType,
     MessageMetaTag,
@@ -213,6 +206,32 @@ pub enum WrapMode {
     Auto,
 }
 
+/// UI mode selection
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum UiMode {
+    /// Text-based interactive UI with readline-style input
+    Text,
+    /// Structured JSON I/O for scripting and automation
+    Structured,
+    /// Headless mode with no UI (for background processing)
+    None,
+}
+
+/// Platform selection for LLM provider
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Platform {
+    #[value(name = "bedrock")]
+    Bedrock,
+    #[value(name = "codewhisperer")]
+    CodeWhisperer,
+}
+
+impl Default for Platform {
+    fn default() -> Self {
+        Platform::CodeWhisperer
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resumes the previous conversation from this directory.
@@ -239,213 +258,249 @@ pub struct ChatArgs {
     /// Control line wrapping behavior (default: auto-detect)
     #[arg(short = 'w', long, value_enum)]
     pub wrap: Option<WrapMode>,
+    /// UI mode to use (text, structured, or none)
+    #[arg(long = "ui-mode", value_enum)]
+    pub ui_mode: Option<UiMode>,
+    /// Platform to use for LLM
+    #[arg(long = "platform", value_enum)]
+    pub platform: Option<Platform>,
+    /// Enable web UI
+    #[arg(long)]
+    pub web_ui: bool,
+    /// Web UI port (default: 8080)
+    #[arg(long)]
+    pub web_port: Option<u16>,
 }
 
 impl ChatArgs {
-    pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
-        let mut input = self.input;
-
-        if self.no_interactive && input.is_none() {
-            if !std::io::stdin().is_terminal() {
-                let mut buffer = String::new();
-                match std::io::stdin().read_to_string(&mut buffer) {
-                    Ok(_) => {
-                        if !buffer.trim().is_empty() {
-                            input = Some(buffer.trim().to_string());
-                        }
-                    },
-                    Err(e) => {
-                        eprintln!("Error reading from stdin: {}", e);
-                    },
-                }
-            }
-
-            if input.is_none() {
-                bail!("Input must be supplied when running in non-interactive mode");
-            }
-        }
-
-        let mut stderr = std::io::stderr();
-
-        let args: Vec<String> = std::env::args().collect();
-        if args
-            .iter()
-            .any(|arg| arg == "--profile" || arg.starts_with("--profile="))
-        {
-            execute!(
-                stderr,
-                StyledText::warning_fg(),
-                style::Print("WARNING: "),
-                StyledText::reset(),
-                style::Print("--profile is deprecated, use "),
-                StyledText::success_fg(),
-                style::Print("--agent"),
-                StyledText::reset(),
-                style::Print(" instead\n")
-            )?;
-        }
-
-        let conversation_id = uuid::Uuid::new_v4().to_string();
-        info!(?conversation_id, "Generated new conversation id");
-
-        // Check MCP status once at the beginning of the session
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
+    pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
+        use crate::agent_env::{
+            EventBus, Session, AgentEnvironment, WorkerBuilder,
         };
-
-        let agents = {
-            let skip_migration = self.no_interactive;
-            let (mut agents, md) =
-                Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr, mcp_enabled).await;
-            agents.trust_all_tools = self.trust_all_tools;
-
-            os.telemetry
-                .send_agent_config_init(&os.database, conversation_id.clone(), AgentConfigInitArgs {
-                    agents_loaded_count: md.load_count as i64,
-                    agents_loaded_failed_count: md.load_failed_count as i64,
-                    legacy_profile_migration_executed: md.migration_performed,
-                    legacy_profile_migrated_count: md.migrated_count as i64,
-                    launched_agent: md.launched_agent,
-                })
-                .await
-                .map_err(|err| error!(?err, "failed to send agent config init telemetry"))
-                .ok();
-
-            // Only show MCP safety message if MCP is enabled and has servers
-            if mcp_enabled
-                && agents
-                    .get_active()
-                    .is_some_and(|a| !a.mcp_servers.mcp_servers.is_empty())
-            {
-                if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
-                    execute!(
-                        stderr,
-                        style::Print(
-                            "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                        )
+        use crate::cli::chat::agent_env_ui::{TextUi, StructuredIO};
+        
+        // Wrap Os in Arc for sharing with WebServer
+        let os_arc = Arc::new(os.clone());
+        
+        // Invert no_interactive flag for clearer logic
+        let interactive = !self.no_interactive;
+        
+        // Initialize time conversion for WebUI events
+        crate::cli::chat::web_server::init_time_conversion();
+        
+        // Task 8.1.1: Create EventBus
+        let event_bus = EventBus::default();
+        
+        // Task 8.1.2: Create Session with EventBus and model providers
+        let platform = self.platform.unwrap_or_default();
+        let model_provider = Self::create_model_provider(platform, os).await?;
+        let model_providers = vec![model_provider];
+        
+        let session = Arc::new(Session::new(event_bus.clone(), model_providers).with_os(os_arc.clone()));
+        
+        // Task 9.3.2: Select UI based on ui_mode and create UI BEFORE worker for StructuredIO
+        let ui_mode = self.ui_mode.unwrap_or(UiMode::Text);
+        
+        // For StructuredIO, create UI before worker so it can receive WorkerEvent::Created
+        let main_ui_structured: Option<Arc<StructuredIO>> = if ui_mode == UiMode::Structured {
+            Some(Arc::new(StructuredIO::new(
+                session.clone(),
+                interactive,
+            )?))
+        } else {
+            None
+        };
+        
+        // Create WebUI if enabled (before worker creation to receive events)
+        let web_ui: Option<Arc<crate::cli::chat::web_server::WebUI>> = if self.web_ui || std::env::var("Q_WEB_UI").is_ok() {
+            use crate::cli::chat::web_server::WebUI;
+            Some(Arc::new(WebUI::new(session.clone())))
+        } else {
+            None
+        };
+        
+        // Collect headless UIs
+        let mut headless_uis: Vec<Arc<dyn crate::agent_env::HeadlessInterface>> = vec![];
+        if let Some(ref web_ui) = web_ui {
+            headless_uis.push(web_ui.clone());
+        }
+        
+        // Create AgentEnvironment with StructuredIO (if present) before worker creation
+        let main_ui_for_agent_env: Option<Arc<dyn crate::agent_env::UserInterface>> = 
+            main_ui_structured.clone().map(|ui| ui as Arc<dyn crate::agent_env::UserInterface>);
+        
+        let agent_env = AgentEnvironment::new(
+            session.clone(),
+            event_bus.clone(),
+            main_ui_for_agent_env,
+            headless_uis,
+            interactive,
+        );
+        
+        // Start event multicasting BEFORE creating worker
+        agent_env.start_event_multicasting();
+        
+        // Task 8.1.3: Create main Worker using WorkerBuilder
+        let main_worker = WorkerBuilder::new()
+            .agent(self.agent.clone())
+            .platform(platform)
+            .model(self.model.clone())
+            .initial_input(self.input.clone())
+            .build(session.clone(), os)
+            .await?;
+        let main_worker_id = main_worker.id;
+        
+        // Create TextUi after worker (TextUi needs worker_id) and update AgentEnvironment if needed
+        let main_ui: Option<Arc<dyn crate::agent_env::UserInterface>> = if main_ui_structured.is_some() {
+            // StructuredIO already set in AgentEnvironment
+            None
+        } else {
+            match ui_mode {
+                UiMode::Text => {
+                    let history_path = directories::chat_cli_bash_history_path(os).ok();
+                    let text_ui = TextUi::new(
+                        session.clone(),
+                        main_worker_id,
+                        history_path,
+                        interactive,
                     )?;
+                    Some(Arc::new(text_ui))
                 }
-                os.database.settings.set(Setting::McpLoadedBefore, true).await?;
+                UiMode::None => {
+                    None // Headless mode
+                }
+                UiMode::Structured => unreachable!("StructuredIO already created"),
             }
-
-            if let Some(trust_tools) = self.trust_tools.take() {
-                for tool in &trust_tools {
-                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
-                        let _ = queue!(
-                            stderr,
-                            StyledText::warning_fg(),
-                            style::Print("WARNING: "),
-                            StyledText::reset(),
-                            style::Print("--trust-tools arg for custom tool "),
-                            StyledText::brand_fg(),
-                            style::Print(tool),
-                            StyledText::reset(),
-                            style::Print(" needs to be prepended with "),
-                            StyledText::success_fg(),
-                            style::Print("@{MCPSERVERNAME}/"),
-                            StyledText::reset(),
-                            style::Print("\n"),
-                        );
+        };
+        
+        // If TextUi was created, we need to recreate AgentEnvironment with it
+        let agent_env = if let Some(text_ui) = main_ui {
+            // Collect headless UIs again
+            let mut headless_uis: Vec<Arc<dyn crate::agent_env::HeadlessInterface>> = vec![];
+            if let Some(ref web_ui) = web_ui {
+                headless_uis.push(web_ui.clone());
+            }
+            
+            let new_agent_env = AgentEnvironment::new(
+                session.clone(),
+                event_bus.clone(),
+                Some(text_ui),
+                headless_uis,
+                interactive,
+            );
+            // Start event multicasting for the new AgentEnvironment
+            new_agent_env.start_event_multicasting();
+            new_agent_env
+        } else {
+            agent_env
+        };
+        
+        // Start web server if WebUI is enabled
+        if let Some(web_ui) = web_ui {
+            use crate::cli::chat::web_server::WebServer;
+            use std::net::SocketAddr;
+            
+            let web_port = self.web_port.unwrap_or(8080);
+            let web_addr: SocketAddr = ([127, 0, 0, 1], web_port).into();
+            
+            let web_server = WebServer::new(
+                web_addr,
+                session.clone(),
+                web_ui,
+                os_arc.clone(),
+            );
+            
+            let shutdown_signal = agent_env.shutdown_signal();
+            tokio::spawn(async move {
+                if let Err(e) = web_server.run_with_shutdown(shutdown_signal).await {
+                    if e.to_string().contains("Address already in use") {
+                        tracing::error!("Port {} already in use. Try --web-port <port>", web_port);
+                    } else {
+                        tracing::error!("Web server error: {}", e);
                     }
                 }
-
-                let _ = stderr.flush();
-
-                if let Some(a) = agents.get_active_mut() {
-                    a.allowed_tools.extend(trust_tools);
-                }
+            });
+            
+            tracing::info!("Web UI available at http://{}", web_addr);
+        }
+        
+        // Error if no input provided in non-interactive mode
+        if self.input.is_none() && !interactive {
+            return Err(eyre::eyre!("No input provided for non-interactive mode"));
+        }
+        
+        // Spawn job completion monitor before spawning jobs (non-interactive mode only)
+        if !interactive {
+            agent_env.spawn_job_completion_monitor();
+        }
+        
+        // Task 8.1.7: Handle initial prompt if provided
+        if self.input.is_some() {
+            // Initial input was already added to conversation history in Task 8.1.4
+            // Now we need to trigger the agent loop
+            use crate::agent_env::worker_tasks::AgentLoopInput;
+            
+            // Launch agent loop for initial input
+            session.run_task__agent_loop(main_worker.clone(), AgentLoopInput {})?;
+        }
+        
+        // Error if no jobs spawned in non-interactive mode
+        if !interactive && !session.has_active_jobs() {
+            return Err(eyre::eyre!("No jobs spawned in non-interactive mode"));
+        }
+        
+        // Task 8.1.8: Run AgentEnvironment
+        tracing::info!("Starting AgentEnvironment main loop");
+        agent_env.run().await?;
+        tracing::info!("AgentEnvironment main loop exited, returning from execute()");
+        
+        Ok(ExitCode::SUCCESS)
+    }
+    
+    async fn create_model_provider(
+        platform: Platform,
+        os: &mut Os,
+    ) -> Result<Arc<dyn crate::agent_env::ModelProvider>> {
+        use crate::agent_env::model_providers::{BedrockConverseStreamModelProvider, CodeWhispererModelProvider};
+        use crate::api_client::ApiClient;
+        use aws_config::BehaviorVersion;
+        use aws_sdk_bedrockruntime::Client as BedrockClient;
+        use aws_types::region::Region;
+        use eyre::Context;
+        
+        match platform {
+            Platform::Bedrock => {
+                let config = aws_config::defaults(BehaviorVersion::latest())
+                    .region(Region::new("us-east-1"))
+                    .load()
+                    .await;
+                let bedrock_client = BedrockClient::new(&config);
+                Ok(Arc::new(BedrockConverseStreamModelProvider::new(bedrock_client)))
             }
-
-            agents
-        };
-
-        // If modelId is specified, verify it exists before starting the chat
-        // Otherwise, CLI will use a default model when starting chat
-        let (models, default_model_opt) = get_available_models(os).await?;
-        // Fallback logic: try user's saved default, then system default
-        let fallback_model_id = || {
-            if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
-                find_model(&models, &saved)
-                    .map(|m| m.model_id.clone())
-                    .or(Some(default_model_opt.model_id.clone()))
-            } else {
-                Some(default_model_opt.model_id.clone())
+            Platform::CodeWhisperer => {
+                let api_client = ApiClient::new(
+                    &os.env,
+                    &os.fs,
+                    &mut os.database,
+                    None,  // Use configured endpoint from database
+                ).await
+                    .context("Failed to create CodeWhisperer API client")?;
+                
+                let streaming_client = api_client.streaming_client()
+                    .ok_or_else(|| eyre::eyre!(
+                        "CodeWhisperer streaming client not available. \
+                         Please run 'q login' or check AMAZON_Q_SIGV4 is not set."
+                    ))?;
+                
+                Ok(Arc::new(CodeWhispererModelProvider::new(streaming_client)))
             }
-        };
-
-        let model_id: Option<String> = if let Some(requested) = self.model.as_ref() {
-            // CLI argument takes highest priority
-            if let Some(m) = find_model(&models, requested) {
-                Some(m.model_id.clone())
-            } else {
-                let available = models
-                    .iter()
-                    .map(|m| m.model_name.as_deref().unwrap_or(&m.model_id))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                bail!("Model '{}' does not exist. Available models: {}", requested, available);
-            }
-        } else if let Some(agent_model) = agents.get_active().and_then(|a| a.model.as_ref()) {
-            // Agent model takes second priority
-            if let Some(m) = find_model(&models, agent_model) {
-                Some(m.model_id.clone())
-            } else {
-                let _ = execute!(
-                    stderr,
-                    StyledText::warning_fg(),
-                    style::Print("WARNING: "),
-                    StyledText::reset(),
-                    style::Print("Agent specifies model '"),
-                    StyledText::brand_fg(),
-                    style::Print(agent_model),
-                    StyledText::reset(),
-                    style::Print("' which is not available. Falling back to configured defaults.\n"),
-                );
-                fallback_model_id()
-            }
-        } else {
-            fallback_model_id()
-        };
-
-        let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
-        let (prompt_response_sender, prompt_response_receiver) =
-            tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let mut tool_manager = ToolManagerBuilder::default()
-            .prompt_query_result_sender(prompt_response_sender)
-            .prompt_query_receiver(prompt_request_receiver)
-            .prompt_query_sender(prompt_request_sender.clone())
-            .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
-            .conversation_id(&conversation_id)
-            .agent(agents.get_active().cloned().unwrap_or_default())
-            .build(os, Box::new(std::io::stderr()), !self.no_interactive)
-            .await?;
-        let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
-
-        ChatSession::new(
-            os,
-            &conversation_id,
-            agents,
-            input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
-            self.resume,
-            || terminal::window_size().map(|s| s.columns.into()).ok(),
-            tool_manager,
-            model_id,
-            tool_config,
-            !self.no_interactive,
-            mcp_enabled,
-            self.wrap,
-        )
-        .await?
-        .spawn(os)
-        .await
-        .map(|_| ExitCode::SUCCESS)
+        }
     }
 }
+
+// ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====
+// =  ====  ORIGINAL ChatSession IMPLEMENTATION ====  ====  ====  ====  ====  =
+// ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====  ====
 
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;

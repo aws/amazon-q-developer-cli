@@ -1,0 +1,394 @@
+/* ============================================================================
+   Global Styles
+   ============================================================================ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #333;
+    background-color: #fff;
+}
+
+/* ============================================================================
+   Container Layout
+   ============================================================================ */
+
+.container {
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* ============================================================================
+   Sidebar
+   ============================================================================ */
+
+.sidebar {
+    width: 250px;
+    background-color: #f5f5f5;
+    border-right: 1px solid #ddd;
+    display: flex;
+    flex-direction: column;
+}
+
+.sidebar-header {
+    padding: 16px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.sidebar-header h2 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.btn-new {
+    padding: 6px 12px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.btn-new:hover {
+    background-color: #0056b3;
+}
+
+.worker-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px;
+}
+
+.worker-item {
+    display: flex;
+    align-items: center;
+    padding: 12px;
+    margin-bottom: 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.worker-item:hover {
+    background-color: #e9ecef;
+}
+
+.worker-item.active {
+    background-color: #007bff;
+    color: white;
+}
+
+.worker-icon {
+    font-size: 20px;
+    margin-right: 12px;
+}
+
+.worker-info {
+    flex: 1;
+}
+
+.worker-name {
+    font-weight: 500;
+    font-size: 14px;
+}
+
+.worker-state {
+    font-size: 12px;
+    opacity: 0.8;
+}
+
+/* ============================================================================
+   Main Content
+   ============================================================================ */
+
+.main-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #fff;
+}
+
+.content-header {
+    padding: 16px 24px;
+    border-bottom: 1px solid #ddd;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.content-header h1 {
+    font-size: 20px;
+    font-weight: 600;
+}
+
+.connection-status {
+    font-size: 12px;
+    color: #666;
+}
+
+/* ============================================================================
+   Conversation Area
+   ============================================================================ */
+
+.conversation {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.no-worker {
+    text-align: center;
+    color: #999;
+    padding: 48px;
+    font-size: 16px;
+}
+
+/* ============================================================================
+   Chat Bubbles
+   ============================================================================ */
+
+.bubble {
+    max-width: 80%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    word-wrap: break-word;
+    white-space: pre-wrap;
+}
+
+.bubble-user {
+    align-self: flex-end;
+    background-color: #e3f2fd;
+    border: 1px solid #90caf9;
+    color: #1565c0;
+}
+
+.bubble-assistant {
+    align-self: flex-start;
+    max-width: 100%;
+    background-color: transparent;
+    border: 1px solid #aed581;
+    color: #33691e;
+}
+
+.bubble-tool {
+    align-self: flex-start;
+    background-color: #fff3e0;
+    border: 1px solid #ffb74d;
+    color: #e65100;
+}
+
+.bubble-error {
+    align-self: flex-start;
+    background-color: #ffebee;
+    border: 1px solid #ef5350;
+    color: #c62828;
+}
+
+.bubble-default {
+    align-self: flex-start;
+    background-color: #f5f5f5;
+    border: 1px solid #ddd;
+    color: #333;
+}
+
+/* ============================================================================
+   Input Area
+   ============================================================================ */
+
+.input-area {
+    padding: 16px 24px;
+    border-top: 1px solid #ddd;
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+
+.input-area textarea {
+    flex: 1;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 14px;
+    resize: none;
+}
+
+.input-area textarea:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+.input-area textarea:disabled {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
+}
+
+.btn-send {
+    padding: 12px 24px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-send:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+
+.btn-send:disabled {
+    background-color: #ccc;
+    cursor: not-allowed;
+}
+
+.btn-cancel {
+    padding: 12px 24px;
+    background-color: #dc3545;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-cancel:hover {
+    background-color: #c82333;
+}
+
+/* ============================================================================
+   Dialog
+   ============================================================================ */
+
+.dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.dialog-content {
+    background-color: white;
+    padding: 24px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    min-width: 400px;
+    max-width: 500px;
+}
+
+.dialog-content h2 {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.dialog-content form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.dialog-content label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.dialog-content input {
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.dialog-content input:focus {
+    outline: none;
+    border-color: #007bff;
+}
+
+.dialog-buttons {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.btn-primary {
+    padding: 10px 20px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-primary:hover {
+    background-color: #0056b3;
+}
+
+.btn-secondary {
+    padding: 10px 20px;
+    background-color: #6c757d;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+}
+
+/* ============================================================================
+   Scrollbar Styling
+   ============================================================================ */
+
+.worker-list::-webkit-scrollbar,
+.conversation::-webkit-scrollbar {
+    width: 8px;
+}
+
+.worker-list::-webkit-scrollbar-track,
+.conversation::-webkit-scrollbar-track {
+    background: #f1f1f1;
+}
+
+.worker-list::-webkit-scrollbar-thumb,
+.conversation::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 4px;
+}
+
+.worker-list::-webkit-scrollbar-thumb:hover,
+.conversation::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}

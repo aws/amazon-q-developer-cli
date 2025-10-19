@@ -582,6 +582,11 @@ impl ApiClient {
         }
     }
 
+    /// Get the CodeWhisperer streaming client (bearer token auth)
+    pub fn streaming_client(&self) -> Option<CodewhispererStreamingClient> {
+        self.streaming_client.clone()
+    }
+
     /// Only meant for testing. Do not use outside of testing responses.
     pub fn set_mock_output(&mut self, json: serde_json::Value) {
         let mut mock = Vec::new();
