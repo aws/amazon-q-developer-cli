@@ -1,6 +1,10 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 
+fn clean_terminal_output(input: &str) -> String {
+    input.replace("(B", "")
+}
+
 #[test]
 #[cfg(all(feature = "help", feature = "sanity"))]
 fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
@@ -57,8 +61,10 @@ fn test_multiline_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
 
-    let multiline_input = "what is aws explain in 100 words.\nwhat is AI explain in 100 words";
-    let response = chat.send_prompt(multiline_input)?;
+    // Ctrl+J produces ASCII Line Feed (0x0A)
+    let ctrl_j = "\x0A";
+    let multiline_input = format!("what is aws explain in 100 words.{}what is AI explain in 100 words", ctrl_j);
+    let response = chat.execute_command(&multiline_input)?;
 
     println!("📝 Response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -102,6 +108,38 @@ fn test_whoami_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ All whoami command functionality verified!");
 
     // Release the lock
+    drop(chat);
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "help", feature = "sanity"))]
+fn test_ctrls_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing ctrl+s input... | Description: Tests <code>ctrl+s</code>command");
+
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    println!("✅ Q Chat session started");
+
+    // Ctrl+J produces ASCII Line Feed (0x0A)
+    let ctrl_j = "\x13";
+    let response = chat.execute_command(ctrl_j)?;
+    let cleaned_response = clean_terminal_output(&response);
+
+    println!("📝 Response: {} bytes", cleaned_response.len());
+    println!("📝 FULL OUTPUT:");
+    println!("{}", cleaned_response);
+    println!("📝 END OUTPUT");
+    assert!(cleaned_response.contains("agent"),"Response should contain /agent");
+    assert!(cleaned_response.contains("editor"),"Response should contain /editor");
+    assert!(cleaned_response.contains("clear"),"Response should contain /clear");
+    assert!(cleaned_response.contains("experiment"),"Response should contain /experiment");
+    assert!(cleaned_response.contains("context"),"Response should contain /context");
+
+    //pressing esc button to close ctrl+s window
+    let esc = chat.execute_command("\x1B")?;
+
     drop(chat);
     Ok(())
 }
