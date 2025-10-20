@@ -378,7 +378,7 @@ pub struct InvalidToolUse {
     pub content: String,
 }
 
-/// State associated with parsing a stream of [Result<StreamEvent, StreamError>] into
+/// State associated with parsing a stream of [StreamResult] into
 /// [AgentLoopEventKind].
 #[derive(Debug)]
 struct StreamParseState {
@@ -432,8 +432,6 @@ impl StreamParseState {
         }
     }
 
-    // pub fn next(&mut self, ev: Option<Result<StreamEvent, StreamError>>, buf: &mut
-    // Vec<AgentLoopEventKind>) {
     pub fn next(&mut self, ev: Option<StreamResult>, buf: &mut Vec<AgentLoopEventKind>) {
         if self.errored {
             if let Some(ev) = ev {

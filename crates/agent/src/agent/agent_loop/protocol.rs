@@ -141,7 +141,6 @@ pub enum AgentLoopEventKind {
     ///
     /// This reflects the exact event the agent loop parses from a [Model::stream] response as part
     /// of executing a user turn.
-    // Stream(StreamResult<StreamEvent, StreamError>),
     Stream(StreamResult),
 }
 
