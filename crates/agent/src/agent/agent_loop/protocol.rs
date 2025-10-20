@@ -95,6 +95,8 @@ impl AgentLoopEvent {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", content = "content")]
+#[serde(rename_all = "camelCase")]
 pub enum AgentLoopEventKind {
     /// Text returned by the assistant.
     AssistantText(String),
@@ -139,12 +141,26 @@ pub enum AgentLoopEventKind {
     ///
     /// This reflects the exact event the agent loop parses from a [Model::stream] response as part
     /// of executing a user turn.
-    StreamEvent(StreamEvent),
-    /// Low level event. Generally only useful for [AgentLoop].
-    ///
-    /// This reflects the exact event the agent loop parses from a [Model::stream] response as part
-    /// of executing a user turn.
-    StreamError(StreamError),
+    // Stream(StreamResult<StreamEvent, StreamError>),
+    Stream(StreamResult),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "result")]
+#[serde(rename_all = "lowercase")]
+pub enum StreamResult {
+    Ok(StreamEvent),
+    #[serde(rename = "error")]
+    Err(StreamError),
+}
+
+impl StreamResult {
+    pub fn unwrap_err(self) -> StreamError {
+        match self {
+            StreamResult::Ok(t) => panic!("called `StreamResult::unwrap_err()` on an `Ok` value: {:?}", &t),
+            StreamResult::Err(e) => e,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]

@@ -7,10 +7,9 @@ use serde::{
 };
 use tokio_util::sync::CancellationToken;
 
+use super::protocol::StreamResult;
 use super::types::{
     Message,
-    StreamError,
-    StreamEvent,
     ToolSpec,
 };
 use crate::agent::rts::RtsModel;
@@ -26,7 +25,7 @@ pub trait Model: std::fmt::Debug + Send + Sync + 'static {
         tool_specs: Option<Vec<ToolSpec>>,
         system_prompt: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>>;
+    ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>>;
 
     /// Dump serializable state required by the model implementation.
     ///
@@ -82,7 +81,7 @@ impl Model for Models {
         tool_specs: Option<Vec<ToolSpec>>,
         system_prompt: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
         match self {
             Models::Rts(rts_model) => rts_model.stream(messages, tool_specs, system_prompt, cancel_token),
             Models::Test(test_model) => test_model.stream(messages, tool_specs, system_prompt, cancel_token),
@@ -106,7 +105,7 @@ impl Model for TestModel {
         _tool_specs: Option<Vec<ToolSpec>>,
         _system_prompt: Option<String>,
         _cancel_token: CancellationToken,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
         panic!("unimplemented")
     }
 }

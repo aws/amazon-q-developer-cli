@@ -26,6 +26,8 @@ use super::types::AgentSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[allow(clippy::large_enum_variant)]
+#[serde(tag = "kind", content = "content")]
+#[serde(rename_all = "camelCase")]
 pub enum AgentEvent {
     /// Agent has finished initialization, and is ready to receive requests.
     ///

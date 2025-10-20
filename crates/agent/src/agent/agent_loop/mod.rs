@@ -22,6 +22,7 @@ use protocol::{
     LoopError,
     SendRequestArgs,
     StreamMetadata,
+    StreamResult,
     UserTurnMetadata,
 };
 use serde::{
@@ -124,10 +125,7 @@ pub struct AgentLoop {
 
     /// The current response stream future being received along with it's associated parse state
     #[allow(clippy::type_complexity)]
-    curr_stream: Option<(
-        StreamParseState,
-        Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send>>,
-    )>,
+    curr_stream: Option<(StreamParseState, Pin<Box<dyn Stream<Item = StreamResult> + Send>>)>,
 
     /// List of completed stream parse states
     stream_states: Vec<StreamParseState>,
@@ -434,7 +432,9 @@ impl StreamParseState {
         }
     }
 
-    pub fn next(&mut self, ev: Option<Result<StreamEvent, StreamError>>, buf: &mut Vec<AgentLoopEventKind>) {
+    // pub fn next(&mut self, ev: Option<Result<StreamEvent, StreamError>>, buf: &mut
+    // Vec<AgentLoopEventKind>) {
+    pub fn next(&mut self, ev: Option<StreamResult>, buf: &mut Vec<AgentLoopEventKind>) {
         if self.errored {
             if let Some(ev) = ev {
                 warn!(?ev, "ignoring unexpected event after having received an error");
@@ -457,13 +457,10 @@ impl StreamParseState {
 
         // Pushing low-level stream events in case end users want to consume these directly. Likely
         // not required.
-        match &ev {
-            Ok(e) => buf.push(AgentLoopEventKind::StreamEvent(e.clone())),
-            Err(e) => buf.push(AgentLoopEventKind::StreamError(e.clone())),
-        }
+        buf.push(AgentLoopEventKind::Stream(ev.clone()));
 
         match ev {
-            Ok(s) => match s {
+            StreamResult::Ok(s) => match s {
                 StreamEvent::MessageStart(ev) => {
                     debug_assert!(ev.role == Role::Assistant);
                 },
@@ -543,7 +540,7 @@ impl StreamParseState {
 
             // Parse invariant - we don't expect any further events after receiving a single
             // error.
-            Err(err) => {
+            StreamResult::Err(err) => {
                 debug_assert!(
                     self.stream_err.is_none(),
                     "Only one stream error event is expected. Previously found: {:?}, just received: {:?}",

@@ -163,7 +163,8 @@ impl AgentSettings {
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
-            auto_compact: Default::default(),
+            // auto_compact: Default::default(),
+            auto_compact: true,
             mcp_init_timeout: Self::DEFAULT_MCP_INIT_TIMEOUT,
         }
     }

@@ -107,6 +107,7 @@ impl std::error::Error for StreamError {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub enum StreamErrorKind {
     /// The request failed due to the context window overflowing.
     ///
@@ -245,7 +246,7 @@ impl Message {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "camelCase")]
 pub enum ContentBlock {
     Text(String),
     ToolUse(ToolUseBlock),

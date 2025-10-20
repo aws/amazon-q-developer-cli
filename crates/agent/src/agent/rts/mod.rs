@@ -32,6 +32,7 @@ use util::serde_value_to_document;
 use uuid::Uuid;
 
 use super::agent_loop::model::Model;
+use super::agent_loop::protocol::StreamResult;
 use super::agent_loop::types::{
     StreamError,
     StreamEvent,
@@ -99,7 +100,7 @@ impl RtsModel {
 
     async fn converse_stream_rts(
         self,
-        tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+        tx: mpsc::Sender<StreamResult>,
         cancel_token: CancellationToken,
         messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
@@ -109,7 +110,7 @@ impl RtsModel {
             Ok(s) => s,
             Err(msg) => {
                 error!(?msg, "failed to create conversation state");
-                tx.send(Err(StreamError::new(StreamErrorKind::Validation {
+                tx.send(StreamResult::Err(StreamError::new(StreamErrorKind::Validation {
                     message: Some(msg),
                 })))
                 .await
@@ -125,7 +126,7 @@ impl RtsModel {
         let result = tokio::select! {
             _ = token_clone.cancelled() => {
                 warn!("rts request cancelled during send");
-                tx.send(Err(StreamError::new(StreamErrorKind::Interrupted)))
+                tx.send(StreamResult::Err(StreamError::new(StreamErrorKind::Interrupted)))
                     .await
                     .map_err(|err| (error!(?err, "failed to send event")))
                     .ok();
@@ -150,7 +151,7 @@ impl RtsModel {
         &self,
         res: Result<SendMessageOutput, ConverseStreamError>,
         request_duration: Duration,
-        tx: mpsc::Sender<std::result::Result<StreamEvent, StreamError>>,
+        tx: mpsc::Sender<StreamResult>,
         token: CancellationToken,
         request_start_time: Instant,
         request_start_time_sys: DateTime<Utc>,
@@ -175,18 +176,20 @@ impl RtsModel {
                 let kind = match err.kind {
                     ConverseStreamErrorKind::Throttling => StreamErrorKind::Throttling,
                     ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other(err.to_string()),
-                    ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::Throttling,
+                    ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
                     ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
                     ConverseStreamErrorKind::Unknown => StreamErrorKind::Other(err.to_string()),
                 };
                 let request_id = err.request_id.clone();
-                tx.send(Err(StreamError::new(kind)
-                    .set_original_request_id(request_id)
-                    .set_original_status_code(err.status_code)
-                    .with_source(Arc::new(err))))
-                    .await
-                    .map_err(|err| error!(?err, "failed to send stream event"))
-                    .ok();
+                tx.send(StreamResult::Err(
+                    StreamError::new(kind)
+                        .set_original_request_id(request_id)
+                        .set_original_status_code(err.status_code)
+                        .with_source(Arc::new(err)),
+                ))
+                .await
+                .map_err(|err| error!(?err, "failed to send stream event"))
+                .ok();
             },
         }
     }
@@ -332,7 +335,7 @@ impl Model for RtsModel {
         tool_specs: Option<Vec<ToolSpec>>,
         system_prompt: Option<String>,
         cancel_token: CancellationToken,
-    ) -> Pin<Box<dyn Stream<Item = Result<StreamEvent, StreamError>> + Send + 'static>> {
+    ) -> Pin<Box<dyn Stream<Item = StreamResult> + Send + 'static>> {
         let (tx, rx) = mpsc::channel(16);
 
         let self_clone = self.clone();
@@ -374,11 +377,11 @@ impl Default for RtsModelState {
 struct ResponseParser {
     /// The response to consume and parse into a sequence of [StreamEvent].
     response: SendMessageOutput,
-    event_tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+    event_tx: mpsc::Sender<StreamResult>,
     cancel_token: CancellationToken,
 
     /// Buffer that is continually written to during stream parsing.
-    buf: Vec<Result<StreamEvent, StreamError>>,
+    buf: Vec<StreamResult>,
 
     // parse state
     /// Whether or not the stream has completed.
@@ -406,7 +409,7 @@ struct ResponseParser {
 impl ResponseParser {
     fn new(
         response: SendMessageOutput,
-        event_tx: mpsc::Sender<Result<StreamEvent, StreamError>>,
+        event_tx: mpsc::Sender<StreamResult>,
         cancel_token: CancellationToken,
         request_id: Option<String>,
         request_start_time: Instant,
@@ -445,8 +448,8 @@ impl ResponseParser {
             tokio::select! {
                 _ = token.cancelled() => {
                     debug!("rts response parser was cancelled");
-                    self.buf.push(Ok(self.make_metadata()));
-                    self.buf.push(Err(StreamError::new(StreamErrorKind::Interrupted)));
+                    self.buf.push(StreamResult::Ok(self.make_metadata()));
+                    self.buf.push(StreamResult::Err(StreamError::new(StreamErrorKind::Interrupted)));
                     self.drain_buf_events().await;
                     return;
                 },
@@ -456,8 +459,8 @@ impl ResponseParser {
                             self.drain_buf_events().await;
                         },
                         Err(err) => {
-                            self.buf.push(Ok(self.make_metadata()));
-                            self.buf.push(Err(self.recv_error_to_stream_error(err)));
+                            self.buf.push(StreamResult::Ok(self.make_metadata()));
+                            self.buf.push(StreamResult::Err(self.recv_error_to_stream_error(err)));
                             self.drain_buf_events().await;
                             return;
                         },
@@ -493,10 +496,12 @@ impl ResponseParser {
             match self.peek().await? {
                 Some(ChatResponseStream::CodeReferenceEvent(_)) => (),
                 _ => {
-                    self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
-                        delta: ContentBlockDelta::Text(content),
-                        content_block_index: None,
-                    })));
+                    self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
+                        ContentBlockDeltaEvent {
+                            delta: ContentBlockDelta::Text(content),
+                            content_block_index: None,
+                        },
+                    )));
                 },
             }
         }
@@ -505,10 +510,12 @@ impl ResponseParser {
             match self.next().await? {
                 Some(ev) => match ev {
                     ChatResponseStream::AssistantResponseEvent { content } => {
-                        self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
-                            delta: ContentBlockDelta::Text(content),
-                            content_block_index: None,
-                        })));
+                        self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
+                            ContentBlockDeltaEvent {
+                                delta: ContentBlockDelta::Text(content),
+                                content_block_index: None,
+                            },
+                        )));
                         return Ok(());
                     },
                     ChatResponseStream::ToolUseEvent {
@@ -520,24 +527,29 @@ impl ResponseParser {
                         self.tool_use_seen = true;
                         if self.parsing_tool_use.is_none() {
                             self.parsing_tool_use = Some((tool_use_id.clone(), name.clone()));
-                            self.buf.push(Ok(StreamEvent::ContentBlockStart(ContentBlockStartEvent {
-                                content_block_start: Some(ContentBlockStart::ToolUse(ToolUseBlockStart {
-                                    tool_use_id,
-                                    name,
-                                })),
-                                content_block_index: None,
-                            })));
+                            self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockStart(
+                                ContentBlockStartEvent {
+                                    content_block_start: Some(ContentBlockStart::ToolUse(ToolUseBlockStart {
+                                        tool_use_id,
+                                        name,
+                                    })),
+                                    content_block_index: None,
+                                },
+                            )));
                         }
                         if let Some(input) = input {
-                            self.buf.push(Ok(StreamEvent::ContentBlockDelta(ContentBlockDeltaEvent {
-                                delta: ContentBlockDelta::ToolUse(ToolUseBlockDelta { input }),
-                                content_block_index: None,
-                            })));
+                            self.buf.push(StreamResult::Ok(StreamEvent::ContentBlockDelta(
+                                ContentBlockDeltaEvent {
+                                    delta: ContentBlockDelta::ToolUse(ToolUseBlockDelta { input }),
+                                    content_block_index: None,
+                                },
+                            )));
                         }
                         if let Some(true) = stop {
-                            self.buf.push(Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
-                                content_block_index: None,
-                            })));
+                            self.buf
+                                .push(StreamResult::Ok(StreamEvent::ContentBlockStop(ContentBlockStopEvent {
+                                    content_block_index: None,
+                                })));
                             self.parsing_tool_use = None;
                         }
                         return Ok(());
@@ -548,14 +560,15 @@ impl ResponseParser {
                 },
                 None => {
                     self.ended = true;
-                    self.buf.push(Ok(StreamEvent::MessageStop(MessageStopEvent {
-                        stop_reason: if self.tool_use_seen {
-                            StopReason::ToolUse
-                        } else {
-                            StopReason::EndTurn
-                        },
-                    })));
-                    self.buf.push(Ok(self.make_metadata()));
+                    self.buf
+                        .push(StreamResult::Ok(StreamEvent::MessageStop(MessageStopEvent {
+                            stop_reason: if self.tool_use_seen {
+                                StopReason::ToolUse
+                            } else {
+                                StopReason::EndTurn
+                            },
+                        })));
+                    self.buf.push(StreamResult::Ok(self.make_metadata()));
                     return Ok(());
                 },
             }
@@ -696,7 +709,7 @@ mod tests {
         let mut cancelled_time = None;
         loop {
             let ev = rx.recv().await.expect("should not fail");
-            if let Ok(StreamEvent::ContentBlockDelta(_)) = ev {
+            if let StreamResult::Ok(StreamEvent::ContentBlockDelta(_)) = ev {
                 if was_cancelled {
                     continue;
                 }
@@ -705,7 +718,7 @@ mod tests {
                 was_cancelled = true;
                 cancelled_time = Some(Instant::now());
             }
-            if let Ok(StreamEvent::Metadata(_)) = ev {
+            if let StreamResult::Ok(StreamEvent::Metadata(_)) = ev {
                 // Next event should be an interrupted error.
                 let ev = rx.recv().await.expect("should have another event after metadata");
                 let err = ev.unwrap_err();

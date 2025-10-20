@@ -35,6 +35,7 @@ use serde::{
     Serialize,
 };
 use tracing::{
+    debug,
     error,
     info,
     warn,
@@ -127,6 +128,7 @@ impl RunArgs {
             let Ok(evt) = agent.recv().await else {
                 bail!("channel closed");
             };
+            debug!(?evt, "received new agent event");
 
             // First, print output
             self.handle_output_format_printing(&evt).await?;
@@ -195,14 +197,8 @@ impl RunArgs {
             OutputFormat::Json => Ok(()), // output will be dealt with after exiting the main loop
             OutputFormat::JsonStreaming => {
                 if let AgentEvent::AgentLoop(evt) = &evt {
-                    match &evt.kind {
-                        AgentLoopEventKind::StreamEvent(stream_event) => {
-                            println!("{}", serde_json::to_string(stream_event)?);
-                        },
-                        AgentLoopEventKind::StreamError(stream_error) => {
-                            println!("{}", serde_json::to_string(stream_error)?);
-                        },
-                        _ => (),
+                    if let AgentLoopEventKind::Stream(stream_event) = &evt.kind {
+                        println!("{}", serde_json::to_string(stream_event)?);
                     }
                 }
                 Ok(())
