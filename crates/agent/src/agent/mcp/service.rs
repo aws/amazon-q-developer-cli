@@ -45,6 +45,7 @@ use crate::agent::agent_config::definitions::McpServerConfig;
 use crate::agent::agent_loop::types::ToolSpec;
 use crate::agent::util::expand_env_vars;
 use crate::agent::util::path::expand_path;
+use crate::util::providers::RealProvider;
 
 /// This struct is consumed by the [rmcp] crate on server launch. The only purpose of this struct
 /// is to handle server-to-client requests. Client-side code will own a [RunningMcpService]
@@ -71,7 +72,9 @@ impl McpService {
     pub async fn launch(self) -> eyre::Result<(RunningMcpService, LaunchMetadata)> {
         match &self.config {
             McpServerConfig::Local(config) => {
-                let cmd = expand_path(&config.command)?;
+                // TODO - don't use real provider
+                let cmd = expand_path(&config.command, &RealProvider)?;
+
                 let mut env_vars = config.env.clone();
                 let cmd = Command::new(cmd.as_ref() as &str).configure(|cmd| {
                     if let Some(envs) = &mut env_vars {

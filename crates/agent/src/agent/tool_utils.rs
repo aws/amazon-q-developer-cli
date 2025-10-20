@@ -12,6 +12,8 @@ use super::consts::{
     MAX_TOOL_NAME_LEN,
     MAX_TOOL_SPEC_DESCRIPTION_LEN,
     RTS_VALID_TOOL_NAME_REGEX,
+    TOOL_USE_PURPOSE_FIELD_DESCRIPTION,
+    TOOL_USE_PURPOSE_FIELD_NAME,
 };
 use super::tools::BuiltInTool;
 
@@ -256,3 +258,35 @@ pub fn sanitize_tool_specs(
         transformed_tool_specs: warnings,
     }
 }
+
+/// Adds an argument to each tool spec called [TOOL_USE_PURPOSE_FIELD_NAME] in order for the model
+/// to provide extra context why the tool use is being made.
+pub fn add_tool_use_purpose_arg(tool_specs: &mut Vec<ToolSpec>) {
+    for spec in tool_specs {
+        let Some(arg_type) = spec.input_schema.get("type").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        if arg_type != "object" {
+            continue;
+        }
+        let Some(properties) = spec.input_schema.get_mut("properties").and_then(|p| p.as_object_mut()) else {
+            continue;
+        };
+        if !properties.contains_key(TOOL_USE_PURPOSE_FIELD_NAME) {
+            let obj = serde_json::Value::Object(
+                [
+                    (
+                        "description".to_string(),
+                        serde_json::Value::String(TOOL_USE_PURPOSE_FIELD_DESCRIPTION.to_string()),
+                    ),
+                    ("type".to_string(), serde_json::Value::String("string".to_string())),
+                ]
+                .into_iter()
+                .collect::<serde_json::Map<_, _>>(),
+            );
+            properties.insert(TOOL_USE_PURPOSE_FIELD_NAME.to_string(), obj);
+        }
+    }
+}
+
+// pub fn parse_tool() -> Result<Tool,

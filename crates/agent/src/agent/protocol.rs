@@ -21,7 +21,7 @@ use super::agent_loop::types::{
 use super::mcp::McpManagerError;
 use super::mcp::types::Prompt;
 use super::task_executor::TaskExecutorEvent;
-use super::tools::ToolKind;
+use super::tools::Tool;
 use super::types::AgentSnapshot;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,10 +45,7 @@ pub enum AgentEvent {
     /// The agent has changed state.
     StateChange { from: ExecutionState, to: ExecutionState },
     /// A tool use was requested by the model, and the permission was evaluated
-    ToolPermissionEvalResult {
-        tool: ToolKind,
-        result: PermissionEvalResult,
-    },
+    ToolPermissionEvalResult { tool: Tool, result: PermissionEvalResult },
     /// Events specific to tool and hook execution
     TaskExecutor(TaskExecutorEvent),
     ApprovalRequest {

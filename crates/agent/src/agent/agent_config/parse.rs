@@ -6,7 +6,7 @@ use std::str::FromStr;
 use crate::agent::agent_loop::types::ToolUseBlock;
 use crate::agent::protocol::AgentError;
 use crate::agent::tools::BuiltInToolName;
-use crate::agent::util::path::canonicalize_path_impl;
+use crate::agent::util::path::canonicalize_path_sys;
 use crate::agent::util::providers::{
     RealProvider,
     SystemProvider,
@@ -32,7 +32,7 @@ impl<'a> ResourceKind<'a> {
 
         let file_path = value.trim_start_matches("file://");
         if file_path.contains('*') || file_path.contains('?') {
-            let canon = canonicalize_path_impl(file_path, sys, sys, sys)
+            let canon = canonicalize_path_sys(file_path, sys)
                 .map_err(|err| format!("Failed to canonicalize path for {}: {}", file_path, err))?;
             let pattern = glob::Pattern::new(canon.as_str())
                 .map_err(|err| format!("Failed to create glob for {}: {}", canon, err))?;
@@ -258,7 +258,7 @@ impl FromStr for CanonicalToolName {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestSystem;
+    use crate::agent::util::test::TestProvider;
 
     #[test]
     fn test_resource_kind_parse_nonfile() {
@@ -270,7 +270,7 @@ mod tests {
 
     #[test]
     fn test_resource_kind_parse_file_scheme() {
-        let sys = TestSystem::new();
+        let sys = TestProvider::new();
 
         let resource = "file://project/README.md";
         assert_eq!(ResourceKind::parse_impl(resource, &sys).unwrap(), ResourceKind::File {

@@ -10,6 +10,7 @@ use super::providers::{
     CwdProvider,
     EnvProvider,
     HomeProvider,
+    SystemProvider,
 };
 
 #[derive(Debug)]
@@ -30,6 +31,8 @@ impl TestDir {
     }
 
     /// Writes the given file under the test directory. Creates parent directories if needed.
+    ///
+    /// The path given by `file` is *not* canonicalized.
     pub async fn with_file(self, file: impl TestFile) -> Self {
         let file_path = file.path();
         if file_path.is_absolute() {
@@ -74,13 +77,13 @@ where
 
 /// Test helper that implements [EnvProvider], [HomeProvider], and [CwdProvider].
 #[derive(Debug, Clone)]
-pub struct TestSystem {
+pub struct TestProvider {
     env: std::collections::HashMap<String, String>,
     home: Option<PathBuf>,
     cwd: Option<PathBuf>,
 }
 
-impl TestSystem {
+impl TestProvider {
     /// Creates a new implementation of [SystemProvider] with the following defaults:
     /// - env vars: HOME=/home/testuser
     /// - cwd: /home/testuser
@@ -122,25 +125,25 @@ impl TestSystem {
     }
 }
 
-impl Default for TestSystem {
+impl Default for TestProvider {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl EnvProvider for TestSystem {
+impl EnvProvider for TestProvider {
     fn var(&self, input: &str) -> Result<String, VarError> {
         self.env.get(input).cloned().ok_or(VarError::NotPresent)
     }
 }
 
-impl HomeProvider for TestSystem {
+impl HomeProvider for TestProvider {
     fn home(&self) -> Option<PathBuf> {
         self.home.as_ref().cloned()
     }
 }
 
-impl CwdProvider for TestSystem {
+impl CwdProvider for TestProvider {
     fn cwd(&self) -> Result<PathBuf, std::io::Error> {
         self.cwd.as_ref().cloned().ok_or(std::io::Error::new(
             std::io::ErrorKind::NotFound,
@@ -148,3 +151,5 @@ impl CwdProvider for TestSystem {
         ))
     }
 }
+
+impl SystemProvider for TestProvider {}

@@ -29,9 +29,9 @@ use crate::agent::agent_config::definitions::{
 };
 use crate::agent::agent_loop::types::ToolUseBlock;
 use crate::agent::tools::{
+    Tool,
     ToolExecutionOutput,
     ToolExecutionResult,
-    ToolKind,
     ToolState,
 };
 use crate::agent::util::truncate_safe;
@@ -299,7 +299,7 @@ pub struct StartToolExecution {
     /// Id for the tool execution. Uniquely identified by an agent id and tool use id.
     pub id: ToolExecutionId,
     /// The tool to execute
-    pub tool: ToolKind,
+    pub tool: Tool,
     /// The future containing the tool execution
     pub fut: ToolFuture,
     /// A receiver for tool state
@@ -327,7 +327,7 @@ pub struct StartHookExecution {
 
 #[derive(Debug)]
 struct ExecutingTool {
-    tool: ToolKind,
+    tool: Tool,
     cancel_token: CancellationToken,
     start_instant: Instant,
     start_time: DateTime<Utc>,
@@ -359,7 +359,7 @@ pub enum TaskExecutorEvent {
 pub struct ToolExecutionStartEvent {
     /// Identifier for the tool execution
     pub id: ToolExecutionId,
-    pub tool: ToolKind,
+    pub tool: Tool,
     pub start_time: DateTime<Utc>,
 }
 
@@ -367,7 +367,7 @@ pub struct ToolExecutionStartEvent {
 pub struct ToolExecutionEndEvent {
     /// Identifier for the tool execution
     pub id: ToolExecutionId,
-    pub tool: ToolKind,
+    pub tool: Tool,
     pub result: ToolExecutorResult,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
@@ -544,8 +544,8 @@ pub struct ToolContext {
     pub tool_response: Option<serde_json::Value>,
 }
 
-impl From<(&ToolUseBlock, &ToolKind)> for ToolContext {
-    fn from(value: (&ToolUseBlock, &ToolKind)) -> Self {
+impl From<(&ToolUseBlock, &Tool)> for ToolContext {
+    fn from(value: (&ToolUseBlock, &Tool)) -> Self {
         Self {
             tool_name: value.1.canonical_tool_name().as_full_name().to_string(),
             tool_input: value.0.input.clone(),
@@ -554,8 +554,8 @@ impl From<(&ToolUseBlock, &ToolKind)> for ToolContext {
     }
 }
 
-impl From<(&ToolUseBlock, &ToolKind, &serde_json::Value)> for ToolContext {
-    fn from(value: (&ToolUseBlock, &ToolKind, &serde_json::Value)) -> Self {
+impl From<(&ToolUseBlock, &Tool, &serde_json::Value)> for ToolContext {
+    fn from(value: (&ToolUseBlock, &Tool, &serde_json::Value)) -> Self {
         Self {
             tool_name: value.1.canonical_tool_name().as_full_name().to_string(),
             tool_input: value.0.input.clone(),

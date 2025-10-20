@@ -6,6 +6,8 @@ use globset::{
     GlobSetBuilder,
 };
 
+use super::util::path::canonicalize_path_sys;
+use super::util::providers::SystemProvider;
 use crate::agent::agent_config::definitions::ToolSettings;
 use crate::agent::protocol::PermissionEvalResult;
 use crate::agent::tools::{
@@ -14,12 +16,12 @@ use crate::agent::tools::{
 };
 use crate::agent::util::error::UtilError;
 use crate::agent::util::glob::matches_any_pattern;
-use crate::agent::util::path::canonicalize_path;
 
-pub fn evaluate_tool_permission(
+pub fn evaluate_tool_permission<P: SystemProvider>(
     allowed_tools: &HashSet<String>,
     settings: &ToolSettings,
     tool: &ToolKind,
+    provider: &P,
 ) -> Result<PermissionEvalResult, UtilError> {
     let tn = tool.canonical_tool_name();
     let tool_name = tn.as_full_name();
@@ -32,12 +34,14 @@ pub fn evaluate_tool_permission(
                 &settings.file_read.denied_paths,
                 file_read.ops.iter().map(|op| &op.path),
                 is_allowed,
+                provider,
             ),
             BuiltInTool::FileWrite(file_write) => evaluate_permission_for_paths(
                 &settings.file_write.allowed_paths,
                 &settings.file_write.denied_paths,
                 [file_write.path()],
                 is_allowed,
+                provider,
             ),
 
             // Reuse the same settings for fs read
@@ -46,12 +50,14 @@ pub fn evaluate_tool_permission(
                 &settings.file_write.denied_paths,
                 [&ls.path],
                 is_allowed,
+                provider,
             ),
             BuiltInTool::ImageRead(image_read) => evaluate_permission_for_paths(
                 &settings.file_write.allowed_paths,
                 &settings.file_write.denied_paths,
                 &image_read.paths,
                 is_allowed,
+                provider,
             ),
             BuiltInTool::Grep(_) => Ok(PermissionEvalResult::Allow),
 
@@ -70,21 +76,23 @@ pub fn evaluate_tool_permission(
     }
 }
 
-fn evaluate_permission_for_paths<T, U>(
+fn evaluate_permission_for_paths<T, U, P>(
     allowed_paths: &[String],
     denied_paths: &[String],
     paths_to_check: T,
     is_allowed: bool,
+    provider: &P,
 ) -> Result<PermissionEvalResult, UtilError>
 where
     T: IntoIterator<Item = U>,
     U: AsRef<str>,
+    P: SystemProvider,
 {
-    let allowed_paths = canonicalize_paths(allowed_paths);
-    let denied_paths = canonicalize_paths(denied_paths);
+    let allowed_paths = canonicalize_paths(allowed_paths, provider);
+    let denied_paths = canonicalize_paths(denied_paths, provider);
     let mut ask = false;
     for path in paths_to_check {
-        let path = canonicalize_path(path)?;
+        let path = canonicalize_path_sys(path, provider)?;
         match evaluate_permission_for_path(path, allowed_paths.iter(), denied_paths.iter()) {
             PermissionCheckResult::Denied(items) => {
                 return Ok(PermissionEvalResult::Deny {
@@ -102,10 +110,10 @@ where
     })
 }
 
-fn canonicalize_paths(paths: &[String]) -> Vec<String> {
+fn canonicalize_paths<P: SystemProvider>(paths: &[String], provider: &P) -> Vec<String> {
     paths
         .iter()
-        .filter_map(|p| canonicalize_path(p).ok())
+        .filter_map(|p| canonicalize_path_sys(p, provider).ok())
         .collect::<Vec<_>>()
 }
 
@@ -190,6 +198,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::test::TestProvider;
 
     #[derive(Debug)]
     struct TestCase {
@@ -216,6 +225,8 @@ mod tests {
 
     #[test]
     fn test_evaluate_permission_for_path() {
+        let sys = TestProvider::new();
+
         // Test case format: (path_to_check, allowed_paths, denied_paths, expected)
         let test_cases: Vec<TestCase> = [
             ("src/main.rs", vec!["src"], vec![], PermissionCheckResult::Allow),
@@ -276,16 +287,16 @@ mod tests {
             );
 
             // Next, test using canonical paths.
-            let path_to_check = canonicalize_path(&test.path_to_check).unwrap();
+            let path_to_check = canonicalize_path_sys(&test.path_to_check, &sys).unwrap();
             let allowed_paths = test
                 .allowed_paths
                 .iter()
-                .map(|p| canonicalize_path(p).unwrap())
+                .map(|p| canonicalize_path_sys(p, &sys).unwrap())
                 .collect::<Vec<_>>();
             let denied_paths = test
                 .denied_paths
                 .iter()
-                .map(|p| canonicalize_path(p).unwrap())
+                .map(|p| canonicalize_path_sys(p, &sys).unwrap())
                 .collect::<Vec<_>>();
             let actual = evaluate_permission_for_path(&path_to_check, allowed_paths.iter(), denied_paths.iter());
             assert_eq!(

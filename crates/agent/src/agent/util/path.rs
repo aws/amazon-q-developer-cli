@@ -10,29 +10,18 @@ use super::error::{
     UtilError,
 };
 use super::providers::{
-    CwdProvider,
     EnvProvider,
     HomeProvider,
     RealProvider,
+    SystemProvider,
 };
 
-/// Helper for [shellexpand::full_with_context]
-fn shellexpand_home<H: HomeProvider>(provider: &H) -> impl Fn() -> Option<String> {
-    || HomeProvider::home(provider).map(|h| h.to_string_lossy().to_string())
-}
-
-/// Helper for [shellexpand::full_with_context]
-fn shellexpand_context<E: EnvProvider>(provider: &E) -> impl Fn(&str) -> Result<Option<String>, VarError> {
-    |input: &str| Ok(EnvProvider::var(provider, input).ok())
-}
-
 /// Performs tilde and environment variable expansion on the provided input.
-pub fn expand_path(input: &str) -> Result<Cow<'_, str>, UtilError> {
-    let sys = RealProvider;
+pub fn expand_path<'a>(input: &'a str, provider: &'_ impl SystemProvider) -> Result<Cow<'a, str>, UtilError> {
     Ok(shellexpand::full_with_context(
         input,
-        shellexpand_home(&sys),
-        shellexpand_context(&sys),
+        shellexpand_home(provider),
+        shellexpand_context(provider),
     )?)
 }
 
@@ -44,28 +33,15 @@ pub fn expand_path(input: &str) -> Result<Cow<'_, str>, UtilError> {
 /// - Resolves `.` and `..` path components
 pub fn canonicalize_path(path: impl AsRef<str>) -> Result<String, UtilError> {
     let sys = RealProvider;
-    canonicalize_path_impl(path, &sys, &sys, &sys)
+    canonicalize_path_sys(path, &sys)
 }
 
-pub fn canonicalize_path_impl<E, H, C>(
-    path: impl AsRef<str>,
-    env_provider: &E,
-    home_provider: &H,
-    cwd_provider: &C,
-) -> Result<String, UtilError>
-where
-    E: EnvProvider,
-    H: HomeProvider,
-    C: CwdProvider,
-{
-    let expanded = shellexpand::full_with_context(
-        path.as_ref(),
-        shellexpand_home(home_provider),
-        shellexpand_context(env_provider),
-    )?;
+pub fn canonicalize_path_sys<P: SystemProvider>(path: impl AsRef<str>, provider: &P) -> Result<String, UtilError> {
+    let expanded =
+        shellexpand::full_with_context(path.as_ref(), shellexpand_home(provider), shellexpand_context(provider))?;
     let path_buf = if !expanded.starts_with("/") {
         // Convert relative paths to absolute paths
-        let current_dir = cwd_provider
+        let current_dir = provider
             .cwd()
             .with_context(|| "could not get current directory".to_string())?;
         current_dir.join(expanded.as_ref() as &str)
@@ -105,14 +81,24 @@ fn normalize_path(path: &Path) -> PathBuf {
     components.iter().collect()
 }
 
+/// Helper for [shellexpand::full_with_context]
+fn shellexpand_home<H: HomeProvider>(provider: &H) -> impl Fn() -> Option<String> {
+    || HomeProvider::home(provider).map(|h| h.to_string_lossy().to_string())
+}
+
+/// Helper for [shellexpand::full_with_context]
+fn shellexpand_context<E: EnvProvider>(provider: &E) -> impl Fn(&str) -> Result<Option<String>, VarError> {
+    |input: &str| Ok(EnvProvider::var(provider, input).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestSystem;
+    use crate::agent::util::test::TestProvider;
 
     #[test]
     fn test_canonicalize_path() {
-        let sys = TestSystem::new()
+        let sys = TestProvider::new()
             .with_var("TEST_VAR", "test_var")
             .with_cwd("/home/testuser/testdir");
 
@@ -125,7 +111,7 @@ mod tests {
         ];
 
         for (path, expected) in tests {
-            let actual = canonicalize_path_impl(path, &sys, &sys, &sys).unwrap();
+            let actual = canonicalize_path_sys(path, &sys).unwrap();
             assert_eq!(
                 actual, expected,
                 "Expected '{}' to expand to '{}', instead got '{}'",

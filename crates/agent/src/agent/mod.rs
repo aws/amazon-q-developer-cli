@@ -106,10 +106,11 @@ use tokio_stream::StreamExt as _;
 use tokio_util::sync::CancellationToken;
 use tool_utils::{
     SanitizedToolSpecs,
+    add_tool_use_purpose_arg,
     sanitize_tool_specs,
 };
-use tools::mcp::McpTool;
 use tools::{
+    Tool,
     ToolExecutionError,
     ToolExecutionOutput,
     ToolExecutionOutputItem,
@@ -129,8 +130,11 @@ use types::{
     ConversationState,
     ConversationSummary,
 };
-use util::path::canonicalize_path;
-use util::providers::SystemProvider;
+use util::path::canonicalize_path_sys;
+use util::providers::{
+    RealProvider,
+    SystemProvider,
+};
 use util::read_file_with_max_limit;
 use util::request_channel::new_request_channel;
 
@@ -239,8 +243,6 @@ pub struct Agent {
     /// Configuration settings to alter agent behavior.
     settings: AgentSettings,
 
-    sys_ctx: Option<Box<dyn SystemProvider>>,
-
     /// Cached result when creating a tool spec for sending to the backend.
     ///
     /// Required since we may perform transformations on the tool names and descriptions that are
@@ -252,6 +254,9 @@ pub struct Agent {
     /// Done for simplicity and to avoid rereading global MCP config files every time we process a
     /// request.
     cached_mcp_configs: LoadedMcpServerConfigs,
+
+    /// Provider for system context like env vars, home dir, current working dir
+    sys_provider: Box<dyn SystemProvider>,
 }
 
 impl Agent {
@@ -294,12 +299,12 @@ impl Agent {
             settings: snapshot.settings,
             cached_tool_specs: None,
             cached_mcp_configs,
-            sys_ctx: None,
+            sys_provider: Box::new(RealProvider),
         })
     }
 
     pub fn set_sys_provider(&mut self, provider: impl SystemProvider) {
-        self.sys_ctx = Some(Box::new(provider));
+        self.sys_provider = Box::new(provider);
     }
 
     /// Starts the agent task, returning a handle from which messages can be sent and events can be
@@ -980,6 +985,7 @@ impl Agent {
             &self.agent_config,
             &self.conversation_metadata,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
+            &self.sys_provider,
         )
         .await
     }
@@ -1104,7 +1110,7 @@ impl Agent {
 
     async fn start_hooks_execution(
         &mut self,
-        hooks: Vec<(HookExecutionId, Option<(ToolUseBlock, ToolKind)>)>,
+        hooks: Vec<(HookExecutionId, Option<(ToolUseBlock, Tool)>)>,
         stage: HookStage,
         prompt: Option<String>,
     ) -> Result<(), AgentError> {
@@ -1336,12 +1342,21 @@ impl Agent {
         if !sanitized_specs.filtered_specs().is_empty() {
             warn!(filtered_specs = ?sanitized_specs.filtered_specs(), "filtered some tool specs");
         }
-        let tool_specs = sanitized_specs.tool_specs();
+        let mut tool_specs = sanitized_specs.tool_specs();
+        add_tool_use_purpose_arg(&mut tool_specs);
         self.cached_tool_specs = Some(sanitized_specs);
         tool_specs
     }
 
     /// Returns the name of all tools available to the given agent.
+    ///
+    /// The tools available to the agent may change overtime, for example:
+    /// * MCP servers loading or exiting
+    /// * MCP tool spec changes
+    /// * Actor messages that update the agent's config
+    ///
+    /// This function ensures that we create a list of known tool names to be available
+    /// for the agent's current state.
     async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
         let mut tool_names = HashSet::new();
         let built_in_tool_names = built_in_tool_names();
@@ -1425,11 +1440,8 @@ impl Agent {
     }
 
     /// Parses tool use blocks into concrete tools, returning those that failed to be parsed.
-    async fn parse_tools(
-        &mut self,
-        tool_uses: Vec<ToolUseBlock>,
-    ) -> (Vec<(ToolUseBlock, ToolKind)>, Vec<ToolParseError>) {
-        let mut tools: Vec<(ToolUseBlock, ToolKind)> = Vec::new();
+    async fn parse_tools(&mut self, tool_uses: Vec<ToolUseBlock>) -> (Vec<(ToolUseBlock, Tool)>, Vec<ToolParseError>) {
+        let mut tools: Vec<(ToolUseBlock, Tool)> = Vec::new();
         let mut parse_errors: Vec<ToolParseError> = Vec::new();
 
         // Next, parse tool from the name.
@@ -1450,7 +1462,7 @@ impl Agent {
                     continue;
                 },
             };
-            let tool = match self.parse_tool(&canonical_tool_name, tool_use.input.clone()).await {
+            let tool = match Tool::parse(&canonical_tool_name, tool_use.input.clone()) {
                 Ok(t) => t,
                 Err(err) => {
                     parse_errors.push(ToolParseError::new(tool_use, err));
@@ -1468,35 +1480,8 @@ impl Agent {
         (tools, parse_errors)
     }
 
-    async fn parse_tool(
-        &self,
-        name: &CanonicalToolName,
-        args: serde_json::Value,
-    ) -> Result<ToolKind, ToolParseErrorKind> {
-        match name {
-            CanonicalToolName::BuiltIn(name) => match BuiltInTool::from_parts(name, args) {
-                Ok(tool) => Ok(ToolKind::BuiltIn(tool)),
-                Err(err) => Err(err),
-            },
-            CanonicalToolName::Mcp { server_name, tool_name } => match args.as_object() {
-                Some(params) => Ok(ToolKind::Mcp(McpTool {
-                    tool_name: tool_name.clone(),
-                    server_name: server_name.clone(),
-                    params: Some(params.clone()),
-                })),
-                None => Err(ToolParseErrorKind::InvalidArgs(format!(
-                    "Arguments must be an object, instead found {:?}",
-                    args
-                ))),
-            },
-            CanonicalToolName::Agent { .. } => Err(ToolParseErrorKind::Other(AgentError::Custom(
-                "Unimplemented".to_string(),
-            ))),
-        }
-    }
-
-    async fn validate_tool(&self, tool: &ToolKind) -> Result<(), ToolParseErrorKind> {
-        match tool {
+    async fn validate_tool(&self, tool: &Tool) -> Result<(), ToolParseErrorKind> {
+        match tool.kind() {
             ToolKind::BuiltIn(built_in) => match built_in {
                 BuiltInTool::FileRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::FileWrite(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
@@ -1512,13 +1497,12 @@ impl Agent {
         }
     }
 
-    async fn evaluate_tool_permission(&mut self, tool: &ToolKind) -> Result<PermissionEvalResult, AgentError> {
-        let config = self.get_agent_config().await;
-        let allowed_tools = config.allowed_tools();
+    async fn evaluate_tool_permission(&mut self, tool: &Tool) -> Result<PermissionEvalResult, AgentError> {
         match evaluate_tool_permission(
-            allowed_tools,
-            &config.tool_settings().cloned().unwrap_or_default(),
-            tool,
+            self.agent_config.allowed_tools(),
+            &self.agent_config.tool_settings().cloned().unwrap_or_default(),
+            tool.kind(),
+            &self.sys_provider,
         ) {
             Ok(res) => Ok(res),
             Err(err) => {
@@ -1530,7 +1514,7 @@ impl Agent {
 
     async fn request_tool_approvals(
         &mut self,
-        tools: Vec<(ToolUseBlock, ToolKind)>,
+        tools: Vec<(ToolUseBlock, Tool)>,
         needs_approval: Vec<String>,
     ) -> Result<(), AgentError> {
         // First, update the agent state to WaitingForApproval
@@ -1565,7 +1549,7 @@ impl Agent {
         Ok(())
     }
 
-    async fn execute_tools(&mut self, tools: Vec<(ToolUseBlock, ToolKind)>) -> Result<(), AgentError> {
+    async fn execute_tools(&mut self, tools: Vec<(ToolUseBlock, Tool)>) -> Result<(), AgentError> {
         let mut tool_state = HashMap::new();
         for (block, tool) in tools {
             let id = ToolExecutionId::new(block.tool_use_id.clone());
@@ -1579,13 +1563,13 @@ impl Agent {
 
     /// Starts executing a tool for the given agent. Tools are executed in parallel on a background
     /// task.
-    async fn start_tool_execution(&mut self, id: ToolExecutionId, tool: ToolKind) -> Result<(), AgentError> {
+    async fn start_tool_execution(&mut self, id: ToolExecutionId, tool: Tool) -> Result<(), AgentError> {
         let tool_clone = tool.clone();
 
         // Channel for handling tool-specific state updates.
         let (tx, rx) = oneshot::channel::<ToolState>();
 
-        let fut: ToolFuture = match tool {
+        let fut: ToolFuture = match tool.kind {
             ToolKind::BuiltIn(builtin) => match builtin {
                 BuiltInTool::FileRead(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::FileWrite(t) => {
@@ -1727,6 +1711,7 @@ impl Agent {
             &self.agent_config,
             &self.conversation_metadata,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
+            &self.sys_provider,
         )
         .await;
 
@@ -1755,20 +1740,22 @@ impl Agent {
 /// 1. Create context messages according to what is configured in the agent config and agent spawn
 ///    hook content.
 /// 2. Modify the message history to align with conversation invariants enforced by the backend.
-async fn format_request<T, U>(
+async fn format_request<T, U, P>(
     mut messages: VecDeque<Message>,
     mut tool_spec: Vec<ToolSpec>,
     agent_config: &Config,
     conversation_md: &ConversationMetadata,
     agent_spawn_hooks: T,
+    provider: &P,
 ) -> SendRequestArgs
 where
     T: IntoIterator<Item = U>,
     U: AsRef<str>,
+    P: SystemProvider,
 {
     enforce_conversation_invariants(&mut messages, &mut tool_spec);
 
-    let ctx_messages = create_context_messages(agent_config, conversation_md, agent_spawn_hooks).await;
+    let ctx_messages = create_context_messages(agent_config, conversation_md, agent_spawn_hooks, provider).await;
     for msg in ctx_messages.into_iter().rev() {
         messages.push_front(msg);
     }
@@ -1789,24 +1776,26 @@ where
 /// prompt).
 ///
 /// The content included in these messages includes:
-/// - Resources from the agent config
-/// - The `prompt` field from the agent config
-/// - Conversation start hooks
-/// - Latest conversation summary from compaction
+/// * Resources from the agent config
+/// * The `prompt` field from the agent config
+/// * Conversation start hooks
+/// * Latest conversation summary from compaction
 ///
 /// We use context messages since the API does not allow any system prompt parameterization.
-async fn create_context_messages<T, U>(
+async fn create_context_messages<T, U, P>(
     agent_config: &Config,
     conversation_md: &ConversationMetadata,
     agent_spawn_hooks: T,
+    provider: &P,
 ) -> Vec<Message>
 where
     T: IntoIterator<Item = U>,
     U: AsRef<str>,
+    P: SystemProvider,
 {
     let summary = conversation_md.summaries.last().map(|s| s.content.as_str());
     let system_prompt = agent_config.system_prompt();
-    let resources = collect_resources(agent_config.resources()).await;
+    let resources = collect_resources(agent_config.resources(), provider).await;
 
     let content = format_user_context_message(
         summary,
@@ -1940,10 +1929,11 @@ struct Resource {
     content: String,
 }
 
-async fn collect_resources<T, U>(resources: T) -> Vec<Resource>
+async fn collect_resources<T, U, P>(resources: T, provider: &P) -> Vec<Resource>
 where
     T: IntoIterator<Item = U>,
     U: AsRef<str>,
+    P: SystemProvider,
 {
     use glob;
 
@@ -1954,7 +1944,7 @@ where
         };
         match kind {
             ResourceKind::File { original, file_path } => {
-                let Ok(path) = canonicalize_path(file_path) else {
+                let Ok(path) = canonicalize_path_sys(file_path, provider) else {
                     continue;
                 };
                 let Ok((content, _)) = read_file_with_max_limit(path, MAX_RESOURCE_FILE_LENGTH, "...truncated").await
@@ -1993,7 +1983,7 @@ where
     return_val
 }
 
-fn hook_matches_tool(config: &HookConfig, tool: &ToolKind) -> bool {
+fn hook_matches_tool(config: &HookConfig, tool: &Tool) -> bool {
     let Some(matcher) = config.matcher() else {
         // No matcher -> hook runs for all tools.
         return true;
@@ -2014,7 +2004,7 @@ fn hook_matches_tool(config: &HookConfig, tool: &ToolKind) -> bool {
                     .mcp_tool_name()
                     .is_some_and(|n| matches_any_pattern([glob_part], n))
         },
-        ToolNameKind::AllBuiltIn => matches!(tool, ToolKind::BuiltIn(_)),
+        ToolNameKind::AllBuiltIn => matches!(tool.kind(), ToolKind::BuiltIn(_)),
         ToolNameKind::BuiltInGlob(glob) => tool.builtin_tool_name().is_some_and(|n| matches_any_pattern([glob], n)),
         ToolNameKind::BuiltIn(name) => tool.builtin_tool_name().is_some_and(|n| n.as_ref() == name),
         ToolNameKind::AgentGlob(_) => false,
@@ -2041,7 +2031,7 @@ pub enum ActiveState {
     /// Agent is waiting for approval to execute tool uses
     WaitingForApproval {
         /// All tools requested by the model
-        tools: Vec<(ToolUseBlock, ToolKind)>,
+        tools: Vec<(ToolUseBlock, Tool)>,
         /// Map from a tool use id to the approval result and tool to execute
         needs_approval: HashMap<String, Option<ApprovalResult>>,
     },
@@ -2053,7 +2043,7 @@ pub enum ActiveState {
     ExecutingRequest,
     /// Agent is executing tools
     ExecutingTools {
-        tools: HashMap<ToolExecutionId, ((ToolUseBlock, ToolKind), Option<ToolExecutorResult>)>,
+        tools: HashMap<ToolExecutionId, ((ToolUseBlock, Tool), Option<ToolExecutorResult>)>,
     },
     /// Agent is summarizing the conversation history.
     ///
@@ -2069,7 +2059,7 @@ pub struct ExecutingHooks {
     /// Also contains tool context used for the hook execution, if available - used to potentially
     /// block tool execution.
     #[allow(clippy::type_complexity)]
-    hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, ToolKind)>, Option<HookResult>)>,
+    hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, Tool)>, Option<HookResult>)>,
     /// See [HookStage].
     stage: HookStage,
 }
@@ -2090,7 +2080,7 @@ pub enum HookStage {
     /// This occurs after tool validation, done as a user-controlled validation step.
     PreToolUse {
         /// All tools requested by the model
-        tools: Vec<(ToolUseBlock, ToolKind)>,
+        tools: Vec<(ToolUseBlock, Tool)>,
         /// List of the tool use id's that require user approval
         needs_approval: Vec<String>,
     },

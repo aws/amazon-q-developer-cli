@@ -36,6 +36,8 @@ use super::agent_config::parse::{
     CanonicalToolName,
     ToolParseErrorKind,
 };
+use super::consts::TOOL_USE_PURPOSE_FIELD_NAME;
+use super::protocol::AgentError;
 use crate::agent::agent_loop::types::{
     ImageBlock,
     ToolSpec,
@@ -110,8 +112,71 @@ trait BuiltInToolTrait {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
-    purpose: Option<String>,
-    kind: ToolKind,
+    pub tool_use_purpose: Option<String>,
+    pub kind: ToolKind,
+}
+
+impl Tool {
+    pub fn parse(name: &CanonicalToolName, mut args: serde_json::Value) -> Result<Self, ToolParseErrorKind> {
+        let tool_use_purpose = args.as_object_mut().and_then(|obj| {
+            obj.remove(TOOL_USE_PURPOSE_FIELD_NAME)
+                .and_then(|v| v.as_str().map(String::from))
+        });
+
+        let kind = match name {
+            CanonicalToolName::BuiltIn(name) => match BuiltInTool::from_parts(name, args) {
+                Ok(tool) => ToolKind::BuiltIn(tool),
+                Err(err) => return Err(err),
+            },
+            CanonicalToolName::Mcp { server_name, tool_name } => match args.as_object() {
+                Some(params) => ToolKind::Mcp(McpTool {
+                    tool_name: tool_name.clone(),
+                    server_name: server_name.clone(),
+                    params: Some(params.clone()),
+                }),
+                None => {
+                    return Err(ToolParseErrorKind::InvalidArgs(format!(
+                        "Arguments must be an object, instead found {:?}",
+                        args
+                    )));
+                },
+            },
+            CanonicalToolName::Agent { .. } => {
+                return Err(ToolParseErrorKind::Other(AgentError::Custom(
+                    "Unimplemented".to_string(),
+                )));
+            },
+        };
+
+        Ok(Self { tool_use_purpose, kind })
+    }
+
+    pub fn kind(&self) -> &ToolKind {
+        &self.kind
+    }
+
+    pub fn canonical_tool_name(&self) -> CanonicalToolName {
+        self.kind.canonical_tool_name()
+    }
+
+    /// Returns the tool name if this is a built-in tool
+    pub fn builtin_tool_name(&self) -> Option<BuiltInToolName> {
+        self.kind.builtin_tool_name()
+    }
+
+    /// Returns the MCP server name if this is an MCP tool
+    pub fn mcp_server_name(&self) -> Option<&str> {
+        self.kind.mcp_server_name()
+    }
+
+    /// Returns the tool name if this is an MCP tool
+    pub fn mcp_tool_name(&self) -> Option<&str> {
+        self.kind.mcp_tool_name()
+    }
+
+    pub async fn get_context(&self) -> Option<ToolContext> {
+        self.kind.get_context().await
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

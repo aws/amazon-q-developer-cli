@@ -15,3 +15,6 @@ pub const MAX_TOOL_SPEC_DESCRIPTION_LEN: usize = 10_004;
 
 /// 10 MB
 pub const MAX_IMAGE_SIZE_BYTES: u64 = 10 * 1024 * 1024;
+
+pub const TOOL_USE_PURPOSE_FIELD_NAME: &str = "__tool_use_purpose";
+pub const TOOL_USE_PURPOSE_FIELD_DESCRIPTION: &str = "A brief explanation why you are making this tool use.";
