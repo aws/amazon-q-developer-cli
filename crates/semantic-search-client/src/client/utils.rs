@@ -73,13 +73,18 @@ where
     {
         let path = entry.path();
 
-        // Skip hidden files
-        if path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|s| s.starts_with('.'))
-        {
-            continue;
+        // Skip hidden files, but allow common configuration files
+        if let Some(filename) = path.file_name().and_then(|n| n.to_str()) {
+            if filename.starts_with('.') {
+                // Allow common configuration files
+                let is_config_file = filename.ends_with("rc") 
+                    || filename.ends_with("config")
+                    || matches!(filename, ".gitignore" | ".env" | ".dockerignore");
+                
+                if !is_config_file {
+                    continue;
+                }
+            }
         }
 
         file_count += 1;
