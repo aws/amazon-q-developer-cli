@@ -41,6 +41,7 @@ use tracing::{
 use types::{
     ContentBlock,
     Message,
+    MessageStartEvent,
     MessageStopEvent,
     MetadataEvent,
     Role,
@@ -403,6 +404,8 @@ struct StreamParseState {
     parsing_tool_use: Option<(String, String, String)>,
     /// Buffered metadata event returned from the response stream
     metadata: Option<MetadataEvent>,
+    /// Buffered message start event returned from the response stream
+    message_start: Option<MessageStartEvent>,
     /// Buffered message stop event returned from the response stream
     message_stop: Option<MessageStopEvent>,
     /// Buffered error event returned from the response stream
@@ -425,6 +428,7 @@ impl StreamParseState {
             user_message,
             message_id: None,
             metadata: None,
+            message_start: None,
             message_stop: None,
             stream_err: None,
             ended_time: None,
@@ -433,15 +437,12 @@ impl StreamParseState {
     }
 
     pub fn next(&mut self, ev: Option<StreamResult>, buf: &mut Vec<AgentLoopEventKind>) {
-        if self.errored {
-            if let Some(ev) = ev {
-                warn!(?ev, "ignoring unexpected event after having received an error");
-            }
-            return;
-        }
-
         let Some(ev) = ev else {
             // No event received means the stream has ended.
+            debug_assert!(
+                self.ended_time.is_none(),
+                "unexpected call to next after stream has already ended"
+            );
             self.ended_time = Some(self.ended_time.unwrap_or(Instant::now()));
             self.errored = self.errored || !self.invalid_tool_uses.is_empty();
             let result = self.make_result();
@@ -453,6 +454,21 @@ impl StreamParseState {
             return;
         };
 
+        if self.errored {
+            warn!(?ev, "ignoring unexpected event after having received an error");
+            return;
+        }
+
+        // Debug assertion that we always start with either a MessageStart, or an error.
+        match &ev {
+            StreamResult::Ok(StreamEvent::MessageStart(_)) | StreamResult::Err(_) => (),
+            other @ StreamResult::Ok(_) => debug_assert!(
+                self.message_start.is_some(),
+                "received an unexpected event at the start of the response stream: {:?}",
+                other
+            ),
+        }
+
         // Pushing low-level stream events in case end users want to consume these directly. Likely
         // not required.
         buf.push(AgentLoopEventKind::Stream(ev.clone()));
@@ -460,7 +476,9 @@ impl StreamParseState {
         match ev {
             StreamResult::Ok(s) => match s {
                 StreamEvent::MessageStart(ev) => {
+                    debug_assert!(self.message_start.is_none());
                     debug_assert!(ev.role == Role::Assistant);
+                    self.message_start = Some(ev);
                 },
                 StreamEvent::MessageStop(ev) => {
                     debug_assert!(self.message_stop.is_none());
@@ -547,7 +565,6 @@ impl StreamParseState {
                 );
                 self.stream_err = Some(err);
                 self.errored = true;
-                self.ended_time = Some(Instant::now());
             },
         }
     }

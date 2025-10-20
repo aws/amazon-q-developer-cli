@@ -55,6 +55,7 @@ use crate::agent::agent_loop::types::{
     ToolUseBlockDelta,
     ToolUseBlockStart,
 };
+use crate::agent_loop::types::MessageStartEvent;
 use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
@@ -387,7 +388,12 @@ struct ResponseParser {
     /// Whether or not the stream has completed.
     ended: bool,
     /// Buffer to hold the next event in [SendMessageOutput].
+    ///
+    /// Required since the RTS stream needs 1 look-ahead token to ensure we don't emit assistant
+    /// response events that are immediately followed by a code reference event.
     peek: Option<ChatResponseStream>,
+    /// Whether or not we have sent a [MessageStartEvent].
+    message_start_pushed: bool,
     /// Whether or not we are currently receiving tool use delta events. Tuple of
     /// `Some((tool_use_id, name))` if true, [None] otherwise.
     parsing_tool_use: Option<(String, String)>,
@@ -421,6 +427,7 @@ impl ResponseParser {
             cancel_token,
             ended: false,
             peek: None,
+            message_start_pushed: false,
             parsing_tool_use: None,
             tool_use_seen: false,
             buf: vec![],
@@ -600,6 +607,14 @@ impl ResponseParser {
         match result {
             Ok(ev) => {
                 trace!(?ev, "Received new event");
+
+                if !self.message_start_pushed {
+                    self.buf
+                        .push(StreamResult::Ok(StreamEvent::MessageStart(MessageStartEvent {
+                            role: Role::Assistant,
+                        })));
+                    self.message_start_pushed = true;
+                }
 
                 // Track metadata about the chunk.
                 self.time_to_first_chunk
