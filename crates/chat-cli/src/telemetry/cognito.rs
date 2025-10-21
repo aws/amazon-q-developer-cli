@@ -29,7 +29,7 @@ pub async fn get_cognito_credentials_send(
     trace!("Creating new cognito credentials");
 
     let conf = aws_sdk_cognitoidentity::Config::builder()
-        .behavior_version(BehaviorVersion::v2025_01_17())
+        .behavior_version(BehaviorVersion::v2025_08_07())
         .region(telemetry_stage.region.clone())
         .app_name(app_name())
         .build();
