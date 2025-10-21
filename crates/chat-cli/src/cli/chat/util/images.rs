@@ -6,7 +6,6 @@ use std::str::FromStr;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Color,
 };
 use serde::{
     Deserialize,
@@ -22,6 +21,7 @@ use crate::cli::chat::consts::{
     MAX_IMAGE_SIZE,
     MAX_NUMBER_OF_IMAGES_PER_REQUEST,
 };
+use crate::theme::StyledText;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImageMetadata {
@@ -91,12 +91,12 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if valid_images.len() > MAX_NUMBER_OF_IMAGES_PER_REQUEST {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            StyledText::warning_fg(),
             style::Print(format!(
                 "\nMore than {} images detected. Extra ones will be dropped.\n",
                 MAX_NUMBER_OF_IMAGES_PER_REQUEST
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
         .ok();
         valid_images.truncate(MAX_NUMBER_OF_IMAGES_PER_REQUEST);
@@ -105,12 +105,12 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if !images_exceeding_size_limit.is_empty() {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            StyledText::warning_fg(),
             style::Print(format!(
                 "\nThe following images are dropped due to exceeding size limit ({}MB):\n",
                 MAX_IMAGE_SIZE / (1024 * 1024)
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
         .ok();
         for (_, metadata) in &images_exceeding_size_limit {
@@ -123,9 +123,9 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
             };
             execute!(
                 &mut *output,
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print(format!("  - {} ({})\n", metadata.filename, image_size_str)),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )
             .ok();
         }

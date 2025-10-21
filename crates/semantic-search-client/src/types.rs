@@ -198,6 +198,8 @@ pub enum FileType {
     Json,
     /// Source code file (programming languages)
     Code,
+    /// PDF file
+    Pdf,
     /// Unknown file type
     Unknown,
 }

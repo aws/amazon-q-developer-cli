@@ -4,7 +4,6 @@ use clap::Subcommand;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use semantic_search_client::SystemStatus;
@@ -20,6 +19,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::knowledge_store::KnowledgeStore;
 
 /// Knowledge base management commands
@@ -88,11 +88,11 @@ impl KnowledgeSubcommand {
     fn write_feature_disabled_message(session: &mut ChatSession) -> Result<(), std::io::Error> {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("\nKnowledge tool is disabled. Enable it with: q settings chat.enableKnowledge true\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("💡 Your knowledge base data is preserved and will be available when re-enabled.\n\n"),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
     }
 
@@ -139,9 +139,9 @@ impl KnowledgeSubcommand {
             queue!(
                 session.stderr,
                 style::SetAttribute(crossterm::style::Attribute::Bold),
-                style::SetForegroundColor(Color::Magenta),
+                StyledText::emphasis_fg(),
                 style::Print(format!("👤 Agent ({}):\n", agent)),
-                style::SetAttribute(crossterm::style::Attribute::Reset),
+                StyledText::reset_attributes(),
             )?;
 
             match KnowledgeStore::get_async_instance(os, Self::get_agent(session)).await {
@@ -171,18 +171,18 @@ impl KnowledgeSubcommand {
                     {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("    <none>\n\n"),
-                            style::SetForegroundColor(Color::Reset)
+                            StyledText::reset(),
                         )?;
                     }
                 },
                 Err(_) => {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("    <none>\n\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 },
             }
@@ -202,12 +202,12 @@ impl KnowledgeSubcommand {
                 session.stderr,
                 style::Print(format!("{}📂 ", indent)),
                 style::SetAttribute(style::Attribute::Bold),
-                style::SetForegroundColor(Color::Grey),
+                StyledText::secondary_fg(),
                 style::Print(&ctx.name),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(format!(" ({})", &ctx.id[..8])),
-                style::SetAttribute(style::Attribute::Reset),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset_attributes(),
+                StyledText::reset(),
                 style::Print("\n")
             )?;
 
@@ -216,9 +216,9 @@ impl KnowledgeSubcommand {
                 queue!(
                     session.stderr,
                     style::Print(format!("{}   ", indent)),
-                    style::SetForegroundColor(Color::Grey),
+                    StyledText::secondary_fg(),
                     style::Print(format!("{}\n", source_path)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
             }
 
@@ -226,17 +226,17 @@ impl KnowledgeSubcommand {
             queue!(
                 session.stderr,
                 style::Print(format!("{}   ", indent)),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(format!("{} items", ctx.item_count)),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print(ctx.embedding_type.description()),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(format!("{}", ctx.updated_at.format("%m/%d %H:%M"))),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n\n")
             )?;
         }
@@ -498,9 +498,9 @@ impl KnowledgeSubcommand {
             OperationResult::Success(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
             OperationResult::Info(msg) => {
@@ -508,7 +508,7 @@ impl KnowledgeSubcommand {
                     queue!(
                         session.stderr,
                         style::Print(format!("\n{}\n\n", msg)),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 }
                 Ok(())
@@ -516,17 +516,17 @@ impl KnowledgeSubcommand {
             OperationResult::Warning(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
             OperationResult::Error(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print(format!("\nError: {}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )
             },
         }

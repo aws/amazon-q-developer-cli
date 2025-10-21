@@ -9,8 +9,12 @@ pub struct FreeTrialInfo {
     pub free_trial_expiry: ::std::option::Option<::aws_smithy_types::DateTime>,
     /// Current free trial usage
     pub current_usage: ::std::option::Option<i32>,
+    /// Current free trial usage with Precision
+    pub current_usage_with_precision: ::std::option::Option<f64>,
     /// Free trial usage limit
     pub usage_limit: ::std::option::Option<i32>,
+    /// Free trial usage limit with Precision
+    pub usage_limit_with_precision: ::std::option::Option<f64>,
 }
 impl FreeTrialInfo {
     /// Status of the free trial for this customer
@@ -28,9 +32,19 @@ impl FreeTrialInfo {
         self.current_usage
     }
 
+    /// Current free trial usage with Precision
+    pub fn current_usage_with_precision(&self) -> ::std::option::Option<f64> {
+        self.current_usage_with_precision
+    }
+
     /// Free trial usage limit
     pub fn usage_limit(&self) -> ::std::option::Option<i32> {
         self.usage_limit
+    }
+
+    /// Free trial usage limit with Precision
+    pub fn usage_limit_with_precision(&self) -> ::std::option::Option<f64> {
+        self.usage_limit_with_precision
     }
 }
 impl FreeTrialInfo {
@@ -48,7 +62,9 @@ pub struct FreeTrialInfoBuilder {
     pub(crate) free_trial_status: ::std::option::Option<crate::types::FreeTrialStatus>,
     pub(crate) free_trial_expiry: ::std::option::Option<::aws_smithy_types::DateTime>,
     pub(crate) current_usage: ::std::option::Option<i32>,
+    pub(crate) current_usage_with_precision: ::std::option::Option<f64>,
     pub(crate) usage_limit: ::std::option::Option<i32>,
+    pub(crate) usage_limit_with_precision: ::std::option::Option<f64>,
 }
 impl FreeTrialInfoBuilder {
     /// Status of the free trial for this customer
@@ -102,6 +118,23 @@ impl FreeTrialInfoBuilder {
         &self.current_usage
     }
 
+    /// Current free trial usage with Precision
+    pub fn current_usage_with_precision(mut self, input: f64) -> Self {
+        self.current_usage_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Current free trial usage with Precision
+    pub fn set_current_usage_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.current_usage_with_precision = input;
+        self
+    }
+
+    /// Current free trial usage with Precision
+    pub fn get_current_usage_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.current_usage_with_precision
+    }
+
     /// Free trial usage limit
     pub fn usage_limit(mut self, input: i32) -> Self {
         self.usage_limit = ::std::option::Option::Some(input);
@@ -119,13 +152,32 @@ impl FreeTrialInfoBuilder {
         &self.usage_limit
     }
 
+    /// Free trial usage limit with Precision
+    pub fn usage_limit_with_precision(mut self, input: f64) -> Self {
+        self.usage_limit_with_precision = ::std::option::Option::Some(input);
+        self
+    }
+
+    /// Free trial usage limit with Precision
+    pub fn set_usage_limit_with_precision(mut self, input: ::std::option::Option<f64>) -> Self {
+        self.usage_limit_with_precision = input;
+        self
+    }
+
+    /// Free trial usage limit with Precision
+    pub fn get_usage_limit_with_precision(&self) -> &::std::option::Option<f64> {
+        &self.usage_limit_with_precision
+    }
+
     /// Consumes the builder and constructs a [`FreeTrialInfo`](crate::types::FreeTrialInfo).
     pub fn build(self) -> crate::types::FreeTrialInfo {
         crate::types::FreeTrialInfo {
             free_trial_status: self.free_trial_status,
             free_trial_expiry: self.free_trial_expiry,
             current_usage: self.current_usage,
+            current_usage_with_precision: self.current_usage_with_precision,
             usage_limit: self.usage_limit,
+            usage_limit_with_precision: self.usage_limit_with_precision,
         }
     }
 }

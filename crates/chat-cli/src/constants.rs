@@ -1,5 +1,7 @@
 //! Centralized constants for user-facing messages
 
+use crate::theme::StyledText;
+
 /// Base product name without any qualifiers
 pub const PRODUCT_NAME: &str = "Amazon Q";
 
@@ -17,67 +19,164 @@ pub mod error_messages {
 
 /// UI text constants
 pub mod ui_text {
+    use super::StyledText;
+
     /// Welcome text for small screens
-    pub const SMALL_SCREEN_WELCOME: &str = color_print::cstr! {"<em>Welcome to <cyan!>Amazon Q</cyan!>!</em>"};
+    pub fn small_screen_welcome() -> String {
+        format!("Welcome to {}!", StyledText::brand("Amazon Q"))
+    }
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        color_print::cstr! {"<magenta,bold>What's New in Amazon Q CLI</magenta,bold>\n\n"}.to_string()
+        format!("{}\n\n", StyledText::emphasis("What's New in Amazon Q CLI"))
     }
 
     /// Trust all tools warning text
     pub fn trust_all_warning() -> String {
-        color_print::cstr! {"<green!>All tools are now trusted (<red!>!</red!>). Amazon Q will execute tools <bold>without</bold> asking for confirmation.\
-\nAgents can sometimes do unexpected things so understand the risks.</green!>
-\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety"}.to_string()
+        let mut warning = String::new();
+
+        warning.push_str(&StyledText::success("All tools are now trusted ("));
+        warning.push_str(&StyledText::error("!"));
+        warning.push_str(&StyledText::success(
+            "). Amazon Q will execute tools without asking for confirmation.",
+        ));
+        warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
+        warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
+
+        warning
     }
 
     /// Rate limit reached message
-    pub const LIMIT_REACHED_TEXT: &str = color_print::cstr! { "You've used all your free requests for this month. You have two options:
+    pub fn limit_reached_text() -> String {
+        format!(
+            "You've used all your free requests for this month. You have two options:
 
-1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> <blue!>https://aws.amazon.com/q/developer/pricing/</blue!>
-2. Wait until next month when your limit automatically resets." };
+1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> {}
+2. Wait until next month when your limit automatically resets.",
+            StyledText::info("https://aws.amazon.com/q/developer/pricing/")
+        )
+    }
 
     /// Extra help text shown in chat interface
-    pub const EXTRA_HELP: &str = color_print::cstr! {"
-<cyan,em>MCP:</cyan,em>
-<black!>You can now configure the Amazon Q CLI to use MCP servers. 
-Learn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html</black!>
+    pub fn extra_help() -> String {
+        let mut help = String::new();
 
-<cyan,em>Tips:</cyan,em>
-<em>!{command}</em>          <black!>Quickly execute a command in your current session</black!>
-<em>Ctrl(^) + j</em>         <black!>Insert new-line to provide multi-line prompt</black!>
-                    <black!>Alternatively, [Alt(⌥) + Enter(⏎)]</black!>
-<em>Ctrl(^) + s</em>         <black!>Fuzzy search commands and context files</black!>
-                    <black!>Use Tab to select multiple items</black!>
-                    <black!>Change the keybind using: q settings chat.skimCommandKey x</black!>
-<em>Ctrl(^) + t</em>         <black!>Toggle tangent mode for isolated conversations</black!>
-                    <black!>Change the keybind using: q settings chat.tangentModeKey x</black!>
-<em>chat.editMode</em>       <black!>The prompt editing mode (vim or emacs)</black!>
-                    <black!>Change using: q settings chat.skimCommandKey x</black!>
-"};
+        // MCP section
+        help.push('\n');
+        help.push_str(&StyledText::brand("MCP:"));
+        help.push('\n');
+        help.push_str(&StyledText::secondary(
+            "You can now configure the Amazon Q CLI to use MCP servers.",
+        ));
+        help.push_str(&StyledText::secondary(
+            "\nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
+        ));
+
+        // Tips section
+        help.push_str("\n\n");
+        help.push_str(&StyledText::brand("Tips:"));
+        help.push('\n');
+
+        // Command execution tip
+        help.push_str(&format!(
+            "{}          {}",
+            StyledText::primary("!{command}"),
+            StyledText::secondary("Quickly execute a command in your current session")
+        ));
+        help.push('\n');
+
+        // Multi-line prompt tip
+        help.push_str(&format!(
+            "{}         {}",
+            StyledText::primary("Ctrl(^) + j"),
+            StyledText::secondary("Insert new-line to provide multi-line prompt")
+        ));
+        help.push_str(&format!(
+            "\n                    {}",
+            StyledText::secondary("Alternatively, [Alt(⌥) + Enter(⏎)]")
+        ));
+        help.push('\n');
+
+        // Fuzzy search tip
+        help.push_str(&format!(
+            "{}         {}",
+            StyledText::primary("Ctrl(^) + s"),
+            StyledText::secondary("Fuzzy search commands and context files")
+        ));
+        help.push_str(&format!(
+            "\n                    {}",
+            StyledText::secondary("Use Tab to select multiple items")
+        ));
+        help.push_str(&format!(
+            "\n                    {}",
+            StyledText::secondary("Change the keybind using: q settings chat.skimCommandKey x")
+        ));
+        help.push('\n');
+
+        // Tangent mode tip
+        help.push_str(&format!(
+            "{}         {}",
+            StyledText::primary("Ctrl(^) + t"),
+            StyledText::secondary("Toggle tangent mode for isolated conversations")
+        ));
+        help.push_str(&format!(
+            "\n                    {}",
+            StyledText::secondary("Change the keybind using: q settings chat.tangentModeKey x")
+        ));
+        help.push('\n');
+
+        // Edit mode tip
+        help.push_str(&format!(
+            "{}       {}",
+            StyledText::primary("chat.editMode"),
+            StyledText::secondary("The prompt editing mode (vim or emacs)")
+        ));
+        help.push_str(&format!(
+            "\n                    {}",
+            StyledText::secondary("Change using: q settings chat.skimCommandKey x")
+        ));
+
+        help
+    }
 
     /// Welcome text with ASCII art logo for large screens
-    pub const WELCOME_TEXT: &str = color_print::cstr! {"<cyan!>
+    pub fn welcome_text() -> String {
+        StyledText::brand(
+            "
        ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
     ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
     ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
     ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
     ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
     ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
-    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧</cyan!>"};
+    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧",
+        )
+    }
 
     /// Resume conversation text
-    pub const RESUME_TEXT: &str = color_print::cstr! {"<em>Picking up where we left off...</em>"};
+    pub fn resume_text() -> String {
+        StyledText::emphasis("Picking up where we left off...")
+    }
 
     /// Popular shortcuts text for large screens
-    pub const POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands  <em>•</em>  <green!>ctrl + j</green!> new lines  <em>•</em>  <green!>ctrl + s</green!> fuzzy search</black!>"};
+    pub fn popular_shortcuts() -> String {
+        format!(
+            "{} all commands  •  {} new lines  •  {} fuzzy search",
+            StyledText::command("/help"),
+            StyledText::command("ctrl + j"),
+            StyledText::command("ctrl + s")
+        )
+    }
 
     /// Popular shortcuts text for small screens
-    pub const SMALL_SCREEN_POPULAR_SHORTCUTS: &str = color_print::cstr! {"<black!><green!>/help</green!> all commands
-<green!>ctrl + j</green!> new lines
-<green!>ctrl + s</green!> fuzzy search
-</black!>"};
+    pub fn small_screen_popular_shortcuts() -> String {
+        format!(
+            "{} all commands\n{} new lines\n{} fuzzy search",
+            StyledText::command("/help"),
+            StyledText::command("ctrl + j"),
+            StyledText::command("ctrl + s")
+        )
+    }
 }
 
 /// Help text constants for CLI commands
@@ -123,42 +222,95 @@ Notes:
 
 /// Tips and rotating messages
 pub mod tips {
-    /// Array of rotating tips shown to users
-    pub const ROTATING_TIPS: [&str; 20] = [
-        color_print::cstr! {"You can resume the last conversation from your current directory by launching with
-        <green!>q chat --resume</green!>"},
-        color_print::cstr! {"Get notified whenever Amazon Q CLI finishes responding.
-        Just run <green!>q settings chat.enableNotifications true</green!>"},
-        color_print::cstr! {"You can use
-        <green!>/editor</green!> to edit your prompt with a vim-like experience"},
-        color_print::cstr! {"<green!>/usage</green!> shows you a visual breakdown of your current context window usage"},
-        color_print::cstr! {"Get notified whenever Amazon Q CLI finishes responding. Just run <green!>q settings
-        chat.enableNotifications true</green!>"},
-        color_print::cstr! {"You can execute bash commands by typing
-        <green!>!</green!> followed by the command"},
-        color_print::cstr! {"Q can use tools without asking for
-        confirmation every time. Give <green!>/tools trust</green!> a try"},
-        color_print::cstr! {"You can
-        programmatically inject context to your prompts by using hooks. Check out <green!>/context hooks
-        help</green!>"},
-        color_print::cstr! {"You can use <green!>/compact</green!> to replace the conversation
-        history with its summary to free up the context space"},
-        color_print::cstr! {"If you want to file an issue
-        to the Amazon Q CLI team, just tell me, or run <green!>q issue</green!>"},
-        color_print::cstr! {"You can enable
-        custom tools with <green!>MCP servers</green!>. Learn more with /help"},
-        color_print::cstr! {"You can
-        specify wait time (in ms) for mcp server loading with <green!>q settings mcp.initTimeout {timeout in
-        int}</green!>. Servers that takes longer than the specified time will continue to load in the background. Use
-        /tools to see pending servers."},
-        color_print::cstr! {"You can see the server load status as well as any
-        warnings or errors associated with <green!>/mcp</green!>"},
-        color_print::cstr! {"Use <green!>/model</green!> to select the model to use for this conversation"},
-        color_print::cstr! {"Set a default model by running <green!>q settings chat.defaultModel MODEL</green!>. Run <green!>/model</green!> to learn more."},
-        color_print::cstr! {"Run <green!>/prompts</green!> to learn how to build & run repeatable workflows"},
-        color_print::cstr! {"Use <green!>/tangent</green!> or <green!>ctrl + t</green!> (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history"},
-        color_print::cstr! {"Ask me directly about my capabilities! Try questions like <green!>\"What can you do?\"</green!> or <green!>\"Can you save conversations?\"</green!>"},
-        color_print::cstr! {"Stay up to date with the latest features and improvements! Use <green!>/changelog</green!> to see what's new in Amazon Q CLI"},
-        color_print::cstr! {"Enable workspace checkpoints to snapshot & restore changes. Just run <green!>q</green!> <green!>settings chat.enableCheckpoint true</green!>"},
-    ];
+    use super::StyledText;
+
+    /// Get rotating tips shown to users
+    pub fn get_rotating_tips() -> Vec<String> {
+        vec![
+            format!(
+                "You can resume the last conversation from your current directory by launching with {}",
+                StyledText::command("q chat --resume")
+            ),
+            format!(
+                "Get notified whenever Amazon Q CLI finishes responding. Just run {}",
+                StyledText::command("q settings chat.enableNotifications true")
+            ),
+            format!(
+                "You can use {} to edit your prompt with a vim-like experience",
+                StyledText::command("/editor")
+            ),
+            format!(
+                "{} shows you a visual breakdown of your current context window usage",
+                StyledText::command("/usage")
+            ),
+            format!(
+                "Get notified whenever Amazon Q CLI finishes responding. Just run {}",
+                StyledText::command("q settings chat.enableNotifications true")
+            ),
+            format!(
+                "You can execute bash commands by typing {} followed by the command",
+                StyledText::command("!")
+            ),
+            format!(
+                "Q can use tools without asking for confirmation every time. Give {} a try",
+                StyledText::command("/tools trust")
+            ),
+            format!(
+                "You can programmatically inject context to your prompts by using hooks. Check out {}",
+                StyledText::command("/context hooks help")
+            ),
+            format!(
+                "You can use {} to replace the conversation history with its summary to free up the context space",
+                StyledText::command("/compact")
+            ),
+            format!(
+                "If you want to file an issue to the Amazon Q CLI team, just tell me, or run {}",
+                StyledText::command("q issue")
+            ),
+            format!(
+                "You can enable custom tools with {}. Learn more with /help",
+                StyledText::command("MCP servers")
+            ),
+            format!(
+                "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
+                StyledText::command("q settings mcp.initTimeout {timeout in int}")
+            ),
+            format!(
+                "You can see the server load status as well as any warnings or errors associated with {}",
+                StyledText::command("/mcp")
+            ),
+            format!(
+                "Use {} to select the model to use for this conversation",
+                StyledText::command("/model")
+            ),
+            format!(
+                "Set a default model by running {}. Run {} to learn more.",
+                StyledText::command("q settings chat.defaultModel MODEL"),
+                StyledText::command("/model")
+            ),
+            format!(
+                "Run {} to learn how to build & run repeatable workflows",
+                StyledText::command("/prompts")
+            ),
+            format!(
+                "Use {} or {} (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history",
+                StyledText::command("/tangent"),
+                StyledText::command("ctrl + t")
+            ),
+            format!(
+                "Ask me directly about my capabilities! Try questions like {} or {}",
+                StyledText::command("\"What can you do?\""),
+                StyledText::command("\"Can you save conversations?\"")
+            ),
+            format!(
+                "Stay up to date with the latest features and improvements! Use {} to see what's new in Amazon Q CLI",
+                StyledText::command("/changelog")
+            ),
+            format!(
+                "Enable workspace checkpoints to snapshot & restore changes. Just run {} {}",
+                StyledText::command("q"),
+                StyledText::command("settings chat.enableCheckpoint true")
+            ),
+        ]
+    }
 }

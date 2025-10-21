@@ -19,10 +19,7 @@ use std::path::{
     PathBuf,
 };
 
-use crossterm::style::{
-    Color,
-    Stylize as _,
-};
+use crossterm::style::Stylize as _;
 use crossterm::{
     execute,
     queue,
@@ -65,10 +62,12 @@ use crate::cli::agent::hook::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::{
     self,
     MCP_SERVER_TOOL_DELIMITER,
     directories,
+    file_uri,
 };
 
 pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
@@ -90,6 +89,16 @@ pub enum AgentConfigError {
     Io(#[from] std::io::Error),
     #[error("Failed to parse legacy mcp config: {0}")]
     BadLegacyMcpConfig(#[from] eyre::Report),
+    #[error("File URI not found: {uri} (resolved to {path})")]
+    FileUriNotFound { uri: String, path: PathBuf },
+    #[error("Failed to read file URI: {uri} (resolved to {path}): {error}")]
+    FileUriReadError {
+        uri: String,
+        path: PathBuf,
+        error: std::io::Error,
+    },
+    #[error("Invalid file URI format: {uri}")]
+    InvalidFileUri { uri: String },
 }
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
@@ -223,22 +232,27 @@ impl Agent {
         legacy_mcp_config: Option<&McpServerConfig>,
         output: &mut impl Write,
     ) -> Result<(), AgentConfigError> {
-        let Self { mcp_servers, .. } = self;
-
         self.path = Some(path.to_path_buf());
+
+        // Resolve file:// URIs in the prompt field
+        if let Some(resolved_prompt) = self.resolve_prompt()? {
+            self.prompt = Some(resolved_prompt);
+        }
+
+        let Self { mcp_servers, .. } = self;
 
         if let (true, Some(legacy_mcp_config)) = (self.use_legacy_mcp_json, legacy_mcp_config) {
             for (name, legacy_server) in &legacy_mcp_config.mcp_servers {
                 if mcp_servers.mcp_servers.contains_key(name) {
                     let _ = queue!(
                         output,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("WARNING: "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print("MCP server '"),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(name),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(
                             "' is already configured in agent config. Skipping duplicate from legacy mcp.json.\n"
                         )
@@ -283,6 +297,46 @@ impl Agent {
         let mut agent_clone = self.clone();
         agent_clone.freeze();
         Ok(serde_json::to_string_pretty(&agent_clone)?)
+    }
+
+    /// Resolves the prompt field, handling file:// URIs if present.
+    /// Returns the prompt content as-is if it doesn't start with file://,
+    /// or resolves the file URI and returns the file content.
+    pub fn resolve_prompt(&self) -> Result<Option<String>, AgentConfigError> {
+        match &self.prompt {
+            None => Ok(None),
+            Some(prompt_str) => {
+                if prompt_str.starts_with("file://") {
+                    // Get the base path from the agent config file path
+                    let base_path = match &self.path {
+                        Some(path) => path.parent().unwrap_or(Path::new(".")),
+                        None => Path::new("."),
+                    };
+
+                    // Resolve the file URI
+                    match file_uri::resolve_file_uri(prompt_str, base_path) {
+                        Ok(content) => Ok(Some(content)),
+                        Err(file_uri::FileUriError::InvalidUri { uri }) => {
+                            Err(AgentConfigError::InvalidFileUri { uri })
+                        },
+                        Err(file_uri::FileUriError::FileNotFound { path }) => Err(AgentConfigError::FileUriNotFound {
+                            uri: prompt_str.clone(),
+                            path,
+                        }),
+                        Err(file_uri::FileUriError::ReadError { path, source }) => {
+                            Err(AgentConfigError::FileUriReadError {
+                                uri: prompt_str.clone(),
+                                path,
+                                error: source,
+                            })
+                        },
+                    }
+                } else {
+                    // Return the prompt as-is for backward compatibility
+                    Ok(Some(prompt_str.clone()))
+                }
+            },
+        }
     }
 
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
@@ -455,10 +509,10 @@ impl Agents {
         if !mcp_enabled {
             let _ = execute!(
                 output,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             );
         }
@@ -517,9 +571,9 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(e),
                             style::Print("\n"),
                         );
@@ -555,9 +609,9 @@ impl Agents {
                         load_metadata.load_failed_count += 1;
                         let _ = queue!(
                             output,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print("Error: "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(e),
                             style::Print("\n"),
                         );
@@ -625,13 +679,13 @@ impl Agents {
             if local_names.contains(name) {
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("WARNING: "),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print("Agent conflict for "),
-                    style::SetForegroundColor(style::Color::Green),
+                    StyledText::success_fg(),
                     style::Print(name),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(". Using workspace version.\n")
                 );
                 false
@@ -655,15 +709,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!(
                         ": no agent with name {} found. Falling back to user specified default",
                         name
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 );
             }
 
@@ -673,15 +727,15 @@ impl Agents {
                 }
                 let _ = queue!(
                     output,
-                    style::SetForegroundColor(Color::Red),
+                    StyledText::error_fg(),
                     style::Print("Error"),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!(
                         ": user defined default {} not found. Falling back to in-memory default",
                         user_set_default
                     )),
                     style::Print("\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 );
             }
 
@@ -739,17 +793,17 @@ impl Agents {
                         let name = &agent.name;
                         let _ = execute!(
                             output,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print("WARNING "),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print("Agent config "),
-                            style::SetForegroundColor(Color::Green),
+                            StyledText::success_fg(),
                             style::Print(name),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(" is malformed at "),
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(&e.instance_path),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(format!(": {e}\n")),
                         );
                     }
@@ -892,17 +946,17 @@ pub fn queue_permission_override_warning(
 ) -> Result<(), std::io::Error> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("WARNING: "),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("You have trusted "),
-        style::SetForegroundColor(Color::Green),
+        StyledText::success_fg(),
         style::Print(tool_name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" tool, which overrides the toolsSettings: "),
-        style::SetForegroundColor(Color::Cyan),
+        StyledText::brand_fg(),
         style::Print(overridden_settings),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n"),
     )?)
 }
@@ -938,7 +992,10 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
     use serde_json::json;
+    use tempfile::TempDir;
 
     use super::*;
     use crate::cli::agent::hook::Source;
@@ -1401,5 +1458,125 @@ mod tests {
                 assert_eq!(hook.source, Source::Agent);
             }
         }
+    }
+
+    #[test]
+    fn test_resolve_prompt_file_uri_relative() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a prompt file
+        let prompt_content = "You are a test agent with specific instructions.";
+        let prompt_file = temp_dir.path().join("test-prompt.md");
+        fs::write(&prompt_file, prompt_content).unwrap();
+
+        // Create agent config file path
+        let config_file = temp_dir.path().join("test-agent.json");
+
+        // Create agent with file:// URI prompt
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: Some("file://./test-prompt.md".to_string()),
+            path: Some(config_file),
+            ..Default::default()
+        };
+
+        // Test resolve_prompt
+        let resolved = agent.resolve_prompt().unwrap();
+        assert_eq!(resolved, Some(prompt_content.to_string()));
+    }
+
+    #[test]
+    fn test_resolve_prompt_file_uri_absolute() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a prompt file
+        let prompt_content = "Absolute path prompt content.";
+        let prompt_file = temp_dir.path().join("absolute-prompt.md");
+        fs::write(&prompt_file, prompt_content).unwrap();
+
+        // Create agent with absolute file:// URI
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: Some(format!("file://{}", prompt_file.display())),
+            path: Some(temp_dir.path().join("test-agent.json")),
+            ..Default::default()
+        };
+
+        // Test resolve_prompt
+        let resolved = agent.resolve_prompt().unwrap();
+        assert_eq!(resolved, Some(prompt_content.to_string()));
+    }
+
+    #[test]
+    fn test_resolve_prompt_inline_unchanged() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create agent with inline prompt
+        let inline_prompt = "This is an inline prompt.";
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: Some(inline_prompt.to_string()),
+            path: Some(temp_dir.path().join("test-agent.json")),
+            ..Default::default()
+        };
+
+        // Test resolve_prompt
+        let resolved = agent.resolve_prompt().unwrap();
+        assert_eq!(resolved, Some(inline_prompt.to_string()));
+    }
+
+    #[test]
+    fn test_resolve_prompt_file_not_found_error() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create agent with non-existent file URI
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: Some("file://./nonexistent.md".to_string()),
+            path: Some(temp_dir.path().join("test-agent.json")),
+            ..Default::default()
+        };
+
+        // Test resolve_prompt should fail
+        let result = agent.resolve_prompt();
+        assert!(result.is_err());
+
+        if let Err(AgentConfigError::FileUriNotFound { uri, .. }) = result {
+            assert_eq!(uri, "file://./nonexistent.md");
+        } else {
+            panic!("Expected FileUriNotFound error, got: {:?}", result);
+        }
+    }
+
+    #[test]
+    fn test_resolve_prompt_no_prompt_field() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create agent without prompt field
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: None,
+            path: Some(temp_dir.path().join("test-agent.json")),
+            ..Default::default()
+        };
+
+        // Test resolve_prompt
+        let resolved = agent.resolve_prompt().unwrap();
+        assert_eq!(resolved, None);
+    }
+
+    #[test]
+    fn test_resolve_prompt_no_path_set() {
+        // Create agent without path set (should not happen in practice)
+        let agent = Agent {
+            name: "test-agent".to_string(),
+            prompt: Some("file://./test.md".to_string()),
+            path: None,
+            ..Default::default()
+        };
+
+        // Test resolve_prompt should fail gracefully
+        let result = agent.resolve_prompt();
+        assert!(result.is_err());
     }
 }

@@ -3,7 +3,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use regex::Regex;
@@ -23,6 +22,7 @@ use crate::cli::chat::tools::{
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Platform-specific modules
@@ -166,10 +166,10 @@ impl ExecuteCommand {
 
         queue!(
             output,
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.command),
             style::Print("\n"),
-            style::ResetColor
+            StyledText::reset(),
         )?;
 
         // Add the summary if available

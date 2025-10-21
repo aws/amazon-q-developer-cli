@@ -113,12 +113,6 @@ where
 impl From<crate::operation::export_result_archive::ExportResultArchiveError> for Error {
     fn from(err: crate::operation::export_result_archive::ExportResultArchiveError) -> Self {
         match err {
-            crate::operation::export_result_archive::ExportResultArchiveError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::export_result_archive::ExportResultArchiveError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::export_result_archive::ExportResultArchiveError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
             },
@@ -130,6 +124,12 @@ impl From<crate::operation::export_result_archive::ExportResultArchiveError> for
             },
             crate::operation::export_result_archive::ExportResultArchiveError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
+            },
+            crate::operation::export_result_archive::ExportResultArchiveError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::export_result_archive::ExportResultArchiveError::ValidationError(inner) => {
+                Error::ValidationError(inner)
             },
             crate::operation::export_result_archive::ExportResultArchiveError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -165,6 +165,12 @@ where
 impl From<crate::operation::generate_assistant_response::GenerateAssistantResponseError> for Error {
     fn from(err: crate::operation::generate_assistant_response::GenerateAssistantResponseError) -> Self {
         match err {
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError(inner) => {
+                Error::AccessDeniedError(inner)
+            }
+            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            }
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::ServiceQuotaExceededError(inner) => {
                 Error::ServiceQuotaExceededError(inner)
             }
@@ -173,12 +179,6 @@ impl From<crate::operation::generate_assistant_response::GenerateAssistantRespon
             }
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::ThrottlingError(inner) => Error::ThrottlingError(inner),
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::ValidationError(inner) => Error::ValidationError(inner),
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::AccessDeniedError(inner) => {
-                Error::AccessDeniedError(inner)
-            }
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError::InternalServerError(inner) => {
-                Error::InternalServerError(inner)
-            }
             crate::operation::generate_assistant_response::GenerateAssistantResponseError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }
@@ -211,15 +211,6 @@ where
 impl From<crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError> for Error {
     fn from(err: crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError) -> Self {
         match err {
-            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ServiceQuotaExceededError(
-                inner,
-            ) => Error::ServiceQuotaExceededError(inner),
-            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ThrottlingError(inner) => {
-                Error::ThrottlingError(inner)
-            },
-            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ValidationError(inner) => {
-                Error::ValidationError(inner)
-            },
             crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
             },
@@ -231,6 +222,15 @@ impl From<crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanErr
             },
             crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
+            },
+            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ServiceQuotaExceededError(
+                inner,
+            ) => Error::ServiceQuotaExceededError(inner),
+            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ThrottlingError(inner) => {
+                Error::ThrottlingError(inner)
+            },
+            crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::ValidationError(inner) => {
+                Error::ValidationError(inner)
             },
             crate::operation::generate_task_assist_plan::GenerateTaskAssistPlanError::Unhandled(inner) => {
                 Error::Unhandled(inner)
@@ -258,24 +258,24 @@ where
 impl From<crate::operation::send_message::SendMessageError> for Error {
     fn from(err: crate::operation::send_message::SendMessageError) -> Self {
         match err {
-            crate::operation::send_message::SendMessageError::ServiceQuotaExceededError(inner) => {
-                Error::ServiceQuotaExceededError(inner)
-            },
-            crate::operation::send_message::SendMessageError::ThrottlingError(inner) => Error::ThrottlingError(inner),
-            crate::operation::send_message::SendMessageError::DryRunOperationError(inner) => {
-                Error::DryRunOperationError(inner)
-            },
-            crate::operation::send_message::SendMessageError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::send_message::SendMessageError::AccessDeniedError(inner) => {
                 Error::AccessDeniedError(inner)
             },
             crate::operation::send_message::SendMessageError::ConflictError(inner) => Error::ConflictError(inner),
+            crate::operation::send_message::SendMessageError::DryRunOperationError(inner) => {
+                Error::DryRunOperationError(inner)
+            },
             crate::operation::send_message::SendMessageError::InternalServerError(inner) => {
                 Error::InternalServerError(inner)
             },
             crate::operation::send_message::SendMessageError::ResourceNotFoundError(inner) => {
                 Error::ResourceNotFoundError(inner)
             },
+            crate::operation::send_message::SendMessageError::ServiceQuotaExceededError(inner) => {
+                Error::ServiceQuotaExceededError(inner)
+            },
+            crate::operation::send_message::SendMessageError::ThrottlingError(inner) => Error::ThrottlingError(inner),
+            crate::operation::send_message::SendMessageError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::send_message::SendMessageError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }

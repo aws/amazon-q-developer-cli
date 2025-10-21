@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
@@ -52,12 +53,12 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::cli::issue;
-use crate::constants::ui_text::EXTRA_HELP;
+use crate::constants::ui_text;
 use crate::os::Os;
 
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
-#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
+#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help())]
 pub enum SlashCommand {
     /// Quit the application
     #[command(aliases = ["q", "exit"])]
@@ -141,16 +142,16 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),
                     style::Print("\n"),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 Ok(ChatState::PromptUser {

@@ -120,6 +120,7 @@ schemars.workspace = true
 jsonschema.workspace = true
 zip.workspace = true
 rmcp.workspace = true
+chat-cli-ui.workspace = true 
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

@@ -457,47 +457,47 @@ impl Highlighter for ChatHelper {
     }
 
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        use crossterm::style::Stylize;
+        use crate::theme::StyledText;
 
         // Parse the plain text prompt to extract profile and warning information
         // and apply colors using crossterm's ANSI escape codes
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add notifier part if present (blue)
+            // Add notifier part if present (info blue)
             if let Some(notifier) = components.delegate_notifier {
-                result.push_str(&format!("[{}]\n", notifier).blue().to_string());
+                result.push_str(&StyledText::info(&format!("[{}]\n", notifier)));
             }
 
-            // Add profile part if present (cyan)
+            // Add profile part if present (profile indicator cyan)
             if let Some(profile) = components.profile {
-                result.push_str(&format!("[{}] ", profile).cyan().to_string());
+                result.push_str(&StyledText::profile(&format!("[{}] ", profile)));
             }
 
             // Add percentage part if present (colored by usage level)
             if let Some(percentage) = components.usage_percentage {
                 let colored_percentage = if percentage < 50.0 {
-                    format!("{}% ", percentage as u32).green()
+                    StyledText::usage_low(&format!("{}% ", percentage as u32))
                 } else if percentage < 90.0 {
-                    format!("{}% ", percentage as u32).yellow()
+                    StyledText::usage_medium(&format!("{}% ", percentage as u32))
                 } else {
-                    format!("{}% ", percentage as u32).red()
+                    StyledText::usage_high(&format!("{}% ", percentage as u32))
                 };
-                result.push_str(&colored_percentage.to_string());
+                result.push_str(&colored_percentage);
             }
 
-            // Add tangent indicator if present (yellow)
+            // Add tangent indicator if present (tangent yellow)
             if components.tangent_mode {
-                result.push_str(&"↯ ".yellow().to_string());
+                result.push_str(&StyledText::tangent("↯ "));
             }
 
-            // Add warning symbol if present (red)
+            // Add warning symbol if present (error red)
             if components.warning {
-                result.push_str(&"!".red().to_string());
+                result.push_str(&StyledText::error("!"));
             }
 
-            // Add the prompt symbol (magenta)
-            result.push_str(&"> ".magenta().to_string());
+            // Add the prompt symbol (prompt magenta)
+            result.push_str(&StyledText::prompt("> "));
 
             Cow::Owned(result)
         } else {
@@ -648,12 +648,12 @@ pub fn rl(
 
 #[cfg(test)]
 mod tests {
-    use crossterm::style::Stylize;
     use rustyline::highlight::Highlighter;
     use rustyline::history::DefaultHistory;
 
     use super::*;
     use crate::cli::experiment::experiment_manager::ExperimentName;
+    use crate::theme::StyledText;
 
     #[tokio::test]
     async fn test_chat_completer_command_completion() {
@@ -725,7 +725,7 @@ mod tests {
         // Test basic prompt highlighting
         let highlighted = helper.highlight_prompt("> ", true);
 
-        assert_eq!(highlighted, "> ".magenta().to_string());
+        assert_eq!(highlighted, StyledText::prompt("> "));
     }
 
     #[tokio::test]
@@ -749,7 +749,10 @@ mod tests {
         // Test warning prompt highlighting
         let highlighted = helper.highlight_prompt("!> ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::error("!"), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -773,7 +776,10 @@ mod tests {
         // Test profile prompt highlighting
         let highlighted = helper.highlight_prompt("[test-profile] > ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "[test-profile] ".cyan(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::profile("[test-profile] "), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -799,7 +805,12 @@ mod tests {
         // Should have cyan profile + red warning + cyan bold prompt
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
         );
     }
 
@@ -847,7 +858,10 @@ mod tests {
 
         // Test tangent mode prompt highlighting - ↯ yellow, > magenta
         let highlighted = helper.highlight_prompt("↯ > ", true);
-        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::tangent("↯ "), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -870,7 +884,15 @@ mod tests {
 
         // Test tangent mode with warning - ↯ yellow, ! red, > magenta
         let highlighted = helper.highlight_prompt("↯ !> ", true);
-        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!(
+                "{}{}{}",
+                StyledText::tangent("↯ "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
+        );
     }
 
     #[tokio::test]
@@ -895,7 +917,12 @@ mod tests {
         let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::tangent("↯ "),
+                StyledText::prompt("> ")
+            )
         );
     }
 

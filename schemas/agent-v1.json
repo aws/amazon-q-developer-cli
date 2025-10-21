@@ -50,7 +50,7 @@
       "default": null
     },
     "prompt": {
-      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.",
+      "description": "The intention for this field is to provide high level context to the\nagent. This should be seen as the same category of context as a system prompt.\nSupports both inline text and file:// URIs to reference external files.\nExample: \"file://./my-prompt.md\" (relative to agent config file)",
       "type": [
         "string",
         "null"
@@ -65,7 +65,7 @@
         "properties": {
           "type": {
             "description": "The type of transport the mcp server is expecting. For http transport, only url (for now) is taken into account",
-            "$ref": "#/$definitions/TransportType",
+            "$ref": "#/definitions/TransportType",
             "default": "stdio"
           },
           "url": {
@@ -93,6 +93,22 @@
               "profile",
               "offline_access"
             ]
+          },
+          "oauth": {
+            "description": "OAuth configuration for this server",
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "redirectUri": {
+                "description": "Custom redirect URI for OAuth flow (e.g., \"127.0.0.1:7778\"). If not specified, a random available port will be assigned by the OS",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
           },
           "command": {
             "description": "The command string used to initialize the mcp server",

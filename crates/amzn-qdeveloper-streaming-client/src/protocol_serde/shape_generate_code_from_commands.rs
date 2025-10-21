@@ -52,16 +52,40 @@ pub fn de_generate_code_from_commands_http_error(
 
     let _error_message = generic.message().map(|msg| msg.to_owned());
     Err(match error_code {
-        "ServiceQuotaExceededError" => {
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ServiceQuotaExceededError({
+        "AccessDeniedError" => {
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::AccessDeniedError({
                 #[allow(unused_mut)]
                 let mut tmp = {
                     #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
-                    output = crate::protocol_serde::shape_service_quota_exceeded_error::de_service_quota_exceeded_error_json_err(_response_body, output)
+                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                    output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
+                        _response_body,
+                        output,
+                    )
                     .map_err(crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled)?;
                     let output = output.meta(generic);
-                    crate::serde_util::service_quota_exceeded_error_correct_errors(output)
+                    crate::serde_util::access_denied_error_correct_errors(output)
+                        .build()
+                        .map_err(
+                            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled,
+                        )?
+                };
+                tmp
+            })
+        },
+        "InternalServerError" => {
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::InternalServerError({
+                #[allow(unused_mut)]
+                let mut tmp = {
+                    #[allow(unused_mut)]
+                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                    output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
+                        _response_body,
+                        output,
+                    )
+                    .map_err(crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled)?;
+                    let output = output.meta(generic);
+                    crate::serde_util::internal_server_error_correct_errors(output)
                         .build()
                         .map_err(
                             crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled,
@@ -112,40 +136,16 @@ pub fn de_generate_code_from_commands_http_error(
                 tmp
             })
         },
-        "AccessDeniedError" => {
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::AccessDeniedError({
+        "ServiceQuotaExceededError" => {
+            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::ServiceQuotaExceededError({
                 #[allow(unused_mut)]
                 let mut tmp = {
                     #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
-                    output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
-                        _response_body,
-                        output,
-                    )
+                    let mut output = crate::types::error::builders::ServiceQuotaExceededErrorBuilder::default();
+                    output = crate::protocol_serde::shape_service_quota_exceeded_error::de_service_quota_exceeded_error_json_err(_response_body, output)
                     .map_err(crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled)?;
                     let output = output.meta(generic);
-                    crate::serde_util::access_denied_error_correct_errors(output)
-                        .build()
-                        .map_err(
-                            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled,
-                        )?
-                };
-                tmp
-            })
-        },
-        "InternalServerError" => {
-            crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::InternalServerError({
-                #[allow(unused_mut)]
-                let mut tmp = {
-                    #[allow(unused_mut)]
-                    let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
-                    output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
-                        _response_body,
-                        output,
-                    )
-                    .map_err(crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled)?;
-                    let output = output.meta(generic);
-                    crate::serde_util::internal_server_error_correct_errors(output)
+                    crate::serde_util::service_quota_exceeded_error_correct_errors(output)
                         .build()
                         .map_err(
                             crate::operation::generate_code_from_commands::GenerateCodeFromCommandsError::unhandled,
