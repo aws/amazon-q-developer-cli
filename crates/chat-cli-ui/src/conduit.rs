@@ -10,12 +10,15 @@ use crossterm::{
     execute,
     queue,
 };
+use rustyline::DefaultEditor;
+use tracing::error;
 
 use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
     Event,
     InputEvent,
     LegacyPassThroughOutput,
+    MetaEvent,
     ToolCallRejection,
     ToolCallStart,
 };
@@ -58,19 +61,25 @@ impl ViewEnd {
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
+        #[derive(Debug)]
         enum IncomingEvent {
             Input(String),
             Interrupt,
-            Send,
-            Backspace,
         }
 
-        #[derive(Default)]
+        #[derive(Default, Debug)]
+        struct PromptSignal {
+            active_agent: Option<String>,
+            trust_all: bool,
+        }
+
+        #[derive(Default, Debug)]
         enum DisplayState {
-            #[default]
             Prompting,
             UserInsertingText,
             StreamingOutput,
+            #[default]
+            Hidden,
         }
 
         #[inline]
@@ -79,9 +88,8 @@ impl ViewEnd {
             stderr: &mut std::io::Stderr,
             stdout: &mut std::io::Stdout,
             theme_source: &impl ThemeSource,
-        ) -> Result<DisplayState, ConduitError> {
-            let mut display_state = DisplayState::default();
-
+            display_state: Option<&mut DisplayState>,
+        ) -> Result<(), ConduitError> {
             match event {
                 Event::LegacyPassThrough(content) => match content {
                     LegacyPassThroughOutput::Stderr(content) => {
@@ -99,25 +107,29 @@ impl ViewEnd {
                 Event::StepStarted(_step_started) => {},
                 Event::StepFinished(_step_finished) => {},
                 Event::TextMessageStart(_text_message_start) => {
-                    display_state = DisplayState::StreamingOutput;
+                    if let Some(display_state) = display_state {
+                        *display_state = DisplayState::StreamingOutput;
+                    }
 
                     queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
                 },
                 Event::TextMessageContent(text_message_content) => {
-                    display_state = DisplayState::StreamingOutput;
+                    if let Some(display_state) = display_state {
+                        *display_state = DisplayState::StreamingOutput;
+                    }
 
                     stdout.write_all(&text_message_content.delta)?;
                     stdout.flush()?;
                 },
                 Event::TextMessageEnd(_text_message_end) => {
-                    display_state = DisplayState::Prompting;
-
                     queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
                     execute!(stdout, style::Print("\n"))?;
                 },
                 Event::TextMessageChunk(_text_message_chunk) => {},
                 Event::ToolCallStart(tool_call_start) => {
-                    display_state = DisplayState::StreamingOutput;
+                    if let Some(display_state) = display_state {
+                        *display_state = DisplayState::StreamingOutput;
+                    }
 
                     let ToolCallStart {
                         tool_call_name,
@@ -167,12 +179,8 @@ impl ViewEnd {
                         execute!(stdout, style::Print(tool_call_args.delta))?;
                     }
                 },
-                Event::ToolCallEnd(_tool_call_end) => {
-                    // noop for now
-                },
-                Event::ToolCallResult(_tool_call_result) => {
-                    // noop for now (currently we don't show the tool call results to users)
-                },
+                Event::ToolCallEnd(_tool_call_end) => {},
+                Event::ToolCallResult(_tool_call_result) => {},
                 Event::StateSnapshot(_state_snapshot) => {},
                 Event::StateDelta(_state_delta) => {},
                 Event::MessagesSnapshot(_messages_snapshot) => {},
@@ -186,7 +194,17 @@ impl ViewEnd {
                 Event::ReasoningMessageEnd(_reasoning_message_end) => {},
                 Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
                 Event::ReasoningEnd(_reasoning_end) => {},
-                Event::MetaEvent(_meta_event) => {},
+                Event::MetaEvent(MetaEvent { meta_type, payload }) => {
+                    if meta_type.as_str() == "timing" {
+                        if let serde_json::Value::String(s) = payload {
+                            if s.as_str() == "prompt_user" {
+                                if let Some(display_state) = display_state {
+                                    *display_state = DisplayState::Prompting;
+                                }
+                            }
+                        }
+                    }
+                },
                 Event::ToolCallRejection(tool_call_rejection) => {
                     let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
@@ -205,105 +223,83 @@ impl ViewEnd {
                 },
             }
 
-            Ok::<DisplayState, ConduitError>(display_state)
+            Ok::<(), ConduitError>(())
         }
 
         if handle_input {
-            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<IncomingEvent>();
+            let (incoming_events_tx, mut incoming_events_rx) = tokio::sync::mpsc::unbounded_channel::<IncomingEvent>();
+            let (prompt_signal_tx, prompt_signal_rx) = std::sync::mpsc::channel::<PromptSignal>();
 
             tokio::task::spawn_blocking(move || {
-                loop {
-                    if let Ok(event) = crossterm::event::read() {
-                        match event {
-                            crossterm::event::Event::Key(key_event) => {
-                                let crossterm::event::KeyEvent { code, modifiers, .. } = key_event;
+                while let Ok(prompt_signal) = prompt_signal_rx.recv() {
+                    let PromptSignal {
+                        active_agent: _,
+                        trust_all: _,
+                    } = prompt_signal;
 
-                                match (modifiers, code) {
-                                    (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('c')) => {
-                                        _ = tx.send(IncomingEvent::Interrupt);
-                                    },
-                                    (_, crossterm::event::KeyCode::Char(input_char)) => {
-                                        _ = tx.send(IncomingEvent::Input(input_char.to_string()));
-                                    },
-                                    (_, crossterm::event::KeyCode::Enter) => {
-                                        _ = tx.send(IncomingEvent::Send);
-                                    },
-                                    (_, crossterm::event::KeyCode::Backspace) => {
-                                        _ = tx.send(IncomingEvent::Backspace);
-                                    },
-                                    // TODO: make a handler for clearing the entire line
-                                    (_, _) => {},
-                                }
-                            },
-                            crossterm::event::Event::Paste(content) => {
-                                let _ = tx.send(IncomingEvent::Input(content));
-                            },
-                            _ => {},
-                        }
-                    }
+                    // TODO: Actually utilize the info to spawn readline here
+                    let prompt = "> ";
+                    let mut rl = DefaultEditor::new().expect("Failed to spawn readline");
+
+                    // std::thread::sleep(std::time::Duration::from_millis(5000));
+
+                    match rl.readline(prompt) {
+                        Ok(input) => {
+                            _ = incoming_events_tx.send(IncomingEvent::Input(input));
+                        },
+                        Err(rustyline::error::ReadlineError::Interrupted) => {
+                            _ = incoming_events_tx.send(IncomingEvent::Interrupt);
+                        },
+                        Err(e) => panic!("Failed to spawn readline: {:?}", e),
+                    };
+
+                    drop(rl);
                 }
             });
 
             tokio::spawn(async move {
                 let mut display_state = DisplayState::default();
-                let mut outgoing_buf = String::new();
+
                 loop {
                     if matches!(display_state, DisplayState::Prompting) {
-                        _ = execute!(
-                            stderr,
-                            style::SetAttribute(style::Attribute::Bold),
-                            Print(">"),
-                            style::SetAttribute(style::Attribute::Reset),
-                            Print(" ")
-                        );
+                        tracing::info!("## ui: prompting sent");
+                        // TODO: fetch prompt related info from session and send it here
+                        if let Err(e) = prompt_signal_tx.send(Default::default()) {
+                            error!("Error sending prompt signal: {:?}", e);
+                        }
                         display_state = DisplayState::UserInsertingText;
                     }
 
                     tokio::select! {
-                        Some(incoming_event) = rx.recv()  => {
+                        Some(incoming_event) = incoming_events_rx.recv() => {
                             match display_state {
-                                DisplayState::Prompting | DisplayState::UserInsertingText => {
+                                DisplayState::UserInsertingText => {
                                     match incoming_event {
                                         IncomingEvent::Input(content) => {
-                                            outgoing_buf.push_str(&content);
-                                            _ = execute!(
-                                                stderr,
-                                                crossterm::cursor::MoveRight(content.len() as u16)
-                                            );
+                                            if let Err(e) = self.sender.send(InputEvent::Text(content)).await {
+                                                error!("Error sending input event: {:?}", e);
+                                            }
+                                            display_state = DisplayState::StreamingOutput;
                                         },
-                                        IncomingEvent::Send => {
-                                            _ = self.sender.send(InputEvent::Text(outgoing_buf.clone()));
-                                            outgoing_buf.clear();
-                                        }
                                         IncomingEvent::Interrupt => {
                                             // If user is still inputting text, the session does
                                             // not need to be notified that they are hitting
                                             // control c.
-                                            outgoing_buf.clear();
                                             display_state = DisplayState::default();
                                         },
-                                        IncomingEvent::Backspace => {
-                                            if outgoing_buf.pop().is_some() {
-                                                _ = execute!(
-                                                    stderr,
-                                                    crossterm::cursor::MoveLeft(1),
-                                                );
-                                            }
-                                        }
                                     }
                                 },
                                 DisplayState::StreamingOutput if matches!(incoming_event, IncomingEvent::Interrupt)=> {
-                                    _ = self.sender.send(InputEvent::Interrupt);
-                                    display_state = DisplayState::Prompting;
+                                    _ = self.sender.send(InputEvent::Interrupt).await;
                                 },
-                                DisplayState::StreamingOutput => {
+                                DisplayState::Hidden | DisplayState::StreamingOutput | DisplayState::Prompting => {
                                     // We ignore everything that's not a sigint here
                                 }
                             }
                         },
                         session_event = self.receiver.recv() => {
                             if let Some(event) = session_event {
-                                display_state = handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source)?;
+                                handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source, Some(&mut display_state))?;
                             } else {
                                 break;
                             }
@@ -316,7 +312,7 @@ impl ViewEnd {
         } else {
             tokio::spawn(async move {
                 while let Some(event) = self.receiver.recv().await {
-                    _ = handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source)?;
+                    handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source, None)?;
                 }
 
                 Ok::<(), ConduitError>(())
