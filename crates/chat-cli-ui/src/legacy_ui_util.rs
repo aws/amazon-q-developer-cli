@@ -8,7 +8,7 @@ use crossterm::style::{
 /// event loop. It is a way to achieve inversion of control to delegate the implementation of
 /// themes to the consumer of this crate. Without this, we would be running into a circular
 /// dependency.
-pub trait ThemeSource {
+pub trait ThemeSource: Send + Sync + 'static {
     fn error(&self, text: &str) -> String;
     fn info(&self, text: &str) -> String;
     fn emphasis(&self, text: &str) -> String;

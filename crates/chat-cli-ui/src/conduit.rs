@@ -14,6 +14,7 @@ use crossterm::{
 use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
     Event,
+    InputEvent,
     LegacyPassThroughOutput,
     ToolCallRejection,
     ToolCallStart,
@@ -41,7 +42,7 @@ pub enum ConduitError {
 pub struct ViewEnd {
     /// Used by the view to send input to the control
     // TODO: later on we will need replace this byte array with an actual event type from ACP
-    pub sender: tokio::sync::mpsc::Sender<Vec<u8>>,
+    pub sender: tokio::sync::mpsc::Sender<InputEvent>,
     /// To receive messages from control about state changes
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<Event>,
 }
@@ -52,130 +53,275 @@ impl ViewEnd {
     /// This blocks the current thread and consumes the [ViewEnd]
     pub fn into_legacy_mode(
         mut self,
+        handle_input: bool,
         theme_source: impl ThemeSource,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
-        tokio::spawn(async move {
-            while let Some(event) = self.receiver.recv().await {
-                match event {
-                    Event::LegacyPassThrough(content) => match content {
-                        LegacyPassThroughOutput::Stderr(content) => {
-                            stderr.write_all(&content)?;
-                            stderr.flush()?;
-                        },
-                        LegacyPassThroughOutput::Stdout(content) => {
-                            stdout.write_all(&content)?;
-                            stdout.flush()?;
-                        },
+        enum IncomingEvent {
+            Input(String),
+            Interrupt,
+            Send,
+            Backspace,
+        }
+
+        #[derive(Default)]
+        enum DisplayState {
+            #[default]
+            Prompting,
+            UserInsertingText,
+            StreamingOutput,
+        }
+
+        #[inline]
+        fn handle_session_event_legacy_mode(
+            event: Event,
+            stderr: &mut std::io::Stderr,
+            stdout: &mut std::io::Stdout,
+            theme_source: &impl ThemeSource,
+        ) -> Result<DisplayState, ConduitError> {
+            let mut display_state = DisplayState::default();
+
+            match event {
+                Event::LegacyPassThrough(content) => match content {
+                    LegacyPassThroughOutput::Stderr(content) => {
+                        stderr.write_all(&content)?;
+                        stderr.flush()?;
                     },
-                    Event::RunStarted(_run_started) => {},
-                    Event::RunFinished(_run_finished) => {},
-                    Event::RunError(_run_error) => {},
-                    Event::StepStarted(_step_started) => {},
-                    Event::StepFinished(_step_finished) => {},
-                    Event::TextMessageStart(_text_message_start) => {
-                        queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
-                    },
-                    Event::TextMessageContent(text_message_content) => {
-                        stdout.write_all(&text_message_content.delta)?;
+                    LegacyPassThroughOutput::Stdout(content) => {
+                        stdout.write_all(&content)?;
                         stdout.flush()?;
                     },
-                    Event::TextMessageEnd(_text_message_end) => {
-                        queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
-                        execute!(stdout, style::Print("\n"))?;
-                    },
-                    Event::TextMessageChunk(_text_message_chunk) => {},
-                    Event::ToolCallStart(tool_call_start) => {
-                        let ToolCallStart {
-                            tool_call_name,
-                            is_trusted,
-                            mcp_server_name,
-                            ..
-                        } = tool_call_start;
+                },
+                Event::RunStarted(_run_started) => {},
+                Event::RunFinished(_run_finished) => {},
+                Event::RunError(_run_error) => {},
+                Event::StepStarted(_step_started) => {},
+                Event::StepFinished(_step_finished) => {},
+                Event::TextMessageStart(_text_message_start) => {
+                    display_state = DisplayState::StreamingOutput;
 
+                    queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
+                },
+                Event::TextMessageContent(text_message_content) => {
+                    display_state = DisplayState::StreamingOutput;
+
+                    stdout.write_all(&text_message_content.delta)?;
+                    stdout.flush()?;
+                },
+                Event::TextMessageEnd(_text_message_end) => {
+                    display_state = DisplayState::Prompting;
+
+                    queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
+                    execute!(stdout, style::Print("\n"))?;
+                },
+                Event::TextMessageChunk(_text_message_chunk) => {},
+                Event::ToolCallStart(tool_call_start) => {
+                    display_state = DisplayState::StreamingOutput;
+
+                    let ToolCallStart {
+                        tool_call_name,
+                        is_trusted,
+                        mcp_server_name,
+                        ..
+                    } = tool_call_start;
+
+                    queue!(
+                        stdout,
+                        theme_source.emphasis_fg(),
+                        Print(format!(
+                            "🛠️  Using tool: {}{}",
+                            tool_call_name,
+                            if is_trusted {
+                                " (trusted)".dark_green()
+                            } else {
+                                "".reset()
+                            }
+                        )),
+                        theme_source.reset(),
+                    )?;
+
+                    if let Some(server_name) = mcp_server_name {
                         queue!(
                             stdout,
+                            theme_source.reset(),
+                            Print(" from mcp server "),
                             theme_source.emphasis_fg(),
-                            Print(format!(
-                                "🛠️  Using tool: {}{}",
-                                tool_call_name,
-                                if is_trusted {
-                                    " (trusted)".dark_green()
-                                } else {
-                                    "".reset()
-                                }
-                            )),
+                            Print(&server_name),
                             theme_source.reset(),
                         )?;
+                    }
 
-                        if let Some(server_name) = mcp_server_name {
-                            queue!(
-                                stdout,
-                                theme_source.reset(),
-                                Print(" from mcp server "),
-                                theme_source.emphasis_fg(),
-                                Print(&server_name),
-                                theme_source.reset(),
-                            )?;
-                        }
+                    execute!(
+                        stdout,
+                        Print("\n"),
+                        Print(CONTINUATION_LINE),
+                        Print("\n"),
+                        Print(TOOL_BULLET)
+                    )?;
+                },
+                Event::ToolCallArgs(tool_call_args) => {
+                    if let serde_json::Value::String(content) = tool_call_args.delta {
+                        execute!(stdout, style::Print(content))?;
+                    } else {
+                        execute!(stdout, style::Print(tool_call_args.delta))?;
+                    }
+                },
+                Event::ToolCallEnd(_tool_call_end) => {
+                    // noop for now
+                },
+                Event::ToolCallResult(_tool_call_result) => {
+                    // noop for now (currently we don't show the tool call results to users)
+                },
+                Event::StateSnapshot(_state_snapshot) => {},
+                Event::StateDelta(_state_delta) => {},
+                Event::MessagesSnapshot(_messages_snapshot) => {},
+                Event::Raw(_raw) => {},
+                Event::Custom(_custom) => {},
+                Event::ActivitySnapshotEvent(_activity_snapshot_event) => {},
+                Event::ActivityDeltaEvent(_activity_delta_event) => {},
+                Event::ReasoningStart(_reasoning_start) => {},
+                Event::ReasoningMessageStart(_reasoning_message_start) => {},
+                Event::ReasoningMessageContent(_reasoning_message_content) => {},
+                Event::ReasoningMessageEnd(_reasoning_message_end) => {},
+                Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
+                Event::ReasoningEnd(_reasoning_end) => {},
+                Event::MetaEvent(_meta_event) => {},
+                Event::ToolCallRejection(tool_call_rejection) => {
+                    let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
-                        execute!(
-                            stdout,
-                            Print("\n"),
-                            Print(CONTINUATION_LINE),
-                            Print("\n"),
-                            Print(TOOL_BULLET)
-                        )?;
-                    },
-                    Event::ToolCallArgs(tool_call_args) => {
-                        if let serde_json::Value::String(content) = tool_call_args.delta {
-                            execute!(stdout, style::Print(content))?;
-                        } else {
-                            execute!(stdout, style::Print(tool_call_args.delta))?;
-                        }
-                    },
-                    Event::ToolCallEnd(_tool_call_end) => {
-                        // noop for now
-                    },
-                    Event::ToolCallResult(_tool_call_result) => {
-                        // noop for now (currently we don't show the tool call results to users)
-                    },
-                    Event::StateSnapshot(_state_snapshot) => {},
-                    Event::StateDelta(_state_delta) => {},
-                    Event::MessagesSnapshot(_messages_snapshot) => {},
-                    Event::Raw(_raw) => {},
-                    Event::Custom(_custom) => {},
-                    Event::ActivitySnapshotEvent(_activity_snapshot_event) => {},
-                    Event::ActivityDeltaEvent(_activity_delta_event) => {},
-                    Event::ReasoningStart(_reasoning_start) => {},
-                    Event::ReasoningMessageStart(_reasoning_message_start) => {},
-                    Event::ReasoningMessageContent(_reasoning_message_content) => {},
-                    Event::ReasoningMessageEnd(_reasoning_message_end) => {},
-                    Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
-                    Event::ReasoningEnd(_reasoning_end) => {},
-                    Event::MetaEvent(_meta_event) => {},
-                    Event::ToolCallRejection(tool_call_rejection) => {
-                        let ToolCallRejection { reason, name, .. } = tool_call_rejection;
-
-                        execute!(
-                            stderr,
-                            theme_source.error_fg(),
-                            Print("Command "),
-                            theme_source.warning_fg(),
-                            Print(name),
-                            theme_source.error_fg(),
-                            Print(" is rejected because it matches one or more rules on the denied list:"),
-                            Print(reason),
-                            Print("\n"),
-                            theme_source.reset(),
-                        )?;
-                    },
-                }
+                    execute!(
+                        stderr,
+                        theme_source.error_fg(),
+                        Print("Command "),
+                        theme_source.warning_fg(),
+                        Print(name),
+                        theme_source.error_fg(),
+                        Print(" is rejected because it matches one or more rules on the denied list:"),
+                        Print(reason),
+                        Print("\n"),
+                        theme_source.reset(),
+                    )?;
+                },
             }
 
-            Ok::<(), ConduitError>(())
-        });
+            Ok::<DisplayState, ConduitError>(display_state)
+        }
+
+        if handle_input {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<IncomingEvent>();
+
+            tokio::task::spawn_blocking(move || {
+                loop {
+                    if let Ok(event) = crossterm::event::read() {
+                        match event {
+                            crossterm::event::Event::Key(key_event) => {
+                                let crossterm::event::KeyEvent { code, modifiers, .. } = key_event;
+
+                                match (modifiers, code) {
+                                    (crossterm::event::KeyModifiers::CONTROL, crossterm::event::KeyCode::Char('c')) => {
+                                        _ = tx.send(IncomingEvent::Interrupt);
+                                    },
+                                    (_, crossterm::event::KeyCode::Char(input_char)) => {
+                                        _ = tx.send(IncomingEvent::Input(input_char.to_string()));
+                                    },
+                                    (_, crossterm::event::KeyCode::Enter) => {
+                                        _ = tx.send(IncomingEvent::Send);
+                                    },
+                                    (_, crossterm::event::KeyCode::Backspace) => {
+                                        _ = tx.send(IncomingEvent::Backspace);
+                                    },
+                                    // TODO: make a handler for clearing the entire line
+                                    (_, _) => {},
+                                }
+                            },
+                            crossterm::event::Event::Paste(content) => {
+                                let _ = tx.send(IncomingEvent::Input(content));
+                            },
+                            _ => {},
+                        }
+                    }
+                }
+            });
+
+            tokio::spawn(async move {
+                let mut display_state = DisplayState::default();
+                let mut outgoing_buf = String::new();
+                loop {
+                    if matches!(display_state, DisplayState::Prompting) {
+                        _ = execute!(
+                            stderr,
+                            style::SetAttribute(style::Attribute::Bold),
+                            Print(">"),
+                            style::SetAttribute(style::Attribute::Reset),
+                            Print(" ")
+                        );
+                        display_state = DisplayState::UserInsertingText;
+                    }
+
+                    tokio::select! {
+                        Some(incoming_event) = rx.recv()  => {
+                            match display_state {
+                                DisplayState::Prompting | DisplayState::UserInsertingText => {
+                                    match incoming_event {
+                                        IncomingEvent::Input(content) => {
+                                            outgoing_buf.push_str(&content);
+                                            _ = execute!(
+                                                stderr,
+                                                crossterm::cursor::MoveRight(content.len() as u16)
+                                            );
+                                        },
+                                        IncomingEvent::Send => {
+                                            _ = self.sender.send(InputEvent::Text(outgoing_buf.clone()));
+                                            outgoing_buf.clear();
+                                        }
+                                        IncomingEvent::Interrupt => {
+                                            // If user is still inputting text, the session does
+                                            // not need to be notified that they are hitting
+                                            // control c.
+                                            outgoing_buf.clear();
+                                            display_state = DisplayState::default();
+                                        },
+                                        IncomingEvent::Backspace => {
+                                            if outgoing_buf.pop().is_some() {
+                                                _ = execute!(
+                                                    stderr,
+                                                    crossterm::cursor::MoveLeft(1),
+                                                );
+                                            }
+                                        }
+                                    }
+                                },
+                                DisplayState::StreamingOutput if matches!(incoming_event, IncomingEvent::Interrupt)=> {
+                                    _ = self.sender.send(InputEvent::Interrupt);
+                                    display_state = DisplayState::Prompting;
+                                },
+                                DisplayState::StreamingOutput => {
+                                    // We ignore everything that's not a sigint here
+                                }
+                            }
+                        },
+                        session_event = self.receiver.recv() => {
+                            if let Some(event) = session_event {
+                                display_state = handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source)?;
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                Ok::<(), ConduitError>(())
+            });
+        } else {
+            tokio::spawn(async move {
+                while let Some(event) = self.receiver.recv().await {
+                    _ = handle_session_event_legacy_mode(event, &mut stderr, &mut stdout, &theme_source)?;
+                }
+
+                Ok::<(), ConduitError>(())
+            });
+        }
 
         Ok(())
     }
@@ -188,7 +334,7 @@ pub struct DestinationStderr;
 #[derive(Clone, Debug)]
 pub struct DestinationStructuredOutput;
 
-pub type InputReceiver = tokio::sync::mpsc::Receiver<Vec<u8>>;
+pub type InputReceiver = tokio::sync::mpsc::Receiver<InputEvent>;
 
 /// This compliments the [ViewEnd]. It can be thought of as the "other end" of a pipe.
 /// The control would own this.
@@ -386,14 +532,14 @@ pub fn get_legacy_conduits(
     ControlEnd<DestinationStdout>,
 ) {
     let (state_tx, state_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
-    let (byte_tx, byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(10);
+    let (input_tx, input_rx) = tokio::sync::mpsc::channel::<InputEvent>(10);
 
     (
         ViewEnd {
-            sender: byte_tx,
+            sender: input_tx,
             receiver: state_rx,
         },
-        byte_rx,
+        input_rx,
         ControlEnd {
             current_event: None,
             should_send_structured_event,

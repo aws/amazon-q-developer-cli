@@ -633,7 +633,7 @@ impl ChatSession {
 
         let stderr = std::io::stderr();
         let stdout = std::io::stdout();
-        if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
+        if let Err(e) = view_end.into_legacy_mode(false, StyledText, stderr, stdout) {
             error!("Conduit view end legacy mode exited: {:?}", e);
         }
 
