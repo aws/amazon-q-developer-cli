@@ -43,6 +43,7 @@ chrono.workspace = true
 clap.workspace = true
 clap_complete.workspace = true
 clap_complete_fig.workspace = true
+code-agent-sdk = { path = "../code-agent-sdk" }
 color-eyre.workspace = true
 color-print.workspace = true
 convert_case.workspace = true

@@ -78,6 +78,7 @@ use crate::cli::chat::tools::fs_write::FsWrite;
 use crate::cli::chat::tools::gh_issue::GhIssue;
 use crate::cli::chat::tools::introspect::Introspect;
 use crate::cli::chat::tools::knowledge::Knowledge;
+use crate::cli::chat::tools::code::Code;
 use crate::cli::chat::tools::thinking::Thinking;
 use crate::cli::chat::tools::todo::TodoList;
 use crate::cli::chat::tools::use_aws::UseAws;
@@ -726,6 +727,9 @@ impl ToolManager {
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
                 tool_specs.remove("knowledge");
             }
+            if !crate::cli::chat::tools::code::Code::is_enabled(os) {
+                tool_specs.remove("code");
+            }
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove("todo_list");
             }
@@ -876,6 +880,7 @@ impl ToolManager {
             "introspect" => Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(map_err)?),
             "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
             "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
+            "code" => Tool::Code(serde_json::from_value::<Code>(value.args).map_err(map_err)?),
             "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),

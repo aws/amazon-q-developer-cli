@@ -88,6 +88,8 @@ pub enum Setting {
     EnabledCheckpoint,
     #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
     EnabledDelegate,
+    #[strum(message = "Enable code intelligence features using LSP servers (boolean)")]
+    EnabledCodeIntelligence,
 }
 
 impl AsRef<str> for Setting {
@@ -129,6 +131,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
         }
     }
 }

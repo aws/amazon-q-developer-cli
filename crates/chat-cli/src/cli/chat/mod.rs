@@ -1,4 +1,5 @@
 use crate::theme::StyledText;
+use crate::cli::experiment::experiment_manager::{ExperimentManager, ExperimentName};
 pub mod cli;
 mod consts;
 pub mod context;
@@ -158,10 +159,7 @@ use crate::cli::chat::cli::prompts::{
 };
 use crate::cli::chat::message::UserMessage;
 use crate::cli::chat::util::sanitize_unicode_tags;
-use crate::cli::experiment::experiment_manager::{
-    ExperimentManager,
-    ExperimentName,
-};
+
 use crate::constants::{
     error_messages,
     tips,
@@ -647,6 +645,22 @@ impl ChatSession {
                 cs
             },
             false => {
+                // Initialize code intelligence client if experiment is enabled
+                let code_intelligence_client = if ExperimentManager::is_enabled(os, ExperimentName::CodeIntelligence) {
+                    match code_agent_sdk::CodeIntelligence::builder()
+                        .workspace_root(std::env::current_dir().unwrap_or_default())
+                        .auto_detect_languages()
+                        .build() {
+                        Ok(client) => Some(client),
+                        Err(e) => {
+                            eprintln!("⚠️  Failed to create code intelligence client: {}", e);
+                            None
+                        }
+                    }
+                } else {
+                    None
+                };
+
                 ConversationState::new(
                     conversation_id,
                     agents,
@@ -655,6 +669,7 @@ impl ChatSession {
                     model_id,
                     os,
                     mcp_enabled,
+                    code_intelligence_client,
                 )
                 .await
             },
@@ -2264,6 +2279,7 @@ impl ChatSession {
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
+                    &mut self.conversation.code_intelligence_client,
                 )
                 .await;
 

@@ -14,6 +14,7 @@ pub enum ExperimentName {
     Checkpoint,
     ContextUsageIndicator,
     Delegate,
+    CodeIntelligence,
 }
 
 impl ExperimentName {
@@ -26,6 +27,7 @@ impl ExperimentName {
             Self::Checkpoint => "Checkpoint",
             Self::ContextUsageIndicator => "Context Usage Indicator",
             Self::Delegate => "Delegate",
+            Self::CodeIntelligence => "Code Intelligence",
         }
     }
 }
@@ -116,6 +118,13 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         setting_key: Setting::EnabledDelegate,
         enabled: true,
         commands: &[],
+    },
+    Experiment {
+        experiment_name: ExperimentName::CodeIntelligence,
+        description: "Enables code intelligence operations using LSP servers (/code)",
+        setting_key: Setting::EnabledCodeIntelligence,
+        enabled: true,
+        commands: &["/code", "/code status", "/code detect"],
     },
 ];
 

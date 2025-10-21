@@ -7,6 +7,7 @@ use std::io::Write;
 use std::sync::atomic::Ordering;
 
 use chrono::Local;
+use code_agent_sdk::sdk::client::CodeIntelligence;
 use crossterm::{
     execute,
     style,
@@ -146,6 +147,9 @@ pub struct ConversationState {
     pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
+    /// Code Intelligence SDK client for code analysis operations
+    #[serde(skip)]
+    pub code_intelligence_client: Option<CodeIntelligence>,
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tangent_state: Option<ConversationCheckpoint>,
@@ -175,6 +179,7 @@ impl ConversationState {
         current_model_id: Option<String>,
         os: &Os,
         mcp_enabled: bool,
+        code_intelligence_client: Option<CodeIntelligence>,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -211,6 +216,7 @@ impl ConversationState {
             file_line_tracker: HashMap::new(),
             checkpoint_manager: None,
             mcp_enabled,
+            code_intelligence_client,
             tangent_state: None,
         }
     }
@@ -1383,6 +1389,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 
@@ -1416,6 +1423,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1452,6 +1460,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1509,6 +1518,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 
@@ -1556,6 +1566,7 @@ mod tests {
             None,
             &os,
             false, // mcp_enabled
+            None,  // code_intelligence_client
         )
         .await;
 
@@ -1629,6 +1640,7 @@ mod tests {
             None,
             &os,
             false, // mcp_enabled
+            None,  // code_intelligence_client
         )
         .await;
 
@@ -1665,6 +1677,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 
@@ -1718,6 +1731,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 

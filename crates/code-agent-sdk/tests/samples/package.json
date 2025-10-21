@@ -1,0 +1,12 @@
+{
+  "name": "code-intelligence-test-samples",
+  "version": "1.0.0",
+  "description": "Test samples for code intelligence integration tests",
+  "main": "test.ts",
+  "scripts": {
+    "test": "echo \"Test samples\""
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0"
+  }
+}

@@ -1,0 +1,116 @@
+{
+  "project_patterns": [
+    "Cargo.toml",
+    "package.json",
+    "tsconfig.json",
+    "pyproject.toml",
+    "setup.py",
+    "go.mod",
+    "pom.xml",
+    "build.gradle",
+    "CMakeLists.txt",
+    "composer.json",
+    "Gemfile",
+    "Package.swift"
+  ],
+  "languages": {
+    "typescript": {
+      "name": "typescript-language-server",
+      "command": "typescript-language-server",
+      "args": ["--stdio"],
+      "file_extensions": ["ts", "js", "tsx", "jsx", "mjs", "cjs", "mts", "cts", "vue"],
+      "project_patterns": ["package.json", "tsconfig.json"],
+      "initialization_options": {
+        "preferences": {
+          "disableSuggestions": false
+        }
+      }
+    },
+    "rust": {
+      "name": "rust-analyzer",
+      "command": "rust-analyzer",
+      "args": [],
+      "file_extensions": ["rs"],
+      "project_patterns": ["Cargo.toml"],
+      "initialization_options": {
+        "cargo": {
+          "buildScripts": {
+            "enable": true
+          }
+        }
+      }
+    },
+    "python": {
+      "name": "pylsp",
+      "command": "pylsp",
+      "args": [],
+      "file_extensions": ["py"],
+      "project_patterns": ["pyproject.toml", "setup.py", "requirements.txt"],
+      "initialization_options": {
+        "pylsp": {
+          "plugins": {
+            "pycodestyle": {
+              "enabled": true
+            }
+          }
+        }
+      }
+    },
+    "go": {
+      "name": "gopls",
+      "command": "gopls",
+      "args": [],
+      "file_extensions": ["go"],
+      "project_patterns": ["go.mod"],
+      "initialization_options": {}
+    },
+    "java": {
+      "name": "jdtls",
+      "command": "jdtls",
+      "args": [],
+      "file_extensions": ["java"],
+      "project_patterns": ["pom.xml", "build.gradle"],
+      "initialization_options": {}
+    },
+    "csharp": {
+      "name": "omnisharp",
+      "command": "omnisharp",
+      "args": ["--languageserver"],
+      "file_extensions": ["cs"],
+      "project_patterns": ["*.csproj", "*.sln"],
+      "initialization_options": {}
+    },
+    "php": {
+      "name": "intelephense",
+      "command": "intelephense",
+      "args": ["--stdio"],
+      "file_extensions": ["php"],
+      "project_patterns": ["composer.json"],
+      "initialization_options": {}
+    },
+    "ruby": {
+      "name": "solargraph",
+      "command": "solargraph",
+      "args": ["stdio"],
+      "file_extensions": ["rb"],
+      "project_patterns": ["Gemfile"],
+      "initialization_options": {}
+    },
+    "kotlin": {
+      "name": "kotlin-language-server",
+      "command": "kotlin-language-server",
+      "args": [],
+      "file_extensions": ["kt", "kts"],
+      "project_patterns": ["build.gradle", "pom.xml"],
+      "initialization_options": {}
+    },
+    "swift": {
+      "name": "sourcekit-lsp",
+      "command": "sourcekit-lsp",
+      "args": [],
+      "file_extensions": ["swift"],
+      "project_patterns": ["Package.swift"],
+      "initialization_options": {}
+    }
+  }
+}

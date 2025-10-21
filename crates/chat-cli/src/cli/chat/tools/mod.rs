@@ -6,6 +6,7 @@ pub mod fs_write;
 pub mod gh_issue;
 pub mod introspect;
 pub mod knowledge;
+pub mod code;
 pub mod thinking;
 pub mod todo;
 pub mod use_aws;
@@ -34,6 +35,7 @@ use fs_write::FsWrite;
 use gh_issue::GhIssue;
 use introspect::Introspect;
 use knowledge::Knowledge;
+use code::Code;
 use serde::{
     Deserialize,
     Serialize,
@@ -63,7 +65,7 @@ use crate::theme::{
 };
 
 pub const DEFAULT_APPROVE: [&str; 0] = [];
-pub const NATIVE_TOOLS: [&str; 9] = [
+pub const NATIVE_TOOLS: [&str; 10] = [
     "fs_read",
     "fs_write",
     #[cfg(windows)]
@@ -73,6 +75,7 @@ pub const NATIVE_TOOLS: [&str; 9] = [
     "use_aws",
     "gh_issue",
     "knowledge",
+    "code",
     "thinking",
     "todo_list",
     "delegate",
@@ -90,6 +93,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Introspect(Introspect),
     Knowledge(Knowledge),
+    Code(Code),
     Thinking(Thinking),
     Todo(TodoList),
     Delegate(Delegate),
@@ -110,6 +114,7 @@ impl Tool {
             Tool::GhIssue(_) => "gh_issue",
             Tool::Introspect(_) => "introspect",
             Tool::Knowledge(_) => "knowledge",
+            Tool::Code(_) => "code",
             Tool::Thinking(_) => "thinking (prerelease)",
             Tool::Todo(_) => "todo_list",
             Tool::Delegate(_) => "delegate",
@@ -130,6 +135,7 @@ impl Tool {
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
+            Tool::Code(_code) => Code::eval_perm(os, agent),
             Tool::Delegate(_) => PermissionEvalResult::Allow, // Allow delegate tool
         }
     }
@@ -141,6 +147,7 @@ impl Tool {
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
+        code_intelligence_client: &mut Option<code_agent_sdk::sdk::client::CodeIntelligence>,
     ) -> Result<InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
@@ -152,6 +159,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
+            Tool::Code(code) => code.invoke(os, stdout, code_intelligence_client).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
@@ -169,6 +177,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
             Tool::Introspect(_) => Introspect::queue_description(output),
             Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
+            Tool::Code(code) => code.queue_description(output),
             Tool::Thinking(thinking) => thinking.queue_description(output),
             Tool::Todo(_) => Ok(()),
             Tool::Delegate(delegate) => delegate.queue_description(output),
@@ -186,6 +195,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Introspect(introspect) => introspect.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
+            Tool::Code(code) => code.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
             Tool::Delegate(_) => Ok(()), // No validation needed for delegate tool

@@ -311,6 +311,11 @@ pub mod tips {
                 StyledText::command("q"),
                 StyledText::command("settings chat.enableCheckpoint true")
             ),
+            format!(
+                "Enable code intelligence for LSP-based symbol search and workspace analysis. Run {} {}",
+                StyledText::command("q"),
+                StyledText::command("settings chat.enableCodeIntelligence true")
+            ),
         ]
     }
 }

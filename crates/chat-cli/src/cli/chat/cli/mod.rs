@@ -2,6 +2,7 @@ use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
+pub mod code;
 pub mod compact;
 pub mod context;
 pub mod editor;
@@ -24,6 +25,7 @@ pub mod usage;
 use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
+use code::CodeSubcommand;
 use compact::CompactArgs;
 use context::ContextSubcommand;
 use editor::EditorArgs;
@@ -71,6 +73,10 @@ pub enum SlashCommand {
     /// Manage context files for the chat session
     #[command(subcommand)]
     Context(ContextSubcommand),
+    /// (Beta) Code intelligence operations using LSP servers. Requires "q settings
+    /// chat.enableCodeIntelligence true"
+    #[command(subcommand, hide = true)]
+    Code(CodeSubcommand),
     /// (Beta) Manage knowledge base for persistent context storage. Requires "q settings
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
@@ -155,6 +161,7 @@ impl SlashCommand {
                 })
             },
             Self::Context(args) => args.execute(os, session).await,
+            Self::Code(subcommand) => subcommand.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Reply(args) => args.execute(session).await,
@@ -201,6 +208,7 @@ impl SlashCommand {
             Self::Agent(_) => "agent",
             Self::Profile => "profile",
             Self::Context(_) => "context",
+            Self::Code(_) => "code",
             Self::Knowledge(_) => "knowledge",
             Self::PromptEditor(_) => "editor",
             Self::Reply(_) => "reply",
@@ -230,6 +238,7 @@ impl SlashCommand {
         match self {
             SlashCommand::Agent(sub) => Some(sub.name()),
             SlashCommand::Context(sub) => Some(sub.name()),
+            SlashCommand::Code(sub) => Some(sub.name()),
             SlashCommand::Knowledge(sub) => Some(sub.name()),
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),
