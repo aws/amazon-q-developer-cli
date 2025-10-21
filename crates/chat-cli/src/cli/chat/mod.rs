@@ -631,13 +631,11 @@ impl ChatSession {
         let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
 
-        tokio::task::spawn_blocking(move || {
-            let stderr = std::io::stderr();
-            let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
-                error!("Conduit view end legacy mode exited: {:?}", e);
-            }
-        });
+        let stderr = std::io::stderr();
+        let stdout = std::io::stdout();
+        if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
+            error!("Conduit view end legacy mode exited: {:?}", e);
+        }
 
         let conversation = match resume_conversation {
             true => {
