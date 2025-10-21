@@ -832,6 +832,26 @@ impl ChatSession {
         }
 
         let (context, report, display_err_message) = match err {
+            ChatError::Auth(AuthError::NoToken) => {
+                execute!(
+                    self.stderr,
+                    style::SetAttribute(Attribute::Bold),
+                    StyledText::error_fg(),
+                    style::Print("Authentication Error\n"),
+                    StyledText::reset_attributes(),
+                    StyledText::reset(),
+                    style::Print("\nYour login session has expired. Please log in again using:\n\n"),
+                    StyledText::success_fg(),
+                    style::Print("    q login\n\n"),
+                    StyledText::reset(),
+                )?;
+
+                self.conversation
+                    .append_transcript("Authentication expired - please log in again".to_string());
+
+                self.inner = Some(ChatState::Exit);
+                return Ok(());
+            },
             ChatError::Interrupted { tool_uses: ref inter } => {
                 execute!(self.stderr, style::Print("\n\n"))?;
 
