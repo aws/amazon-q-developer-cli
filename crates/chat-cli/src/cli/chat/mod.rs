@@ -21,6 +21,7 @@ mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 use crate::constants::ui_text;
+mod managed_input;
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -54,6 +55,7 @@ use chat_cli_ui::conduit::{
 };
 use chat_cli_ui::protocol::{
     Event,
+    InputEvent,
     MessageRole,
     TextMessageContent,
     TextMessageEnd,
@@ -605,6 +607,7 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    managed_input: Option<tokio::sync::mpsc::Receiver<InputEvent>>,
 }
 
 impl ChatSession {
@@ -628,12 +631,12 @@ impl ChatSession {
         let mut existing_conversation = false;
 
         let should_send_structured_msg = should_send_structured_message(os);
-        let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
+        let (view_end, managed_input, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
 
         let stderr = std::io::stderr();
         let stdout = std::io::stdout();
-        if let Err(e) = view_end.into_legacy_mode(false, StyledText, stderr, stdout) {
+        if let Err(e) = view_end.into_legacy_mode(true, StyledText, stderr, stdout) {
             error!("Conduit view end legacy mode exited: {:?}", e);
         }
 
@@ -737,6 +740,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            managed_input: Some(managed_input),
         })
     }
 
@@ -1940,7 +1944,17 @@ impl ChatSession {
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
         let prompt = self.generate_tool_trust_prompt(os).await;
-        let user_input = match self.read_user_input(&prompt, false) {
+        let user_input = if self.managed_input.is_some() {
+            self.stderr.send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }))?;
+            self.read_user_input_managed().await
+        } else {
+            self.read_user_input(&prompt, false)
+        };
+        debug!("## ui: User input: {:?}", user_input);
+        let user_input = match user_input {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
         };
@@ -1968,6 +1982,20 @@ impl ChatSession {
 
         self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
+    }
+
+    async fn read_user_input_managed(&mut self) -> Option<String> {
+        if let Some(managed_input) = &mut self.managed_input {
+            if let Some(content) = managed_input.recv().await {
+                if let InputEvent::Text(content) = content {
+                    return Some(content);
+                } else {
+                    return None;
+                }
+            }
+        }
+
+        None
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
