@@ -518,7 +518,9 @@ fn fallback<'a, 'b>(
         let fallback = any.parse_next(i)?;
         if let Some(width) = fallback.width() {
             queue_newline_or_advance(&mut o, state, width)?;
-            if fallback != ' ' || state.column != 1 {
+            // When markdown is disabled, preserve all characters including leading spaces
+            // to maintain proper indentation in code blocks
+            if state.markdown_disabled.unwrap_or(false) || fallback != ' ' || state.column != 1 {
                 queue(&mut o, style::Print(fallback))?;
             }
         }
@@ -658,12 +660,12 @@ mod tests {
     use super::*;
 
     macro_rules! validate {
-        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?], $markdown_enabled:expr) => {
+        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?], $markdown_enabled:expr, $trim_result:expr) => {
             #[test]
             fn $test() -> eyre::Result<()> {
                 use crossterm::ExecutableCommand;
 
-                let mut input = $input.trim().to_owned();
+                let mut input = $input.to_owned();
                 input.push(' ');
                 input.push(' ');
 
@@ -693,14 +695,22 @@ mod tests {
                 $(wresult.execute($commands)?;)+
                 let wresult = String::from_utf8(wresult)?;
 
-                assert_eq!(presult.trim(), wresult);
+                if $trim_result {
+                    assert_eq!(presult.trim(), wresult);
+                } else {
+                    assert_eq!(presult, wresult);
+                }
 
                 Ok(())
             }
         };
 
+        ($test:ident, $input:literal, [$($commands:expr),+ $(,)?], $markdown_enabled:expr) => {
+            validate!($test, $input, [$($commands),+], $markdown_enabled, true);
+        };
+
         ($test:ident, $input:literal, [$($commands:expr),+ $(,)?]) => {
-            validate!($test, $input, [$($commands),+], false);
+            validate!($test, $input, [$($commands),+], false, true);
         };
     }
 
@@ -823,5 +833,12 @@ mod tests {
         "+ % @ . ?",
         [style::Print("+ % @ . ?")],
         true
+    );
+    validate!(
+        markdown_disabled_indentation_preserved,
+        "    if n <= 1:",
+        [style::Print("    if n <= 1:  ")],
+        true,
+        false
     );
 }
