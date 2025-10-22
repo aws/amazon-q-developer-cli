@@ -167,7 +167,7 @@ fn complete_command(commands: Vec<&str>, word: &str, start: usize) -> (usize, Ve
         commands
             .iter()
             .filter(|p| p.starts_with(word))
-            .map(|s| s.to_string())
+            .map(|s| (*s).to_string())
             .collect(),
     )
 }
