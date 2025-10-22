@@ -34,6 +34,72 @@ impl LspCodingService {
     pub fn new(workspace_service: Box<dyn WorkspaceService>) -> Self {
         Self { workspace_service }
     }
+
+    /// Send proper LSP notifications for file changes
+    async fn notify_file_changes(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        workspace_edit: &WorkspaceEdit,
+    ) -> Result<()> {
+        use lsp_types::{DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, TextDocumentContentChangeEvent};
+        use std::collections::HashSet;
+
+        let mut changed_files = HashSet::new();
+
+        // Collect unique files from changes field
+        if let Some(changes) = &workspace_edit.changes {
+            for uri in changes.keys() {
+                if let Ok(file_path) = uri.to_file_path() {
+                    // Only notify for files that are actually opened in LSP
+                    if workspace_manager.is_file_opened(&file_path) {
+                        changed_files.insert((uri.clone(), file_path));
+                    }
+                }
+            }
+        }
+
+        // Collect unique files from document_changes field
+        if let Some(document_changes) = &workspace_edit.document_changes {
+            if let lsp_types::DocumentChanges::Edits(edits) = document_changes {
+                for edit in edits {
+                    if let Ok(file_path) = edit.text_document.uri.to_file_path() {
+                        // Only notify for files that are actually opened in LSP
+                        if workspace_manager.is_file_opened(&file_path) {
+                            changed_files.insert((edit.text_document.uri.clone(), file_path));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Send didChange with full content for each opened file
+        for (uri, file_path) in changed_files {
+            // Get next version number first
+            let version = workspace_manager.get_next_version(&file_path);
+            
+            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&file_path).await {
+                // Read current file content
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    let params = DidChangeTextDocumentParams {
+                        text_document: VersionedTextDocumentIdentifier {
+                            uri: uri.clone(),
+                            version,
+                        },
+                        content_changes: vec![TextDocumentContentChangeEvent {
+                            range: None, // Full document update (safer)
+                            range_length: None,
+                            text: content,
+                        }],
+                    };
+                    
+                    tracing::trace!("Sending didChange for opened file: {:?}, version: {}", file_path, version);
+                    let _ = client.did_change(params).await;
+                }
+            }
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -107,6 +173,10 @@ impl CodingService for LspCodingService {
                 use crate::utils::apply_workspace_edit;
                 if let Err(e) = apply_workspace_edit(workspace_edit) {
                     tracing::trace!("Failed to apply workspace edit: {}", e);
+                } else {
+                    // Send workspace change notifications. 
+                    // TODO: This needs to be improved to have a propper fileWatcher for the repository.
+                    self.notify_file_changes(workspace_manager, workspace_edit).await?;
                 }
             }
         } else {

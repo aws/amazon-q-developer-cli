@@ -2,10 +2,17 @@ use crate::config::ConfigManager;
 use crate::lsp::LspRegistry;
 use crate::model::types::{LspInfo, WorkspaceInfo};
 use anyhow::Result;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::warn;
 use url::Url;
+
+/// Tracks file state in LSP servers
+#[derive(Debug, Clone)]
+pub struct FileState {
+    pub version: i32,
+    pub is_open: bool,
+}
 
 /// Manages workspace detection and LSP client lifecycle
 #[derive(Debug)]
@@ -13,7 +20,7 @@ pub struct WorkspaceManager {
     workspace_root: PathBuf,
     registry: LspRegistry,
     initialized: bool,
-    opened_files: HashSet<PathBuf>,
+    opened_files: HashMap<PathBuf, FileState>, // Track version and open state
     workspace_info: Option<WorkspaceInfo>,
 }
 
@@ -34,7 +41,7 @@ impl WorkspaceManager {
             workspace_root: resolved_root,
             registry,
             initialized: false,
-            opened_files: HashSet::new(),
+            opened_files: HashMap::new(),
             workspace_info: None,
         }
     }
@@ -285,12 +292,38 @@ impl WorkspaceManager {
 
     /// Check if a file is already opened
     pub fn is_file_opened(&self, file_path: &Path) -> bool {
-        self.opened_files.contains(file_path)
+        self.opened_files.get(file_path).map_or(false, |state| state.is_open)
     }
 
-    /// Mark a file as opened
+    /// Mark a file as opened with initial version
     pub fn mark_file_opened(&mut self, file_path: PathBuf) {
-        self.opened_files.insert(file_path);
+        self.opened_files.insert(file_path, FileState {
+            version: 1,
+            is_open: true,
+        });
+    }
+
+    /// Get next version for file and increment it
+    pub fn get_next_version(&mut self, file_path: &Path) -> i32 {
+        if let Some(state) = self.opened_files.get_mut(file_path) {
+            state.version += 1;
+            state.version
+        } else {
+            // File not tracked, start at version 1
+            self.opened_files.insert(file_path.to_path_buf(), FileState {
+                version: 1,
+                is_open: true,
+            });
+            1
+        }
+    }
+
+    /// Mark file as closed
+    pub fn mark_file_closed(&mut self, file_path: &Path) {
+        if let Some(state) = self.opened_files.get_mut(file_path) {
+            state.is_open = false;
+            state.version = 0;
+        }
     }
 
     /// Get detected workspace languages (cached)

@@ -194,6 +194,24 @@ impl LspClient {
             .await
     }
 
+    /// Notify server about file system changes
+    ///
+    /// # Arguments
+    /// * `params` - File change events
+    pub async fn did_change_watched_files(&self, params: DidChangeWatchedFilesParams) -> Result<()> {
+        self.send_notification("workspace/didChangeWatchedFiles", json!(params))
+            .await
+    }
+
+    /// Notify server about document content changes
+    ///
+    /// # Arguments
+    /// * `params` - Document change parameters
+    pub async fn did_change(&self, params: DidChangeTextDocumentParams) -> Result<()> {
+        self.send_notification("textDocument/didChange", json!(params))
+            .await
+    }
+
     /// Generic LSP request handler with automatic response parsing
     async fn send_lsp_request<T, R>(&self, method: &str, params: T) -> Result<Option<R>>
     where

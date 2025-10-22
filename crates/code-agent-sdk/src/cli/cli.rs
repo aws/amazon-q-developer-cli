@@ -36,7 +36,7 @@ enum Commands {
         #[arg(short, long, conflicts_with_all = ["file", "line", "column"])]
         name: Option<String>,
         /// File containing the symbol (for position-based search)
-        #[arg(short, long, requires_all = ["line", "column"])]
+        #[arg(short, long, requires_ifs = [("line", "column"), ("column", "line")])]
         file: Option<PathBuf>,
         /// Row number (1-based)
         #[arg(short, long)]

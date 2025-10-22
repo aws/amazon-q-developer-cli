@@ -53,7 +53,7 @@ impl LspConfig {
                     }),
                     diagnostic: Some(DiagnosticClientCapabilities {
                         dynamic_registration: Some(true),
-                        related_document_support: Some(false),
+                        related_document_support: Some(true),
                     }),
                     ..Default::default()
                 }),
@@ -69,6 +69,10 @@ impl LspConfig {
                     workspace_folders: Some(true),
                     diagnostic: Some(DiagnosticWorkspaceClientCapabilities {
                         refresh_support: Some(true),
+                    }),
+                    did_change_watched_files: Some(DidChangeWatchedFilesClientCapabilities {
+                        dynamic_registration: Some(true),
+                        relative_pattern_support: Some(true),
                     }),
                     ..Default::default()
                 }),
