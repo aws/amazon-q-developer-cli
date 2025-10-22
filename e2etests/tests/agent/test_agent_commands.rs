@@ -532,3 +532,30 @@ fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 
 }
+
+// Tests the /agent swap command to swap the agents
+// Verifies agent swap process and response validation
+#[test]
+#[cfg(all(feature = "agent", feature = "sanity"))]
+fn test_agent_swap_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing /agent swap command... | Description: Tests the <code> /agent swap</code>command.");
+
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+
+    // Start the command and wait for name prompt
+    let _response1 = chat.execute_command("/agent swap")?;
+    println!("📝 Agent swap response: {} bytes", _response1.len());
+    println!("📝 Full output: {}", _response1);
+    println!("📝 End output");
+    let _response2 = chat.execute_command("1")?;
+    println!("📝 Agent swap response: {} bytes", _response2.len());
+    println!("📝 Agent swap response Full output : {}", _response2);
+
+    assert!(
+        _response2.contains("✓") || _response2.contains("Choose one of the following agents"),
+        "Expected agent swap confirmation"
+    );
+    drop(chat);
+    Ok(())
+}
