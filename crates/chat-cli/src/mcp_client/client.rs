@@ -427,11 +427,14 @@ impl McpClientService {
                 let expanded_cmd = shellexpand::full_with_context(command_as_str, home_dir, context)?;
 
                 let command = Command::new(expanded_cmd.as_ref() as &str).configure(|cmd| {
+                    // Set process environment variables first
+                    cmd.envs(std::env::vars()).args(args);
+
+                    // Then override with custom environment variables from config
                     if let Some(envs) = config_envs {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
                     }
-                    cmd.envs(std::env::vars()).args(args);
 
                     #[cfg(not(windows))]
                     cmd.process_group(0);
