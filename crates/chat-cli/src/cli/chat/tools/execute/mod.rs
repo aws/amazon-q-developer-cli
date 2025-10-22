@@ -624,12 +624,13 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_denied_commands_invalid_regex() {
         let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
-                    ToolSettingTarget("execute_bash".to_string()),
+                    ToolSettingTarget(tool_name.to_string()),
                     serde_json::json!({
                         "deniedCommands": ["^(?!ls$).*"]  // Invalid regex with unsupported lookahead
                     }),
