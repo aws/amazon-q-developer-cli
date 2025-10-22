@@ -1331,10 +1331,17 @@ impl PromptsSubcommand {
             // Handle local prompt
             session.pending_prompts.clear();
 
+            // Apply argument substitution if arguments are provided
+            let final_content = if let Some(ref args) = arguments {
+                substitute_arguments(&content, args)
+            } else {
+                content.clone()
+            };
+
             // Create a PromptMessage from the local prompt content
             let prompt_message = PromptMessage {
                 role: PromptMessageRole::User,
-                content: PromptMessageContent::Text { text: content.clone() },
+                content: PromptMessageContent::Text { text: final_content },
             };
             session.pending_prompts.push_back(prompt_message);
 
@@ -2045,6 +2052,37 @@ fn display_file_prompt_content(_prompt_name: &str, content: &str, session: &mut 
     Ok(())
 }
 
+/// Substitute argument placeholders in prompt content
+fn substitute_arguments(content: &str, args: &[String]) -> String {
+    let mut result = content.to_string();
+
+    // Handle escaped dollar signs first by temporarily replacing them
+    result = result.replace("$$", "\x00ESCAPED_DOLLAR\x00");
+
+    // Handle $ARGUMENTS
+    let all_args = args.join(" ");
+    result = result.replace("$ARGUMENTS", &all_args);
+
+    // Handle positional arguments $1, $2, $3, etc.
+    for (i, arg) in args.iter().enumerate() {
+        let placeholder = format!("${}", i + 1);
+        result = result.replace(&placeholder, arg);
+    }
+
+    // Handle missing positional arguments (replace with empty string)
+    let mut pos = args.len() + 1;
+    while result.contains(&format!("${}", pos)) {
+        let placeholder = format!("${}", pos);
+        result = result.replace(&placeholder, "");
+        pos += 1;
+    }
+
+    // Restore escaped dollar signs
+    result = result.replace("\x00ESCAPED_DOLLAR\x00", "$");
+
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use std::fs;
@@ -2531,5 +2569,53 @@ mod tests {
             unqualified_name
         };
         assert_eq!(actual_prompt_name, "my_prompt");
+    }
+
+    #[test]
+    fn test_substitute_arguments_basic() {
+        let content = "Create a $1 function that $2";
+        let args = vec!["Python".to_string(), "calculates sum".to_string()];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "Create a Python function that calculates sum");
+    }
+
+    #[test]
+    fn test_substitute_arguments_all() {
+        let content = "Context: $ARGUMENTS";
+        let args = vec!["arg1".to_string(), "arg2".to_string(), "arg3".to_string()];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "Context: arg1 arg2 arg3");
+    }
+
+    #[test]
+    fn test_substitute_arguments_missing() {
+        let content = "Create $1 and $2 and $3";
+        let args = vec!["first".to_string()];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "Create first and  and ");
+    }
+
+    #[test]
+    fn test_substitute_arguments_no_placeholders() {
+        let content = "This has no placeholders";
+        let args = vec!["arg1".to_string()];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "This has no placeholders");
+    }
+
+    #[test]
+    fn test_substitute_arguments_empty_args() {
+        let content = "Create $1 with $ARGUMENTS";
+        let args: Vec<String> = vec![];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "Create  with ");
+    }
+
+    #[test]
+    fn test_substitute_arguments_escaped_dollar() {
+        let content = "Price is $$1 and name is $1";
+        let args = vec!["test".to_string()];
+        let result = substitute_arguments(content, &args);
+        assert_eq!(result, "Price is $1 and name is test");
     }
 }
