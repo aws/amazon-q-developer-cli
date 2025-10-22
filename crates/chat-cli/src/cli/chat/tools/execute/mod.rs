@@ -288,7 +288,10 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::cli::agent::{Agent, ToolSettingTarget};
+    use crate::cli::agent::{
+        Agent,
+        ToolSettingTarget,
+    };
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -620,7 +623,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_denied_commands_invalid_regex() {
-
         let os = Os::new().await.unwrap();
         let agent = Agent {
             name: "test_agent".to_string(),
@@ -640,7 +642,11 @@ mod tests {
         // Test command that should be denied by the pattern
         let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd",})).unwrap();
         let res = pwd_cmd.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(_)), "Invalid regex should deny all commands, got {:?}", res);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "Invalid regex should deny all commands, got {:?}",
+            res
+        );
     }
 
     #[tokio::test]
