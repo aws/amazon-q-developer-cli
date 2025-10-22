@@ -46,15 +46,21 @@ const USER_AGENT: &str = "Kiro-CLI";
 struct AuthPortalCallback {
     login_option: String,
     code: Option<String>,
-    issuer_uri: Option<String>,
+    issuer_url: Option<String>,
     sso_region: Option<String>,
     state: String,
     path: String,
 }
 
 pub enum PortalResult {
+    /// User authenticated with social provider (Google/GitHub)
     Social(SocialProvider),
-    Internal { issuer_uri: String, idc_region: String },
+    /// User selected BuilderID authentication
+    BuilderId { issuer_url: String, idc_region: String },
+    /// User selected AWS Identity Center authentication
+    AwsIdc { issuer_url: String, idc_region: String },
+    /// User selected internal authentication (Amazon-only)
+    Internal { issuer_url: String, idc_region: String },
 }
 
 /// Local-only: open unified portal and handle single callback
@@ -119,15 +125,41 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
             Ok(PortalResult::Social(provider))
         },
         "internal" => {
-            let issuer_uri = callback
-                .issuer_uri
-                .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_uri for internal auth".into()))?;
+            let issuer_url = callback
+                .issuer_url
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_url for internal auth".into()))?;
             let sso_region = callback
                 .sso_region
                 .ok_or_else(|| AuthError::OAuthCustomError("Missing sso_region for internal auth".into()))?;
-            // DO NOT register here. Let caller run start_pkce_authorization(issuer_uri, sso_region).
+            // DO NOT register here. Let caller run start_pkce_authorization(issuer_url, sso_region).
             Ok(PortalResult::Internal {
-                issuer_uri,
+                issuer_url,
+                idc_region: sso_region,
+            })
+        },
+        "awsidc" => {
+            let issuer_url: String = callback
+                .issuer_url
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_url for awsIdc auth".into()))?;
+            let sso_region = callback
+                .sso_region
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing sso_region for awsIdc auth".into()))?;
+            // DO NOT register here. Let caller run start_pkce_authorization(issuer_url, sso_region).
+            Ok(PortalResult::AwsIdc {
+                issuer_url,
+                idc_region: sso_region,
+            })
+        },
+        "builderid" => {
+            let issuer_url = callback
+                .issuer_url
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing issuer_url for builderId auth".into()))?;
+            let sso_region = callback
+                .sso_region
+                .ok_or_else(|| AuthError::OAuthCustomError("Missing sso_region for builderId auth".into()))?;
+            // DO NOT register here. Let caller run start_pkce_authorization(issuer_url, sso_region).
+            Ok(PortalResult::BuilderId {
+                issuer_url,
                 idc_region: sso_region,
             })
         },
@@ -201,7 +233,7 @@ impl Service<Request<Incoming>> for AuthCallbackService {
                 let callback = AuthPortalCallback {
                     login_option: query_params.get("login_option").cloned().unwrap_or_default(),
                     code: query_params.get("code").cloned(),
-                    issuer_uri: query_params.get("issuer_uri").cloned(),
+                    issuer_url: query_params.get("issuer_url").cloned(),
                     sso_region: query_params.get("idc_region").cloned(),
                     state: query_params.get("state").cloned().unwrap_or_default(),
                     path: path.to_string(),
@@ -210,7 +242,7 @@ impl Service<Request<Incoming>> for AuthCallbackService {
                 debug!(
                     login_option=%callback.login_option,
                     code_present=%callback.code.is_some(),
-                    issuer_uri=?callback.issuer_uri,
+                    issuer_url=?callback.issuer_url,
                     state=%callback.state,
                     "Parsed portal callback query"
                 );

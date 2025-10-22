@@ -319,14 +319,6 @@ impl PkceRegistration {
             None => Err(AuthError::OAuthMissingCode),
         }
     }
-
-    pub fn issuer_url(&self) -> &str {
-        &self.issuer_url
-    }
-
-    pub fn region(&self) -> &Region {
-        &self.region
-    }
 }
 
 type CodeSender = std::sync::Arc<tokio::sync::mpsc::Sender<Result<(String, String), AuthError>>>;

@@ -106,45 +106,27 @@ impl LoginArgs {
             match start_unified_auth(&mut os.database).await? {
                 PortalResult::Social(provider) => {
                     pre_portal_spinner.stop_with_message(format!("Logged in with {}", provider));
-                    os.telemetry.send_user_logged_in(None, None, Some(provider)).ok();
+                    os.telemetry.send_user_logged_in().ok();
                     return Ok(ExitCode::SUCCESS);
                 },
-                PortalResult::Internal { issuer_uri, idc_region } => {
-                    pre_portal_spinner.stop();
-                    // EXACTLY same with original PKCE path: this registers client + completes auth.
-                    let (client, registration) =
-                        start_pkce_authorization(Some(issuer_uri.clone()), Some(idc_region.clone())).await?;
+                PortalResult::BuilderId { issuer_url, idc_region } => {
+                    pre_portal_spinner.stop_with_message("".into());
+                    info!("Completing BuilderID authentication");
+                    complete_sso_auth(os, issuer_url, idc_region, false).await?;
+                },
+                PortalResult::AwsIdc { issuer_url, idc_region } => {
+                    pre_portal_spinner.stop_with_message("".into());
+                    info!("Completing AWS Identity Center authentication");
+                    // Save IdC credentials for future use
+                    let _ = os.database.set_start_url(issuer_url.clone());
+                    let _ = os.database.set_idc_region(idc_region.clone());
 
-                    match crate::util::open::open_url_async(&registration.url).await {
-                        // If it succeeded, finish PKCE.
-                        Ok(()) => {
-                            let mut spinner = Spinner::new(vec![
-                                SpinnerComponent::Spinner,
-                                SpinnerComponent::Text(" Logging in...".into()),
-                            ]);
-                            let issuer_url = registration.issuer_url().to_string();
-                            let region = registration.region().to_string();
-                            let ctrl_c_stream = ctrl_c();
-                            tokio::select! {
-                                res = registration.finish(&client, Some(&mut os.database)) => res?,
-                                Ok(_) = ctrl_c_stream => {
-                                    #[allow(clippy::exit)]
-                                    exit(1);
-                                },
-                            }
-                            os.telemetry
-                                .send_user_logged_in(Some(issuer_url), Some(region), None)
-                                .ok();
-                            spinner.stop_with_message("Logged in".into());
-                        },
-                        // If we are unable to open the link with the browser, then fallback to
-                        // the device code flow.
-                        Err(err) => {
-                            // Try device code flow.
-                            error!(%err, "Failed to open URL with browser, falling back to device code flow");
-                            try_device_authorization(os, Some(issuer_uri.clone()), Some(idc_region.clone())).await?;
-                        },
-                    }
+                    complete_sso_auth(os, issuer_url, idc_region, true).await?;
+                },
+                PortalResult::Internal { issuer_url, idc_region } => {
+                    pre_portal_spinner.stop_with_message("".into());
+                    info!("Completing internal authentication");
+                    complete_sso_auth(os, issuer_url, idc_region, true).await?;
                 },
             }
         } else {
@@ -202,6 +184,7 @@ impl LoginArgs {
 
                             (Some(start_url), Some(region))
                         },
+                        AuthMethod::Social(_) => unreachable!(),
                     };
 
                     // Remote machine won't be able to handle browser opening and redirects,
@@ -212,11 +195,58 @@ impl LoginArgs {
                         select_profile_interactive(os, true).await?;
                     }
                 },
+                AuthMethod::Social(_) => unreachable!(),
             }
         }
 
         Ok(ExitCode::SUCCESS)
     }
+}
+
+/// Complete SSO authentication (BuilderID, IdC, or Internal) after portal selection
+///
+/// # Arguments
+/// * `requires_profile` - Whether to prompt for profile selection after login (IdC only)
+async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, requires_profile: bool) -> Result<()> {
+    let (client, registration) = start_pkce_authorization(Some(issuer_url.clone()), Some(idc_region.clone())).await?;
+
+    match crate::util::open::open_url_async(&registration.url).await {
+        Ok(()) => {
+            // Browser opened successfully, wait for PKCE flow to complete
+            let mut spinner = Spinner::new(vec![
+                SpinnerComponent::Spinner,
+                SpinnerComponent::Text(" Logging in...".into()),
+            ]);
+
+            let ctrl_c_stream = ctrl_c();
+            tokio::select! {
+                res = registration.finish(&client, Some(&mut os.database)) => res?,
+                Ok(_) = ctrl_c_stream => {
+                    #[allow(clippy::exit)]
+                    exit(1);
+                },
+            }
+
+            os.telemetry.send_user_logged_in().ok();
+            spinner.stop_with_message("Logged in".into());
+
+            // Prompt for profile selection if needed (IdC only)
+            if requires_profile {
+                select_profile_interactive(os, true).await?;
+            }
+        },
+        Err(err) => {
+            // Failed to open browser, fallback to device code flow
+            error!(%err, "Failed to open URL, falling back to device code flow");
+            try_device_authorization(os, Some(issuer_url), Some(idc_region)).await?;
+
+            if requires_profile {
+                select_profile_interactive(os, true).await?;
+            }
+        },
+    }
+
+    Ok(())
 }
 
 pub async fn logout(os: &mut Os) -> Result<ExitCode> {
@@ -301,7 +331,7 @@ impl WhoamiArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum LicenseType {
-    /// Free license (Builder ID)
+    /// Free license with Builder ID
     Free,
     /// Pro license with Identity Center
     Pro,
@@ -325,6 +355,9 @@ enum AuthMethod {
     BuilderId,
     /// IdC (enterprise)
     IdentityCenter,
+    /// Social login
+    #[allow(dead_code)]
+    Social(SocialProvider),
 }
 
 impl Display for AuthMethod {
@@ -332,6 +365,8 @@ impl Display for AuthMethod {
         match self {
             AuthMethod::BuilderId => write!(f, "Use for Free with Builder ID"),
             AuthMethod::IdentityCenter => write!(f, "Use with Pro license"),
+            AuthMethod::Social(SocialProvider::Google) => write!(f, "Use with Google"),
+            AuthMethod::Social(SocialProvider::Github) => write!(f, "Use with GitHub"),
         }
     }
 }
@@ -382,7 +417,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                os.telemetry.send_user_logged_in(start_url, region, None).ok();
+                os.telemetry.send_user_logged_in().ok();
                 spinner.stop_with_message("Logged in".into());
                 break;
             },
