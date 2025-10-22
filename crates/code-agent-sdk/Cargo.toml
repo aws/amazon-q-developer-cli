@@ -16,6 +16,7 @@ uuid.workspace = true
 futures.workspace = true
 async-trait.workspace = true
 tracing.workspace = true
+tracing-subscriber.workspace = true
 clap.workspace = true
 rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
 
