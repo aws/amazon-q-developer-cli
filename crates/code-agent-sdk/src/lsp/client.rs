@@ -155,7 +155,10 @@ impl LspClient {
     /// # Returns
     /// * `Result<Option<WorkspaceEdit>>` - Workspace changes or None
     pub async fn rename(&self, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
-        self.send_lsp_request("textDocument/rename", params).await
+        tracing::trace!("LSP rename request: method=textDocument/rename, params={:?}", params);
+        let result = self.send_lsp_request("textDocument/rename", params).await;
+        tracing::trace!("LSP rename response: {:?}", result);
+        result
     }
 
     /// Format a document
@@ -197,18 +200,27 @@ impl LspClient {
         T: serde::Serialize,
         R: serde::de::DeserializeOwned,
     {
+        tracing::trace!("Sending LSP request: method={}, params={:?}", method, serde_json::to_value(&params)?);
+        
         let (tx, rx) = oneshot::channel();
 
         self.send_request(method, json!(params), move |result| {
+            tracing::trace!("LSP request callback received result: {:?}", result);
             let _ = tx.send(result);
         })
         .await?;
 
+        tracing::trace!("Waiting for LSP response...");
         let result = rx.await??;
+        tracing::trace!("Raw LSP response: {:?}", result);
+        
         if result.is_null() {
+            tracing::trace!("LSP response is null, returning None");
             Ok(None)
         } else {
-            Ok(Some(serde_json::from_value(result)?))
+            let parsed: R = serde_json::from_value(result)?;
+            tracing::trace!("Successfully parsed LSP response");
+            Ok(Some(parsed))
         }
     }
 

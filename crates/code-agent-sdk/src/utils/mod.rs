@@ -6,6 +6,7 @@
 pub mod file;
 pub mod fuzzy_search;
 pub mod position;
+pub mod logging;
 
 // Re-export commonly used functions for convenience
 pub use file::{apply_text_edits, apply_workspace_edit, canonicalize_path, ensure_absolute_path};

@@ -57,47 +57,60 @@ impl CodingService for LspCodingService {
         workspace_manager: &mut WorkspaceManager,
         request: RenameSymbolRequest,
     ) -> Result<Option<WorkspaceEdit>> {
+        tracing::trace!("Starting rename_symbol: file={:?}, row={}, col={}, new_name={}", 
+            request.file_path, request.row, request.column, request.new_name);
+
         // Ensure initialized
         if !workspace_manager.is_initialized() {
+            tracing::trace!("Workspace not initialized, initializing...");
             workspace_manager.initialize().await?;
         }
 
         let canonical_path = canonicalize_path(&request.file_path)?;
+        tracing::trace!("Canonical path: {:?}", canonical_path);
+        
         let content = std::fs::read_to_string(&canonical_path)?;
+        tracing::trace!("File content length: {} bytes", content.len());
+        
         self.workspace_service
             .open_file(workspace_manager, &canonical_path, content)
             .await?;
+        tracing::trace!("File opened in workspace");
 
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
             .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+        tracing::trace!("Got LSP client for file");
 
         let uri = Url::from_file_path(&canonical_path)
             .map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        tracing::trace!("File URI: {}", uri);
 
         let params = RenameParams {
             text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri },
-                position: Position {
-                    line: request.row,
-                    character: request.column,
-                },
+                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                position: crate::utils::position::to_lsp_position(request.row, request.column),
             },
             new_name: request.new_name.clone(),
             work_done_progress_params: Default::default(),
         };
+        tracing::trace!("Sending rename request to LSP: {:?}", params);
 
         let result = client.rename(params).await;
+        tracing::trace!("LSP rename result: {:?}", result);
 
         // Apply edits if not dry_run
         if !request.dry_run {
             if let Ok(Some(ref workspace_edit)) = result {
+                tracing::trace!("Applying workspace edit (not dry-run)");
                 use crate::utils::apply_workspace_edit;
                 if let Err(e) = apply_workspace_edit(workspace_edit) {
                     tracing::trace!("Failed to apply workspace edit: {}", e);
                 }
             }
+        } else {
+            tracing::trace!("Dry-run mode, not applying edits");
         }
 
         result

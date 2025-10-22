@@ -27,10 +27,29 @@ pub struct RenameResult {
 impl RenameResult {
     /// Create from LSP WorkspaceEdit
     pub fn from_lsp_workspace_edit(edit: &lsp_types::WorkspaceEdit) -> Self {
-        let file_count = edit.changes.as_ref().map(|c| c.len()).unwrap_or(0);
-        let edit_count = edit.changes.as_ref()
-            .map(|changes| changes.values().map(|edits| edits.len()).sum())
-            .unwrap_or(0);
+        let mut file_count = 0;
+        let mut edit_count = 0;
+        
+        // Handle changes field
+        if let Some(changes) = &edit.changes {
+            file_count += changes.len();
+            edit_count += changes.values().map(|edits| edits.len()).sum::<usize>();
+        }
+        
+        // Handle document_changes field
+        if let Some(document_changes) = &edit.document_changes {
+            match document_changes {
+                lsp_types::DocumentChanges::Edits(edits) => {
+                    file_count += edits.len();
+                    edit_count += edits.iter().map(|edit| edit.edits.len()).sum::<usize>();
+                }
+                lsp_types::DocumentChanges::Operations(_) => {
+                    // Operations like create/rename/delete files
+                    file_count += 1;
+                    edit_count += 1;
+                }
+            }
+        }
         
         Self { file_count, edit_count }
     }

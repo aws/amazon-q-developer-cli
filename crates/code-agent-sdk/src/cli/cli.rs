@@ -2,9 +2,10 @@ use clap::{Parser, Subcommand};
 use code_agent_sdk::{
     CodeIntelligence, FindReferencesByLocationRequest, FindReferencesByNameRequest,
     FindSymbolsRequest, GetDocumentSymbolsRequest, GotoDefinitionRequest,
-    RenameSymbolRequest, FormatCodeRequest,
+    RenameSymbolRequest, FormatCodeRequest, OpenFileRequest,
 };
 use code_agent_sdk::model::types::ApiSymbolKind;
+use code_agent_sdk::utils::logging;
 use std::path::PathBuf;
 use std::str::FromStr;
 
@@ -92,6 +93,13 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Initialize file logging for debugging
+    if let Err(e) = logging::init_file_logging() {
+        eprintln!("Warning: Failed to initialize logging: {}", e);
+    } else {
+        println!("📝 Logging enabled to code_intelligence.log");
+    }
+
     let cli = Cli::parse();
 
     // Auto-detect workspace and initialize
@@ -245,6 +253,17 @@ async fn main() -> anyhow::Result<()> {
             new_name,
             dry_run,
         } => {
+            // Open the file first to ensure LSP server processes it
+            let content = std::fs::read_to_string(&file)?;
+            code_intel.open_file(OpenFileRequest {
+                file_path: file.clone(),
+                content,
+            }).await?;
+            
+            // Wait for LSP server to process the file
+            println!("⏳ Waiting for LSP server to process file...");
+            tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+            
             let request = RenameSymbolRequest {
                 file_path: file.clone(),
                 row,
