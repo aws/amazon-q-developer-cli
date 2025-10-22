@@ -195,6 +195,8 @@ impl ExecuteCommand {
             allowed_commands: Vec<String>,
             #[serde(default)]
             denied_commands: Vec<String>,
+            #[serde(default)]
+            deny_by_default: bool,
             #[serde(default = "default_allow_read_only")]
             auto_allow_readonly: bool,
         }
@@ -211,6 +213,7 @@ impl ExecuteCommand {
                 let Settings {
                     allowed_commands,
                     denied_commands,
+                    deny_by_default,
                     auto_allow_readonly,
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
@@ -222,7 +225,14 @@ impl ExecuteCommand {
 
                 let denied_match_set = denied_commands
                     .iter()
-                    .filter_map(|dc| Regex::new(&format!(r"\A{dc}\z")).ok())
+                    .filter_map(|dc| match Regex::new(&format!(r"\A{dc}\z")) {
+                        Ok(regex) => Some(regex),
+                        Err(e) => {
+                            error!("Invalid regex pattern '{}' in deniedCommands: {:?}. Treating as deny-all for security.", dc, e);
+                            // Invalid regex - treat as "deny all" for security
+                            Regex::new(r"\A.*\z").ok()
+                        }
+                    })
                     .filter(|r| r.is_match(command))
                     .map(|r| r.to_string())
                     .collect::<Vec<_>>();
@@ -234,7 +244,11 @@ impl ExecuteCommand {
                 if is_in_allowlist {
                     PermissionEvalResult::Allow
                 } else if self.requires_acceptance(Some(&allowed_commands), auto_allow_readonly) {
-                    PermissionEvalResult::Ask
+                    if deny_by_default {
+                        PermissionEvalResult::Deny(vec!["not in allowed commands list".to_string()])
+                    } else {
+                        PermissionEvalResult::Ask
+                    }
                 } else {
                     PermissionEvalResult::Allow
                 }
@@ -273,7 +287,10 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::cli::agent::ToolSettingTarget;
+    use crate::cli::agent::{
+        Agent,
+        ToolSettingTarget,
+    };
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -519,13 +536,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_enabled() {
-        use std::collections::HashMap;
-
-        use crate::cli::agent::{
-            Agent,
-            ToolSettingTarget,
-        };
-
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
 
@@ -567,13 +577,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_with_denied_commands() {
-        use std::collections::HashMap;
-
-        use crate::cli::agent::{
-            Agent,
-            ToolSettingTarget,
-        };
-
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
 
@@ -614,6 +617,66 @@ mod tests {
         let res = allowed_readonly_cmd.eval_perm(&os, &agent);
         // Should allow read-only commands not in denied list
         assert!(matches!(res, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_denied_commands_invalid_regex() {
+        let os = Os::new().await.unwrap();
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("execute_bash".to_string()),
+                    serde_json::json!({
+                        "deniedCommands": ["^(?!ls$).*"]  // Invalid regex with unsupported lookahead
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test command that should be denied by the pattern
+        let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd",})).unwrap();
+        let res = pwd_cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "Invalid regex should deny all commands, got {:?}",
+            res
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_deny_by_default() {
+        let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "allowedCommands": ["ls"],
+                        "denyByDefault": true
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test allowed command - should be allowed
+        let ls_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "ls",})).unwrap();
+        let res = ls_cmd.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test non-allowed command - should be denied (not asked)
+        let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd"})).unwrap();
+        let res = pwd_cmd.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(_)));
     }
 
     #[tokio::test]
