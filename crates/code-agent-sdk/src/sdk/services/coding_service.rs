@@ -22,7 +22,7 @@ pub trait CodingService: Send + Sync {
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FormatCodeRequest,
-    ) -> Result<Vec<TextEdit>>;
+    ) -> Result<usize>;
 }
 
 /// LSP-based implementation of CodingService
@@ -79,29 +79,35 @@ impl CodingService for LspCodingService {
         let params = RenameParams {
             text_document_position: TextDocumentPositionParams {
                 text_document: TextDocumentIdentifier { uri },
-                position: crate::utils::to_lsp_position(request.row, request.column),
+                position: Position {
+                    line: request.row,
+                    character: request.column,
+                },
             },
             new_name: request.new_name.clone(),
             work_done_progress_params: Default::default(),
         };
 
-        let workspace_edit = client.rename(params).await?;
+        let result = client.rename(params).await;
 
-        // Apply workspace edit using LSP batch operations if not dry-run
-        if let Some(ref edit) = workspace_edit {
-            if !request.dry_run {
-                client.apply_workspace_edit(edit).await?;
+        // Apply edits if not dry_run
+        if !request.dry_run {
+            if let Ok(Some(ref workspace_edit)) = result {
+                use crate::utils::apply_workspace_edit;
+                if let Err(e) = apply_workspace_edit(workspace_edit) {
+                    tracing::trace!("Failed to apply workspace edit: {}", e);
+                }
             }
         }
 
-        Ok(workspace_edit)
+        result
     }
 
     async fn format_code(
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FormatCodeRequest,
-    ) -> Result<Vec<TextEdit>> {
+    ) -> Result<usize> {
         // Ensure initialized
         if !workspace_manager.is_initialized() {
             workspace_manager.initialize().await?;
@@ -125,12 +131,12 @@ impl CodingService for LspCodingService {
                     )
                 })?;
 
-            let uri = Url::from_file_path(&canonical_path).map_err(|_| {
-                anyhow::anyhow!("Invalid file path: {}", canonical_path.display())
-            })?;
-
             let params = DocumentFormattingParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
+                text_document: TextDocumentIdentifier {
+                    uri: Url::from_file_path(&canonical_path).map_err(|_| {
+                        anyhow::anyhow!("Invalid file path: {}", canonical_path.display())
+                    })?,
+                },
                 options: FormattingOptions {
                     tab_size: request.tab_size,
                     insert_spaces: request.insert_spaces,
@@ -147,25 +153,18 @@ impl CodingService for LspCodingService {
                 .await?
                 .unwrap_or_default();
 
-            // Apply formatting edits using LSP batch operations
-            if !edits.is_empty() {
-                let mut changes = std::collections::HashMap::new();
-                changes.insert(uri, edits.clone());
-                
-                let workspace_edit = WorkspaceEdit {
-                    changes: Some(changes),
-                    document_changes: None,
-                    change_annotations: None,
-                };
+            let edit_count = edits.len();
 
-                client.apply_workspace_edit(&workspace_edit).await?;
+            // Apply formatting edits to the actual file
+            if !edits.is_empty() {
+                use crate::utils::apply_text_edits;
+                apply_text_edits(&canonical_path, &edits)?;
             }
 
-            Ok(edits)
+            Ok(edit_count)
         } else {
             // Format workspace - not commonly supported by LSPs
-            // Return empty edits for now
-            Ok(Vec::new())
+            Ok(0)
         }
     }
 }

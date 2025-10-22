@@ -865,8 +865,8 @@ impl CodeIntelligenceServer {
             )
         })?;
 
-        let message = if edits {
-            "Code formatted successfully".to_string()
+        let message = if edits > 0 {
+            format!("Code formatted successfully ({} edits applied)", edits)
         } else {
             "No formatting changes needed".to_string()
         };

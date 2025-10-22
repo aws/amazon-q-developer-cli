@@ -492,12 +492,10 @@ impl CodeIntelligence {
     pub async fn format_code(
         &mut self,
         request: FormatCodeRequest,
-    ) -> Result<bool> {
-        let edits = self.coding_service
+    ) -> Result<usize> {
+        self.coding_service
             .format_code(&mut self.workspace_manager, request)
-            .await?;
-            
-        Ok(!edits.is_empty())
+            .await
     }
 
     // File operations - delegate to WorkspaceService

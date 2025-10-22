@@ -37,7 +37,6 @@ pub struct SearchSymbolsParams {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct FindReferencesParams {
-    pub symbol_name: String,
     pub file_path: String,
     pub row: i32,
     pub column: i32,
@@ -284,11 +283,11 @@ impl Code {
                             if references.is_empty() {
                                 queue!(
                                     _stdout,
-                                    style::Print("\n🔗 No references found for \""),
+                                    style::Print("\n🔗 No references found at "),
                                     StyledText::warning_fg(),
-                                    style::Print(&params.symbol_name),
+                                    style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
                                     StyledText::reset(),
-                                    style::Print("\"\n"),
+                                    style::Print("\n"),
                                 )?;
                             } else {
                                 queue!(
@@ -297,11 +296,11 @@ impl Code {
                                     StyledText::success_fg(),
                                     style::Print(&references.len().to_string()),
                                     StyledText::reset(),
-                                    style::Print(" reference(s) to \""),
+                                    style::Print(" reference(s) at "),
                                     StyledText::success_fg(),
-                                    style::Print(&params.symbol_name),
+                                    style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
                                     StyledText::reset(),
-                                    style::Print("\":\n"),
+                                    style::Print(":\n"),
                                 )?;
                                 for (i, reference) in references.iter().enumerate() {
                                     queue!(
@@ -500,11 +499,7 @@ impl Code {
             Code::FindReferences(params) => {
                 queue!(
                     output,
-                    style::Print("🔗 Finding references for "),
-                    StyledText::success_fg(),
-                    style::Print(&format!("\"{}\"", params.symbol_name)),
-                    StyledText::reset(),
-                    style::Print(" at "),
+                    style::Print("🔗 Finding references at "),
                     StyledText::info_fg(),
                     style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
                     StyledText::reset(),

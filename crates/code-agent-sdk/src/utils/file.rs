@@ -78,6 +78,7 @@ pub fn apply_workspace_edit(workspace_edit: &WorkspaceEdit) -> Result<()> {
     let mut applied_files = Vec::new();
     let mut failed_files = Vec::new();
 
+    // Handle changes field
     if let Some(changes) = &workspace_edit.changes {
         for (uri, edits) in changes {
             let file_path = Path::new(uri.path());
@@ -101,6 +102,46 @@ pub fn apply_workspace_edit(workspace_edit: &WorkspaceEdit) -> Result<()> {
                 Err(e) => {
                     failed_files.push((file_path.to_path_buf(), e.to_string()));
                 }
+            }
+        }
+    }
+    
+    // Handle document_changes field
+    if let Some(document_changes) = &workspace_edit.document_changes {
+        match document_changes {
+            lsp_types::DocumentChanges::Edits(edits) => {
+                for edit in edits {
+                    let file_path = Path::new(edit.text_document.uri.path());
+                    
+                    // Validate file exists and is writable
+                    if !file_path.exists() {
+                        failed_files.push((file_path.to_path_buf(), "File does not exist".to_string()));
+                        continue;
+                    }
+
+                    if file_path.metadata()?.permissions().readonly() {
+                        failed_files.push((file_path.to_path_buf(), "File is read-only".to_string()));
+                        continue;
+                    }
+
+                    let text_edits: Vec<TextEdit> = edit.edits.iter().map(|e| match e {
+                        lsp_types::OneOf::Left(text_edit) => text_edit.clone(),
+                        lsp_types::OneOf::Right(annotated_edit) => annotated_edit.text_edit.clone(),
+                    }).collect();
+                    
+                    match apply_text_edits(file_path, &text_edits) {
+                        Ok(()) => {
+                            applied_files.push(file_path.to_path_buf());
+                        }
+                        Err(e) => {
+                            failed_files.push((file_path.to_path_buf(), e.to_string()));
+                        }
+                    }
+                }
+            }
+            lsp_types::DocumentChanges::Operations(_) => {
+                // Resource operations not yet supported - log as trace
+                tracing::trace!("Resource operations not yet supported in workspace edit");
             }
         }
     }

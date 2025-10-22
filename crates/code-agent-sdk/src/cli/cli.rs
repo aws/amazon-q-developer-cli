@@ -6,6 +6,7 @@ use code_agent_sdk::{
 };
 use code_agent_sdk::model::types::ApiSymbolKind;
 use std::path::PathBuf;
+use std::str::FromStr;
 
 #[derive(Parser)]
 #[command(name = "code-agent-cli")]
@@ -111,7 +112,7 @@ async fn main() -> anyhow::Result<()> {
             let request = FindSymbolsRequest {
                 symbol_name: name,
                 file_path: file,
-                symbol_type: symbol_type.and_then(|s| ApiSymbolKind::from_str(&s)),
+                symbol_type: symbol_type.and_then(|s| ApiSymbolKind::from_str(&s).ok()),
                 limit: None,        // Use default 20
                 exact_match: false, // Enable fuzzy matching
             };
@@ -288,12 +289,14 @@ async fn main() -> anyhow::Result<()> {
                 insert_spaces,
             };
 
-            let has_changes = code_intel.format_code(request).await?;
+            let edit_count = code_intel.format_code(request).await?;
 
-            if !has_changes {
+            if edit_count == 0 {
                 println!("No formatting changes needed");
             } else {
-                println!("✅ File formatted successfully");
+                // Count unique lines affected by calculating from edit count
+                println!("Applied formatting to {} lines", edit_count);
+                println!("✅ Formatting applied successfully");
             }
         }
 

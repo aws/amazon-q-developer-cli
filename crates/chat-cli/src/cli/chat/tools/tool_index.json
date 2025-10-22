@@ -458,8 +458,7 @@
             "find_references", 
             "goto_definition",
             "rename_symbol",
-            "format_code",
-            "workspace_outline",
+            "format",
             "get_document_symbols",
             "lookup_symbols",
             "initialize_workspace"
@@ -468,7 +467,7 @@
         },
         "symbol_name": {
           "type": "string",
-          "description": "Name of symbol to search for (required for search_symbols and find_references operations)"
+          "description": "Name of symbol to search for (required for search_symbols operation)"
         },
         "file_path": {
           "type": "string", 
