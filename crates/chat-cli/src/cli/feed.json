@@ -13,8 +13,8 @@
     {
       "type": "release",
       "date": "2025-10-23",
-      "version": "1.18.1",
-      "title": "Version 1.18.1",
+      "version": "1.18.2",
+      "title": "Version 1.18.2",
       "changes": [
         {
           "type": "added",
@@ -39,6 +39,18 @@
         {
           "type": "fixed",
           "description": "Issue when resuming previous conversations with `--resume` flag - [#3133](https://github.com/aws/amazon-q-developer-cli/pull/3133)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-13",
+      "version": "1.18.1",
+      "title": "Version 1.18.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor version reporting an old version"
         }
       ]
     },
