@@ -1,13 +1,13 @@
 # Agent Format
 
-The agent configuration file for each agent is a JSON file. The filename (without the `.json` extension) becomes the agent's name. It contains configuration needed to instantiate and run the agent.
+The agent configuration file for each agent is a JSON file. It contains configuration needed to instantiate and run the agent.
 
 > [!TIP]
 > We recommend using the `/agent generate` slash command within your active Q session to intelligently generate your agent configuration with the help of Q.
 
 Every agent configuration file can include the following sections:
 
-- [`name`](#name-field) — The name of the agent (optional, derived from filename if not specified).
+- [`name`](#name-field) — The name of the agent.
 - [`description`](#description-field) — A description of the agent.
 - [`prompt`](#prompt-field) — High-level context for the agent.
 - [`mcpServers`](#mcpservers-field) — The MCP servers the agent has access to.
@@ -228,7 +228,7 @@ Optionally, you can also prefix native tools with the namespace `@builtin`.
     "fs_*",                    // All filesystem tools
     "execute_*",               // All execute tools
     "*_test",                  // Any tool ending in _test
-    @builtin,                // All native tools
+    @builtin,                  // All native tools
     
     // MCP tool wildcards
     "@server/api_*",           // All API tools from server
