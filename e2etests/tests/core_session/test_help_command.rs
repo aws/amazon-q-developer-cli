@@ -15,7 +15,7 @@ fn test_help_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
 
-    let response = chat.execute_command("/help")?;
+    let response = chat.execute_command_with_timeout("/help",Some(100))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -64,7 +64,7 @@ fn test_multiline_command() -> Result<(), Box<dyn std::error::Error>> {
     // Ctrl+J produces ASCII Line Feed (0x0A)
     let ctrl_j = "\x0A";
     let multiline_input = format!("what is aws explain in 100 words.{}what is AI explain in 100 words", ctrl_j);
-    let response = chat.execute_command(&multiline_input)?;
+    let response = chat.execute_command_with_timeout(&multiline_input,Some(1000))?;
 
     println!("📝 Response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -90,7 +90,7 @@ fn test_whoami_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
 
-    let response = chat.execute_command("!whoami")?;
+    let response = chat.execute_command_with_timeout("!whoami",Some(100))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -124,7 +124,7 @@ fn test_ctrls_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ctrl+J produces ASCII Line Feed (0x0A)
     let ctrl_j = "\x13";
-    let response = chat.execute_command(ctrl_j)?;
+    let response = chat.execute_command_with_timeout(ctrl_j,Some(100))?;
     let cleaned_response = clean_terminal_output(&response);
 
     println!("📝 Response: {} bytes", cleaned_response.len());
@@ -139,6 +139,33 @@ fn test_ctrls_command() -> Result<(), Box<dyn std::error::Error>> {
 
     //pressing esc button to close ctrl+s window
     let esc = chat.execute_command("\x1B")?;
+
+    drop(chat);
+    Ok(())
+}
+
+#[test]
+#[cfg(all(feature = "help", feature = "sanity"))]
+fn test_multiline_with_alt_enter_command() -> Result<(), Box<dyn std::error::Error>> {
+    println!("\n🔍 Testing Alt(⌥) + Enter(⏎)  input... | Description: Tests <code>Alt(⌥) + Enter(⏎) </code>for multiline input");
+
+    let session = q_chat_helper::get_chat_session();
+    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    println!("✅ Q Chat session started");
+    let altEnter = "\x1B\x0A";
+    let awsPrompt = "what is AWS explain in 100 words ";
+    let aiPrompt = "what is AI explain in 100 words";
+
+    let combined = format!("{}{}{}", awsPrompt, altEnter,aiPrompt);
+    let response = chat.execute_command_with_timeout(&combined,Some(1000))?;
+    println!("📝 Response: {} bytes", response.len());
+    println!("📝 FULL OUTPUT: {}",response);
+    println!("📝 END");
+
+    assert!(response.contains("AWS"), "Response should contain 'AWS'");
+    assert!(response.contains("AI"), "Response should contain 'AI'");
+    assert!(!response.is_empty(), "Response should not be empty");
+    println!("✅ Alt+Enter multiline input processed successfully");
 
     drop(chat);
     Ok(())

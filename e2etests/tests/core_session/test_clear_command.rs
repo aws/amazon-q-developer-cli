@@ -13,7 +13,7 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Send initial message
     println!("\n🔍 Sending prompt: 'My name is TestUser'");
-    let _initial_response = chat.execute_command("My name is TestUser")?;
+    let _initial_response = chat.execute_command_with_timeout("My name is TestUser",Some(1000))?;
     println!("📝 Initial response: {} bytes", _initial_response.len());
     println!("📝 INITIAL RESPONSE OUTPUT:");
     println!("{}", _initial_response);
@@ -21,13 +21,13 @@ fn test_clear_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Execute clear command
     println!("\n🔍 Executing command: '/clear'");
-    let _clear_response = chat.execute_command("/clear")?;
+    let _clear_response = chat.execute_command_with_timeout("/clear",Some(1000))?;
 
     println!("✅ Clear command executed");
     
     // Check if AI remembers previous conversation
     println!("\n🔍 Sending prompt: 'What is my name?'");
-    let test_response = chat.execute_command("What is my name?")?;
+    let test_response = chat.execute_command_with_timeout("What is my name?",Some(1000))?;
     println!("📝 Test response: {} bytes", test_response.len());
     println!("📝 TEST RESPONSE OUTPUT:");
     println!("{}", test_response);
