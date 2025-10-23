@@ -1943,7 +1943,6 @@ impl ChatSession {
         }
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
-        let prompt = self.generate_tool_trust_prompt(os).await;
         let user_input = if self.managed_input.is_some() {
             self.stderr.send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
                 meta_type: "timing".to_string(),
@@ -1951,9 +1950,9 @@ impl ChatSession {
             }))?;
             self.read_user_input_managed().await
         } else {
+            let prompt = self.generate_tool_trust_prompt(os).await;
             self.read_user_input(&prompt, false)
         };
-        debug!("## ui: User input: {:?}", user_input);
         let user_input = match user_input {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
