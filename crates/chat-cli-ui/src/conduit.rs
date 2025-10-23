@@ -1,6 +1,8 @@
+use std::future;
 use std::io::Write as _;
 use std::marker::PhantomData;
 use std::path::PathBuf;
+use std::pin::Pin;
 
 use crossterm::style::{
     self,
@@ -12,6 +14,7 @@ use crossterm::{
     queue,
 };
 use rustyline::EditMode;
+use tokio::signal::ctrl_c;
 use tracing::error;
 
 use crate::legacy_ui_util::{
@@ -49,19 +52,36 @@ pub enum ConduitError {
 /// - To deliver state changes from the control layer to the view layer
 pub struct ViewEnd {
     /// Used by the view to send input to the control
-    // TODO: later on we will need replace this byte array with an actual event type from ACP
     pub sender: tokio::sync::mpsc::Sender<InputEvent>,
     /// To receive messages from control about state changes
     pub receiver: tokio::sync::mpsc::UnboundedReceiver<Event>,
 }
 
 impl ViewEnd {
-    /// Method to facilitate in the interim
-    /// It takes possible messages from the old even loop and queues write to the output provided
-    /// This blocks the current thread and consumes the [ViewEnd]
+    /// Converts the ViewEnd into legacy mode operation. This mainly serves a purpose in the
+    /// following circumstances:
+    /// - To preserve the UX of the current event loop while abstracting away the impl Write it
+    ///   writes to
+    /// - To serve as an interim UI for the new event loop while preserving the UX of the current
+    ///   product while the new UI is being worked out
+    ///
+    /// # Parameters
+    ///
+    /// * `ui_managed_input` - When true, the UI layer will manage user input through readline. When
+    ///   false, input handling is delegated to the event loop (via InputSource).
+    /// * `ui_managed_ctrl_c` - When true, the UI layer will handle Ctrl+C interrupts. When false,
+    ///   interrupt handling is delegated to the event loop (via its own ctrl c handler).
+    /// * `theme_source` - Provider for terminal styling and theming information.
+    /// * `stderr` - Standard error stream for error output.
+    /// * `stdout` - Standard output stream for normal output.
+    ///
+    /// # Returns
+    ///
+    /// Returns `Ok(())` on successful initialization, or a `ConduitError` if setup fails.
     pub fn into_legacy_mode(
         mut self,
-        managed_input: bool,
+        ui_managed_input: bool,
+        ui_managed_ctrl_c: bool,
         theme_source: impl ThemeSource,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
@@ -254,7 +274,7 @@ impl ViewEnd {
             Ok::<(), ConduitError>(())
         }
 
-        if managed_input {
+        if ui_managed_input {
             let (incoming_events_tx, mut incoming_events_rx) = tokio::sync::mpsc::unbounded_channel::<IncomingEvent>();
             let (prompt_signal_tx, prompt_signal_rx) = std::sync::mpsc::channel::<PromptSignal>();
 
@@ -303,15 +323,27 @@ impl ViewEnd {
                 let prompt_signal = PromptSignal::default();
 
                 loop {
+                    let ctrl_c_handler: Pin<
+                        Box<dyn Future<Output = Result<(), std::io::Error>> + Send + Sync + 'static>,
+                    >;
+
                     if matches!(display_state, DisplayState::Prompting) {
-                        // TODO: fetch prompt related info from session and send it here
                         if let Err(e) = prompt_signal_tx.send(prompt_signal.clone()) {
                             error!("Error sending prompt signal: {:?}", e);
                         }
                         display_state = DisplayState::UserInsertingText;
+
+                        ctrl_c_handler = Box::pin(future::pending());
+                    } else if ui_managed_ctrl_c {
+                        ctrl_c_handler = Box::pin(ctrl_c());
+                    } else {
+                        ctrl_c_handler = Box::pin(future::pending());
                     }
 
                     tokio::select! {
+                        _ = ctrl_c_handler => {
+                            _ = self.sender.send(InputEvent::Interrupt).await;
+                        },
                         Some(incoming_event) = incoming_events_rx.recv() => {
                             match display_state {
                                 DisplayState::UserInsertingText => {
@@ -323,10 +355,8 @@ impl ViewEnd {
                                             display_state = DisplayState::StreamingOutput;
                                         },
                                         IncomingEvent::Interrupt => {
-                                            // If user is still inputting text, the session does
-                                            // not need to be notified that they are hitting
-                                            // control c.
                                             display_state = DisplayState::default();
+                                            _ = self.sender.send(InputEvent::Interrupt).await;
                                         },
                                     }
                                 },

@@ -645,7 +645,7 @@ impl ChatSession {
 
         let stderr = std::io::stderr();
         let stdout = std::io::stdout();
-        if let Err(e) = view_end.into_legacy_mode(should_use_ui_managed_input, StyledText, stderr, stdout) {
+        if let Err(e) = view_end.into_legacy_mode(should_use_ui_managed_input, false, StyledText, stderr, stdout) {
             error!("Conduit view end legacy mode exited: {:?}", e);
         }
 
@@ -1962,7 +1962,7 @@ impl ChatSession {
                 meta_type: "timing".to_string(),
                 payload: serde_json::Value::String("prompt_user".to_string()),
             }))?;
-            self.read_user_input_managed().await
+            self.read_user_input_via_ui().await
         } else {
             let prompt = self.generate_tool_trust_prompt(os).await;
             self.read_user_input(&prompt, false)
@@ -1973,7 +1973,11 @@ impl ChatSession {
         };
 
         // Check if there's a pending clipboard paste from Ctrl+V
-        let pasted_paths = self.input_source.take_clipboard_pastes();
+        let pasted_paths = self
+            .input_source
+            .as_mut()
+            .map(|input_source| input_source.take_clipboard_pastes())
+            .unwrap_or_default();
         if !pasted_paths.is_empty() {
             // Check if the input contains image markers
             let image_marker_regex = regex::Regex::new(r"\[Image #\d+\]").unwrap();
@@ -1986,7 +1990,9 @@ impl ChatSession {
                     .join(" ");
 
                 // Reset the counter for next message
-                self.input_source.reset_paste_count();
+                if let Some(input_source) = self.input_source.as_mut() {
+                    input_source.reset_paste_count();
+                }
 
                 // Return HandleInput with all paths to automatically process the images
                 return Ok(ChatState::HandleInput { input: paths_str });
@@ -1997,13 +2003,39 @@ impl ChatSession {
         Ok(ChatState::HandleInput { input: user_input })
     }
 
-    async fn read_user_input_managed(&mut self) -> Option<String> {
+    async fn read_user_input_via_ui(&mut self) -> Option<String> {
         if let Some(managed_input) = &mut self.managed_input {
-            if let Some(content) = managed_input.recv().await {
-                if let InputEvent::Text(content) = content {
-                    return Some(content);
-                } else {
-                    return None;
+            let mut has_hit_ctrl_c = false;
+            while let Some(input_event) = managed_input.recv().await {
+                match input_event {
+                    InputEvent::Text(content) => {
+                        return Some(content);
+                    },
+                    InputEvent::Interrupt => {
+                        if has_hit_ctrl_c {
+                            return None;
+                        } else {
+                            has_hit_ctrl_c = true;
+                            _ = execute!(
+                                self.stderr,
+                                style::Print(format!(
+                                    "\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type {})\n\n",
+                                    "/quit".green()
+                                ))
+                            );
+
+                            if self
+                                .stderr
+                                .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                                    meta_type: "timing".to_string(),
+                                    payload: serde_json::Value::String("prompt_user".to_string()),
+                                }))
+                                .is_err()
+                            {
+                                return None;
+                            }
+                        }
+                    },
                 }
             }
         }

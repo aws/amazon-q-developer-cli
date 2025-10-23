@@ -160,7 +160,7 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
 /// - structured: This makes the event loop send structured messages where applicable (in addition
 ///   to logging ANSI bytes directly where it has not been instrumented)
 /// - new: This spawns the new UI to be used on top of the current event loop (if we end up enabling
-///   this)
+///   this). This would also require the event loop to emit structured events.
 /// - unset: This is the default behavior where everything is unstructured (i.e. ANSI bytes straight
 ///   to stderr or stdout)
 ///
