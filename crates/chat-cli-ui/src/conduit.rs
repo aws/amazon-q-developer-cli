@@ -1,5 +1,6 @@
 use std::io::Write as _;
 use std::marker::PhantomData;
+use std::path::PathBuf;
 
 use crossterm::style::{
     self,
@@ -10,10 +11,14 @@ use crossterm::{
     execute,
     queue,
 };
-use rustyline::DefaultEditor;
+use rustyline::EditMode;
 use tracing::error;
 
-use crate::legacy_ui_util::ThemeSource;
+use crate::legacy_ui_util::{
+    ThemeSource,
+    generate_prompt,
+    rl,
+};
 use crate::protocol::{
     Event,
     InputEvent,
@@ -67,10 +72,33 @@ impl ViewEnd {
             Interrupt,
         }
 
-        #[derive(Default, Debug)]
+        #[derive(Clone, Debug)]
         struct PromptSignal {
             active_agent: Option<String>,
             trust_all: bool,
+            is_in_tangent_mode: bool,
+            available_prompts: Vec<String>,
+            history_path: PathBuf,
+            available_commands: Vec<String>,
+            edit_mode: EditMode,
+            history_hints_enabled: bool,
+            usage_percentage: Option<f32>,
+        }
+
+        impl Default for PromptSignal {
+            fn default() -> Self {
+                Self {
+                    active_agent: Default::default(),
+                    trust_all: Default::default(),
+                    available_prompts: Default::default(),
+                    is_in_tangent_mode: Default::default(),
+                    history_path: Default::default(),
+                    available_commands: Default::default(),
+                    history_hints_enabled: Default::default(),
+                    usage_percentage: Default::default(),
+                    edit_mode: EditMode::Emacs,
+                }
+            }
         }
 
         #[derive(Default, Debug)]
@@ -233,17 +261,30 @@ impl ViewEnd {
             tokio::task::spawn_blocking(move || {
                 while let Ok(prompt_signal) = prompt_signal_rx.recv() {
                     let PromptSignal {
-                        active_agent: _,
-                        trust_all: _,
+                        active_agent,
+                        trust_all,
+                        available_prompts,
+                        history_path,
+                        available_commands,
+                        edit_mode,
+                        history_hints_enabled,
+                        is_in_tangent_mode,
+                        usage_percentage,
                     } = prompt_signal;
 
-                    // TODO: Actually utilize the info to spawn readline here
-                    let prompt = "> ";
-                    let mut rl = DefaultEditor::new().expect("Failed to spawn readline");
+                    let mut rl = rl(
+                        history_hints_enabled,
+                        edit_mode,
+                        history_path,
+                        available_commands,
+                        available_prompts,
+                    )
+                    .expect("Failed to spawn readline");
 
-                    // std::thread::sleep(std::time::Duration::from_millis(5000));
+                    let prompt =
+                        generate_prompt(active_agent.as_deref(), trust_all, is_in_tangent_mode, usage_percentage);
 
-                    match rl.readline(prompt) {
+                    match rl.readline(&prompt) {
                         Ok(input) => {
                             _ = incoming_events_tx.send(IncomingEvent::Input(input));
                         },
@@ -259,12 +300,12 @@ impl ViewEnd {
 
             tokio::spawn(async move {
                 let mut display_state = DisplayState::default();
+                let prompt_signal = PromptSignal::default();
 
                 loop {
                     if matches!(display_state, DisplayState::Prompting) {
-                        tracing::info!("## ui: prompting sent");
                         // TODO: fetch prompt related info from session and send it here
-                        if let Err(e) = prompt_signal_tx.send(Default::default()) {
+                        if let Err(e) = prompt_signal_tx.send(prompt_signal.clone()) {
                             error!("Error sending prompt signal: {:?}", e);
                         }
                         display_state = DisplayState::UserInsertingText;
