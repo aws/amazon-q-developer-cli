@@ -651,7 +651,14 @@ impl ChatSession {
                         .workspace_root(std::env::current_dir().unwrap_or_default())
                         .auto_detect_languages()
                         .build() {
-                        Ok(client) => Some(client),
+                        Ok(mut client) => {
+                            if let Err(e) = client.initialize().await {
+                                eprintln!("⚠️  Failed to initialize code intelligence: {}", e);
+                                None
+                            } else {
+                                Some(client)
+                            }
+                        }
                         Err(e) => {
                             eprintln!("⚠️  Failed to create code intelligence client: {}", e);
                             None

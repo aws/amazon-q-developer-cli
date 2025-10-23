@@ -4,8 +4,10 @@ use crate::model::types::{LspInfo, WorkspaceInfo};
 use crate::model::FsEvent;
 use crate::sdk::file_watcher::{FileWatcher, FileWatcherConfig};
 use anyhow::Result;
-use std::collections::{HashMap, HashSet};
+use dashmap::DashMap;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tracing::warn;
 use url::Url;
@@ -23,7 +25,7 @@ pub struct WorkspaceManager {
     workspace_root: PathBuf,
     registry: LspRegistry,
     initialized: bool,
-    opened_files: HashMap<PathBuf, FileState>, // Track version and open state
+    opened_files: Arc<DashMap<PathBuf, FileState>>, // Thread-safe file state tracking
     workspace_info: Option<WorkspaceInfo>,
     
     // File watching infrastructure
@@ -48,7 +50,7 @@ impl WorkspaceManager {
             workspace_root: resolved_root,
             registry,
             initialized: false,
-            opened_files: HashMap::new(),
+            opened_files: Arc::new(DashMap::new()),
             workspace_info: None,
             _file_watcher: None,
             event_processor_handle: None,
@@ -117,8 +119,8 @@ impl WorkspaceManager {
                 }
             };
 
-            // Add 3-second timeout to prevent hanging on unavailable servers
-            match tokio::time::timeout(tokio::time::Duration::from_secs(3), init_future).await {
+            // Add 1-second timeout to prevent hanging on unavailable servers
+            match tokio::time::timeout(tokio::time::Duration::from_secs(1), init_future).await {
                 Ok(_) => {
                 }
                 Err(_) => {
@@ -135,7 +137,7 @@ impl WorkspaceManager {
         
         // Start file watching after LSP initialization
         if let Err(e) = self.start_file_watching() {
-            tracing::warn!("Failed to start file watching: {}", e);
+            warn!("Failed to start file watching: {}", e);
         }
         
         Ok(())
@@ -320,22 +322,25 @@ impl WorkspaceManager {
 
     /// Get next version for file and increment it
     pub fn get_next_version(&mut self, file_path: &Path) -> i32 {
-        if let Some(state) = self.opened_files.get_mut(file_path) {
-            state.version += 1;
-            state.version
-        } else {
-            // File not tracked, start at version 1
-            self.opened_files.insert(file_path.to_path_buf(), FileState {
-                version: 1,
-                is_open: true,
-            });
-            1
+        match self.opened_files.get_mut(file_path) {
+            Some(mut state) => {
+                state.version += 1;
+                state.version
+            }
+            None => {
+                // File not tracked, start at version 1
+                self.opened_files.insert(file_path.to_path_buf(), FileState {
+                    version: 1,
+                    is_open: true,
+                });
+                1
+            }
         }
     }
 
     /// Mark file as closed
     pub fn mark_file_closed(&mut self, file_path: &Path) {
-        if let Some(state) = self.opened_files.get_mut(file_path) {
+        if let Some(mut state) = self.opened_files.get_mut(file_path) {
             state.is_open = false;
             state.version = 0;
         }
@@ -385,7 +390,12 @@ impl WorkspaceManager {
         let file_watcher = FileWatcher::new(self.workspace_root.clone(), tx, config)?;
         
         // Start event processor with workspace manager reference
-        let processor = crate::sdk::file_watcher::EventProcessor::new(rx, self as *mut _, self.workspace_root.clone());
+        let processor = crate::sdk::file_watcher::EventProcessor::new(
+            rx, 
+            self as *mut _, 
+            self.workspace_root.clone(),
+            self.opened_files.clone()  // Share the Arc<DashMap>
+        );
         let handle = tokio::spawn(async move {
             processor.run().await;
         });

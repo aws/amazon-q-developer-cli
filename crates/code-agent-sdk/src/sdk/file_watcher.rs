@@ -1,10 +1,13 @@
 use crate::model::{FsEvent, FsEventKind};
+use crate::sdk::workspace_manager::FileState;
 use anyhow::Result;
+use dashmap::DashMap;
 use globset::{Glob, GlobSetBuilder};
 use ignore::gitignore::{Gitignore, GitignoreBuilder};
 use notify::{Event, RecommendedWatcher, RecursiveMode, Watcher};
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
 use url::Url;
@@ -247,16 +250,23 @@ pub(crate) struct EventProcessor {
     event_rx: mpsc::UnboundedReceiver<FsEvent>,
     workspace_manager: *mut crate::sdk::WorkspaceManager,
     workspace_root: PathBuf,
+    opened_files: Arc<DashMap<PathBuf, FileState>>, // Thread-safe shared state
 }
 
 unsafe impl Send for EventProcessor {}
 
 impl EventProcessor {
-    pub fn new(event_rx: mpsc::UnboundedReceiver<FsEvent>, workspace_manager: *mut crate::sdk::WorkspaceManager, workspace_root: PathBuf) -> Self {
+    pub fn new(
+        event_rx: mpsc::UnboundedReceiver<FsEvent>, 
+        workspace_manager: *mut crate::sdk::WorkspaceManager, 
+        workspace_root: PathBuf,
+        opened_files: Arc<DashMap<PathBuf, FileState>>
+    ) -> Self {
         Self { 
             event_rx, 
             workspace_manager,
             workspace_root,
+            opened_files,
         }
     }
 
@@ -290,9 +300,11 @@ impl EventProcessor {
             match event.kind {
                 FsEventKind::Created => {
                     // Send workspace/didChangeWatchedFiles for new files (only if not already open)
-                    unsafe {
-                        let workspace_manager = &mut *self.workspace_manager;
-                        if !workspace_manager.is_file_opened(&absolute_path) {
+                    let is_file_open = self.opened_files.get(&absolute_path).map_or(false, |state| state.is_open);
+                    
+                    if !is_file_open {
+                        unsafe {
+                            let workspace_manager = &mut *self.workspace_manager;
                             if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
                                 // 1. Send didChangeWatchedFiles notification
                                 let params = DidChangeWatchedFilesParams {
@@ -305,17 +317,19 @@ impl EventProcessor {
                                 tracing::info!("📄 File created, sending didChangeWatchedFiles: {:?}", absolute_path);
                                 let _ = client.did_change_watched_files(params).await;
                             }
-                        } else {
-                            tracing::info!("📄 File created but already open, skipping notification: {:?}", absolute_path);
                         }
+                    } else {
+                        tracing::info!("📄 File created but already open, skipping notification: {:?}", absolute_path);
                     }
                 }
                 
                 FsEventKind::Deleted => {
+                    let is_file_open = self.opened_files.get(&absolute_path).map_or(false, |state| state.is_open);
+                    
                     unsafe {
                         let workspace_manager = &mut *self.workspace_manager;
                         
-                        if workspace_manager.is_file_opened(&absolute_path) {
+                        if is_file_open {
                             // File was opened - send didClose AND didChangeWatchedFiles
                             if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
                                 // 1. Close the opened file
@@ -337,7 +351,12 @@ impl EventProcessor {
                                 tracing::info!("🗑️ Sending didChangeWatchedFiles for deleted file: {:?}", absolute_path);
                                 let _ = client.did_change_watched_files(watch_params).await;
                             }
-                            workspace_manager.mark_file_closed(&absolute_path);
+                            
+                            // Mark file as closed in shared state
+                            if let Some(mut state) = self.opened_files.get_mut(&absolute_path) {
+                                state.is_open = false;
+                                state.version = 0;
+                            }
                         } else {
                             // File was closed - just send didChangeWatchedFiles
                             if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
@@ -355,13 +374,27 @@ impl EventProcessor {
                 }
                 
                 FsEventKind::Modified => {
-                    // SAFETY: We know workspace_manager is valid during EventProcessor lifetime
+                    let is_file_open = self.opened_files.get(&absolute_path).map_or(false, |state| state.is_open);
+                    
                     unsafe {
                         let workspace_manager = &mut *self.workspace_manager;
                         
-                        if workspace_manager.is_file_opened(&absolute_path) {
-                            // Send didChange for opened files
-                            let version = workspace_manager.get_next_version(&absolute_path);
+                        if is_file_open {
+                            // Send didChange for opened files - increment version in shared state
+                            let version = match self.opened_files.get_mut(&absolute_path) {
+                                Some(mut state) => {
+                                    state.version += 1;
+                                    state.version
+                                }
+                                None => {
+                                    // File not tracked, start at version 1
+                                    self.opened_files.insert(absolute_path.clone(), FileState {
+                                        version: 1,
+                                        is_open: true,
+                                    });
+                                    1
+                                }
+                            };
                             
                             if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
                                 if let Ok(content) = std::fs::read_to_string(&absolute_path) {
@@ -403,11 +436,13 @@ impl EventProcessor {
                         let from_absolute = self.workspace_root.join(&from_path);
                         tracing::info!("📋 File renamed: {:?} -> {:?}", from_absolute, absolute_path);
                         
+                        let was_from_open = self.opened_files.get(&from_absolute).map_or(false, |state| state.is_open);
+                        
                         unsafe {
                             let workspace_manager = &mut *self.workspace_manager;
                             
                             // Handle as Delete(old) + Create(new)
-                            if workspace_manager.is_file_opened(&from_absolute) {
+                            if was_from_open {
                                 // Old file was opened - send didClose
                                 if let Ok(Some(client)) = workspace_manager.get_client_for_file(&from_absolute).await {
                                     if let Ok(from_uri) = Url::from_file_path(&from_absolute) {
@@ -420,7 +455,12 @@ impl EventProcessor {
                                         let _ = client.did_close(params).await;
                                     }
                                 }
-                                workspace_manager.mark_file_closed(&from_absolute);
+                                
+                                // Mark old file as closed in shared state
+                                if let Some(mut state) = self.opened_files.get_mut(&from_absolute) {
+                                    state.is_open = false;
+                                    state.version = 0;
+                                }
                             }
                             
                             // Send didChangeWatchedFiles for new file
