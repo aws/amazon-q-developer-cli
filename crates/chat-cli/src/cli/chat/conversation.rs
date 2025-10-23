@@ -102,6 +102,57 @@ pub struct McpServerInfo {
     pub config: CustomToolConfig,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserTurnMetadata {
+    continuation_id: String,
+    /// [RequestMetadata] about the ongoing operation.
+    requests: Vec<RequestMetadata>,
+}
+
+impl Default for UserTurnMetadata {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Enum used to store metadata about user turns
+impl UserTurnMetadata {
+    pub fn new() -> Self {
+        Self {
+            continuation_id: uuid::Uuid::new_v4().to_string(),
+            requests: vec![],
+        }
+    }
+
+    pub fn continuation_id(&self) -> &str {
+        &self.continuation_id
+    }
+
+    pub fn add_request(&mut self, request: RequestMetadata) {
+        self.requests.push(request);
+    }
+
+    pub fn first_request(&self) -> Option<RequestMetadata> {
+        self.requests.first().cloned()
+    }
+
+    pub fn last_request(&self) -> Option<RequestMetadata> {
+        self.requests.last().cloned()
+    }
+
+    pub fn iter(&self) -> impl Iterator<Item = &RequestMetadata> {
+        self.requests.iter()
+    }
+
+    pub fn first(&self) -> Option<&RequestMetadata> {
+        self.requests.first()
+    }
+
+    pub fn last(&self) -> Option<&RequestMetadata> {
+        self.requests.last()
+    }
+}
+
 /// Tracks state related to an ongoing conversation.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {
@@ -149,6 +200,9 @@ pub struct ConversationState {
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tangent_state: Option<ConversationCheckpoint>,
+    /// Metadata about the ongoing user turn operation
+    #[serde(default)]
+    pub user_turn_metadata: UserTurnMetadata,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +266,7 @@ impl ConversationState {
             checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
+            user_turn_metadata: UserTurnMetadata::new(),
         }
     }
 
@@ -376,6 +431,10 @@ impl ConversationState {
 
     pub fn reset_next_user_message(&mut self) {
         self.next_message = None;
+    }
+
+    pub fn current_continuation_id(&self) -> &str {
+        self.user_turn_metadata.continuation_id()
     }
 
     pub async fn set_next_user_message(&mut self, input: String) {
@@ -614,6 +673,7 @@ impl ConversationState {
             dropped_context_files,
             tools: &self.tools,
             model_id: self.model_info.as_ref().map(|m| m.model_id.as_str()),
+            continuation_id: Some(self.user_turn_metadata.continuation_id()),
         })
     }
 
@@ -719,6 +779,7 @@ impl ConversationState {
                 .unwrap_or(UserMessage::new_prompt(summary_content, None)) // should not happen
                 .into_user_input_message(self.model_info.as_ref().map(|m| m.model_id.clone()), &tools),
             history: Some(flatten_history(history.iter())),
+            agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
 
@@ -777,6 +838,7 @@ Return only the JSON configuration, no additional text.",
             conversation_id: Some(self.conversation_id.clone()),
             user_input_message: generation_message.into_user_input_message(self.model.clone(), &tools),
             history: Some(flatten_history(history.iter())),
+            agent_continuation_id: Some(self.user_turn_metadata.continuation_id().to_string()),
         })
     }
 
@@ -992,6 +1054,7 @@ pub struct BackendConversationStateImpl<'a, T, U> {
     pub dropped_context_files: Vec<(String, String)>,
     pub tools: &'a HashMap<ToolOrigin, Vec<Tool>>,
     pub model_id: Option<&'a str>,
+    pub continuation_id: Option<&'a str>,
 }
 
 impl BackendConversationStateImpl<'_, std::collections::vec_deque::Iter<'_, HistoryEntry>, Option<Vec<HistoryEntry>>> {
@@ -1007,6 +1070,7 @@ impl BackendConversationStateImpl<'_, std::collections::vec_deque::Iter<'_, Hist
             conversation_id: Some(self.conversation_id.to_string()),
             user_input_message,
             history: Some(history),
+            agent_continuation_id: self.continuation_id.map(str::to_string),
         })
     }
 

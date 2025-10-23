@@ -470,14 +470,24 @@ impl ResponseParser {
     async fn parse_tool_use(&mut self, id: String, name: String) -> Result<AssistantToolUse, RecvError> {
         let mut tool_string = String::new();
         let start = Instant::now();
-        while let Some(ChatResponseStream::ToolUseEvent { .. }) = self.peek().await? {
-            if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
-                if let Some(i) = input {
-                    tool_string.push_str(&i);
-                }
-                if let Some(true) = stop {
+        loop {
+            match self.peek().await? {
+                Some(ChatResponseStream::ToolUseEvent { .. }) => {
+                    if let Some(ChatResponseStream::ToolUseEvent { input, stop, .. }) = self.next().await? {
+                        if let Some(i) = input {
+                            tool_string.push_str(&i);
+                        }
+                        if let Some(true) = stop {
+                            break;
+                        }
+                    }
+                },
+                Some(ChatResponseStream::MetadataEvent { .. } | ChatResponseStream::MeteringEvent { .. }) => {
+                    self.next().await?;
+                },
+                _other => {
                     break;
-                }
+                },
             }
         }
 
