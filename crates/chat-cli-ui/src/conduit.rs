@@ -61,7 +61,7 @@ impl ViewEnd {
     /// This blocks the current thread and consumes the [ViewEnd]
     pub fn into_legacy_mode(
         mut self,
-        handle_input: bool,
+        managed_input: bool,
         theme_source: impl ThemeSource,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
@@ -254,7 +254,7 @@ impl ViewEnd {
             Ok::<(), ConduitError>(())
         }
 
-        if handle_input {
+        if managed_input {
             let (incoming_events_tx, mut incoming_events_rx) = tokio::sync::mpsc::unbounded_channel::<IncomingEvent>();
             let (prompt_signal_tx, prompt_signal_rx) = std::sync::mpsc::channel::<PromptSignal>();
 
