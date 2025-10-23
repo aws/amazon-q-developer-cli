@@ -19,12 +19,13 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 clap.workspace = true
 rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
+notify.workspace = true
+ignore.workspace = true
+globset.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true
 tracing-subscriber.workspace = true
-ignore = "0.4"
-notify = "6.0"
 
 [[bin]]
 name = "code-agent-cli"

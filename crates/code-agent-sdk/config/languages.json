@@ -20,6 +20,7 @@
       "args": ["--stdio"],
       "file_extensions": ["ts", "js", "tsx", "jsx", "mjs", "cjs", "mts", "cts", "vue"],
       "project_patterns": ["package.json", "tsconfig.json"],
+      "exclude_patterns": ["**/node_modules/**", "**/dist/**", "**/build/**", "**/.next/**", "**/coverage/**"],
       "initialization_options": {
         "preferences": {
           "disableSuggestions": false
@@ -32,6 +33,7 @@
       "args": [],
       "file_extensions": ["rs"],
       "project_patterns": ["Cargo.toml"],
+      "exclude_patterns": ["**/target/**", "**/Cargo.lock"],
       "initialization_options": {
         "cargo": {
           "buildScripts": {
@@ -46,6 +48,7 @@
       "args": [],
       "file_extensions": ["py"],
       "project_patterns": ["pyproject.toml", "setup.py", "requirements.txt"],
+      "exclude_patterns": ["**/__pycache__/**", "**/venv/**", "**/env/**", "**/.venv/**", "**/build/**", "**/dist/**"],
       "initialization_options": {
         "pylsp": {
           "plugins": {
@@ -62,6 +65,7 @@
       "args": [],
       "file_extensions": ["go"],
       "project_patterns": ["go.mod"],
+      "exclude_patterns": ["**/vendor/**", "**/bin/**"],
       "initialization_options": {}
     },
     "java": {
@@ -70,6 +74,7 @@
       "args": [],
       "file_extensions": ["java"],
       "project_patterns": ["pom.xml", "build.gradle"],
+      "exclude_patterns": ["**/target/**", "**/build/**", "**/.gradle/**", "**/bin/**"],
       "initialization_options": {}
     },
     "csharp": {
@@ -78,6 +83,7 @@
       "args": ["--languageserver"],
       "file_extensions": ["cs"],
       "project_patterns": ["*.csproj", "*.sln"],
+      "exclude_patterns": ["**/bin/**", "**/obj/**", "**/packages/**"],
       "initialization_options": {}
     },
     "php": {
@@ -86,6 +92,7 @@
       "args": ["--stdio"],
       "file_extensions": ["php"],
       "project_patterns": ["composer.json"],
+      "exclude_patterns": ["**/vendor/**", "**/cache/**"],
       "initialization_options": {}
     },
     "ruby": {
@@ -94,6 +101,7 @@
       "args": ["stdio"],
       "file_extensions": ["rb"],
       "project_patterns": ["Gemfile"],
+      "exclude_patterns": ["**/vendor/**", "**/tmp/**"],
       "initialization_options": {}
     },
     "kotlin": {
@@ -102,6 +110,7 @@
       "args": [],
       "file_extensions": ["kt", "kts"],
       "project_patterns": ["build.gradle", "pom.xml"],
+      "exclude_patterns": ["**/build/**", "**/target/**", "**/.gradle/**"],
       "initialization_options": {}
     },
     "swift": {
@@ -110,6 +119,7 @@
       "args": [],
       "file_extensions": ["swift"],
       "project_patterns": ["Package.swift"],
+      "exclude_patterns": ["**/.build/**", "**/build/**"],
       "initialization_options": {}
     }
   }

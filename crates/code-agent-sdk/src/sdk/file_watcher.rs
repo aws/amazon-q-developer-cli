@@ -277,7 +277,7 @@ impl EventProcessor {
     }
 
     async fn handle_file_event(&mut self, event: &FsEvent) -> Result<()> {
-        use lsp_types::{DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, TextDocumentContentChangeEvent, DidChangeWatchedFilesParams, FileEvent, FileChangeType};
+        use lsp_types::{DidChangeTextDocumentParams, VersionedTextDocumentIdentifier, TextDocumentContentChangeEvent, DidChangeWatchedFilesParams, FileEvent, FileChangeType, DidCloseTextDocumentParams, TextDocumentIdentifier};
         
         // Convert relative URI to absolute path
         if let Ok(relative_path) = event.uri.to_file_path() {
@@ -288,6 +288,98 @@ impl EventProcessor {
             };
             
             match event.kind {
+                FsEventKind::Created => {
+                    // Send workspace/didChangeWatchedFiles for new files (only if not already open)
+                    unsafe {
+                        let workspace_manager = &mut *self.workspace_manager;
+                        if !workspace_manager.is_file_opened(&absolute_path) {
+                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                // 1. Send didChangeWatchedFiles notification
+                                let params = DidChangeWatchedFilesParams {
+                                    changes: vec![FileEvent {
+                                        uri: absolute_uri.clone(),
+                                        typ: FileChangeType::CREATED,
+                                    }],
+                                };
+                                
+                                tracing::info!("📄 File created, sending didChangeWatchedFiles: {:?}", absolute_path);
+                                let _ = client.did_change_watched_files(params).await;
+                                
+                                // 2. Force parsing by sending didOpen (cross-server way to guarantee indexing)
+                                if let Ok(content) = std::fs::read_to_string(&absolute_path) {
+                                    // Determine language ID from file extension using ConfigManager
+                                    let language_id = if let Some(ext) = absolute_path.extension().and_then(|ext| ext.to_str()) {
+                                        crate::config::ConfigManager::get_language_for_extension(ext)
+                                            .unwrap_or_else(|| "plaintext".to_string())
+                                    } else {
+                                        "plaintext".to_string()
+                                    };
+
+                                    let open_params = lsp_types::DidOpenTextDocumentParams {
+                                        text_document: lsp_types::TextDocumentItem {
+                                            uri: absolute_uri.clone(),
+                                            language_id: language_id.clone(),
+                                            version: 1,
+                                            text: content,
+                                        },
+                                    };
+                                    
+                                    tracing::info!("📂 Forcing parse with didOpen ({}): {:?}", language_id, absolute_path);
+                                    let _ = client.did_open(open_params).await;
+                                    
+                                    // Mark as opened in workspace manager
+                                    workspace_manager.mark_file_opened(absolute_path.clone());
+                                }
+                            }
+                        } else {
+                            tracing::info!("📄 File created but already open, skipping notification: {:?}", absolute_path);
+                        }
+                    }
+                }
+                
+                FsEventKind::Deleted => {
+                    unsafe {
+                        let workspace_manager = &mut *self.workspace_manager;
+                        
+                        if workspace_manager.is_file_opened(&absolute_path) {
+                            // File was opened - send didClose AND didChangeWatchedFiles
+                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                // 1. Close the opened file
+                                let close_params = DidCloseTextDocumentParams {
+                                    text_document: TextDocumentIdentifier {
+                                        uri: absolute_uri.clone(),
+                                    },
+                                };
+                                tracing::info!("🗑️ Opened file deleted, sending didClose: {:?}", absolute_path);
+                                let _ = client.did_close(close_params).await;
+                                
+                                // 2. Notify filesystem deletion
+                                let watch_params = DidChangeWatchedFilesParams {
+                                    changes: vec![FileEvent {
+                                        uri: absolute_uri,
+                                        typ: FileChangeType::DELETED,
+                                    }],
+                                };
+                                tracing::info!("🗑️ Sending didChangeWatchedFiles for deleted file: {:?}", absolute_path);
+                                let _ = client.did_change_watched_files(watch_params).await;
+                            }
+                            workspace_manager.mark_file_closed(&absolute_path);
+                        } else {
+                            // File was closed - just send didChangeWatchedFiles
+                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                let params = DidChangeWatchedFilesParams {
+                                    changes: vec![FileEvent {
+                                        uri: absolute_uri,
+                                        typ: FileChangeType::DELETED,
+                                    }],
+                                };
+                                tracing::info!("🗑️ File deleted, sending didChangeWatchedFiles: {:?}", absolute_path);
+                                let _ = client.did_change_watched_files(params).await;
+                            }
+                        }
+                    }
+                }
+                
                 FsEventKind::Modified => {
                     // SAFETY: We know workspace_manager is valid during EventProcessor lifetime
                     unsafe {
@@ -331,12 +423,44 @@ impl EventProcessor {
                         }
                     }
                 }
-                FsEventKind::Created => tracing::info!("📄 File created: {:?}", absolute_path),
-                FsEventKind::Deleted => tracing::info!("🗑️ File deleted: {:?}", absolute_path),
+                
                 FsEventKind::Renamed { ref from } => {
                     if let Ok(from_path) = from.to_file_path() {
                         let from_absolute = self.workspace_root.join(&from_path);
                         tracing::info!("📋 File renamed: {:?} -> {:?}", from_absolute, absolute_path);
+                        
+                        unsafe {
+                            let workspace_manager = &mut *self.workspace_manager;
+                            
+                            // Handle as Delete(old) + Create(new)
+                            if workspace_manager.is_file_opened(&from_absolute) {
+                                // Old file was opened - send didClose
+                                if let Ok(Some(client)) = workspace_manager.get_client_for_file(&from_absolute).await {
+                                    if let Ok(from_uri) = Url::from_file_path(&from_absolute) {
+                                        let params = DidCloseTextDocumentParams {
+                                            text_document: TextDocumentIdentifier {
+                                                uri: from_uri,
+                                            },
+                                        };
+                                        tracing::info!("📋 Renamed file was opened, sending didClose for old path: {:?}", from_absolute);
+                                        let _ = client.did_close(params).await;
+                                    }
+                                }
+                                workspace_manager.mark_file_closed(&from_absolute);
+                            }
+                            
+                            // Send didChangeWatchedFiles for new file
+                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                let params = DidChangeWatchedFilesParams {
+                                    changes: vec![FileEvent {
+                                        uri: absolute_uri,
+                                        typ: FileChangeType::CREATED,
+                                    }],
+                                };
+                                tracing::info!("📋 Sending didChangeWatchedFiles for renamed file: {:?}", absolute_path);
+                                let _ = client.did_change_watched_files(params).await;
+                            }
+                        }
                     }
                 }
             }

@@ -74,6 +74,15 @@ impl LspConfig {
                         dynamic_registration: Some(true),
                         relative_pattern_support: Some(true),
                     }),
+                    file_operations: Some(WorkspaceFileOperationsClientCapabilities {
+                        dynamic_registration: Some(true),
+                        will_rename: Some(true),
+                        will_delete: Some(true),
+                        did_create: Some(true),
+                        will_create: Some(true),
+                        did_rename: Some(true),
+                        did_delete: Some(true),
+                    }),
                     ..Default::default()
                 }),
                 ..Default::default()

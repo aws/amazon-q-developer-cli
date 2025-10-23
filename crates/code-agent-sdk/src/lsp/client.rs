@@ -203,6 +203,15 @@ impl LspClient {
             .await
     }
 
+    /// Notify server about created files (LSP 3.16+)
+    ///
+    /// # Arguments
+    /// * `params` - Created file parameters
+    pub async fn did_create_files(&self, params: CreateFilesParams) -> Result<()> {
+        self.send_notification("workspace/didCreateFiles", json!(params))
+            .await
+    }
+
     /// Notify server about document content changes
     ///
     /// # Arguments
