@@ -67,7 +67,10 @@ pub mod env_var {
         Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH",
 
         /// Identifier for the client application or service using the chat-cli
-        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION"
+        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION",
+
+        /// Shows continuation IDs in chat output for debugging/development
+        Q_SHOW_CONTINUATION_IDS = "Q_SHOW_CONTINUATION_IDS"
     }
 }
 

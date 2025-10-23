@@ -407,6 +407,7 @@ impl ApiClient {
             conversation_id,
             user_input_message,
             history,
+            agent_continuation_id,
         } = conversation;
 
         let model_id_opt: Option<String> = user_input_message.model_id.clone();
@@ -425,6 +426,8 @@ impl ApiClient {
                         .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
                         .transpose()?,
                 )
+                .set_agent_continuation_id(agent_continuation_id)
+                .agent_task_type(amzn_codewhisperer_streaming_client::types::AgentTaskType::Vibe)
                 .build()
                 .expect("building conversation should not fail");
 
@@ -769,6 +772,7 @@ mod tests {
                     model_id: Some("model".to_owned()),
                 },
                 history: None,
+                agent_continuation_id: None,
             })
             .await
             .unwrap();
