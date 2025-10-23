@@ -38,7 +38,7 @@ use crate::database::{
 };
 use crate::util::system_info::is_mwinit_available;
 
-const AUTH_PORTAL_URL: &str = "https://gamma.app.kiro.aws.dev/signin";
+const AUTH_PORTAL_URL: &str = "https://app.kiro.aws.dev/signin";
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(600);
 const USER_AGENT: &str = "Kiro-CLI";
 
@@ -249,16 +249,28 @@ impl Service<Request<Incoming>> for AuthCallbackService {
 
                 let _ = tx.send(callback).await;
 
+                let redirect_url = format!("{}?auth_status=success&redirect_from=kirocli", AUTH_PORTAL_URL);
+
                 Ok(Response::builder()
                     .status(302)
-                    .header("Location", AUTH_PORTAL_URL)
+                    .header("Location", redirect_url)
                     .header("Cache-Control", "no-store")
-                    .body("".into())
-                    .expect("valid builder"))
+                    .body(Full::new(Bytes::from("")))
+                    .expect("valid response"))
             } else {
-                info!(%path, "Ignoring non-callback path");
+                // Invalid path - redirect back to portal with error
+                info!(%path, "Invalid callback path, redirecting to portal");
+
+                let redirect_url = format!(
+                    "{}?auth_status=error&redirect_from=kirocli&error_message={}",
+                    AUTH_PORTAL_URL,
+                    urlencoding::encode("Invalid callback path")
+                );
+
                 Ok(Response::builder()
-                    .status(404)
+                    .status(302)
+                    .header("Location", redirect_url)
+                    .header("Cache-Control", "no-store")
                     .body(Full::new(Bytes::from("")))
                     .expect("valid response"))
             }
