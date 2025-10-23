@@ -378,14 +378,12 @@ async fn process_path(
 async fn add_file_to_context(os: &Os, path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
     let filename = path.to_string_lossy().to_string();
     let content = os.fs.read_to_string(path).await?;
-    
+
     // Check if this is a steering file that needs front matter filtering
-    if filename.contains(".kiro/steering") && filename.ends_with(".md") {
-        if !should_include_steering_file(&content)? {
-            return Ok(());
-        }
+    if filename.contains(".kiro/steering") && filename.ends_with(".md") && !should_include_steering_file(&content)? {
+        return Ok(());
     }
-    
+
     context_files.push((filename, content));
     Ok(())
 }
@@ -402,30 +400,30 @@ fn should_include_steering_file(content: &str) -> Result<bool> {
         // No front matter - include the file
         return Ok(true);
     }
-    
+
     // Find the end of the front matter
     let lines: Vec<&str> = content.lines().collect();
     let mut end_index = None;
-    
+
     for (i, line) in lines.iter().enumerate().skip(1) {
         if line.trim() == "---" {
             end_index = Some(i);
             break;
         }
     }
-    
+
     let end_index = match end_index {
         Some(idx) => idx,
         None => {
             // Malformed front matter - include the file
             return Ok(true);
-        }
+        },
     };
-    
+
     // Extract and parse the front matter
     let front_matter_lines = &lines[1..end_index];
     let front_matter_yaml = front_matter_lines.join("\n");
-    
+
     match serde_yaml::from_str::<FrontMatter>(&front_matter_yaml) {
         Ok(front_matter) => {
             match front_matter.inclusion.as_deref() {
@@ -435,11 +433,11 @@ fn should_include_steering_file(content: &str) -> Result<bool> {
                 None => Ok(true),               // No inclusion field - include
                 Some(_) => Ok(true),            // Unknown inclusion value - include
             }
-        }
+        },
         Err(_) => {
             // Failed to parse front matter - include the file
             Ok(true)
-        }
+        },
     }
 }
 
