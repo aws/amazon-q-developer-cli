@@ -38,7 +38,7 @@
         },
         {
           "type": "fixed",
-          "description": "Issue when resuming previous conversations with `--resume` flag - [#3133](https://github.com/aws/amazon-q-developer-cli/pull/3133)"
+          "description": "Fixes an issue with checkpoint feature, when starting multiple conversations from the same directory - [#3133](https://github.com/aws/amazon-q-developer-cli/pull/3133)"
         }
       ]
     },
