@@ -304,32 +304,6 @@ impl EventProcessor {
                                 
                                 tracing::info!("📄 File created, sending didChangeWatchedFiles: {:?}", absolute_path);
                                 let _ = client.did_change_watched_files(params).await;
-                                
-                                // 2. Force parsing by sending didOpen (cross-server way to guarantee indexing)
-                                if let Ok(content) = std::fs::read_to_string(&absolute_path) {
-                                    // Determine language ID from file extension using ConfigManager
-                                    let language_id = if let Some(ext) = absolute_path.extension().and_then(|ext| ext.to_str()) {
-                                        crate::config::ConfigManager::get_language_for_extension(ext)
-                                            .unwrap_or_else(|| "plaintext".to_string())
-                                    } else {
-                                        "plaintext".to_string()
-                                    };
-
-                                    let open_params = lsp_types::DidOpenTextDocumentParams {
-                                        text_document: lsp_types::TextDocumentItem {
-                                            uri: absolute_uri.clone(),
-                                            language_id: language_id.clone(),
-                                            version: 1,
-                                            text: content,
-                                        },
-                                    };
-                                    
-                                    tracing::info!("📂 Forcing parse with didOpen ({}): {:?}", language_id, absolute_path);
-                                    let _ = client.did_open(open_params).await;
-                                    
-                                    // Mark as opened in workspace manager
-                                    workspace_manager.mark_file_opened(absolute_path.clone());
-                                }
                             }
                         } else {
                             tracing::info!("📄 File created but already open, skipping notification: {:?}", absolute_path);
