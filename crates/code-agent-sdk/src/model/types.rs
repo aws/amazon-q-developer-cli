@@ -196,6 +196,8 @@ pub struct LanguageServerConfig {
     pub args: Vec<String>,
     /// File extensions this language server handles (e.g., ["rs", "toml"])
     pub file_extensions: Vec<String>,
+    /// Patterns to exclude from file watching (e.g., ["**/target/**", "**/node_modules/**"])
+    pub exclude_patterns: Vec<String>,
     /// Optional initialization options sent to the language server
     pub initialization_options: Option<serde_json::Value>,
 }
@@ -230,5 +232,26 @@ pub struct LspInfo {
     pub is_available: bool,
     /// Version information if available
     pub version: Option<String>,
+}
+
+// ============================================================================
+// File Watching Types (Crate Internal)
+// ============================================================================
+
+/// File system event for internal file watching system
+#[derive(Debug, Clone)]
+pub(crate) struct FsEvent {
+    pub(crate) uri: url::Url,
+    pub(crate) kind: FsEventKind,
+    pub(crate) timestamp: std::time::Instant,
+}
+
+/// Types of file system events
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum FsEventKind {
+    Created,
+    Modified,
+    Deleted,
+    Renamed { from: url::Url },
 }
 

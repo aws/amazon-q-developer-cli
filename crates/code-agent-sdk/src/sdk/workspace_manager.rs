@@ -1,9 +1,12 @@
 use crate::config::ConfigManager;
 use crate::lsp::LspRegistry;
 use crate::model::types::{LspInfo, WorkspaceInfo};
+use crate::model::FsEvent;
+use crate::sdk::file_watcher::{FileWatcher, FileWatcherConfig};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use tokio::sync::mpsc;
 use tracing::warn;
 use url::Url;
 
@@ -22,6 +25,10 @@ pub struct WorkspaceManager {
     initialized: bool,
     opened_files: HashMap<PathBuf, FileState>, // Track version and open state
     workspace_info: Option<WorkspaceInfo>,
+    
+    // File watching infrastructure
+    _file_watcher: Option<FileWatcher>,
+    event_processor_handle: Option<tokio::task::JoinHandle<()>>,
 }
 
 impl WorkspaceManager {
@@ -43,6 +50,8 @@ impl WorkspaceManager {
             initialized: false,
             opened_files: HashMap::new(),
             workspace_info: None,
+            _file_watcher: None,
+            event_processor_handle: None,
         }
     }
 
@@ -123,6 +132,12 @@ impl WorkspaceManager {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
         self.initialized = true;
+        
+        // Start file watching after LSP initialization
+        if let Err(e) = self.start_file_watching() {
+            tracing::warn!("Failed to start file watching: {}", e);
+        }
+        
         Ok(())
     }
 
@@ -337,6 +352,49 @@ impl WorkspaceManager {
             .unwrap()
             .detected_languages
             .clone())
+    }
+
+    /// Start file watching with patterns based on detected languages
+    pub fn start_file_watching(&mut self) -> Result<()> {
+        let (tx, rx) = mpsc::unbounded_channel::<FsEvent>();
+        
+        // Generate config from detected languages
+        let mut include_patterns = Vec::new();
+        let mut exclude_patterns = vec!["**/.git/**".to_string()]; // Always exclude .git
+        
+        // Get detected languages and their patterns
+        let detected_languages = self.get_detected_languages()?;
+        for language in &detected_languages {
+            if let Ok(lang_config) = ConfigManager::get_config_by_language(language) {
+                // Add include patterns from file extensions
+                for ext in &lang_config.file_extensions {
+                    include_patterns.push(format!("**/*.{}", ext));
+                }
+                // Add exclude patterns from language config
+                exclude_patterns.extend(lang_config.exclude_patterns);
+            }
+        }
+        
+        let config = FileWatcherConfig {
+            include_patterns,
+            exclude_patterns,
+            respect_gitignore: true,
+        };
+        
+        // Start file watcher
+        let file_watcher = FileWatcher::new(self.workspace_root.clone(), tx, config)?;
+        
+        // Start event processor with workspace manager reference
+        let processor = crate::sdk::file_watcher::EventProcessor::new(rx, self as *mut _, self.workspace_root.clone());
+        let handle = tokio::spawn(async move {
+            processor.run().await;
+        });
+        
+        self._file_watcher = Some(file_watcher);
+        self.event_processor_handle = Some(handle);
+        
+        tracing::info!("🔍 File watching started for languages: {:?}", detected_languages);
+        Ok(())
     }
 }
 

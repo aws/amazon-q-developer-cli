@@ -13,3 +13,6 @@ pub use types::{
     FormatCodeRequest, GetDocumentSymbolsRequest, GetSymbolsRequest, GotoDefinitionRequest,
     LanguageServerConfig, LspInfo, OpenFileRequest, RenameSymbolRequest, WorkspaceInfo,
 };
+
+// Re-export crate-internal types
+pub(crate) use types::{FsEvent, FsEventKind};

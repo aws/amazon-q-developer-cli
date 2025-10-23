@@ -11,6 +11,7 @@ pub struct LanguageConfig {
     pub args: Vec<String>,
     pub file_extensions: Vec<String>,
     pub project_patterns: Vec<String>,
+    pub exclude_patterns: Vec<String>,
     pub initialization_options: Option<Value>,
 }
 
@@ -66,6 +67,7 @@ impl LanguagesConfig {
             command: config.command.clone(),
             args: config.args.clone(),
             file_extensions: config.file_extensions.clone(),
+            exclude_patterns: config.exclude_patterns.clone(),
             initialization_options: config.initialization_options.clone(),
         })
     }
@@ -79,6 +81,7 @@ impl LanguagesConfig {
                 command: config.command.clone(),
                 args: config.args.clone(),
                 file_extensions: config.file_extensions.clone(),
+                exclude_patterns: config.exclude_patterns.clone(),
                 initialization_options: config.initialization_options.clone(),
             })
             .collect()
@@ -108,6 +111,7 @@ impl LanguagesConfig {
                     "args": ["--stdio"],
                     "file_extensions": ["ts", "js", "tsx", "jsx"],
                     "project_patterns": ["package.json", "tsconfig.json"],
+                    "exclude_patterns": ["**/node_modules/**", "**/dist/**"],
                     "initialization_options": {
                         "preferences": {
                             "disableSuggestions": false
@@ -120,6 +124,7 @@ impl LanguagesConfig {
                     "args": [],
                     "file_extensions": ["rs"],
                     "project_patterns": ["Cargo.toml"],
+                    "exclude_patterns": ["**/target/**"],
                     "initialization_options": {
                         "cargo": {
                             "buildScripts": {
@@ -134,6 +139,7 @@ impl LanguagesConfig {
                     "args": [],
                     "file_extensions": ["py"],
                     "project_patterns": ["pyproject.toml", "setup.py"],
+                    "exclude_patterns": ["**/__pycache__/**", "**/venv/**"],
                     "initialization_options": {}
                 }
             }

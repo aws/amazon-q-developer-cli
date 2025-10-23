@@ -89,6 +89,7 @@ mod tests {
             command: format!("{}-lsp", name),
             args: vec!["--stdio".to_string()],
             file_extensions: extensions.iter().map(|s| s.to_string()).collect(),
+            exclude_patterns: vec!["**/test/**".to_string()],
             initialization_options: None,
         }
     }

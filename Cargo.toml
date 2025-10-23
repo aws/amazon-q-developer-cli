@@ -59,6 +59,7 @@ http = "1.2.0"
 http-body-util = "0.1.3"
 hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.11", features = ["tokio"] }
+ignore = "0.4.24"
 indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
@@ -66,6 +67,7 @@ libc = "0.2.172"
 mimalloc = "0.1.46"
 mockito = "1.7.0"
 nix = { version = "0.29.0", features = ["feature", "fs", "ioctl", "process", "signal", "term", "user"] }
+notify = "8.2.0"
 objc2 = "0.5.2"
 objc2-app-kit = { version = "0.2.2", features = ["NSWorkspace"] }
 objc2-foundation = { version = "0.2.2", features = ["NSString", "NSURL"] }

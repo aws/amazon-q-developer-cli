@@ -5,6 +5,7 @@
 //! performing code analysis tasks.
 
 pub mod client;
+pub mod file_watcher;
 pub mod services;
 pub mod workspace_manager;
 
