@@ -1,5 +1,8 @@
 use crate::theme::StyledText;
-use crate::util::ui::should_send_structured_message;
+use crate::util::ui::{
+    should_send_structured_message,
+    should_use_ui_managed_input,
+};
 pub mod cli;
 mod consts;
 pub mod context;
@@ -426,13 +429,18 @@ impl ChatArgs {
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
+        let input_source = if should_use_ui_managed_input() {
+            None
+        } else {
+            Some(InputSource::new(os, prompt_request_sender, prompt_response_receiver)?)
+        };
 
         ChatSession::new(
             os,
             &conversation_id,
             agents,
             input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
+            input_source,
             self.resume,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,
@@ -575,7 +583,7 @@ pub struct ChatSession {
     initial_input: Option<String>,
     /// Whether we're starting a new conversation or continuing an old one.
     existing_conversation: bool,
-    input_source: InputSource,
+    input_source: Option<InputSource>,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
     spinner: Option<Spinners>,
@@ -614,7 +622,7 @@ impl ChatSession {
         conversation_id: &str,
         mut agents: Agents,
         mut input: Option<String>,
-        input_source: InputSource,
+        input_source: Option<InputSource>,
         resume_conversation: bool,
         terminal_width_provider: fn() -> Option<usize>,
         tool_manager: ToolManager,
@@ -627,13 +635,14 @@ impl ChatSession {
         // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
 
+        let should_use_ui_managed_input = input_source.is_none();
         let should_send_structured_msg = should_send_structured_message(os);
         let (view_end, managed_input, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
 
         let stderr = std::io::stderr();
         let stdout = std::io::stdout();
-        if let Err(e) = view_end.into_legacy_mode(true, StyledText, stderr, stdout) {
+        if let Err(e) = view_end.into_legacy_mode(should_use_ui_managed_input, StyledText, stderr, stdout) {
             error!("Conduit view end legacy mode exited: {:?}", e);
         }
 
@@ -737,7 +746,11 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
-            managed_input: Some(managed_input),
+            managed_input: if should_use_ui_managed_input {
+                Some(managed_input)
+            } else {
+                None
+            },
         })
     }
 
@@ -1904,8 +1917,9 @@ impl ChatSession {
                 .filter(|name| *name != DUMMY_TOOL_NAME)
                 .cloned()
                 .collect::<Vec<_>>();
-            self.input_source
-                .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
+            if let Some(input_source) = &mut self.input_source {
+                input_source.put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
+            }
         }
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
@@ -3382,9 +3396,14 @@ impl ChatSession {
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+        // If this function is called at all, input_source should not be None
+        debug_assert!(self.input_source.is_some());
+
         let mut ctrl_c = false;
+        let input_source = self.input_source.as_mut()?;
+
         loop {
-            match (self.input_source.read_line(Some(prompt)), ctrl_c) {
+            match (input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty
@@ -3856,11 +3875,11 @@ mod tests {
             "fake_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec![
+            Some(InputSource::new_mock(vec![
                 "create a new file".to_string(),
                 "y".to_string(),
                 "exit".to_string(),
-            ]),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -3984,7 +4003,7 @@ mod tests {
             "fake_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec![
+            Some(InputSource::new_mock(vec![
                 "/tools".to_string(),
                 "/tools help".to_string(),
                 "create a new file".to_string(),
@@ -4001,7 +4020,7 @@ mod tests {
                 "create a file".to_string(), // prompt again due to reset
                 "n".to_string(),             // cancel
                 "exit".to_string(),
-            ]),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -4089,7 +4108,7 @@ mod tests {
             "fake_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec![
+            Some(InputSource::new_mock(vec![
                 "create 2 new files parallel".to_string(),
                 "t".to_string(),
                 "/tools reset".to_string(),
@@ -4097,7 +4116,7 @@ mod tests {
                 "y".to_string(),
                 "y".to_string(),
                 "exit".to_string(),
-            ]),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -4165,13 +4184,13 @@ mod tests {
             "fake_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec![
+            Some(InputSource::new_mock(vec![
                 "/tools trust-all".to_string(),
                 "create a new file".to_string(),
                 "/tools reset".to_string(),
                 "create a new file".to_string(),
                 "exit".to_string(),
-            ]),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -4221,7 +4240,11 @@ mod tests {
             "fake_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec!["/subscribe".to_string(), "y".to_string(), "/quit".to_string()]),
+            Some(InputSource::new_mock(vec![
+                "/subscribe".to_string(),
+                "y".to_string(),
+                "/quit".to_string(),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -4324,11 +4347,11 @@ mod tests {
             "fake_conv_id",
             agents,
             None, // No initial input
-            InputSource::new_mock(vec![
+            Some(InputSource::new_mock(vec![
                 "read /test.txt".to_string(),
                 "y".to_string(), // Accept tool execution
                 "exit".to_string(),
-            ]),
+            ])),
             false,
             || Some(80),
             tool_manager,
@@ -4458,7 +4481,10 @@ mod tests {
             "test_conv_id",
             agents,
             None,
-            InputSource::new_mock(vec!["read /sensitive.txt".to_string(), "exit".to_string()]),
+            Some(InputSource::new_mock(vec![
+                "read /sensitive.txt".to_string(),
+                "exit".to_string(),
+            ])),
             false,
             || Some(80),
             tool_manager,
