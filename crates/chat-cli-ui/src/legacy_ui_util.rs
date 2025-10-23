@@ -123,7 +123,7 @@ impl Completer for ChatCompleter {
         if line.starts_with('@') {
             let search_word = line.strip_prefix('@').unwrap_or("");
             // Here we assume that the names given by the event loop is already namespaced
-            // approriately (i.e. not namespaced if the prompt name is unique and namespaced with
+            // appropriately (i.e. not namespaced if the prompt name is unique and namespaced with
             // their respective server if it is)
             let completions = self
                 .available_prompts
