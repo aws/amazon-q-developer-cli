@@ -355,7 +355,7 @@ enum AuthMethod {
     BuilderId,
     /// IdC (enterprise)
     IdentityCenter,
-    /// Social login
+    /// Social login (not available in remote)
     #[allow(dead_code)]
     Social(SocialProvider),
 }
