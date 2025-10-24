@@ -113,6 +113,7 @@ impl ExecuteCommand {
                                 || arg.contains("-delete")
                                 || arg.contains("-ok") // includes -okdir
                                 || arg.contains("-fprint") // includes -fprint0 and -fprintf
+                                || arg.contains("-fls")
                         }) =>
                 {
                     return true;
@@ -287,7 +288,10 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::cli::agent::{Agent, ToolSettingTarget};
+    use crate::cli::agent::{
+        Agent,
+        ToolSettingTarget,
+    };
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -334,6 +338,7 @@ mod tests {
             ("find important-dir/ -exec rm {} \\;", true),
             ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
             ("find important-dir/ -delete", true),
+            ("find important-dir/ -fls /etc/passwd", true),
             (
                 "echo y | find . -type f -maxdepth 1 -okdir open -a Calculator {} +",
                 true,
@@ -618,14 +623,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_denied_commands_invalid_regex() {
-
         let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
                 let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
                 map.insert(
-                    ToolSettingTarget("execute_bash".to_string()),
+                    ToolSettingTarget(tool_name.to_string()),
                     serde_json::json!({
                         "deniedCommands": ["^(?!ls$).*"]  // Invalid regex with unsupported lookahead
                     }),
@@ -638,7 +643,11 @@ mod tests {
         // Test command that should be denied by the pattern
         let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd",})).unwrap();
         let res = pwd_cmd.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(_)), "Invalid regex should deny all commands, got {:?}", res);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "Invalid regex should deny all commands, got {:?}",
+            res
+        );
     }
 
     #[tokio::test]
