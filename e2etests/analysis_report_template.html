@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amazon Q CLI Test Analysis Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1, h2 { color: #232f3e; }
+        .chart-container { width: 100%; height: 400px; margin: 20px 0; }
+        .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
+        .analytics-card { background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #ff9900; }
+        .matrix-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 12px; }
+        .matrix-table th, .matrix-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .matrix-table th { background-color: #232f3e; color: white; }
+        .pass { background-color: #d4edda; color: #155724; }
+        .fail { background-color: #f8d7da; color: #721c24; }
+        .na { background-color: #e2e3e5; color: #6c757d; }
+        .feature-name { text-align: left !important; font-weight: bold; }
+        .summary-stats { display: flex; justify-content: space-around; margin: 20px 0; }
+        .stat-box { text-align: center; padding: 15px; background: #e8f4fd; border-radius: 5px; }
+        .stat-number { font-size: 24px; font-weight: bold; color: #232f3e; }
+        .stat-label { color: #666; }
+        .test-summary-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .test-summary-table th, .test-summary-table td { border: 1px solid #ddd; padding: 10px; text-align: center; }
+        .test-summary-table th { background-color: #232f3e; color: white; }
+        .duration-changes-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .duration-changes-table th, .duration-changes-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .duration-changes-table td:last-child { text-align: left; font-size: 11px; }
+        .duration-changes-table th { background-color: #232f3e; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Amazon Q CLI Test Analysis Report</h1>
+        <p>Generated on: <span id="reportDate"></span></p>
+        
+        <h2>Overall Execution Statistics</h2>
+        <div class="summary-stats">
+            <div class="stat-box">
+                <div class="stat-number" id="totalReports">0</div>
+                <div class="stat-label">Total Reports</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="totalFeatures">0</div>
+                <div class="stat-label">Features Tracked</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="avgDuration">0</div>
+                <div class="stat-label">Avg Duration (min)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="bestTime">0</div>
+                <div class="stat-label">Best Time (min)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="bestWithCurrentTests">0</div>
+                <div class="stat-label">Best w/ Current Tests (min)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="latestExecution">0</div>
+                <div class="stat-label">Latest Execution (min)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="avgLast3">0</div>
+                <div class="stat-label">Avg Last 3 (min)</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number" id="avgLast5">0</div>
+                <div class="stat-label">Avg Last 5 (min)</div>
+            </div>
+        </div>
+
+        <h2>Duration and Test Count Trends</h2>
+        <div class="chart-container">
+            <canvas id="trendsChart"></canvas>
+        </div>
+        
+        <h2>Feature-wise Trends</h2>
+        <div style="margin: 10px 0;">
+            <label for="featureSelect">Select Feature: </label>
+            <select id="featureSelect" onchange="updateFeatureChart()" style="padding: 5px; font-size: 14px;">
+                <option value="">-- Select a Feature --</option>
+            </select>
+        </div>
+        <div class="chart-container">
+            <canvas id="featureTrendsChart"></canvas>
+        </div>
+        
+        <h2>Test Execution Summary</h2>
+        <table class="test-summary-table" id="testSummaryTable">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Total Tests</th>
+                    <th>Duration (minutes)</th>
+                    <th>Duration (hours)</th>
+                    <th>vs Average</th>
+                </tr>
+            </thead>
+            <tbody></tbody>
+        </table>
+
+        <div class="analytics-card">
+            <h3>Average Duration by Feature</h3>
+            <table class="test-summary-table" id="featureDurationsTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0, 'featureDurationsTable')" style="cursor: pointer;">Feature ↕</th>
+                        <th onclick="sortTable(1, 'featureDurationsTable')" style="cursor: pointer;">Avg Duration (min) ↕</th>
+                        <th onclick="sortTable(2, 'featureDurationsTable')" style="cursor: pointer;">Best Time (min) ↕</th>
+                        <th onclick="sortTable(3, 'featureDurationsTable')" style="cursor: pointer;">Best w/ Current Tests ↕</th>
+                        <th onclick="sortTable(4, 'featureDurationsTable')" style="cursor: pointer;">Latest Time (min) ↕</th>
+                        <th onclick="sortTable(5, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 3 (min) ↕</th>
+                        <th onclick="sortTable(6, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 5 (min) ↕</th>
+                        <th onclick="sortTable(7, 'featureDurationsTable')" style="cursor: pointer;">Latest Tests ↕</th>
+                        <th onclick="sortTable(8, 'featureDurationsTable')" style="cursor: pointer;">Max Tests ↕</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+
+        <div class="analytics-card">
+            <h3>All Duration Changes</h3>
+            <div id="durationChanges"></div>
+        </div>
+
+        <h2>Feature Status Matrix</h2>
+        <div style="overflow-x: auto;">
+            <table class="matrix-table" id="featureMatrix">
+                <thead>
+                    <tr>
+                        <th>Feature</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        
+        <div class="analytics-card">
+            <h3>Feature Failure Analysis</h3>
+            <table class="test-summary-table" id="failureRatesTable">
+                <thead>
+                    <tr>
+                        <th onclick="sortTable(0, 'failureRatesTable')" style="cursor: pointer;">Feature ↕</th>
+                        <th onclick="sortTable(1, 'failureRatesTable')" style="cursor: pointer;">Failure Rate (%) ↕</th>
+                        <th onclick="sortTable(2, 'failureRatesTable')" style="cursor: pointer;">Total Runs ↕</th>
+                        <th onclick="sortTable(3, 'failureRatesTable')" style="cursor: pointer;">Failed Runs ↕</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Data placeholders - will be replaced by Python script
+        const dates = {{DATES}};
+        const durations = {{DURATIONS}};
+        const testCounts = {{TEST_COUNTS}};
+        const featureMatrix = {{FEATURE_MATRIX}};
+        const analytics = {{ANALYTICS}};
+        const testSummary = {{TEST_SUMMARY}};
+        const featureTrends = {{FEATURE_TRENDS}};
+
+        // Set report date
+        document.getElementById('reportDate').textContent = new Date().toLocaleString();
+
+        // Update summary stats
+        document.getElementById('totalReports').textContent = analytics.total_reports;
+        document.getElementById('totalFeatures').textContent = analytics.all_features.length;
+        const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
+        document.getElementById('avgDuration').textContent = avgDuration.toFixed(1);
+        
+        // Update overall execution stats
+        if (analytics.overall_stats) {
+            document.getElementById('bestTime').textContent = analytics.overall_stats.best_time;
+            document.getElementById('bestWithCurrentTests').textContent = analytics.overall_stats.best_with_current_tests;
+            document.getElementById('latestExecution').textContent = analytics.overall_stats.latest_execution;
+            document.getElementById('avgLast3').textContent = analytics.overall_stats.avg_last_3;
+            document.getElementById('avgLast5').textContent = analytics.overall_stats.avg_last_5;
+        }
+
+        // Create trends chart
+        const ctx = document.getElementById('trendsChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: dates,
+                datasets: [{
+                    label: 'Duration (minutes)',
+                    data: durations,
+                    borderColor: '#ff9900',
+                    backgroundColor: 'rgba(255, 153, 0, 0.1)',
+                    yAxisID: 'y'
+                }, {
+                    label: 'Test Count',
+                    data: testCounts,
+                    borderColor: '#232f3e',
+                    backgroundColor: 'rgba(35, 47, 62, 0.1)',
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Duration (minutes)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Test Count' },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+
+        // Populate failure rates table (sorted by failure rate descending)
+        const failureRatesTable = document.getElementById('failureRatesTable').querySelector('tbody');
+        const sortedFailures = Object.entries(analytics.feature_failure_analysis)
+            .sort(([,a], [,b]) => b.failure_rate - a.failure_rate);
+        sortedFailures.forEach(([feature, data]) => {
+            const row = failureRatesTable.insertRow();
+            row.insertCell(0).textContent = feature;
+            row.insertCell(1).textContent = data.failure_rate.toFixed(1);
+            row.insertCell(2).textContent = data.total_runs;
+            row.insertCell(3).textContent = data.failed_runs;
+        });
+
+        // Populate feature durations table
+        const featureDurationsTable = document.getElementById('featureDurationsTable').querySelector('tbody');
+        Object.entries(analytics.feature_analytics).forEach(([feature, data]) => {
+            const row = featureDurationsTable.insertRow();
+            row.insertCell(0).textContent = feature;
+            row.insertCell(1).textContent = data.avg_duration;
+            row.insertCell(2).textContent = data.best_duration;
+            row.insertCell(3).textContent = data.best_duration_with_tests;
+            row.insertCell(4).textContent = data.latest_duration;
+            row.insertCell(5).textContent = data.avg_last_3;
+            row.insertCell(6).textContent = data.avg_last_5;
+            row.insertCell(7).textContent = data.latest_test_count;
+            row.insertCell(8).textContent = data.max_tests;
+        });
+        
+        // Sort table function
+        function sortTable(columnIndex, tableId) {
+            const table = document.getElementById(tableId);
+            const tbody = table.querySelector('tbody');
+            const rows = Array.from(tbody.rows);
+            
+            rows.sort((a, b) => {
+                const aVal = a.cells[columnIndex].textContent;
+                const bVal = b.cells[columnIndex].textContent;
+                
+                if (columnIndex === 0) { // Feature name - string sort
+                    return aVal.localeCompare(bVal);
+                } else { // Numeric columns
+                    return parseFloat(bVal) - parseFloat(aVal);
+                }
+            });
+            
+            rows.forEach(row => tbody.appendChild(row));
+        }
+        
+        // Make sortTable globally available
+        window.sortTable = sortTable;
+        
+        // Populate feature dropdown
+        const featureSelect = document.getElementById('featureSelect');
+        analytics.all_features.forEach(feature => {
+            const option = document.createElement('option');
+            option.value = feature;
+            option.textContent = feature;
+            featureSelect.appendChild(option);
+        });
+        
+        // Feature trends chart
+        let featureTrendsChart = null;
+        
+        function updateFeatureChart() {
+            const selectedFeature = featureSelect.value;
+            if (!selectedFeature) {
+                if (featureTrendsChart) {
+                    featureTrendsChart.destroy();
+                    featureTrendsChart = null;
+                }
+                return;
+            }
+            
+            const featureData = featureTrends[selectedFeature];
+            const ctx = document.getElementById('featureTrendsChart').getContext('2d');
+            
+            if (featureTrendsChart) {
+                featureTrendsChart.destroy();
+            }
+            
+            featureTrendsChart = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: dates,
+                    datasets: [{
+                        label: `${selectedFeature} - Duration (minutes)`,
+                        data: featureData.durations,
+                        borderColor: '#ff9900',
+                        backgroundColor: 'rgba(255, 153, 0, 0.1)',
+                        yAxisID: 'y'
+                    }, {
+                        label: `${selectedFeature} - Test Count`,
+                        data: featureData.test_counts,
+                        borderColor: '#232f3e',
+                        backgroundColor: 'rgba(35, 47, 62, 0.1)',
+                        yAxisID: 'y1'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            type: 'linear',
+                            display: true,
+                            position: 'left',
+                            title: { display: true, text: 'Duration (minutes)' }
+                        },
+                        y1: {
+                            type: 'linear',
+                            display: true,
+                            position: 'right',
+                            title: { display: true, text: 'Test Count' },
+                            grid: { drawOnChartArea: false }
+                        }
+                    }
+                }
+            });
+        }
+        
+        window.updateFeatureChart = updateFeatureChart;
+
+        // Populate duration changes
+        const durationChangesDiv = document.getElementById('durationChanges');
+        if (analytics.all_duration_changes && analytics.all_duration_changes.length > 0) {
+            let changesHtml = '<table class="duration-changes-table"><thead><tr><th>Date</th><th>Total Time (min)</th><th>Total Tests</th><th>vs Previous</th><th>vs Prev 3 Avg</th><th>vs Prev 5 Avg</th><th>vs Average</th><th>vs Best Time</th><th>vs Best w/ Current</th><th>Contributing Features</th></tr></thead><tbody>';
+            analytics.all_duration_changes.forEach(change => {
+                const changeDate = new Date(change.date).toLocaleDateString();
+                const changeClass = change.change_percent > 0 ? 'fail' : 'pass';
+                
+                // Build feature breakdown table
+                let featureBreakdown = '';
+                if (change.feature_breakdown && change.feature_breakdown.length > 0) {
+                    const allFeatures = change.feature_breakdown
+                        .sort((a, b) => b.current_duration - a.current_duration);
+                    
+                    featureBreakdown = '<table style="width:100%; font-size:10px; border-collapse:collapse;">';
+                    featureBreakdown += '<tr><th style="border:1px solid #ccc; padding:2px;">Feature</th><th style="border:1px solid #ccc; padding:2px;">Duration</th><th style="border:1px solid #ccc; padding:2px;">Tests</th><th style="border:1px solid #ccc; padding:2px;">Change</th></tr>';
+                    
+                    allFeatures.forEach(f => {
+                        const testChangeText = f.test_change > 0 ? `+${f.test_change}` : f.test_change < 0 ? `${f.test_change}` : '0';
+                        const testChangeColor = f.test_change > 0 ? 'color:green;' : f.test_change < 0 ? 'color:red;' : '';
+                        featureBreakdown += `<tr>`;
+                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.feature}</td>`;
+                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.current_duration}min (avg:${f.average_duration})</td>`;
+                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.current_test_count}</td>`;
+                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px; ${testChangeColor}">${testChangeText}</td>`;
+                        featureBreakdown += `</tr>`;
+                    });
+                    
+                    featureBreakdown += '</table>';
+                } else {
+                    featureBreakdown = 'No feature data available';
+                }
+                
+                const changeClass3 = change.change_vs_prev_3 > 0 ? 'fail' : 'pass';
+                const changeClass5 = change.change_vs_prev_5 > 0 ? 'fail' : 'pass';
+                const changeClassAvg = change.change_vs_avg > 0 ? 'fail' : 'pass';
+                const changeClassBest = change.change_vs_best > 0 ? 'fail' : 'pass';
+                const changeClassBestCurrent = change.change_vs_best_current > 0 ? 'fail' : 'pass';
+                
+                // Format comparison cells with baseline time, difference, and percentage on separate lines
+                const formatComparison = (percent, baselineTime, currentTime) => {
+                    const diff = currentTime - baselineTime;
+                    return `${baselineTime}<br>${diff > 0 ? '+' : ''}${diff.toFixed(1)}<br>(${percent > 0 ? '+' : ''}${percent.toFixed(1)}%)`;
+                };
+                
+                const vsPrevious = formatComparison(change.change_percent, change.prev_duration_minutes, change.curr_duration_minutes);
+                const vsPrev3 = change.prev_3_avg_minutes > 0 ? formatComparison(change.change_vs_prev_3, change.prev_3_avg_minutes, change.curr_duration_minutes) : 'N/A';
+                const vsPrev5 = change.prev_5_avg_minutes > 0 ? formatComparison(change.change_vs_prev_5, change.prev_5_avg_minutes, change.curr_duration_minutes) : 'N/A';
+                const vsAvg = formatComparison(change.change_vs_avg, change.overall_avg_minutes, change.curr_duration_minutes);
+                const vsBest = formatComparison(change.change_vs_best, change.best_time_minutes, change.curr_duration_minutes);
+                const vsBestCurrent = formatComparison(change.change_vs_best_current, change.best_current_minutes, change.curr_duration_minutes);
+                
+                changesHtml += `<tr><td>${changeDate}</td><td>${change.curr_duration_minutes}</td><td>${change.total_tests}</td><td class="${changeClass}">${vsPrevious}</td><td class="${changeClass3}">${vsPrev3}</td><td class="${changeClass5}">${vsPrev5}</td><td class="${changeClassAvg}">${vsAvg}</td><td class="${changeClassBest}">${vsBest}</td><td class="${changeClassBestCurrent}">${vsBestCurrent}</td><td style="text-align: left; padding:5px;">${featureBreakdown}</td></tr>`;
+            });
+            changesHtml += '</tbody></table>';
+            durationChangesDiv.innerHTML = changesHtml;
+        } else {
+            durationChangesDiv.innerHTML = '<p>No duration changes data available.</p>';
+        }
+        
+        // Populate test summary table (sorted by date descending)
+        const testSummaryTable = document.getElementById('testSummaryTable').querySelector('tbody');
+        const sortedTestSummary = [...testSummary].reverse(); // Reverse to show most recent first
+        sortedTestSummary.forEach(summary => {
+            const row = testSummaryTable.insertRow();
+            row.insertCell(0).textContent = summary.date;
+            row.insertCell(1).textContent = summary.total_tests;
+            row.insertCell(2).textContent = summary.duration_minutes;
+            row.insertCell(3).textContent = summary.duration_hours;
+            
+            // Add comparison column with color coding
+            const comparisonCell = row.insertCell(4);
+            const comparisonText = summary.avg_comparison > 0 ? `+${summary.avg_comparison}%` : `${summary.avg_comparison}%`;
+            comparisonCell.textContent = comparisonText;
+            
+            if (summary.is_significant) {
+                comparisonCell.style.backgroundColor = summary.avg_comparison > 0 ? '#f8d7da' : '#d4edda';
+                comparisonCell.style.color = summary.avg_comparison > 0 ? '#721c24' : '#155724';
+            } else {
+                comparisonCell.style.backgroundColor = '#d4edda';
+                comparisonCell.style.color = '#155724';
+            }
+        });
+
+        // Build feature matrix table
+        const table = document.getElementById('featureMatrix');
+        const thead = table.querySelector('thead tr');
+        const tbody = table.querySelector('tbody');
+
+        // Reverse dates to show latest first
+        const reversedDates = [...dates].reverse();
+
+        // Add date headers (latest first)
+        reversedDates.forEach(date => {
+            const th = document.createElement('th');
+            th.textContent = date;
+            thead.appendChild(th);
+        });
+
+        // Add feature rows
+        featureMatrix.forEach(row => {
+            const tr = document.createElement('tr');
+            
+            // Feature name cell
+            const featureCell = document.createElement('td');
+            featureCell.textContent = row.feature;
+            featureCell.className = 'feature-name';
+            tr.appendChild(featureCell);
+            
+            // Status cells for each date (latest first)
+            reversedDates.forEach(date => {
+                const cell = document.createElement('td');
+                const status = row[date] || 'N/A';
+                cell.textContent = status;
+                cell.className = status.toLowerCase();
+                tr.appendChild(cell);
+            });
+            
+            tbody.appendChild(tr);
+        });
+        
+        // Auto-select first feature and show its chart (after all data is loaded)
+        if (analytics.all_features.length > 0) {
+            featureSelect.value = analytics.all_features[0];
+            updateFeatureChart();
+        }
+    </script>
+</body>
+</html>
