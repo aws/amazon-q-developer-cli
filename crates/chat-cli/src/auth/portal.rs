@@ -1,7 +1,6 @@
 //! Unified auth portal integration for streamlined authentication
 //! Handles callbacks from https://app.kiro.dev/signin
 
-use std::collections::HashMap;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -19,6 +18,7 @@ use tokio::net::TcpListener;
 use tracing::{
     debug,
     info,
+    warn,
 };
 
 use crate::auth::AuthError;
@@ -45,17 +45,25 @@ struct AuthPortalCallback {
     sso_region: Option<String>,
     state: String,
     path: String,
+    error: Option<String>,
+    error_description: Option<String>,
 }
 
 pub enum PortalResult {
-    /// User authenticated with social provider (Google/GitHub)
     Social(SocialProvider),
-    /// User selected BuilderID authentication
-    BuilderId { issuer_url: String, idc_region: String },
-    /// User selected AWS Identity Center authentication
-    AwsIdc { issuer_url: String, idc_region: String },
-    /// User selected internal authentication (Amazon-only)
-    Internal { issuer_url: String, idc_region: String },
+    BuilderId {
+        issuer_url: String,
+        idc_region: String,
+    },
+    AwsIdc {
+        issuer_url: String,
+        idc_region: String,
+    },
+    /// Internal amazon user
+    Internal {
+        issuer_url: String,
+        idc_region: String,
+    },
 }
 
 /// Local-only: open unified portal and handle single callback
@@ -85,7 +93,49 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
 
     let callback = wait_for_auth_callback(listener, state.clone()).await?;
 
+    if let Some(error) = &callback.error {
+        let friendly_msg =
+            format_user_friendly_error(error, callback.error_description.as_deref(), &callback.login_option);
+
+        warn!(
+            "OAuth error for {}: {} - {}",
+            callback.login_option, error, friendly_msg
+        );
+
+        return Err(match callback.login_option.as_str() {
+            "google" | "github" => AuthError::SocialAuthProviderFailure(friendly_msg),
+            _ => AuthError::OAuthCustomError(friendly_msg),
+        });
+    }
+
     process_portal_callback(db, callback, port, &verifier).await
+}
+
+fn format_user_friendly_error(error_code: &str, description: Option<&str>, provider: &str) -> String {
+    let cleaned_description = description.map(|d| {
+        let first_part = d.split(';').next().unwrap_or(d);
+        // Replace + with spaces (URL encoding)
+        first_part.replace('+', " ").trim().to_string()
+    });
+
+    match error_code {
+        "access_denied" => {
+            format!(
+                "{} denied access to Kiro. Please ensure you grant all required permissions.",
+                provider
+            )
+        },
+        "invalid_request" => "Authentication failed due to an invalid request. Please try again.".to_string(),
+        "unauthorized_client" => "The application is not authorized. Please contact support.".to_string(),
+        "server_error" => {
+            format!("{} login is temporarily unavailable. Please try again later.", provider)
+        },
+        "invalid_scope" => "The requested permissions are invalid. Please contact support.".to_string(),
+        _ => {
+            // For unknown errors, use cleaned description or a generic message
+            cleaned_description.unwrap_or_else(|| format!("Authentication failed: {}. Please try again.", error_code))
+        },
+    }
 }
 
 /// Build the authorization URL with all required parameters
@@ -103,7 +153,6 @@ fn build_auth_url(redirect_base: &str, state: &str, challenge: &str) -> String {
     )
 }
 
-/// Process the callback based on login option selected
 async fn process_portal_callback(
     db: &mut Database,
     callback: AuthPortalCallback,
@@ -245,7 +294,18 @@ async fn handle_valid_callback(
     path: &str,
     tx: tokio::sync::mpsc::Sender<AuthPortalCallback>,
 ) -> Result<Response<Full<Bytes>>, AuthError> {
-    let query_params = parse_query_params(uri);
+    let query_params = uri
+        .query()
+        .map(|query| {
+            query
+                .split('&')
+                .filter_map(|kv| {
+                    kv.split_once('=')
+                        .map(|(k, v)| (k.to_string(), urlencoding::decode(v).unwrap_or_default().to_string()))
+                })
+                .collect::<std::collections::HashMap<String, String>>() // 
+        })
+        .ok_or(AuthError::OAuthCustomError("query parameters are missing".into()))?;
 
     let callback = AuthPortalCallback {
         login_option: query_params.get("login_option").cloned().unwrap_or_default(),
@@ -254,22 +314,20 @@ async fn handle_valid_callback(
         sso_region: query_params.get("idc_region").cloned(),
         state: query_params.get("state").cloned().unwrap_or_default(),
         path: path.to_string(),
+        error: query_params.get("error").cloned(),
+        error_description: query_params.get("error_description").cloned(),
     };
 
-    debug!(
-        login_option=%callback.login_option,
-        code_present=%callback.code.is_some(),
-        issuer_url=?callback.issuer_url,
-        state=%callback.state,
-        "Parsed portal callback query"
-    );
+    let _ = tx.send(callback.clone()).await;
 
-    let _ = tx.send(callback).await;
-
-    build_redirect_response("success", None)
+    if let Some(error) = &callback.error {
+        let error_msg = callback.error_description.as_deref().unwrap_or(error.as_str());
+        build_redirect_response("error", Some(error_msg))
+    } else {
+        build_redirect_response("success", None)
+    }
 }
 
-/// Handle invalid callback paths
 async fn handle_invalid_callback(path: &str) -> Result<Response<Full<Bytes>>, AuthError> {
     info!(%path, "Invalid callback path, redirecting to portal");
     build_redirect_response("error", Some("Invalid callback path"))
@@ -289,18 +347,6 @@ fn build_redirect_response(status: &str, error_message: Option<&str>) -> Result<
         .header("Cache-Control", "no-store")
         .body(Full::new(Bytes::from("")))
         .expect("valid response"))
-}
-
-/// Parse query parameters from URI
-fn parse_query_params(uri: &hyper::Uri) -> HashMap<String, String> {
-    uri.query()
-        .map(|q| {
-            q.split('&')
-                .filter_map(|kv| kv.split_once('='))
-                .map(|(k, v)| (k.to_string(), urlencoding::decode(v).unwrap_or_default().to_string()))
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 async fn bind_allowed_port(ports: &[u16]) -> Result<TcpListener, AuthError> {

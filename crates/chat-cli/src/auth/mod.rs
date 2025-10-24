@@ -65,10 +65,7 @@ pub enum AuthError {
     Reqwest(#[from] reqwest::Error),
     #[error("HTTP error: {0}")]
     HttpStatus(reqwest::StatusCode),
-    // Social auth specific errors
-    #[error(
-        "Authentication failed: The identity provider denied access. Please ensure you grant all required permissions."
-    )]
+    #[error("Authentication failed: {0}")]
     SocialAuthProviderFailure(String),
 }
 

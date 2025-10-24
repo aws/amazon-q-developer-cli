@@ -200,7 +200,6 @@ impl SocialToken {
             "redirect_uri": redirect_uri,
         });
 
-        // Send request
         let response = client
             .post(format!("{}/oauth/token", SOCIAL_AUTH_SERVICE_ENDPOINT))
             .header("Content-Type", "application/json")
@@ -209,7 +208,6 @@ impl SocialToken {
             .send()
             .await?;
 
-        // Handle response
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
