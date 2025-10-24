@@ -14,6 +14,7 @@
 #![allow(clippy::unnecessary_map_on_constructor)]
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::redundant_explicit_links)]
+#![allow(rustdoc::invalid_html_tags)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
@@ -51,6 +52,24 @@ pub use config::Config;
 pub use error_meta::Error;
 
 /// Client for calling Amazon Q Developer Streaming.
+/// # Using the `Client`
+///
+/// A client has a function for every operation that can be performed by the service.
+/// For example, the [`GenerateCodeFromCommands`](crate::operation::generate_code_from_commands)
+/// operation has a [`Client::generate_code_from_commands`], function which returns a builder for
+/// that operation. The fluent builder ultimately has a `send()` function that returns an async
+/// future that returns a result, as illustrated below:
+///
+/// ```rust,ignore
+/// let result = client.generate_code_from_commands()
+///     .output_format("example")
+///     .send()
+///     .await;
+/// ```
+///
+/// The underlying HTTP requests that get made by this can be modified with the
+/// `customize_operation` function on the fluent builder. See the
+/// [`customize`](crate::client::customize) module for more information.
 pub mod client;
 
 /// Configuration for Amazon Q Developer Streaming.
@@ -73,7 +92,7 @@ pub mod primitives;
 /// Data structures used by operation inputs/outputs.
 pub mod types;
 
-mod auth_plugin;
+mod event_receiver;
 
 pub(crate) mod protocol_serde;
 
@@ -83,7 +102,7 @@ mod serialization_settings;
 
 mod serde_util;
 
-mod event_receiver;
+mod endpoint_lib;
 
 mod event_stream_serde;
 

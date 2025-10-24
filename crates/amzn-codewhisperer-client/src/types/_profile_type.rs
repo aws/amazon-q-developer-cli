@@ -13,6 +13,7 @@
 /// # let profiletype = unimplemented!();
 /// match profiletype {
 ///     ProfileType::Codewhisperer => { /* ... */ },
+///     ProfileType::Kiro => { /* ... */ },
 ///     ProfileType::QDeveloper => { /* ... */ },
 ///     other @ _ if other.as_str() == "NewFeature" => { /* handles a case for `NewFeature` */ },
 ///     _ => { /* ... */ },
@@ -50,6 +51,8 @@ pub enum ProfileType {
     #[allow(missing_docs)] // documentation missing in model
     Codewhisperer,
     #[allow(missing_docs)] // documentation missing in model
+    Kiro,
+    #[allow(missing_docs)] // documentation missing in model
     QDeveloper,
     /// `Unknown` contains new variants that have been added since this code was generated.
     #[deprecated(
@@ -61,6 +64,7 @@ impl ::std::convert::From<&str> for ProfileType {
     fn from(s: &str) -> Self {
         match s {
             "CODEWHISPERER" => ProfileType::Codewhisperer,
+            "KIRO" => ProfileType::Kiro,
             "Q_DEVELOPER" => ProfileType::QDeveloper,
             other => ProfileType::Unknown(crate::primitives::sealed_enum_unknown::UnknownVariantValue(
                 other.to_owned(),
@@ -80,6 +84,7 @@ impl ProfileType {
     pub fn as_str(&self) -> &str {
         match self {
             ProfileType::Codewhisperer => "CODEWHISPERER",
+            ProfileType::Kiro => "KIRO",
             ProfileType::QDeveloper => "Q_DEVELOPER",
             ProfileType::Unknown(value) => value.as_str(),
         }
@@ -87,7 +92,7 @@ impl ProfileType {
 
     /// Returns all the `&str` representations of the enum members.
     pub const fn values() -> &'static [&'static str] {
-        &["CODEWHISPERER", "Q_DEVELOPER"]
+        &["CODEWHISPERER", "KIRO", "Q_DEVELOPER"]
     }
 }
 impl ::std::convert::AsRef<str> for ProfileType {
@@ -111,6 +116,7 @@ impl ::std::fmt::Display for ProfileType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ProfileType::Codewhisperer => write!(f, "CODEWHISPERER"),
+            ProfileType::Kiro => write!(f, "KIRO"),
             ProfileType::QDeveloper => write!(f, "Q_DEVELOPER"),
             ProfileType::Unknown(value) => write!(f, "{}", value),
         }
