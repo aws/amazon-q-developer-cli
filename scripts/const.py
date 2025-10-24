@@ -1,26 +1,26 @@
 import pathlib
 
 
-APP_NAME = "Amazon Q"
-CLI_BINARY_NAME = "q"
-CHAT_BINARY_NAME = "qchat"
-PTY_BINARY_NAME = "qterm"
-DESKTOP_BINARY_NAME = "q-desktop"
-URL_SCHEMA = "q"
-TAURI_PRODUCT_NAME = "q_desktop"
-LINUX_PACKAGE_NAME = "amazon-q"
+APP_NAME = "Kiro-Cli"
+CLI_BINARY_NAME = "kiro-cli"
+CHAT_BINARY_NAME = "kiro-cli-chat"
+PTY_BINARY_NAME = "kiro-cli-term"
+DESKTOP_BINARY_NAME = "kiro-cli-desktop"
+URL_SCHEMA = "kiro-cli"
+TAURI_PRODUCT_NAME = "kiro-cli-desktop"
+LINUX_PACKAGE_NAME = "kiro-cli"
 
 # macos specific
 MACOS_BUNDLE_ID = "com.amazon.codewhisperer"
 DMG_NAME = APP_NAME
 
 # Linux specific
-LINUX_ARCHIVE_NAME = "q"
+LINUX_ARCHIVE_NAME = "kiro-cli"
 LINUX_LEGACY_GNOME_EXTENSION_UUID = "amazon-q-for-cli-legacy-gnome-integration@aws.amazon.com"
 LINUX_MODERN_GNOME_EXTENSION_UUID = "amazon-q-for-cli-gnome-integration@aws.amazon.com"
 
 # cargo packages
-CLI_PACKAGE_NAME = "q_cli"
+CLI_PACKAGE_NAME = "kiro-cli"
 CHAT_PACKAGE_NAME = "chat_cli"
 PTY_PACKAGE_NAME = "figterm"
 DESKTOP_PACKAGE_NAME = "fig_desktop"
