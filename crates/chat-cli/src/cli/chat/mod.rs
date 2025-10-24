@@ -2985,6 +2985,16 @@ impl ChatSession {
                     )?;
                 }
 
+                // Display continuation ID if available and debug mode is enabled
+                if std::env::var_os("Q_SHOW_CONTINUATION_IDS").is_some() {
+                    queue!(
+                        self.stdout,
+                        style::SetForegroundColor(Color::DarkGrey),
+                        style::Print(format!("({})\n", self.conversation.current_continuation_id())),
+                        style::SetForegroundColor(Color::Reset)
+                    )?;
+                }
+
                 for (i, citation) in &state.citations {
                     queue!(
                         self.stdout,
