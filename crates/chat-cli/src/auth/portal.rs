@@ -17,6 +17,7 @@ use rand::Rng;
 use tokio::net::TcpListener;
 use tracing::{
     debug,
+    error,
     info,
     warn,
 };
@@ -232,12 +233,33 @@ async fn wait_for_auth_callback(
 ) -> Result<AuthPortalCallback, AuthError> {
     let (tx, mut rx) = tokio::sync::mpsc::channel::<AuthPortalCallback>(1);
 
-    // Accept a single connection
     let server_handle = tokio::spawn(async move {
-        if let Ok((stream, _)) = listener.accept().await {
-            let io = TokioIo::new(stream);
-            let service = AuthCallbackService { tx: tx.clone() };
-            let _ = http1::Builder::new().serve_connection(io, service).await;
+        const MAX_CONNECTIONS: usize = 3;
+        let mut count = 0;
+
+        loop {
+            if count >= MAX_CONNECTIONS {
+                warn!("Reached max connections ({})", MAX_CONNECTIONS);
+                break;
+            }
+
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    count += 1;
+                    debug!("Connection {}/{}", count, MAX_CONNECTIONS);
+
+                    let io = TokioIo::new(stream);
+                    let service = AuthCallbackService { tx: tx.clone() };
+
+                    tokio::spawn(async move {
+                        let _ = http1::Builder::new().serve_connection(io, service).await;
+                    });
+                },
+                Err(e) => {
+                    error!("Accept failed: {}", e);
+                    break;
+                },
+            }
         }
     });
 
@@ -329,7 +351,7 @@ async fn handle_valid_callback(
 }
 
 async fn handle_invalid_callback(path: &str) -> Result<Response<Full<Bytes>>, AuthError> {
-    info!(%path, "Invalid callback path, redirecting to portal");
+    info!(%path, "Invalid callback path: {}, redirecting to portal", path);
     build_redirect_response("error", Some("Invalid callback path"))
 }
 
