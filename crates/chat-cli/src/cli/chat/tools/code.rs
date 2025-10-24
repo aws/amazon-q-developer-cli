@@ -2,7 +2,7 @@ use std::io::Write;
 
 use eyre::Result;
 use serde::Deserialize;
-
+use code_agent_sdk::SymbolInfo;
 use super::{InvokeOutput, OutputKind};
 use crate::cli::agent::{Agent, PermissionEvalResult};
 use crate::cli::experiment::experiment_manager::{ExperimentManager, ExperimentName};
@@ -110,50 +110,23 @@ impl Code {
                     eyre::bail!("Symbol name cannot be empty");
                 }
                 if let Some(file_path) = &params.file_path {
-                    let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
-                    if !path.exists() {
-                        eyre::bail!("File path '{}' does not exist", file_path);
-                    }
+                    Self::validate_file_exists(os, file_path)?;
                 }
                 Ok(())
             }
             Code::FindReferences(params) => {
-                let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &params.file_path);
-                if !path.exists() {
-                    eyre::bail!("File path '{}' does not exist", params.file_path);
-                }
-                if params.row < 1 {
-                    eyre::bail!("Row number must be >= 1 (got {})", params.row);
-                }
-                if params.column < 1 {
-                    eyre::bail!("Column number must be >= 1 (got {})", params.column);
-                }
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
                 Ok(())
             }
             Code::GotoDefinition(params) => {
-                let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &params.file_path);
-                if !path.exists() {
-                    eyre::bail!("File path '{}' does not exist", params.file_path);
-                }
-                if params.row < 1 {
-                    eyre::bail!("Row number must be >= 1 (got {})", params.row);
-                }
-                if params.column < 1 {
-                    eyre::bail!("Column number must be >= 1 (got {})", params.column);
-                }
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
                 Ok(())
             }
             Code::RenameSymbol(params) => {
-                let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &params.file_path);
-                if !path.exists() {
-                    eyre::bail!("File path '{}' does not exist", params.file_path);
-                }
-                if params.row < 1 {
-                    eyre::bail!("Row number must be >= 1 (got {})", params.row);
-                }
-                if params.column < 1 {
-                    eyre::bail!("Column number must be >= 1 (got {})", params.column);
-                }
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
                 if params.new_name.trim().is_empty() {
                     eyre::bail!("New name cannot be empty");
                 }
@@ -161,10 +134,7 @@ impl Code {
             }
             Code::Format(params) => {
                 if let Some(file_path) = &params.file_path {
-                    let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
-                    if !path.exists() {
-                        eyre::bail!("File path '{}' does not exist", file_path);
-                    }
+                    Self::validate_file_exists(os, file_path)?;
                 }
                 if params.tab_size < 1 {
                     eyre::bail!("Tab size must be >= 1 (got {})", params.tab_size);
@@ -172,10 +142,7 @@ impl Code {
                 Ok(())
             }
             Code::GetDocumentSymbols(params) => {
-                let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &params.file_path);
-                if !path.exists() {
-                    eyre::bail!("File path '{}' does not exist", params.file_path);
-                }
+                Self::validate_file_exists(os, &params.file_path)?;
                 Ok(())
             }
             Code::LookupSymbols(params) => {
@@ -183,15 +150,30 @@ impl Code {
                     eyre::bail!("Symbols list cannot be empty");
                 }
                 if let Some(file_path) = &params.file_path {
-                    let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
-                    if !path.exists() {
-                        eyre::bail!("File path '{}' does not exist", file_path);
-                    }
+                    Self::validate_file_exists(os, file_path)?;
                 }
                 Ok(())
             }
             Code::InitializeWorkspace => Ok(()),
         }
+    }
+
+    fn validate_file_exists(os: &Os, file_path: &str) -> Result<()> {
+        let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
+        if !path.exists() {
+            eyre::bail!("File path '{}' does not exist", file_path);
+        }
+        Ok(())
+    }
+
+    fn validate_position(row: i32, column: i32) -> Result<()> {
+        if row < 1 {
+            eyre::bail!("Row number must be >= 1 (got {})", row);
+        }
+        if column < 1 {
+            eyre::bail!("Column number must be >= 1 (got {})", column);
+        }
+        Ok(())
     }
 
     pub async fn invoke(
@@ -229,35 +211,35 @@ impl Code {
                                     StyledText::reset(),
                                     style::Print("\"\n"),
                                 )?;
+                                result = "No symbols found".to_string();
                             } else {
+                                let limit = params.limit.unwrap_or(10) as usize;
+                                let is_truncated = symbols.len() >= limit;
+                                
                                 queue!(
                                     _stdout,
                                     style::Print("\n🔍 Found "),
                                     StyledText::success_fg(),
                                     style::Print(&symbols.len().to_string()),
                                     StyledText::reset(),
-                                    style::Print(" symbol(s):\n"),
+                                    style::Print(" symbol(s)"),
                                 )?;
-                                for (i, symbol) in symbols.iter().enumerate() {
-                                    let symbol_type = symbol.symbol_type.as_deref().unwrap_or("symbol");
+                                
+                                if is_truncated {
                                     queue!(
                                         _stdout,
-                                        style::Print(&format!("  {}. ", i + 1)),
-                                        StyledText::info_fg(),
-                                        style::Print(symbol_type),
-                                        StyledText::reset(),
                                         style::Print(" "),
-                                        StyledText::success_fg(),
-                                        style::Print(&symbol.name),
+                                        StyledText::warning_fg(),
+                                        style::Print("(limited by max results)"),
                                         StyledText::reset(),
-                                        style::Print(&format!(" at {}:{}:{}\n", 
-                                            symbol.file_path, 
-                                            symbol.start_row, 
-                                            symbol.start_column)),
                                     )?;
                                 }
+                                
+                                queue!(_stdout, style::Print(":\n"))?;
+                                Self::render_symbols(&symbols, _stdout)?;
+                                
+                                result = format!("{:?}", symbols);
                             }
-                            result = format!("{:?}", symbols);
                         }
                         Err(e) => {
                             queue!(
@@ -283,12 +265,13 @@ impl Code {
                             if references.is_empty() {
                                 queue!(
                                     _stdout,
-                                    style::Print("\n🔗 No references found at "),
+                                    style::Print("\n🔗 No references found for symbol at "),
                                     StyledText::warning_fg(),
                                     style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
                                     StyledText::reset(),
                                     style::Print("\n"),
                                 )?;
+                                result = "No references found".to_string();
                             } else {
                                 queue!(
                                     _stdout,
@@ -296,26 +279,13 @@ impl Code {
                                     StyledText::success_fg(),
                                     style::Print(&references.len().to_string()),
                                     StyledText::reset(),
-                                    style::Print(" reference(s) at "),
-                                    StyledText::success_fg(),
-                                    style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
-                                    StyledText::reset(),
-                                    style::Print(":\n"),
+                                    style::Print(" reference(s) across workspace:\n"),
                                 )?;
-                                for (i, reference) in references.iter().enumerate() {
-                                    queue!(
-                                        _stdout,
-                                        style::Print(&format!("  {}. ", i + 1)),
-                                        StyledText::info_fg(),
-                                        style::Print(&reference.file_path),
-                                        StyledText::reset(),
-                                        style::Print(&format!(":{}:{}\n", 
-                                            reference.start_row, 
-                                            reference.start_column)),
-                                    )?;
-                                }
+                                
+                                Self::render_references(&references, _stdout)?;
+                                
+                                result = format!("{:?}", references);
                             }
-                            result = format!("{:?}", references);
                         }
                         Err(e) => {
                             queue!(
@@ -338,10 +308,53 @@ impl Code {
                     };
                     
                     match client.goto_definition(request).await {
-                        Ok(definition) => {
+                        Ok(Some(definition)) => {
+                            // Always show location with context in single line
+                            let context = if let Some(source) = &definition.source_line {
+                                let trimmed = source.trim();
+                                if !trimmed.is_empty() {
+                                    format!(": {}", trimmed)
+                                } else {
+                                    String::new()
+                                }
+                            } else {
+                                String::new()
+                            };
+                            
+                            queue!(
+                                _stdout,
+                                style::Print("\n"),
+                                StyledText::success_fg(),
+                                style::Print(&format!("{}:{}:{}{}", 
+                                    definition.file_path, 
+                                    definition.start_row, 
+                                    definition.start_column,
+                                    context)),
+                                StyledText::reset(),
+                                style::Print("\n"),
+                            )?;
+                            
                             result = format!("{:?}", definition);
                         }
+                        Ok(None) => {
+                            queue!(
+                                _stdout,
+                                style::Print("\n⚠️ No definition found for symbol at "),
+                                StyledText::warning_fg(),
+                                style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
+                                StyledText::reset(),
+                                style::Print("\n"),
+                            )?;
+                            result = "No definition found".to_string();
+                        }
                         Err(e) => {
+                            queue!(
+                                _stdout,
+                                style::Print("\n❌ Failed to find definition: "),
+                                StyledText::error_fg(),
+                                style::Print(&format!("{}\n", e)),
+                                StyledText::reset(),
+                            )?;
                             result = format!("❌ Failed to find definition: {}", e);
                         }
                     }
@@ -356,8 +369,16 @@ impl Code {
                     };
                     
                     match client.rename_symbol(request).await {
-                        Ok(rename_result) => {
-                            result = format!("{:?}", rename_result);
+                        Ok(Some(rename_result)) => {
+                            let is_dry_run = params.dry_run.unwrap_or(false);
+                            if is_dry_run {
+                                result = format!("{:?}", rename_result);
+                            } else {
+                                result = format!("{:?}", rename_result);
+                            }
+                        }
+                        Ok(None) => {
+                            result = "⚠️ No symbol found at the specified location".to_string();
                         }
                         Err(e) => {
                             result = format!("❌ Failed to rename symbol: {}", e);
@@ -372,8 +393,23 @@ impl Code {
                     };
                     
                     match client.format_code(request).await {
-                        Ok(format_result) => {
-                            result = format!("{:?}", format_result);
+                        Ok(lines_formatted) => {
+                            if lines_formatted > 0 {
+                                queue!(
+                                    _stdout,
+                                    style::Print("\n🎨 Applied formatting to "),
+                                    StyledText::success_fg(),
+                                    style::Print(&lines_formatted.to_string()),
+                                    StyledText::reset(),
+                                    style::Print(" lines\n"),
+                                )?;
+                            } else {
+                                queue!(
+                                    _stdout,
+                                    style::Print("\n🎨 No formatting changes needed\n"),
+                                )?;
+                            }
+                            result = format!("{:?}", lines_formatted);
                         }
                         Err(e) => {
                             result = format!("❌ Failed to format code: {}", e);
@@ -387,9 +423,29 @@ impl Code {
                     
                     match client.get_document_symbols(request).await {
                         Ok(symbols) => {
+                            if symbols.is_empty() {
+                                queue!(
+                                    _stdout,
+                                    style::Print("\n📄 No symbols found in "),
+                                    StyledText::warning_fg(),
+                                    style::Print(&params.file_path),
+                                    StyledText::reset(),
+                                    style::Print("\n"),
+                                )?;
+                            } else {
+                                queue!(_stdout, style::Print("\n"))?;
+                                Self::render_symbols(&symbols, _stdout)?;
+                            }
                             result = format!("{:?}", symbols);
                         }
                         Err(e) => {
+                            queue!(
+                                _stdout,
+                                style::Print("\n❌ Failed to get document symbols: "),
+                                StyledText::error_fg(),
+                                style::Print(&format!("{}\n", e)),
+                                StyledText::reset(),
+                            )?;
                             result = format!("❌ Failed to get document symbols: {}", e);
                         }
                     }
@@ -405,11 +461,14 @@ impl Code {
                     
                     match client.get_symbols(request).await {
                         Ok(symbols) => {
+                            let requested_count = params.symbols.len();
+                            let found_count = symbols.len();
+                            
                             if symbols.is_empty() {
                                 queue!(
                                     _stdout,
                                     StyledText::warning_fg(),
-                                    style::Print("🔎 No symbols found\n"),
+                                    style::Print(&format!("\n🔎 No symbols found (0 of {} requested)\n", requested_count)),
                                     StyledText::reset(),
                                 )?;
                             } else {
@@ -417,28 +476,15 @@ impl Code {
                                     _stdout,
                                     style::Print("\n🔎 Found "),
                                     StyledText::success_fg(),
-                                    style::Print(&symbols.len().to_string()),
+                                    style::Print(&found_count.to_string()),
                                     StyledText::reset(),
-                                    style::Print(" symbol(s):\n"),
+                                    style::Print(" of "),
+                                    StyledText::info_fg(),
+                                    style::Print(&requested_count.to_string()),
+                                    StyledText::reset(),
+                                    style::Print(" symbols:\n"),
                                 )?;
-                                for (i, symbol) in symbols.iter().enumerate() {
-                                    let symbol_type = symbol.symbol_type.as_deref().unwrap_or("symbol");
-                                    queue!(
-                                        _stdout,
-                                        style::Print(&format!("  {}. ", i + 1)),
-                                        StyledText::info_fg(),
-                                        style::Print(symbol_type),
-                                        StyledText::reset(),
-                                        style::Print(" "),
-                                        StyledText::success_fg(),
-                                        style::Print(&symbol.name),
-                                        StyledText::reset(),
-                                        style::Print(&format!(" at {}:{}:{}\n", 
-                                            symbol.file_path, 
-                                            symbol.start_row, 
-                                            symbol.start_column)),
-                                    )?;
-                                }
+                                Self::render_symbols(&symbols, _stdout)?;
                             }
                             result = format!("{:?}", symbols);
                         }
@@ -460,6 +506,14 @@ impl Code {
                             result = format!("{:?}", init_response);
                         }
                         Err(e) => {
+                            queue!(
+                                _stdout,
+                                style::Print("❌ Failed to initialize workspace: "),
+                                StyledText::error_fg(),
+                                style::Print(&format!("{}", e)),
+                                StyledText::reset(),
+                                style::Print("\n"),
+                            )?;
                             result = format!("❌ Failed to initialize workspace: {}", e);
                         }
                     }
@@ -473,33 +527,90 @@ impl Code {
         })
     }
 
+    fn render_symbols(symbols: &[SymbolInfo], stdout: &mut impl Write) -> Result<()> {
+        use crossterm::{queue, style};
+        use crate::theme::StyledText;
+
+        for (i, symbol) in symbols.iter().enumerate() {
+            let symbol_type = symbol.symbol_type.as_deref().unwrap_or("symbol");
+            queue!(
+                stdout,
+                style::Print(&format!("  {}. ", i + 1)),
+                StyledText::info_fg(),
+                style::Print(symbol_type),
+                StyledText::reset(),
+                style::Print(" "),
+                StyledText::success_fg(),
+                style::Print(&symbol.name),
+                StyledText::reset(),
+                style::Print(&format!(" at {}:{}:{}\n",
+                    symbol.file_path,
+                    symbol.start_row,
+                    symbol.start_column)),
+            )?;
+        }
+        Ok(())
+    }
+
+    fn render_references(references: &[code_agent_sdk::model::entities::ReferenceInfo], stdout: &mut impl Write) -> Result<()> {
+        use crossterm::{queue, style};
+        use crate::theme::StyledText;
+        
+        for (i, reference) in references.iter().enumerate() {
+            queue!(
+                stdout,
+                style::Print(&format!("  {}. ", i + 1)),
+                StyledText::info_fg(),
+                style::Print(&reference.file_path),
+                StyledText::reset(),
+                style::Print(&format!(":{}:{}", reference.start_row, reference.start_column)),
+            )?;
+            
+            // Show source line if available
+            if let Some(source) = &reference.source_line {
+                let trimmed = source.trim();
+                if !trimmed.is_empty() {
+                    queue!(
+                        stdout,
+                        style::Print(" - "),
+                        StyledText::success_fg(),
+                        style::Print(trimmed),
+                        StyledText::reset(),
+                    )?;
+                }
+            }
+            
+            queue!(stdout, style::Print("\n"))?;
+        }
+        Ok(())
+    }
+
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
         use crossterm::{queue, style};
         use crate::theme::StyledText;
         
         match self {
             Code::SearchSymbols(params) => {
+                let limit = params.limit.unwrap_or(10);
+                let is_exact = params.exact_match.unwrap_or(false);
+                
                 queue!(
                     output,
-                    style::Print("Searching for symbols matching: "),
+                    style::Print("🔍 Searching for symbols matching: "),
                     StyledText::success_fg(),
-                    style::Print(&params.symbol_name),
+                    style::Print(&format!("\"{}\"", params.symbol_name)),
                     StyledText::reset(),
+                    style::Print(&format!(" with limit {}", limit)),
                 )?;
-                if let Some(file_path) = &params.file_path {
-                    queue!(
-                        output,
-                        style::Print(" in file: "),
-                        StyledText::info_fg(),
-                        style::Print(file_path),
-                        StyledText::reset(),
-                    )?;
+                
+                if is_exact {
+                    queue!(output, style::Print(" and exact match"))?;
                 }
             }
             Code::FindReferences(params) => {
                 queue!(
                     output,
-                    style::Print("🔗 Finding references at "),
+                    style::Print("🔗 Finding all references at: "),
                     StyledText::info_fg(),
                     style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
                     StyledText::reset(),
@@ -517,11 +628,17 @@ impl Code {
                     style::Print(&format!("{}:{}", params.row, params.column)),
                     StyledText::reset(),
                 )?;
+                
+                let show_source = params.show_source.unwrap_or(true);
+                if show_source {
+                    queue!(output, style::Print(" (show source)"))?;
+                }
             }
             Code::RenameSymbol(params) => {
+                let is_dry_run = params.dry_run.unwrap_or(false);
                 queue!(
                     output,
-                    style::Print("✏️  Renaming symbol at: "),
+                    style::Print("✏️ Renaming symbol at: "),
                     StyledText::success_fg(),
                     style::Print(&params.file_path),
                     StyledText::reset(),
@@ -531,23 +648,36 @@ impl Code {
                     StyledText::reset(),
                     style::Print(" to: "),
                     StyledText::success_fg(),
-                    style::Print(&params.new_name),
+                    style::Print(&format!("\"{}\"", params.new_name)),
                     StyledText::reset(),
                 )?;
+                
+                if is_dry_run {
+                    queue!(
+                        output,
+                        style::Print(" ("),
+                        StyledText::warning_fg(),
+                        style::Print("DRY RUN"),
+                        StyledText::reset(),
+                        style::Print(")"),
+                    )?;
+                }
             }
             Code::Format(params) => {
-                if let Some(file_path) = &params.file_path {
+                queue!(
+                    output,
+                    style::Print("🎨 Formatting code in: "),
+                    StyledText::success_fg(),
+                    style::Print(params.file_path.as_deref().unwrap_or("entire workspace")),
+                    StyledText::reset(),
+                )?;
+                
+                // Show indentation settings only if non-default
+                if params.tab_size != 4 || !params.insert_spaces {
+                    let indent_type = if params.insert_spaces { "spaces" } else { "tabs" };
                     queue!(
                         output,
-                        style::Print("🎨 Formatting code in: "),
-                        StyledText::success_fg(),
-                        style::Print(file_path),
-                        StyledText::reset(),
-                    )?;
-                } else {
-                    queue!(
-                        output,
-                        style::Print("🎨 Formatting workspace code"),
+                        style::Print(&format!(" ({} {})", params.tab_size, indent_type)),
                     )?;
                 }
             }
@@ -585,6 +715,17 @@ impl Code {
                     style::Print("]"),
                     StyledText::reset(),
                 )?;
+                
+                // Show scope only if file-specific
+                if let Some(file_path) = &params.file_path {
+                    queue!(
+                        output,
+                        style::Print(" in "),
+                        StyledText::info_fg(),
+                        style::Print(file_path),
+                        StyledText::reset(),
+                    )?;
+                }
             }
             Code::InitializeWorkspace => {
                 queue!(
