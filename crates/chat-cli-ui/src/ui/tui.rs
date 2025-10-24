@@ -163,7 +163,12 @@ impl Tui {
 
     pub fn enter(&mut self) -> Result<()> {
         crossterm::terminal::enable_raw_mode()?;
-        crossterm::execute!(std::io::stderr(), EnterAlternateScreen, cursor::Hide)?;
+        crossterm::execute!(
+            std::io::stderr(),
+            crossterm::terminal::Clear(crossterm::terminal::ClearType::All),
+            EnterAlternateScreen,
+            cursor::Hide
+        )?;
         self.start();
 
         Ok(())

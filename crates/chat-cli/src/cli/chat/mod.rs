@@ -56,6 +56,7 @@ use chat_cli_ui::conduit::{
     DestinationStdout,
     get_legacy_conduits,
 };
+use chat_cli_ui::get_app;
 use chat_cli_ui::protocol::{
     Event,
     InputEvent,
@@ -643,11 +644,17 @@ impl ChatSession {
         let (view_end, managed_input, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
 
-        let stderr = std::io::stderr();
-        let stdout = std::io::stdout();
-        if let Err(e) = view_end.into_legacy_mode(should_use_ui_managed_input, false, StyledText, stderr, stdout) {
-            error!("Conduit view end legacy mode exited: {:?}", e);
-        }
+        // let stderr = std::io::stderr();
+        // let stdout = std::io::stdout();
+        // if let Err(e) = view_end.into_legacy_mode(should_use_ui_managed_input, false, StyledText, stderr,
+        // stdout) {     error!("Conduit view end legacy mode exited: {:?}", e);
+        // }
+        tokio::spawn(async move {
+            let mut app = get_app(view_end);
+            if let Err(e) = app.run().await {
+                error!("UI layer has exited with error: {:?}", e);
+            }
+        });
 
         let conversation = match resume_conversation {
             true => {
@@ -1754,7 +1761,7 @@ impl ChatSession {
             )
             .await?;
 
-        if self.interactive {
+        if self.interactive && self.input_source.is_some() {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinner::new(
                 Spinners::Dots,
@@ -2278,7 +2285,7 @@ impl ChatSession {
             queue!(self.stderr, StyledText::reset())?;
             queue!(self.stderr, cursor::Hide)?;
 
-            if self.interactive {
+            if self.interactive && self.input_source.is_some() {
                 self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
             }
 
@@ -2711,7 +2718,7 @@ impl ChatSession {
 
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
-        if self.interactive {
+        if self.interactive && self.input_source.is_some() {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
 
@@ -3066,7 +3073,7 @@ impl ChatSession {
             // Set spinner after showing all of the assistant text content so far.
             if tool_name_being_recvd.is_some() {
                 queue!(self.stderr, cursor::Hide)?;
-                if self.interactive {
+                if self.interactive && self.input_source.is_some() {
                     self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
                 }
             }
@@ -3389,7 +3396,7 @@ impl ChatSession {
             Err(err) => return Err(err),
         }
 
-        if self.interactive {
+        if self.interactive && self.input_source.is_some() {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 

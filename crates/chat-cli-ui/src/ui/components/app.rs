@@ -7,6 +7,7 @@ use tokio::sync::mpsc::unbounded_channel;
 use tracing::error;
 
 use super::Component;
+use crate::conduit::ViewEnd;
 use crate::ui::action::Action;
 use crate::ui::config::{
     Config,
@@ -20,6 +21,7 @@ use crate::ui::tui::{
 pub struct App {
     pub config: Config,
     pub should_quit: bool,
+    pub view_end: ViewEnd,
     pub components: Arc<Mutex<Vec<Box<dyn Component>>>>,
 }
 
@@ -32,7 +34,7 @@ impl App {
         // TODO: make a defer routine that restores the terminal on exit
         tui.enter()?;
 
-        let mut event_receiver = tui.event_rx.take().expect("Missing event receiver");
+        let mut terminal_event_receiver = tui.event_rx.take().expect("Missing event receiver");
         let components_clone = self.components.clone();
 
         // Render Task
@@ -40,8 +42,29 @@ impl App {
             while render_rx.recv().await.is_some() {
                 let mut components = components_clone.lock().await;
                 tui.terminal.draw(|f| {
-                    for component in components.iter_mut() {
-                        if let Err(e) = component.draw(f, f.area()) {
+                    use ratatui::layout::{
+                        Constraint,
+                        Layout,
+                    };
+
+                    // Split the screen: chat window takes most space, input bar at bottom
+                    let chunks = Layout::vertical([
+                        Constraint::Min(1),    // Chat window takes remaining space
+                        Constraint::Length(3), // Input bar has fixed height of 3 lines
+                    ])
+                    .split(f.area());
+
+                    // Render each component in its designated area
+                    // First component (ChatWindow) gets the top area
+                    // Second component (InputBar) gets the bottom area
+                    for (i, component) in components.iter_mut().enumerate() {
+                        let rect = if i == 0 {
+                            chunks[0] // ChatWindow
+                        } else {
+                            chunks[1] // InputBar
+                        };
+
+                        if let Err(e) = component.draw(f, rect) {
                             error!("Error rendering component {:?}", e);
                         }
                     }
@@ -59,13 +82,11 @@ impl App {
         tokio::spawn(async move {
             let mut key_event_buf = Vec::<crossterm::event::KeyEvent>::new();
 
-            while let Some(event) = event_receiver.recv().await {
-                let Ok(action) = handle_events(&event, &mut key_event_buf, &config) else {
-                    error!("Error covnerting tui events to action");
+            while let Some(event) = terminal_event_receiver.recv().await {
+                let Ok(action) = handle_ui_events(&event, &mut key_event_buf, &config) else {
+                    error!("Error converting tui events to action");
                     continue;
                 };
-
-                tracing::info!("action: {:?}", action);
 
                 match action {
                     Some(action) => {
@@ -79,7 +100,7 @@ impl App {
                         let mut components = components_clone.lock().await;
 
                         for component in components.iter_mut() {
-                            match component.handle_events(event.clone()) {
+                            match component.handle_terminal_events(event.clone()) {
                                 Ok(action) => {
                                     if let Some(action) = action {
                                         if let Err(e) = action_tx_clone.send(action) {
@@ -97,42 +118,76 @@ impl App {
             }
         });
 
-        // Main loop
-        while let Some(action) = action_rx.recv().await {
-            match action {
-                Action::Render => {
-                    if let Err(e) = render_tx.send(()) {
-                        error!("Error sending rendering message to rendering thread: {:?}", e);
+        loop {
+            tokio::select! {
+                session_event = self.view_end.receiver.recv() => {
+                    let Some(session_event) = session_event else {
+                        break;
+                    };
+
+                    let mut components = self.components.lock().await;
+                    for component in components.iter_mut() {
+                        match component.handle_session_events(session_event.clone()) {
+                            Ok(subsequent_action) => {
+                                if let Some(subsequent_action) = subsequent_action {
+                                    if let Err(e) = action_tx.send(subsequent_action) {
+                                        error!("Error sending subsequent action: {:?}", e);
+                                    }
+                                }
+                            },
+                            Err(e) => error!("Error updating component: {:?}", e),
+                        }
                     }
                 },
-                Action::Tick => {},
-                Action::Resize(_, _) => {},
-                Action::Quit => {},
-                Action::ClearScreen => {},
-                Action::Error(_) => {},
-                Action::Help => {},
-            }
+                action = action_rx.recv() => {
+                    let Some(action) = action else {
+                        break;
+                    };
 
-            let mut components = self.components.lock().await;
-            for component in components.iter_mut() {
-                match component.update(action.clone()) {
-                    Ok(subsequent_action) => {
-                        if let Some(subsequent_action) = subsequent_action {
-                            if let Err(e) = action_tx.send(subsequent_action) {
-                                error!("Error sending subsequent action: {:?}", e);
+                    match &action {
+                        Action::Render => {
+                            if let Err(e) = render_tx.send(()) {
+                                error!("Error sending rendering message to rendering thread: {:?}", e);
+                            }
+                        },
+                        Action::Tick => {},
+                        Action::Resize(_, _) => {},
+                        Action::Quit => {},
+                        Action::ClearScreen => {},
+                        Action::Error(_) => {},
+                        Action::Help => {},
+                        Action::Input(input_event) => {
+                            if let Err(e) = self.view_end.sender.send(input_event.clone()).await {
+                                error!("Error sending input event to control end: {:?}", e);
                             }
                         }
-                    },
-                    Err(e) => error!("Error updating component: {:?}", e),
-                }
+                    }
+
+                    let mut components = self.components.lock().await;
+                    for component in components.iter_mut() {
+                        match component.update(action.clone()) {
+                            Ok(subsequent_action) => {
+                                if let Some(subsequent_action) = subsequent_action {
+                                    if let Err(e) = action_tx.send(subsequent_action) {
+                                        error!("Error sending subsequent action: {:?}", e);
+                                    }
+                                }
+                            },
+                            Err(e) => error!("Error updating component: {:?}", e),
+                        }
+                    }
+                },
+
             }
         }
+        // Main loop
 
         Ok(())
     }
 }
 
-fn handle_events(
+#[inline]
+fn handle_ui_events(
     event: &Event,
     key_event_buf: &mut Vec<crossterm::event::KeyEvent>,
     config: &Config,
@@ -175,7 +230,7 @@ fn handle_events(
                         },
                     }
                 },
-                _ | KeyEventKind::Repeat => Ok(None),
+                KeyEventKind::Repeat => Ok(None),
             }
         },
         _ => Err(eyre::eyre!("Event not yet supported")),

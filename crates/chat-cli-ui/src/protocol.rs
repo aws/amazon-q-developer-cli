@@ -498,6 +498,7 @@ impl Event {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum InputEvent {
     Text(String),
     Interrupt,

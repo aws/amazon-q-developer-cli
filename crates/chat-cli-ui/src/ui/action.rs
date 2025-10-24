@@ -4,6 +4,8 @@ use serde::{
     Serialize,
 };
 
+use crate::protocol::InputEvent;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Action {
     Tick,
@@ -13,4 +15,5 @@ pub enum Action {
     ClearScreen,
     Error(String),
     Help,
+    Input(InputEvent),
 }

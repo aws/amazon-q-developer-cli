@@ -1,8 +1,4 @@
 use crossterm::event::KeyEventKind;
-use ratatui::layout::{
-    Constraint,
-    Layout,
-};
 use ratatui::style::{
     Color,
     Style,
@@ -19,6 +15,8 @@ use ratatui::widgets::{
 };
 
 use super::Component;
+use crate::protocol::InputEvent;
+use crate::ui::action::Action;
 
 #[derive(Default)]
 pub struct InputBar {
@@ -63,11 +61,8 @@ impl InputBar {
 }
 
 impl Component for InputBar {
-    // Q: why do we need frame and rect if rect comes from frame?
-    fn draw(&mut self, f: &mut ratatui::Frame<'_>, _rect: ratatui::prelude::Rect) -> eyre::Result<()> {
-        let chunks = Layout::vertical([Constraint::Min(1), Constraint::Length(3)]).split(f.area());
-
-        // Input box at the bottom
+    fn draw(&mut self, f: &mut ratatui::Frame<'_>, rect: ratatui::prelude::Rect) -> eyre::Result<()> {
+        // Input box - render in the provided rect
         let input = Paragraph::new(Line::from(vec![
             Span::styled(">", Style::default().fg(Color::Red)), // Red angle bracket
             Span::raw(" "),                                     // Space
@@ -79,30 +74,26 @@ impl Component for InputBar {
                 .border_style(Style::new().blue())
                 .title("Type your message (Enter to send, Esc to quit)"),
         );
-        f.render_widget(input, chunks[1]);
+        f.render_widget(input, rect);
 
         // Set cursor position in the input box
         f.set_cursor_position((
-            chunks[1].x + self.cursor_position as u16 + 3, // +3 to account for "> " prefix and border
-            chunks[1].y + 1,
+            rect.x + self.cursor_position as u16 + 3, // +3 to account for "> " prefix and border
+            rect.y + 1,
         ));
 
         Ok(())
     }
 
-    fn handle_key_events(
-        &mut self,
-        key: crossterm::event::KeyEvent,
-    ) -> eyre::Result<Option<crate::ui::action::Action>> {
+    fn handle_key_events(&mut self, key: crossterm::event::KeyEvent) -> eyre::Result<Option<Action>> {
         if let KeyEventKind::Press = key.kind {
             match key.code {
                 crossterm::event::KeyCode::Backspace => {
                     self.delete_char();
                 },
                 crossterm::event::KeyCode::Enter => {
-                    let _message = self.submit_message();
-                    // TODO: produce an action here
-                    return Ok(None);
+                    let message = self.submit_message();
+                    return Ok(Some(Action::Input(InputEvent::Text(message))));
                 },
                 crossterm::event::KeyCode::Left => {
                     self.move_cursor_left();

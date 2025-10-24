@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use chat_cli_ui::conduit::get_event_conduits;
 use chat_cli_ui::ui::config::Config;
 use chat_cli_ui::ui::{
     App,
@@ -61,9 +62,14 @@ fn main() -> Result<()> {
 
     let rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
 
+    let (view_end, input_receiver, control_end) = get_event_conduits();
+    _ = input_receiver;
+    _ = control_end;
+
     let mut app = App {
         config: Config::default(),
         should_quit: false,
+        view_end,
         components: {
             let mut components = Vec::<Box<dyn Component>>::new();
 

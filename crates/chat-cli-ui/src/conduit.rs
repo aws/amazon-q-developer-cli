@@ -622,6 +622,25 @@ pub fn get_legacy_conduits(
     )
 }
 
+pub fn get_event_conduits() -> (ViewEnd, InputReceiver, ControlEnd<DestinationStructuredOutput>) {
+    let (state_tx, state_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
+    let (input_tx, input_rx) = tokio::sync::mpsc::channel::<InputEvent>(10);
+
+    (
+        ViewEnd {
+            sender: input_tx,
+            receiver: state_rx,
+        },
+        input_rx,
+        ControlEnd {
+            current_event: None,
+            should_send_structured_event: true,
+            sender: state_tx.clone(),
+            pass_through_destination: PhantomData,
+        },
+    )
+}
+
 pub trait InterimEvent {
     type Error: std::error::Error;
     fn insert_content(&mut self, content: &[u8]) -> Result<(), Self::Error>;

@@ -10,11 +10,14 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::action::Action;
 use super::tui::Event;
+use crate::protocol::Event as SessionEvent;
 
 mod app;
+mod chat_window;
 mod input_bar;
 
 pub use app::*;
+pub use chat_window::*;
 pub use input_bar::*;
 
 pub trait Component: Send + Sync + 'static {
@@ -25,7 +28,7 @@ pub trait Component: Send + Sync + 'static {
     fn init(&mut self) -> Result<()> {
         Ok(())
     }
-    fn handle_events(&mut self, event: Event) -> Result<Option<Action>> {
+    fn handle_terminal_events(&mut self, event: Event) -> Result<Option<Action>> {
         let r = match event {
             Event::Key(key_event) => self.handle_key_events(key_event)?,
             Event::Mouse(mouse_event) => self.handle_mouse_events(mouse_event)?,
@@ -39,6 +42,10 @@ pub trait Component: Send + Sync + 'static {
     }
     #[allow(unused_variables)]
     fn handle_mouse_events(&mut self, mouse: MouseEvent) -> Result<Option<Action>> {
+        Ok(None)
+    }
+    #[allow(unused_variables)]
+    fn handle_session_events(&mut self, session_event: SessionEvent) -> Result<Option<Action>> {
         Ok(None)
     }
     #[allow(unused_variables)]
