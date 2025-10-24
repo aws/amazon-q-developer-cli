@@ -10,7 +10,7 @@ class StoreIfNotEmptyAction(argparse.Action):
 
 parser = argparse.ArgumentParser(
     prog="build",
-    description="Builds the qchat binary",
+    description="Builds the kiro-cli-chat binary",
 )
 subparsers = parser.add_subparsers(help="sub-command help", dest="subparser", required=True)
 
