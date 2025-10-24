@@ -39,7 +39,6 @@ use tracing::{
     info,
     warn,
 };
-use walkdir;
 use wrapper_types::ResourcePath;
 pub use wrapper_types::{
     OriginalToolName,
