@@ -9,7 +9,7 @@ fn test_hooks_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
    let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/hooks")?;
+    let response = chat.execute_command_with_timeout("/hooks",Some(500))?;
     
     println!("📝 Hooks command response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -35,7 +35,7 @@ fn test_hooks_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/hooks --help")?;
+    let response = chat.execute_command_with_timeout("/hooks --help",Some(500))?;
     
     println!("📝 Hooks help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -70,7 +70,7 @@ fn test_hooks_h_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/hooks -h")?;
+    let response = chat.execute_command_with_timeout("/hooks -h",Some(500))?;
     
     println!("📝 Hooks help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

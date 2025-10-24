@@ -10,7 +10,7 @@ fn test_model_dynamic_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute /model command to get list
-    let model_response = chat.execute_command("/model")?;
+    let model_response = chat.execute_command_with_timeout("/model",Some(1000))?;
     
     println!("📝 Model response: {} bytes", model_response.len());
     println!("📝 MODEL RESPONSE:");
@@ -124,7 +124,7 @@ fn test_model_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/model --help")?;
+    let response = chat.execute_command_with_timeout("/model --help",Some(500))?;
     
     println!("📝 Model help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -159,7 +159,7 @@ fn test_model_h_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/model -h")?;
+    let response = chat.execute_command_with_timeout("/model -h",Some(500))?;
     
     println!("📝 Model help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

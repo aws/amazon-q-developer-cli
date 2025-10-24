@@ -10,7 +10,7 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute q mcp remove --help command
-    let help_response = chat.execute_command("execute below bash command q mcp remove --help")?;
+    let help_response = chat.execute_command_with_timeout("execute below bash command q mcp remove --help",Some(1000))?;
     
     println!("📝 MCP remove help response: {} bytes", help_response.len());
     println!("📝 HELP RESPONSE:");
@@ -23,7 +23,7 @@ fn test_mcp_remove_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
 
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -54,7 +54,7 @@ fn test_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Execute mcp add --help command
     println!("\n🔍 Executing command: 'q mcp add --help'");
-    let response = chat.execute_command("execute below bash command q mcp add --help")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp add --help",Some(1000))?;
     
     println!("📝 Restart response: {} bytes", response.len());
     println!("📝 RESTART RESPONSE:");
@@ -72,7 +72,7 @@ fn test_mcp_add_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -107,7 +107,7 @@ fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute q mcp --help command
-    let help_response = chat.execute_command("execute below bash command q mcp --help")?;
+    let help_response = chat.execute_command_with_timeout("execute below bash command q mcp --help",Some(1000))?;
     
     println!("📝 MCP help response: {} bytes", help_response.len());
     println!("📝 HELP RESPONSE:");
@@ -120,7 +120,7 @@ fn test_mcp_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
 
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -161,7 +161,7 @@ fn test_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Execute mcp import --help command
     println!("\n🔍 Executing command: 'q mcp import --help'");
-    let response = chat.execute_command("execute below bash command q mcp import --help")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp import --help",Some(1000))?;
     
     println!("📝 Restart response: {} bytes", response.len());
     println!("📝 RESTART RESPONSE:");
@@ -179,7 +179,7 @@ fn test_mcp_import_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -217,7 +217,7 @@ fn test_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("execute below bash command q mcp list")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp list",Some(1000))?;
     
     println!("📝 MCP list response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -231,7 +231,7 @@ fn test_mcp_list_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -256,7 +256,7 @@ fn test_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("execute below bash command q mcp list --help")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp list --help",Some(1000))?;
     
     println!("📝 MCP list help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -270,7 +270,7 @@ fn test_mcp_list_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -304,7 +304,7 @@ fn test_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Execute mcp status --help command
     println!("\n🔍 Executing command: 'q mcp status --help'");
-    let response = chat.execute_command("execute below bash command q mcp status --help")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp status --help",Some(1000))?;
 
     println!("📝 Restart response: {} bytes", response.len());
     println!("📝 RESTART RESPONSE:");
@@ -321,7 +321,7 @@ fn test_mcp_status_help_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -366,7 +366,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // First check if MCP already exists using q mcp list
     println!("\n🔍 Checking if aws-documentation MCP already exists...");
-    let list_response = chat.execute_command("execute below bash command q mcp list")?;
+    let list_response = chat.execute_command_with_timeout("execute below bash command q mcp list",Some(1000))?;
     
     println!("📝 List response: {} bytes", list_response.len());
     println!("📝 LIST RESPONSE:");
@@ -374,7 +374,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END LIST RESPONSE");
     
     // Allow the list command
-    let list_allow_response = chat.execute_command("y")?;
+    let list_allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 List allow response: {} bytes", list_allow_response.len());
     println!("📝 LIST ALLOW RESPONSE:");
     println!("{}", list_allow_response);
@@ -384,14 +384,14 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     if list_allow_response.contains("aws-documentation") {
         println!("\n🔍 aws-documentation MCP already exists, removing it first...");
         
-        let remove_response = chat.execute_command("execute below bash command q mcp remove --name aws-documentation")?;
+        let remove_response = chat.execute_command_with_timeout("execute below bash command q mcp remove --name aws-documentation",Some(1000))?;
         println!("📝 Remove response: {} bytes", remove_response.len());
         println!("📝 REMOVE RESPONSE:");
         println!("{}", remove_response);
         println!("📝 END REMOVE RESPONSE");
         
         // Allow the remove command
-        let remove_allow_response = chat.execute_command("y")?;
+        let remove_allow_response = chat.execute_command_with_timeout("y",Some(500))?;
         println!("📝 Remove allow response: {} bytes", remove_allow_response.len());
         println!("📝 REMOVE ALLOW RESPONSE:");
         println!("{}", remove_allow_response);
@@ -406,7 +406,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // Now add the MCP server
     println!("\n🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
-    let response = chat.execute_command("execute below bash command q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest",Some(2000))?;
     
     println!("📝 Response: {} bytes", response.len());
     println!("📝 RESPONSE:");
@@ -420,7 +420,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
     println!("{}", allow_response);
@@ -433,7 +433,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Now test removing the MCP server
     println!("\n🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
-    let remove_response = chat.execute_command("execute below bash command q mcp remove --name aws-documentation")?;
+    let remove_response = chat.execute_command_with_timeout("execute below bash command q mcp remove --name aws-documentation",Some(2000))?;
     println!("📝 Remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
     println!("{}", remove_response);
@@ -446,7 +446,7 @@ fn test_add_and_remove_mcp_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found remove tool execution permission prompt");
     
     // Allow the remove tool execution
-    let remove_allow_response = chat.execute_command("y")?;
+    let remove_allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 Remove allow response: {} bytes", remove_allow_response.len());
     println!("📝 REMOVE ALLOW RESPONSE:");
     println!("{}", remove_allow_response);
@@ -481,7 +481,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
 
     // Execute mcp add command
     println!("\n🔍 Executing command: 'q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest'");
-    let response = chat.execute_command("execute below bash command q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp add --name aws-documentation --command uvx --args awslabs.aws-documentation-mcp-server@latest",Some(2000))?;
     
     println!("📝 Response: {} bytes", response.len());
     println!("📝 RESPONSE:");
@@ -494,7 +494,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
     
     // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
     println!("{}", allow_response);
@@ -505,7 +505,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found successful addition message");
 
     // Allow the tool execution
-    let response = chat.execute_command("execute below bash command q mcp status --name aws-documentation")?;
+    let response = chat.execute_command_with_timeout("execute below bash command q mcp status --name aws-documentation",Some(2000))?;
     println!("📝 Allow response: {} bytes", response.len());
     println!("📝 ALLOW RESPONSE:");
     println!("{}", response);
@@ -517,7 +517,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found tool execution permission prompt");
 
      // Allow the tool execution
-    let show_response = chat.execute_command("y")?;
+    let show_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 Allow response: {} bytes", show_response.len());
     println!("📝 ALLOW RESPONSE:");
     println!("{}", show_response);
@@ -533,7 +533,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Now test removing the MCP server
     println!("\n🔍 Executing remove command: 'q mcp remove --name aws-documentation'");
-    let remove_response = chat.execute_command("execute below bash command q mcp remove --name aws-documentation")?;
+    let remove_response = chat.execute_command_with_timeout("execute below bash command q mcp remove --name aws-documentation",Some(2000))?;
     println!("📝 Remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
     println!("{}", remove_response);
@@ -546,7 +546,7 @@ fn test_mcp_status_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found remove tool execution permission prompt");
     
     // Allow the remove tool execution
-    let remove_allow_response = chat.execute_command("y")?;
+    let remove_allow_response = chat.execute_command_with_timeout("y",Some(500))?;
     println!("📝 Remove allow response: {} bytes", remove_allow_response.len());
     println!("📝 REMOVE ALLOW RESPONSE:");
     println!("{}", remove_allow_response);

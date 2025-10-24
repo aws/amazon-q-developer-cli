@@ -10,7 +10,7 @@ fn test_what_is_aws_prompt() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap();
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("What is AWS?")?;
+    let response = chat.execute_command_with_timeout("What is AWS?",Some(1000))?;
     
     println!("📝 AI response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -66,7 +66,7 @@ fn test_simple_greeting() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap();
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("Hello")?;
+    let response = chat.execute_command_with_timeout("Hello",Some(1000))?;
     
     println!("📝 Greeting response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

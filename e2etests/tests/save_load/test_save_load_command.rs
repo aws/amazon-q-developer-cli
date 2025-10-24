@@ -27,12 +27,12 @@ fn test_save_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Create actual conversation content
-    let _help_response = chat.execute_command("/help")?;
-    let _tools_response = chat.execute_command("/tools")?;
+    let _help_response = chat.execute_command_with_timeout("/help",Some(2000))?;
+    let _tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     println!("✅ Created conversation content with /help and /tools commands");
     
     // Execute /save command
-    let response = chat.execute_command(&format!("/save {}", save_path))?;
+    let response = chat.execute_command_with_timeout(&format!("/save {}", save_path),Some(2000))?;
     
     println!("📝 Save response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -65,7 +65,7 @@ fn test_save_command_argument_validation() -> Result<(), Box<dyn std::error::Err
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/save")?;
+    let response = chat.execute_command_with_timeout("/save",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -100,7 +100,7 @@ fn test_save_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/save --help")?;
+    let response = chat.execute_command_with_timeout("/save --help",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -138,7 +138,7 @@ fn test_save_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/save -h")?;
+    let response = chat.execute_command_with_timeout("/save -h",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -180,12 +180,12 @@ fn test_save_force_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Create actual conversation content
-    let _help_response = chat.execute_command("/help")?;
-    let _tools_response = chat.execute_command("/tools")?;
+    let _help_response = chat.execute_command_with_timeout("/help",Some(2000))?;
+    let _tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     println!("✅ Created conversation content with /help and /tools commands");
 
     // Execute /save command first
-    let response = chat.execute_command(&format!("/save {}", save_path))?;
+    let response = chat.execute_command_with_timeout(&format!("/save {}", save_path),Some(2000))?;
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
@@ -235,12 +235,12 @@ fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Create actual conversation content
-    let _help_response = chat.execute_command("/help")?;
-    let _tools_response = chat.execute_command("/tools")?;
+    let _help_response = chat.execute_command_with_timeout("/help",Some(2000))?;
+    let _tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     println!("✅ Created conversation content with /help and /tools commands");
 
     // Execute /save command first
-    let response = chat.execute_command(&format!("/save {}", save_path))?;
+    let response = chat.execute_command_with_timeout(&format!("/save {}", save_path),Some(2000))?;
     println!("📝 FULL OUTPUT:");
     println!("{}", response);
     println!("📝 END OUTPUT");
@@ -248,11 +248,11 @@ fn test_save_f_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Initial save completed");
 
     // Add more conversation content after initial save
-    let _prompt_response = chat.execute_command("/context show")?;
+    let _prompt_response = chat.execute_command_with_timeout("/context show",Some(2000))?;
     println!("✅ Added more conversation content after initial save");
 
     // Execute /save -f command to overwrite with new content
-    let force_response = chat.execute_command(&format!("/save -f {}", save_path))?;
+    let force_response = chat.execute_command_with_timeout(&format!("/save -f {}", save_path),Some(2000))?;
 
     println!("📝 Save force response: {} bytes", force_response.len());
     println!("📝 FULL OUTPUT:");
@@ -286,7 +286,7 @@ fn test_load_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/load --help")?;
+    let response = chat.execute_command_with_timeout("/load --help",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -324,7 +324,7 @@ fn test_load_h_flag_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/load -h")?;
+    let response = chat.execute_command_with_timeout("/load -h",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -366,12 +366,12 @@ fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Create actual conversation content
-    let _help_response = chat.execute_command("/help")?;
-    let _tools_response = chat.execute_command("/tools")?;
+    let _help_response = chat.execute_command_with_timeout("/help",Some(2000))?;
+    let _tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     println!("✅ Created conversation content with /help and /tools commands");
     
     // Execute /save command to create a file to load
-    let save_response = chat.execute_command(&format!("/save {}", save_path))?;
+    let save_response = chat.execute_command_with_timeout(&format!("/save {}", save_path),Some(2000))?;
     
     println!("📝 Save response: {} bytes", save_response.len());
     println!("📝 SAVE OUTPUT:");
@@ -387,7 +387,7 @@ fn test_load_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Save file created at {}", save_path);
     
     // Execute /load command to load the saved conversation
-    let load_response = chat.execute_command(&format!("/load {}", save_path))?;
+    let load_response = chat.execute_command_with_timeout(&format!("/load {}", save_path),Some(2000))?;
     
     println!("📝 Load response: {} bytes", load_response.len());
     println!("📝 LOAD OUTPUT:");
@@ -413,7 +413,7 @@ fn test_load_command_argument_validation() -> Result<(), Box<dyn std::error::Err
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/load")?;
+    let response = chat.execute_command_with_timeout("/load",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

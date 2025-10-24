@@ -10,7 +10,7 @@ fn test_subscribe_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/subscribe")?;
+    let response = chat.execute_command_with_timeout("/subscribe",Some(500))?;
     
     println!("📝 Subscribe response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -36,7 +36,7 @@ fn test_subscribe_manage_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/subscribe --manage")?;
+    let response = chat.execute_command_with_timeout("/subscribe --manage",Some(500))?;
     
     println!("📝 Subscribe response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -62,7 +62,7 @@ fn test_subscribe_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/subscribe --help")?;
+    let response = chat.execute_command_with_timeout("/subscribe --help",Some(500))?;
     
     println!("📝 Subscribe help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -106,7 +106,7 @@ fn test_subscribe_h_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/subscribe -h")?;
+    let response = chat.execute_command_with_timeout("/subscribe -h",Some(500))?;
     
     println!("📝 Subscribe help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

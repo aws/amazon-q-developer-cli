@@ -11,7 +11,7 @@ fn test_knowledge_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/experiment")?;
+    let response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     println!("📝 Experiment response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -86,7 +86,7 @@ fn test_knowledge_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test reverting back to original state (run command again)
     println!("📝 Testing revert to original state...");
-    let revert_response = chat.execute_command("/experiment")?;
+    let revert_response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     // Navigate to Knowledge option again (only if not already selected)
     if !knowledge_already_selected {
@@ -127,7 +127,7 @@ fn test_thinking_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/experiment")?;
+    let response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     println!("📝 Experiment response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -202,7 +202,7 @@ fn test_thinking_command() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test reverting back to original state (run command again)
     println!("📝 Testing revert to original state...");
-    let revert_response = chat.execute_command("/experiment")?;
+    let revert_response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     // Navigate to Thinking option again (only if not already selected)
     if !Thinking_already_selected {
@@ -243,7 +243,7 @@ fn test_experiment_help_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/experiment --help")?;
+    let response = chat.execute_command_with_timeout("/experiment --help",Some(500))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -273,7 +273,7 @@ fn test_tangent_mode_experiment() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/experiment")?;
+    let response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     println!("📝 Experiment response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -348,7 +348,7 @@ fn test_tangent_mode_experiment() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test reverting back to original state (run command again)
     println!("📝 Testing revert to original state...");
-    let revert_response = chat.execute_command("/experiment")?;
+    let revert_response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     // Navigate to Tangent Mode option again (only if not already selected)
     if !Tangent_already_selected {
@@ -389,7 +389,7 @@ fn test_todo_lists_experiment() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/experiment")?;
+    let response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     println!("📝 Experiment response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -464,7 +464,7 @@ fn test_todo_lists_experiment() -> Result<(), Box<dyn std::error::Error>> {
     
     // Test reverting back to original state (run command again)
     println!("📝 Testing revert to original state...");
-    let revert_response = chat.execute_command("/experiment")?;
+    let revert_response = chat.execute_command_with_timeout("/experiment",Some(500))?;
     
     // Navigate to Todo Lists option again (only if not already selected)
     if !TodoLists_already_selected {

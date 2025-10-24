@@ -11,7 +11,7 @@ fn test_todos_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/todos")?;
+    let response = chat.execute_command_with_timeout("/todos",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -45,7 +45,7 @@ fn test_todos_help_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/todos help")?;
+    let response = chat.execute_command_with_timeout("/todos help",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -92,7 +92,7 @@ fn test_todos_view_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("Add task in todos list Review emails")?;
+    let response = chat.execute_command_with_timeout("Add task in todos list Review emails",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -105,7 +105,7 @@ fn test_todos_view_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(response.contains("Review emails"), "Missing Review emails message");
     println!("✅ Confirmed todo_list tool usage");
 
-    let response = chat.execute_command("/todos view")?;
+    let response = chat.execute_command_with_timeout("/todos view",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -136,7 +136,7 @@ fn test_todos_view_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(confirm_response.contains("Review emails"), "Missing Review emails to-do item");
     println!("✅ Confirmed viewing of selected to-do list with items");
 
-    let response = chat.execute_command("/todos delete")?;
+    let response = chat.execute_command_with_timeout("/todos delete",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -196,7 +196,7 @@ fn test_todos_resume_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
 
-    let response = chat.execute_command("Add task in todos list Review emails")?;
+    let response = chat.execute_command_with_timeout("Add task in todos list Review emails",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -209,7 +209,7 @@ fn test_todos_resume_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(response.contains("Review emails"), "Missing Review emails message");
     println!("✅ Confirmed todo_list tool usage");
 
-    let response = chat.execute_command("/todos resume")?;
+    let response = chat.execute_command_with_timeout("/todos resume",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -240,7 +240,7 @@ fn test_todos_resume_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(confirm_response.contains("TODO"), "Missing TODO item");
     println!("✅ Confirmed resuming of selected to-do list with items");
 
-    let response = chat.execute_command("/todos delete")?;
+    let response = chat.execute_command_with_timeout("/todos delete",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -300,7 +300,7 @@ fn test_todos_delete_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
 
-    let response = chat.execute_command("Add task in todos list Review emails")?;
+    let response = chat.execute_command_with_timeout("Add task in todos list Review emails",Some(2000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -313,7 +313,7 @@ fn test_todos_delete_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(response.contains("Review emails"), "Missing Review emails message");
     println!("✅ Confirmed todo_list tool usage");
 
-    let response = chat.execute_command("/todos view")?;
+    let response = chat.execute_command_with_timeout("/todos view",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -344,7 +344,7 @@ fn test_todos_delete_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(confirm_response.contains("Review emails"), "Missing Review emails to-do item");
     println!("✅ Confirmed viewing of selected to-do list with items");
 
-    let response = chat.execute_command("/todos delete")?;
+    let response = chat.execute_command_with_timeout("/todos delete",Some(2000))?;
 
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

@@ -1,5 +1,6 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
+
 #[allow(unused_imports)]
 use regex::Regex;
 
@@ -13,7 +14,7 @@ fn test_changelog_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/changelog")?;
+    let response = chat.execute_command_with_timeout("/changelog",Some(1000))?;
     
     println!("📝 Changelog response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -56,7 +57,7 @@ fn test_changelog_help_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    let response = chat.execute_command("/changelog -h")?;
+    let response = chat.execute_command_with_timeout("/changelog -h",Some(1000))?;
     
     println!("📝 Help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

@@ -11,7 +11,7 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/usage")?;
+    let response = chat.execute_command_with_timeout("/usage",Some(2000))?;
     
     println!("📝 Tools response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -58,8 +58,8 @@ fn test_usage_command() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Tests the /usage --help command to display help information for the usage command
-/// Verifies Usage section, Options section, and help flags (-h, --help)
+// Tests the /usage --help command to display help information for the usage command
+// Verifies Usage section, Options section, and help flags (-h, --help)
 #[test]
 #[cfg(all(feature = "usage", feature = "sanity"))]
 fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,7 +68,7 @@ fn test_usage_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
      
-    let response = chat.execute_command("/usage --help")?;
+    let response = chat.execute_command_with_timeout("/usage --help",Some(2000))?;
     
     println!("📝 Usage help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -108,7 +108,7 @@ fn test_usage_h_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/usage -h")?;
+    let response = chat.execute_command_with_timeout("/usage -h",Some(2000))?;
     
     println!("📝 Usage help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

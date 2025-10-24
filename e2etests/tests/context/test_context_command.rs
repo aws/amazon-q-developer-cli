@@ -9,7 +9,7 @@ fn test_context_show_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/context show")?;
+    let response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Context show response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -40,7 +40,7 @@ fn test_context_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/context help")?;
+    let response = chat.execute_command_with_timeout("/context help",Some(500))?;
     
     println!("📝 Context help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -80,7 +80,7 @@ fn test_context_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/context")?;
+    let response = chat.execute_command_with_timeout("/context",Some(500))?;
     
     println!("📝 Context response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -116,7 +116,7 @@ fn test_context_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/context test")?;
+    let response = chat.execute_command_with_timeout("/context test",Some(500))?;
     
     println!("📝 Context invalid response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -147,7 +147,7 @@ fn test_add_non_existing_file_context() -> Result<(), Box<dyn std::error::Error>
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Try to add non-existing file to context
-    let add_response = chat.execute_command(&format!("/context add {}", non_existing_file_path))?;
+    let add_response = chat.execute_command_with_timeout(&format!("/context add {}", non_existing_file_path),Some(1000))?;
     
     println!("📝 Context add response: {} bytes", add_response.len());
     println!("📝 ADD RESPONSE:");
@@ -172,7 +172,7 @@ fn test_context_remove_command_of_non_existent_file() -> Result<(), Box<dyn std:
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/context remove non_existent_file.txt")?;
+    let response = chat.execute_command_with_timeout("/context remove non_existent_file.txt",Some(1000))?;
     
     println!("📝 Context remove response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -203,7 +203,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Add file to context
-    let add_response = chat.execute_command(&format!("/context add {}", test_file_path))?;
+    let add_response = chat.execute_command_with_timeout(&format!("/context add {}", test_file_path),Some(1000))?;
     
     println!("📝 Context add response: {} bytes", add_response.len());
     println!("📝 ADD RESPONSE:");
@@ -215,7 +215,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ File added to context successfully");
     
     // Execute /context show to confirm file is present
-    let show_response = chat.execute_command("/context show")?;
+    let show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Context show response: {} bytes", show_response.len());
     println!("📝 SHOW RESPONSE:");
@@ -227,7 +227,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ File confirmed present in context");
     
     // Remove file from context
-    let remove_response = chat.execute_command(&format!("/context remove {}", test_file_path))?;
+    let remove_response = chat.execute_command_with_timeout(&format!("/context remove {}", test_file_path),Some(1000))?;
     
     println!("📝 Context remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
@@ -239,7 +239,7 @@ fn test_add_remove_file_context() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ File removed from context successfully");
     
     // Execute /context show to confirm file is gone
-    let final_show_response = chat.execute_command("/context show")?;
+    let final_show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Final context show response: {} bytes", final_show_response.len());
     println!("📝 FINAL SHOW RESPONSE:");
@@ -280,7 +280,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Add glob pattern to context
-    let add_response = chat.execute_command(&format!("/context add {}", glob_pattern))?;
+    let add_response = chat.execute_command_with_timeout(&format!("/context add {}", glob_pattern),Some(1000))?;
     
     println!("📝 Context add response: {} bytes", add_response.len());
     println!("📝 ADD RESPONSE:");
@@ -292,7 +292,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
     println!("✅ Glob pattern added to context successfully");
     
     // Execute /context show to confirm pattern matches files
-    let show_response = chat.execute_command("/context show")?;
+    let show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Context show response: {} bytes", show_response.len());
     println!("📝 SHOW RESPONSE:");
@@ -304,7 +304,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
     println!("✅ Glob pattern confirmed present in context with matches");
 
     // Remove glob pattern from context
-    let remove_response = chat.execute_command(&format!("/context remove {}", glob_pattern))?;
+    let remove_response = chat.execute_command_with_timeout(&format!("/context remove {}", glob_pattern),Some(1000))?;
     
     println!("📝 Context remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
@@ -316,7 +316,7 @@ fn test_add_glob_pattern_file_context()-> Result<(), Box<dyn std::error::Error>>
     println!("✅ Glob pattern removed from context successfully");
     
     // Execute /context show to confirm glob pattern is gone
-    let final_show_response = chat.execute_command("/context show")?;
+    let final_show_response = chat.execute_command_with_timeout("/context show",Some(1000))?;
     
     println!("📝 Final context show response: {} bytes", final_show_response.len());
     println!("📝 FINAL SHOW RESPONSE:");
@@ -357,7 +357,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Add multiple files to context in one command
-    let add_response = chat.execute_command(&format!("/context add {} {} {}", test_file1_path, test_file2_path, test_file3_path))?;
+    let add_response = chat.execute_command_with_timeout(&format!("/context add {} {} {}", test_file1_path, test_file2_path, test_file3_path),Some(1000))?;
     
     println!("📝 Context add response: {} bytes", add_response.len());
     println!("📝 ADD RESPONSE:");
@@ -369,7 +369,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
     println!("✅ Multiple files added to context successfully");
     
     // Execute /context show to confirm files are present
-    let show_response = chat.execute_command("/context show")?;
+    let show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Context show response: {} bytes", show_response.len());
     println!("📝 SHOW RESPONSE:");
@@ -383,7 +383,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
     println!("✅ All files confirmed present in context");
 
     // Remove multiple files from context
-    let remove_response = chat.execute_command(&format!("/context remove {} {} {}", test_file1_path, test_file2_path, test_file3_path))?;
+    let remove_response = chat.execute_command_with_timeout(&format!("/context remove {} {} {}", test_file1_path, test_file2_path, test_file3_path),Some(1000))?;
     
     println!("📝 Context remove response: {} bytes", remove_response.len());
     println!("📝 REMOVE RESPONSE:");
@@ -395,7 +395,7 @@ fn test_add_remove_multiple_file_context()-> Result<(), Box<dyn std::error::Erro
     println!("✅ Multiple files removed from context successfully");
     
     // Execute /context show to confirm files are gone
-    let final_show_response = chat.execute_command("/context show")?;
+    let final_show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Final context show response: {} bytes", final_show_response.len());
     println!("📝 FINAL SHOW RESPONSE:");
@@ -436,7 +436,7 @@ fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Add multiple files to context
-    let add_response = chat.execute_command(&format!("/context add {}", test_file_path))?;
+    let add_response = chat.execute_command_with_timeout(&format!("/context add {}", test_file_path),Some(1000))?;
     
     println!("📝 Context add response: {} bytes", add_response.len());
     println!("📝 ADD RESPONSE:");
@@ -448,7 +448,7 @@ fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Files added to context successfully");
     
     // Execute /context show to confirm files are present
-    let show_response = chat.execute_command("/context show")?;
+    let show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Context show response: {} bytes", show_response.len());
     println!("📝 SHOW RESPONSE:");
@@ -460,7 +460,7 @@ fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Files confirmed present in context");
     
     // Execute /context clear to remove all files
-    let clear_response = chat.execute_command("/context clear")?;
+    let clear_response = chat.execute_command_with_timeout("/context clear",Some(500))?;
     
     println!("📝 Context clear response: {} bytes", clear_response.len());
     println!("📝 CLEAR RESPONSE:");
@@ -472,7 +472,7 @@ fn test_clear_context_command()-> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Context cleared successfully");
     
     // Execute /context show to confirm no files remain
-    let final_show_response = chat.execute_command("/context show")?;
+    let final_show_response = chat.execute_command_with_timeout("/context show",Some(500))?;
     
     println!("📝 Final context show response: {} bytes", final_show_response.len());
     println!("📝 FINAL SHOW RESPONSE:");

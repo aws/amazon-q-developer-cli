@@ -23,7 +23,7 @@ fn test_tools_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools")?;
+    let response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     
     println!("📝 Tools response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -74,7 +74,7 @@ fn test_tools_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools --help")?;
+    let response = chat.execute_command_with_timeout("/tools --help",Some(2000))?;
     
     println!("📝 Tools help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -117,7 +117,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Execute trust-all command
-    let trust_all_response = chat.execute_command("/tools trust-all")?;
+    let trust_all_response = chat.execute_command_with_timeout("/tools trust-all",Some(2000))?;
     
     println!("📝 Trust-all response: {} bytes", trust_all_response.len());
     println!("📝 TRUST-ALL OUTPUT:");
@@ -129,7 +129,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ trust-all confirmation message!!");
     
     // Now check tools list to verify all tools are trusted
-    let tools_response = chat.execute_command("/tools")?;
+    let tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     
     println!("📝 Tools response after trust-all: {} bytes", tools_response.len());
     println!("📝 TOOLS OUTPUT:");
@@ -152,7 +152,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ All tools trust-all functionality verified!");
     
     // Execute reset command
-    let reset_response = chat.execute_command("/tools reset")?;
+    let reset_response = chat.execute_command_with_timeout("/tools reset",Some(1000))?;
     
     println!("📝 Reset response: {} bytes", reset_response.len());
     println!("📝 RESET OUTPUT:");
@@ -164,7 +164,7 @@ fn test_tools_trust_all_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found reset confirmation message");
     
     // Now check tools list to verify tools have mixed permissions
-    let tools_response = chat.execute_command("/tools")?;
+    let tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     
     println!("📝 Tools response after reset: {} bytes", tools_response.len());
     println!("📝 TOOLS OUTPUT:");
@@ -192,7 +192,7 @@ fn test_tools_trust_all_help_command() -> Result<(), Box<dyn std::error::Error>>
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools trust-all --help")?;
+    let response = chat.execute_command_with_timeout("/tools trust-all --help",Some(2000))?;
     
     println!("📝 Tools trust-all help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -224,7 +224,7 @@ fn test_tools_reset_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools reset --help")?;
+    let response = chat.execute_command_with_timeout("/tools reset --help",Some(2000))?;
     
     println!("📝 Tools reset help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -256,7 +256,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First get list of tools to find one that's not trusted
-    let tools_response = chat.execute_command("/tools")?;
+    let tools_response = chat.execute_command_with_timeout("/tools",Some(2000))?;
     
     println!("📝 Tools response: {} bytes", tools_response.len());
     println!("📝 TOOLS OUTPUT:");
@@ -286,7 +286,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
         
         // Execute trust command
         let trust_command = format!("/tools trust {}", tool_name);
-        let trust_response = chat.execute_command(&trust_command)?;
+        let trust_response = chat.execute_command_with_timeout(&trust_command,Some(2000))?;
         
         println!("📝 Trust response: {} bytes", trust_response.len());
         println!("📝 TRUST OUTPUT:");
@@ -299,7 +299,7 @@ fn test_tools_trust_command() -> Result<(), Box<dyn std::error::Error>> {
         
         // Execute untrust command
         let untrust_command = format!("/tools untrust {}", tool_name);
-        let untrust_response = chat.execute_command(&untrust_command)?;
+        let untrust_response = chat.execute_command_with_timeout(&untrust_command,Some(2000))?;
         
         println!("📝 Untrust response: {} bytes", untrust_response.len());
         println!("📝 UNTRUST OUTPUT:");
@@ -329,7 +329,7 @@ fn test_tools_trust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/tools trust --help")?;
+    let response = chat.execute_command_with_timeout("/tools trust --help",Some(2000))?;
     
     println!("📝 Tools trust help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -364,7 +364,7 @@ fn test_tools_untrust_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools untrust --help")?;
+    let response = chat.execute_command_with_timeout("/tools untrust --help",Some(2000))?;
     
     println!("📝 Tools untrust help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -399,7 +399,7 @@ fn test_tools_schema_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/tools schema --help")?;
+    let response = chat.execute_command_with_timeout("/tools schema --help",Some(2000))?;
     
     println!("📝 Tools schema help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -486,7 +486,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test fs_write tool by asking to create a file with "Hello World" content
-    let response = chat.execute_command(&format!("Create a file at {} with content 'Hello World'", save_path))?;
+    let response = chat.execute_command_with_timeout(&format!("Create a file at {} with content 'Hello World'", save_path),Some(2000))?;
 
     println!("📝 fs_write response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -502,7 +502,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found expected file path in response");
 
      // Allow the tool execution
-    let allow_response = chat.execute_command("y")?;
+    let allow_response = chat.execute_command_with_timeout("y",Some(2000))?;
     
     println!("📝 Allow response: {} bytes", allow_response.len());
     println!("📝 ALLOW RESPONSE:");
@@ -518,7 +518,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found success indication");
 
     // Test fs_read tool by asking to read the created file
-    let response = chat.execute_command(&format!("Read file {}'", save_path))?;
+    let response = chat.execute_command_with_timeout(&format!("Read file {}'", save_path),Some(2000))?;
 
     println!("📝 fs_read response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -553,7 +553,7 @@ fn test_execute_bash_tool() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test execute_bash tool by asking to run pwd command
-    let response = chat.execute_command("Run pwd")?;
+    let response = chat.execute_command_with_timeout("Run pwd",Some(2000))?;
 
     println!("📝 execute_bash response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -588,7 +588,7 @@ fn test_report_issue_tool() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test report_issue tool by asking to report an issue
-    let response = chat.execute_command("Report an issue: 'File creation not working properly'")?;
+    let response = chat.execute_command_with_timeout("Report an issue: 'File creation not working properly'",Some(2000))?;
 
     println!("📝 report_issue response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -619,7 +619,7 @@ fn test_use_aws_tool() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Test use_aws tool by asking to describe EC2 instances in us-west-2
-    let response = chat.execute_command("Describe EC2 instances in us-west-2")?;
+    let response = chat.execute_command_with_timeout("Describe EC2 instances in us-west-2",Some(2000))?;
 
     println!("📝 use_aws response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -650,7 +650,7 @@ fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::err
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // First, trust the execute_bash tool
-    let trust_response = chat.execute_command("/tools trust execute_bash")?;
+    let trust_response = chat.execute_command_with_timeout("/tools trust execute_bash",Some(2000))?;
     
     println!("📝 Trust response: {} bytes", trust_response.len());
     println!("📝 TRUST OUTPUT:");
@@ -662,7 +662,7 @@ fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::err
     println!("✅ Found trust confirmation");
 
     // Now test execute_bash tool with a simple command that should run directly without confirmation
-    let response = chat.execute_command("Run mkdir -p test_dir && echo 'test' > test_dir/test.txt")?;
+    let response = chat.execute_command_with_timeout("Run mkdir -p test_dir && echo 'test' > test_dir/test.txt",Some(2000))?;
 
     println!("📝 execute_bash response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -679,7 +679,7 @@ fn test_trust_execute_bash_for_direct_execution() -> Result<(), Box<dyn std::err
     
     println!("✅ All trusted execute_bash functionality verified!");
 
-    chat.execute_command("Delete the directory test_dir/test.txt")?;
+    chat.execute_command_with_timeout("Delete the directory test_dir/test.txt",Some(2000))?;
      
     println!("✅ Directory successfully deleted");
     

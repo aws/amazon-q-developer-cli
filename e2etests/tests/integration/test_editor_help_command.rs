@@ -9,7 +9,7 @@ fn test_editor_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/editor --help")?;
+    let response = chat.execute_command_with_timeout("/editor --help",Some(500))?;
     
     println!("📝 Editor help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -49,7 +49,7 @@ fn test_help_editor_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/help editor")?;
+    let response = chat.execute_command_with_timeout("/help editor",Some(500))?;
     
     println!("📝 Help editor response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -89,7 +89,7 @@ fn test_editor_h_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/editor -h")?;
+    let response = chat.execute_command_with_timeout("/editor -h",Some(500))?;
     
     println!("📝 Editor help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -130,7 +130,7 @@ fn test_editor_command_interaction() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command to open editor panel
-    let response = chat.execute_command("/editor")?;
+    let response = chat.execute_command_with_timeout("/editor",Some(500))?;
     
     println!("📝 Editor command response: {} bytes", response.len());
     println!("📝 EDITOR RESPONSE:");
@@ -178,7 +178,7 @@ fn test_editor_command_error() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command to open editor panel
-    let response = chat.execute_command("/editor nonexistent_file.txt")?;
+    let response = chat.execute_command_with_timeout("/editor nonexistent_file.txt",Some(500))?;
     
     println!("📝 Editor command response: {} bytes", response.len());
     println!("📝 EDITOR RESPONSE:");
@@ -234,7 +234,7 @@ fn test_editor_with_file_path() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
     // Execute /editor command with file path
-    let response = chat.execute_command(&format!("/editor {}", test_file_path))?;
+    let response = chat.execute_command_with_timeout(&format!("/editor {}", test_file_path),Some(500))?;
     
     println!("📝 Editor with file response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

@@ -9,7 +9,7 @@ fn test_prompts_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap();
 
-    let response = chat.execute_command("/prompts")?;
+    let response = chat.execute_command_with_timeout("/prompts",Some(1000))?;
 
     println!("📝 Prompts command response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -45,7 +45,7 @@ fn test_prompts_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap();
 
-    let response = chat.execute_command("/prompts --help")?;
+    let response = chat.execute_command_with_timeout("/prompts --help",Some(1000))?;
 
     println!("📝 Prompts help response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -103,7 +103,7 @@ fn test_prompts_list_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap();
 
-    let response = chat.execute_command("/prompts list")?;
+    let response = chat.execute_command_with_timeout("/prompts list",Some(2000))?;
 
     println!("📝 Prompts list response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -140,7 +140,7 @@ fn test_prompts_get_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap();
 
-    let response = chat.execute_command("/prompts list")?;
+    let response = chat.execute_command_with_timeout("/prompts list",Some(2000))?;
     println!("📝 Prompts list response: {}", response);
     let first_prompt = response
         .lines()
@@ -151,7 +151,7 @@ fn test_prompts_get_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(!first_prompt.is_empty(), "No Prompts are available");
     println!("📝 First prompt found: {}", first_prompt);
 
-    let get_response = chat.execute_command(&format!("/prompts get {}", first_prompt))?;
+    let get_response = chat.execute_command_with_timeout(&format!("/prompts get {}", first_prompt),Some(2000))?;
     println!("📝 Get response: {}", get_response);
 
     assert!(get_response.is_empty() || !get_response.is_empty(), "Prompts contents can be or can not be empty.");

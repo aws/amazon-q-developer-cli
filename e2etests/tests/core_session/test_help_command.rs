@@ -152,11 +152,11 @@ fn test_multiline_with_alt_enter_command() -> Result<(), Box<dyn std::error::Err
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     println!("✅ Q Chat session started");
-    let altEnter = "\x1B\x0A";
-    let awsPrompt = "what is AWS explain in 100 words ";
-    let aiPrompt = "what is AI explain in 100 words";
+    let alt_enter = "\x1B\x0A";
+    let aws_prompt = "what is AWS explain in 100 words ";
+    let ai_rompt = "what is AI explain in 100 words";
 
-    let combined = format!("{}{}{}", awsPrompt, altEnter,aiPrompt);
+    let combined = format!("{}{}{}", aws_prompt, alt_enter,ai_rompt);
     let response = chat.execute_command_with_timeout(&combined,Some(1000))?;
     println!("📝 Response: {} bytes", response.len());
     println!("📝 FULL OUTPUT: {}",response);
