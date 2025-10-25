@@ -4469,7 +4469,7 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("SecurityAgent".to_string(), agent);
-        agents.switch("SecurityAgent", &os).expect("Failed to switch agent");
+        agents.switch("SecurityAgent").expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
