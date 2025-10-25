@@ -4391,7 +4391,7 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("TestAgent".to_string(), agent);
-        agents.switch("TestAgent", &os).expect("Failed to switch agent");
+        agents.switch("TestAgent").expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
