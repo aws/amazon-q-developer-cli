@@ -818,7 +818,7 @@ impl std::str::FromStr for ImageFormat {
             "jpg" => Ok(ImageFormat::Jpeg),
             "png" => Ok(ImageFormat::Png),
             "webp" => Ok(ImageFormat::Webp),
-            _ => Err(format!("Failed to parse '{}' as ImageFormat", s)),
+            _ => Err(format!("Failed to parse '{s}' as ImageFormat")),
         }
     }
 }

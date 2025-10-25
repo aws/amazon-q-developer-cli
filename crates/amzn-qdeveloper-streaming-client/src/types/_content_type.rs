@@ -125,7 +125,7 @@ impl ::std::fmt::Display for ContentType {
             ContentType::File => write!(f, "FILE"),
             ContentType::Prompt => write!(f, "PROMPT"),
             ContentType::Workspace => write!(f, "WORKSPACE"),
-            ContentType::Unknown(value) => write!(f, "{}", value),
+            ContentType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

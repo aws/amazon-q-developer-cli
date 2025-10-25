@@ -118,7 +118,7 @@ impl ::std::fmt::Display for UpdateOperation {
             UpdateOperation::Activate => write!(f, "ACTIVATE"),
             UpdateOperation::Deactivate => write!(f, "DEACTIVATE"),
             UpdateOperation::Update => write!(f, "UPDATE"),
-            UpdateOperation::Unknown(value) => write!(f, "{}", value),
+            UpdateOperation::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

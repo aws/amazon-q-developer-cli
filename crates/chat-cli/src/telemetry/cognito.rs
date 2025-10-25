@@ -134,8 +134,7 @@ impl provider::ProvideCredentials for CognitoProvider {
             match Database::new().await {
                 Ok(mut db) => get_cognito_credentials(&mut db, &self.telemetry_stage).await,
                 Err(err) => Err(CredentialsError::provider_error(format!(
-                    "failed to get database: {:?}",
-                    err
+                    "failed to get database: {err:?}"
                 ))),
             }
         })

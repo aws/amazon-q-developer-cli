@@ -28,7 +28,7 @@ impl PasteArgs {
                     style::SetForegroundColor(Color::Red),
                     style::Print("❌ Failed to paste image: "),
                     style::SetForegroundColor(Color::Reset),
-                    style::Print(format!("{}\n", e))
+                    style::Print(format!("{e}\n"))
                 )?;
 
                 Ok(ChatState::PromptUser {

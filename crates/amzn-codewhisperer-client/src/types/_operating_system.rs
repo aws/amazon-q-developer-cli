@@ -118,7 +118,7 @@ impl ::std::fmt::Display for OperatingSystem {
             OperatingSystem::Linux => write!(f, "LINUX"),
             OperatingSystem::Mac => write!(f, "MAC"),
             OperatingSystem::Windows => write!(f, "WINDOWS"),
-            OperatingSystem::Unknown(value) => write!(f, "{}", value),
+            OperatingSystem::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

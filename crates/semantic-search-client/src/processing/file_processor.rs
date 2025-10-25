@@ -144,7 +144,7 @@ pub fn process_file_with_config(
             // Use the configured chunk size and overlap
             let chunks = chunk_text(&content, chunk_size, chunk_overlap);
             let path_str = path.to_string_lossy().to_string();
-            let file_type_str = format!("{:?}", file_type);
+            let file_type_str = format!("{file_type:?}");
 
             let mut results = Vec::new();
 
@@ -289,8 +289,7 @@ mod tests {
             assert_eq!(
                 get_file_type(&PathBuf::from(filename)),
                 expected,
-                "Failed for {}",
-                filename
+                "Failed for {filename}"
             );
         }
     }

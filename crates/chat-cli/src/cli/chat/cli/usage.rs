@@ -134,7 +134,7 @@ impl UsageArgs {
                 style::Print("█".repeat(progress_bar_width)),
                 StyledText::reset(),
                 style::Print(" "),
-                style::Print(format!("{:.2}%", total_percentage)),
+                style::Print(format!("{total_percentage:.2}%")),
             )?;
         } else {
             queue!(
@@ -186,7 +186,7 @@ impl UsageArgs {
                 style::Print("█".repeat(left_over_width)),
                 style::Print(" "),
                 StyledText::reset(),
-                style::Print(format!("{:.2}%", total_percentage)),
+                style::Print(format!("{total_percentage:.2}%")),
             )?;
         }
 

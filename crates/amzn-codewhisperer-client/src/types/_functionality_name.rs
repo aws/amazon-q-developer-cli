@@ -157,7 +157,7 @@ impl ::std::fmt::Display for FunctionalityName {
             FunctionalityName::TaskAssist => write!(f, "TASK_ASSIST"),
             FunctionalityName::Transformations => write!(f, "TRANSFORMATIONS"),
             FunctionalityName::TransformationsWebApp => write!(f, "TRANSFORMATIONS_WEBAPP"),
-            FunctionalityName::Unknown(value) => write!(f, "{}", value),
+            FunctionalityName::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

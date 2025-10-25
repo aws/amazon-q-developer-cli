@@ -539,7 +539,7 @@ async fn get_auth_manager_impl(
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
-    let redirect_uri = format!("http://{}", actual_addr);
+    let redirect_uri = format!("http://{actual_addr}");
     let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
     let scopes_as_slice = scopes_as_str.as_slice();
     start_authorization(&mut oauth_state, scopes_as_slice, &redirect_uri).await?;
@@ -593,7 +593,7 @@ async fn start_authorization(
         let config = match auth_manager.register_client(CLIENT_ID, redirect_uri).await {
             Ok(config) => config,
             Err(e) => {
-                eprintln!("Dynamic registration failed: {}", e);
+                eprintln!("Dynamic registration failed: {e}");
                 // fallback to default config
                 config
             },
@@ -678,11 +678,10 @@ async fn make_svc(
                 let error = params.get("error");
                 let resp = if let Some(err) = error {
                     mk_response(format!(
-                        "OAuth failed. Check URL for precise reasons. Possible reasons: {}.\n\
+                        "OAuth failed. Check URL for precise reasons. Possible reasons: {err}.\n\
                          If this is scope related, you can try configuring the server scopes \n\
                          to be an empty array by adding \"oauthScopes\": [] to your server config.\n\
-                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n",
-                        err
+                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n"
                     ))
                 } else {
                     mk_response("You can close this page now".to_string())

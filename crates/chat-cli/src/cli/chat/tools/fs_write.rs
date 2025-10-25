@@ -702,9 +702,7 @@ fn print_diff(
         queue!(
             output,
             style::Print(format!(
-                "{:>old_line_num_width$}",
-                old_i_str,
-                old_line_num_width = old_line_num_width
+                "{old_i_str:>old_line_num_width$}"
             ))
         )?;
         if sign == " " {
@@ -715,9 +713,7 @@ fn print_diff(
         queue!(
             output,
             style::Print(format!(
-                "{:>new_line_num_width$}",
-                new_i_str,
-                new_line_num_width = new_line_num_width
+                "{new_i_str:>new_line_num_width$}"
             ))
         )?;
         // Print the line.
@@ -820,7 +816,7 @@ fn stylized_file(path: impl AsRef<Path>, file_text: impl AsRef<str>) -> Result<S
 
     let syntax = ps
         .find_syntax_by_extension(extension)
-        .wrap_err_with(|| format!("missing extension: {}", extension))?;
+        .wrap_err_with(|| format!("missing extension: {extension}"))?;
 
     let theme = &ts.themes["base16-ocean.dark"];
     let mut highlighter = HighlightLines::new(syntax, theme);
@@ -968,7 +964,7 @@ mod tests {
 
         assert_eq!(
             os.fs.read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
+            format!("{file_text}\n")
         );
 
         let file_text = "Goodbye, world!\nSee you later";
@@ -986,7 +982,7 @@ mod tests {
         // File should end with a newline
         assert_eq!(
             os.fs.read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
+            format!("{file_text}\n")
         );
 
         let file_text = "This is a new string";
@@ -1003,7 +999,7 @@ mod tests {
 
         assert_eq!(
             os.fs.read_to_string("/my-file").await.unwrap(),
-            format!("{}\n", file_text)
+            format!("{file_text}\n")
         );
     }
 
@@ -1158,7 +1154,7 @@ mod tests {
             .await
             .unwrap();
         let actual = os.fs.read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}\n", test_file_contents, new_str));
+        assert_eq!(actual, format!("{test_file_contents}{new_str}\n"));
 
         // Then, test prepending
         let v = serde_json::json!({
@@ -1173,7 +1169,7 @@ mod tests {
             .await
             .unwrap();
         let actual = os.fs.read_to_string(test_file_path).await.unwrap();
-        assert_eq!(actual, format!("{}{}{}\n", new_str, test_file_contents, new_str));
+        assert_eq!(actual, format!("{new_str}{test_file_contents}{new_str}\n"));
     }
 
     #[tokio::test]
@@ -1199,7 +1195,7 @@ mod tests {
         let actual = os.fs.read_to_string(TEST_FILE_PATH).await.unwrap();
         assert_eq!(
             actual,
-            format!("{}{}\n", TEST_FILE_CONTENTS, content_to_append),
+            format!("{TEST_FILE_CONTENTS}{content_to_append}\n"),
             "Content should be appended to the end of the file with a newline added"
         );
 
@@ -1251,11 +1247,11 @@ mod tests {
 
         // Get the home directory from the context
         let home_dir = os.env.home().unwrap_or_default();
-        println!("Test home directory: {:?}", home_dir);
+        println!("Test home directory: {home_dir:?}");
 
         // Create a file directly in the home directory first to ensure it exists
         let home_path = os.fs.chroot_path(&home_dir);
-        println!("Chrooted home path: {:?}", home_path);
+        println!("Chrooted home path: {home_path:?}");
 
         // Ensure the home directory exists
         os.fs.create_dir_all(&home_path).await.unwrap();
@@ -1273,19 +1269,19 @@ mod tests {
 
         match &result {
             Ok(_) => println!("Writing to ~/file.txt succeeded"),
-            Err(e) => println!("Writing to ~/file.txt failed: {:?}", e),
+            Err(e) => println!("Writing to ~/file.txt failed: {e:?}"),
         }
 
         assert!(result.is_ok(), "Writing to ~/file.txt should succeed");
 
         // Verify content was written correctly
         let file_path = home_path.join("file.txt");
-        println!("Checking file at: {:?}", file_path);
+        println!("Checking file at: {file_path:?}");
 
         let content_result = os.fs.read_to_string(&file_path).await;
         match &content_result {
-            Ok(content) => println!("Read content: {:?}", content),
-            Err(e) => println!("Failed to read content: {:?}", e),
+            Ok(content) => println!("Read content: {content:?}"),
+            Err(e) => println!("Failed to read content: {e:?}"),
         }
 
         assert!(content_result.is_ok(), "Should be able to read from expanded path");

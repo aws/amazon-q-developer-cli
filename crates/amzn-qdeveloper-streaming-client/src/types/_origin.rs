@@ -254,7 +254,7 @@ impl ::std::fmt::Display for Origin {
             Origin::SmAiStudioIde => write!(f, "SM_AI_STUDIO_IDE"),
             Origin::UnifiedSearch => write!(f, "UNIFIED_SEARCH"),
             Origin::UnknownValue => write!(f, "UNKNOWN"),
-            Origin::Unknown(value) => write!(f, "{}", value),
+            Origin::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

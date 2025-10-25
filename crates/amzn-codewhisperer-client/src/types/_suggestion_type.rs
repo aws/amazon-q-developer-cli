@@ -112,7 +112,7 @@ impl ::std::fmt::Display for SuggestionType {
         match self {
             SuggestionType::Completions => write!(f, "COMPLETIONS"),
             SuggestionType::Edits => write!(f, "EDITS"),
-            SuggestionType::Unknown(value) => write!(f, "{}", value),
+            SuggestionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

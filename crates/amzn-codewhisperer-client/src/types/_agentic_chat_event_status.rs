@@ -118,7 +118,7 @@ impl ::std::fmt::Display for AgenticChatEventStatus {
             AgenticChatEventStatus::Cancelled => write!(f, "CANCELLED"),
             AgenticChatEventStatus::Failed => write!(f, "FAILED"),
             AgenticChatEventStatus::Succeeded => write!(f, "SUCCEEDED"),
-            AgenticChatEventStatus::Unknown(value) => write!(f, "{}", value),
+            AgenticChatEventStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

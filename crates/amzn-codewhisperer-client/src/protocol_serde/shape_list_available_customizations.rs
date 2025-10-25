@@ -180,7 +180,7 @@ pub(crate) fn de_list_available_customizations(
             },
             other => {
                 return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
+                    format!("expected object key or end object, found: {other:?}"),
                 ));
             },
         }

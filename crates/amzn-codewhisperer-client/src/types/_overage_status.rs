@@ -112,7 +112,7 @@ impl ::std::fmt::Display for OverageStatus {
         match self {
             OverageStatus::Disabled => write!(f, "DISABLED"),
             OverageStatus::Enabled => write!(f, "ENABLED"),
-            OverageStatus::Unknown(value) => write!(f, "{}", value),
+            OverageStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

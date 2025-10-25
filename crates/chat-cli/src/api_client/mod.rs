@@ -625,7 +625,7 @@ impl ApiClient {
                     serde_json::Value::Object(tool_use) => {
                         stream.append(&mut split_tool_use_event(tool_use));
                     },
-                    other => panic!("Unexpected value: {:?}", other),
+                    other => panic!("Unexpected value: {other:?}"),
                 }
             }
             mock.push(stream);

@@ -26,8 +26,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                     let parsed = crate::protocol_serde::shape_code_event::de_code_event_payload(&message.payload()[..])
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall CodeEvent: {}",
-                                err
+                                "failed to unmarshall CodeEvent: {err}"
                             ))
                         })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -57,8 +56,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                             )
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall Error: {}",
-                                    err
+                                    "failed to unmarshall Error: {err}"
                                 ))
                             })?;
                         builder.set_meta(Some(generic));
@@ -67,7 +65,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                                 crate::serde_util::internal_server_error_correct_errors(builder)
                                     .build()
                                     .map_err(|err| {
-                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{}", err))
+                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{err}"))
                                     })?,
                             ),
                         ));
@@ -79,7 +77,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                             builder,
                         )
                         .map_err(|err| {
-                            ::aws_smithy_eventstream::error::Error::unmarshalling(format!("failed to unmarshall QuotaLevelExceededError: {}", err))
+                            ::aws_smithy_eventstream::error::Error::unmarshalling(format!("failed to unmarshall QuotaLevelExceededError: {err}"))
                         })?;
                         builder.set_meta(Some(generic));
                         return Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Error(
@@ -87,7 +85,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                                 crate::serde_util::service_quota_exceeded_error_correct_errors(builder)
                                     .build()
                                     .map_err(|err| {
-                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{}", err))
+                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{err}"))
                                     })?,
                             ),
                         ));
@@ -100,8 +98,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                         )
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall ValidationError: {}",
-                                err
+                                "failed to unmarshall ValidationError: {err}"
                             ))
                         })?;
                         builder.set_meta(Some(generic));
@@ -110,7 +107,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
                                 crate::serde_util::validation_error_correct_errors(builder)
                                     .build()
                                     .map_err(|err| {
-                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{}", err))
+                                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{err}"))
                                     })?,
                             ),
                         ));
@@ -123,8 +120,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for GenerateCodeFromComm
             },
             value => {
                 return Err(::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                    "unrecognized :message-type: {}",
-                    value
+                    "unrecognized :message-type: {value}"
                 )));
             },
         }
@@ -161,8 +157,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         )
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall MessageMetadataEvent: {}",
-                                err
+                                "failed to unmarshall MessageMetadataEvent: {err}"
                             ))
                         })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -176,8 +171,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         )
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall AssistantResponseEvent: {}",
-                                err
+                                "failed to unmarshall AssistantResponseEvent: {err}"
                             ))
                         })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -191,8 +185,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         )
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall ReasoningContentEvent: {}",
-                                err
+                                "failed to unmarshall ReasoningContentEvent: {err}"
                             ))
                         })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -210,8 +203,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     )
                     .map_err(|err| {
                         ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                            "failed to unmarshall CodeReferenceEvent: {}",
-                            err
+                            "failed to unmarshall CodeReferenceEvent: {err}"
                         ))
                     })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -223,8 +215,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_supplementary_web_links_event::de_supplementary_web_links_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall SupplementaryWebLinksEvent: {}",
-                                    err
+                                    "failed to unmarshall SupplementaryWebLinksEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -237,8 +228,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     )
                     .map_err(|err| {
                         ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                            "failed to unmarshall FollowupPromptEvent: {}",
-                            err
+                            "failed to unmarshall FollowupPromptEvent: {err}"
                         ))
                     })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -249,8 +239,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     let parsed = crate::protocol_serde::shape_code_event::de_code_event_payload(&message.payload()[..])
                         .map_err(|err| {
                             ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                "failed to unmarshall CodeEvent: {}",
-                                err
+                                "failed to unmarshall CodeEvent: {err}"
                             ))
                         })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -262,8 +251,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_intents_event::de_intents_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall IntentsEvent: {}",
-                                    err
+                                    "failed to unmarshall IntentsEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -275,8 +263,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_interaction_components_event::de_interaction_components_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall InteractionComponentsEvent: {}",
-                                    err
+                                    "failed to unmarshall InteractionComponentsEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -288,8 +275,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_tool_use_event::de_tool_use_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall ToolUseEvent: {}",
-                                    err
+                                    "failed to unmarshall ToolUseEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -302,8 +288,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     )
                     .map_err(|err| {
                         ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                            "failed to unmarshall ToolResultEvent: {}",
-                            err
+                            "failed to unmarshall ToolResultEvent: {err}"
                         ))
                     })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -315,8 +300,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_metadata_event::de_metadata_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall MetadataEvent: {}",
-                                    err
+                                    "failed to unmarshall MetadataEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -328,8 +312,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_metering_event::de_metering_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall MeteringEvent: {}",
-                                    err
+                                    "failed to unmarshall MeteringEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -341,8 +324,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::protocol_serde::shape_citation_event::de_citation_event_payload(&message.payload()[..])
                             .map_err(|err| {
                                 ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                                    "failed to unmarshall CitationEvent: {}",
-                                    err
+                                    "failed to unmarshall CitationEvent: {err}"
                                 ))
                             })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -355,8 +337,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     )
                     .map_err(|err| {
                         ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                            "failed to unmarshall InvalidStateEvent: {}",
-                            err
+                            "failed to unmarshall InvalidStateEvent: {err}"
                         ))
                     })?;
                     Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
@@ -384,8 +365,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                     )
                     .map_err(|err| {
                         ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                            "failed to unmarshall error: {}",
-                            err
+                            "failed to unmarshall error: {err}"
                         ))
                     })?;
                     builder.set_meta(Some(generic));
@@ -394,7 +374,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                             crate::serde_util::internal_server_error_correct_errors(builder)
                                 .build()
                                 .map_err(|err| {
-                                    ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{}", err))
+                                    ::aws_smithy_eventstream::error::Error::unmarshalling(format!("{err}"))
                                 })?,
                         ),
                     ));
@@ -405,8 +385,7 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
             },
             value => {
                 return Err(::aws_smithy_eventstream::error::Error::unmarshalling(format!(
-                    "unrecognized :message-type: {}",
-                    value
+                    "unrecognized :message-type: {value}"
                 )));
             },
         }

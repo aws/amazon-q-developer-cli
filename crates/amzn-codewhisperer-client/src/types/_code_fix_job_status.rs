@@ -118,7 +118,7 @@ impl ::std::fmt::Display for CodeFixJobStatus {
             CodeFixJobStatus::Failed => write!(f, "Failed"),
             CodeFixJobStatus::InProgress => write!(f, "InProgress"),
             CodeFixJobStatus::Succeeded => write!(f, "Succeeded"),
-            CodeFixJobStatus::Unknown(value) => write!(f, "{}", value),
+            CodeFixJobStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -112,7 +112,7 @@ impl ::std::fmt::Display for OverageCapability {
         match self {
             OverageCapability::OverageCapable => write!(f, "OVERAGE_CAPABLE"),
             OverageCapability::OverageIncapable => write!(f, "OVERAGE_INCAPABLE"),
-            OverageCapability::Unknown(value) => write!(f, "{}", value),
+            OverageCapability::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

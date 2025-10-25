@@ -172,7 +172,7 @@ impl ::std::fmt::Display for UserIntent {
             UserIntent::ImproveCode => write!(f, "IMPROVE_CODE"),
             UserIntent::ShowExamples => write!(f, "SHOW_EXAMPLES"),
             UserIntent::SuggestAlternateImplementation => write!(f, "SUGGEST_ALTERNATE_IMPLEMENTATION"),
-            UserIntent::Unknown(value) => write!(f, "{}", value),
+            UserIntent::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

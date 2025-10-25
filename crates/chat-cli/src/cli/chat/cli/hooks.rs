@@ -67,7 +67,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
                             .strip_prefix('@')
                             .and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next())
                         {
-                            let server_pattern = format!("@{}", server_name);
+                            let server_pattern = format!("@{server_name}");
                             if pattern == &server_pattern {
                                 return true;
                             }
@@ -189,7 +189,7 @@ impl HookExecutor {
                     StyledText::warning_fg(),
                     style::Print(format!("{:.2} s", duration.as_secs_f32())),
                     StyledText::reset(),
-                    style::Print(format!(": {}\n", err)),
+                    style::Print(format!(": {err}\n")),
                 )?;
             }
 
@@ -558,7 +558,7 @@ mod tests {
 
         // Create a simple hook that writes JSON input to a file
         #[cfg(unix)]
-        let command = format!("cat > {}", test_file_str);
+        let command = format!("cat > {test_file_str}");
         #[cfg(windows)]
         let command = format!(
             "powershell -Command \"$input | Out-File -FilePath '{}'\"",

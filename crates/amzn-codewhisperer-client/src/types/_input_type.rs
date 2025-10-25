@@ -113,7 +113,7 @@ impl ::std::fmt::Display for InputType {
         match self {
             InputType::Image => write!(f, "IMAGE"),
             InputType::Text => write!(f, "TEXT"),
-            InputType::Unknown(value) => write!(f, "{}", value),
+            InputType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -118,7 +118,7 @@ impl ::std::fmt::Display for ProfileType {
             ProfileType::Codewhisperer => write!(f, "CODEWHISPERER"),
             ProfileType::Kiro => write!(f, "KIRO"),
             ProfileType::QDeveloper => write!(f, "Q_DEVELOPER"),
-            ProfileType::Unknown(value) => write!(f, "{}", value),
+            ProfileType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

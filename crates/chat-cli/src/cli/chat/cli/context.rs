@@ -201,16 +201,16 @@ impl ContextSubcommand {
                         let icon = if *is_temporary { "💬" } else { "👤" };
                         execute!(
                             session.stderr,
-                            style::Print(format!("{} {} ", icon, filename)),
+                            style::Print(format!("{icon} {filename} ")),
                             StyledText::secondary_fg(),
-                            style::Print(format!("(~{} tkns)\n", est_tokens)),
+                            style::Print(format!("(~{est_tokens} tkns)\n")),
                             StyledText::reset(),
                         )?;
                         if expand {
                             execute!(
                                 session.stderr,
                                 StyledText::secondary_fg(),
-                                style::Print(format!("{}\n\n", content)),
+                                style::Print(format!("{content}\n\n")),
                                 StyledText::reset(),
                             )?;
                         }
@@ -229,7 +229,7 @@ impl ContextSubcommand {
 
                     execute!(
                         session.stderr,
-                        style::Print(format!("\nTotal: ~{} tokens\n\n", total_tokens))
+                        style::Print(format!("\nTotal: ~{total_tokens} tokens\n\n"))
                     )?;
 
                     if let Some(dropped_files) = dropped_files {
@@ -238,8 +238,7 @@ impl ContextSubcommand {
                                 session.stderr,
                                 StyledText::warning_fg(),
                                 style::Print(format!(
-                                    "Total token count exceeds limit: {}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n",
-                                    context_files_max_size
+                                    "Total token count exceeds limit: {context_files_max_size}. The following files will be automatically dropped when interacting with Q. Consider removing them. \n\n"
                                 )),
                                 StyledText::reset(),
                             )?;
@@ -251,9 +250,9 @@ impl ContextSubcommand {
                                 let est_tokens = TokenCounter::count_tokens(content);
                                 execute!(
                                     session.stderr,
-                                    style::Print(format!("{} ", filename)),
+                                    style::Print(format!("{filename} ")),
                                     StyledText::secondary_fg(),
-                                    style::Print(format!("(~{} tkns)\n", est_tokens)),
+                                    style::Print(format!("(~{est_tokens} tkns)\n")),
                                     StyledText::reset(),
                                 )?;
                             }
@@ -306,7 +305,7 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         StyledText::error_fg(),
-                        style::Print(format!("\nError: {}\n\n", e)),
+                        style::Print(format!("\nError: {e}\n\n")),
                         StyledText::reset(),
                     )?;
                 },
@@ -325,7 +324,7 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         StyledText::error_fg(),
-                        style::Print(format!("\nError: {}\n\n", e)),
+                        style::Print(format!("\nError: {e}\n\n")),
                         StyledText::reset(),
                     )?;
                 },

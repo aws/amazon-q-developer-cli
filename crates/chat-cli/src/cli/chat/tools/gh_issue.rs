@@ -164,7 +164,7 @@ impl GhIssue {
                     .iter()
                     .map(|(file, content)| {
                         let size = TokenCounter::count_tokens(content);
-                        os_str.push_str(&format!("{}, {} tkns\n", file, size));
+                        os_str.push_str(&format!("{file}, {size} tkns\n"));
                         size
                     })
                     .sum();

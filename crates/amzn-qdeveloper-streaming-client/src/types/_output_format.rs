@@ -144,7 +144,7 @@ impl ::std::fmt::Display for OutputFormat {
             OutputFormat::TerraformIac => write!(f, "terraform/iac"),
             OutputFormat::TypescriptCdk => write!(f, "typescript/cdk"),
             OutputFormat::YamlCfn => write!(f, "yaml/cfn"),
-            OutputFormat::Unknown(value) => write!(f, "{}", value),
+            OutputFormat::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

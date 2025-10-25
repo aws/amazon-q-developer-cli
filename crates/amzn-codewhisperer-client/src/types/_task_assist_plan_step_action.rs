@@ -129,7 +129,7 @@ impl ::std::fmt::Display for TaskAssistPlanStepAction {
             TaskAssistPlanStepAction::Delete => write!(f, "DELETE"),
             TaskAssistPlanStepAction::Modify => write!(f, "MODIFY"),
             TaskAssistPlanStepAction::UnknownValue => write!(f, "UNKNOWN"),
-            TaskAssistPlanStepAction::Unknown(value) => write!(f, "{}", value),
+            TaskAssistPlanStepAction::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

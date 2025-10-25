@@ -124,7 +124,7 @@ impl ::std::fmt::Display for UsageLimitType {
             UsageLimitType::AiEditor => write!(f, "AI_EDITOR"),
             UsageLimitType::CodeCompletions => write!(f, "CODE_COMPLETIONS"),
             UsageLimitType::Transform => write!(f, "TRANSFORM"),
-            UsageLimitType::Unknown(value) => write!(f, "{}", value),
+            UsageLimitType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

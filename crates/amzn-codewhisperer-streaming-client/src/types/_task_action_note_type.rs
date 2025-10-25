@@ -113,7 +113,7 @@ impl ::std::fmt::Display for TaskActionNoteType {
         match self {
             TaskActionNoteType::Info => write!(f, "INFO"),
             TaskActionNoteType::Warning => write!(f, "WARNING"),
-            TaskActionNoteType::Unknown(value) => write!(f, "{}", value),
+            TaskActionNoteType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

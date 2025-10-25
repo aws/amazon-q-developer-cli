@@ -126,7 +126,7 @@ impl ::std::fmt::Display for ServiceQuotaExceededExceptionReason {
             ServiceQuotaExceededExceptionReason::OverageRequestLimitExceeded => {
                 write!(f, "OVERAGE_REQUEST_LIMIT_EXCEEDED")
             },
-            ServiceQuotaExceededExceptionReason::Unknown(value) => write!(f, "{}", value),
+            ServiceQuotaExceededExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

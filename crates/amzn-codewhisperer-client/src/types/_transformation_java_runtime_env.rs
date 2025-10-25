@@ -124,7 +124,7 @@ impl ::std::fmt::Display for TransformationJavaRuntimeEnv {
             TransformationJavaRuntimeEnv::Jvm17 => write!(f, "JVM_17"),
             TransformationJavaRuntimeEnv::Jvm21 => write!(f, "JVM_21"),
             TransformationJavaRuntimeEnv::Jvm8 => write!(f, "JVM_8"),
-            TransformationJavaRuntimeEnv::Unknown(value) => write!(f, "{}", value),
+            TransformationJavaRuntimeEnv::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

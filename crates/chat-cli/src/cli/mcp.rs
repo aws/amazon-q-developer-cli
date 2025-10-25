@@ -400,7 +400,7 @@ impl StatusArgs {
                         output,
                         style::Print("\n─────────────\n"),
                         style::Print(format!("Scope   : {}\n", scope_display(&sc))),
-                        style::Print(format!("Agent   : {}\n", name)),
+                        style::Print(format!("Agent   : {name}\n")),
                         style::Print(format!("Command : {}\n", cfg.command)),
                         style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
                         style::Print(format!("Disabled: {}\n", cfg.disabled)),
@@ -410,7 +410,7 @@ impl StatusArgs {
                                 || "(none)".into(),
                                 |e| e
                                     .iter()
-                                    .map(|(k, v)| format!("{}={}", k, v))
+                                    .map(|(k, v)| format!("{k}={v}"))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             )

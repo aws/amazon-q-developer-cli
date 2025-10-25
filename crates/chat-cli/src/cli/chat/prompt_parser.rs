@@ -95,7 +95,7 @@ pub fn generate_prompt(
         .map(|p| format!("[{p}] "))
         .unwrap_or_default();
 
-    let percentage_part = usage_percentage.map(|p| format!("{:.0}% ", p)).unwrap_or_default();
+    let percentage_part = usage_percentage.map(|p| format!("{p:.0}% ")).unwrap_or_default();
 
     if tangent_mode {
         format!("{profile_part}{percentage_part}↯ {warning_symbol}> ")

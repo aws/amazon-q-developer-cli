@@ -151,7 +151,7 @@ impl ::std::fmt::Display for VendKeyGrantUseCase {
             VendKeyGrantUseCase::Lochness => write!(f, "LOCHNESS"),
             VendKeyGrantUseCase::Test => write!(f, "TEST"),
             VendKeyGrantUseCase::WeaverBird => write!(f, "WEAVER_BIRD"),
-            VendKeyGrantUseCase::Unknown(value) => write!(f, "{}", value),
+            VendKeyGrantUseCase::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

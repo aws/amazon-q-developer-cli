@@ -808,13 +808,12 @@ impl ConversationState {
             "[SYSTEM NOTE: This is an automated agent generation request, not from the user]\n\n\
 FORMAT REQUIREMENTS: Generate a JSON configuration for a custom coding agent. \
 IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO ```json tags, NO conversational text.\n\n\
-Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
-The configuration must conform to this JSON schema:\n{}\n\n\
-We have a prepopulated template: {} \n\n\
+Your task is to generate an agent configuration file for an agent named '{agent_name}' with the following description: {agent_description}\n\n\
+The configuration must conform to this JSON schema:\n{schema}\n\n\
+We have a prepopulated template: {prepopulated_content} \n\n\
 Please change the useLegacyMcpJson field to false. 
-Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
-Return only the JSON configuration, no additional text.",
-   agent_name, agent_description, schema, prepopulated_content, selected_servers
+Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {selected_servers}. 
+Return only the JSON configuration, no additional text."
         );
 
         let generation_message = UserMessage::new_prompt(generation_content.clone(), None);
@@ -885,7 +884,7 @@ Return only the JSON configuration, no additional text.",
                     if !files_to_use.is_empty() {
                         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
                         for (filename, content) in files_to_use {
-                            context_content.push_str(&format!("[{}]\n{}\n", filename, content));
+                            context_content.push_str(&format!("[{filename}]\n{content}\n"));
                         }
                         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
                     }
@@ -901,7 +900,7 @@ Return only the JSON configuration, no additional text.",
         }
 
         if let Some(agent_prompt) = self.agents.get_active().and_then(|a| a.prompt.as_ref()) {
-            context_content.push_str(&format!("Follow this instruction: {}", agent_prompt));
+            context_content.push_str(&format!("Follow this instruction: {agent_prompt}"));
         }
 
         if !context_content.is_empty() {
@@ -1348,15 +1347,13 @@ mod tests {
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.first()) {
             assert!(
                 matches!(msg, ChatMessage::UserInputMessage(_)),
-                "{assertion_iteration}: First message in the history must be from the user, instead found: {:?}",
-                msg
+                "{assertion_iteration}: First message in the history must be from the user, instead found: {msg:?}"
             );
         }
         if let Some(Some(msg)) = state.history.as_ref().map(|h| h.last()) {
             assert!(
                 matches!(msg, ChatMessage::AssistantResponseMessage(_)),
-                "{assertion_iteration}: Last message in the history must be from the assistant, instead found: {:?}",
-                msg
+                "{assertion_iteration}: Last message in the history must be from the assistant, instead found: {msg:?}"
             );
             // If the last message from the assistant contains tool uses, then the next user
             // message must contain tool results.
@@ -1416,9 +1413,7 @@ mod tests {
         let actual_history_len = state.history.unwrap_or_default().len();
         assert!(
             actual_history_len <= MAX_CONVERSATION_STATE_HISTORY_LEN,
-            "history should not extend past the max limit of {}, instead found length {}",
-            MAX_CONVERSATION_STATE_HISTORY_LEN,
-            actual_history_len
+            "history should not extend past the max limit of {MAX_CONVERSATION_STATE_HISTORY_LEN}, instead found length {actual_history_len}"
         );
 
         let os = state

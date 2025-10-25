@@ -113,7 +113,7 @@ impl ::std::fmt::Display for AgentTaskType {
         match self {
             AgentTaskType::SpecTask => write!(f, "spectask"),
             AgentTaskType::Vibe => write!(f, "vibe"),
-            AgentTaskType::Unknown(value) => write!(f, "{}", value),
+            AgentTaskType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

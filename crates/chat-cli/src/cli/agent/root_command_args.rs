@@ -107,11 +107,11 @@ impl AgentArgs {
                 let max_name_length = agent_with_path.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
                 let output_str = agent_with_path
                     .into_iter()
-                    .map(|(name, path)| format!("{name:<width$}    {path}", width = max_name_length))
+                    .map(|(name, path)| format!("{name:<max_name_length$}    {path}"))
                     .collect::<Vec<_>>()
                     .join("\n");
 
-                writeln!(stderr, "{}", output_str)?;
+                writeln!(stderr, "{output_str}")?;
             },
             Some(AgentSubcommands::Create { name, directory, from }) => {
                 let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
@@ -259,8 +259,7 @@ impl AgentArgs {
                             style::Print("✓ Success: "),
                             StyledText::reset(),
                             style::Print(format!(
-                                "Profile migration successful. Migrated {} agent(s)\n",
-                                migrated_count
+                                "Profile migration successful. Migrated {migrated_count} agent(s)\n"
                             )),
                         );
                     },

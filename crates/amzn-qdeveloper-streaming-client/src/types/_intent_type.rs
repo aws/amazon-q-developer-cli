@@ -130,7 +130,7 @@ impl ::std::fmt::Display for IntentType {
             IntentType::GlueSensei => write!(f, "GLUE_SENSEI"),
             IntentType::ResourceData => write!(f, "RESOURCE_DATA"),
             IntentType::Support => write!(f, "SUPPORT"),
-            IntentType::Unknown(value) => write!(f, "{}", value),
+            IntentType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

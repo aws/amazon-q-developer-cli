@@ -197,7 +197,7 @@ impl ::std::fmt::Display for CustomizationStatus {
             CustomizationStatus::Updated => write!(f, "UPDATED"),
             CustomizationStatus::UpdateFailed => write!(f, "UPDATE_FAILED"),
             CustomizationStatus::Updating => write!(f, "UPDATING"),
-            CustomizationStatus::Unknown(value) => write!(f, "{}", value),
+            CustomizationStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

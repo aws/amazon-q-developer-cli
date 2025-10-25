@@ -258,7 +258,7 @@ impl ChatArgs {
                         }
                     },
                     Err(e) => {
-                        eprintln!("Error reading from stdin: {}", e);
+                        eprintln!("Error reading from stdin: {e}");
                     },
                 }
             }
@@ -978,7 +978,7 @@ impl ChatSession {
 
                         if let Some(id) = request_id {
                             self.conversation
-                                .append_transcript(format!("Model unavailable (Request ID: {})", id));
+                                .append_transcript(format!("Model unavailable (Request ID: {id})"));
                         }
 
                         self.inner = Some(ChatState::RetryModelOverload);
@@ -992,7 +992,7 @@ impl ChatSession {
                         "The model you've selected is temporarily unavailable. {}{}\n\n",
                         model_instruction,
                         match request_id {
-                            Some(id) => format!("\n    Request ID: {}", id),
+                            Some(id) => format!("\n    Request ID: {id}"),
                             None => "".to_owned(),
                         }
                     );
@@ -1078,7 +1078,7 @@ impl ChatSession {
                 StyledText::error_fg(),
             )?;
 
-            let text = re.replace_all(&format!("{}: {:?}\n", context, report), "").into_owned();
+            let text = re.replace_all(&format!("{context}: {report:?}\n"), "").into_owned();
 
             queue!(self.stderr, style::Print(&text),)?;
             self.conversation.append_transcript(text);
@@ -1304,7 +1304,7 @@ impl ChatSession {
                 execute!(
                     self.stderr,
                     StyledText::brand_fg(),
-                    style::Print(format!("🤖 You are chatting with {}\n", display_name)),
+                    style::Print(format!("🤖 You are chatting with {display_name}\n")),
                     StyledText::reset(),
                     style::Print("\n")
                 )?;
@@ -1577,7 +1577,7 @@ impl ChatSession {
             if let Some(custom_prompt) = &custom_prompt {
                 execute!(
                     output,
-                    style::Print(format!("• Custom prompt applied: {}\n", custom_prompt))
+                    style::Print(format!("• Custom prompt applied: {custom_prompt}\n"))
                 )?;
             }
             animate_output(&mut self.stderr, &output)?;
@@ -1706,7 +1706,7 @@ impl ChatSession {
         };
         let prepopulated_content = prepopulated_agent
             .to_str_pretty()
-            .map_err(|e| ChatError::Custom(format!("Error prepopulating agent fields: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("Error prepopulating agent fields: {e}").into()))?;
 
         // Create the agent generation request - this now works!
         let generation_state = self
@@ -1723,8 +1723,7 @@ impl ChatSession {
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinners::new(format!(
-                "Generating agent config for '{}'...",
-                agent_name
+                "Generating agent config for '{agent_name}'..."
             )));
         }
 
@@ -1809,7 +1808,7 @@ impl ChatSession {
         };
 
         let formatted_json = serde_json::to_string_pretty(&initial_agent_config)
-            .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("Failed to format JSON: {e}").into()))?;
 
         let edited_content = open_editor(Some(formatted_json))?;
 
@@ -1820,7 +1819,7 @@ impl ChatSession {
                 execute!(
                     self.stderr,
                     StyledText::error_fg(),
-                    style::Print(format!("✗ Invalid edited configuration: {}\n\n", err)),
+                    style::Print(format!("✗ Invalid edited configuration: {err}\n\n")),
                     StyledText::reset(),
                 )?;
                 return Ok(ChatState::PromptUser {
@@ -1834,7 +1833,7 @@ impl ChatSession {
             execute!(
                 self.stderr,
                 StyledText::error_fg(),
-                style::Print(format!("✗ Failed to save agent config: {}\n\n", err)),
+                style::Print(format!("✗ Failed to save agent config: {err}\n\n")),
                 StyledText::reset(),
             )?;
             return Err(err);
@@ -1844,8 +1843,7 @@ impl ChatSession {
             self.stderr,
             StyledText::success_fg(),
             style::Print(format!(
-                "✓ Agent '{}' has been created and saved successfully!\n",
-                agent_name
+                "✓ Agent '{agent_name}' has been created and saved successfully!\n"
             )),
             StyledText::reset(),
         )?;
@@ -1995,7 +1993,7 @@ impl ChatSession {
                             queue!(
                                 self.stderr,
                                 StyledText::error_fg(),
-                                style::Print(format!("\nFailed to execute command: {}\n", err)),
+                                style::Print(format!("\nFailed to execute command: {err}\n")),
                                 StyledText::reset(),
                             )?;
                             let _ = self
@@ -2022,7 +2020,7 @@ impl ChatSession {
                         .replace("slash_command ", "/")
                         .replace("slash_command\u{1b}[0m ", "/");
 
-                    writeln!(self.stderr, "{}", ansi_output)?;
+                    writeln!(self.stderr, "{ansi_output}")?;
 
                     // Print the subcommand help, if available. Required since by default we won't
                     // show what the actual arguments are, requiring an unnecessary --help call.
@@ -2080,7 +2078,7 @@ impl ChatSession {
                         queue!(
                             self.stderr,
                             StyledText::warning_fg(),
-                            style::Print(format!("Self exited with status: {}\n", status)),
+                            style::Print(format!("Self exited with status: {status}\n")),
                             StyledText::reset(),
                         )?;
                     }
@@ -2089,7 +2087,7 @@ impl ChatSession {
                     queue!(
                         self.stderr,
                         StyledText::error_fg(),
-                        style::Print(format!("\nFailed to execute command: {}\n", e)),
+                        style::Print(format!("\nFailed to execute command: {e}\n")),
                         StyledText::reset(),
                     )?;
                 },
@@ -2461,7 +2459,7 @@ impl ChatSession {
                         style::Print("\n"),
                         StyledText::success_fg(),
                         style::SetAttribute(Attribute::Bold),
-                        style::Print(format!(" ● Completed in {}s", tool_time)),
+                        style::Print(format!(" ● Completed in {tool_time}s")),
                         StyledText::reset(),
                     )?;
                     if let Some(tag) = checkpoint_tag {
@@ -2522,7 +2520,7 @@ impl ChatSession {
                         style::Print("\n"),
                         style::SetAttribute(Attribute::Bold),
                         StyledText::error_fg(),
-                        style::Print(format!(" ● Execution failed after {}s:\n", tool_time)),
+                        style::Print(format!(" ● Execution failed after {tool_time}s:\n")),
                         StyledText::reset_attributes(),
                         StyledText::error_fg(),
                         style::Print(&err),
@@ -2845,8 +2843,7 @@ impl ChatSession {
                             let tool_results = vec![ToolUseResult {
                                 tool_use_id,
                                 content: vec![ToolUseResultBlock::Text(format!(
-                                    "Tool validation failed: {}. Please ensure tool arguments are provided as a valid JSON object.",
-                                    error_message
+                                    "Tool validation failed: {error_message}. Please ensure tool arguments are provided as a valid JSON object."
                                 ))],
                                 status: ToolResultStatus::Error,
                             }];
@@ -2856,8 +2853,7 @@ impl ChatSession {
                                 style::Print("\n\n"),
                                 StyledText::warning_fg(),
                                 style::Print(format!(
-                                    "Tool validation failed: {}\n Retrying the request...",
-                                    error_message
+                                    "Tool validation failed: {error_message}\n Retrying the request..."
                                 )),
                                 StyledText::reset(),
                                 style::Print("\n"),
@@ -3034,7 +3030,7 @@ impl ChatSession {
                             execute!(
                                 self.stderr,
                                 StyledText::warning_fg(),
-                                style::Print(format!("⚠️ Could not create automatic checkpoint: {}\n\n", e)),
+                                style::Print(format!("⚠️ Could not create automatic checkpoint: {e}\n\n")),
                                 StyledText::reset(),
                             )?;
                         } else {
@@ -3042,7 +3038,7 @@ impl ChatSession {
                                 self.stderr,
                                 StyledText::info_fg(),
                                 style::SetAttribute(Attribute::Bold),
-                                style::Print(format!("✓ Created checkpoint {}\n\n", tag)),
+                                style::Print(format!("✓ Created checkpoint {tag}\n\n")),
                                 StyledText::reset(),
                                 StyledText::reset_attributes(),
                             )?;
@@ -3162,7 +3158,7 @@ impl ChatSession {
                             self.stderr,
                             style::Print("\n"),
                             StyledText::error_fg(),
-                            style::Print(format!("{}\n", content)),
+                            style::Print(format!("{content}\n")),
                             StyledText::reset(),
                         )?;
                     }
@@ -3224,8 +3220,7 @@ impl ChatSession {
                         tool_results.push(ToolUseResult {
                             tool_use_id: tool.id.clone(),
                             content: vec![ToolUseResultBlock::Text(format!(
-                                "PreToolHook blocked the tool execution: {}",
-                                output
+                                "PreToolHook blocked the tool execution: {output}"
                             ))],
                             status: ToolResultStatus::Error,
                         });
@@ -3244,7 +3239,7 @@ impl ChatSession {
                             self.stderr,
                             style::Print("\n"),
                             StyledText::error_fg(),
-                            style::Print(format!("{}\n", content)),
+                            style::Print(format!("{content}\n")),
                             StyledText::reset(),
                         )?;
                     }
@@ -3644,10 +3639,8 @@ impl ChatSession {
             Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
             Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
             You do not need to display the tasks to the user yourself. You can begin completing the tasks after calling the `load` command.\n
-            TODO LIST CONTENTS: {}\n
-            ID: {}\n",
-            contents,
-            id
+            TODO LIST CONTENTS: {contents}\n
+            ID: {id}\n"
         );
 
         let summary_message = UserMessage::new_prompt(request_content.clone(), None);
@@ -3793,23 +3786,23 @@ fn is_approval_response(input: &str) -> bool {
 async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
     let config_dir = if is_global {
         directories::chat_global_agent_path(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
+            .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {e}").into()))?
     } else {
         directories::chat_local_agent_dir(os)
-            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
+            .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {e}").into()))?
     };
 
     tokio::fs::create_dir_all(&config_dir)
         .await
-        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to create config directory: {e}").into()))?;
 
-    let config_file = config_dir.join(format!("{}.json", agent_name));
+    let config_file = config_dir.join(format!("{agent_name}.json"));
     let config_json = serde_json::to_string_pretty(config)
-        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to serialize agent config: {e}").into()))?;
 
     tokio::fs::write(&config_file, config_json)
         .await
-        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to write agent config file: {e}").into()))?;
 
     Ok(())
 }
@@ -4225,7 +4218,7 @@ mod tests {
 
         for (input, expected) in cases {
             let processed = input.trim().to_string();
-            assert_eq!(processed, expected.trim().to_string(), "Failed for input: {}", input);
+            assert_eq!(processed, expected.trim().to_string(), "Failed for input: {input}");
         }
     }
 
@@ -4308,8 +4301,8 @@ mod tests {
         // Get the real path in the temp directory for the hooks to write to
         let pre_hook_log_path = os.fs.chroot_path_str("/pre-hook-test.log");
         let post_hook_log_path = os.fs.chroot_path_str("/post-hook-test.log");
-        let pre_hook_command = format!("cat > {}", pre_hook_log_path);
-        let post_hook_command = format!("cat > {}", post_hook_log_path);
+        let pre_hook_command = format!("cat > {pre_hook_log_path}");
+        let post_hook_command = format!("cat > {post_hook_log_path}");
 
         hooks.insert(HookTrigger::PreToolUse, vec![Hook {
             command: pre_hook_command,
@@ -4379,7 +4372,7 @@ mod tests {
             let tool_input = &pre_hook_data["tool_input"];
             assert!(tool_input["operations"].is_array());
 
-            println!("✓ PreToolUse hook validation passed: {}", pre_log_content);
+            println!("✓ PreToolUse hook validation passed: {pre_log_content}");
         } else {
             panic!("PreToolUse hook log file not found - hook may not have been called");
         }
@@ -4402,7 +4395,7 @@ mod tests {
             let content = result_blocks[0].as_str().unwrap();
             assert!(content.contains("line1\nline2\nline3"));
 
-            println!("✓ PostToolUse hook validation passed: {}", post_log_content);
+            println!("✓ PostToolUse hook validation passed: {post_log_content}");
         } else {
             panic!("PostToolUse hook log file not found - hook may not have been called");
         }
@@ -4516,7 +4509,7 @@ mod tests {
         ];
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
-            assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
+            assert_eq!(actual, *expected, "expected {expected} for input {input}");
         }
     }
 }

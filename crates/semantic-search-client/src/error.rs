@@ -30,14 +30,14 @@ pub enum SemanticSearchError {
 impl fmt::Display for SemanticSearchError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            SemanticSearchError::IoError(e) => write!(f, "I/O error: {}", e),
-            SemanticSearchError::SerdeError(e) => write!(f, "Serialization error: {}", e),
-            SemanticSearchError::SerializationError(msg) => write!(f, "Serialization error: {}", msg),
-            SemanticSearchError::InvalidPath(path) => write!(f, "Invalid path: {}", path),
-            SemanticSearchError::ContextNotFound(id) => write!(f, "Context not found: {}", id),
-            SemanticSearchError::OperationFailed(msg) => write!(f, "Operation failed: {}", msg),
-            SemanticSearchError::InvalidArgument(msg) => write!(f, "Invalid argument: {}", msg),
-            SemanticSearchError::EmbeddingError(msg) => write!(f, "Embedding error: {}", msg),
+            SemanticSearchError::IoError(e) => write!(f, "I/O error: {e}"),
+            SemanticSearchError::SerdeError(e) => write!(f, "Serialization error: {e}"),
+            SemanticSearchError::SerializationError(msg) => write!(f, "Serialization error: {msg}"),
+            SemanticSearchError::InvalidPath(path) => write!(f, "Invalid path: {path}"),
+            SemanticSearchError::ContextNotFound(id) => write!(f, "Context not found: {id}"),
+            SemanticSearchError::OperationFailed(msg) => write!(f, "Operation failed: {msg}"),
+            SemanticSearchError::InvalidArgument(msg) => write!(f, "Invalid argument: {msg}"),
+            SemanticSearchError::EmbeddingError(msg) => write!(f, "Embedding error: {msg}"),
         }
     }
 }

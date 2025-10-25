@@ -168,7 +168,7 @@ fn main() {
             Some("percent") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Percent),
             Some("none") | None => quote!(::amzn_toolkit_telemetry_client::types::Unit::None),
             Some(unknown) => {
-                panic!("unknown unit: {:?}", unknown);
+                panic!("unknown unit: {unknown:?}");
             },
         };
 
@@ -276,5 +276,5 @@ fn main() {
     let pp = prettyplease::unparse(&file);
 
     // write an empty file to the output directory
-    std::fs::write(format!("{}/mod.rs", outdir), pp).unwrap();
+    std::fs::write(format!("{outdir}/mod.rs"), pp).unwrap();
 }

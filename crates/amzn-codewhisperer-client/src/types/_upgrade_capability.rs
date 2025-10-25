@@ -112,7 +112,7 @@ impl ::std::fmt::Display for UpgradeCapability {
         match self {
             UpgradeCapability::UpgradeCapable => write!(f, "UPGRADE_CAPABLE"),
             UpgradeCapability::UpgradeIncapable => write!(f, "UPGRADE_INCAPABLE"),
-            UpgradeCapability::Unknown(value) => write!(f, "{}", value),
+            UpgradeCapability::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

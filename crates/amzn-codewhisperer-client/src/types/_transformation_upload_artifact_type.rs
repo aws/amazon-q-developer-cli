@@ -112,7 +112,7 @@ impl ::std::fmt::Display for TransformationUploadArtifactType {
         match self {
             TransformationUploadArtifactType::ClientBuildResult => write!(f, "ClientBuildResult"),
             TransformationUploadArtifactType::Dependencies => write!(f, "Dependencies"),
-            TransformationUploadArtifactType::Unknown(value) => write!(f, "{}", value),
+            TransformationUploadArtifactType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

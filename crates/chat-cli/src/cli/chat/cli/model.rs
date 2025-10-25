@@ -109,12 +109,12 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             let description = model.description();
             if Some(model.model_id.as_str()) == active_model_id {
                 if let Some(desc) = description {
-                    format!("{} (active) | {}", display_name, desc)
+                    format!("{display_name} (active) | {desc}")
                 } else {
-                    format!("{} (active)", display_name)
+                    format!("{display_name} (active)")
                 }
             } else if let Some(desc) = description {
-                format!("{} | {}", display_name, desc)
+                format!("{display_name} | {desc}")
             } else {
                 display_name.to_string()
             }
@@ -146,7 +146,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::Print(format!(" Using {}\n\n", display_name)),
+            style::Print(format!(" Using {display_name}\n\n")),
             StyledText::reset(),
             StyledText::reset(),
             StyledText::reset(),
@@ -166,7 +166,7 @@ pub async fn get_model_info(model_id: &str, os: &Os) -> Result<ModelInfo, ChatEr
     models
         .into_iter()
         .find(|m| m.model_id == model_id)
-        .ok_or_else(|| ChatError::Custom(format!("Model '{}' not found", model_id).into()))
+        .ok_or_else(|| ChatError::Custom(format!("Model '{model_id}' not found").into()))
 }
 
 /// Get available models with caching support

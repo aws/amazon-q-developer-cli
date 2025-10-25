@@ -93,8 +93,7 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
             &mut *output,
             StyledText::warning_fg(),
             style::Print(format!(
-                "\nMore than {} images detected. Extra ones will be dropped.\n",
-                MAX_NUMBER_OF_IMAGES_PER_REQUEST
+                "\nMore than {MAX_NUMBER_OF_IMAGES_PER_REQUEST} images detected. Extra ones will be dropped.\n"
             )),
             StyledText::reset(),
         )
@@ -203,7 +202,7 @@ mod tests {
         ];
 
         for (path, expected) in test_cases {
-            assert_eq!(is_supported_image_type(path), expected, "Failed for path: {}", path);
+            assert_eq!(is_supported_image_type(path), expected, "Failed for path: {path}");
         }
     }
 
@@ -259,7 +258,7 @@ mod tests {
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &[large_image_path.to_string_lossy().to_string()]);
         let output_str = output.to_str_lossy();
-        print!("{}", output_str);
+        print!("{output_str}");
         assert!(output_str.contains("The following images are dropped due to exceeding size limit (10MB):"));
         assert!(output_str.contains("- large_image.jpg (10.00 MB)"));
         assert!(images.is_empty());
@@ -271,7 +270,7 @@ mod tests {
 
         let mut paths = vec![];
         for i in 0..(MAX_NUMBER_OF_IMAGES_PER_REQUEST + 2) {
-            let image_path = temp_dir.path().join(format!("image_{}.jpg", i));
+            let image_path = temp_dir.path().join(format!("image_{i}.jpg"));
             paths.push(image_path.to_string_lossy().to_string());
             std::fs::write(&image_path, b"fake_image_data").unwrap();
         }
@@ -334,14 +333,14 @@ mod tests {
 
         let mut supported_paths = vec![];
         for format in &supported_formats {
-            let temp_file = temp_dir.path().join(format!("pasted_image.{}", format));
+            let temp_file = temp_dir.path().join(format!("pasted_image.{format}"));
             std::fs::write(&temp_file, b"fake_image_data").unwrap();
             supported_paths.push(temp_file.to_string_lossy().to_string());
         }
 
         let mut unsupported_paths = vec![];
         for format in &unsupported_formats {
-            let temp_file = temp_dir.path().join(format!("pasted_file.{}", format));
+            let temp_file = temp_dir.path().join(format!("pasted_file.{format}"));
             std::fs::write(&temp_file, b"fake_data").unwrap();
             unsupported_paths.push(temp_file.to_string_lossy().to_string());
         }
@@ -367,7 +366,7 @@ mod tests {
         for i in 0..3 {
             let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
 
-            std::fs::write(temp_file.path(), format!("fake_image_data_{}", i).as_bytes()).unwrap();
+            std::fs::write(temp_file.path(), format!("fake_image_data_{i}").as_bytes()).unwrap();
             paths.push(temp_file.path().to_string_lossy().to_string());
             temp_files.push(temp_file); // Keep temp files alive
         }

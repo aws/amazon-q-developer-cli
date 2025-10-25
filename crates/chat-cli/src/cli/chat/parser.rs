@@ -68,7 +68,7 @@ impl std::fmt::Display for SendMessageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Failed to send the request: ")?;
         if let Some(request_id) = self.request_metadata.request_id.as_ref() {
-            write!(f, "request_id: {}, error: ", request_id)?;
+            write!(f, "request_id: {request_id}, error: ")?;
         }
         write!(f, "{}", self.source)?;
         Ok(())
@@ -113,7 +113,7 @@ impl std::fmt::Display for RecvError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Failed to receive the next message: ")?;
         if let Some(request_id) = self.request_metadata.request_id.as_ref() {
-            write!(f, "request_id: {}, error: ", request_id)?;
+            write!(f, "request_id: {request_id}, error: ")?;
         }
         write!(f, "{}", self.source)?;
         Ok(())
@@ -524,7 +524,7 @@ impl ResponseParser {
                             tool_use_id: id,
                             name,
                             message,
-                            error_message: format!("Expected JSON object, got: {:?}", args),
+                            error_message: format!("Expected JSON object, got: {args:?}"),
                         }));
                     },
                 }
@@ -860,7 +860,7 @@ mod tests {
         for _ in 0..5 {
             match parser.recv().await {
                 Ok(event) => {
-                    output.push_str(&format!("{:?}", event));
+                    output.push_str(&format!("{event:?}"));
                 },
                 Err(recv_error) => {
                     if matches!(recv_error.source, RecvErrorKind::ToolValidationError { .. }) {

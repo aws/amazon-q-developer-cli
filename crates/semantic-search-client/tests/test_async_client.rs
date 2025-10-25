@@ -29,12 +29,12 @@ mod tests {
         // Create a test file with unique content
         let unique_id = uuid::Uuid::new_v4().to_string();
         let test_file = temp_path.join("test.txt");
-        let content = format!("This is a unique test document {} for semantic search", unique_id);
+        let content = format!("This is a unique test document {unique_id} for semantic search");
         std::fs::write(&test_file, &content).unwrap();
 
         // Example of background indexing using tokio::task::spawn_blocking
         let path_clone = test_file.clone();
-        let name = format!("Test Context {}", unique_id);
+        let name = format!("Test Context {unique_id}");
         let description = "Test Description";
         let persistent = true;
 
@@ -58,7 +58,7 @@ mod tests {
 
         // Wait for the background task to complete
         let context_id = handle.await.unwrap();
-        println!("Created context with ID: {}", context_id);
+        println!("Created context with ID: {context_id}");
 
         // Wait a moment for indexing to complete
         time::sleep(Duration::from_millis(500)).await;
@@ -92,13 +92,12 @@ mod tests {
         let num_files = 10;
 
         for i in 0..num_files {
-            let file_path = temp_path.join(format!("test_file_{}.txt", i));
+            let file_path = temp_path.join(format!("test_file_{i}.txt"));
             let content = format!(
-                "This is test file {} with unique ID {} for semantic search.\n\n\
+                "This is test file {i} with unique ID {unique_id} for semantic search.\n\n\
                  It contains multiple paragraphs to test chunking.\n\n\
                  This is paragraph 3 with some additional content.\n\n\
-                 And finally paragraph 4 with more text for embedding.",
-                i, unique_id
+                 And finally paragraph 4 with more text for embedding."
             );
             std::fs::write(&file_path, &content).unwrap();
         }
@@ -113,20 +112,20 @@ mod tests {
                 println!("Counting files...");
             },
             ProgressStatus::StartingIndexing(count) => {
-                println!("Starting indexing of {} files...", count);
+                println!("Starting indexing of {count} files...");
             },
             ProgressStatus::Indexing(current, total) => {
-                println!("Indexing file {}/{}", current, total);
+                println!("Indexing file {current}/{total}");
                 progress_counter_clone.store(current, Ordering::SeqCst);
             },
             ProgressStatus::DownloadingModel(current, total) => {
-                println!("Downloading model {}/{} bytes", current, total);
+                println!("Downloading model {current}/{total} bytes");
             },
             ProgressStatus::CreatingSemanticContext => {
                 println!("Creating semantic context...");
             },
             ProgressStatus::GeneratingEmbeddings(current, total) => {
-                println!("Generating embeddings {}/{}", current, total);
+                println!("Generating embeddings {current}/{total}");
             },
             ProgressStatus::BuildingIndex => {
                 println!("Building index...");
@@ -146,7 +145,7 @@ mod tests {
                 let mut client = SemanticSearchClient::new_with_default_dir().unwrap();
                 client.add_context_from_path(
                     &temp_path,
-                    &format!("Large Test Context {}", unique_id),
+                    &format!("Large Test Context {unique_id}"),
                     "Test with multiple files and progress tracking",
                     true,
                     Some(progress_callback),
@@ -164,14 +163,14 @@ mod tests {
             time::sleep(Duration::from_millis(100)).await;
             let current_progress = progress_counter.load(Ordering::SeqCst);
             if current_progress > last_progress {
-                println!("Progress update: {} files processed", current_progress);
+                println!("Progress update: {current_progress} files processed");
                 last_progress = current_progress;
             }
         }
 
         // Wait for the background task to complete
         let context_id = handle.await.unwrap();
-        println!("Created context with ID: {}", context_id);
+        println!("Created context with ID: {context_id}");
 
         // Wait a moment for indexing to complete
         time::sleep(Duration::from_millis(500)).await;
@@ -187,9 +186,9 @@ mod tests {
 
         // Verify that we can search for specific content in specific files
         for i in 0..num_files {
-            let file_specific_query = format!("test file {}", i);
+            let file_specific_query = format!("test file {i}");
             let file_results = search_client.search_all(&file_specific_query, None).unwrap();
-            assert!(!file_results.is_empty(), "Expected to find test file {}", i);
+            assert!(!file_results.is_empty(), "Expected to find test file {i}");
         }
     }
 }

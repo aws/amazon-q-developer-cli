@@ -305,8 +305,7 @@ impl UserMessage {
             // Format the time with iso8601 format using a timezone offset.
             let timestamp = ts.to_rfc3339_opts(chrono::SecondsFormat::Millis, false);
             content.push_str(&format!(
-                "{}Current time: {}, {}\n{}",
-                CONTEXT_ENTRY_START_HEADER, weekday, timestamp, CONTEXT_ENTRY_END_HEADER,
+                "{CONTEXT_ENTRY_START_HEADER}Current time: {weekday}, {timestamp}\n{CONTEXT_ENTRY_END_HEADER}",
             ));
         }
 
@@ -319,7 +318,7 @@ impl UserMessage {
         // additional context to add.
         match (content.is_empty(), self.prompt()) {
             (false, Some(p)) => {
-                content.push_str(&format!("{}{}{}", USER_ENTRY_START_HEADER, p, USER_ENTRY_END_HEADER));
+                content.push_str(&format!("{USER_ENTRY_START_HEADER}{p}{USER_ENTRY_END_HEADER}"));
             },
             (true, Some(p)) => content.push_str(p),
             _ => (),

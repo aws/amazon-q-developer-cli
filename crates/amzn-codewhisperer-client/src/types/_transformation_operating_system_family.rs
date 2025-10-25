@@ -113,7 +113,7 @@ impl ::std::fmt::Display for TransformationOperatingSystemFamily {
         match self {
             TransformationOperatingSystemFamily::Linux => write!(f, "LINUX"),
             TransformationOperatingSystemFamily::Windows => write!(f, "WINDOWS"),
-            TransformationOperatingSystemFamily::Unknown(value) => write!(f, "{}", value),
+            TransformationOperatingSystemFamily::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

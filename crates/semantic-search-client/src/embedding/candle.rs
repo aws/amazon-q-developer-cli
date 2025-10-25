@@ -214,8 +214,7 @@ impl CandleTextEmbedder {
             Err(e) => {
                 error!("Model inference failed: {}", e);
                 return Err(SemanticSearchError::EmbeddingError(format!(
-                    "Model inference failed: {}",
-                    e
+                    "Model inference failed: {e}"
                 )));
             },
         };
@@ -226,8 +225,7 @@ impl CandleTextEmbedder {
             Err(e) => {
                 error!("Failed to compute mean embeddings: {}", e);
                 return Err(SemanticSearchError::EmbeddingError(format!(
-                    "Failed to compute mean embeddings: {}",
-                    e
+                    "Failed to compute mean embeddings: {e}"
                 )));
             },
         };
@@ -245,8 +243,7 @@ impl CandleTextEmbedder {
             Err(e) => {
                 error!("Failed to convert embeddings to vector: {}", e);
                 Err(SemanticSearchError::EmbeddingError(format!(
-                    "Failed to convert embeddings to vector: {}",
-                    e
+                    "Failed to convert embeddings to vector: {e}"
                 )))
             },
         }
@@ -281,8 +278,7 @@ fn load_tokenizer(tokenizer_path: &Path) -> Result<Tokenizer> {
         Err(e) => {
             error!("Failed to load tokenizer from {:?}: {}", tokenizer_path, e);
             Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to load tokenizer: {}",
-                e
+                "Failed to load tokenizer: {e}"
             )))
         },
     }
@@ -304,8 +300,7 @@ fn load_model(model_path: &Path, config: &ModelConfig, device: &Device) -> Resul
             Err(e) => {
                 error!("Failed to load model weights from {:?}: {}", model_path, e);
                 return Err(SemanticSearchError::EmbeddingError(format!(
-                    "Failed to load model weights: {}",
-                    e
+                    "Failed to load model weights: {e}"
                 )));
             },
         }
@@ -317,8 +312,7 @@ fn load_model(model_path: &Path, config: &ModelConfig, device: &Device) -> Resul
         Err(e) => {
             error!("Failed to create BERT model: {}", e);
             Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to create BERT model: {}",
-                e
+                "Failed to create BERT model: {e}"
             )))
         },
     }
@@ -355,8 +349,7 @@ fn create_tensors_from_tokens(tokens: &[tokenizers::Encoding], device: &Device) 
             Err(e) => {
                 error!("Failed to create token_ids tensor: {}", e);
                 return Err(SemanticSearchError::EmbeddingError(format!(
-                    "Failed to create token_ids tensor: {}",
-                    e
+                    "Failed to create token_ids tensor: {e}"
                 )));
             },
         };
@@ -366,8 +359,7 @@ fn create_tensors_from_tokens(tokens: &[tokenizers::Encoding], device: &Device) 
             Err(e) => {
                 error!("Failed to create attention_mask tensor: {}", e);
                 return Err(SemanticSearchError::EmbeddingError(format!(
-                    "Failed to create attention_mask tensor: {}",
-                    e
+                    "Failed to create attention_mask tensor: {e}"
                 )));
             },
         };
@@ -382,8 +374,7 @@ fn create_tensors_from_tokens(tokens: &[tokenizers::Encoding], device: &Device) 
         Err(e) => {
             error!("Failed to stack token_ids tensors: {}", e);
             return Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to stack token_ids tensors: {}",
-                e
+                "Failed to stack token_ids tensors: {e}"
             )));
         },
     };
@@ -393,8 +384,7 @@ fn create_tensors_from_tokens(tokens: &[tokenizers::Encoding], device: &Device) 
         Err(e) => {
             error!("Failed to stack attention_mask tensors: {}", e);
             return Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to stack attention_mask tensors: {}",
-                e
+                "Failed to stack attention_mask tensors: {e}"
             )));
         },
     };
@@ -410,8 +400,7 @@ fn normalize_l2(v: &Tensor) -> Result<Tensor> {
         Err(e) => {
             error!("Failed to square tensor for L2 normalization: {}", e);
             return Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to square tensor: {}",
-                e
+                "Failed to square tensor: {e}"
             )));
         },
     };
@@ -422,8 +411,7 @@ fn normalize_l2(v: &Tensor) -> Result<Tensor> {
         Err(e) => {
             error!("Failed to sum squared values: {}", e);
             return Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to sum tensor: {}",
-                e
+                "Failed to sum tensor: {e}"
             )));
         },
     };
@@ -434,8 +422,7 @@ fn normalize_l2(v: &Tensor) -> Result<Tensor> {
         Err(e) => {
             error!("Failed to compute square root for normalization: {}", e);
             return Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to compute square root: {}",
-                e
+                "Failed to compute square root: {e}"
             )));
         },
     };
@@ -446,8 +433,7 @@ fn normalize_l2(v: &Tensor) -> Result<Tensor> {
         Err(e) => {
             error!("Failed to normalize by division: {}", e);
             Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to normalize: {}",
-                e
+                "Failed to normalize: {e}"
             )))
         },
     }
@@ -543,7 +529,7 @@ mod tests {
             },
             Err(e) => {
                 // If model loading fails, skip the test
-                println!("Skipping test: Failed to load real embedder: {}", e);
+                println!("Skipping test: Failed to load real embedder: {e}");
             },
         }
     }
@@ -579,7 +565,7 @@ mod tests {
             },
             Err(e) => {
                 // If model loading fails, skip the test
-                println!("Skipping test: Failed to load real embedder: {}", e);
+                println!("Skipping test: Failed to load real embedder: {e}");
             },
         }
     }
@@ -647,7 +633,7 @@ mod tests {
     fn run_performance_test(model_type: ModelType, texts: &[String]) {
         match CandleTextEmbedder::with_model_type(model_type) {
             Ok(embedder) => {
-                println!("Testing performance of {:?}", model_type);
+                println!("Testing performance of {model_type:?}");
 
                 // Warm-up run
                 let _ = embedder.embed_batch(texts);
@@ -679,7 +665,7 @@ mod tests {
                 );
             },
             Err(e) => {
-                println!("Failed to load model {:?}: {}", model_type, e);
+                println!("Failed to load model {model_type:?}: {e}");
             },
         }
     }
@@ -704,7 +690,7 @@ mod tests {
             Ok(embedder) => {
                 // Test a simple embedding to verify the model works
                 let result = embedder.embed("Test sentence for model verification.");
-                assert!(result.is_ok(), "Model {:?} failed to generate embedding", model_type);
+                assert!(result.is_ok(), "Model {model_type:?} failed to generate embedding");
 
                 // Verify embedding dimensions
                 let embedding = result.unwrap();
@@ -716,14 +702,13 @@ mod tests {
                 assert_eq!(
                     embedding.len(),
                     expected_dim,
-                    "Model {:?} produced embedding with incorrect dimensions",
-                    model_type
+                    "Model {model_type:?} produced embedding with incorrect dimensions"
                 );
 
-                println!("Successfully loaded and tested model {:?}", model_type);
+                println!("Successfully loaded and tested model {model_type:?}");
             },
             Err(e) => {
-                println!("Failed to load model {:?}: {}", model_type, e);
+                println!("Failed to load model {model_type:?}: {e}");
                 // Don't fail the test if a model can't be loaded, just report it
             },
         }

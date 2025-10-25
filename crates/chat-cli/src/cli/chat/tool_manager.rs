@@ -1106,7 +1106,7 @@ impl ToolManager {
                         let bundle = bundles.first().ok_or(GetPromptError::MissingPromptInfo)?;
                         if let Some(sn) = sn {
                             if bundle.server_name != *sn {
-                                return Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name)));
+                                return Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}")));
                             }
                         }
                         bundle
@@ -1127,7 +1127,7 @@ impl ToolManager {
 
                     Ok(resp)
                 },
-                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name))),
+                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}"))),
                 (None, None) => Err(GetPromptError::PromptNotFound(prompt_name)),
             }
         } else {
@@ -1405,7 +1405,7 @@ fn spawn_orchestrator_task(
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
                             let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
-                            format!("{:.2}", time_taken)
+                            format!("{time_taken:.2}")
                         });
                     pending.write().await.remove(&server_name);
 
@@ -1863,7 +1863,7 @@ async fn process_tool_specs(
                         "tool description is longer than 10024 characters and has been truncated",
                     ),
                 };
-                acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
+                acc.push_str(format!(" - {tool_name} ({msg})\n").as_str());
                 acc
             },
         )))
@@ -1884,12 +1884,12 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
     if sanitized.is_empty() {
         hasher.write(orig.as_bytes());
         let hash = format!("{:03}", hasher.finish() % 1000);
-        return format!("a{}", hash);
+        return format!("a{hash}");
     }
     match sanitized.chars().next() {
         Some(c) if c.is_ascii_alphabetic() => sanitized,
         Some(_) => {
-            format!("a{}", sanitized)
+            format!("a{sanitized}")
         },
         None => {
             hasher.write(orig.as_bytes());
@@ -1930,11 +1930,11 @@ fn queue_init_message(
     queue!(
         output,
         StyledText::info_fg(),
-        style::Print(format!(" {}", complete)),
+        style::Print(format!(" {complete}")),
         StyledText::reset(),
         style::Print(" of "),
         StyledText::info_fg(),
-        style::Print(format!("{} ", total)),
+        style::Print(format!("{total} ")),
         StyledText::reset(),
         style::Print("mcp servers initialized."),
     )?;
@@ -2048,11 +2048,11 @@ fn queue_incomplete_load_message(
         StyledText::warning_fg(),
         style::Print("⚠"),
         StyledText::info_fg(),
-        style::Print(format!(" {}", complete)),
+        style::Print(format!(" {complete}")),
         StyledText::reset(),
         style::Print(" of "),
         StyledText::info_fg(),
-        style::Print(format!("{} ", total)),
+        style::Print(format!("{total} ")),
         StyledText::reset(),
         style::Print("mcp servers initialized."),
         StyledText::reset(),
@@ -2091,7 +2091,7 @@ mod tests {
         let sanitized_all_bad_name = sanitize_name(all_bad_name.to_string(), &regex, &mut hasher);
         assert!(regex.is_match(&sanitized_all_bad_name));
 
-        let with_delim = format!("a{}b{}c", NAMESPACE_DELIMITER, NAMESPACE_DELIMITER);
+        let with_delim = format!("a{NAMESPACE_DELIMITER}b{NAMESPACE_DELIMITER}c");
         let sanitized = sanitize_name(with_delim, &regex, &mut hasher);
         assert_eq!(sanitized, "abc");
     }

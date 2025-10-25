@@ -200,10 +200,10 @@ impl Event {
                     status_code: status_code.map(|v| v as i64).map(Into::into),
                     codewhispererterminal_model: model.map(Into::into),
                     codewhispererterminal_time_to_first_chunks_ms: time_to_first_chunk_ms
-                        .map(|v| format!("{:.3}", v))
+                        .map(|v| format!("{v:.3}"))
                         .map(Into::into),
                     codewhispererterminal_time_between_chunks_ms: time_between_chunks_ms
-                        .map(|v| v.iter().map(|v| format!("{:.3}", v)).collect::<Vec<_>>().join(","))
+                        .map(|v| v.iter().map(|v| format!("{v:.3}")).collect::<Vec<_>>().join(","))
                         .map(Into::into),
                     codewhispererterminal_chat_conversation_type: chat_conversation_type.map(Into::into),
                     codewhispererterminal_tool_name: tool_name.map(Into::into),
@@ -267,7 +267,7 @@ impl Event {
                     codewhispererterminal_time_to_first_chunks_ms: Some(
                         time_to_first_chunks_ms
                             .into_iter()
-                            .map(|v| v.map_or("null".to_string(), |v| format!("{:.3}", v)))
+                            .map(|v| v.map_or("null".to_string(), |v| format!("{v:.3}")))
                             .collect::<Vec<_>>()
                             .join(",")
                             .into(),

@@ -318,7 +318,7 @@ impl std::fmt::Display for ToolOrigin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ToolOrigin::Native => write!(f, "Built-in"),
-            ToolOrigin::McpServer(server) => write!(f, "{} (MCP)", server),
+            ToolOrigin::McpServer(server) => write!(f, "{server} (MCP)"),
         }
     }
 }
@@ -518,8 +518,7 @@ pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, St
 
     // Set up additional metadata for the AWS CLI user agent
     let user_agent_metadata_value = format!(
-        "{} {}/{}",
-        USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+        "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
     );
 
     // Check if the user agent metadata env var already exists using Os
@@ -530,7 +529,7 @@ pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, St
         if !existing_value.is_empty() {
             env_vars.insert(
                 USER_AGENT_ENV_VAR.to_string(),
-                format!("{} {}", existing_value, user_agent_metadata_value),
+                format!("{existing_value} {user_agent_metadata_value}"),
             );
         } else {
             env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
@@ -586,16 +585,14 @@ mod tests {
                 // If the expected path is relative, we need to ensure it is relative to the cwd.
                 let expected = fs.chroot_path_str(expected);
 
-                assert!(formatted == expected, "Expected '{}' to be '{}'", formatted, expected);
+                assert!(formatted == expected, "Expected '{formatted}' to be '{expected}'");
 
                 return;
             }
 
             assert!(
                 formatted.contains(expected),
-                "Expected '{}' to be '{}'",
-                formatted,
-                expected
+                "Expected '{formatted}' to be '{expected}'"
             );
         }
 

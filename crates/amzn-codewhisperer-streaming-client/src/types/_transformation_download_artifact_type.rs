@@ -119,7 +119,7 @@ impl ::std::fmt::Display for TransformationDownloadArtifactType {
             TransformationDownloadArtifactType::ClientInstructions => write!(f, "ClientInstructions"),
             TransformationDownloadArtifactType::GeneratedCode => write!(f, "GeneratedCode"),
             TransformationDownloadArtifactType::Logs => write!(f, "Logs"),
-            TransformationDownloadArtifactType::Unknown(value) => write!(f, "{}", value),
+            TransformationDownloadArtifactType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

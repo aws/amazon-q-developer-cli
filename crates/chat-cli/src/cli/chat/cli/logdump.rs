@@ -39,10 +39,10 @@ impl LogdumpArgs {
         )?;
 
         let timestamp = Utc::now().format("%Y-%m-%dT%H-%M-%SZ").to_string();
-        let zip_filename = format!("q-logs-{}.zip", timestamp);
+        let zip_filename = format!("q-logs-{timestamp}.zip");
         let zip_path: PathBuf = PathBuf::from(&zip_filename);
         let logs_directory =
-            logs_dir().map_err(|e| ChatError::Custom(format!("Failed to get logs directory: {}", e).into()))?;
+            logs_dir().map_err(|e| ChatError::Custom(format!("Failed to get logs directory: {e}").into()))?;
 
         match self.create_log_dump(&zip_path, logs_directory).await {
             Ok(log_count) => {
@@ -50,8 +50,7 @@ impl LogdumpArgs {
                     session.stderr,
                     StyledText::success_fg(),
                     style::Print(format!(
-                        "✓ Successfully created {} with {} log files\n",
-                        zip_filename, log_count
+                        "✓ Successfully created {zip_filename} with {log_count} log files\n"
                     )),
                     StyledText::reset(),
                 )?;
@@ -60,10 +59,10 @@ impl LogdumpArgs {
                 execute!(
                     session.stderr,
                     StyledText::error_fg(),
-                    style::Print(format!("✗ Failed to create log dump: {}\n\n", e)),
+                    style::Print(format!("✗ Failed to create log dump: {e}\n\n")),
                     StyledText::reset(),
                 )?;
-                return Err(ChatError::Custom(format!("Log dump failed: {}", e).into()));
+                return Err(ChatError::Custom(format!("Log dump failed: {e}").into()));
             },
         }
 

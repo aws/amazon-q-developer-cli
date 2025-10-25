@@ -134,7 +134,7 @@ impl ToolsArgs {
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{}:\n", origin)),
+                style::Print(format!("{origin}:\n")),
                 StyledText::reset_attributes(),
                 style::Print(to_display),
                 style::Print("\n")

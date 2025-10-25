@@ -128,7 +128,7 @@ impl ::std::fmt::Display for TerminalUserInteractionEventType {
             TerminalUserInteractionEventType::CodewhispererTerminalTranslationAction => {
                 write!(f, "CODEWHISPERER_TERMINAL_TRANSLATION_ACTION")
             },
-            TerminalUserInteractionEventType::Unknown(value) => write!(f, "{}", value),
+            TerminalUserInteractionEventType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

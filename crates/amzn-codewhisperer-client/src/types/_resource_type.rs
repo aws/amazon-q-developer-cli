@@ -124,7 +124,7 @@ impl ::std::fmt::Display for ResourceType {
             ResourceType::Credit => write!(f, "CREDIT"),
             ResourceType::Spec => write!(f, "SPEC"),
             ResourceType::Vibe => write!(f, "VIBE"),
-            ResourceType::Unknown(value) => write!(f, "{}", value),
+            ResourceType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

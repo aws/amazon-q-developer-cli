@@ -127,8 +127,7 @@ impl BackgroundWorker {
                 self.update_operation_status(
                     operation_id,
                     format!(
-                        "Waiting for available slot (max {} concurrent)...",
-                        MAX_CONCURRENT_OPERATIONS
+                        "Waiting for available slot (max {MAX_CONCURRENT_OPERATIONS} concurrent)..."
                     ),
                 )
                 .await;
@@ -184,7 +183,7 @@ impl BackgroundWorker {
 
         tokio::fs::create_dir_all(&context_dir)
             .await
-            .map_err(|e| format!("Failed to create context directory: {}", e))?;
+            .map_err(|e| format!("Failed to create context directory: {e}"))?;
 
         if cancel_token.is_cancelled() {
             return Err("Operation was cancelled during setup".to_string());
@@ -353,7 +352,7 @@ impl BackgroundWorker {
         if cancel_token.is_cancelled() {
             self.mark_operation_cancelled(operation_id).await;
         } else {
-            self.update_operation_status(operation_id, format!("Successfully cleared {} contexts", removed))
+            self.update_operation_status(operation_id, format!("Successfully cleared {removed} contexts"))
                 .await;
             self.mark_operation_completed(operation_id).await;
         }
@@ -446,7 +445,7 @@ impl BackgroundWorker {
             self.context_manager
                 .save_contexts_metadata(&self.base_dir)
                 .await
-                .map_err(|e| format!("Failed to save contexts metadata: {}", e))?;
+                .map_err(|e| format!("Failed to save contexts metadata: {e}"))?;
         }
 
         Ok(())
