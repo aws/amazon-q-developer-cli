@@ -85,7 +85,7 @@ impl TokenCounter {
         Self::count_tokens_char_count(content.len())
     }
 
-    fn count_tokens_char_count(count: usize) -> usize {
+    pub fn count_tokens_char_count(count: usize) -> usize {
         (count / Self::TOKEN_TO_CHAR_RATIO + 5) / 10 * 10
     }
 
