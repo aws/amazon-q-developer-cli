@@ -33,6 +33,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::cli::chat::cli::editor::open_editor_file;
 use crate::cli::chat::tool_manager::PromptBundle;
+use crate::cli::chat::util::truncate_safe_in_place;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -240,14 +241,14 @@ fn format_description(description: Option<&String>) -> String {
 /// Truncates a description string to the specified maximum length.
 ///
 /// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
-/// to ensure clean formatting.
+/// to ensure clean formatting. This function is UTF-8 safe and will not panic
+/// on multibyte characters (e.g., CJK languages).
 fn truncate_description(text: &str, max_length: usize) -> String {
-    if text.len() <= max_length {
-        text.to_string()
-    } else {
-        let truncated = &text[..max_length.saturating_sub(3)];
-        format!("{}...", truncated.trim_end())
-    }
+    let mut result = text.to_string();
+
+    truncate_safe_in_place(&mut result, max_length, "...");
+
+    result
 }
 
 /// Represents parsed MCP error details for generating user-friendly messages.
@@ -2243,6 +2244,52 @@ mod tests {
         assert!(!result.contains(" ..."));
         assert!(result.ends_with("..."));
         assert_eq!(result, "Prompt to explain available tools and...");
+
+        // Test CJK characters (fixes #3117, #3170)
+        let korean = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때";
+        let result = truncate_description(korean, 40);
+        assert!(result.len() <= 40);
+        assert!(result.ends_with("..."));
+
+        let chinese = "移除 eagleeye-ec-databases 任務狀況確認，最後完成後把";
+        let result = truncate_description(chinese, 60);
+        assert!(result.len() <= 60);
+
+        let japanese = "これは日本語のテキストです。長い文章をテストします。";
+        let result = truncate_description(japanese, 30);
+        assert!(result.len() <= 30);
+        assert!(result.ends_with("..."));
+
+        // Test empty string
+        assert_eq!(truncate_description("", 10), "");
+
+        // Edge case: max_length very small (result will be just "...")
+        let result = truncate_description("한국어", 5);
+        assert_eq!(result, "...");
+
+        let result = truncate_description("ABCDEF", 5);
+        assert_eq!(result, "AB...");
+
+        // Edge case: first CJK character (3 bytes) + "..." = 6 bytes minimum
+        let result = truncate_description("한국어", 6);
+        assert_eq!(result, "한...");
+        assert!(result.len() <= 6);
+
+        // Edge case: emoji (4-byte characters)
+        let emoji = "😀😀😀😀😀";
+        let result = truncate_description(emoji, 15);
+        assert!(result.len() <= 15);
+        assert!(result.ends_with("..."));
+
+        // Edge case: mixed ASCII and CJK
+        let mixed = "Hello世界こんにちは";
+        let result = truncate_description(mixed, 15);
+        assert!(result.len() <= 15);
+        assert!(result.ends_with("..."));
+
+        // Edge case: single CJK character that fits
+        let result = truncate_description("한", 10);
+        assert_eq!(result, "한");
     }
 
     #[test]
