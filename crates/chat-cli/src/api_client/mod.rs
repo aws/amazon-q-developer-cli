@@ -359,6 +359,15 @@ impl ApiClient {
         Ok(mcp_enabled)
     }
 
+    pub async fn get_usage_limits(&self) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
+        let request = self
+            .client
+            .get_usage_limits();
+
+        let response = request.send().await?;
+        Ok(response)
+    }
+
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {
         if cfg!(test) {
             return Ok(CreateSubscriptionTokenOutput::builder()

@@ -1,10 +1,11 @@
 use clap::Args;
-use crossterm::style::Attribute;
+use crossterm::style::{Attribute, Color};
 use crossterm::{
     execute,
     queue,
     style,
 };
+use chrono::{DateTime, Utc};
 
 use super::model::context_window_tokens;
 use crate::cli::chat::token_counter::{
@@ -73,6 +74,118 @@ pub async fn get_total_usage_percentage(session: &mut ChatSession, os: &Os) -> R
     Ok(calculate_usage_percentage(data.total_tokens, data.context_window_size))
 }
 
+/// Display billing and subscription information
+async fn display_billing_info(os: &Os, session: &mut ChatSession) -> Result<bool, ChatError> {
+    match os.client.get_usage_limits().await {
+        Ok(usage_limits) => {
+            display_user_and_plan_info(&usage_limits, session).await?;
+            display_bonus_credits(&usage_limits, session).await?;
+            display_estimated_usage(&usage_limits, session).await?;
+            Ok(true)
+        },
+        Err(_) => {
+            // Hide billing section when not authenticated
+            Ok(false)
+        }
+    }
+}
+
+async fn display_user_and_plan_info(_usage_limits: &amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, session: &mut ChatSession) -> Result<(), ChatError> {
+    execute!(
+        session.stderr,
+        style::SetAttribute(style::Attribute::Bold),
+        style::Print("Usage details\n"),
+        style::SetAttribute(style::Attribute::Reset),
+        style::Print("To manage your account, upgrade your plan or configure overages use "),
+        style::SetForegroundColor(Color::Blue),
+        style::Print("/usage manage"),
+        style::SetForegroundColor(Color::Reset),
+        style::Print(" to open admin hub\n\n"),
+    )?;
+    Ok(())
+}
+
+async fn display_bonus_credits(usage_limits: &amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, session: &mut ChatSession) -> Result<(), ChatError> {
+    let usage_breakdown = usage_limits.usage_breakdown_list();
+    
+    // Find Credits resource type for bonus credits
+    if let Some(credits) = usage_breakdown.iter().find(|item| {
+        item.resource_type().map_or(false, |rt| rt.as_str() == "CREDIT")
+    }) {
+        if let Some(free_trial_info) = credits.free_trial_info() {
+            let used = free_trial_info.current_usage().unwrap_or(0);
+            let total = free_trial_info.usage_limit().unwrap_or(0);
+            
+            // Calculate days until expiry
+            if let Some(expiry_timestamp) = free_trial_info.free_trial_expiry() {
+                let expiry_secs = expiry_timestamp.secs();
+                let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(|| Utc::now());
+                let now = Utc::now();
+                let days_until_expiry = (expiry_date - now).num_days().max(0);
+                
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("🎁 "),
+                    style::SetForegroundColor(Color::Reset),
+                    style::SetAttribute(style::Attribute::Bold),
+                    style::Print("Bonus credits: "),
+                    style::SetAttribute(style::Attribute::Reset),
+                    style::Print("You have bonus credits applied to your account, we will use these first, then your plan credits.\n"),
+                    style::Print(format!("New user credit bonus: {}/{} credits used, expires in {} days\n\n", used, total, days_until_expiry)),
+                )?;
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn display_estimated_usage(usage_limits: &amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, session: &mut ChatSession) -> Result<(), ChatError> {
+    let usage_breakdown = usage_limits.usage_breakdown_list();
+    
+    // Get plan info
+    let plan_name = usage_limits.subscription_info()
+        .map(|si| si.subscription_title())
+        .unwrap_or("Unknown");
+
+    // Get days until reset
+    let days_left = usage_limits.days_until_reset().unwrap_or(0);
+
+    // Get credits info
+    if let Some(credits) = usage_breakdown.iter().find(|item| {
+        item.resource_type().map_or(false, |rt| rt.as_str() == "CREDIT")
+    }) {
+        let used = credits.current_usage();
+        let limit = credits.usage_limit();
+        let percentage = if limit > 0 { (used as f32 / limit as f32 * 100.0) as i32 } else { 0 };
+
+        execute!(
+            session.stderr,
+            style::Print(format!("Current plan: {}\n", plan_name)),
+            style::Print("Overages: Off\n"),
+            style::Print(format!("Days left in billing cycle: {}\n\n", days_left)),
+            style::Print(format!("Current plan credit usage ({} of {} credits used)\n", used, limit)),
+        )?;
+
+        // Draw progress bar
+        let bar_width = 60;
+        let filled_width = (percentage as f32 / 100.0 * bar_width as f32) as usize;
+        let empty_width = bar_width - filled_width;
+
+        execute!(
+            session.stderr,
+            style::SetForegroundColor(Color::Magenta),
+            style::Print("█".repeat(filled_width)),
+            style::SetForegroundColor(Color::DarkGrey),
+            style::Print("█".repeat(empty_width)),
+            style::SetForegroundColor(Color::Reset),
+            style::Print(format!(" {}%\n\n", percentage)),
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Arguments for the usage command that displays token usage statistics and context window
 /// information.
 ///
@@ -80,12 +193,70 @@ pub async fn get_total_usage_percentage(session: &mut ChatSession, os: &Os) -> R
 /// assistant responses, and user prompts) within the current chat session's context window.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
-pub struct UsageArgs;
+pub struct UsageArgs {
+    /// Show only context window usage
+    #[arg(long)]
+    context: bool,
+    /// Show only credits and billing information
+    #[arg(long)]
+    credits: bool,
+}
 
 impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let usage_data = get_detailed_usage_data(session, os).await?;
+        match (self.context, self.credits) {
+            (true, false) => {
+                // Show only context window usage
+                self.show_context_usage(os, session).await
+            },
+            (false, true) => {
+                // Show only credits/billing information
+                self.show_credits_info(os, session).await
+            },
+            (false, false) => {
+                // Show both (default behavior)
+                self.show_full_usage(os, session).await
+            },
+            (true, true) => {
+                // Both flags specified - show error
+                execute!(
+                    session.stderr,
+                    style::SetForegroundColor(Color::Red),
+                    style::Print("Error: Cannot specify both --context and --credits flags\n"),
+                    style::SetForegroundColor(Color::Reset),
+                )?;
+                Ok(ChatState::PromptUser { skip_printing_tools: true })
+            }
+        }
+    }
 
+    async fn show_context_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let usage_data = get_detailed_usage_data(session, os).await?;
+        self.display_context_window(&usage_data, session).await?;
+        Ok(ChatState::PromptUser { skip_printing_tools: true })
+    }
+
+    async fn show_credits_info(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        let billing_displayed = display_billing_info(os, session).await?;
+        if !billing_displayed {
+            execute!(
+                session.stderr,
+                style::Print("Credit based usage is not supported for your subscription\n"),
+            )?;
+        }
+        Ok(ChatState::PromptUser { skip_printing_tools: true })
+    }
+
+    async fn show_full_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Try to display billing information first (silently ignore if not available)
+        let _billing_displayed = display_billing_info(os, session).await?;
+
+        let usage_data = get_detailed_usage_data(session, os).await?;
+        self.display_context_window(&usage_data, session).await?;
+        Ok(ChatState::PromptUser { skip_printing_tools: true })
+    }
+
+    async fn display_context_window(&self, usage_data: &DetailedUsageData, session: &mut ChatSession) -> Result<(), ChatError> {
         if !usage_data.dropped_context_files.is_empty() {
             execute!(
                 session.stderr,
@@ -252,8 +423,38 @@ impl UsageArgs {
             StyledText::reset(),
         )?;
 
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_calculate_usage_percentage() {
+        let char_count: CharCount = 4000.into(); // 4000 chars ≈ 1000 tokens
+        let tokens: TokenCount = char_count.into();
+        let context_window_size = 10000;
+        let percentage = calculate_usage_percentage(tokens, context_window_size);
+        assert_eq!(percentage, 10.0);
+    }
+
+    #[test]
+    fn test_calculate_usage_percentage_zero() {
+        let char_count: CharCount = 0.into();
+        let tokens: TokenCount = char_count.into();
+        let context_window_size = 10000;
+        let percentage = calculate_usage_percentage(tokens, context_window_size);
+        assert_eq!(percentage, 0.0);
+    }
+
+    #[test]
+    fn test_calculate_usage_percentage_full() {
+        let char_count: CharCount = 40000.into(); // 40000 chars ≈ 10000 tokens
+        let tokens: TokenCount = char_count.into();
+        let context_window_size = 10000;
+        let percentage = calculate_usage_percentage(tokens, context_window_size);
+        assert_eq!(percentage, 100.0);
     }
 }

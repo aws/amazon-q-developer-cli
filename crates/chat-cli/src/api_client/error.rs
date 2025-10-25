@@ -1,6 +1,7 @@
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenError;
 use amzn_codewhisperer_client::operation::generate_completions::GenerateCompletionsError;
 use amzn_codewhisperer_client::operation::get_profile::GetProfileError;
+use amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsError;
 use amzn_codewhisperer_client::operation::list_available_customizations::ListAvailableCustomizationsError;
 use amzn_codewhisperer_client::operation::list_available_models::ListAvailableModelsError;
 use amzn_codewhisperer_client::operation::list_available_profiles::ListAvailableProfilesError;
@@ -104,6 +105,9 @@ pub enum ApiClientError {
 
     #[error(transparent)]
     GetProfileError(#[from] SdkError<GetProfileError, HttpResponse>),
+
+    #[error(transparent)]
+    GetUsageLimitsError(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
 }
 
 impl ApiClientError {
@@ -130,6 +134,7 @@ impl ApiClientError {
             Self::ListAvailableModelsError(e) => sdk_status_code(e),
             Self::DefaultModelNotFound => None,
             Self::GetProfileError(e) => sdk_status_code(e),
+            Self::GetUsageLimitsError(e) => sdk_status_code(e),
         }
     }
 }
@@ -158,6 +163,7 @@ impl ReasonCode for ApiClientError {
             Self::ListAvailableModelsError(e) => sdk_error_code(e),
             Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
             Self::GetProfileError(e) => sdk_error_code(e),
+            Self::GetUsageLimitsError(e) => sdk_error_code(e),
         }
     }
 }
