@@ -94,7 +94,14 @@ impl LoginArgs {
                 } else {
                     // --license is not specified, prompt the user to choose
                     let options = [AuthMethod::BuilderId, AuthMethod::IdentityCenter];
-                    let i = match choose("Select login method", &options)? {
+                    let default_idx = os.database.get_login_method()?
+                        .and_then(|method| {
+                            if method == "BuilderId" { Some(0) }
+                            else if method == "IdentityCenter" { Some(1) }
+                            else { None }
+                        })
+                        .unwrap_or(0);
+                    let i = match choose("Select login method", &options, default_idx)? {
                         Some(i) => i,
                         None => bail!("No login method selected"),
                     };
@@ -164,6 +171,13 @@ impl LoginArgs {
                 }
             },
         };
+
+        // Save the login method for next time
+        let method_str = match login_method {
+            AuthMethod::BuilderId => "BuilderId",
+            AuthMethod::IdentityCenter => "IdentityCenter",
+        };
+        let _ = os.database.set_login_method(method_str.to_string());
 
         if login_method == AuthMethod::IdentityCenter {
             select_profile_interactive(os, true).await?;

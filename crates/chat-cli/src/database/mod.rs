@@ -58,6 +58,7 @@ const CLIENT_ID_KEY: &str = "telemetryClientId";
 const CODEWHISPERER_PROFILE_KEY: &str = "api.codewhisperer.profile";
 const START_URL_KEY: &str = "auth.idc.start-url";
 const IDC_REGION_KEY: &str = "auth.idc.region";
+const LOGIN_METHOD_KEY: &str = "auth.login-method";
 // We include this key to remove for backwards compatibility
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
@@ -322,6 +323,16 @@ impl Database {
     pub fn set_idc_region(&mut self, region: String) -> Result<usize, DatabaseError> {
         // Annoyingly, this is encoded as a JSON string on older clients
         self.set_json_entry(Table::State, IDC_REGION_KEY, region)
+    }
+
+    /// Get the last used login method.
+    pub fn get_login_method(&self) -> Result<Option<String>, DatabaseError> {
+        self.get_json_entry::<String>(Table::State, LOGIN_METHOD_KEY)
+    }
+
+    /// Set the last used login method.
+    pub fn set_login_method(&mut self, method: String) -> Result<usize, DatabaseError> {
+        self.set_json_entry(Table::State, LOGIN_METHOD_KEY, method)
     }
 
     /// Get if user has already completed a migration

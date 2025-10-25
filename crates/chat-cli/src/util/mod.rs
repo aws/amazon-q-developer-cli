@@ -59,7 +59,7 @@ impl std::fmt::Display for UnknownDesktopErrContext {
     }
 }
 
-pub fn choose(prompt: impl Display, options: &[impl ToString]) -> Result<Option<usize>> {
+pub fn choose(prompt: impl Display, options: &[impl ToString], default: usize) -> Result<Option<usize>> {
     if options.is_empty() {
         bail!("no options passed to choose")
     }
@@ -71,7 +71,7 @@ pub fn choose(prompt: impl Display, options: &[impl ToString]) -> Result<Option<
 
     match Select::with_theme(&dialoguer_theme())
         .items(options)
-        .default(0)
+        .default(default)
         .with_prompt(prompt.to_string())
         .interact_opt()
     {
