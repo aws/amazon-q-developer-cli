@@ -112,7 +112,7 @@ impl ::std::fmt::Display for TransformationType {
         match self {
             TransformationType::DocumentGeneration => write!(f, "DOCUMENT_GENERATION"),
             TransformationType::LanguageUpgrade => write!(f, "LANGUAGE_UPGRADE"),
-            TransformationType::Unknown(value) => write!(f, "{}", value),
+            TransformationType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

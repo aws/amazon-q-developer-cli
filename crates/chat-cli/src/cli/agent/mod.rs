@@ -714,8 +714,7 @@ impl Agents {
                     style::Print("Error"),
                     StyledText::warning_fg(),
                     style::Print(format!(
-                        ": no agent with name {} found. Falling back to user specified default",
-                        name
+                        ": no agent with name {name} found. Falling back to user specified default"
                     )),
                     style::Print("\n"),
                     StyledText::reset(),
@@ -732,8 +731,7 @@ impl Agents {
                     style::Print("Error"),
                     StyledText::warning_fg(),
                     style::Print(format!(
-                        ": user defined default {} not found. Falling back to in-memory default",
-                        user_set_default
+                        ": user defined default {user_set_default} not found. Falling back to in-memory default"
                     )),
                     style::Print("\n"),
                     StyledText::reset(),
@@ -1186,8 +1184,7 @@ mod tests {
         // fs_read has a default of "trust working directory"
         assert!(
             label.contains("trust working directory"),
-            "fs_read should show default trusted permission, instead found: {}",
-            label
+            "fs_read should show default trusted permission, instead found: {label}"
         );
     }
 
@@ -1202,8 +1199,7 @@ mod tests {
         let label = agents.display_label("random_tool", &ToolOrigin::Native);
         assert!(
             label.contains("trusted"),
-            "trust_all_tools should make everything trusted, instead found: {}",
-            label
+            "trust_all_tools should make everything trusted, instead found: {label}"
         );
     }
 
@@ -1215,23 +1211,20 @@ mod tests {
         let fs_read_label = agents.display_label("fs_read", &ToolOrigin::Native);
         assert!(
             fs_read_label.contains("trust working directory"),
-            "fs_read should be trusted by default, instead found: {}",
-            fs_read_label
+            "fs_read should be trusted by default, instead found: {fs_read_label}"
         );
 
         let fs_write_label = agents.display_label("fs_write", &ToolOrigin::Native);
         assert!(
             fs_write_label.contains("not trusted"),
-            "fs_write should not be trusted by default, instead found: {}",
-            fs_write_label
+            "fs_write should not be trusted by default, instead found: {fs_write_label}"
         );
 
         let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let execute_bash_label = agents.display_label(execute_name, &ToolOrigin::Native);
         assert!(
             execute_bash_label.contains("not trusted"),
-            "execute_bash should not be trusted by default, instead found: {}",
-            execute_bash_label
+            "execute_bash should not be trusted by default, instead found: {execute_bash_label}"
         );
     }
 
@@ -1276,64 +1269,56 @@ mod tests {
         let label = agents.display_label("fs_read", &ToolOrigin::Native);
         assert!(
             label.contains("trusted"),
-            "fs_read should be trusted (exact match), instead found: {}",
-            label
+            "fs_read should be trusted (exact match), instead found: {label}"
         );
 
         // Test 2: Native wildcard match
         let label = agents.display_label("execute_bash", &ToolOrigin::Native);
         assert!(
             label.contains("trusted"),
-            "execute_bash should match execute_* pattern, instead found: {}",
-            label
+            "execute_bash should match execute_* pattern, instead found: {label}"
         );
 
         // Test 3: Native no match
         let label = agents.display_label("fs_write", &ToolOrigin::Native);
         assert!(
             !label.contains("trusted") || label.contains("not trusted"),
-            "fs_write should not be trusted, instead found: {}",
-            label
+            "fs_write should not be trusted, instead found: {label}"
         );
 
         // Test 4: MCP server exact match (allows any tool from server1)
         let label = agents.display_label("any_tool", &ToolOrigin::McpServer("server1".to_string()));
         assert!(
             label.contains("trusted"),
-            "Server-level permission should allow any tool, instead found: {}",
-            label
+            "Server-level permission should allow any tool, instead found: {label}"
         );
 
         // Test 5: MCP tool exact match
         let label = agents.display_label("specific_tool", &ToolOrigin::McpServer("server2".to_string()));
         assert!(
             label.contains("trusted"),
-            "Exact MCP tool should be trusted, instead found: {}",
-            label
+            "Exact MCP tool should be trusted, instead found: {label}"
         );
 
         // Test 6: MCP tool wildcard match
         let label = agents.display_label("tool_read", &ToolOrigin::McpServer("server3".to_string()));
         assert!(
             label.contains("trusted"),
-            "tool_read should match @server3/tool_* pattern, instead found: {}",
-            label
+            "tool_read should match @server3/tool_* pattern, instead found: {label}"
         );
 
         // Test 7: MCP tool no match
         let label = agents.display_label("other_tool", &ToolOrigin::McpServer("server2".to_string()));
         assert!(
             !label.contains("trusted") || label.contains("not trusted"),
-            "Non-matching MCP tool should not be trusted, instead found: {}",
-            label
+            "Non-matching MCP tool should not be trusted, instead found: {label}"
         );
 
         // Test 8: MCP server no match
         let label = agents.display_label("some_tool", &ToolOrigin::McpServer("unknown_server".to_string()));
         assert!(
             !label.contains("trusted") || label.contains("not trusted"),
-            "Unknown server should not be trusted, instead found: {}",
-            label
+            "Unknown server should not be trusted, instead found: {label}"
         );
     }
 
@@ -1545,7 +1530,7 @@ mod tests {
         if let Err(AgentConfigError::FileUriNotFound { uri, .. }) = result {
             assert_eq!(uri, "file://./nonexistent.md");
         } else {
-            panic!("Expected FileUriNotFound error, got: {:?}", result);
+            panic!("Expected FileUriNotFound error, got: {result:?}");
         }
     }
 

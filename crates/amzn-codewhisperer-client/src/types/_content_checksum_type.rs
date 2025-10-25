@@ -106,7 +106,7 @@ impl ::std::fmt::Display for ContentChecksumType {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ContentChecksumType::Sha256 => write!(f, "SHA_256"),
-            ContentChecksumType::Unknown(value) => write!(f, "{}", value),
+            ContentChecksumType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

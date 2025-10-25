@@ -112,7 +112,7 @@ impl ::std::fmt::Display for ArtifactType {
         match self {
             ArtifactType::BuiltJars => write!(f, "BuiltJars"),
             ArtifactType::SourceCode => write!(f, "SourceCode"),
-            ArtifactType::Unknown(value) => write!(f, "{}", value),
+            ArtifactType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -53,7 +53,7 @@ pub fn is_tool_in_allowlist(allowed_tools: &HashSet<String>, tool_name: &str, se
             debug!("MCP patterns: {:?}", patterns);
 
             // Check server-level permission first: @server_name
-            let server_pattern = format!("@{}", server);
+            let server_pattern = format!("@{server}");
             debug!("Checking server-level pattern: '{}'", server_pattern);
             if matches_any_pattern(&patterns, &server_pattern) {
                 debug!("Server-level permission granted for '{}'", server_pattern);
@@ -61,7 +61,7 @@ pub fn is_tool_in_allowlist(allowed_tools: &HashSet<String>, tool_name: &str, se
             }
 
             // Check tool-specific permission: @server_name/tool_name
-            let tool_pattern = format!("@{}{}{}", server, MCP_SERVER_TOOL_DELIMITER, tool_name);
+            let tool_pattern = format!("@{server}{MCP_SERVER_TOOL_DELIMITER}{tool_name}");
             debug!("Checking tool-specific pattern: '{}'", tool_pattern);
             let result = matches_any_pattern(&patterns, &tool_pattern);
             debug!("Tool-specific permission result for '{}': {}", tool_pattern, result);

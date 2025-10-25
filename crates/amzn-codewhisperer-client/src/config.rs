@@ -1670,7 +1670,7 @@ pub(crate) fn base_client_runtime_plugins(
 
     let default_retry_partition = "codewhispererruntime";
     let default_retry_partition = match config.region() {
-        Some(region) => ::std::borrow::Cow::from(format!("{default_retry_partition}-{}", region)),
+        Some(region) => ::std::borrow::Cow::from(format!("{default_retry_partition}-{region}")),
         None => ::std::borrow::Cow::from(default_retry_partition),
     };
 

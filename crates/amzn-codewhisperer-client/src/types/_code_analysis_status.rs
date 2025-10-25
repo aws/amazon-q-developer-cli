@@ -118,7 +118,7 @@ impl ::std::fmt::Display for CodeAnalysisStatus {
             CodeAnalysisStatus::Completed => write!(f, "Completed"),
             CodeAnalysisStatus::Failed => write!(f, "Failed"),
             CodeAnalysisStatus::Pending => write!(f, "Pending"),
-            CodeAnalysisStatus::Unknown(value) => write!(f, "{}", value),
+            CodeAnalysisStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

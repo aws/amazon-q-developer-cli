@@ -32,7 +32,7 @@ impl ReplyArgs {
             Some(msg) => {
                 // Format with > prefix for each line
                 msg.lines()
-                    .map(|line| format!("> {}", line))
+                    .map(|line| format!("> {line}"))
                     .collect::<Vec<_>>()
                     .join("\n")
             },
@@ -56,7 +56,7 @@ impl ReplyArgs {
                 execute!(
                     session.stderr,
                     StyledText::error_fg(),
-                    style::Print(format!("\nError opening editor: {}\n\n", err)),
+                    style::Print(format!("\nError opening editor: {err}\n\n")),
                     StyledText::reset(),
                 )?;
 

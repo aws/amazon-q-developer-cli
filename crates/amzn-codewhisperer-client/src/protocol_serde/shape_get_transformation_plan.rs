@@ -179,7 +179,7 @@ pub(crate) fn de_get_transformation_plan(
             },
             other => {
                 return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
+                    format!("expected object key or end object, found: {other:?}"),
                 ));
             },
         }

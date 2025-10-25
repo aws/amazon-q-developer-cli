@@ -466,12 +466,12 @@ impl Highlighter for ChatHelper {
 
             // Add notifier part if present (info blue)
             if let Some(notifier) = components.delegate_notifier {
-                result.push_str(&StyledText::info(&format!("[{}]\n", notifier)));
+                result.push_str(&StyledText::info(&format!("[{notifier}]\n")));
             }
 
             // Add profile part if present (profile indicator cyan)
             if let Some(profile) = components.profile {
-                result.push_str(&StyledText::profile(&format!("[{}] ", profile)));
+                result.push_str(&StyledText::profile(&format!("[{profile}] ")));
             }
 
             // Add percentage part if present (colored by usage level)
@@ -536,7 +536,7 @@ impl rustyline::ConditionalEventHandler for PasteImageHandler {
 
                 // Insert [Image #N] marker so user sees what they're pasting
                 // User presses Enter to submit
-                Some(Cmd::Insert(1, format!("[Image #{}]", count)))
+                Some(Cmd::Insert(1, format!("[Image #{count}]")))
             },
             Err(ClipboardError::NoImage) => {
                 // Silent fail - no image to paste
@@ -589,7 +589,7 @@ pub fn rl(
     // Load history from ~/.aws/amazonq/cli_history
     if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
-            eprintln!("Warning: Failed to load history: {}", e);
+            eprintln!("Warning: Failed to load history: {e}");
         }
     }
 
@@ -1000,7 +1000,7 @@ mod tests {
             // If there was a previous handler, it means the key was already bound
             // (which could be our custom binding overriding Emacs)
             if previous_handler.is_some() {
-                panic!("Ctrl+{} appears to be overridden (found existing binding)", key);
+                panic!("Ctrl+{key} appears to be overridden (found existing binding)");
             }
         }
     }

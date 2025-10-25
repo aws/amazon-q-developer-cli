@@ -125,7 +125,7 @@ impl ::std::fmt::Display for DiagnosticSeverity {
             DiagnosticSeverity::Hint => write!(f, "HINT"),
             DiagnosticSeverity::Information => write!(f, "INFORMATION"),
             DiagnosticSeverity::Warning => write!(f, "WARNING"),
-            DiagnosticSeverity::Unknown(value) => write!(f, "{}", value),
+            DiagnosticSeverity::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

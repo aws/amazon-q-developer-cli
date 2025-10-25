@@ -572,8 +572,8 @@ mod tests {
     #[test]
     fn test_error_display_debug() {
         for error in all_errors() {
-            eprintln!("{}", error);
-            eprintln!("{:?}", error);
+            eprintln!("{error}");
+            eprintln!("{error:?}");
         }
     }
 
@@ -596,7 +596,7 @@ mod tests {
             MIGRATIONS
                 .iter()
                 .enumerate()
-                .all(|(i, m)| m.name.starts_with(&format!("{:03}_", i)))
+                .all(|(i, m)| m.name.starts_with(&format!("{i:03}_")))
         );
 
         // Assert all the files in migrations/ are in the list

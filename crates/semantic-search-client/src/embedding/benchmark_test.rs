@@ -34,7 +34,7 @@ fn should_skip_real_embedder_tests() -> bool {
 fn benchmark_candle_model(model_type: ModelType) {
     match CandleTextEmbedder::with_model_type(model_type) {
         Ok(embedder) => {
-            println!("Benchmarking Candle model: {:?}", model_type);
+            println!("Benchmarking Candle model: {model_type:?}");
             let results = run_standard_benchmark(&embedder);
             println!(
                 "Model: {}, Embedding dim: {}, Single time: {:?}, Batch time: {:?}, Avg per text: {:?}",
@@ -46,7 +46,7 @@ fn benchmark_candle_model(model_type: ModelType) {
             );
         },
         Err(e) => {
-            println!("Failed to load Candle model {:?}: {}", model_type, e);
+            println!("Failed to load Candle model {model_type:?}: {e}");
         },
     }
 }

@@ -70,7 +70,7 @@ impl SubscribeArgs {
                     queue!(
                         session.stderr,
                         StyledText::error_fg(),
-                        style::Print(format!("Failed to get subscription status: {}\n\n", err)),
+                        style::Print(format!("Failed to get subscription status: {err}\n\n")),
                         StyledText::reset(),
                     )?;
                 },
@@ -122,7 +122,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print(format!("{}\n\n", e)),
+                style::Print(format!("{e}\n\n")),
                 StyledText::reset(),
             )?;
             // Don't exit early here, the check isn't required to subscribe.
@@ -134,7 +134,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
         session.stderr,
         style::Print(SUBSCRIBE_TITLE_TEXT),
         StyledText::secondary_fg(),
-        style::Print(format!("\n\n{}\n\n", SUBSCRIBE_TEXT)),
+        style::Print(format!("\n\n{SUBSCRIBE_TEXT}\n\n")),
         StyledText::reset(),
         cursor::Show
     )?;

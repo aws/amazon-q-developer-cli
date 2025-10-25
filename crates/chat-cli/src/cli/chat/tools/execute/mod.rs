@@ -59,7 +59,7 @@ impl ExecuteCommand {
 
         let has_regex_match = allowed_commands
             .iter()
-            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
+            .map(|cmd| Regex::new(&format!(r"\A{cmd}\z")))
             .filter(Result::is_ok)
             .flatten()
             .any(|regex| regex.is_match(&self.command));
@@ -360,9 +360,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -398,9 +396,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -434,9 +430,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -645,8 +639,7 @@ mod tests {
         let res = pwd_cmd.eval_perm(&os, &agent);
         assert!(
             matches!(res, PermissionEvalResult::Deny(_)),
-            "Invalid regex should deny all commands, got {:?}",
-            res
+            "Invalid regex should deny all commands, got {res:?}"
         );
     }
 
@@ -703,8 +696,7 @@ mod tests {
 
         // Check the format is correct
         let expected_metadata = format!(
-            "{} {}/{}",
-            USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+            "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
         );
         assert!(user_agent_value.contains(&expected_metadata));
     }

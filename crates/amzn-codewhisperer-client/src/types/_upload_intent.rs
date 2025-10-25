@@ -158,7 +158,7 @@ impl ::std::fmt::Display for UploadIntent {
             UploadIntent::Transformation => write!(f, "TRANSFORMATION"),
             UploadIntent::UnitTestsGeneration => write!(f, "UNIT_TESTS_GENERATION"),
             UploadIntent::WorkspaceContext => write!(f, "WORKSPACE_CONTEXT"),
-            UploadIntent::Unknown(value) => write!(f, "{}", value),
+            UploadIntent::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

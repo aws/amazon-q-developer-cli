@@ -569,7 +569,7 @@ fn codeblock_begin<'a, 'b>(
         state.in_codeblock = true;
 
         if !language.is_empty() {
-            queue(&mut o, style::Print(format!("{}\n", language).bold()))?;
+            queue(&mut o, style::Print(format!("{language}\n").bold()))?;
         }
 
         queue(&mut o, StyledText::success_fg())?;

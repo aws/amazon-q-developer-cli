@@ -130,7 +130,7 @@ impl ::std::fmt::Display for SuggestionState {
             SuggestionState::Empty => write!(f, "EMPTY"),
             SuggestionState::Merge => write!(f, "MERGE"),
             SuggestionState::Reject => write!(f, "REJECT"),
-            SuggestionState::Unknown(value) => write!(f, "{}", value),
+            SuggestionState::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

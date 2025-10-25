@@ -112,7 +112,7 @@ impl ::std::fmt::Display for ChangeLogGranularityType {
         match self {
             ChangeLogGranularityType::Business => write!(f, "BUSINESS"),
             ChangeLogGranularityType::Standard => write!(f, "STANDARD"),
-            ChangeLogGranularityType::Unknown(value) => write!(f, "{}", value),
+            ChangeLogGranularityType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

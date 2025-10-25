@@ -204,8 +204,7 @@ impl ContextManager {
 
                                 if !is_cancelled && !is_failed && !is_completed {
                                     return Err(crate::error::SemanticSearchError::InvalidArgument(format!(
-                                        "Already indexing this path: {} (Operation: {})",
-                                        path, name
+                                        "Already indexing this path: {path} (Operation: {name})"
                                     )));
                                 }
                             }
@@ -347,7 +346,7 @@ impl ContextManager {
         let context_dir = base_dir.join(context_id);
         if context_dir.exists() {
             tokio::fs::remove_dir_all(&context_dir).await.map_err(|e| {
-                SemanticSearchError::OperationFailed(format!("Failed to remove context directory: {}", e))
+                SemanticSearchError::OperationFailed(format!("Failed to remove context directory: {e}"))
             })?;
         }
 
@@ -411,7 +410,7 @@ impl ContextManager {
             .collect();
 
         utils::save_json_to_file(&contexts_file, &persistent_contexts)
-            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to save contexts metadata: {}", e)))
+            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to save contexts metadata: {e}")))
     }
 
     /// Get contexts reference

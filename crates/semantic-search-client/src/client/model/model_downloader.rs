@@ -59,7 +59,7 @@ impl ModelDownloader {
         client
             .ensure_model(&model_config, target_dir)
             .await
-            .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {}", e)))?;
+            .map_err(|e| SemanticSearchError::EmbeddingError(format!("Failed to download model: {e}")))?;
 
         debug!("Model download completed for {}", model_config.name);
         Ok(())

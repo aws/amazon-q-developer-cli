@@ -87,7 +87,7 @@ impl PersistSubcommand {
 
                 // If the original path fails and doesn't end with .json, try with .json appended
                 let contents = if original_result.is_err() && !path.ends_with(".json") {
-                    let json_path = format!("{}.json", path);
+                    let json_path = format!("{path}.json");
                     match os.fs.read_to_string(&json_path).await {
                         Ok(content) => content,
                         Err(_) => {

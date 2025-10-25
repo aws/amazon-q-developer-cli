@@ -195,7 +195,7 @@ impl CheckpointSubcommand {
                 },
                 Err(e) => {
                     session.conversation.checkpoint_manager = Some(manager);
-                    return Err(ChatError::Custom(format!("Failed to gather checkpoints: {}", e).into()));
+                    return Err(ChatError::Custom(format!("Failed to gather checkpoints: {e}").into()));
                 },
             }
         };
@@ -216,7 +216,7 @@ impl CheckpointSubcommand {
                     session.stderr,
                     StyledText::info_fg(),
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(format!("✓ Restored to checkpoint {}\n", tag)),
+                    style::Print(format!("✓ Restored to checkpoint {tag}\n")),
                     StyledText::reset(),
                     StyledText::reset_attributes(),
                 )?;
@@ -224,7 +224,7 @@ impl CheckpointSubcommand {
             },
             Err(e) => {
                 session.conversation.checkpoint_manager = Some(manager);
-                return Err(ChatError::Custom(format!("Failed to restore: {}", e).into()));
+                return Err(ChatError::Custom(format!("Failed to restore: {e}").into()));
             },
         }
 
@@ -247,7 +247,7 @@ impl CheckpointSubcommand {
         };
 
         print_checkpoints(manager, &mut session.stderr, limit)
-            .map_err(|e| ChatError::Custom(format!("Could not display all checkpoints: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("Could not display all checkpoints: {e}").into()))?;
 
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
@@ -307,7 +307,7 @@ impl CheckpointSubcommand {
         };
 
         expand_checkpoint(manager, &mut session.stderr, &tag)
-            .map_err(|e| ChatError::Custom(format!("Failed to expand checkpoint: {}", e).into()))?;
+            .map_err(|e| ChatError::Custom(format!("Failed to expand checkpoint: {e}").into()))?;
 
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
@@ -335,8 +335,7 @@ impl CheckpointSubcommand {
                 session.stderr,
                 StyledText::warning_fg(),
                 style::Print(format!(
-                    "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
-                    tag1
+                    "⚠️ Checkpoint '{tag1}' not found! Use /checkpoint list to see available checkpoints\n"
                 )),
                 StyledText::reset(),
             )?;
@@ -350,8 +349,7 @@ impl CheckpointSubcommand {
                 session.stderr,
                 StyledText::warning_fg(),
                 style::Print(format!(
-                    "⚠️ Checkpoint '{}' not found! Use /checkpoint list to see available checkpoints\n",
-                    tag2
+                    "⚠️ Checkpoint '{tag2}' not found! Use /checkpoint list to see available checkpoints\n"
                 )),
                 StyledText::reset(),
             )?;
@@ -361,9 +359,9 @@ impl CheckpointSubcommand {
         }
 
         let header = if tag2 == "HEAD" {
-            format!("Changes since checkpoint {}:\n", tag1)
+            format!("Changes since checkpoint {tag1}:\n")
         } else {
-            format!("Changes from {} to {}:\n", tag1, tag2)
+            format!("Changes from {tag1} to {tag2}:\n")
         };
 
         execute!(
@@ -427,13 +425,13 @@ impl CheckpointDisplay {
             if let Some(stats) = manager.file_stats_cache.get(&checkpoint.tag) {
                 let stats_str = format_stats(stats);
                 if !stats_str.is_empty() {
-                    parts.push(format!(" ({})", stats_str).dark_grey());
+                    parts.push(format!(" ({stats_str})").dark_grey());
                 }
             }
         } else {
             // Tool checkpoint: show tool name and description
             let tool_name = checkpoint.tool_name.clone().unwrap_or_else(|| "Tool".to_string());
-            parts.push(format!("{}: ", tool_name).magenta());
+            parts.push(format!("{tool_name}: ").magenta());
             parts.push(checkpoint.description.clone().reset());
         }
 
@@ -447,7 +445,7 @@ impl CheckpointDisplay {
 impl std::fmt::Display for CheckpointDisplay {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for part in &self.parts {
-            write!(f, "{}", part)?;
+            write!(f, "{part}")?;
         }
         Ok(())
     }
@@ -498,7 +496,7 @@ fn expand_checkpoint(manager: &CheckpointManager, output: &mut impl Write, tag: 
         execute!(
             output,
             StyledText::warning_fg(),
-            style::Print(format!("⚠️ checkpoint '{}' not found\n", tag)),
+            style::Print(format!("⚠️ checkpoint '{tag}' not found\n")),
             StyledText::reset(),
         )?;
         return Ok(());
@@ -550,7 +548,7 @@ fn expand_checkpoint(manager: &CheckpointManager, output: &mut impl Write, tag: 
             execute!(
                 output,
                 StyledText::secondary_fg(),
-                style::Print(format!(" ({})", stats_str)),
+                style::Print(format!(" ({stats_str})")),
                 StyledText::reset(),
             )?;
         }

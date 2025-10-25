@@ -40,7 +40,7 @@ pub fn draw_box(
             // Here we need to account for words that are too long as well
             if word.len() >= inner_width {
                 let mut start = 0_usize;
-                for (i, _) in word.chars().enumerate() {
+                for (i, _) in word.char_indices() {
                     if i - start >= inner_width {
                         wrapped_lines.push(word[start..i].to_string());
                         start = i;
@@ -99,7 +99,7 @@ pub fn draw_box(
                 .saturating_sub(left_pad)
                 .saturating_sub(visible_line_len),
         );
-        execute!(output, style::Print(format!("{}\n", content)))?;
+        execute!(output, style::Print(format!("{content}\n")))?;
     }
 
     // Bottom vertical padding
@@ -110,7 +110,7 @@ pub fn draw_box(
 
     // Bottom rounded corner line: ╰────────────╯
     let bottom = format!("╰{}╯", "─".repeat(box_width - 2)).with(border_color);
-    execute!(output, style::Print(format!("{}\n", bottom)))?;
+    execute!(output, style::Print(format!("{bottom}\n")))?;
     Ok(())
 }
 

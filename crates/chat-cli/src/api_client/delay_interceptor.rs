@@ -73,7 +73,7 @@ impl Intercept for DelayTrackingInterceptor {
                     MAX_RETRY_DELAY_DURATION.as_secs_f64()
                 ));
             } else if delay >= self.minor_delay_threshold {
-                Self::print_warning(format!("Retry #{}, retrying within 5s..", attempt_number,));
+                Self::print_warning(format!("Retry #{attempt_number}, retrying within 5s..",));
             }
         }
 

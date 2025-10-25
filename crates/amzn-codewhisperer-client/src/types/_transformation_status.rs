@@ -220,7 +220,7 @@ impl ::std::fmt::Display for TransformationStatus {
             TransformationStatus::Stopping => write!(f, "STOPPING"),
             TransformationStatus::Transformed => write!(f, "TRANSFORMED"),
             TransformationStatus::Transforming => write!(f, "TRANSFORMING"),
-            TransformationStatus::Unknown(value) => write!(f, "{}", value),
+            TransformationStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -116,7 +116,7 @@ fn substitute_env_vars(input: &str, env: &crate::os::Env) -> String {
 
     re.replace_all(input, |caps: &regex::Captures<'_>| {
         let var_name = &caps[1];
-        env.get(var_name).unwrap_or_else(|_| format!("${{{}}}", var_name))
+        env.get(var_name).unwrap_or_else(|_| format!("${{{var_name}}}"))
     })
     .to_string()
 }

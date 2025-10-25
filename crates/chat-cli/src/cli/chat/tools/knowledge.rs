@@ -167,7 +167,7 @@ impl Knowledge {
                     let path_type = if path.is_dir() { "directory" } else { "file" };
                     queue!(
                         updates,
-                        style::Print(format!(" ({}: ", path_type)),
+                        style::Print(format!(" ({path_type}: ")),
                         StyledText::success_fg(),
                         style::Print(&add.value),
                         StyledText::reset(),
@@ -180,7 +180,7 @@ impl Knowledge {
                             updates,
                             style::Print(" (text: "),
                             StyledText::info_fg(),
-                            style::Print(format!("{}...", preview)),
+                            style::Print(format!("{preview}...")),
                             StyledText::reset(),
                             style::Print(")\n")
                         )?;
@@ -256,7 +256,7 @@ impl Knowledge {
                 let path_type = if path.is_dir() { "directory" } else { "file" };
                 queue!(
                     updates,
-                    style::Print(format!(" using new {}: ", path_type)),
+                    style::Print(format!(" using new {path_type}: ")),
                     StyledText::success_fg(),
                     style::Print(&update.path),
                     StyledText::reset(),
@@ -343,7 +343,7 @@ impl Knowledge {
                         "Added '{}' to knowledge base with ID: {}. Track active jobs in '/knowledge status' with provided id.",
                         add.name, context_id
                     ),
-                    Err(e) => format!("Failed to add to knowledge base: {}", e),
+                    Err(e) => format!("Failed to add to knowledge base: {e}"),
                 }
             },
             Knowledge::Remove(remove) => {
@@ -351,20 +351,20 @@ impl Knowledge {
                     // Remove by ID
                     match store.remove_by_id(&remove.context_id).await {
                         Ok(_) => format!("Removed context with ID '{}' from knowledge base", remove.context_id),
-                        Err(e) => format!("Failed to remove context by ID: {}", e),
+                        Err(e) => format!("Failed to remove context by ID: {e}"),
                     }
                 } else if !remove.name.is_empty() {
                     // Remove by name
                     match store.remove_by_name(&remove.name).await {
                         Ok(_) => format!("Removed context with name '{}' from knowledge base", remove.name),
-                        Err(e) => format!("Failed to remove context by name: {}", e),
+                        Err(e) => format!("Failed to remove context by name: {e}"),
                     }
                 } else if !remove.path.is_empty() {
                     // Remove by path
                     let sanitized_path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &remove.path);
                     match store.remove_by_path(sanitized_path.to_string_lossy().as_ref()).await {
                         Ok(_) => format!("Removed context with path '{}' from knowledge base", remove.path),
-                        Err(e) => format!("Failed to remove context by path: {}", e),
+                        Err(e) => format!("Failed to remove context by path: {e}"),
                     }
                 } else {
                     "Error: No identifier provided for removal. Please specify name, context_id, or path.".to_string()
@@ -398,7 +398,7 @@ impl Knowledge {
                             "Updated context with ID '{}' using path '{}'.  Track active jobs in '/knowledge status' with provided id.",
                             update.context_id, update.path
                         ),
-                        Err(e) => format!("Failed to update context by ID: {}", e),
+                        Err(e) => format!("Failed to update context by ID: {e}"),
                     }
                 } else if !update.name.is_empty() {
                     // Update by name
@@ -407,7 +407,7 @@ impl Knowledge {
                             "Updated context with name '{}' using path '{}'. Track active jobs in '/knowledge status' with provided id.",
                             update.name, update.path
                         ),
-                        Err(e) => format!("Failed to update context by name: {}", e),
+                        Err(e) => format!("Failed to update context by name: {e}"),
                     }
                 } else {
                     // Update by path (if no ID or name provided)
@@ -416,14 +416,14 @@ impl Knowledge {
                             "Updated context with path '{}'. Track active jobs in '/knowledge status' with provided id.",
                             update.path
                         ),
-                        Err(e) => format!("Failed to update context by path: {}", e),
+                        Err(e) => format!("Failed to update context by path: {e}"),
                     }
                 }
             },
             Knowledge::Clear(_) => store
                 .clear()
                 .await
-                .unwrap_or_else(|e| format!("Failed to clear knowledge base: {}", e)),
+                .unwrap_or_else(|e| format!("Failed to clear knowledge base: {e}")),
             Knowledge::Search(search) => {
                 let results = store.search(&search.query, search.context_id.as_deref()).await;
                 match results {
@@ -434,14 +434,14 @@ impl Knowledge {
                             let mut output = format!("Search results for \"{}\":\n\n", search.query);
                             for result in results {
                                 if let Some(text) = result.text() {
-                                    output.push_str(&format!("{}\n\n", text));
+                                    output.push_str(&format!("{text}\n\n"));
                                 }
                             }
                             output
                         }
                     },
                     Err(e) => {
-                        format!("Search failed: {}", e)
+                        format!("Search failed: {e}")
                     },
                 }
             },
@@ -497,19 +497,18 @@ impl Knowledge {
                                 ));
                             }
                         }
-                        output.push_str(&format!("\nStatus unavailable: {}", e));
+                        output.push_str(&format!("\nStatus unavailable: {e}"));
                         output
                     },
                     (Err(e), Ok(status_data)) => {
                         // Show status but note contexts error
-                        let mut output = format!("Contexts unavailable: {}\n\n", e);
+                        let mut output = format!("Contexts unavailable: {e}\n\n");
                         output.push_str(&Self::format_status_display(&status_data));
                         output
                     },
                     (Err(contexts_err), Err(status_err)) => {
                         format!(
-                            "Failed to get contexts: {}\nFailed to get status: {}",
-                            contexts_err, status_err
+                            "Failed to get contexts: {contexts_err}\nFailed to get status: {status_err}"
                         )
                     },
                 }
@@ -517,7 +516,7 @@ impl Knowledge {
             Knowledge::Cancel(cancel) => store
                 .cancel_operation(Some(&cancel.operation_id))
                 .await
-                .unwrap_or_else(|e| format!("Failed to cancel operation: {}", e)),
+                .unwrap_or_else(|e| format!("Failed to cancel operation: {e}")),
         };
 
         Ok(InvokeOutput {
@@ -555,7 +554,7 @@ impl Knowledge {
                 semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
                 semantic_search_client::OperationType::Clearing => op.message.clone(),
             };
-            output.push_str(&format!("   {}\n", description));
+            output.push_str(&format!("   {description}\n"));
 
             // Status/progress line with ETA if available
             if op.is_cancelled {
@@ -569,7 +568,7 @@ impl Knowledge {
                 if let Some(eta) = op.eta {
                     output.push_str(&format!("   {}% • ETA: {}s\n", percentage, eta.as_secs()));
                 } else {
-                    output.push_str(&format!("   {}%\n", percentage));
+                    output.push_str(&format!("   {percentage}%\n"));
                 }
             } else {
                 output.push_str("   In progress\n");

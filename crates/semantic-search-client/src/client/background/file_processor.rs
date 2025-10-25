@@ -86,7 +86,7 @@ impl FileProcessor {
         match count_result {
             Ok(Ok(count)) => Ok(count),
             Ok(Err(e)) => Err(e),
-            Err(e) => Err(format!("File counting task failed: {}", e)),
+            Err(e) => Err(format!("File counting task failed: {e}")),
         }
     }
 
@@ -105,7 +105,7 @@ impl FileProcessor {
         self.update_operation_status(
             operation_manager,
             operation_id,
-            format!("Starting indexing ({} files)", file_count),
+            format!("Starting indexing ({file_count} files)"),
         )
         .await;
 
@@ -151,7 +151,7 @@ impl FileProcessor {
                     operation_id,
                     processed_files as u64,
                     file_count as u64,
-                    format!("Indexing files ({}/{})", processed_files, file_count),
+                    format!("Indexing files ({processed_files}/{file_count})"),
                 )
                 .await;
             }
@@ -168,7 +168,7 @@ impl FileProcessor {
             let inc = include_patterns.as_deref().unwrap_or(&[]);
             let exc = exclude_patterns.as_deref().unwrap_or(&[]);
             Ok(Some(
-                crate::pattern_filter::PatternFilter::new(inc, exc).map_err(|e| format!("Invalid patterns: {}", e))?,
+                crate::pattern_filter::PatternFilter::new(inc, exc).map_err(|e| format!("Invalid patterns: {e}"))?,
             ))
         } else {
             Ok(None)

@@ -143,7 +143,7 @@ impl ::std::fmt::Display for IdeDiagnosticType {
             IdeDiagnosticType::Security => write!(f, "SECURITY"),
             IdeDiagnosticType::SyntaxError => write!(f, "SYNTAX_ERROR"),
             IdeDiagnosticType::TypeError => write!(f, "TYPE_ERROR"),
-            IdeDiagnosticType::Unknown(value) => write!(f, "{}", value),
+            IdeDiagnosticType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

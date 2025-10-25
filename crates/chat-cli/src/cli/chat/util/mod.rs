@@ -264,9 +264,7 @@ mod tests {
             assert_eq!(
                 input.as_str(),
                 *expected,
-                "input: {} with max bytes: {} failed",
-                input,
-                max_bytes
+                "input: {input} with max bytes: {max_bytes} failed"
             );
         }
     }
@@ -301,7 +299,7 @@ mod tests {
         }
 
         for ch in ['a', '你', '\u{03A9}'] {
-            assert!(!is_hidden(ch), "char {:?} should NOT be hidden", ch);
+            assert!(!is_hidden(ch), "char {ch:?} should NOT be hidden");
         }
     }
 

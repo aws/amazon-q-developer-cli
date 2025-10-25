@@ -118,7 +118,7 @@ impl ::std::fmt::Display for InlineChatUserDecision {
             InlineChatUserDecision::Accept => write!(f, "ACCEPT"),
             InlineChatUserDecision::Dismiss => write!(f, "DISMISS"),
             InlineChatUserDecision::Reject => write!(f, "REJECT"),
-            InlineChatUserDecision::Unknown(value) => write!(f, "{}", value),
+            InlineChatUserDecision::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

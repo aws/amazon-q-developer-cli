@@ -115,7 +115,7 @@ impl ::std::fmt::Display for RecommendationsWithReferencesPreference {
         match self {
             RecommendationsWithReferencesPreference::Allow => write!(f, "ALLOW"),
             RecommendationsWithReferencesPreference::Block => write!(f, "BLOCK"),
-            RecommendationsWithReferencesPreference::Unknown(value) => write!(f, "{}", value),
+            RecommendationsWithReferencesPreference::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

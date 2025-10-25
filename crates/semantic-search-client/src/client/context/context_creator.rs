@@ -91,7 +91,7 @@ impl ContextCreator {
         }
 
         let mut bm25_context = BM25Context::new(context_dir.join("data.bm25.json"), 5.0)
-            .map_err(|e| format!("Failed to create BM25 context: {}", e))?;
+            .map_err(|e| format!("Failed to create BM25 context: {e}"))?;
 
         let mut data_points = Vec::new();
         let total_items = items.len();
@@ -107,13 +107,13 @@ impl ContextCreator {
                     operation_id,
                     i as u64,
                     total_items as u64,
-                    format!("Creating BM25 data points ({}/{})", i, total_items),
+                    format!("Creating BM25 data points ({i}/{total_items})"),
                 )
                 .await;
             }
 
             let data_point = Self::create_bm25_data_point_from_item(item, i)
-                .map_err(|e| format!("Failed to create BM25 data point: {}", e))?;
+                .map_err(|e| format!("Failed to create BM25 data point: {e}"))?;
             data_points.push(data_point);
         }
 
@@ -126,7 +126,7 @@ impl ContextCreator {
 
         bm25_context
             .add_data_points(data_points)
-            .map_err(|e| format!("Failed to add BM25 data points: {}", e))?;
+            .map_err(|e| format!("Failed to add BM25 data points: {e}"))?;
 
         let _ = bm25_context.save();
 
@@ -168,7 +168,7 @@ impl ContextCreator {
         }
 
         let mut semantic_context = SemanticContext::new(context_dir.join("data.json"))
-            .map_err(|e| format!("Failed to create semantic context: {}", e))?;
+            .map_err(|e| format!("Failed to create semantic context: {e}"))?;
 
         let mut data_points = Vec::new();
         let total_items = items.len();
@@ -184,13 +184,13 @@ impl ContextCreator {
                     operation_id,
                     i as u64,
                     total_items as u64,
-                    format!("Generating embeddings ({}/{})", i, total_items),
+                    format!("Generating embeddings ({i}/{total_items})"),
                 )
                 .await;
             }
 
             let data_point = Self::create_data_point_from_item(item, i, embedder)
-                .map_err(|e| format!("Failed to create data point: {}", e))?;
+                .map_err(|e| format!("Failed to create data point: {e}"))?;
             data_points.push(data_point);
         }
 
@@ -203,7 +203,7 @@ impl ContextCreator {
 
         semantic_context
             .add_data_points(data_points)
-            .map_err(|e| format!("Failed to add data points: {}", e))?;
+            .map_err(|e| format!("Failed to add data points: {e}"))?;
 
         // Persist context.
         let _ = semantic_context.save();

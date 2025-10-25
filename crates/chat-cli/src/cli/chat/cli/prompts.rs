@@ -94,7 +94,7 @@ impl std::fmt::Display for Prompt {
 impl Prompt {
     /// Create a new prompt with the given name in the specified directory
     fn new(name: &str, base_dir: PathBuf) -> Self {
-        let path = base_dir.join(format!("{}.md", name));
+        let path = base_dir.join(format!("{name}.md"));
         Self {
             name: name.to_string(),
             path,
@@ -2056,7 +2056,7 @@ mod tests {
 
     fn create_prompt_file(dir: &PathBuf, name: &str, content: &str) {
         fs::create_dir_all(dir).unwrap();
-        fs::write(dir.join(format!("{}.md", name)), content).unwrap();
+        fs::write(dir.join(format!("{name}.md")), content).unwrap();
     }
 
     #[tokio::test]
@@ -2502,7 +2502,7 @@ mod tests {
 
         let alt_names: Vec<String> = server_names
             .iter()
-            .map(|s| format!("- @{}/{}", s, prompt_name))
+            .map(|s| format!("- @{s}/{prompt_name}"))
             .collect();
         let alt_msg = format!("\n{}\n", alt_names.join("\n"));
 

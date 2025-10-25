@@ -144,7 +144,7 @@ impl ::std::fmt::Display for TransformationProgressUpdateStatus {
             TransformationProgressUpdateStatus::InProgress => write!(f, "IN_PROGRESS"),
             TransformationProgressUpdateStatus::Paused => write!(f, "PAUSED"),
             TransformationProgressUpdateStatus::Skipped => write!(f, "SKIPPED"),
-            TransformationProgressUpdateStatus::Unknown(value) => write!(f, "{}", value),
+            TransformationProgressUpdateStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

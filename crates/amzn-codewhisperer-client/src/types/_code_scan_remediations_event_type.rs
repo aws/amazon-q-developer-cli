@@ -123,7 +123,7 @@ impl ::std::fmt::Display for CodeScanRemediationsEventType {
             CodeScanRemediationsEventType::CodescanIssueApplyFix => write!(f, "CODESCAN_ISSUE_APPLY_FIX"),
             CodeScanRemediationsEventType::CodescanIssueHover => write!(f, "CODESCAN_ISSUE_HOVER"),
             CodeScanRemediationsEventType::CodescanIssueViewDetails => write!(f, "CODESCAN_ISSUE_VIEW_DETAILS"),
-            CodeScanRemediationsEventType::Unknown(value) => write!(f, "{}", value),
+            CodeScanRemediationsEventType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

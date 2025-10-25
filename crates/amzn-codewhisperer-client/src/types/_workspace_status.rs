@@ -130,7 +130,7 @@ impl ::std::fmt::Display for WorkspaceStatus {
             WorkspaceStatus::Deleting => write!(f, "DELETING"),
             WorkspaceStatus::Pending => write!(f, "PENDING"),
             WorkspaceStatus::Ready => write!(f, "READY"),
-            WorkspaceStatus::Unknown(value) => write!(f, "{}", value),
+            WorkspaceStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

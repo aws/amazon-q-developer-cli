@@ -123,7 +123,7 @@ impl ::std::fmt::Display for ThrottlingExceptionReason {
             ThrottlingExceptionReason::DailyRequestCount => write!(f, "DAILY_REQUEST_COUNT"),
             ThrottlingExceptionReason::InsufficientModelCapacity => write!(f, "INSUFFICIENT_MODEL_CAPACITY"),
             ThrottlingExceptionReason::MonthlyRequestCount => write!(f, "MONTHLY_REQUEST_COUNT"),
-            ThrottlingExceptionReason::Unknown(value) => write!(f, "{}", value),
+            ThrottlingExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

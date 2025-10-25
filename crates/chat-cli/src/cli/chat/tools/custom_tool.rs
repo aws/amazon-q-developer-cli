@@ -161,7 +161,7 @@ impl CustomTool {
                     .map(|p| format!("{CONTINUATION_LINE} {p}"))
                     .collect::<Vec<_>>()
                     .join("\n"),
-                _ => format!("{:?}", params),
+                _ => format!("{params:?}"),
             };
             queue!(
                 output,

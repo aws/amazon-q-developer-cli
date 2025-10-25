@@ -112,7 +112,7 @@ impl ::std::fmt::Display for SubscriptionProvider {
         match self {
             SubscriptionProvider::AwsAccount => write!(f, "AWS_ACCOUNT"),
             SubscriptionProvider::Stripe => write!(f, "STRIPE"),
-            SubscriptionProvider::Unknown(value) => write!(f, "{}", value),
+            SubscriptionProvider::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

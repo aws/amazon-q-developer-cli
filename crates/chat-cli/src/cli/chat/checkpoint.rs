@@ -295,10 +295,10 @@ impl CheckpointManager {
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             if let Some((status, file)) = line.split_once('\t') {
                 match status.chars().next() {
-                    Some('A') => result.push_str(&format!("  + {} (added)\n", file).green().to_string()),
-                    Some('M') => result.push_str(&format!("  ~ {} (modified)\n", file).yellow().to_string()),
-                    Some('D') => result.push_str(&format!("  - {} (deleted)\n", file).red().to_string()),
-                    Some('R' | 'C') => result.push_str(&format!("  ~ {} (renamed)\n", file).yellow().to_string()),
+                    Some('A') => result.push_str(&format!("  + {file} (added)\n").green().to_string()),
+                    Some('M') => result.push_str(&format!("  ~ {file} (modified)\n").yellow().to_string()),
+                    Some('D') => result.push_str(&format!("  - {file} (deleted)\n").red().to_string()),
+                    Some('R' | 'C') => result.push_str(&format!("  ~ {file} (renamed)\n").yellow().to_string()),
                     _ => {},
                 }
             }
@@ -375,7 +375,7 @@ pub fn truncate_message(s: &str, max_len: usize) -> String {
     if let Some(pos) = truncated.rfind(' ') {
         format!("{}...", &truncated[..pos])
     } else {
-        format!("{}...", truncated)
+        format!("{truncated}...")
     }
 }
 

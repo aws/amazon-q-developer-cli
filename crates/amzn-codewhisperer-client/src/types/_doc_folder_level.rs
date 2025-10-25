@@ -113,7 +113,7 @@ impl ::std::fmt::Display for DocFolderLevel {
         match self {
             DocFolderLevel::EntireWorkspace => write!(f, "ENTIRE_WORKSPACE"),
             DocFolderLevel::SubFolder => write!(f, "SUB_FOLDER"),
-            DocFolderLevel::Unknown(value) => write!(f, "{}", value),
+            DocFolderLevel::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

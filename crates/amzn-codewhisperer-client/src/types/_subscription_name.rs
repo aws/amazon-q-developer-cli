@@ -124,7 +124,7 @@ impl ::std::fmt::Display for SubscriptionName {
             SubscriptionName::KiroPower => write!(f, "KIRO_POWER"),
             SubscriptionName::KiroPro => write!(f, "KIRO_PRO"),
             SubscriptionName::KiroProPlus => write!(f, "KIRO_PRO_PLUS"),
-            SubscriptionName::Unknown(value) => write!(f, "{}", value),
+            SubscriptionName::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

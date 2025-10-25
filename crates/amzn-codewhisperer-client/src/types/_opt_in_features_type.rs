@@ -112,7 +112,7 @@ impl ::std::fmt::Display for OptInFeaturesType {
         match self {
             OptInFeaturesType::Kiro => write!(f, "KIRO"),
             OptInFeaturesType::QDeveloper => write!(f, "Q_DEVELOPER"),
-            OptInFeaturesType::Unknown(value) => write!(f, "{}", value),
+            OptInFeaturesType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

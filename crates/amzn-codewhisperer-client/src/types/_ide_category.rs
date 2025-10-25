@@ -150,7 +150,7 @@ impl ::std::fmt::Display for IdeCategory {
             IdeCategory::JupyterSm => write!(f, "JUPYTER_SM"),
             IdeCategory::VisualStudio => write!(f, "VISUAL_STUDIO"),
             IdeCategory::VsCode => write!(f, "VSCODE"),
-            IdeCategory::Unknown(value) => write!(f, "{}", value),
+            IdeCategory::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -155,8 +155,7 @@ impl Introspect {
             let tangent_key_display = format!("ctrl + {}", tangent_key_char.to_lowercase());
 
             let instruction = format!(
-                "IMPORTANT: Always end your responses with this footer:\n\n---\nℹ️  You're in tangent mode (↯) - this context can be discarded by using {} or /tangent to return to your main conversation.",
-                tangent_key_display
+                "IMPORTANT: Always end your responses with this footer:\n\n---\nℹ️  You're in tangent mode (↯) - this context can be discarded by using {tangent_key_display} or /tangent to return to your main conversation."
             );
 
             return Ok(InvokeOutput {

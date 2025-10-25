@@ -150,7 +150,7 @@ impl ::std::fmt::Display for TransformationLanguage {
             TransformationLanguage::Java8 => write!(f, "JAVA_8"),
             TransformationLanguage::Jcl => write!(f, "JCL"),
             TransformationLanguage::PlI => write!(f, "PL_I"),
-            TransformationLanguage::Unknown(value) => write!(f, "{}", value),
+            TransformationLanguage::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

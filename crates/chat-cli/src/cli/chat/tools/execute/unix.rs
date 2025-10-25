@@ -44,7 +44,7 @@ pub async fn run_command<W: Write>(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
-        .wrap_err_with(|| format!("Unable to spawn command '{}'", command))?;
+        .wrap_err_with(|| format!("Unable to spawn command '{command}'"))?;
 
     let stdout_final: String;
     let stderr_final: String;
@@ -96,7 +96,7 @@ pub async fn run_command<W: Write>(
                 },
             };
         }
-        .wrap_err_with(|| format!("No exit status for '{}'", command))?;
+        .wrap_err_with(|| format!("No exit status for '{command}'"))?;
 
         u.flush()?;
 
@@ -111,7 +111,7 @@ pub async fn run_command<W: Write>(
         let output = child
             .wait_with_output()
             .await
-            .wrap_err_with(|| format!("No exit status for '{}'", command))?;
+            .wrap_err_with(|| format!("No exit status for '{command}'"))?;
 
         exit_status = output.status;
         stdout_final = String::from_utf8_lossy(&output.stdout).to_string();

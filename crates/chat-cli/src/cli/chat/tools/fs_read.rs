@@ -699,7 +699,7 @@ impl FsDirectory {
         let depth = self.depth.unwrap_or_default();
         Ok(queue!(
             updates,
-            style::Print(format!("with maximum depth of {}", depth))
+            style::Print(format!("with maximum depth of {depth}"))
         )?)
     }
 

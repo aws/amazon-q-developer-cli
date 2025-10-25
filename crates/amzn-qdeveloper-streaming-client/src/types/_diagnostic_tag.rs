@@ -113,7 +113,7 @@ impl ::std::fmt::Display for DiagnosticTag {
         match self {
             DiagnosticTag::Deprecated => write!(f, "DEPRECATED"),
             DiagnosticTag::Unnecessary => write!(f, "UNNECESSARY"),
-            DiagnosticTag::Unknown(value) => write!(f, "{}", value),
+            DiagnosticTag::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

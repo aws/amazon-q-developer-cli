@@ -112,7 +112,7 @@ impl ::std::fmt::Display for DocumentationType {
         match self {
             DocumentationType::ChangeLog => write!(f, "CHANGE_LOG"),
             DocumentationType::Readme => write!(f, "README"),
-            DocumentationType::Unknown(value) => write!(f, "{}", value),
+            DocumentationType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }
