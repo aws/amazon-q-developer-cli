@@ -7,9 +7,9 @@ Amazon Q CLI includes several built-in tools that agents can use. This document 
 - [`fs_write`](#fs_write-tool) — Create and edit files.
 - [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
-- [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
-- [`thinking`](#thinking-tool) — Internal reasoning mechanism.
-- [`todo_list`](#todo_list-tool) — Create and manage TODO lists for tracking multi-step tasks.
+- [`knowledge`](#knowledge-tool-experimental) — Store and retrieve information in a knowledge base.
+- [`thinking`](#thinking-tool-experimental) — Internal reasoning mechanism.
+- [`todo_list`](#todo_list-tool-experimental) — Create and manage TODO lists for tracking multi-step tasks.
 - [`use_aws`](#use_aws-tool) — Make AWS CLI API calls.
 
 ## Execute_bash Tool
