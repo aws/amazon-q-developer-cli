@@ -20,6 +20,7 @@
 ///     Origin::Gitlab => { /* ... */ },
 ///     Origin::Ide => { /* ... */ },
 ///     Origin::InlineChat => { /* ... */ },
+///     Origin::KiroCli => { /* ... */ },
 ///     Origin::Marketing => { /* ... */ },
 ///     Origin::Md => { /* ... */ },
 ///     Origin::MdCe => { /* ... */ },
@@ -84,6 +85,8 @@ pub enum Origin {
     Ide,
     /// Q Developer Inline Chat.
     InlineChat,
+    /// KIRO CLI
+    KiroCli,
     /// AWS Marketing Website (https://aws.amazon.com)
     Marketing,
     /// MD.
@@ -128,6 +131,7 @@ impl ::std::convert::From<&str> for Origin {
             "GITLAB" => Origin::Gitlab,
             "IDE" => Origin::Ide,
             "INLINE_CHAT" => Origin::InlineChat,
+            "KIRO_CLI" => Origin::KiroCli,
             "MARKETING" => Origin::Marketing,
             "MD" => Origin::Md,
             "MD_CE" => Origin::MdCe,
@@ -165,6 +169,7 @@ impl Origin {
             Origin::Gitlab => "GITLAB",
             Origin::Ide => "IDE",
             Origin::InlineChat => "INLINE_CHAT",
+            Origin::KiroCli => "KIRO_CLI",
             Origin::Marketing => "MARKETING",
             Origin::Md => "MD",
             Origin::MdCe => "MD_CE",
@@ -192,6 +197,7 @@ impl Origin {
             "GITLAB",
             "IDE",
             "INLINE_CHAT",
+            "KIRO_CLI",
             "MARKETING",
             "MD",
             "MD_CE",
@@ -235,6 +241,7 @@ impl ::std::fmt::Display for Origin {
             Origin::Gitlab => write!(f, "GITLAB"),
             Origin::Ide => write!(f, "IDE"),
             Origin::InlineChat => write!(f, "INLINE_CHAT"),
+            Origin::KiroCli => write!(f, "KIRO_CLI"),
             Origin::Marketing => write!(f, "MARKETING"),
             Origin::Md => write!(f, "MD"),
             Origin::MdCe => write!(f, "MD_CE"),
@@ -247,7 +254,7 @@ impl ::std::fmt::Display for Origin {
             Origin::SmAiStudioIde => write!(f, "SM_AI_STUDIO_IDE"),
             Origin::UnifiedSearch => write!(f, "UNIFIED_SEARCH"),
             Origin::UnknownValue => write!(f, "UNKNOWN"),
-            Origin::Unknown(value) => write!(f, "{}", value),
+            Origin::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

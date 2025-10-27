@@ -40,7 +40,7 @@ pub fn draw_box(
             // Here we need to account for words that are too long as well
             if word.len() >= inner_width {
                 let mut start = 0_usize;
-                for (i, _) in word.chars().enumerate() {
+                for (i, _) in word.char_indices() {
                     if i - start >= inner_width {
                         wrapped_lines.push(word[start..i].to_string());
                         start = i;
@@ -99,7 +99,7 @@ pub fn draw_box(
                 .saturating_sub(left_pad)
                 .saturating_sub(visible_line_len),
         );
-        execute!(output, style::Print(format!("{}\n", content)))?;
+        execute!(output, style::Print(format!("{content}\n")))?;
     }
 
     // Bottom vertical padding
@@ -110,17 +110,17 @@ pub fn draw_box(
 
     // Bottom rounded corner line: ╰────────────╯
     let bottom = format!("╰{}╯", "─".repeat(box_width - 2)).with(border_color);
-    execute!(output, style::Print(format!("{}\n", bottom)))?;
+    execute!(output, style::Print(format!("{bottom}\n")))?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use bstr::ByteSlice;
-    use crossterm::style::Color;
 
     use super::*;
     use crate::cli::chat::GREETING_BREAK_POINT;
+    use crate::theme::theme;
 
     #[tokio::test]
     async fn test_draw_tip_box() {
@@ -133,7 +133,7 @@ mod tests {
             "Did you know?",
             short_tip,
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            theme().ui.secondary_text,
         )
         .expect("Failed to draw tip box");
 
@@ -144,7 +144,7 @@ mod tests {
             "Did you know?",
             long_tip,
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            theme().ui.secondary_text,
         )
         .expect("Failed to draw tip box");
 
@@ -160,7 +160,7 @@ mod tests {
             "Did you know?",
             long_tip_with_one_long_word.as_str(),
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            theme().ui.secondary_text,
         )
         .expect("Failed to draw tip box");
         // Test with a long tip with two long words that should wrap
@@ -170,7 +170,7 @@ mod tests {
             "Did you know?",
             long_tip_with_two_long_words.as_str(),
             GREETING_BREAK_POINT,
-            Color::DarkGrey,
+            theme().ui.secondary_text,
         )
         .expect("Failed to draw tip box");
 

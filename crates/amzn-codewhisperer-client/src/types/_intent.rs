@@ -112,7 +112,7 @@ impl ::std::fmt::Display for Intent {
         match self {
             Intent::Dev => write!(f, "DEV"),
             Intent::Doc => write!(f, "DOC"),
-            Intent::Unknown(value) => write!(f, "{}", value),
+            Intent::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

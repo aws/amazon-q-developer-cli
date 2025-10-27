@@ -3,7 +3,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use serde::Deserialize;
@@ -22,6 +21,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::knowledge_store::KnowledgeStore;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
@@ -156,9 +156,9 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print("Adding to knowledge base: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(&add.name),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 // Check if value is a path or text content
@@ -167,10 +167,10 @@ impl Knowledge {
                     let path_type = if path.is_dir() { "directory" } else { "file" };
                     queue!(
                         updates,
-                        style::Print(format!(" ({}: ", path_type)),
-                        style::SetForegroundColor(Color::Green),
+                        style::Print(format!(" ({path_type}: ")),
+                        StyledText::success_fg(),
                         style::Print(&add.value),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(")\n")
                     )?;
                 } else {
@@ -179,18 +179,18 @@ impl Knowledge {
                         queue!(
                             updates,
                             style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
-                            style::Print(format!("{}...", preview)),
-                            style::ResetColor,
+                            StyledText::info_fg(),
+                            style::Print(format!("{preview}...")),
+                            StyledText::reset(),
                             style::Print(")\n")
                         )?;
                     } else {
                         queue!(
                             updates,
                             style::Print(" (text: "),
-                            style::SetForegroundColor(Color::Blue),
+                            StyledText::info_fg(),
                             style::Print(&add.value),
-                            style::ResetColor,
+                            StyledText::reset(),
                             style::Print(")\n")
                         )?;
                     }
@@ -201,33 +201,33 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by name: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.name),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !remove.context_id.is_empty() {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by ID: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !remove.path.is_empty() {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base by path: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&remove.path),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     queue!(
                         updates,
                         style::Print("Removing from knowledge base: "),
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("No identifier provided"),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 }
             },
@@ -238,17 +238,17 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print(" with ID: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&update.context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else if !update.name.is_empty() {
                     queue!(
                         updates,
                         style::Print(" with name: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&update.name),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 }
 
@@ -256,19 +256,19 @@ impl Knowledge {
                 let path_type = if path.is_dir() { "directory" } else { "file" };
                 queue!(
                     updates,
-                    style::Print(format!(" using new {}: ", path_type)),
-                    style::SetForegroundColor(Color::Green),
+                    style::Print(format!(" using new {path_type}: ")),
+                    StyledText::success_fg(),
                     style::Print(&update.path),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
             },
             Knowledge::Clear(_) => {
                 queue!(
                     updates,
                     style::Print("Clearing "),
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("all"),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(" knowledge base entries"),
                 )?;
             },
@@ -276,18 +276,18 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print("Searching knowledge base for: "),
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(&search.query),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 if let Some(context_id) = &search.context_id {
                     queue!(
                         updates,
                         style::Print(" in context: "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(context_id),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     queue!(updates, style::Print(" across all contexts"),)?;
@@ -343,7 +343,7 @@ impl Knowledge {
                         "Added '{}' to knowledge base with ID: {}. Track active jobs in '/knowledge status' with provided id.",
                         add.name, context_id
                     ),
-                    Err(e) => format!("Failed to add to knowledge base: {}", e),
+                    Err(e) => format!("Failed to add to knowledge base: {e}"),
                 }
             },
             Knowledge::Remove(remove) => {
@@ -351,20 +351,20 @@ impl Knowledge {
                     // Remove by ID
                     match store.remove_by_id(&remove.context_id).await {
                         Ok(_) => format!("Removed context with ID '{}' from knowledge base", remove.context_id),
-                        Err(e) => format!("Failed to remove context by ID: {}", e),
+                        Err(e) => format!("Failed to remove context by ID: {e}"),
                     }
                 } else if !remove.name.is_empty() {
                     // Remove by name
                     match store.remove_by_name(&remove.name).await {
                         Ok(_) => format!("Removed context with name '{}' from knowledge base", remove.name),
-                        Err(e) => format!("Failed to remove context by name: {}", e),
+                        Err(e) => format!("Failed to remove context by name: {e}"),
                     }
                 } else if !remove.path.is_empty() {
                     // Remove by path
                     let sanitized_path = crate::cli::chat::tools::sanitize_path_tool_arg(os, &remove.path);
                     match store.remove_by_path(sanitized_path.to_string_lossy().as_ref()).await {
                         Ok(_) => format!("Removed context with path '{}' from knowledge base", remove.path),
-                        Err(e) => format!("Failed to remove context by path: {}", e),
+                        Err(e) => format!("Failed to remove context by path: {e}"),
                     }
                 } else {
                     "Error: No identifier provided for removal. Please specify name, context_id, or path.".to_string()
@@ -398,7 +398,7 @@ impl Knowledge {
                             "Updated context with ID '{}' using path '{}'.  Track active jobs in '/knowledge status' with provided id.",
                             update.context_id, update.path
                         ),
-                        Err(e) => format!("Failed to update context by ID: {}", e),
+                        Err(e) => format!("Failed to update context by ID: {e}"),
                     }
                 } else if !update.name.is_empty() {
                     // Update by name
@@ -407,7 +407,7 @@ impl Knowledge {
                             "Updated context with name '{}' using path '{}'. Track active jobs in '/knowledge status' with provided id.",
                             update.name, update.path
                         ),
-                        Err(e) => format!("Failed to update context by name: {}", e),
+                        Err(e) => format!("Failed to update context by name: {e}"),
                     }
                 } else {
                     // Update by path (if no ID or name provided)
@@ -416,14 +416,14 @@ impl Knowledge {
                             "Updated context with path '{}'. Track active jobs in '/knowledge status' with provided id.",
                             update.path
                         ),
-                        Err(e) => format!("Failed to update context by path: {}", e),
+                        Err(e) => format!("Failed to update context by path: {e}"),
                     }
                 }
             },
             Knowledge::Clear(_) => store
                 .clear()
                 .await
-                .unwrap_or_else(|e| format!("Failed to clear knowledge base: {}", e)),
+                .unwrap_or_else(|e| format!("Failed to clear knowledge base: {e}")),
             Knowledge::Search(search) => {
                 let results = store.search(&search.query, search.context_id.as_deref()).await;
                 match results {
@@ -434,14 +434,14 @@ impl Knowledge {
                             let mut output = format!("Search results for \"{}\":\n\n", search.query);
                             for result in results {
                                 if let Some(text) = result.text() {
-                                    output.push_str(&format!("{}\n\n", text));
+                                    output.push_str(&format!("{text}\n\n"));
                                 }
                             }
                             output
                         }
                     },
                     Err(e) => {
-                        format!("Search failed: {}", e)
+                        format!("Search failed: {e}")
                     },
                 }
             },
@@ -497,19 +497,18 @@ impl Knowledge {
                                 ));
                             }
                         }
-                        output.push_str(&format!("\nStatus unavailable: {}", e));
+                        output.push_str(&format!("\nStatus unavailable: {e}"));
                         output
                     },
                     (Err(e), Ok(status_data)) => {
                         // Show status but note contexts error
-                        let mut output = format!("Contexts unavailable: {}\n\n", e);
+                        let mut output = format!("Contexts unavailable: {e}\n\n");
                         output.push_str(&Self::format_status_display(&status_data));
                         output
                     },
                     (Err(contexts_err), Err(status_err)) => {
                         format!(
-                            "Failed to get contexts: {}\nFailed to get status: {}",
-                            contexts_err, status_err
+                            "Failed to get contexts: {contexts_err}\nFailed to get status: {status_err}"
                         )
                     },
                 }
@@ -517,7 +516,7 @@ impl Knowledge {
             Knowledge::Cancel(cancel) => store
                 .cancel_operation(Some(&cancel.operation_id))
                 .await
-                .unwrap_or_else(|e| format!("Failed to cancel operation: {}", e)),
+                .unwrap_or_else(|e| format!("Failed to cancel operation: {e}")),
         };
 
         Ok(InvokeOutput {
@@ -555,7 +554,7 @@ impl Knowledge {
                 semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
                 semantic_search_client::OperationType::Clearing => op.message.clone(),
             };
-            output.push_str(&format!("   {}\n", description));
+            output.push_str(&format!("   {description}\n"));
 
             // Status/progress line with ETA if available
             if op.is_cancelled {
@@ -569,7 +568,7 @@ impl Knowledge {
                 if let Some(eta) = op.eta {
                     output.push_str(&format!("   {}% • ETA: {}s\n", percentage, eta.as_secs()));
                 } else {
-                    output.push_str(&format!("   {}%\n", percentage));
+                    output.push_str(&format!("   {percentage}%\n"));
                 }
             } else {
                 output.push_str("   In progress\n");

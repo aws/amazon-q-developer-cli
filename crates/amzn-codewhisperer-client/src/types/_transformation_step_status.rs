@@ -150,7 +150,7 @@ impl ::std::fmt::Display for TransformationStepStatus {
             TransformationStepStatus::Paused => write!(f, "PAUSED"),
             TransformationStepStatus::Skipped => write!(f, "SKIPPED"),
             TransformationStepStatus::Stopped => write!(f, "STOPPED"),
-            TransformationStepStatus::Unknown(value) => write!(f, "{}", value),
+            TransformationStepStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -2,17 +2,17 @@ use clap::Subcommand;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
 };
 
 use crate::cli::ConversationState;
+use crate::cli::chat::context::ContextFilePath;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Commands for persisting and loading conversation state
 #[deny(missing_docs)]
@@ -42,9 +42,9 @@ impl PersistSubcommand {
                     Err(err) => {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Red),
+                            StyledText::error_fg(),
                             style::Print(format!("\nFailed to {} {}: {}\n\n", $name, $path, &err)),
-                            style::SetAttribute(Attribute::Reset)
+                            StyledText::reset_attributes()
                         )?;
 
                         return Ok(ChatState::PromptUser {
@@ -61,12 +61,12 @@ impl PersistSubcommand {
                 if os.fs.exists(&path) && !force {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!(
                             "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
                             &path
                         )),
-                        style::SetAttribute(Attribute::Reset)
+                        StyledText::reset_attributes()
                     )?;
                     return Ok(ChatState::PromptUser {
                         skip_printing_tools: true,
@@ -76,9 +76,9 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n✔ Exported conversation state to {}\n\n", &path)),
-                    style::SetAttribute(Attribute::Reset)
+                    StyledText::reset_attributes()
                 )?;
             },
             Self::Load { path } => {
@@ -87,7 +87,7 @@ impl PersistSubcommand {
 
                 // If the original path fails and doesn't end with .json, try with .json appended
                 let contents = if original_result.is_err() && !path.ends_with(".json") {
-                    let json_path = format!("{}.json", path);
+                    let json_path = format!("{path}.json");
                     match os.fs.read_to_string(&json_path).await {
                         Ok(content) => content,
                         Err(_) => {
@@ -103,6 +103,21 @@ impl PersistSubcommand {
                 std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
                 std::mem::swap(&mut new_state.mcp_enabled, &mut session.conversation.mcp_enabled);
                 std::mem::swap(&mut new_state.model_info, &mut session.conversation.model_info);
+                // For context, we would only take paths that are not in the current agent
+                // And we'll place them as temporary context
+                // Note that we are NOT doing the same with hooks because hooks are more
+                // instrinsically linked to agent and it affects the behavior of an agent
+                if let Some(cm) = &new_state.context_manager {
+                    if let Some(existing_cm) = &mut session.conversation.context_manager {
+                        let existing_paths = &mut existing_cm.paths;
+                        for incoming_path in &cm.paths {
+                            if !existing_paths.contains(incoming_path) {
+                                existing_paths
+                                    .push(ContextFilePath::Session(incoming_path.get_path_as_str().to_string()));
+                            }
+                        }
+                    }
+                }
                 std::mem::swap(
                     &mut new_state.context_manager,
                     &mut session.conversation.context_manager,
@@ -112,9 +127,9 @@ impl PersistSubcommand {
 
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print(format!("\n✔ Imported conversation state from {}\n\n", &path)),
-                    style::SetAttribute(Attribute::Reset)
+                    StyledText::reset_attributes()
                 )?;
             },
         }

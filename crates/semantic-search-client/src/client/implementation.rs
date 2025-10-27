@@ -734,7 +734,7 @@ impl SemanticSearchClient {
         // Search in all volatile contexts
         for (context_id, context) in &self.volatile_contexts {
             let context_guard = context.lock().map_err(|e| {
-                SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {}", e))
+                SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {e}"))
             })?;
 
             match context_guard.search(&query_vector, effective_limit) {
@@ -809,7 +809,7 @@ impl SemanticSearchClient {
 
         let context_guard = context
             .lock()
-            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {}", e)))?;
+            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {e}")))?;
 
         context_guard.search(&query_vector, effective_limit)
     }
@@ -861,7 +861,7 @@ impl SemanticSearchClient {
         // Get the context data
         let context_guard = context
             .lock()
-            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {}", e)))?;
+            .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {e}")))?;
 
         // Save the data to the persistent directory
         let data_path = persistent_dir.join("data.json");
@@ -953,8 +953,7 @@ impl SemanticSearchClient {
             self.remove_context_by_id(&id, delete_persistent)
         } else {
             Err(SemanticSearchError::ContextNotFound(format!(
-                "No context found with name: {}",
-                name
+                "No context found with name: {name}"
             )))
         }
     }
@@ -981,8 +980,7 @@ impl SemanticSearchClient {
             self.remove_context_by_id(&id, delete_persistent)
         } else {
             Err(SemanticSearchError::ContextNotFound(format!(
-                "No context found with path: {}",
-                path
+                "No context found with path: {path}"
             )))
         }
     }

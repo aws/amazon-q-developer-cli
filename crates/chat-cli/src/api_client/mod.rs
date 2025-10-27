@@ -23,6 +23,12 @@ use amzn_codewhisperer_client::types::{
     UserContext,
 };
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
+use amzn_codewhisperer_streaming_client::config::endpoint::{
+    Endpoint as StreamingEndpoint,
+    EndpointFuture,
+    Params,
+    ResolveEndpoint,
+};
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
 use amzn_qdeveloper_streaming_client::types::Origin;
 use aws_config::retry::RetryConfig;
@@ -65,6 +71,25 @@ use crate::os::{
     Env,
     Fs,
 };
+
+#[derive(Debug)]
+struct StaticEndpointResolver {
+    url: String,
+}
+
+impl StaticEndpointResolver {
+    fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
+impl ResolveEndpoint for StaticEndpointResolver {
+    fn resolve_endpoint<'a>(&'a self, _params: &'a Params) -> EndpointFuture<'a> {
+        let url = self.url.clone();
+        let endpoint = StreamingEndpoint::builder().url(url).build();
+        EndpointFuture::ready(Ok(endpoint))
+    }
+}
 
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
@@ -185,7 +210,7 @@ impl ApiClient {
                         .interceptor(DelayTrackingInterceptor::new())
                         .bearer_token_resolver(UnifiedBearerResolver)
                         .app_name(app_name())
-                        .endpoint_url(endpoint.url())
+                        .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
                         .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                         .stalled_stream_protection(stalled_stream_protection_config())
                         .build(),
@@ -600,7 +625,7 @@ impl ApiClient {
                     serde_json::Value::Object(tool_use) => {
                         stream.append(&mut split_tool_use_event(tool_use));
                     },
-                    other => panic!("Unexpected value: {:?}", other),
+                    other => panic!("Unexpected value: {other:?}"),
                 }
             }
             mock.push(stream);

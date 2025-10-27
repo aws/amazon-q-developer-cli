@@ -130,7 +130,7 @@ impl ::std::fmt::Display for ValidationExceptionReason {
             ValidationExceptionReason::InvalidConversationId => write!(f, "INVALID_CONVERSATION_ID"),
             ValidationExceptionReason::InvalidKmsGrant => write!(f, "INVALID_KMS_GRANT"),
             ValidationExceptionReason::InvalidModelId => write!(f, "INVALID_MODEL_ID"),
-            ValidationExceptionReason::Unknown(value) => write!(f, "{}", value),
+            ValidationExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

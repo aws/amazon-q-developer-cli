@@ -13,6 +13,7 @@ pub mod mcp_client;
 pub mod os;
 pub mod request;
 pub mod telemetry;
+pub mod theme;
 pub mod util;
 
 pub use mcp_client::*;

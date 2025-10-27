@@ -33,6 +33,11 @@ impl SendMessageOutput {
     pub fn builder() -> crate::operation::send_message::builders::SendMessageOutputBuilder {
         crate::operation::send_message::builders::SendMessageOutputBuilder::default()
     }
+
+    #[allow(unused)]
+    pub(crate) fn into_builder(self) -> crate::operation::send_message::builders::SendMessageOutputBuilder {
+        Self::builder().send_message_response(self.send_message_response)
+    }
 }
 
 /// A builder for [`SendMessageOutput`](crate::operation::send_message::SendMessageOutput).

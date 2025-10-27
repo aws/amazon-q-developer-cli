@@ -112,7 +112,7 @@ impl ::std::fmt::Display for ResourcePolicyEffect {
         match self {
             ResourcePolicyEffect::Allow => write!(f, "ALLOW"),
             ResourcePolicyEffect::Deny => write!(f, "DENY"),
-            ResourcePolicyEffect::Unknown(value) => write!(f, "{}", value),
+            ResourcePolicyEffect::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

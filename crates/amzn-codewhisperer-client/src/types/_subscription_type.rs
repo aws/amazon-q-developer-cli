@@ -136,7 +136,7 @@ impl ::std::fmt::Display for SubscriptionType {
             SubscriptionType::QDeveloperStandalonePower => write!(f, "Q_DEVELOPER_STANDALONE_POWER"),
             SubscriptionType::QDeveloperStandalonePro => write!(f, "Q_DEVELOPER_STANDALONE_PRO"),
             SubscriptionType::QDeveloperStandaloneProPlus => write!(f, "Q_DEVELOPER_STANDALONE_PRO_PLUS"),
-            SubscriptionType::Unknown(value) => write!(f, "{}", value),
+            SubscriptionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

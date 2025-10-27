@@ -119,7 +119,7 @@ impl ::std::fmt::Display for ChatTriggerType {
             ChatTriggerType::Diagnostic => write!(f, "DIAGNOSTIC"),
             ChatTriggerType::InlineChat => write!(f, "INLINE_CHAT"),
             ChatTriggerType::Manual => write!(f, "MANUAL"),
-            ChatTriggerType::Unknown(value) => write!(f, "{}", value),
+            ChatTriggerType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

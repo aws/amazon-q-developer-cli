@@ -6,7 +6,6 @@ use std::str::FromStr;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Color,
 };
 use serde::{
     Deserialize,
@@ -22,6 +21,7 @@ use crate::cli::chat::consts::{
     MAX_IMAGE_SIZE,
     MAX_NUMBER_OF_IMAGES_PER_REQUEST,
 };
+use crate::theme::StyledText;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ImageMetadata {
@@ -91,12 +91,11 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if valid_images.len() > MAX_NUMBER_OF_IMAGES_PER_REQUEST {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            StyledText::warning_fg(),
             style::Print(format!(
-                "\nMore than {} images detected. Extra ones will be dropped.\n",
-                MAX_NUMBER_OF_IMAGES_PER_REQUEST
+                "\nMore than {MAX_NUMBER_OF_IMAGES_PER_REQUEST} images detected. Extra ones will be dropped.\n"
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
         .ok();
         valid_images.truncate(MAX_NUMBER_OF_IMAGES_PER_REQUEST);
@@ -105,12 +104,12 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
     if !images_exceeding_size_limit.is_empty() {
         execute!(
             &mut *output,
-            style::SetForegroundColor(Color::DarkYellow),
+            StyledText::warning_fg(),
             style::Print(format!(
                 "\nThe following images are dropped due to exceeding size limit ({}MB):\n",
                 MAX_IMAGE_SIZE / (1024 * 1024)
             )),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
         .ok();
         for (_, metadata) in &images_exceeding_size_limit {
@@ -123,9 +122,9 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
             };
             execute!(
                 &mut *output,
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print(format!("  - {} ({})\n", metadata.filename, image_size_str)),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )
             .ok();
         }
@@ -203,7 +202,7 @@ mod tests {
         ];
 
         for (path, expected) in test_cases {
-            assert_eq!(is_supported_image_type(path), expected, "Failed for path: {}", path);
+            assert_eq!(is_supported_image_type(path), expected, "Failed for path: {path}");
         }
     }
 
@@ -259,7 +258,7 @@ mod tests {
         let mut output = vec![];
         let images = handle_images_from_paths(&mut output, &[large_image_path.to_string_lossy().to_string()]);
         let output_str = output.to_str_lossy();
-        print!("{}", output_str);
+        print!("{output_str}");
         assert!(output_str.contains("The following images are dropped due to exceeding size limit (10MB):"));
         assert!(output_str.contains("- large_image.jpg (10.00 MB)"));
         assert!(images.is_empty());
@@ -271,7 +270,7 @@ mod tests {
 
         let mut paths = vec![];
         for i in 0..(MAX_NUMBER_OF_IMAGES_PER_REQUEST + 2) {
-            let image_path = temp_dir.path().join(format!("image_{}.jpg", i));
+            let image_path = temp_dir.path().join(format!("image_{i}.jpg"));
             paths.push(image_path.to_string_lossy().to_string());
             std::fs::write(&image_path, b"fake_image_data").unwrap();
         }
@@ -279,5 +278,183 @@ mod tests {
         let images = handle_images_from_paths(&mut vec![], &paths);
 
         assert_eq!(images.len(), MAX_NUMBER_OF_IMAGES_PER_REQUEST);
+    }
+
+    #[test]
+    fn test_pasted_image_paths_processed_correctly() {
+        let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
+        std::fs::write(temp_file.path(), b"fake_png_data").unwrap();
+
+        let path = temp_file.path().to_string_lossy().to_string();
+        let mut output = vec![];
+
+        let images = handle_images_from_paths(&mut output, &[path.clone()]);
+
+        // Verify the image was processed correctly
+        assert_eq!(images.len(), 1, "Should process one pasted image");
+        assert_eq!(images[0].1.filepath, path, "Filepath should match");
+        assert!(images[0].1.filename.ends_with(".png"), "Should have .png extension");
+        assert_eq!(images[0].1.size, 13, "Size should match fake data");
+        assert_eq!(images[0].0.format, ImageFormat::Png, "Format should be PNG");
+    }
+
+    #[test]
+    fn test_pasted_image_size_limit_enforcement() {
+        let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
+        let large_data = vec![0u8; MAX_IMAGE_SIZE + 1];
+        std::fs::write(temp_file.path(), &large_data).unwrap();
+
+        let path = temp_file.path().to_string_lossy().to_string();
+        let mut output = vec![];
+
+        let images = handle_images_from_paths(&mut output, &[path]);
+
+        assert_eq!(images.len(), 0, "Oversized pasted image should be rejected");
+
+        let output_str = output.to_str_lossy();
+        assert!(
+            output_str.contains("The following images are dropped due to exceeding size limit"),
+            "Should show size limit warning"
+        );
+        assert!(
+            output_str.contains("10.00 MB"),
+            "Should show the size of rejected image"
+        );
+    }
+
+    #[test]
+    fn test_pasted_image_format_validation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let supported_formats = vec!["png", "jpg", "jpeg", "gif", "webp"];
+        let unsupported_formats = vec!["txt", "pdf", "doc"];
+
+        let mut supported_paths = vec![];
+        for format in &supported_formats {
+            let temp_file = temp_dir.path().join(format!("pasted_image.{format}"));
+            std::fs::write(&temp_file, b"fake_image_data").unwrap();
+            supported_paths.push(temp_file.to_string_lossy().to_string());
+        }
+
+        let mut unsupported_paths = vec![];
+        for format in &unsupported_formats {
+            let temp_file = temp_dir.path().join(format!("pasted_file.{format}"));
+            std::fs::write(&temp_file, b"fake_data").unwrap();
+            unsupported_paths.push(temp_file.to_string_lossy().to_string());
+        }
+
+        let mut output = vec![];
+        let images = handle_images_from_paths(&mut output, &supported_paths);
+        assert_eq!(
+            images.len(),
+            supported_formats.len(),
+            "All supported formats should be processed"
+        );
+
+        let mut output = vec![];
+        let images = handle_images_from_paths(&mut output, &unsupported_paths);
+        assert_eq!(images.len(), 0, "Unsupported formats should be ignored");
+    }
+
+    #[test]
+    fn test_multiple_pasted_images_in_sequence() {
+        let mut paths = vec![];
+        let mut temp_files = vec![];
+
+        for i in 0..3 {
+            let temp_file = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+
+            std::fs::write(temp_file.path(), format!("fake_image_data_{i}").as_bytes()).unwrap();
+            paths.push(temp_file.path().to_string_lossy().to_string());
+            temp_files.push(temp_file); // Keep temp files alive
+        }
+
+        let mut output = vec![];
+        let images = handle_images_from_paths(&mut output, &paths);
+
+        assert_eq!(images.len(), 3, "Should process all pasted images");
+
+        for (image_block, metadata) in images.iter() {
+            assert!(metadata.filename.ends_with(".png"), "Should have .png extension");
+            assert_eq!(image_block.format, ImageFormat::Png, "Format should be PNG");
+            assert!(metadata.size > 0, "Should have non-zero size");
+        }
+    }
+
+    #[test]
+    fn test_mixing_pasted_and_manual_image_paths() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let manual_image = temp_dir.path().join("manual_screenshot.jpg");
+        std::fs::write(&manual_image, b"manual_image_data").unwrap();
+
+        let pasted_image1 = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+        std::fs::write(pasted_image1.path(), b"pasted_image_1").unwrap();
+
+        let pasted_image2 = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+        std::fs::write(pasted_image2.path(), b"pasted_image_2").unwrap();
+
+        let paths = vec![
+            manual_image.to_string_lossy().to_string(),
+            pasted_image1.path().to_string_lossy().to_string(),
+            pasted_image2.path().to_string_lossy().to_string(),
+        ];
+
+        let mut output = vec![];
+        let images = handle_images_from_paths(&mut output, &paths);
+
+        assert_eq!(images.len(), 3, "Should process both manual and pasted images");
+
+        assert_eq!(images[0].1.filename, "manual_screenshot.jpg");
+        assert_eq!(images[0].0.format, ImageFormat::Jpeg);
+
+        assert!(images[1].1.filename.ends_with(".png"));
+        assert!(images[2].1.filename.ends_with(".png"));
+        assert_eq!(images[1].0.format, ImageFormat::Png);
+        assert_eq!(images[2].0.format, ImageFormat::Png);
+    }
+
+    #[test]
+    fn test_pasted_images_processed_uniformly_with_manual() {
+        let temp_dir = tempfile::tempdir().unwrap();
+
+        let jpg_manual = temp_dir.path().join("photo.jpg");
+        std::fs::write(&jpg_manual, b"jpg_data").unwrap();
+
+        let png_pasted = tempfile::Builder::new().suffix(".png").tempfile().unwrap();
+        std::fs::write(png_pasted.path(), b"png_data").unwrap();
+
+        let gif_manual = temp_dir.path().join("animation.gif");
+        std::fs::write(&gif_manual, b"gif_data").unwrap();
+
+        let webp_pasted = tempfile::Builder::new().suffix(".webp").tempfile().unwrap();
+        std::fs::write(webp_pasted.path(), b"webp_data").unwrap();
+
+        let paths = vec![
+            jpg_manual.to_string_lossy().to_string(),
+            png_pasted.path().to_string_lossy().to_string(),
+            gif_manual.to_string_lossy().to_string(),
+            webp_pasted.path().to_string_lossy().to_string(),
+        ];
+
+        let mut output = vec![];
+        let images = handle_images_from_paths(&mut output, &paths);
+
+        assert_eq!(images.len(), 4, "Should process all images uniformly");
+
+        for (image_block, metadata) in &images {
+            assert!(!metadata.filename.is_empty(), "Should have filename");
+            assert!(!metadata.filepath.is_empty(), "Should have filepath");
+            assert!(metadata.size > 0, "Should have size");
+
+            match image_block.format {
+                ImageFormat::Jpeg => assert!(metadata.filename.ends_with(".jpg")),
+                ImageFormat::Png => assert!(metadata.filename.ends_with(".png")),
+                ImageFormat::Gif => assert!(metadata.filename.ends_with(".gif")),
+                ImageFormat::Webp => assert!(metadata.filename.ends_with(".webp")),
+            }
+        }
     }
 }

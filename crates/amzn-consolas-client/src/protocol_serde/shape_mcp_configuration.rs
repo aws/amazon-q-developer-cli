@@ -6,6 +6,9 @@ pub fn ser_mcp_configuration(
     {
         object.key("toggle").string(input.toggle.as_str());
     }
+    if let Some(var_1) = &input.mcp_registry_url {
+        object.key("mcpRegistryUrl").string(var_1.as_str());
+    }
     Ok(())
 }
 
@@ -43,12 +46,19 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "mcpRegistryUrl" => {
+                                builder = builder.set_mcp_registry_url(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
+                                        .transpose()?,
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },
                     other => {
                         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                            format!("expected object key or end object, found: {:?}", other),
+                            format!("expected object key or end object, found: {other:?}"),
                         ));
                     },
                 }

@@ -3,7 +3,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use regex::Regex;
@@ -23,6 +22,7 @@ use crate::cli::chat::tools::{
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Platform-specific modules
@@ -59,7 +59,7 @@ impl ExecuteCommand {
 
         let has_regex_match = allowed_commands
             .iter()
-            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
+            .map(|cmd| Regex::new(&format!(r"\A{cmd}\z")))
             .filter(Result::is_ok)
             .flatten()
             .any(|regex| regex.is_match(&self.command));
@@ -113,6 +113,7 @@ impl ExecuteCommand {
                                 || arg.contains("-delete")
                                 || arg.contains("-ok") // includes -okdir
                                 || arg.contains("-fprint") // includes -fprint0 and -fprintf
+                                || arg.contains("-fls")
                         }) =>
                 {
                     return true;
@@ -166,10 +167,10 @@ impl ExecuteCommand {
 
         queue!(
             output,
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.command),
             style::Print("\n"),
-            style::ResetColor
+            StyledText::reset(),
         )?;
 
         // Add the summary if available
@@ -195,6 +196,8 @@ impl ExecuteCommand {
             allowed_commands: Vec<String>,
             #[serde(default)]
             denied_commands: Vec<String>,
+            #[serde(default)]
+            deny_by_default: bool,
             #[serde(default = "default_allow_read_only")]
             auto_allow_readonly: bool,
         }
@@ -211,6 +214,7 @@ impl ExecuteCommand {
                 let Settings {
                     allowed_commands,
                     denied_commands,
+                    deny_by_default,
                     auto_allow_readonly,
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
@@ -222,7 +226,14 @@ impl ExecuteCommand {
 
                 let denied_match_set = denied_commands
                     .iter()
-                    .filter_map(|dc| Regex::new(&format!(r"\A{dc}\z")).ok())
+                    .filter_map(|dc| match Regex::new(&format!(r"\A{dc}\z")) {
+                        Ok(regex) => Some(regex),
+                        Err(e) => {
+                            error!("Invalid regex pattern '{}' in deniedCommands: {:?}. Treating as deny-all for security.", dc, e);
+                            // Invalid regex - treat as "deny all" for security
+                            Regex::new(r"\A.*\z").ok()
+                        }
+                    })
                     .filter(|r| r.is_match(command))
                     .map(|r| r.to_string())
                     .collect::<Vec<_>>();
@@ -234,7 +245,11 @@ impl ExecuteCommand {
                 if is_in_allowlist {
                     PermissionEvalResult::Allow
                 } else if self.requires_acceptance(Some(&allowed_commands), auto_allow_readonly) {
-                    PermissionEvalResult::Ask
+                    if deny_by_default {
+                        PermissionEvalResult::Deny(vec!["not in allowed commands list".to_string()])
+                    } else {
+                        PermissionEvalResult::Ask
+                    }
                 } else {
                     PermissionEvalResult::Allow
                 }
@@ -273,7 +288,10 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::cli::agent::ToolSettingTarget;
+    use crate::cli::agent::{
+        Agent,
+        ToolSettingTarget,
+    };
 
     #[test]
     fn test_requires_acceptance_for_readonly_commands() {
@@ -320,6 +338,7 @@ mod tests {
             ("find important-dir/ -exec rm {} \\;", true),
             ("find . -name '*.c' -execdir gcc -o '{}.out' '{}' \\;", true),
             ("find important-dir/ -delete", true),
+            ("find important-dir/ -fls /etc/passwd", true),
             (
                 "echo y | find . -type f -maxdepth 1 -okdir open -a Calculator {} +",
                 true,
@@ -341,9 +360,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -379,9 +396,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(None, true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -415,9 +430,7 @@ mod tests {
             assert_eq!(
                 tool.requires_acceptance(Option::from(&allowed_cmds.to_vec()), true),
                 *expected,
-                "expected command: `{}` to have requires_acceptance: `{}`",
-                cmd,
-                expected
+                "expected command: `{cmd}` to have requires_acceptance: `{expected}`"
             );
         }
     }
@@ -519,13 +532,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_enabled() {
-        use std::collections::HashMap;
-
-        use crate::cli::agent::{
-            Agent,
-            ToolSettingTarget,
-        };
-
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
 
@@ -567,13 +573,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_with_denied_commands() {
-        use std::collections::HashMap;
-
-        use crate::cli::agent::{
-            Agent,
-            ToolSettingTarget,
-        };
-
         let os = Os::new().await.unwrap();
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
 
@@ -617,6 +616,66 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_eval_perm_denied_commands_invalid_regex() {
+        let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "deniedCommands": ["^(?!ls$).*"]  // Invalid regex with unsupported lookahead
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test command that should be denied by the pattern
+        let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd",})).unwrap();
+        let res = pwd_cmd.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "Invalid regex should deny all commands, got {res:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_deny_by_default() {
+        let os = Os::new().await.unwrap();
+        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget(tool_name.to_string()),
+                    serde_json::json!({
+                        "allowedCommands": ["ls"],
+                        "denyByDefault": true
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Test allowed command - should be allowed
+        let ls_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "ls",})).unwrap();
+        let res = ls_cmd.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test non-allowed command - should be denied (not asked)
+        let pwd_cmd = serde_json::from_value::<ExecuteCommand>(serde_json::json!({"command": "pwd"})).unwrap();
+        let res = pwd_cmd.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Deny(_)));
+    }
+
+    #[tokio::test]
     async fn test_cloudtrail_tracking() {
         use crate::cli::chat::consts::{
             USER_AGENT_APP_NAME,
@@ -637,8 +696,7 @@ mod tests {
 
         // Check the format is correct
         let expected_metadata = format!(
-            "{} {}/{}",
-            USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+            "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
         );
         assert!(user_agent_value.contains(&expected_metadata));
     }

@@ -279,11 +279,11 @@ impl AsyncSemanticSearchClient {
         // Validate patterns early to fail fast
         if let Some(ref include_patterns) = request.include_patterns {
             crate::pattern_filter::PatternFilter::new(include_patterns, &[])
-                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid include pattern: {}", e)))?;
+                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid include pattern: {e}")))?;
         }
         if let Some(ref exclude_patterns) = request.exclude_patterns {
             crate::pattern_filter::PatternFilter::new(&[], exclude_patterns)
-                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid exclude pattern: {}", e)))?;
+                .map_err(|e| SemanticSearchError::InvalidArgument(format!("Invalid exclude pattern: {e}")))?;
         }
 
         let operation_id = Uuid::new_v4();

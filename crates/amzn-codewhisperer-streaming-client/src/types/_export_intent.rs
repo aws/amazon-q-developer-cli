@@ -119,7 +119,7 @@ impl ::std::fmt::Display for ExportIntent {
             ExportIntent::TaskAssist => write!(f, "TASK_ASSIST"),
             ExportIntent::Transformation => write!(f, "TRANSFORMATION"),
             ExportIntent::UnitTests => write!(f, "UNIT_TESTS"),
-            ExportIntent::Unknown(value) => write!(f, "{}", value),
+            ExportIntent::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

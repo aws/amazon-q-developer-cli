@@ -106,7 +106,7 @@ impl ::std::fmt::Display for CodeAnalysisFindingsSchema {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             CodeAnalysisFindingsSchema::CodeanalysisFindingsV10 => write!(f, "codeanalysis/findings/1.0"),
-            CodeAnalysisFindingsSchema::Unknown(value) => write!(f, "{}", value),
+            CodeAnalysisFindingsSchema::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

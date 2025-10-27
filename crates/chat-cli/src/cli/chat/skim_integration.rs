@@ -222,7 +222,7 @@ pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String
                             // Construct the full command with selected files
                             let mut cmd = cmd.clone();
                             for file in files {
-                                cmd.push_str(&format!(" {}", file));
+                                cmd.push_str(&format!(" {file}"));
                             }
                             Ok(Some(cmd))
                         },
@@ -240,11 +240,11 @@ pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String
                                 full_cmd.push_str(" --global");
                             }
                             for path in paths {
-                                full_cmd.push_str(&format!(" {}", path));
+                                full_cmd.push_str(&format!(" {path}"));
                             }
                             Ok(Some(full_cmd))
                         },
-                        Some((_, _)) => Ok(Some(format!("{} (No paths selected)", cmd))),
+                        Some((_, _)) => Ok(Some(format!("{cmd} (No paths selected)"))),
                         None => Ok(Some(selected_command.clone())), // User cancelled path selection
                     }
                 },
@@ -258,7 +258,7 @@ pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String
                     };
 
                     match selected_tool {
-                        Some(tool) => Ok(Some(format!("{} {}", selected_command, tool))),
+                        Some(tool) => Ok(Some(format!("{selected_command} {tool}"))),
                         None => Ok(Some(selected_command.clone())), /* User cancelled tool selection, return just the
                                                                      * command */
                     }
@@ -348,16 +348,14 @@ mod tests {
         for cmd in hardcoded_commands {
             assert!(
                 available_commands.contains(cmd),
-                "Command '{}' is used in select_command but not defined in COMMANDS array",
-                cmd
+                "Command '{cmd}' is used in select_command but not defined in COMMANDS array"
             );
 
             // This should assert that all the commands we assert are present in the match statement of
             // select_command()
             assert!(
                 CommandType::from_str(cmd).is_some(),
-                "Command '{}' cannot be parsed into a CommandType",
-                cmd
+                "Command '{cmd}' cannot be parsed into a CommandType"
             );
         }
     }

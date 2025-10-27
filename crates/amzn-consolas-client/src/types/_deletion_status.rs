@@ -112,7 +112,7 @@ impl ::std::fmt::Display for DeletionStatus {
         match self {
             DeletionStatus::Failed => write!(f, "FAILED"),
             DeletionStatus::Succeeded => write!(f, "SUCCEEDED"),
-            DeletionStatus::Unknown(value) => write!(f, "{}", value),
+            DeletionStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

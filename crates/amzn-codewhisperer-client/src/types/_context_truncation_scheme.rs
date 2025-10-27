@@ -113,7 +113,7 @@ impl ::std::fmt::Display for ContextTruncationScheme {
         match self {
             ContextTruncationScheme::Analysis => write!(f, "ANALYSIS"),
             ContextTruncationScheme::Gumby => write!(f, "GUMBY"),
-            ContextTruncationScheme::Unknown(value) => write!(f, "{}", value),
+            ContextTruncationScheme::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

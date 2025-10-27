@@ -73,10 +73,10 @@ impl UseAws {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .wrap_err_with(|| format!("Unable to spawn command '{:?}'", self))?
+            .wrap_err_with(|| format!("Unable to spawn command '{self:?}'"))?
             .wait_with_output()
             .await
-            .wrap_err_with(|| format!("Unable to spawn command '{:?}'", self))?;
+            .wrap_err_with(|| format!("Unable to spawn command '{self:?}'"))?;
         let status = output.status.code().unwrap_or(0).to_string();
         let stdout = output.stdout.to_str_lossy();
         let stderr = output.stderr.to_str_lossy();
@@ -126,23 +126,23 @@ impl UseAws {
             for (name, value) in parameters {
                 match value {
                     serde_json::Value::String(s) if s.is_empty() => {
-                        queue!(output, style::Print(format!("- {}\n", name)))?;
+                        queue!(output, style::Print(format!("- {name}\n")))?;
                     },
                     _ => {
-                        queue!(output, style::Print(format!("- {}: {}\n", name, value)))?;
+                        queue!(output, style::Print(format!("- {name}: {value}\n")))?;
                     },
                 }
             }
         }
 
         if let Some(ref profile_name) = self.profile_name {
-            queue!(output, style::Print(format!("Profile name: {}\n", profile_name)))?;
+            queue!(output, style::Print(format!("Profile name: {profile_name}\n")))?;
         }
 
         queue!(output, style::Print(format!("Region: {}", self.region)))?;
 
         if let Some(ref label) = self.label {
-            queue!(output, style::Print(format!("\nLabel: {}", label)))?;
+            queue!(output, style::Print(format!("\nLabel: {label}")))?;
         }
         Ok(())
     }
@@ -273,15 +273,13 @@ mod tests {
         let params = cmd.cli_parameters().unwrap();
         assert!(
             params.iter().any(|p| p.0 == "--table-name" && p.1 == "table-name"),
-            "not found in {:?}",
-            params
+            "not found in {params:?}"
         );
         assert!(
             params
                 .iter()
                 .any(|p| p.0 == "--key-condition-expression" && p.1 == "PartitionKey = :pkValue"),
-            "not found in {:?}",
-            params
+            "not found in {params:?}"
         );
     }
 

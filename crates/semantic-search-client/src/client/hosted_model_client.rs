@@ -154,7 +154,7 @@ impl HostedModelClient {
 
         let response = self.client.get(url).send().await.map_err(|e| {
             error!("HTTP request failed for URL: {} - Error: {}", url, e);
-            anyhow::anyhow!("HTTP request failed for URL: {} - {}", url, e)
+            anyhow::anyhow!("HTTP request failed for URL: {url} - {e}")
         })?;
 
         if !response.status().is_success() {
@@ -165,10 +165,7 @@ impl HostedModelClient {
                 .unwrap_or_else(|_| "Unable to read response body".to_string());
             error!("HTTP {} response body: {}", status, body);
             return Err(anyhow::anyhow!(
-                "HTTP {} error for URL: {} - Response: {}",
-                status,
-                url,
-                body
+                "HTTP {status} error for URL: {url} - Response: {body}"
             ));
         }
 
@@ -344,7 +341,7 @@ mod tests {
         // Test the internal URL construction logic by checking what would be built
         let base_url = "https://example.com/models";
         let model_name = "all-MiniLM-L6-v2";
-        let expected_url = format!("{}/{}.zip", base_url, model_name);
+        let expected_url = format!("{base_url}/{model_name}.zip");
 
         assert_eq!(expected_url, "https://example.com/models/all-MiniLM-L6-v2.zip");
     }

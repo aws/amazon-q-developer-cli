@@ -168,7 +168,7 @@ pub(crate) fn de_allow_vended_log_delivery_for_resource(
             },
             other => {
                 return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
+                    format!("expected object key or end object, found: {other:?}"),
                 ));
             },
         }

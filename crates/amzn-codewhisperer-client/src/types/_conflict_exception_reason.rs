@@ -123,7 +123,7 @@ impl ::std::fmt::Display for ConflictExceptionReason {
             ConflictExceptionReason::CustomerKmsKeyDisabled => write!(f, "CUSTOMER_KMS_KEY_DISABLED"),
             ConflictExceptionReason::CustomerKmsKeyInvalidKeyPolicy => write!(f, "CUSTOMER_KMS_KEY_INVALID_KEY_POLICY"),
             ConflictExceptionReason::MismatchedKmsKey => write!(f, "MISMATCHED_KMS_KEY"),
-            ConflictExceptionReason::Unknown(value) => write!(f, "{}", value),
+            ConflictExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

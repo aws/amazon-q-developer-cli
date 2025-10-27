@@ -10,8 +10,6 @@ use bstr::ByteSlice;
 use clap::Args;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
     Stylize,
 };
 use crossterm::{
@@ -46,6 +44,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::constants::help_text::hooks_long_help;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::pattern_matching::matches_any_pattern;
 
@@ -68,7 +67,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
                             .strip_prefix('@')
                             .and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next())
                         {
-                            let server_pattern = format!("@{}", server_name);
+                            let server_pattern = format!("@{server_name}");
                             if pattern == &server_pattern {
                                 return true;
                             }
@@ -77,7 +76,7 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
 
                     // Use matches_any_pattern for both MCP and built-in tools
                     let mut patterns = std::collections::HashSet::new();
-                    patterns.insert(pattern.clone());
+                    patterns.insert(pattern.as_str());
                     matches_any_pattern(&patterns, tool_name)
                 },
             }
@@ -181,16 +180,16 @@ impl HookExecutor {
             if let Err(err) = &result {
                 queue!(
                     output,
-                    style::SetForegroundColor(style::Color::Red),
+                    StyledText::error_fg(),
                     style::Print("✗ "),
-                    style::SetForegroundColor(style::Color::Blue),
+                    StyledText::info_fg(),
                     style::Print(&hook.1.command),
-                    style::ResetColor,
+                    StyledText::reset(),
                     style::Print(" failed after "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("{:.2} s", duration.as_secs_f32())),
-                    style::ResetColor,
-                    style::Print(format!(": {}\n", err)),
+                    StyledText::reset(),
+                    style::Print(format!(": {err}\n")),
                 )?;
             }
 
@@ -200,19 +199,19 @@ impl HookExecutor {
                 if *exit_code != 0 {
                     queue!(
                         output,
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print("✗ "),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(format!("{} \"", hook.0)),
                         style::Print(&hook.1.command),
                         style::Print("\""),
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!(
                             " failed with exit code: {}, stderr: {})\n",
                             exit_code,
                             hook_output.trim_end()
                         )),
-                        style::ResetColor,
+                        StyledText::reset(),
                     )?;
                 } else {
                     complete += 1;
@@ -231,11 +230,11 @@ impl HookExecutor {
 
                 queue!(
                     output,
-                    style::SetForegroundColor(Color::Blue),
+                    StyledText::info_fg(),
                     style::Print(format!("{symbol} {} in ", spinner_text(complete, total))),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print(format!("{:.2} s\n", start_time.elapsed().as_secs_f32())),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
             } else {
                 spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
@@ -379,8 +378,7 @@ impl HookExecutor {
 
 /// Sanitizes a string value to be used as an environment variable
 fn sanitize_user_prompt(input: &str) -> String {
-    // Limit the size of input to first 4096 characters
-    let truncated = if input.len() > 4096 { &input[0..4096] } else { input };
+    let truncated = truncate_safe(input, 4096);
 
     // Remove any potentially problematic characters
     truncated.replace(|c: char| c.is_control() && c != '\n' && c != '\r' && c != '\t', "")
@@ -421,9 +419,9 @@ impl HooksArgs {
                 style::Print(
                     "No hooks are configured.\n\nRefer to the documentation for how to add hooks to your agent: "
                 ),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(AGENT_FORMAT_HOOKS_DOC_URL),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
                 style::Print("\n"),
             )?;
         } else {
@@ -560,7 +558,7 @@ mod tests {
 
         // Create a simple hook that writes JSON input to a file
         #[cfg(unix)]
-        let command = format!("cat > {}", test_file_str);
+        let command = format!("cat > {test_file_str}");
         #[cfg(windows)]
         let command = format!(
             "powershell -Command \"$input | Out-File -FilePath '{}'\"",
@@ -742,5 +740,32 @@ mod tests {
         assert_eq!(*trigger, HookTrigger::Stop);
         assert_eq!(*exit_code, 0);
         assert!(hook_output.contains("Turn completed successfully"));
+    }
+
+    #[test]
+    fn test_sanitize_user_prompt_cjk_characters() {
+        // Test with CJK characters that would cause panic with naive byte slicing
+        let korean_text = "한".repeat(2000); // Each Korean character is 3 bytes in UTF-8
+        let result = sanitize_user_prompt(&korean_text);
+
+        // Should not panic and should be truncated safely
+        assert!(result.len() <= 4096);
+        assert!(!result.is_empty());
+
+        // Test with mixed ASCII and CJK at boundary
+        let mixed_text = "a".repeat(4094) + "한국어"; // 4094 + 9 bytes = 4103 bytes
+        let result = sanitize_user_prompt(&mixed_text);
+        assert!(result.len() <= 4096);
+        assert!(result.ends_with("a")); // Should end with ASCII, not partial CJK
+
+        // Test with text shorter than limit
+        let short_text = "안녕하세요";
+        let result = sanitize_user_prompt(short_text);
+        assert_eq!(result, short_text);
+
+        // Test with control characters
+        let text_with_controls = "Hello\x00World\nTest\r\tEnd";
+        let result = sanitize_user_prompt(text_with_controls);
+        assert_eq!(result, "HelloWorld\nTest\r\tEnd");
     }
 }

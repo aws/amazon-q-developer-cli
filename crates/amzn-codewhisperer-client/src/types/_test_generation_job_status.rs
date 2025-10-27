@@ -118,7 +118,7 @@ impl ::std::fmt::Display for TestGenerationJobStatus {
             TestGenerationJobStatus::Completed => write!(f, "COMPLETED"),
             TestGenerationJobStatus::Failed => write!(f, "FAILED"),
             TestGenerationJobStatus::InProgress => write!(f, "IN_PROGRESS"),
-            TestGenerationJobStatus::Unknown(value) => write!(f, "{}", value),
+            TestGenerationJobStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

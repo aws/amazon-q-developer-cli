@@ -1,8 +1,5 @@
 use clap::Args;
-use crossterm::style::{
-    Attribute,
-    Color,
-};
+use crossterm::style::Attribute;
 use crossterm::{
     execute,
     queue,
@@ -20,6 +17,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Detailed usage data for context window analysis
 #[derive(Debug)]
@@ -91,13 +89,13 @@ impl UsageArgs {
         if !usage_data.dropped_context_files.is_empty() {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print("\nSome context files are dropped due to size limit, please run "),
-                style::SetForegroundColor(Color::DarkGreen),
+                StyledText::success_fg(),
                 style::Print("/context show "),
-                style::SetForegroundColor(Color::DarkYellow),
+                StyledText::warning_fg(),
                 style::Print("to learn more.\n"),
-                style::SetForegroundColor(style::Color::Reset)
+                StyledText::reset(),
             )?;
         }
 
@@ -132,11 +130,11 @@ impl UsageArgs {
                     usage_data.total_tokens,
                     usage_data.context_window_size / 1000
                 )),
-                style::SetForegroundColor(Color::DarkRed),
+                StyledText::error_fg(),
                 style::Print("█".repeat(progress_bar_width)),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print(" "),
-                style::Print(format!("{:.2}%", total_percentage)),
+                style::Print(format!("{total_percentage:.2}%")),
             )?;
         } else {
             queue!(
@@ -147,7 +145,7 @@ impl UsageArgs {
                     usage_data.context_window_size / 1000
                 )),
                 // Context files
-                style::SetForegroundColor(Color::DarkCyan),
+                StyledText::brand_fg(),
                 // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
                 // empty
                 style::Print(
@@ -159,7 +157,7 @@ impl UsageArgs {
                 ),
                 style::Print("█".repeat(context_width)),
                 // Tools
-                style::SetForegroundColor(Color::DarkRed),
+                StyledText::error_fg(),
                 style::Print("|".repeat(if tools_width == 0 && usage_data.tools_tokens.value() > 0 {
                     1
                 } else {
@@ -167,7 +165,7 @@ impl UsageArgs {
                 })),
                 style::Print("█".repeat(tools_width)),
                 // Assistant responses
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print(
                     "|".repeat(if assistant_width == 0 && usage_data.assistant_tokens.value() > 0 {
                         1
@@ -177,18 +175,18 @@ impl UsageArgs {
                 ),
                 style::Print("█".repeat(assistant_width)),
                 // User prompts
-                style::SetForegroundColor(Color::Magenta),
+                StyledText::emphasis_fg(),
                 style::Print("|".repeat(if user_width == 0 && usage_data.user_tokens.value() > 0 {
                     1
                 } else {
                     0
                 })),
                 style::Print("█".repeat(user_width)),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print("█".repeat(left_over_width)),
                 style::Print(" "),
-                style::SetForegroundColor(Color::Reset),
-                style::Print(format!("{:.2}%", total_percentage)),
+                StyledText::reset(),
+                style::Print(format!("{total_percentage:.2}%")),
             )?;
         }
 
@@ -196,33 +194,33 @@ impl UsageArgs {
 
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::DarkCyan),
+            StyledText::brand_fg(),
             style::Print("█ Context files: "),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print(format!(
                 "~{} tokens ({:.2}%)\n",
                 usage_data.context_tokens,
                 calculate_usage_percentage(usage_data.context_tokens, usage_data.context_window_size)
             )),
-            style::SetForegroundColor(Color::DarkRed),
+            StyledText::error_fg(),
             style::Print("█ Tools:    "),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n",
                 usage_data.tools_tokens,
                 calculate_usage_percentage(usage_data.tools_tokens, usage_data.context_window_size)
             )),
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::Print("█ Q responses: "),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print(format!(
                 "  ~{} tokens ({:.2}%)\n",
                 usage_data.assistant_tokens,
                 calculate_usage_percentage(usage_data.assistant_tokens, usage_data.context_window_size)
             )),
-            style::SetForegroundColor(Color::Magenta),
+            StyledText::emphasis_fg(),
             style::Print("█ Your prompts: "),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
             style::Print(format!(
                 " ~{} tokens ({:.2}%)\n\n",
                 usage_data.user_tokens,
@@ -234,24 +232,24 @@ impl UsageArgs {
             session.stderr,
             style::SetAttribute(Attribute::Bold),
             style::Print("\n💡 Pro Tips:\n"),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::reset_attributes(),
+            StyledText::secondary_fg(),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            StyledText::success_fg(),
             style::Print("/compact"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(" to replace the conversation history with its summary\n"),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            StyledText::success_fg(),
             style::Print("/clear"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(" to erase the entire chat history\n"),
             style::Print("Run "),
-            style::SetForegroundColor(Color::DarkGreen),
+            StyledText::success_fg(),
             style::Print("/context show"),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print(" to see tokens per context file\n\n"),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset(),
         )?;
 
         Ok(ChatState::PromptUser {

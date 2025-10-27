@@ -153,7 +153,7 @@ impl ::std::fmt::Display for ProfileStatus {
             ProfileStatus::Deleting => write!(f, "DELETING"),
             ProfileStatus::UpdateFailed => write!(f, "UPDATE_FAILED"),
             ProfileStatus::Updating => write!(f, "UPDATING"),
-            ProfileStatus::Unknown(value) => write!(f, "{}", value),
+            ProfileStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

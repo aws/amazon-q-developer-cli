@@ -112,7 +112,7 @@ impl ::std::fmt::Display for FreeTrialStatus {
         match self {
             FreeTrialStatus::Active => write!(f, "ACTIVE"),
             FreeTrialStatus::Expired => write!(f, "EXPIRED"),
-            FreeTrialStatus::Unknown(value) => write!(f, "{}", value),
+            FreeTrialStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

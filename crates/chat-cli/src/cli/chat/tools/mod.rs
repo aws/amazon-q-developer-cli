@@ -21,10 +21,17 @@ use std::path::{
     PathBuf,
 };
 
+use chat_cli_ui::conduit::{
+    ControlEnd,
+    DestinationStdout,
+};
+use chat_cli_ui::protocol::{
+    Event,
+    ToolCallArgs,
+};
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use custom_tool::CustomTool;
 use delegate::Delegate;
@@ -58,6 +65,10 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
+use crate::theme::{
+    StyledText,
+    theme,
+};
 
 pub const DEFAULT_APPROVE: [&str; 0] = [];
 pub const NATIVE_TOOLS: [&str; 9] = [
@@ -156,20 +167,51 @@ impl Tool {
     }
 
     /// Queues up a tool's intention in a human readable format
-    pub async fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
-        match self {
-            Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
-            Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
-            Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
-            Tool::UseAws(use_aws) => use_aws.queue_description(output),
-            Tool::Custom(custom_tool) => custom_tool.queue_description(output),
-            Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
-            Tool::Introspect(_) => Introspect::queue_description(output),
-            Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
-            Tool::Thinking(thinking) => thinking.queue_description(output),
-            Tool::Todo(_) => Ok(()),
-            Tool::Delegate(delegate) => delegate.queue_description(output),
-        }
+    pub async fn queue_description(&self, os: &Os, output: &mut ControlEnd<DestinationStdout>) -> Result<()> {
+        if output.should_send_structured_event {
+            let mut buf = Vec::<u8>::new();
+
+            match self {
+                Tool::FsRead(fs_read) => fs_read.queue_description(os, &mut buf).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(os, &mut buf),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(&mut buf),
+                Tool::UseAws(use_aws) => use_aws.queue_description(&mut buf),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(&mut buf),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(&mut buf),
+                Tool::Introspect(_) => Introspect::queue_description(&mut buf),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(os, &mut buf).await,
+                Tool::Thinking(thinking) => thinking.queue_description(&mut buf),
+                Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(&mut buf),
+            }?;
+
+            let tool_call_args = ToolCallArgs {
+                // We'll ignore this for now
+                tool_call_id: Default::default(),
+                delta: {
+                    let sanitized = strip_ansi_escapes::strip_str(String::from_utf8_lossy(&buf));
+                    serde_json::Value::String(sanitized)
+                },
+            };
+
+            output.send(Event::ToolCallArgs(tool_call_args))?;
+        } else {
+            match self {
+                Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
+                Tool::UseAws(use_aws) => use_aws.queue_description(output),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(output),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
+                Tool::Introspect(_) => Introspect::queue_description(output),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
+                Tool::Thinking(thinking) => thinking.queue_description(output),
+                Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(output),
+            }?;
+        };
+
+        Ok(())
     }
 
     /// Validates the tool with the arguments supplied
@@ -276,7 +318,7 @@ impl std::fmt::Display for ToolOrigin {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ToolOrigin::Native => write!(f, "Built-in"),
-            ToolOrigin::McpServer(server) => write!(f, "{} (MCP)", server),
+            ToolOrigin::McpServer(server) => write!(f, "{server} (MCP)"),
         }
     }
 }
@@ -416,9 +458,9 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
             style::Print(super::CONTINUATION_LINE),
             style::Print("\n"),
             style::Print(super::PURPOSE_ARROW),
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::Print("Purpose: "),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(purpose),
             style::Print("\n"),
         )?;
@@ -438,9 +480,9 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
 
     // Determine symbol and color
     let (symbol, color) = match (is_error, use_bullet) {
-        (true, _) => (super::ERROR_EXCLAMATION, Color::Red),
-        (false, true) => (super::TOOL_BULLET, Color::Reset),
-        (false, false) => (super::SUCCESS_TICK, Color::Green),
+        (true, _) => (super::ERROR_EXCLAMATION, theme().status.error),
+        (false, true) => (super::TOOL_BULLET, theme().ui.secondary_text),
+        (false, false) => (super::SUCCESS_TICK, theme().status.success),
     };
 
     queue!(updates, style::Print("\n"))?;
@@ -451,7 +493,7 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
             updates,
             style::SetForegroundColor(color),
             style::Print(symbol),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(first_line),
             style::Print("\n"),
         )?;
@@ -476,8 +518,7 @@ pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, St
 
     // Set up additional metadata for the AWS CLI user agent
     let user_agent_metadata_value = format!(
-        "{} {}/{}",
-        USER_AGENT_APP_NAME, USER_AGENT_VERSION_KEY, USER_AGENT_VERSION_VALUE
+        "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
     );
 
     // Check if the user agent metadata env var already exists using Os
@@ -488,7 +529,7 @@ pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, St
         if !existing_value.is_empty() {
             env_vars.insert(
                 USER_AGENT_ENV_VAR.to_string(),
-                format!("{} {}", existing_value, user_agent_metadata_value),
+                format!("{existing_value} {user_agent_metadata_value}"),
             );
         } else {
             env_vars.insert(USER_AGENT_ENV_VAR.to_string(), user_agent_metadata_value);
@@ -544,16 +585,14 @@ mod tests {
                 // If the expected path is relative, we need to ensure it is relative to the cwd.
                 let expected = fs.chroot_path_str(expected);
 
-                assert!(formatted == expected, "Expected '{}' to be '{}'", formatted, expected);
+                assert!(formatted == expected, "Expected '{formatted}' to be '{expected}'");
 
                 return;
             }
 
             assert!(
                 formatted.contains(expected),
-                "Expected '{}' to be '{}'",
-                formatted,
-                expected
+                "Expected '{formatted}' to be '{expected}'"
             );
         }
 

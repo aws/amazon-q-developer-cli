@@ -97,7 +97,7 @@ pub enum KnowledgeError {
 impl std::fmt::Display for KnowledgeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            KnowledgeError::SearchError(msg) => write!(f, "Search error: {}", msg),
+            KnowledgeError::SearchError(msg) => write!(f, "Search error: {msg}"),
         }
     }
 }
@@ -162,25 +162,6 @@ impl KnowledgeStore {
             .and_then(|name| name.to_str())
             .unwrap_or(DEFAULT_AGENT_NAME);
 
-        // Migrate from legacy ~/.semantic_search
-        let old_flat_dir = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".semantic_search");
-
-        if old_flat_dir.exists() && !agent_dir.exists() {
-            if let Some(parent) = agent_dir.parent() {
-                std::fs::create_dir_all(parent).ok();
-            }
-            if std::fs::rename(&old_flat_dir, agent_dir).is_ok() {
-                println!(
-                    "✅ Migrated knowledge base from {} to {}",
-                    old_flat_dir.display(),
-                    agent_dir.display()
-                );
-                return true;
-            }
-        }
-
         // Migrate from knowledge_bases root - get file list first to avoid recursion
         if let Some(kb_root) = agent_dir.parent() {
             if kb_root.exists() {
@@ -188,9 +169,14 @@ impl KnowledgeStore {
                     let files_to_migrate: Vec<_> = entries
                         .flatten()
                         .filter(|entry| {
+                            let path = entry.path();
                             let name = entry.file_name();
                             let name_str = name.to_string_lossy();
-                            name_str != current_agent_id && name_str != DEFAULT_AGENT_NAME && !name_str.starts_with('.')
+                            // Only migrate FILES, not directories (to avoid moving other agent directories)
+                            path.is_file()
+                                && name_str != current_agent_id
+                                && name_str != DEFAULT_AGENT_NAME
+                                && !name_str.starts_with('.')
                         })
                         .collect();
 
@@ -275,12 +261,12 @@ impl KnowledgeStore {
         let path_buf = std::path::PathBuf::from(path_str);
         let canonical_path = path_buf
             .canonicalize()
-            .map_err(|_io_error| format!("❌ Path does not exist: {}", path_str))?;
+            .map_err(|_io_error| format!("❌ Path does not exist: {path_str}"))?;
 
         // Use provided description or generate default
         let description = options
             .description
-            .unwrap_or_else(|| format!("Knowledge context for {}", name));
+            .unwrap_or_else(|| format!("Knowledge context for {name}"));
 
         // Create AddContextRequest with all options
         let request = AddContextRequest {
@@ -313,7 +299,7 @@ impl KnowledgeStore {
                 Some(s) => match EmbeddingType::from_str(s) {
                     Some(et) => Some(et),
                     None => {
-                        return Err(format!("Invalid embedding type '{}'. Valid options are: fast, best", s));
+                        return Err(format!("Invalid embedding type '{s}'. Valid options are: fast, best"));
                     },
                 },
                 None => None,
@@ -345,7 +331,7 @@ impl KnowledgeStore {
                 if error_msg.contains("Invalid include pattern") || error_msg.contains("Invalid exclude pattern") {
                     Err(error_msg)
                 } else {
-                    Err(format!("Failed to start indexing: {}", e))
+                    Err(format!("Failed to start indexing: {e}"))
                 }
             },
         }
@@ -439,15 +425,15 @@ impl KnowledgeStore {
                 "🚀 Started clearing all contexts in background.\n📊 Use 'knowledge status' to check progress.\n🆔 Operation ID: {}",
                 &operation_id.to_string()[..8]
             )),
-            Err(e) => Err(format!("Failed to start clear operation: {}", e)),
+            Err(e) => Err(format!("Failed to start clear operation: {e}")),
         }
     }
 
     /// Clear all contexts immediately (synchronous operation)
     pub async fn clear_immediate(&mut self) -> Result<String, String> {
         match self.agent_client.clear_all_immediate().await {
-            Ok(count) => Ok(format!("✅ Successfully cleared {} knowledge base entries", count)),
-            Err(e) => Err(format!("Failed to clear knowledge base: {}", e)),
+            Ok(count) => Ok(format!("✅ Successfully cleared {count} knowledge base entries")),
+            Err(e) => Err(format!("Failed to clear knowledge base: {e}")),
         }
     }
 
@@ -459,7 +445,7 @@ impl KnowledgeStore {
                 .await
                 .map_err(|e| e.to_string())
         } else {
-            Err(format!("No context found with path '{}'", path))
+            Err(format!("No context found with path '{path}'"))
         }
     }
 
@@ -471,7 +457,7 @@ impl KnowledgeStore {
                 .await
                 .map_err(|e| e.to_string())
         } else {
-            Err(format!("No context found with name '{}'", name))
+            Err(format!("No context found with name '{name}'"))
         }
     }
 
@@ -521,7 +507,7 @@ impl KnowledgeStore {
         let context = contexts
             .iter()
             .find(|c| c.id == context_id)
-            .ok_or_else(|| format!("Context '{}' not found", context_id))?;
+            .ok_or_else(|| format!("Context '{context_id}' not found"))?;
 
         let context_name = context.name.clone();
 
@@ -559,7 +545,7 @@ impl KnowledgeStore {
             };
             self.add(name, path_str, options).await
         } else {
-            Err(format!("Context with name '{}' not found", name))
+            Err(format!("Context with name '{name}' not found"))
         }
     }
 }

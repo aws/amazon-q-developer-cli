@@ -119,7 +119,7 @@ impl ::std::fmt::Display for AlertType {
             AlertType::Error => write!(f, "ERROR"),
             AlertType::Info => write!(f, "INFO"),
             AlertType::Warning => write!(f, "WARNING"),
-            AlertType::Unknown(value) => write!(f, "{}", value),
+            AlertType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

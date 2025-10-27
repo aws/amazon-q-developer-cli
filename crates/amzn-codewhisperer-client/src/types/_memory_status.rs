@@ -113,7 +113,7 @@ impl ::std::fmt::Display for MemoryStatus {
         match self {
             MemoryStatus::DecryptionFailure => write!(f, "DECRYPTION_FAILURE"),
             MemoryStatus::Valid => write!(f, "VALID"),
-            MemoryStatus::Unknown(value) => write!(f, "{}", value),
+            MemoryStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

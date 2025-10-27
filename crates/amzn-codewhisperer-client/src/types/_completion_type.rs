@@ -112,7 +112,7 @@ impl ::std::fmt::Display for CompletionType {
         match self {
             CompletionType::Block => write!(f, "BLOCK"),
             CompletionType::Line => write!(f, "LINE"),
-            CompletionType::Unknown(value) => write!(f, "{}", value),
+            CompletionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

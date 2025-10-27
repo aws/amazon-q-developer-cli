@@ -4,7 +4,6 @@ use clap::Subcommand;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::Result;
 use semantic_search_client::SystemStatus;
@@ -20,6 +19,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::knowledge_store::KnowledgeStore;
 
 /// Knowledge base management commands
@@ -88,11 +88,11 @@ impl KnowledgeSubcommand {
     fn write_feature_disabled_message(session: &mut ChatSession) -> Result<(), std::io::Error> {
         queue!(
             session.stderr,
-            style::SetForegroundColor(Color::Red),
+            StyledText::error_fg(),
             style::Print("\nKnowledge tool is disabled. Enable it with: q settings chat.enableKnowledge true\n"),
-            style::SetForegroundColor(Color::Yellow),
+            StyledText::warning_fg(),
             style::Print("💡 Your knowledge base data is preserved and will be available when re-enabled.\n\n"),
-            style::SetForegroundColor(Color::Reset)
+            StyledText::reset(),
         )
     }
 
@@ -112,7 +112,7 @@ impl KnowledgeSubcommand {
             KnowledgeSubcommand::Show => {
                 match Self::handle_show(os, session).await {
                     Ok(_) => OperationResult::Info("".to_string()), // Empty Info, formatting already done
-                    Err(e) => OperationResult::Error(format!("Failed to show knowledge base entries: {}", e)),
+                    Err(e) => OperationResult::Error(format!("Failed to show knowledge base entries: {e}")),
                 }
             },
             KnowledgeSubcommand::Add {
@@ -139,9 +139,9 @@ impl KnowledgeSubcommand {
             queue!(
                 session.stderr,
                 style::SetAttribute(crossterm::style::Attribute::Bold),
-                style::SetForegroundColor(Color::Magenta),
-                style::Print(format!("👤 Agent ({}):\n", agent)),
-                style::SetAttribute(crossterm::style::Attribute::Reset),
+                StyledText::emphasis_fg(),
+                style::Print(format!("👤 Agent ({agent}):\n")),
+                StyledText::reset_attributes(),
             )?;
 
             match KnowledgeStore::get_async_instance(os, Self::get_agent(session)).await {
@@ -160,7 +160,7 @@ impl KnowledgeSubcommand {
                         if !status.operations.is_empty() {
                             let formatted_status = Self::format_status_display(status);
                             if !formatted_status.is_empty() {
-                                queue!(session.stderr, style::Print(format!("{}\n", formatted_status)))?;
+                                queue!(session.stderr, style::Print(format!("{formatted_status}\n")))?;
                             }
                         }
                     }
@@ -171,18 +171,18 @@ impl KnowledgeSubcommand {
                     {
                         queue!(
                             session.stderr,
-                            style::SetForegroundColor(Color::DarkGrey),
+                            StyledText::secondary_fg(),
                             style::Print("    <none>\n\n"),
-                            style::SetForegroundColor(Color::Reset)
+                            StyledText::reset(),
                         )?;
                     }
                 },
                 Err(_) => {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("    <none>\n\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 },
             }
@@ -200,14 +200,14 @@ impl KnowledgeSubcommand {
             // Main entry line with name and ID
             queue!(
                 session.stderr,
-                style::Print(format!("{}📂 ", indent)),
+                style::Print(format!("{indent}📂 ")),
                 style::SetAttribute(style::Attribute::Bold),
-                style::SetForegroundColor(Color::Grey),
+                StyledText::secondary_fg(),
                 style::Print(&ctx.name),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(format!(" ({})", &ctx.id[..8])),
-                style::SetAttribute(style::Attribute::Reset),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset_attributes(),
+                StyledText::reset(),
                 style::Print("\n")
             )?;
 
@@ -215,28 +215,28 @@ impl KnowledgeSubcommand {
             if let Some(source_path) = &ctx.source_path {
                 queue!(
                     session.stderr,
-                    style::Print(format!("{}   ", indent)),
-                    style::SetForegroundColor(Color::Grey),
-                    style::Print(format!("{}\n", source_path)),
-                    style::SetForegroundColor(Color::Reset)
+                    style::Print(format!("{indent}   ")),
+                    StyledText::secondary_fg(),
+                    style::Print(format!("{source_path}\n")),
+                    StyledText::reset(),
                 )?;
             }
 
             // Stats line with improved colors
             queue!(
                 session.stderr,
-                style::Print(format!("{}   ", indent)),
-                style::SetForegroundColor(Color::Green),
+                style::Print(format!("{indent}   ")),
+                StyledText::success_fg(),
                 style::Print(format!("{} items", ctx.item_count)),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::Blue),
+                StyledText::info_fg(),
                 style::Print(ctx.embedding_type.description()),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(" • "),
-                style::SetForegroundColor(Color::DarkGrey),
+                StyledText::secondary_fg(),
                 style::Print(format!("{}", ctx.updated_at.format("%m/%d %H:%M"))),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n\n")
             )?;
         }
@@ -268,7 +268,7 @@ impl KnowledgeSubcommand {
 
                 let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
                     Ok(store) => store,
-                    Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {}", e)),
+                    Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {e}")),
                 };
                 let mut store = async_knowledge_store.lock().await;
 
@@ -302,12 +302,12 @@ impl KnowledgeSubcommand {
                         if e.contains("Invalid include pattern") || e.contains("Invalid exclude pattern") {
                             OperationResult::Error(e)
                         } else {
-                            OperationResult::Error(format!("Failed to add: {}", e))
+                            OperationResult::Error(format!("Failed to add: {e}"))
                         }
                     },
                 }
             },
-            Err(e) => OperationResult::Error(format!("Invalid path: {}", e)),
+            Err(e) => OperationResult::Error(format!("Invalid path: {e}")),
         }
     }
 
@@ -318,7 +318,7 @@ impl KnowledgeSubcommand {
 
         let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
-            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {}", e)),
+            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base: {e}")),
         };
         let mut store = async_knowledge_store.lock().await;
 
@@ -327,16 +327,14 @@ impl KnowledgeSubcommand {
         // Try path first, then name
         if store.remove_by_path(&sanitized_path.to_string_lossy()).await.is_ok() {
             OperationResult::Success(format!(
-                "Removed {} knowledge base entry with path '{}'",
-                scope_desc, path
+                "Removed {scope_desc} knowledge base entry with path '{path}'"
             ))
         } else if store.remove_by_name(path).await.is_ok() {
             OperationResult::Success(format!(
-                "Removed {} knowledge base entry with name '{}'",
-                scope_desc, path
+                "Removed {scope_desc} knowledge base entry with name '{path}'"
             ))
         } else {
-            OperationResult::Warning(format!("Entry not found in {} knowledge base: {}", scope_desc, path))
+            OperationResult::Warning(format!("Entry not found in {scope_desc} knowledge base: {path}"))
         }
     }
 
@@ -348,14 +346,14 @@ impl KnowledgeSubcommand {
                 let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
                     Ok(store) => store,
                     Err(e) => {
-                        return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e));
+                        return OperationResult::Error(format!("Error accessing knowledge base directory: {e}"));
                     },
                 };
                 let mut store = async_knowledge_store.lock().await;
 
                 match store.update_by_path(&sanitized_path).await {
                     Ok(message) => OperationResult::Info(message),
-                    Err(e) => OperationResult::Error(format!("Failed to update: {}", e)),
+                    Err(e) => OperationResult::Error(format!("Failed to update: {e}")),
                 }
             },
             Err(e) => OperationResult::Error(e),
@@ -386,7 +384,7 @@ impl KnowledgeSubcommand {
         let agent = Self::get_agent(session);
         let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
-            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
+            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {e}")),
         };
         let mut store = async_knowledge_store.lock().await;
 
@@ -399,7 +397,7 @@ impl KnowledgeSubcommand {
         if let Err(e) = store.cancel_operation(None).await {
             queue!(
                 session.stderr,
-                style::Print(&format!("⚠️  Warning: Failed to cancel operations: {}\n", e))
+                style::Print(&format!("⚠️  Warning: Failed to cancel operations: {e}\n"))
             )
             .unwrap();
         }
@@ -412,7 +410,7 @@ impl KnowledgeSubcommand {
         .unwrap();
         match store.clear_immediate().await {
             Ok(message) => OperationResult::Success(message),
-            Err(e) => OperationResult::Error(format!("Failed to clear: {}", e)),
+            Err(e) => OperationResult::Error(format!("Failed to clear: {e}")),
         }
     }
 
@@ -435,7 +433,7 @@ impl KnowledgeSubcommand {
                 semantic_search_client::OperationType::Indexing { path, .. } => path.clone(),
                 semantic_search_client::OperationType::Clearing => op.message.clone(),
             };
-            output.push_str(&format!("       {}\n", description));
+            output.push_str(&format!("       {description}\n"));
 
             // Status/progress line with ETA if available
             if op.is_cancelled {
@@ -449,7 +447,7 @@ impl KnowledgeSubcommand {
                 if let Some(eta) = op.eta {
                     output.push_str(&format!("       {}% • ETA: {}s\n", percentage, eta.as_secs()));
                 } else {
-                    output.push_str(&format!("       {}%\n", percentage));
+                    output.push_str(&format!("       {percentage}%\n"));
                 }
             } else {
                 output.push_str("       In progress\n");
@@ -469,13 +467,13 @@ impl KnowledgeSubcommand {
         let agent = Self::get_agent(session);
         let async_knowledge_store = match KnowledgeStore::get_async_instance(os, agent).await {
             Ok(store) => store,
-            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {}", e)),
+            Err(e) => return OperationResult::Error(format!("Error accessing knowledge base directory: {e}")),
         };
         let mut store = async_knowledge_store.lock().await;
 
         match store.cancel_operation(operation_id).await {
             Ok(result) => OperationResult::Success(result),
-            Err(e) => OperationResult::Error(format!("Failed to cancel operation: {}", e)),
+            Err(e) => OperationResult::Error(format!("Failed to cancel operation: {e}")),
         }
     }
 
@@ -487,7 +485,7 @@ impl KnowledgeSubcommand {
 
         let os_path = sanitize_path_tool_arg(os, path);
         if !os_path.exists() {
-            return Err(format!("Path '{}' does not exist", path));
+            return Err(format!("Path '{path}' does not exist"));
         }
 
         Ok(os_path.to_string_lossy().to_string())
@@ -498,17 +496,17 @@ impl KnowledgeSubcommand {
             OperationResult::Success(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
-                    style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::success_fg(),
+                    style::Print(format!("\n{msg}\n\n")),
+                    StyledText::reset(),
                 )
             },
             OperationResult::Info(msg) => {
                 if !msg.trim().is_empty() {
                     queue!(
                         session.stderr,
-                        style::Print(format!("\n{}\n\n", msg)),
-                        style::SetForegroundColor(Color::Reset)
+                        style::Print(format!("\n{msg}\n\n")),
+                        StyledText::reset(),
                     )?;
                 }
                 Ok(())
@@ -516,17 +514,17 @@ impl KnowledgeSubcommand {
             OperationResult::Warning(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
-                    style::Print(format!("\n{}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::warning_fg(),
+                    style::Print(format!("\n{msg}\n\n")),
+                    StyledText::reset(),
                 )
             },
             OperationResult::Error(msg) => {
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(format!("\nError: {}\n\n", msg)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::error_fg(),
+                    style::Print(format!("\nError: {msg}\n\n")),
+                    StyledText::reset(),
                 )
             },
         }

@@ -475,7 +475,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     fn macos_tempdir_test() {
         let tmpdir = macos_tempdir().unwrap();
-        println!("{:?}", tmpdir);
+        println!("{tmpdir:?}");
     }
 
     #[tokio::test]

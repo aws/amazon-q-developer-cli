@@ -112,7 +112,7 @@ impl ::std::fmt::Display for SymbolType {
         match self {
             SymbolType::Declaration => write!(f, "DECLARATION"),
             SymbolType::Usage => write!(f, "USAGE"),
-            SymbolType::Unknown(value) => write!(f, "{}", value),
+            SymbolType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

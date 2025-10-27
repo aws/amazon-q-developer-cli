@@ -24,6 +24,7 @@ pub use crate::types::_mcp_configuration::McpConfiguration;
 pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
+pub use crate::types::_opt_in_features_type::OptInFeaturesType;
 pub use crate::types::_overage_configuration::OverageConfiguration;
 pub use crate::types::_overage_status::OverageStatus;
 pub use crate::types::_previous_editor_state_metadata::PreviousEditorStateMetadata;
@@ -101,6 +102,8 @@ mod _notifications_feature;
 mod _opt_in_feature_toggle;
 
 mod _opt_in_features;
+
+mod _opt_in_features_type;
 
 mod _overage_configuration;
 

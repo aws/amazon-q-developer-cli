@@ -8,10 +8,7 @@ use clap::{
     Args,
     Subcommand,
 };
-use crossterm::style::{
-    Attribute,
-    Color,
-};
+use crossterm::style::Attribute;
 use crossterm::{
     queue,
     style,
@@ -34,6 +31,7 @@ use crate::cli::chat::{
     trust_all_text,
 };
 use crate::constants::help_text::tools_long_help;
+use crate::theme::StyledText;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
 /// Command-line arguments for managing tools in the chat session
@@ -87,7 +85,7 @@ impl ToolsArgs {
                 let width = (longest + 2).saturating_sub("Tool".len()) + 4;
                 format!("Tool{:>width$}Permission", "", width = width)
             }),
-            style::SetAttribute(Attribute::Reset),
+            StyledText::reset_attributes(),
             style::Print("\n"),
             style::Print("▔".repeat(terminal_width)),
         )?;
@@ -136,8 +134,8 @@ impl ToolsArgs {
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{}:\n", origin)),
-                style::SetAttribute(Attribute::Reset),
+                style::Print(format!("{origin}:\n")),
+                StyledText::reset_attributes(),
                 style::Print(to_display),
                 style::Print("\n")
             );
@@ -149,11 +147,11 @@ impl ToolsArgs {
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
                 style::Print("Servers loading (Some of these might need auth. See "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print("/mcp"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print(" for details)"),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
                 style::Print("\n"),
                 style::Print("▔".repeat(terminal_width)),
             )?;
@@ -168,21 +166,21 @@ impl ToolsArgs {
                 style::Print(
                     "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
                 ),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("\n"),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
         }
 
         if !session.conversation.mcp_enabled {
             queue!(
                 session.stderr,
-                style::SetForegroundColor(Color::Yellow),
+                StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
                 style::Print("MCP functionality has been disabled by your administrator.\n\n"),
             )?;
         }
@@ -265,14 +263,14 @@ impl ToolsSubcommand {
                 if !invalid_tools.is_empty() {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!("\nCannot trust '{}', ", invalid_tools.join("', '"))),
                         if invalid_tools.len() > 1 {
                             style::Print("they do not exist.")
                         } else {
                             style::Print("it does not exist.")
                         },
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 }
                 if !valid_tools.is_empty() {
@@ -291,7 +289,7 @@ impl ToolsSubcommand {
 
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         if tools_to_trust.len() > 1 {
                             style::Print(format!("\nTools '{}' are ", tools_to_trust.join("', '")))
                         } else {
@@ -300,8 +298,8 @@ impl ToolsSubcommand {
                         style::Print("now trusted. I will "),
                         style::SetAttribute(Attribute::Bold),
                         style::Print("not"),
-                        style::SetAttribute(Attribute::Reset),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::reset_attributes(),
+                        StyledText::success_fg(),
                         style::Print(format!(
                             " ask for confirmation before running {}.",
                             if tools_to_trust.len() > 1 {
@@ -311,7 +309,7 @@ impl ToolsSubcommand {
                             }
                         )),
                         style::Print("\n"),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
 
                     session.conversation.agents.trust_tools(tools_to_trust);
@@ -326,14 +324,14 @@ impl ToolsSubcommand {
                 if !invalid_tools.is_empty() {
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print(format!("\nCannot untrust '{}', ", invalid_tools.join("', '"))),
                         if invalid_tools.len() > 1 {
                             style::Print("they do not exist.")
                         } else {
                             style::Print("it does not exist.")
                         },
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 }
                 if !valid_tools.is_empty() {
@@ -354,14 +352,14 @@ impl ToolsSubcommand {
 
                     queue!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         if tools_to_untrust.len() > 1 {
                             style::Print(format!("\nTools '{}' are ", tools_to_untrust.join("', '")))
                         } else {
                             style::Print(format!("\nTool '{}' is ", tools_to_untrust[0]))
                         },
                         style::Print("set to per-request confirmation.\n"),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 }
             },
@@ -401,9 +399,9 @@ impl ToolsSubcommand {
                 }
                 queue!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("\nReset all tools to the permission levels as defined in agent."),
-                    style::SetForegroundColor(Color::Reset),
+                    StyledText::reset(),
                 )?;
             },
         };

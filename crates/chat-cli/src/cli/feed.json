@@ -12,6 +12,50 @@
     },
     {
       "type": "release",
+      "date": "2025-10-23",
+      "version": "1.19.0",
+      "title": "Version 1.19.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Image paste support and `/paste` command - [#3088](https://github.com/aws/amazon-q-developer-cli/pull/3088)"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved UX for `q settings list` command - [#3167](https://github.com/aws/amazon-q-developer-cli/pull/3167)"
+        },
+        {
+          "type": "added",
+          "description": "File:// URI support for agent prompts - [#3024](https://github.com/aws/amazon-q-developer-cli/pull/3024)"
+        },
+        {
+          "type": "added",
+          "description": "PDF file support for knowledge - [#3151](https://github.com/aws/amazon-q-developer-cli/pull/3151)"
+        },
+        {
+          "type": "added",
+          "description": "Support configurable OAuth redirect URI per MCP server - [#3124](https://github.com/aws/amazon-q-developer-cli/pull/3124)"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixes an issue with checkpoint feature, when starting multiple conversations from the same directory - [#3133](https://github.com/aws/amazon-q-developer-cli/pull/3133)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-13",
+      "version": "1.18.1",
+      "title": "Version 1.18.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor version reporting an old version"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-10-03",
       "version": "1.18.0",
       "title": "Version 1.18.0",

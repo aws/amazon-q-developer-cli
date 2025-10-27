@@ -196,10 +196,12 @@ pub struct HttpServiceBuilder<'a> {
     pub timeout: u64,
     pub scopes: &'a [String],
     pub headers: &'a HashMap<String, String>,
+    pub oauth_config: &'a Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     pub messenger: &'a dyn Messenger,
 }
 
 impl<'a> HttpServiceBuilder<'a> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         server_name: &'a str,
         os: &'a Os,
@@ -207,6 +209,7 @@ impl<'a> HttpServiceBuilder<'a> {
         timeout: u64,
         scopes: &'a [String],
         headers: &'a HashMap<String, String>,
+        oauth_config: &'a Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
         messenger: &'a dyn Messenger,
     ) -> Self {
         Self {
@@ -216,6 +219,7 @@ impl<'a> HttpServiceBuilder<'a> {
             timeout,
             scopes,
             headers,
+            oauth_config,
             messenger,
         }
     }
@@ -231,6 +235,7 @@ impl<'a> HttpServiceBuilder<'a> {
             timeout,
             scopes,
             headers,
+            oauth_config,
             messenger,
         } = self;
 
@@ -292,7 +297,9 @@ impl<'a> HttpServiceBuilder<'a> {
                                     cred_full_path.clone(),
                                     reg_full_path.clone(),
                                     scopes,
+                                    oauth_config,
                                     messenger,
+                                    os,
                                 )
                                 .await?;
 
@@ -452,7 +459,9 @@ async fn get_auth_manager(
     cred_full_path: PathBuf,
     reg_full_path: PathBuf,
     scopes: &[String],
+    oauth_config: &Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     messenger: &dyn Messenger,
+    os: &Os,
 ) -> Result<AuthorizationManager, OauthUtilError> {
     let cred_as_bytes = tokio::fs::read(&cred_full_path).await;
     let reg_as_bytes = tokio::fs::read(&reg_full_path).await;
@@ -474,7 +483,7 @@ async fn get_auth_manager(
         _ => {
             info!("Error reading cached credentials");
             debug!("## mcp: cache read failed. constructing auth manager from scratch");
-            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, messenger).await?;
+            let (am, redirect_uri) = get_auth_manager_impl(oauth_state, scopes, oauth_config, messenger, os).await?;
 
             // Client registration is done in [start_authorization]
             // If we have gotten past that point that means we have the info to persist the
@@ -509,16 +518,28 @@ async fn get_auth_manager(
 async fn get_auth_manager_impl(
     mut oauth_state: OAuthState,
     scopes: &[String],
+    oauth_config: &Option<crate::cli::chat::tools::custom_tool::OAuthConfig>,
     messenger: &dyn Messenger,
+    _os: &Os,
 ) -> Result<(AuthorizationManager, String), OauthUtilError> {
-    let socket_addr = SocketAddr::from(([127, 0, 0, 1], 0));
+    // Get port from per-server oauth config, or use 0 for random port assignment
+    let port = oauth_config
+        .as_ref()
+        .and_then(|cfg| cfg.redirect_uri.as_ref())
+        .and_then(|uri| {
+            // Parse port from redirect_uri like "127.0.0.1:7778" or ":7778"
+            uri.split(':').next_back().and_then(|p| p.parse::<u16>().ok())
+        })
+        .unwrap_or(0); // Port 0 = OS assigns random available port
+
+    let socket_addr = SocketAddr::from(([127, 0, 0, 1], port));
     let cancellation_token = tokio_util::sync::CancellationToken::new();
     let (tx, rx) = tokio::sync::oneshot::channel::<(String, String)>();
 
     let (actual_addr, _dg) = make_svc(tx, socket_addr, cancellation_token).await?;
     info!("Listening on local host port {:?} for oauth", actual_addr);
 
-    let redirect_uri = format!("http://{}", actual_addr);
+    let redirect_uri = format!("http://{actual_addr}");
     let scopes_as_str = scopes.iter().map(String::as_str).collect::<Vec<_>>();
     let scopes_as_slice = scopes_as_str.as_slice();
     start_authorization(&mut oauth_state, scopes_as_slice, &redirect_uri).await?;
@@ -572,7 +593,7 @@ async fn start_authorization(
         let config = match auth_manager.register_client(CLIENT_ID, redirect_uri).await {
             Ok(config) => config,
             Err(e) => {
-                eprintln!("Dynamic registration failed: {}", e);
+                eprintln!("Dynamic registration failed: {e}");
                 // fallback to default config
                 config
             },
@@ -657,11 +678,10 @@ async fn make_svc(
                 let error = params.get("error");
                 let resp = if let Some(err) = error {
                     mk_response(format!(
-                        "OAuth failed. Check URL for precise reasons. Possible reasons: {}.\n\
+                        "OAuth failed. Check URL for precise reasons. Possible reasons: {err}.\n\
                          If this is scope related, you can try configuring the server scopes \n\
                          to be an empty array by adding \"oauthScopes\": [] to your server config.\n\
-                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n",
-                        err
+                         Example: {{\"type\": \"http\", \"uri\": \"https://example.com/mcp\", \"oauthScopes\": []}}\n"
                     ))
                 } else {
                     mk_response("You can close this page now".to_string())

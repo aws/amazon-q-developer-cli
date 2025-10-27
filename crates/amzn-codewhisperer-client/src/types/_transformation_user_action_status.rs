@@ -112,7 +112,7 @@ impl ::std::fmt::Display for TransformationUserActionStatus {
         match self {
             TransformationUserActionStatus::Completed => write!(f, "COMPLETED"),
             TransformationUserActionStatus::Rejected => write!(f, "REJECTED"),
-            TransformationUserActionStatus::Unknown(value) => write!(f, "{}", value),
+            TransformationUserActionStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

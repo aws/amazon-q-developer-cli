@@ -5,7 +5,6 @@ use clap::{
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Color,
 };
 
 use crate::cli::chat::{
@@ -18,6 +17,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, PartialEq, Args)]
 pub struct TangentArgs {
@@ -52,9 +52,9 @@ impl TangentArgs {
         if !ExperimentManager::is_enabled(os, ExperimentName::TangentMode) {
             execute!(
                 session.stderr,
-                style::SetForegroundColor(Color::Red),
+                StyledText::error_fg(),
                 style::Print("\nTangent mode is disabled. Enable it with: q settings chat.enableTangentMode true\n"),
-                style::SetForegroundColor(Color::Reset)
+                StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
                 skip_printing_tools: true,
@@ -67,11 +67,11 @@ impl TangentArgs {
                 if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print(
                             "⚠️ Checkpoint is disabled while in tangent mode. Please exit tangent mode if you want to use checkpoint.\n"
                         ),
-                        style::SetForegroundColor(Color::Reset),
+                        StyledText::reset(),
                     )?;
                 }
                 if session.conversation.is_in_tangent_mode() {
@@ -81,20 +81,20 @@ impl TangentArgs {
 
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("Restored conversation from checkpoint ("),
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("↯"),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print(") with last conversation entry preserved.\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 } else {
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::Red),
+                        StyledText::error_fg(),
                         style::Print("You need to be in tangent mode to use tail.\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 }
             },
@@ -106,24 +106,24 @@ impl TangentArgs {
 
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("Restored conversation from checkpoint ("),
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("↯"),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("). - Returned to main conversation.\n"),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 } else {
                     // Check if checkpoint is enabled
                     if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
                         execute!(
                             session.stderr,
-                            style::SetForegroundColor(Color::Yellow),
+                            StyledText::warning_fg(),
                             style::Print(
                                 "⚠️ Checkpoint is disabled while in tangent mode. Please exit tangent mode if you want to use checkpoint.\n"
                             ),
-                            style::SetForegroundColor(Color::Reset),
+                            StyledText::reset(),
                         )?;
                     }
 
@@ -142,24 +142,24 @@ impl TangentArgs {
 
                     execute!(
                         session.stderr,
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("Created a conversation checkpoint ("),
-                        style::SetForegroundColor(Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("↯"),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print("). Use "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print(&tangent_key_display),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print(" or "),
-                        style::SetForegroundColor(Color::Green),
+                        StyledText::success_fg(),
                         style::Print("/tangent"),
-                        style::SetForegroundColor(Color::DarkGrey),
+                        StyledText::secondary_fg(),
                         style::Print(" to restore the conversation later.\n"),
                         style::Print(
                             "Note: this functionality is experimental and may change or be removed in the future.\n"
                         ),
-                        style::SetForegroundColor(Color::Reset)
+                        StyledText::reset(),
                     )?;
                 }
             },

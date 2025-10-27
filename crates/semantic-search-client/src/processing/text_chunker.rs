@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn test_chunk_text_large() {
         setup();
-        let words: Vec<String> = (0..200).map(|i| format!("word{}", i)).collect();
+        let words: Vec<String> = (0..200).map(|i| format!("word{i}")).collect();
         let text = words.join(" ");
 
         let chunks = chunk_text(&text, Some(50), Some(10));
@@ -109,7 +109,7 @@ mod tests {
     #[test]
     fn test_chunk_text_with_config_defaults() {
         setup();
-        let words: Vec<String> = (0..200).map(|i| format!("word{}", i)).collect();
+        let words: Vec<String> = (0..200).map(|i| format!("word{i}")).collect();
         let text = words.join(" ");
 
         // Use default config values

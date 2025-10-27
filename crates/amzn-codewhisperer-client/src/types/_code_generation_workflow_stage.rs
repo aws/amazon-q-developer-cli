@@ -112,7 +112,7 @@ impl ::std::fmt::Display for CodeGenerationWorkflowStage {
         match self {
             CodeGenerationWorkflowStage::Refinement => write!(f, "CodeRefinement"),
             CodeGenerationWorkflowStage::Initial => write!(f, "InitialCodeGeneration"),
-            CodeGenerationWorkflowStage::Unknown(value) => write!(f, "{}", value),
+            CodeGenerationWorkflowStage::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

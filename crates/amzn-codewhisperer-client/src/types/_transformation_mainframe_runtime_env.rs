@@ -107,7 +107,7 @@ impl ::std::fmt::Display for TransformationMainframeRuntimeEnv {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             TransformationMainframeRuntimeEnv::Mainframe => write!(f, "MAINFRAME"),
-            TransformationMainframeRuntimeEnv::Unknown(value) => write!(f, "{}", value),
+            TransformationMainframeRuntimeEnv::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

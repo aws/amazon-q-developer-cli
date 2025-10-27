@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
@@ -10,6 +11,7 @@ pub mod knowledge;
 pub mod logdump;
 pub mod mcp;
 pub mod model;
+pub mod paste;
 pub mod persist;
 pub mod profile;
 pub mod prompts;
@@ -32,6 +34,7 @@ use knowledge::KnowledgeSubcommand;
 use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
+use paste::PasteArgs;
 use persist::PersistSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
@@ -50,12 +53,12 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::cli::issue;
-use crate::constants::ui_text::EXTRA_HELP;
+use crate::constants::ui_text;
 use crate::os::Os;
 
 /// q (Amazon Q Chat)
 #[derive(Debug, PartialEq, Parser)]
-#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = EXTRA_HELP)]
+#[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help())]
 pub enum SlashCommand {
     /// Quit the application
     #[command(aliases = ["q", "exit"])]
@@ -122,6 +125,8 @@ pub enum SlashCommand {
     /// View, manage, and resume to-do lists
     #[command(subcommand)]
     Todos(TodoSubcommand),
+    /// Paste an image from clipboard
+    Paste(PasteArgs),
 }
 
 impl SlashCommand {
@@ -137,16 +142,16 @@ impl SlashCommand {
                 };
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("This command has been deprecated. Use"),
-                    style::SetForegroundColor(style::Color::Cyan),
+                    StyledText::brand_fg(),
                     style::Print(" /agent "),
-                    style::SetForegroundColor(style::Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("instead.\nSee "),
                     style::Print(AGENT_MIGRATION_DOC_URL),
                     style::Print(" for more detail"),
                     style::Print("\n"),
-                    style::ResetColor,
+                    StyledText::reset(),
                 )?;
 
                 Ok(ChatState::PromptUser {
@@ -190,6 +195,7 @@ impl SlashCommand {
             // },
             Self::Checkpoint(subcommand) => subcommand.execute(os, session).await,
             Self::Todos(subcommand) => subcommand.execute(os, session).await,
+            Self::Paste(args) => args.execute(os, session).await,
         }
     }
 
@@ -222,6 +228,7 @@ impl SlashCommand {
             },
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
+            Self::Paste(_) => "paste",
         }
     }
 

@@ -112,7 +112,7 @@ impl ::std::fmt::Display for OptInFeatureToggle {
         match self {
             OptInFeatureToggle::Off => write!(f, "OFF"),
             OptInFeatureToggle::On => write!(f, "ON"),
-            OptInFeatureToggle::Unknown(value) => write!(f, "{}", value),
+            OptInFeatureToggle::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

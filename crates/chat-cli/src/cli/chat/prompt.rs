@@ -1,6 +1,10 @@
 use std::borrow::Cow;
 use std::cell::RefCell;
 use std::path::PathBuf;
+use std::sync::{
+    Arc,
+    Mutex,
+};
 
 use eyre::Result;
 use rustyline::completion::{
@@ -46,6 +50,10 @@ use super::tool_manager::{
     PromptQuery,
     PromptQueryResult,
 };
+use super::util::clipboard::{
+    ClipboardError,
+    paste_image_from_clipboard,
+};
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
@@ -53,6 +61,41 @@ use crate::cli::experiment::experiment_manager::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::util::directories::chat_cli_bash_history_path;
+
+/// Shared state for clipboard paste operations triggered by Ctrl+V
+#[derive(Clone, Debug)]
+pub struct PasteState {
+    inner: Arc<Mutex<PasteStateInner>>,
+}
+
+#[derive(Debug)]
+struct PasteStateInner {
+    paths: Vec<PathBuf>,
+}
+
+impl PasteState {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(PasteStateInner { paths: Vec::new() })),
+        }
+    }
+
+    pub fn add(&self, path: PathBuf) -> usize {
+        let mut inner = self.inner.lock().unwrap();
+        inner.paths.push(path);
+        inner.paths.len()
+    }
+
+    pub fn take_all(&self) -> Vec<PathBuf> {
+        let mut inner = self.inner.lock().unwrap();
+        std::mem::take(&mut inner.paths)
+    }
+
+    pub fn reset_count(&self) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.paths.clear();
+    }
+}
 
 pub const COMMANDS: &[&str] = &[
     "/clear",
@@ -100,6 +143,7 @@ pub const COMMANDS: &[&str] = &[
     "/changelog",
     "/save",
     "/load",
+    "/paste",
     "/subscribe",
 ];
 
@@ -413,47 +457,47 @@ impl Highlighter for ChatHelper {
     }
 
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
-        use crossterm::style::Stylize;
+        use crate::theme::StyledText;
 
         // Parse the plain text prompt to extract profile and warning information
         // and apply colors using crossterm's ANSI escape codes
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add notifier part if present (blue)
+            // Add notifier part if present (info blue)
             if let Some(notifier) = components.delegate_notifier {
-                result.push_str(&format!("[{}]\n", notifier).blue().to_string());
+                result.push_str(&StyledText::info(&format!("[{notifier}]\n")));
             }
 
-            // Add profile part if present (cyan)
+            // Add profile part if present (profile indicator cyan)
             if let Some(profile) = components.profile {
-                result.push_str(&format!("[{}] ", profile).cyan().to_string());
+                result.push_str(&StyledText::profile(&format!("[{profile}] ")));
             }
 
             // Add percentage part if present (colored by usage level)
             if let Some(percentage) = components.usage_percentage {
                 let colored_percentage = if percentage < 50.0 {
-                    format!("{}% ", percentage as u32).green()
+                    StyledText::usage_low(&format!("{}% ", percentage as u32))
                 } else if percentage < 90.0 {
-                    format!("{}% ", percentage as u32).yellow()
+                    StyledText::usage_medium(&format!("{}% ", percentage as u32))
                 } else {
-                    format!("{}% ", percentage as u32).red()
+                    StyledText::usage_high(&format!("{}% ", percentage as u32))
                 };
-                result.push_str(&colored_percentage.to_string());
+                result.push_str(&colored_percentage);
             }
 
-            // Add tangent indicator if present (yellow)
+            // Add tangent indicator if present (tangent yellow)
             if components.tangent_mode {
-                result.push_str(&"↯ ".yellow().to_string());
+                result.push_str(&StyledText::tangent("↯ "));
             }
 
-            // Add warning symbol if present (red)
+            // Add warning symbol if present (error red)
             if components.warning {
-                result.push_str(&"!".red().to_string());
+                result.push_str(&StyledText::error("!"));
             }
 
-            // Add the prompt symbol (magenta)
-            result.push_str(&"> ".magenta().to_string());
+            // Add the prompt symbol (prompt magenta)
+            result.push_str(&StyledText::prompt("> "));
 
             Cow::Owned(result)
         } else {
@@ -463,10 +507,54 @@ impl Highlighter for ChatHelper {
     }
 }
 
+/// Handler for pasting images from clipboard via Ctrl+V
+///
+/// This stores the pasted image path in shared state and inserts a marker.
+/// The marker causes readline to return, and the chat loop handles the paste automatically.
+struct PasteImageHandler {
+    paste_state: PasteState,
+}
+
+impl PasteImageHandler {
+    fn new(paste_state: PasteState) -> Self {
+        Self { paste_state }
+    }
+}
+
+impl rustyline::ConditionalEventHandler for PasteImageHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        _ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        match paste_image_from_clipboard() {
+            Ok(path) => {
+                // Store the full path in shared state and get the count
+                let count = self.paste_state.add(path);
+
+                // Insert [Image #N] marker so user sees what they're pasting
+                // User presses Enter to submit
+                Some(Cmd::Insert(1, format!("[Image #{count}]")))
+            },
+            Err(ClipboardError::NoImage) => {
+                // Silent fail - no image to paste
+                Some(Cmd::Noop)
+            },
+            Err(_) => {
+                // Could log error, but don't interrupt user
+                Some(Cmd::Noop)
+            },
+        }
+    }
+}
+
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
     receiver: PromptQueryResponseReceiver,
+    paste_state: PasteState,
 ) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -501,7 +589,7 @@ pub fn rl(
     // Load history from ~/.aws/amazonq/cli_history
     if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
-            eprintln!("Warning: Failed to load history: {}", e);
+            eprintln!("Warning: Failed to load history: {e}");
         }
     }
 
@@ -549,17 +637,23 @@ pub fn rl(
         EventHandler::Simple(Cmd::Insert(1, "/tangent".to_string())),
     );
 
+    // Add custom keybinding for Ctrl+V to paste images from clipboard
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
+        EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
+    );
+
     Ok(rl)
 }
 
 #[cfg(test)]
 mod tests {
-    use crossterm::style::Stylize;
     use rustyline::highlight::Highlighter;
     use rustyline::history::DefaultHistory;
 
     use super::*;
     use crate::cli::experiment::experiment_manager::ExperimentName;
+    use crate::theme::StyledText;
 
     #[tokio::test]
     async fn test_chat_completer_command_completion() {
@@ -631,7 +725,7 @@ mod tests {
         // Test basic prompt highlighting
         let highlighted = helper.highlight_prompt("> ", true);
 
-        assert_eq!(highlighted, "> ".magenta().to_string());
+        assert_eq!(highlighted, StyledText::prompt("> "));
     }
 
     #[tokio::test]
@@ -655,7 +749,10 @@ mod tests {
         // Test warning prompt highlighting
         let highlighted = helper.highlight_prompt("!> ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::error("!"), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -679,7 +776,10 @@ mod tests {
         // Test profile prompt highlighting
         let highlighted = helper.highlight_prompt("[test-profile] > ", true);
 
-        assert_eq!(highlighted, format!("{}{}", "[test-profile] ".cyan(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::profile("[test-profile] "), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -705,7 +805,12 @@ mod tests {
         // Should have cyan profile + red warning + cyan bold prompt
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "!".red(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
         );
     }
 
@@ -753,7 +858,10 @@ mod tests {
 
         // Test tangent mode prompt highlighting - ↯ yellow, > magenta
         let highlighted = helper.highlight_prompt("↯ > ", true);
-        assert_eq!(highlighted, format!("{}{}", "↯ ".yellow(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!("{}{}", StyledText::tangent("↯ "), StyledText::prompt("> "))
+        );
     }
 
     #[tokio::test]
@@ -776,7 +884,15 @@ mod tests {
 
         // Test tangent mode with warning - ↯ yellow, ! red, > magenta
         let highlighted = helper.highlight_prompt("↯ !> ", true);
-        assert_eq!(highlighted, format!("{}{}{}", "↯ ".yellow(), "!".red(), "> ".magenta()));
+        assert_eq!(
+            highlighted,
+            format!(
+                "{}{}{}",
+                StyledText::tangent("↯ "),
+                StyledText::error("!"),
+                StyledText::prompt("> ")
+            )
+        );
     }
 
     #[tokio::test]
@@ -801,7 +917,12 @@ mod tests {
         let highlighted = helper.highlight_prompt("[dev] ↯ > ", true);
         assert_eq!(
             highlighted,
-            format!("{}{}{}", "[dev] ".cyan(), "↯ ".yellow(), "> ".magenta())
+            format!(
+                "{}{}{}",
+                StyledText::profile("[dev] "),
+                StyledText::tangent("↯ "),
+                StyledText::prompt("> ")
+            )
         );
     }
 
@@ -864,7 +985,8 @@ mod tests {
 
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
-        let mut test_editor = rl(&mock_os, sender, receiver).unwrap();
+        let paste_state = PasteState::new();
+        let mut test_editor = rl(&mock_os, sender, receiver, paste_state).unwrap();
 
         // Reserved Emacs keybindings that should not be overridden
         let reserved_keys = ['a', 'e', 'f', 'b', 'k'];
@@ -878,7 +1000,7 @@ mod tests {
             // If there was a previous handler, it means the key was already bound
             // (which could be our custom binding overriding Emacs)
             if previous_handler.is_some() {
-                panic!("Ctrl+{} appears to be overridden (found existing binding)", key);
+                panic!("Ctrl+{key} appears to be overridden (found existing binding)");
             }
         }
     }

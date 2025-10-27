@@ -204,7 +204,7 @@ pub(crate) fn de_start_code_analysis(
             },
             other => {
                 return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                    format!("expected object key or end object, found: {:?}", other),
+                    format!("expected object key or end object, found: {other:?}"),
                 ));
             },
         }

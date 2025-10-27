@@ -198,6 +198,8 @@ pub enum FileType {
     Json,
     /// Source code file (programming languages)
     Code,
+    /// PDF file
+    Pdf,
     /// Unknown file type
     Unknown,
 }
@@ -254,7 +256,7 @@ impl OperationType {
     /// Get display name for the operation
     pub fn display_name(&self) -> String {
         match self {
-            OperationType::Indexing { name, .. } => format!("Indexing '{}'", name),
+            OperationType::Indexing { name, .. } => format!("Indexing '{name}'"),
             OperationType::Clearing => "Clearing all".to_string(),
         }
     }

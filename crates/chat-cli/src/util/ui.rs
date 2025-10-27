@@ -4,12 +4,18 @@ use crossterm::execute;
 use crossterm::style::{
     self,
     Attribute,
-    Color,
 };
 use eyre::Result;
+use serde::{
+    Deserialize,
+    Serialize,
+};
 
 use crate::cli::feed::Feed;
 use crate::constants::ui_text;
+use crate::database::settings::Setting;
+use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Render changelog content from feed.json with manual formatting
 pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
@@ -29,11 +35,11 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
         // Show version header
         execute!(
             output,
-            style::SetForegroundColor(Color::Blue),
+            StyledText::info_fg(),
             style::SetAttribute(Attribute::Bold),
             style::Print(format!("## {} ({})\n", entry.version, entry.date)),
-            style::SetAttribute(Attribute::Reset),
-            style::SetForegroundColor(Color::Reset),
+            StyledText::reset_attributes(),
+            StyledText::reset(),
         )?;
 
         let mut sorted_changes = entry.changes.clone();
@@ -46,9 +52,9 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
             execute!(output, style::Print("• ["))?;
             execute!(
                 output,
-                style::SetForegroundColor(Color::Magenta),
+                StyledText::emphasis_fg(),
                 style::Print(&capitalized_type),
-                style::SetForegroundColor(Color::Reset),
+                StyledText::reset(),
             )?;
             execute!(output, style::Print("] "))?;
             print_with_bold(output, &processed_description)?;
@@ -143,11 +149,26 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
                 output,
                 style::SetAttribute(Attribute::Bold),
                 style::Print(text),
-                style::SetAttribute(Attribute::Reset),
+                StyledText::reset_attributes(),
             )?;
         } else {
             execute!(output, style::Print(text))?;
         }
     }
     Ok(())
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UiMode {
+    #[default]
+    Structured,
+    Passthrough,
+    New,
+}
+
+pub fn should_send_structured_message(os: &Os) -> bool {
+    let ui_mode = os.database.settings.get_string(Setting::UiMode);
+
+    ui_mode.as_deref().is_some_and(|mode| mode == "structured")
 }

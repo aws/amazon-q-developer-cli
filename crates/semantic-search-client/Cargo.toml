@@ -38,6 +38,7 @@ reqwest = { workspace = true }
 zip = { version = "4.3.0", default-features = false, features = ["deflate", "time"] }
 tokio-stream = "0.1.17"
 sha2 = "0.10.9"
+pdf-extract.workspace = true
 
 # Candle dependencies - not used on Linux ARM
 [target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]

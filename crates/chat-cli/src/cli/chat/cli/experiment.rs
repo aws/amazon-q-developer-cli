@@ -1,14 +1,10 @@
 // ABOUTME: Implements the /experiment slash command for toggling experimental features
 // ABOUTME: Provides interactive selection interface similar to /model command
-
 use clap::Args;
-use crossterm::style::{
-    self,
-    Color,
-};
 use crossterm::{
     execute,
     queue,
+    style,
 };
 use dialoguer::Select;
 
@@ -19,6 +15,7 @@ use crate::cli::chat::{
 };
 use crate::cli::experiment::experiment_manager::ExperimentManager;
 use crate::os::Os;
+use crate::theme::StyledText;
 
 #[derive(Debug, PartialEq, Args)]
 pub struct ExperimentArgs;
@@ -62,9 +59,9 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
     // Show disclaimer before selection
     queue!(
         session.stderr,
-        style::SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ Experimental features may be changed or removed at any time\n\n"),
-        style::ResetColor,
+        StyledText::reset(),
     )?;
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
@@ -74,10 +71,7 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
         Ok(sel) => {
-            let _ = crossterm::execute!(
-                std::io::stdout(),
-                crossterm::style::SetForegroundColor(crossterm::style::Color::Magenta)
-            );
+            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
             sel
         },
         // Ctrl‑C -> Err(Interrupted)
@@ -94,7 +88,7 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         Err(e) => return Err(ChatError::Custom(format!("Failed to choose experiment: {e}").into())),
     };
 
-    queue!(session.stderr, style::ResetColor)?;
+    queue!(session.stderr, StyledText::reset())?;
 
     if let Some(index) = selection {
         // Clear the dialoguer selection line and disclaimer
@@ -123,15 +117,15 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         queue!(
             session.stderr,
             style::Print("\n"),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(format!(
                 " {} experiment {}\n\n",
                 experiment.experiment_name.as_str(),
                 status_text
             )),
-            style::ResetColor,
-            style::SetForegroundColor(Color::Reset),
-            style::SetBackgroundColor(Color::Reset),
+            StyledText::reset(),
+            StyledText::reset(),
+            StyledText::reset(),
         )?;
     } else {
         // ESC was pressed - clear the warning message
@@ -142,7 +136,7 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         )?;
     }
 
-    execute!(session.stderr, style::ResetColor)?;
+    execute!(session.stderr, StyledText::reset())?;
 
     Ok(Some(ChatState::PromptUser {
         skip_printing_tools: false,

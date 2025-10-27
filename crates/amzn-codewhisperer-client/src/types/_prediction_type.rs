@@ -112,7 +112,7 @@ impl ::std::fmt::Display for PredictionType {
         match self {
             PredictionType::Completions => write!(f, "COMPLETIONS"),
             PredictionType::Edits => write!(f, "EDITS"),
-            PredictionType::Unknown(value) => write!(f, "{}", value),
+            PredictionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

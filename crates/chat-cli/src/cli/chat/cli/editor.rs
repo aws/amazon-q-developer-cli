@@ -2,8 +2,6 @@ use clap::Args;
 use crossterm::execute;
 use crossterm::style::{
     self,
-    Attribute,
-    Color,
 };
 use uuid::Uuid;
 
@@ -12,6 +10,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::theme::StyledText;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -34,9 +33,9 @@ impl EditorArgs {
             Err(err) => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print(format!("\nError opening editor: {}\n\n", err)),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::error_fg(),
+                    style::Print(format!("\nError opening editor: {err}\n\n")),
+                    StyledText::reset(),
                 )?;
 
                 return Ok(ChatState::PromptUser {
@@ -49,9 +48,9 @@ impl EditorArgs {
             true => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Yellow),
+                    StyledText::warning_fg(),
                     style::Print("\nEmpty content from editor, not submitting.\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 ChatState::PromptUser {
@@ -61,18 +60,18 @@ impl EditorArgs {
             false => {
                 execute!(
                     session.stderr,
-                    style::SetForegroundColor(Color::Green),
+                    StyledText::success_fg(),
                     style::Print("\nContent loaded from editor. Submitting prompt...\n\n"),
-                    style::SetForegroundColor(Color::Reset)
+                    StyledText::reset(),
                 )?;
 
                 // Display the content as if the user typed it
                 execute!(
                     session.stderr,
-                    style::SetAttribute(Attribute::Reset),
-                    style::SetForegroundColor(Color::Magenta),
+                    StyledText::reset_attributes(),
+                    StyledText::emphasis_fg(),
                     style::Print("> "),
-                    style::SetAttribute(Attribute::Reset),
+                    StyledText::reset_attributes(),
                     style::Print(&content),
                     style::Print("\n")
                 )?;
@@ -109,7 +108,7 @@ fn launch_editor(file_path: &std::path::Path) -> Result<(), ChatError> {
     let status = cmd
         .arg(file_path)
         .status()
-        .map_err(|e| ChatError::Custom(format!("Failed to open editor: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to open editor: {e}").into()))?;
 
     if !status.success() {
         return Err(ChatError::Custom("Editor exited with non-zero status".into()));
@@ -133,14 +132,14 @@ pub fn open_editor(initial_text: Option<String>) -> Result<String, ChatError> {
     // Write initial content to the file if provided
     let initial_content = initial_text.unwrap_or_default();
     std::fs::write(&temp_file_path, &initial_content)
-        .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to create temporary file: {e}").into()))?;
 
     // Launch the editor
     launch_editor(&temp_file_path)?;
 
     // Read the content back
     let content = std::fs::read_to_string(&temp_file_path)
-        .map_err(|e| ChatError::Custom(format!("Failed to read temporary file: {}", e).into()))?;
+        .map_err(|e| ChatError::Custom(format!("Failed to read temporary file: {e}").into()))?;
 
     // Clean up the temporary file
     let _ = std::fs::remove_file(&temp_file_path);

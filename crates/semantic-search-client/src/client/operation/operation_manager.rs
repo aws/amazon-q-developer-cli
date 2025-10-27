@@ -83,7 +83,7 @@ impl OperationManager {
                 progress.message = "Operation cancelled by user".to_string();
             }
 
-            Ok(format!("✅ Cancelled operation: {} (ID: {})", op_type, id_display))
+            Ok(format!("✅ Cancelled operation: {op_type} (ID: {id_display})"))
         } else {
             Err(SemanticSearchError::OperationFailed(format!(
                 "Operation not found: {}",
@@ -140,7 +140,7 @@ impl OperationManager {
             }
         }
 
-        Ok(format!("✅ Cancelled {} active operations", count))
+        Ok(format!("✅ Cancelled {count} active operations"))
     }
 
     /// Find operation by short ID
@@ -156,8 +156,8 @@ impl OperationManager {
     pub async fn list_operation_ids(&self) -> Vec<String> {
         let operations = self.active_operations.read().await;
         operations
-            .iter()
-            .map(|(id, _)| format!("{} (short: {})", id, &id.to_string()[..8]))
+            .keys()
+            .map(|id| format!("{} (short: {})", id, &id.to_string()[..8]))
             .collect()
     }
 

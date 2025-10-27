@@ -48,20 +48,70 @@ where
     }
 }
 
+/// The default endpoint resolver
+#[derive(Debug, Default)]
+pub struct DefaultResolver {}
+
+impl DefaultResolver {
+    /// Create a new endpoint resolver with default settings
+    pub fn new() -> Self {
+        Self {}
+    }
+
+    fn resolve_endpoint(
+        &self,
+        params: &crate::config::endpoint::Params,
+    ) -> ::std::result::Result<::aws_smithy_types::endpoint::Endpoint, ::aws_smithy_runtime_api::box_error::BoxError>
+    {
+        let mut diagnostic_collector = crate::endpoint_lib::diagnostic::DiagnosticCollector::new();
+        Ok(
+            crate::config::endpoint::internals::resolve_endpoint(params, &mut diagnostic_collector)
+                .map_err(|err| err.with_source(diagnostic_collector.take_last_error()))?,
+        )
+    }
+}
+
+impl crate::config::endpoint::ResolveEndpoint for DefaultResolver {
+    fn resolve_endpoint(
+        &self,
+        params: &crate::config::endpoint::Params,
+    ) -> ::aws_smithy_runtime_api::client::endpoint::EndpointFuture<'_> {
+        ::aws_smithy_runtime_api::client::endpoint::EndpointFuture::ready(self.resolve_endpoint(params))
+    }
+}
+
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
 /// Configuration parameters for resolving the correct endpoint
-pub struct Params {}
+pub struct Params {
+    /// This has a value if clients provide an explicit URL to be used
+    pub(crate) endpoint: ::std::option::Option<::std::string::String>,
+    /// The region of the service
+    pub(crate) region: ::std::string::String,
+}
 impl Params {
     /// Create a builder for [`Params`]
     pub fn builder() -> crate::config::endpoint::ParamsBuilder {
         crate::config::endpoint::ParamsBuilder::default()
     }
+
+    /// This has a value if clients provide an explicit URL to be used
+    pub fn endpoint(&self) -> ::std::option::Option<&str> {
+        self.endpoint.as_deref()
+    }
+
+    /// The region of the service
+    pub fn region(&self) -> ::std::option::Option<&str> {
+        Some(&self.region)
+    }
 }
 
 /// Builder for [`Params`]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
-pub struct ParamsBuilder {}
+pub struct ParamsBuilder {
+    endpoint: ::std::option::Option<::std::string::String>,
+    region: ::std::option::Option<::std::string::String>,
+}
 impl ParamsBuilder {
     /// Consume this builder, creating [`Params`].
     pub fn build(
@@ -69,8 +119,48 @@ impl ParamsBuilder {
     ) -> ::std::result::Result<crate::config::endpoint::Params, crate::config::endpoint::InvalidParams> {
         Ok(
             #[allow(clippy::unnecessary_lazy_evaluations)]
-            crate::config::endpoint::Params {},
+            crate::config::endpoint::Params {
+                endpoint: self.endpoint,
+                region: self
+                    .region
+                    .or_else(|| Some("us-east-1".to_string()))
+                    .ok_or_else(|| crate::config::endpoint::InvalidParams::missing("region"))?,
+            },
         )
+    }
+
+    /// Sets the value for endpoint
+    ///
+    /// This has a value if clients provide an explicit URL to be used
+    pub fn endpoint(mut self, value: impl Into<::std::string::String>) -> Self {
+        self.endpoint = Some(value.into());
+        self
+    }
+
+    /// Sets the value for endpoint
+    ///
+    /// This has a value if clients provide an explicit URL to be used
+    pub fn set_endpoint(mut self, param: Option<::std::string::String>) -> Self {
+        self.endpoint = param;
+        self
+    }
+
+    /// Sets the value for region
+    ///
+    /// When unset, this parameter has a default value of `us-east-1`.
+    /// The region of the service
+    pub fn region(mut self, value: impl Into<::std::string::String>) -> Self {
+        self.region = Some(value.into());
+        self
+    }
+
+    /// Sets the value for region
+    ///
+    /// When unset, this parameter has a default value of `us-east-1`.
+    /// The region of the service
+    pub fn set_region(mut self, param: Option<::std::string::String>) -> Self {
+        self.region = param;
+        self
     }
 }
 
@@ -94,3 +184,5 @@ impl std::fmt::Display for InvalidParams {
 }
 
 impl std::error::Error for InvalidParams {}
+
+mod internals;

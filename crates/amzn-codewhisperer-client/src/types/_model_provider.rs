@@ -107,7 +107,7 @@ impl ::std::fmt::Display for ModelProvider {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             ModelProvider::Default => write!(f, "DEFAULT"),
-            ModelProvider::Unknown(value) => write!(f, "{}", value),
+            ModelProvider::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

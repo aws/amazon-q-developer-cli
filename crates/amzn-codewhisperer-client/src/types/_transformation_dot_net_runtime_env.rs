@@ -143,7 +143,7 @@ impl ::std::fmt::Display for TransformationDotNetRuntimeEnv {
             TransformationDotNetRuntimeEnv::Net80 => write!(f, "NET_8_0"),
             TransformationDotNetRuntimeEnv::Net90 => write!(f, "NET_9_0"),
             TransformationDotNetRuntimeEnv::NetStandard20 => write!(f, "NET_STANDARD_2_0"),
-            TransformationDotNetRuntimeEnv::Unknown(value) => write!(f, "{}", value),
+            TransformationDotNetRuntimeEnv::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

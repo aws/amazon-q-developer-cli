@@ -118,7 +118,7 @@ impl ::std::fmt::Display for CodeGenerationWorkflowStatus {
             CodeGenerationWorkflowStatus::Complete => write!(f, "Complete"),
             CodeGenerationWorkflowStatus::Failed => write!(f, "Failed"),
             CodeGenerationWorkflowStatus::InProgress => write!(f, "InProgress"),
-            CodeGenerationWorkflowStatus::Unknown(value) => write!(f, "{}", value),
+            CodeGenerationWorkflowStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -112,7 +112,7 @@ impl ::std::fmt::Display for DocUserDecision {
         match self {
             DocUserDecision::Accept => write!(f, "ACCEPT"),
             DocUserDecision::Reject => write!(f, "REJECT"),
-            DocUserDecision::Unknown(value) => write!(f, "{}", value),
+            DocUserDecision::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

@@ -112,7 +112,7 @@ impl ::std::fmt::Display for SupplementalContextType {
         match self {
             SupplementalContextType::PreviousEditorState => write!(f, "PreviousEditorState"),
             SupplementalContextType::WorkspaceContext => write!(f, "WorkspaceContext"),
-            SupplementalContextType::Unknown(value) => write!(f, "{}", value),
+            SupplementalContextType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

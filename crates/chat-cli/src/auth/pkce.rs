@@ -364,11 +364,10 @@ impl PkceHttpService {
             let error_description = query_params.get("error_description").unwrap_or(&"");
             let _ = code_tx
                 .send(Err(AuthError::OAuthCustomError(format!(
-                    "error occurred during authorization: {:?}, {:?}",
-                    error, error_description
+                    "error occurred during authorization: {error:?}, {error_description:?}"
                 ))))
                 .await;
-            return Self::redirect_to_index(&host, &format!("?error={}", error));
+            return Self::redirect_to_index(&host, &format!("?error={error}"));
         } else {
             let code = query_params.get("code");
             let state = query_params.get("state");
@@ -390,7 +389,7 @@ impl PkceHttpService {
     fn redirect_to_index(host: &str, query_params: &str) -> Result<ServiceResponse, AuthError> {
         Ok(Response::builder()
             .status(302)
-            .header("Location", format!("http://{}/index.html{}", host, query_params))
+            .header("Location", format!("http://{host}/index.html{query_params}"))
             .body("".into())
             .expect("is valid builder, should not panic"))
     }
@@ -517,7 +516,7 @@ mod tests {
         let registration = PkceRegistration::register(&client, region.clone(), start_url, None)
             .await
             .unwrap();
-        println!("{:?}", registration);
+        println!("{registration:?}");
         if crate::util::open::open_url_async(&registration.url).await.is_err() {
             panic!("unable to open the URL");
         }
@@ -619,10 +618,10 @@ mod tests {
     #[tokio::test]
     async fn verify_gen_code_challenge() {
         let code_verifier = generate_code_verifier();
-        println!("{:?}", code_verifier);
+        println!("{code_verifier:?}");
 
         let code_challenge = generate_code_challenge(&code_verifier);
-        println!("{:?}", code_challenge);
+        println!("{code_challenge:?}");
         assert!(code_challenge.len() >= 43);
     }
 

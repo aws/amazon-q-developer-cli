@@ -119,7 +119,7 @@ impl ::std::fmt::Display for DocInteractionType {
             DocInteractionType::EditReadme => write!(f, "EDIT_README"),
             DocInteractionType::GenerateReadme => write!(f, "GENERATE_README"),
             DocInteractionType::UpdateReadme => write!(f, "UPDATE_README"),
-            DocInteractionType::Unknown(value) => write!(f, "{}", value),
+            DocInteractionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

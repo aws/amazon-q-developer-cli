@@ -172,7 +172,7 @@ impl ::std::fmt::Display for ChatMessageInteractionType {
             ChatMessageInteractionType::HoverReference => write!(f, "HOVER_REFERENCE"),
             ChatMessageInteractionType::InsertAtCursor => write!(f, "INSERT_AT_CURSOR"),
             ChatMessageInteractionType::Upvote => write!(f, "UPVOTE"),
-            ChatMessageInteractionType::Unknown(value) => write!(f, "{}", value),
+            ChatMessageInteractionType::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

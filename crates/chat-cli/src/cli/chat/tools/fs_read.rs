@@ -5,7 +5,6 @@ use std::io::Write;
 use crossterm::queue;
 use crossterm::style::{
     self,
-    Color,
 };
 use eyre::{
     Result,
@@ -45,6 +44,7 @@ use crate::cli::chat::{
     sanitize_unicode_tags,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
@@ -84,9 +84,9 @@ impl FsRead {
             queue!(
                 updates,
                 style::Print("Batch fs_read operation with "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(self.operations.len()),
-                style::ResetColor,
+                StyledText::reset(),
                 style::Print(" operations:\n")
             )?;
 
@@ -425,10 +425,10 @@ impl FsImage {
         queue!(
             updates,
             style::Print("Reading images: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.image_paths.join("\n")),
             style::Print("\n"),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
         Ok(())
     }
@@ -466,9 +466,9 @@ impl FsLine {
         queue!(
             updates,
             style::Print("Reading file: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.path),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(", "),
         )?;
 
@@ -479,21 +479,21 @@ impl FsLine {
             _ if end == line_count => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(start),
-                style::ResetColor,
+                StyledText::reset(),
                 style::Print(" to end of file"),
             )?),
             _ => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(start),
-                style::ResetColor,
+                StyledText::reset(),
                 style::Print(" to "),
-                style::SetForegroundColor(Color::Green),
+                StyledText::success_fg(),
                 style::Print(end),
-                style::ResetColor,
+                StyledText::reset(),
             )?),
         }
     }
@@ -595,13 +595,13 @@ impl FsSearch {
         queue!(
             updates,
             style::Print("Searching: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.path),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(" for pattern: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.pattern.to_lowercase()),
-            style::ResetColor,
+            StyledText::reset(),
         )?;
         Ok(())
     }
@@ -691,15 +691,15 @@ impl FsDirectory {
         queue!(
             updates,
             style::Print("Reading directory: "),
-            style::SetForegroundColor(Color::Green),
+            StyledText::success_fg(),
             style::Print(&self.path),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print(" "),
         )?;
         let depth = self.depth.unwrap_or_default();
         Ok(queue!(
             updates,
-            style::Print(format!("with maximum depth of {}", depth))
+            style::Print(format!("with maximum depth of {depth}"))
         )?)
     }
 

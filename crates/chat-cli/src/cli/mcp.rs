@@ -11,7 +11,6 @@ use clap::{
     Args,
     ValueEnum,
 };
-use crossterm::style::Stylize;
 use crossterm::{
     execute,
     style,
@@ -36,6 +35,7 @@ use crate::cli::chat::tools::custom_tool::{
     default_timeout,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 use crate::util::directories;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
@@ -307,7 +307,7 @@ impl ListArgs {
             writeln!(output)?;
             writeln!(output, "{}:\n", scope_display(&scope))?;
             for (agent_name, cfg_opt, _) in agents {
-                writeln!(output, "  {}", agent_name.bold())?;
+                writeln!(output, "  {}", StyledText::emphasis(&agent_name))?;
                 match cfg_opt {
                     Some(cfg) if !cfg.mcp_servers.is_empty() => {
                         // Sorting servers by name since HashMap is unordered, and having a bunch
@@ -400,7 +400,7 @@ impl StatusArgs {
                         output,
                         style::Print("\n─────────────\n"),
                         style::Print(format!("Scope   : {}\n", scope_display(&sc))),
-                        style::Print(format!("Agent   : {}\n", name)),
+                        style::Print(format!("Agent   : {name}\n")),
                         style::Print(format!("Command : {}\n", cfg.command)),
                         style::Print(format!("Timeout : {} ms\n", cfg.timeout)),
                         style::Print(format!("Disabled: {}\n", cfg.disabled)),
@@ -410,7 +410,7 @@ impl StatusArgs {
                                 || "(none)".into(),
                                 |e| e
                                     .iter()
-                                    .map(|(k, v)| format!("{}={}", k, v))
+                                    .map(|(k, v)| format!("{k}={v}"))
                                     .collect::<Vec<_>>()
                                     .join(", ")
                             )

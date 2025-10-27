@@ -217,7 +217,7 @@ fn main() {
             Some("percent") => quote!(::amzn_toolkit_telemetry_client::types::Unit::Percent),
             Some("none") | None => quote!(::amzn_toolkit_telemetry_client::types::Unit::None),
             Some(unknown) => {
-                panic!("unknown unit: {:?}", unknown);
+                panic!("unknown unit: {unknown:?}");
             },
         };
 
@@ -325,7 +325,7 @@ fn main() {
     let pp = prettyplease::unparse(&file);
 
     // write an empty file to the output directory
-    std::fs::write(format!("{}/mod.rs", outdir), pp).unwrap();
+    std::fs::write(format!("{outdir}/mod.rs"), pp).unwrap();
 }
 
 /// Downloads the latest feed.json from the autocomplete repository.
@@ -366,7 +366,7 @@ fn download_feed_json() {
     match output {
         Ok(result) if result.status.success() => {
             if let Err(e) = std::fs::write("src/cli/feed.json", result.stdout) {
-                panic!("Failed to write feed.json: {}", e);
+                panic!("Failed to write feed.json: {e}");
             } else {
                 println!("cargo:warning=Successfully downloaded latest feed.json");
             }
@@ -377,10 +377,10 @@ fn download_feed_json() {
             } else {
                 "An unknown error occurred".to_string()
             };
-            panic!("Failed to download feed.json: {}", error_msg);
+            panic!("Failed to download feed.json: {error_msg}");
         },
         Err(e) => {
-            panic!("Failed to execute curl: {}", e);
+            panic!("Failed to execute curl: {e}");
         },
     }
 }

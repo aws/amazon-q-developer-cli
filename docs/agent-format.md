@@ -42,11 +42,45 @@ The `description` field provides a description of what the agent does. This is p
 
 ## Prompt Field
 
-The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. 
+The `prompt` field is intended to provide high-level context to the agent, similar to a system prompt. It supports both inline text and file:// URIs to reference external files.
+
+### Inline Prompt
 
 ```json
 {
   "prompt": "You are an expert AWS infrastructure specialist"
+}
+```
+
+### File URI Prompt
+
+You can reference external files using `file://` URIs. This allows you to maintain long, complex prompts in separate files for better organization and version control, while keeping your agent configuration clean and readable.
+
+```json
+{
+  "prompt": "file://./my-agent-prompt.md"
+}
+```
+
+#### File URI Path Resolution
+
+- **Relative paths**: Resolved relative to the agent configuration file's directory
+  - `"file://./prompt.md"` → `prompt.md` in the same directory as the agent config
+  - `"file://../shared/prompt.md"` → `prompt.md` in a parent directory
+- **Absolute paths**: Used as-is
+  - `"file:///home/user/prompts/agent.md"` → Absolute path to the file
+
+#### File URI Examples
+
+```json
+{
+  "prompt": "file://./prompts/aws-expert.md"
+}
+```
+
+```json
+{
+  "prompt": "file:///Users/developer/shared-prompts/rust-specialist.md"
 }
 ```
 
@@ -178,6 +212,8 @@ The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`
 - **Server pattern**: `"@*-mcp/read_*"` → matches `@git-mcp/read_file`, `@db-mcp/read_data`
 - **Any tool from pattern servers**: `"@git-*/*"` → matches any tool from servers matching `git-*`
 
+Optionally, you can also prefix native tools with the namespace `@builtin`.
+
 ### Examples
 
 ```json
@@ -192,6 +228,7 @@ The `allowedTools` field supports glob-style wildcard patterns using `*` and `?`
     "fs_*",                    // All filesystem tools
     "execute_*",               // All execute tools
     "*_test",                  // Any tool ending in _test
+    @builtin,                // All native tools
     
     // MCP tool wildcards
     "@server/api_*",           // All API tools from server

@@ -118,7 +118,7 @@ impl ::std::fmt::Display for CodeAnalysisScope {
             CodeAnalysisScope::Agentic => write!(f, "AGENTIC"),
             CodeAnalysisScope::File => write!(f, "FILE"),
             CodeAnalysisScope::Project => write!(f, "PROJECT"),
-            CodeAnalysisScope::Unknown(value) => write!(f, "{}", value),
+            CodeAnalysisScope::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

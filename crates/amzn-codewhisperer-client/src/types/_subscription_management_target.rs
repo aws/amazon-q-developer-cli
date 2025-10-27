@@ -112,7 +112,7 @@ impl ::std::fmt::Display for SubscriptionManagementTarget {
         match self {
             SubscriptionManagementTarget::Manage => write!(f, "MANAGE"),
             SubscriptionManagementTarget::Purchase => write!(f, "PURCHASE"),
-            SubscriptionManagementTarget::Unknown(value) => write!(f, "{}", value),
+            SubscriptionManagementTarget::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

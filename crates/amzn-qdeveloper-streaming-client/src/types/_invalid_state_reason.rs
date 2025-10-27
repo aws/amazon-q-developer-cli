@@ -107,7 +107,7 @@ impl ::std::fmt::Display for InvalidStateReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             InvalidStateReason::InvalidTaskAssistPlan => write!(f, "INVALID_TASK_ASSIST_PLAN"),
-            InvalidStateReason::Unknown(value) => write!(f, "{}", value),
+            InvalidStateReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

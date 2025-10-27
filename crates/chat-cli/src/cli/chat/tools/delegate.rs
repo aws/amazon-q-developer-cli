@@ -6,11 +6,7 @@ use std::io::{
 use std::path::PathBuf;
 
 use chrono::Utc;
-use crossterm::style::{
-    Color,
-    Print,
-    SetForegroundColor,
-};
+use crossterm::style::Print;
 use crossterm::{
     execute,
     queue,
@@ -44,6 +40,7 @@ use crate::cli::{
     DEFAULT_AGENT_NAME,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
@@ -167,8 +164,7 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
 
 fn format_launch_success(agent: &str, task: &str) -> String {
     format!(
-        "✓ Agent '{}' launched successfully.\nTask: {}\n\nUse 'status' operation to check progress.",
-        agent, task
+        "✓ Agent '{agent}' launched successfully.\nTask: {task}\n\nUse 'status' operation to check progress."
     )
 }
 
@@ -177,9 +173,9 @@ pub fn display_agent_info(agent: &str, task: &str, config: &AgentConfig) -> Resu
 
     execute!(
         stdout(),
-        Print(format!("Agent: {}\n", agent)),
-        Print(format!("Description: {}\n", short_desc)),
-        Print(format!("Task: {}\n", task)),
+        Print(format!("Agent: {agent}\n")),
+        Print(format!("Description: {short_desc}\n")),
+        Print(format!("Task: {task}\n")),
     )?;
 
     if !config.allowed_tools.is_empty() {
@@ -191,9 +187,9 @@ pub fn display_agent_info(agent: &str, task: &str, config: &AgentConfig) -> Resu
     execute!(
         stdout(),
         Print("\n"),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print("! This task will run with the agent's specific tool permissions.\n\n"),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
 
     Ok(())
@@ -213,11 +209,11 @@ pub fn display_default_agent_warning() -> Result<()> {
     execute!(
         stdout(),
         Print("\n"),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print(
             "! This task will run with trust-all permissions and can execute commands or consume system/cloud resources.\n\n"
         ),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
     Ok(())
 }
@@ -225,9 +221,9 @@ pub fn display_default_agent_warning() -> Result<()> {
 pub fn get_user_confirmation() -> Result<bool> {
     execute!(
         stdout(),
-        SetForegroundColor(Color::Yellow),
+        StyledText::warning_fg(),
         Print("Continue? [y/N]: "),
-        SetForegroundColor(Color::Reset),
+        StyledText::reset(),
     )?;
 
     let mut input = String::new();
@@ -326,12 +322,17 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
 
     // Run Q chat with specific agent in background, non-interactive
     let mut cmd = tokio::process::Command::new("q");
-    cmd.args(["chat", "--agent", agent, task]);
+    cmd.args(["chat", "--non-interactive"]);
+    if agent == DEFAULT_AGENT_NAME {
+        cmd.arg("--trust-all-tools");
+    }
+    cmd.args(["--agent", agent, task]);
 
     // Redirect to capture output (runs silently)
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
+    cmd.envs(std::env::vars());
 
     #[cfg(not(windows))]
     cmd.process_group(0);
@@ -375,23 +376,23 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             execution.output = if stderr.is_empty() {
                 stdout.to_string()
             } else {
-                format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
+                format!("STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
             };
 
             // Save to ~/.aws/amazonq/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
-                eprintln!("Failed to save agent execution: {}", e);
+                eprintln!("Failed to save agent execution: {e}");
             }
         },
         Err(e) => {
             execution.status = AgentStatus::Failed;
             execution.completed_at = Some(Utc::now());
             execution.exit_code = Some(-1);
-            execution.output = format!("Failed to wait for process: {}", e);
+            execution.output = format!("Failed to wait for process: {e}");
 
             // Save to ~/.aws/amazonq/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
-                eprintln!("Failed to save agent execution: {}", e);
+                eprintln!("Failed to save agent execution: {e}");
             }
         },
     }
@@ -418,7 +419,7 @@ pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
 
             Ok(execution.format_status())
         },
-        None => Ok(format!("No execution found for agent '{}'", agent)),
+        None => Ok(format!("No execution found for agent '{agent}'")),
     }
 }
 
@@ -512,7 +513,7 @@ pub async fn save_agent_execution(os: &Os, execution: &AgentExecution) -> Result
 
 pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
     let subagents_dir = subagents_dir(os).await?;
-    Ok(subagents_dir.join(format!("{}.json", agent)))
+    Ok(subagents_dir.join(format!("{agent}.json")))
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {

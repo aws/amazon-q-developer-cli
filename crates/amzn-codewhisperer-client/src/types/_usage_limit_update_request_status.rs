@@ -118,7 +118,7 @@ impl ::std::fmt::Display for UsageLimitUpdateRequestStatus {
             UsageLimitUpdateRequestStatus::Approved => write!(f, "APPROVED"),
             UsageLimitUpdateRequestStatus::PendingReview => write!(f, "PENDING_REVIEW"),
             UsageLimitUpdateRequestStatus::Rejected => write!(f, "REJECTED"),
-            UsageLimitUpdateRequestStatus::Unknown(value) => write!(f, "{}", value),
+            UsageLimitUpdateRequestStatus::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

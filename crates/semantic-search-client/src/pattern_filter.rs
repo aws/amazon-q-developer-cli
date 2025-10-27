@@ -14,12 +14,12 @@ impl PatternFilter {
     pub fn new(include_patterns: &[String], exclude_patterns: &[String]) -> Result<Self, String> {
         let include_patterns = include_patterns
             .iter()
-            .map(|p| Pattern::new(p).map_err(|e| format!("Invalid include pattern '{}': {}", p, e)))
+            .map(|p| Pattern::new(p).map_err(|e| format!("Invalid include pattern '{p}': {e}")))
             .collect::<Result<Vec<_>, _>>()?;
 
         let exclude_patterns = exclude_patterns
             .iter()
-            .map(|p| Pattern::new(p).map_err(|e| format!("Invalid exclude pattern '{}': {}", p, e)))
+            .map(|p| Pattern::new(p).map_err(|e| format!("Invalid exclude pattern '{p}': {e}")))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {

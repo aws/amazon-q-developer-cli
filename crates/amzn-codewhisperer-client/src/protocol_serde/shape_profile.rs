@@ -96,6 +96,16 @@ where
                                     crate::protocol_serde::shape_opt_in_features::de_opt_in_features(tokens)?,
                                 );
                             },
+                            "optInFeaturesType" => {
+                                builder = builder.set_opt_in_features_type(
+                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
+                                        .map(|s| {
+                                            s.to_unescaped()
+                                                .map(|u| crate::types::OptInFeaturesType::from(u.as_ref()))
+                                        })
+                                        .transpose()?,
+                                );
+                            },
                             "permissionUpdateRequired" => {
                                 builder = builder.set_permission_update_required(
                                     ::aws_smithy_json::deserialize::token::expect_bool_or_null(tokens.next())?,
@@ -111,7 +121,7 @@ where
                     },
                     other => {
                         return Err(::aws_smithy_json::deserialize::error::DeserializeError::custom(
-                            format!("expected object key or end object, found: {:?}", other),
+                            format!("expected object key or end object, found: {other:?}"),
                         ));
                     },
                 }

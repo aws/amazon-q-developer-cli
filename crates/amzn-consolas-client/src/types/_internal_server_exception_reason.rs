@@ -107,7 +107,7 @@ impl ::std::fmt::Display for InternalServerExceptionReason {
     fn fmt(&self, f: &mut ::std::fmt::Formatter) -> ::std::fmt::Result {
         match self {
             InternalServerExceptionReason::ModelTemporarilyUnavailable => write!(f, "MODEL_TEMPORARILY_UNAVAILABLE"),
-            InternalServerExceptionReason::Unknown(value) => write!(f, "{}", value),
+            InternalServerExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

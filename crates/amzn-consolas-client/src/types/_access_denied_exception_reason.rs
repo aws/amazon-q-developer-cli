@@ -142,7 +142,7 @@ impl ::std::fmt::Display for AccessDeniedExceptionReason {
             AccessDeniedExceptionReason::UnauthorizedWorkspaceContextFeatureAccess => {
                 write!(f, "UNAUTHORIZED_WORKSPACE_CONTEXT_FEATURE_ACCESS")
             },
-            AccessDeniedExceptionReason::Unknown(value) => write!(f, "{}", value),
+            AccessDeniedExceptionReason::Unknown(value) => write!(f, "{value}"),
         }
     }
 }

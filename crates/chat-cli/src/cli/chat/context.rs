@@ -41,8 +41,7 @@ impl Serialize for ContextFilePath {
         S: Serializer,
     {
         match self {
-            ContextFilePath::Agent(path) => path.serialize(serializer),
-            ContextFilePath::Session(_) => Err(serde::ser::Error::custom("Session paths are not serialized")),
+            ContextFilePath::Agent(path) | ContextFilePath::Session(path) => path.serialize(serializer),
         }
     }
 }

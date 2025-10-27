@@ -29,7 +29,7 @@ pub async fn get_cognito_credentials_send(
     trace!("Creating new cognito credentials");
 
     let conf = aws_sdk_cognitoidentity::Config::builder()
-        .behavior_version(BehaviorVersion::v2025_01_17())
+        .behavior_version(BehaviorVersion::v2025_08_07())
         .region(telemetry_stage.region.clone())
         .app_name(app_name())
         .build();
@@ -134,8 +134,7 @@ impl provider::ProvideCredentials for CognitoProvider {
             match Database::new().await {
                 Ok(mut db) => get_cognito_credentials(&mut db, &self.telemetry_stage).await,
                 Err(err) => Err(CredentialsError::provider_error(format!(
-                    "failed to get database: {:?}",
-                    err
+                    "failed to get database: {err:?}"
                 ))),
             }
         })

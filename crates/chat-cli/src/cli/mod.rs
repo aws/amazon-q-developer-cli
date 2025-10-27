@@ -1,3 +1,4 @@
+use crate::theme::StyledText;
 mod agent;
 pub mod chat;
 mod debug;
@@ -31,7 +32,6 @@ use clap::{
     Subcommand,
     ValueEnum,
 };
-use crossterm::style::Stylize;
 use eyre::{
     Result,
     bail,
@@ -142,7 +142,7 @@ impl RootSubcommand {
         if self.requires_auth() && !is_logged_in(&mut os.database).await {
             bail!(
                 "You are not logged in, please log in with {}",
-                format!("{CLI_BINARY_NAME} login").bold()
+                StyledText::command(&format!("{CLI_BINARY_NAME} login"))
             );
         }
 

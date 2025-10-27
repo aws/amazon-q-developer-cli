@@ -96,6 +96,7 @@ use crate::mcp_client::{
 };
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
+use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
 use crate::util::directories::home_dir;
 
@@ -301,15 +302,15 @@ impl ToolManagerBuilder {
                 if server_name == "builtin" {
                     let _ = queue!(
                         output,
-                        style::SetForegroundColor(style::Color::Red),
+                        StyledText::error_fg(),
                         style::Print("✗ Invalid server name "),
-                        style::SetForegroundColor(style::Color::Blue),
+                        StyledText::info_fg(),
                         style::Print(&server_name),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(". Server name cannot contain reserved word "),
-                        style::SetForegroundColor(style::Color::Yellow),
+                        StyledText::warning_fg(),
                         style::Print("builtin"),
-                        style::ResetColor,
+                        StyledText::reset(),
                         style::Print(" (it is used to denote native tools)\n")
                     );
                     false
@@ -1105,7 +1106,7 @@ impl ToolManager {
                         let bundle = bundles.first().ok_or(GetPromptError::MissingPromptInfo)?;
                         if let Some(sn) = sn {
                             if bundle.server_name != *sn {
-                                return Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name)));
+                                return Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}")));
                             }
                         }
                         bundle
@@ -1126,7 +1127,7 @@ impl ToolManager {
 
                     Ok(resp)
                 },
-                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{}/{}", sn, prompt_name))),
+                (None, Some(sn)) => Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}"))),
                 (None, None) => Err(GetPromptError::PromptNotFound(prompt_name)),
             }
         } else {
@@ -1404,7 +1405,7 @@ fn spawn_orchestrator_task(
                         .remove(&server_name)
                         .map_or("0.0".to_owned(), |init_time| {
                             let time_taken = (std::time::Instant::now() - init_time).as_secs_f64().abs();
-                            format!("{:.2}", time_taken)
+                            format!("{time_taken:.2}")
                         });
                     pending.write().await.remove(&server_name);
 
@@ -1862,7 +1863,7 @@ async fn process_tool_specs(
                         "tool description is longer than 10024 characters and has been truncated",
                     ),
                 };
-                acc.push_str(format!(" - {} ({})\n", tool_name, msg).as_str());
+                acc.push_str(format!(" - {tool_name} ({msg})\n").as_str());
                 acc
             },
         )))
@@ -1883,12 +1884,12 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
     if sanitized.is_empty() {
         hasher.write(orig.as_bytes());
         let hash = format!("{:03}", hasher.finish() % 1000);
-        return format!("a{}", hash);
+        return format!("a{hash}");
     }
     match sanitized.chars().next() {
         Some(c) if c.is_ascii_alphabetic() => sanitized,
         Some(_) => {
-            format!("a{}", sanitized)
+            format!("a{sanitized}")
         },
         None => {
             hasher.write(orig.as_bytes());
@@ -1900,15 +1901,15 @@ fn sanitize_name(orig: String, regex: &regex::Regex, hasher: &mut impl Hasher) -
 fn queue_success_message(name: &str, time_taken: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Green),
+        StyledText::success_fg(),
         style::Print("✓ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" loaded in "),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!("{time_taken} s\n")),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -1920,39 +1921,29 @@ fn queue_init_message(
     output: &mut impl Write,
 ) -> eyre::Result<()> {
     if total == complete {
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Green),
-            style::Print("✓"),
-            style::ResetColor,
-        )?;
+        queue!(output, StyledText::success_fg(), style::Print("✓"), StyledText::reset(),)?;
     } else if total == complete + failed {
-        queue!(
-            output,
-            style::SetForegroundColor(style::Color::Red),
-            style::Print("✗"),
-            style::ResetColor,
-        )?;
+        queue!(output, StyledText::error_fg(), style::Print("✗"), StyledText::reset(),)?;
     } else {
         queue!(output, style::Print(SPINNER_CHARS[spinner_logo_idx]))?;
     }
     queue!(
         output,
-        style::SetForegroundColor(style::Color::Blue),
-        style::Print(format!(" {}", complete)),
-        style::ResetColor,
+        StyledText::info_fg(),
+        style::Print(format!(" {complete}")),
+        StyledText::reset(),
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
-        style::Print(format!("{} ", total)),
-        style::ResetColor,
+        StyledText::info_fg(),
+        style::Print(format!("{total} ")),
+        StyledText::reset(),
         style::Print("mcp servers initialized."),
     )?;
     if total > complete + failed {
         queue!(
             output,
-            style::SetForegroundColor(style::Color::Blue),
+            StyledText::info_fg(),
             style::Print(" ctrl-c "),
-            style::ResetColor,
+            StyledText::reset(),
             style::Print("to start chatting now")
         )?;
     }
@@ -1968,33 +1959,33 @@ fn queue_failure_message(
     use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Red),
+        StyledText::error_fg(),
         style::Print("✗ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" has failed to load after"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!(" {time} s")),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n - "),
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
             " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
         )),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
 fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" requires OAuth authentication. Use /mcp to see the auth link\n"),
     )?)
 }
@@ -2002,15 +1993,15 @@ fn queue_oauth_message(name: &str, output: &mut impl Write) -> eyre::Result<()> 
 fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" requires OAuth authentication. Follow this link to proceed: \n"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print("\n")
     )?)
 }
@@ -2018,31 +2009,31 @@ fn queue_oauth_message_with_link(name: &str, msg: &eyre::Report, output: &mut im
 fn queue_warn_message(name: &str, msg: &eyre::Report, time: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" has loaded in"),
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print(format!(" {time} s")),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" with the following warning:\n"),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
 fn queue_disabled_message(name: &str, output: &mut impl Write) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::DarkGrey),
+        StyledText::secondary_fg(),
         style::Print("○ "),
-        style::SetForegroundColor(style::Color::Blue),
+        StyledText::info_fg(),
         style::Print(name),
-        style::ResetColor,
+        StyledText::reset(),
         style::Print(" is disabled\n"),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -2054,21 +2045,21 @@ fn queue_incomplete_load_message(
 ) -> eyre::Result<()> {
     Ok(queue!(
         output,
-        style::SetForegroundColor(style::Color::Yellow),
+        StyledText::warning_fg(),
         style::Print("⚠"),
-        style::SetForegroundColor(style::Color::Blue),
-        style::Print(format!(" {}", complete)),
-        style::ResetColor,
+        StyledText::info_fg(),
+        style::Print(format!(" {complete}")),
+        StyledText::reset(),
         style::Print(" of "),
-        style::SetForegroundColor(style::Color::Blue),
-        style::Print(format!("{} ", total)),
-        style::ResetColor,
+        StyledText::info_fg(),
+        style::Print(format!("{total} ")),
+        StyledText::reset(),
         style::Print("mcp servers initialized."),
-        style::ResetColor,
+        StyledText::reset(),
         // We expect the message start with a newline
         style::Print(" Servers still loading:"),
         style::Print(msg),
-        style::ResetColor,
+        StyledText::reset(),
     )?)
 }
 
@@ -2100,7 +2091,7 @@ mod tests {
         let sanitized_all_bad_name = sanitize_name(all_bad_name.to_string(), &regex, &mut hasher);
         assert!(regex.is_match(&sanitized_all_bad_name));
 
-        let with_delim = format!("a{}b{}c", NAMESPACE_DELIMITER, NAMESPACE_DELIMITER);
+        let with_delim = format!("a{NAMESPACE_DELIMITER}b{NAMESPACE_DELIMITER}c");
         let sanitized = sanitize_name(with_delim, &regex, &mut hasher);
         assert_eq!(sanitized, "abc");
     }
