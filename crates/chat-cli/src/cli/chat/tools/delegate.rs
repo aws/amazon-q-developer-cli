@@ -163,9 +163,7 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
 }
 
 fn format_launch_success(agent: &str, task: &str) -> String {
-    format!(
-        "✓ Agent '{agent}' launched successfully.\nTask: {task}\n\nUse 'status' operation to check progress."
-    )
+    format!("✓ Agent '{agent}' launched successfully.\nTask: {task}\n\nUse 'status' operation to check progress.")
 }
 
 pub fn display_agent_info(agent: &str, task: &str, config: &AgentConfig) -> Result<()> {

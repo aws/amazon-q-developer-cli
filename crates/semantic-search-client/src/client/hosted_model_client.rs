@@ -164,9 +164,7 @@ impl HostedModelClient {
                 .await
                 .unwrap_or_else(|_| "Unable to read response body".to_string());
             error!("HTTP {} response body: {}", status, body);
-            return Err(anyhow::anyhow!(
-                "HTTP {status} error for URL: {url} - Response: {body}"
-            ));
+            return Err(anyhow::anyhow!("HTTP {status} error for URL: {url} - Response: {body}"));
         }
 
         // Get content length for progress tracking

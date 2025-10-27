@@ -1747,7 +1747,7 @@ impl ChatSession {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
             self.spinner = Some(Spinner::new(
                 Spinners::Dots,
-                format!("Generating agent config for '{}'...", agent_name),
+                format!("Generating agent config for '{agent_name}'..."),
             ));
         }
 

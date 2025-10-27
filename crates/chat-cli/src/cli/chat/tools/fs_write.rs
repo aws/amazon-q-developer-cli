@@ -699,23 +699,13 @@ fn print_diff(
             style::Print(sign),
             style::Print(" ")
         )?;
-        queue!(
-            output,
-            style::Print(format!(
-                "{old_i_str:>old_line_num_width$}"
-            ))
-        )?;
+        queue!(output, style::Print(format!("{old_i_str:>old_line_num_width$}")))?;
         if sign == " " {
             queue!(output, style::Print(", "))?;
         } else {
             queue!(output, style::Print("  "))?;
         }
-        queue!(
-            output,
-            style::Print(format!(
-                "{new_i_str:>new_line_num_width$}"
-            ))
-        )?;
+        queue!(output, style::Print(format!("{new_i_str:>new_line_num_width$}")))?;
         // Print the line.
         queue!(
             output,

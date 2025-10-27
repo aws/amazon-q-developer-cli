@@ -432,9 +432,7 @@ fn normalize_l2(v: &Tensor) -> Result<Tensor> {
         Ok(n) => Ok(n),
         Err(e) => {
             error!("Failed to normalize by division: {}", e);
-            Err(SemanticSearchError::EmbeddingError(format!(
-                "Failed to normalize: {e}"
-            )))
+            Err(SemanticSearchError::EmbeddingError(format!("Failed to normalize: {e}")))
         },
     }
 }

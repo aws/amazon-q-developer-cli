@@ -408,11 +408,7 @@ impl StatusArgs {
                             "Env Vars: {}\n",
                             cfg.env.map_or_else(
                                 || "(none)".into(),
-                                |e| e
-                                    .iter()
-                                    .map(|(k, v)| format!("{k}={v}"))
-                                    .collect::<Vec<_>>()
-                                    .join(", ")
+                                |e| e.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(", ")
                             )
                         )),
                     )?;

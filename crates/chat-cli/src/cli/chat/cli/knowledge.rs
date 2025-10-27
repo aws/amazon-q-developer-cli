@@ -326,13 +326,9 @@ impl KnowledgeSubcommand {
 
         // Try path first, then name
         if store.remove_by_path(&sanitized_path.to_string_lossy()).await.is_ok() {
-            OperationResult::Success(format!(
-                "Removed {scope_desc} knowledge base entry with path '{path}'"
-            ))
+            OperationResult::Success(format!("Removed {scope_desc} knowledge base entry with path '{path}'"))
         } else if store.remove_by_name(path).await.is_ok() {
-            OperationResult::Success(format!(
-                "Removed {scope_desc} knowledge base entry with name '{path}'"
-            ))
+            OperationResult::Success(format!("Removed {scope_desc} knowledge base entry with name '{path}'"))
         } else {
             OperationResult::Warning(format!("Entry not found in {scope_desc} knowledge base: {path}"))
         }

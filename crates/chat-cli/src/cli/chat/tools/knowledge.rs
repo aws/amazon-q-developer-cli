@@ -507,9 +507,7 @@ impl Knowledge {
                         output
                     },
                     (Err(contexts_err), Err(status_err)) => {
-                        format!(
-                            "Failed to get contexts: {contexts_err}\nFailed to get status: {status_err}"
-                        )
+                        format!("Failed to get contexts: {contexts_err}\nFailed to get status: {status_err}")
                     },
                 }
             },

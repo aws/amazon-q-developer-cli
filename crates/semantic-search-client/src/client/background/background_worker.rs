@@ -126,9 +126,7 @@ impl BackgroundWorker {
             Err(_) => {
                 self.update_operation_status(
                     operation_id,
-                    format!(
-                        "Waiting for available slot (max {MAX_CONCURRENT_OPERATIONS} concurrent)..."
-                    ),
+                    format!("Waiting for available slot (max {MAX_CONCURRENT_OPERATIONS} concurrent)..."),
                 )
                 .await;
                 match self.indexing_semaphore.acquire().await {

@@ -2500,10 +2500,7 @@ mod tests {
         let prompt_name = "test_prompt";
         let server_names = ["server1", "server2", "server3"];
 
-        let alt_names: Vec<String> = server_names
-            .iter()
-            .map(|s| format!("- @{s}/{prompt_name}"))
-            .collect();
+        let alt_names: Vec<String> = server_names.iter().map(|s| format!("- @{s}/{prompt_name}")).collect();
         let alt_msg = format!("\n{}\n", alt_names.join("\n"));
 
         assert_eq!(

@@ -517,9 +517,8 @@ pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, St
     let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
 
     // Set up additional metadata for the AWS CLI user agent
-    let user_agent_metadata_value = format!(
-        "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
-    );
+    let user_agent_metadata_value =
+        format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
 
     // Check if the user agent metadata env var already exists using Os
     let existing_value = os.env.get(USER_AGENT_ENV_VAR).ok();

@@ -697,10 +697,7 @@ impl FsDirectory {
             style::Print(" "),
         )?;
         let depth = self.depth.unwrap_or_default();
-        Ok(queue!(
-            updates,
-            style::Print(format!("with maximum depth of {depth}"))
-        )?)
+        Ok(queue!(updates, style::Print(format!("with maximum depth of {depth}")))?)
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {

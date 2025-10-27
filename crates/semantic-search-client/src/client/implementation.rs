@@ -733,9 +733,9 @@ impl SemanticSearchClient {
 
         // Search in all volatile contexts
         for (context_id, context) in &self.volatile_contexts {
-            let context_guard = context.lock().map_err(|e| {
-                SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {e}"))
-            })?;
+            let context_guard = context
+                .lock()
+                .map_err(|e| SemanticSearchError::OperationFailed(format!("Failed to acquire lock on context: {e}")))?;
 
             match context_guard.search(&query_vector, effective_limit) {
                 Ok(results) => {

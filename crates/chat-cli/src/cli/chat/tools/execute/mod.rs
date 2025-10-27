@@ -695,9 +695,7 @@ mod tests {
         let user_agent_value = env_vars.get(USER_AGENT_ENV_VAR).unwrap();
 
         // Check the format is correct
-        let expected_metadata = format!(
-            "{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}"
-        );
+        let expected_metadata = format!("{USER_AGENT_APP_NAME} {USER_AGENT_VERSION_KEY}/{USER_AGENT_VERSION_VALUE}");
         assert!(user_agent_value.contains(&expected_metadata));
     }
 
