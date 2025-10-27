@@ -114,7 +114,13 @@ impl Tool {
             #[cfg(not(windows))]
             Tool::ExecuteCommand(_) => "execute_bash",
             Tool::UseAws(_) => "use_aws",
-            Tool::Custom(custom_tool) => &custom_tool.name,
+            Tool::Custom(custom_tool) => {
+                return custom_tool
+                    .display_name
+                    .as_deref()
+                    .unwrap_or(&custom_tool.name)
+                    .to_owned();
+            },
             Tool::GhIssue(_) => "gh_issue",
             Tool::Introspect(_) => "introspect",
             Tool::Knowledge(_) => "knowledge",
