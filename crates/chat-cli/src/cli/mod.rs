@@ -48,6 +48,7 @@ use crate::cli::mcp::McpSubcommand;
 use crate::cli::user::{
     LoginArgs,
     WhoamiArgs,
+    is_logged_in,
 };
 use crate::logging::{
     LogArgs,
@@ -138,7 +139,7 @@ impl RootSubcommand {
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
-        if self.requires_auth() && !crate::auth::is_logged_in(&mut os.database).await {
+        if self.requires_auth() && !is_logged_in(&mut os.database).await {
             bail!(
                 "You are not logged in, please log in with {}",
                 StyledText::command(&format!("{CLI_BINARY_NAME} login"))
