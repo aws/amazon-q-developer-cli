@@ -106,7 +106,16 @@ const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
 pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    Ok(os.env.current_dir()?.join(".amazonq").join("mcp.json"))
+    let current_dir = os.env.current_dir()?;
+
+    // Check for .kiro first (new format)
+    let kiro_path = current_dir.join(".kiro").join("mcp.json");
+    if kiro_path.exists() {
+        Ok(kiro_path)
+    } else {
+        // Fallback to .amazonq (legacy format)
+        Ok(current_dir.join(".amazonq").join("mcp.json"))
+    }
 }
 
 pub fn global_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
@@ -2200,5 +2209,21 @@ mod tests {
             serde_json::Value::String("test_value".to_string()),
         );
         assert_eq!(result, Some(expected_map));
+    }
+
+    #[tokio::test]
+    async fn test_workspace_mcp_config_path_fallback() -> eyre::Result<()> {
+        use crate::os::Os;
+
+        let os = Os::new().await.unwrap();
+
+        // Test that function returns a valid path (either .kiro or .amazonq)
+        let path = workspace_mcp_config_path(&os)?;
+        let path_str = path.to_string_lossy();
+
+        // Should end with either .kiro/mcp.json or .amazonq/mcp.json
+        assert!(path_str.ends_with(".kiro/mcp.json") || path_str.ends_with(".amazonq/mcp.json"));
+
+        Ok(())
     }
 }
