@@ -122,6 +122,7 @@ zip.workspace = true
 rmcp.workspace = true
 chat-cli-ui.workspace = true 
 serde_yaml.workspace = true
+urlencoding = "2.1.3"
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

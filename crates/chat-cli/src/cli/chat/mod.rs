@@ -1722,9 +1722,7 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinners::new(format!(
-                "Generating agent config for '{agent_name}'..."
-            )));
+            self.spinner = Some(Spinners::new(format!("Generating agent config for '{agent_name}'...")));
         }
 
         let mut response = match self
