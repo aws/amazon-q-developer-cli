@@ -150,7 +150,7 @@ impl SocialToken {
 
         let client = Client::new();
         let response = client
-            .post(format!("{}/refreshToken", SOCIAL_AUTH_SERVICE_ENDPOINT))
+            .post(format!("{SOCIAL_AUTH_SERVICE_ENDPOINT}/refreshToken"))
             .header("Content-Type", "application/json")
             .header("User-Agent", USER_AGENT)
             .json(&serde_json::json!({
@@ -201,7 +201,7 @@ impl SocialToken {
         });
 
         let response = client
-            .post(format!("{}/oauth/token", SOCIAL_AUTH_SERVICE_ENDPOINT))
+            .post(format!("{SOCIAL_AUTH_SERVICE_ENDPOINT}/oauth/token"))
             .header("Content-Type", "application/json")
             .header("User-Agent", USER_AGENT)
             .json(&token_request)
@@ -214,8 +214,7 @@ impl SocialToken {
 
             error!("Token exchange failed: {} - {}", status, body);
             return Err(AuthError::SocialAuthProviderFailure(format!(
-                "Token exchange failed: {}",
-                body
+                "Token exchange failed: {body}"
             )));
         }
         let token_response: TokenResponse = response.json().await?;

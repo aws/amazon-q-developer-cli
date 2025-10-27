@@ -83,14 +83,14 @@ pub async fn start_unified_auth(db: &mut Database) -> Result<PortalResult, AuthE
     let listener = bind_allowed_port(CALLBACK_PORTS).await?;
     let port = listener.local_addr()?.port();
 
-    let redirect_base = format!("http://localhost:{}", port);
+    let redirect_base = format!("http://localhost:{port}");
     info!(%port, %redirect_base, "Unified auth portal listening for callback");
 
     let auth_url = build_auth_url(&redirect_base, &state, &challenge);
 
     crate::util::open::open_url_async(&auth_url)
         .await
-        .map_err(|e| AuthError::OAuthCustomError(format!("Failed to open browser: {}", e)))?;
+        .map_err(|e| AuthError::OAuthCustomError(format!("Failed to open browser: {e}")))?;
 
     let callback = wait_for_auth_callback(listener, state.clone()).await?;
 
@@ -121,20 +121,17 @@ fn format_user_friendly_error(error_code: &str, description: Option<&str>, provi
 
     match error_code {
         "access_denied" => {
-            format!(
-                "{} denied access to Kiro. Please ensure you grant all required permissions.",
-                provider
-            )
+            format!("{provider} denied access to Kiro. Please ensure you grant all required permissions.")
         },
         "invalid_request" => "Authentication failed due to an invalid request. Please try again.".to_string(),
         "unauthorized_client" => "The application is not authorized. Please contact support.".to_string(),
         "server_error" => {
-            format!("{} login is temporarily unavailable. Please try again later.", provider)
+            format!("{provider} login is temporarily unavailable. Please try again later.")
         },
         "invalid_scope" => "The requested permissions are invalid. Please contact support.".to_string(),
         _ => {
             // For unknown errors, use cleaned description or a generic message
-            cleaned_description.unwrap_or_else(|| format!("Authentication failed: {}. Please try again.", error_code))
+            cleaned_description.unwrap_or_else(|| format!("Authentication failed: {error_code}. Please try again."))
         },
     }
 }
@@ -183,7 +180,7 @@ async fn process_portal_callback(
                 idc_region: sso_region,
             })
         },
-        other => Err(AuthError::OAuthCustomError(format!("Unknown login_option: {}", other))),
+        other => Err(AuthError::OAuthCustomError(format!("Unknown login_option: {other}"))),
     }
 }
 
@@ -217,12 +214,12 @@ fn extract_sso_params(callback: &AuthPortalCallback, auth_type: &str) -> Result<
     let issuer_url = callback
         .issuer_url
         .clone()
-        .ok_or_else(|| AuthError::OAuthCustomError(format!("Missing issuer_url for {} auth", auth_type)))?;
+        .ok_or_else(|| AuthError::OAuthCustomError(format!("Missing issuer_url for {auth_type} auth")))?;
 
     let sso_region = callback
         .sso_region
         .clone()
-        .ok_or_else(|| AuthError::OAuthCustomError(format!("Missing sso_region for {} auth", auth_type)))?;
+        .ok_or_else(|| AuthError::OAuthCustomError(format!("Missing sso_region for {auth_type} auth")))?;
 
     Ok((issuer_url, sso_region))
 }
@@ -357,7 +354,7 @@ async fn handle_invalid_callback(path: &str) -> Result<Response<Full<Bytes>>, Au
 
 /// Build a redirect response to the auth portal
 fn build_redirect_response(status: &str, error_message: Option<&str>) -> Result<Response<Full<Bytes>>, AuthError> {
-    let mut redirect_url = format!("{}?auth_status={}&redirect_from=kirocli", AUTH_PORTAL_URL, status);
+    let mut redirect_url = format!("{AUTH_PORTAL_URL}?auth_status={status}&redirect_from=kirocli");
 
     if let Some(msg) = error_message {
         redirect_url.push_str(&format!("&error_message={}", urlencoding::encode(msg)));

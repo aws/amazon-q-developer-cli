@@ -105,7 +105,7 @@ impl LoginArgs {
             ]);
             match start_unified_auth(&mut os.database).await? {
                 PortalResult::Social(provider) => {
-                    pre_portal_spinner.stop_with_message(format!("Logged in with {}", provider));
+                    pre_portal_spinner.stop_with_message(format!("Logged in with {provider}"));
                     os.telemetry.send_user_logged_in().ok();
                     return Ok(ExitCode::SUCCESS);
                 },
