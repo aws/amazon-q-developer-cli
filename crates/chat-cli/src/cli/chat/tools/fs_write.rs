@@ -775,8 +775,8 @@ fn stylize_output_if_able(os: &Os, path: impl AsRef<Path>, file_text: &str) -> S
     StylizedFile {
         truecolor: false,
         content: file_text.to_string(),
-        gutter_bg: theme().ui.secondary_text,
-        line_bg: theme().ui.secondary_text,
+        gutter_bg: style::Color::Reset,
+        line_bg: style::Color::Reset,
     }
 }
 
@@ -799,8 +799,8 @@ impl Default for StylizedFile {
         Self {
             truecolor: false,
             content: Default::default(),
-            gutter_bg: theme().ui.secondary_text,
-            line_bg: theme().ui.secondary_text,
+            gutter_bg: style::Color::Reset,
+            line_bg: style::Color::Reset,
         }
     }
 }
