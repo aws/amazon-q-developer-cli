@@ -34,6 +34,13 @@ impl GenerateAssistantResponseOutput {
     {
         crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder::default()
     }
+
+    #[allow(unused)]
+    pub(crate) fn into_builder(
+        self,
+    ) -> crate::operation::generate_assistant_response::builders::GenerateAssistantResponseOutputBuilder {
+        Self::builder().generate_assistant_response_response(self.generate_assistant_response_response)
+    }
 }
 
 /// A builder for

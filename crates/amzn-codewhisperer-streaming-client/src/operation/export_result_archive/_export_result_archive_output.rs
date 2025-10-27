@@ -33,6 +33,13 @@ impl ExportResultArchiveOutput {
     pub fn builder() -> crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder {
         crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder::default()
     }
+
+    #[allow(unused)]
+    pub(crate) fn into_builder(
+        self,
+    ) -> crate::operation::export_result_archive::builders::ExportResultArchiveOutputBuilder {
+        Self::builder().body(self.body)
+    }
 }
 
 /// A builder for

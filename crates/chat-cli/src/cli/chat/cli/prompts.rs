@@ -2482,7 +2482,7 @@ mod tests {
             prompt_get: prompt1,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test filtering by server
         let filtered: Vec<&PromptBundle> = bundles.iter().filter(|b| b.server_name == "server1").copied().collect();
@@ -2490,7 +2490,7 @@ mod tests {
         assert_eq!(filtered[0].server_name, "server1");
 
         // Test no filtering (all bundles)
-        let all: Vec<&PromptBundle> = bundles.iter().copied().collect();
+        let all: Vec<&PromptBundle> = bundles.to_vec();
         assert_eq!(all.len(), 2);
     }
 
@@ -2498,7 +2498,7 @@ mod tests {
     fn test_ambiguous_prompt_message_generation() {
         // Test generating disambiguation message
         let prompt_name = "test_prompt";
-        let server_names = vec!["server1", "server2", "server3"];
+        let server_names = ["server1", "server2", "server3"];
 
         let alt_names: Vec<String> = server_names
             .iter()

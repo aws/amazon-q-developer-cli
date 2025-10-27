@@ -15,5 +15,8 @@ pub fn ser_list_profiles_input_input(
     if let Some(var_3) = &input.next_token {
         object.key("nextToken").string(var_3.as_str());
     }
+    if let Some(var_4) = &input.opt_in_features_type {
+        object.key("optInFeaturesType").string(var_4.as_str());
+    }
     Ok(())
 }
