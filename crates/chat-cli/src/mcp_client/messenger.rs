@@ -74,6 +74,7 @@ pub enum MessengerError {
     Custom(String),
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct NullMessenger;
 

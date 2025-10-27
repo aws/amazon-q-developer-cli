@@ -107,14 +107,6 @@ impl Drop for LoopBackDropGuard {
     }
 }
 
-/// OAuth Authorization Server metadata for endpoint discovery
-#[derive(Clone, Serialize, Deserialize, Debug)]
-pub struct OAuthMeta {
-    pub authorization_endpoint: String,
-    pub token_endpoint: String,
-    pub registration_endpoint: Option<String>,
-}
-
 /// This is modeled after [OAuthClientConfig]
 /// It's only here because [OAuthClientConfig] does not implement Serialize and Deserialize
 #[derive(Clone, Serialize, Deserialize, Debug)]

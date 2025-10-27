@@ -44,6 +44,7 @@ pub enum UtilError {
     Json(#[from] serde_json::Error),
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct UnknownDesktopErrContext {
     xdg_current_desktop: String,

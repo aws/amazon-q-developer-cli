@@ -17,6 +17,7 @@ use serde::{
     Serializer,
 };
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileContext {
@@ -26,12 +27,14 @@ pub struct FileContext {
     pub programming_language: ProgrammingLanguage,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProgrammingLanguage {
     pub language_name: LanguageName,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::AsRefStr)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
@@ -53,18 +56,21 @@ pub enum LanguageName {
     Sql,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReferenceTrackerConfiguration {
     pub recommendations_with_references: RecommendationsWithReferences,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub enum RecommendationsWithReferences {
     Block,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecommendationsInput {
@@ -73,6 +79,7 @@ pub struct RecommendationsInput {
     pub next_token: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecommendationsOutput {
@@ -82,6 +89,7 @@ pub struct RecommendationsOutput {
     pub request_id: Option<String>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Recommendation {

@@ -6,10 +6,6 @@ use crossterm::style::{
     Attribute,
 };
 use eyre::Result;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 
 use crate::cli::feed::Feed;
 use crate::constants::ui_text;
@@ -156,15 +152,6 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
         }
     }
     Ok(())
-}
-
-#[derive(Default, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum UiMode {
-    #[default]
-    Structured,
-    Passthrough,
-    New,
 }
 
 pub fn should_send_structured_message(os: &Os) -> bool {

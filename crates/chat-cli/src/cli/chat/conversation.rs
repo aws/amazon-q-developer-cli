@@ -435,14 +435,14 @@ impl ConversationState {
         self.history
             .back()
             .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
-            .map(|tools| (tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(",")))
+            .map(|tools| tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(","))
     }
 
     pub fn latest_tool_use_names(&self) -> Option<String> {
         self.history
             .back()
             .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
-            .map(|tools| (tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(",")))
+            .map(|tools| tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(","))
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
