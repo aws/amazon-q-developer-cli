@@ -30,6 +30,9 @@
         .duration-changes-table th, .duration-changes-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         .duration-changes-table td:last-child { text-align: left; font-size: 11px; }
         .duration-changes-table th { background-color: #232f3e; color: white; }
+        .test-increase { background-color: #f8d7da; color: #721c24; }
+        .test-decrease { background-color: #d4edda; color: #155724; }
+        .test-no-change { background-color: #e2e3e5; color: #6c757d; }
     </style>
 </head>
 <body>
@@ -349,7 +352,7 @@
         // Populate duration changes
         const durationChangesDiv = document.getElementById('durationChanges');
         if (analytics.all_duration_changes && analytics.all_duration_changes.length > 0) {
-            let changesHtml = '<table class="duration-changes-table"><thead><tr><th>Date</th><th>Total Time (min)</th><th>Total Tests</th><th>vs Previous</th><th>vs Prev 3 Avg</th><th>vs Prev 5 Avg</th><th>vs Average</th><th>vs Best Time</th><th>vs Best w/ Current</th><th>Contributing Features</th></tr></thead><tbody>';
+            let changesHtml = '<table class="duration-changes-table"><thead><tr><th>Date</th><th>Total Time (min)</th><th>Total Tests</th><th>vs Previous</th><th>vs Prev 3 Avg</th><th>vs Prev 5 Avg</th><th>vs Average</th><th>vs Best Time</th><th>vs Best w/ Same test counts</th><th>Contributing Features</th></tr></thead><tbody>';
             analytics.all_duration_changes.forEach(change => {
                 const changeDate = new Date(change.date).toLocaleDateString();
                 const changeClass = change.change_percent > 0 ? 'fail' : 'pass';
@@ -365,12 +368,12 @@
                     
                     allFeatures.forEach(f => {
                         const testChangeText = f.test_change > 0 ? `+${f.test_change}` : f.test_change < 0 ? `${f.test_change}` : '0';
-                        const testChangeColor = f.test_change > 0 ? 'color:green;' : f.test_change < 0 ? 'color:red;' : '';
+                        const testChangeStyle = f.test_change > 0 ? 'background-color:#f8d7da; color:#721c24;' : f.test_change < 0 ? 'background-color:#d4edda; color:#155724;' : 'background-color:#e2e3e5; color:#6c757d;';
                         featureBreakdown += `<tr>`;
                         featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.feature}</td>`;
                         featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.current_duration}min (avg:${f.average_duration})</td>`;
                         featureBreakdown += `<td style="border:1px solid #ccc; padding:2px;">${f.current_test_count}</td>`;
-                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px; ${testChangeColor}">${testChangeText}</td>`;
+                        featureBreakdown += `<td style="border:1px solid #ccc; padding:2px; ${testChangeStyle}">${testChangeText}</td>`;
                         featureBreakdown += `</tr>`;
                     });
                     

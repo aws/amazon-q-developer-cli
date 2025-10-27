@@ -199,14 +199,15 @@ def generate_analytics(reports_data):
             prev_5_avg = sum(reports_data[j]['duration'] for j in range(i-5, i)) / 5
             change_vs_prev_5 = ((curr_duration - prev_5_avg) / prev_5_avg) * 100 if prev_5_avg > 0 else 0
         
-        # Calculate comparisons with overall metrics
-        overall_avg = sum(report['duration'] for report in reports_data) / len(reports_data)
-        best_time = min(report['duration'] for report in reports_data)
+        # Calculate comparisons with historical data only (up to current date)
+        historical_reports = reports_data[:i+1]  # Only include reports up to current index
+        overall_avg = sum(report['duration'] for report in historical_reports) / len(historical_reports)
+        best_time = min(report['duration'] for report in historical_reports)
         
-        # Find best time with current test count
+        # Find best time with current test count from historical data only
         current_test_count = reports_data[i]['total_tests']
         best_with_current = float('inf')
-        for report in reports_data:
+        for report in historical_reports:
             if report['total_tests'] >= current_test_count:
                 best_with_current = min(best_with_current, report['duration'])
         best_with_current = best_with_current if best_with_current != float('inf') else curr_duration
