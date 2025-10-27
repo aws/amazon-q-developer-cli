@@ -1316,7 +1316,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chat-cli-ui"
-version = "1.19.0"
+version = "1.19.1"
 dependencies = [
  "chrono",
  "crossterm",
@@ -1343,7 +1343,7 @@ dependencies = [
 
 [[package]]
 name = "chat_cli"
-version = "1.19.0"
+version = "1.19.1"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -6350,7 +6350,7 @@ dependencies = [
 
 [[package]]
 name = "semantic_search_client"
-version = "1.19.0"
+version = "1.19.1"
 dependencies = [
  "anyhow",
  "bm25",

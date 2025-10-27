@@ -24,6 +24,10 @@
           "type": "fixed",
           "description": "Non-interactive chat output now correctly prints to standard output  - [#3277](https://github.com/aws/amazon-q-developer-cli/pull/3277)"
         }
+         {
+          "type": "fixed",
+          "description": "Spinner now cleans up correctly after quick operations  - [#3282](https://github.com/aws/amazon-q-developer-cli/pull/3282)"
+        }
       ]
     },
     {
