@@ -18,7 +18,7 @@
       "changes": [
         {
           "type": "fixed",
-          "description": "Improved fs-write diff color contrast for dark and light terminal themes - [#3281](https://github.com/aws/amazon-q-developer-cli/pull/3281)"
+          "description": "Improved `fs-write` diff color contrast for dark and light terminal themes - [#3281](https://github.com/aws/amazon-q-developer-cli/pull/3281)"
         },
         {
           "type": "fixed",
