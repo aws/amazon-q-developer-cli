@@ -1,10 +1,14 @@
+use spinners::{
+    Spinner,
+    Spinners,
+};
+
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
-mod custom_spinner;
 mod input_source;
 mod message;
 mod parse;
@@ -83,7 +87,6 @@ use crossterm::{
     style,
     terminal,
 };
-use custom_spinner::Spinners;
 use eyre::{
     Report,
     Result,
@@ -576,7 +579,7 @@ pub struct ChatSession {
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
-    spinner: Option<Spinners>,
+    spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
     /// Tool uses requested by the model that are actively being handled.
@@ -829,6 +832,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         let (context, report, display_err_message) = match err {
@@ -1138,6 +1146,10 @@ impl ChatSession {
 
 impl Drop for ChatSession {
     fn drop(&mut self) {
+        if let Some(spinner) = &mut self.spinner {
+            spinner.stop();
+        }
+
         execute!(
             self.stderr,
             cursor::MoveToColumn(0),
@@ -1435,7 +1447,7 @@ impl ChatSession {
             .await?;
 
         if self.interactive {
-            self.spinner = Some(Spinners::new("Creating summary...".to_string()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
 
         let mut response = match self
@@ -1451,6 +1463,12 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
+                    execute!(
+                        self.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0),
+                        StyledText::reset_attributes()
+                    )?;
                 }
 
                 // If the request fails due to context window overflow, then we'll see if it's
@@ -1548,6 +1566,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         self.conversation
@@ -1718,10 +1741,10 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinners::new(format!(
-                "Generating agent config for '{}'...",
-                agent_name
-            )));
+            self.spinner = Some(Spinner::new(
+                Spinners::Dots,
+                format!("Generating agent config for '{}'...", agent_name),
+            ));
         }
 
         let mut response = match self
@@ -1737,6 +1760,12 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
+                    execute!(
+                        self.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0),
+                        StyledText::reset_attributes()
+                    )?;
                 }
                 return Err(err);
             },
@@ -1783,6 +1812,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
@@ -2174,7 +2208,7 @@ impl ChatSession {
             queue!(self.stderr, cursor::Hide)?;
 
             if self.interactive {
-                self.spinner = Some(Spinners::new("Thinking...".to_owned()));
+                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
             }
 
             Ok(ChatState::HandleResponseStream(conv_state))
@@ -2326,6 +2360,12 @@ impl ChatSession {
 
             if let Some(spinner) = self.spinner.take() {
                 drop(spinner);
+                queue!(
+                    self.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
             }
 
             // Handle checkpoint after tool execution - store tag for later display
@@ -2601,7 +2641,7 @@ impl ChatSession {
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
-            self.spinner = Some(Spinners::new("Thinking...".to_string()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
 
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
@@ -2657,6 +2697,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         loop {
@@ -2699,6 +2744,11 @@ impl ChatSession {
                         parser::ResponseEvent::ToolUse(tool_use) => {
                             if self.spinner.is_some() {
                                 drop(self.spinner.take());
+                                queue!(
+                                    self.stderr,
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                    cursor::MoveToColumn(0),
+                                )?;
                             }
                             tool_uses.push(tool_use);
                             tool_name_being_recvd = None;
@@ -2748,7 +2798,7 @@ impl ChatSession {
                             );
 
                             execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinners::new("Dividing up the work...".to_string()));
+                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
 
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -2887,6 +2937,12 @@ impl ChatSession {
 
             if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
                 drop(self.spinner.take());
+                queue!(
+                    self.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
             }
 
             info!("## control end: buf: {:?}", buf);
@@ -2940,7 +2996,7 @@ impl ChatSession {
             if tool_name_being_recvd.is_some() {
                 queue!(self.stderr, cursor::Hide)?;
                 if self.interactive {
-                    self.spinner = Some(Spinners::new("Thinking...".to_string()));
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
                 }
             }
 
@@ -3263,7 +3319,7 @@ impl ChatSession {
         }
 
         if self.interactive {
-            self.spinner = Some(Spinners::new("Thinking...".to_owned()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 
         Ok(ChatState::HandleResponseStream(
@@ -3708,7 +3764,7 @@ where
     Fut: std::future::Future<Output = Result<T, E>>,
 {
     queue!(output, cursor::Hide,).ok();
-    let spinner = Spinners::new(spinner_text.to_owned());
+    let spinner = Spinner::new(Spinners::Dots, spinner_text.to_owned());
 
     let result = f().await;
 
