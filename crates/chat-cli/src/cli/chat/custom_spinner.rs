@@ -26,7 +26,7 @@ impl Spinners {
         pb.set_style(
             ProgressStyle::default_spinner()
                 .tick_chars(SPINNER_CHARS)
-                .template("{spinner:.green} {msg}")
+                .template("{spinner} {msg}")
                 .unwrap(),
         );
         pb.set_message(message);
