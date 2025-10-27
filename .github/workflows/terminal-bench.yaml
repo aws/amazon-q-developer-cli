@@ -78,7 +78,7 @@ jobs:
     # uploads results if run fails as well to allow for easy log inspection
     - name: Upload results
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: benchmark-results
         path: terminal-bench-test/runs/
