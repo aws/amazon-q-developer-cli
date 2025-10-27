@@ -7,7 +7,7 @@ CHAT_BINARY_NAME = "kiro-cli-chat"
 PTY_BINARY_NAME = "kiro-cli-term"
 DESKTOP_BINARY_NAME = "kiro-cli-desktop"
 URL_SCHEMA = "kiro-cli"
-TAURI_PRODUCT_NAME = "kiro-cli-desktop"
+TAURI_PRODUCT_NAME = "kiro_cli_desktop"
 LINUX_PACKAGE_NAME = "kiro-cli"
 
 # macos specific
