@@ -35,7 +35,7 @@ use crate::auth::social::{
 use crate::database::Database;
 use crate::util::system_info::is_mwinit_available;
 
-const AUTH_PORTAL_URL: &str = "https://app.kiro.dev/signin";
+const AUTH_PORTAL_URL: &str = "https://beta.app.kiro.dev/signin";
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
