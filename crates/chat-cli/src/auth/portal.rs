@@ -1,6 +1,7 @@
 //! Unified auth portal integration for streamlined authentication
 //! Handles callbacks from https://app.kiro.dev/signin
 
+use std::env;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -35,7 +36,7 @@ use crate::auth::social::{
 use crate::database::Database;
 use crate::util::system_info::is_mwinit_available;
 
-const AUTH_PORTAL_URL: &str = "https://app.kiro.dev/signin";
+const DEFAULT_AUTH_PORTAL_URL: &str = "https://app.kiro.dev";
 const DEFAULT_AUTHORIZATION_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone)]
@@ -140,10 +141,11 @@ fn format_user_friendly_error(error_code: &str, description: Option<&str>, provi
 fn build_auth_url(redirect_base: &str, state: &str, challenge: &str) -> String {
     let is_internal = is_mwinit_available();
     let internal_param = if is_internal { "&from_amazon_internal=true" } else { "" };
+    let auth_portal_url = get_auth_portal_url();
 
     format!(
-        "{}?state={}&code_challenge={}&code_challenge_method=S256&redirect_uri={}{}&redirect_from=kirocli",
-        AUTH_PORTAL_URL,
+        "{}/signin?state={}&code_challenge={}&code_challenge_method=S256&redirect_uri={}{}&redirect_from=kirocli",
+        auth_portal_url,
         state,
         challenge,
         urlencoding::encode(redirect_base),
@@ -354,8 +356,8 @@ async fn handle_invalid_callback(path: &str) -> Result<Response<Full<Bytes>>, Au
 
 /// Build a redirect response to the auth portal
 fn build_redirect_response(status: &str, error_message: Option<&str>) -> Result<Response<Full<Bytes>>, AuthError> {
-    let mut redirect_url = format!("{AUTH_PORTAL_URL}?auth_status={status}&redirect_from=kirocli");
-
+    let auth_portal_url = get_auth_portal_url();
+    let mut redirect_url = format!("{auth_portal_url}/signin?auth_status={status}&redirect_from=kirocli");
     if let Some(msg) = error_message {
         redirect_url.push_str(&format!("&error_message={}", urlencoding::encode(msg)));
     }
@@ -381,4 +383,8 @@ async fn bind_allowed_port(ports: &[u16]) -> Result<TcpListener, AuthError> {
     Err(AuthError::OAuthCustomError(
         "All callback ports are in use. Please close some applications and try again.".into(),
     ))
+}
+
+fn get_auth_portal_url() -> String {
+    env::var("KIRO_AUTH_PORTAL_URL").unwrap_or_else(|_| DEFAULT_AUTH_PORTAL_URL.to_string())
 }
