@@ -166,7 +166,7 @@ pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
 /// Returns the local todo list storage directory
 pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
-    Ok(cwd.join(".amazonq").join("cli-todo-lists"))
+    Ok(cwd.join(".kiro-cli").join("cli-todo-lists"))
 }
 
 /// Contains the command definitions that allow the model to create,

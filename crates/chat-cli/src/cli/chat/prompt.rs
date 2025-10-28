@@ -586,7 +586,7 @@ pub fn rl(
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
 
-    // Load history from ~/.aws/amazonq/cli_history
+    // Load history from ~/.kiro-cli/cli_history
     if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
             eprintln!("Warning: Failed to load history: {e}");

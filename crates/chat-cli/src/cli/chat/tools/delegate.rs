@@ -50,7 +50,7 @@ use crate::theme::StyledText;
 /// - status: Check agent status (agent optional - defaults to 'all')
 /// - list: Show available agents
 ///
-/// Only one task per agent. Files stored in ~/.aws/amazonq/.subagents/
+/// Only one task per agent. Files stored in ~/.kiro-cli/.subagents/
 ///
 /// Examples:
 /// - Launch: {"operation": "launch", "agent": "rust-agent", "task": "Create snake game"}
@@ -377,7 +377,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
                 format!("STDOUT:\n{stdout}\n\nSTDERR:\n{stderr}")
             };
 
-            // Save to ~/.aws/amazonq/.subagents/{agent}.json
+            // Save to ~/.kiro-cli/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {e}");
             }
@@ -388,7 +388,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             execution.exit_code = Some(-1);
             execution.output = format!("Failed to wait for process: {e}");
 
-            // Save to ~/.aws/amazonq/.subagents/{agent}.json
+            // Save to ~/.kiro-cli/.subagents/{agent}.json
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {e}");
             }
@@ -515,7 +515,7 @@ pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
-    let subagents_dir = os.env.current_dir()?.join(".amazonq").join(".subagents");
+    let subagents_dir = os.env.current_dir()?.join(".kiro-cli").join(".subagents");
     if !subagents_dir.exists() {
         os.fs.create_dir_all(&subagents_dir).await?;
     }

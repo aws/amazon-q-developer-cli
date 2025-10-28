@@ -54,7 +54,7 @@ use crate::util::{
 
 Notes
 • Launch q chat with a specific agent with --agent
-• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.amazonq/cli-agents (accessible in workspace)
+• Construct an agent under ~/.kiro-cli/cli-agents/ (accessible globally) or cwd/.kiro-cli/cli-agents (accessible in workspace)
 • See example config under global directory
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
