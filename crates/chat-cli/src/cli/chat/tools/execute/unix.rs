@@ -30,7 +30,7 @@ pub async fn run_command<W: Write>(
     max_result_size: usize,
     mut updates: Option<W>,
 ) -> Result<CommandResult> {
-    let shell = std::env::var("AMAZON_Q_CHAT_SHELL").unwrap_or("bash".to_string());
+    let shell = std::env::var("KIRO_CHAT_SHELL").unwrap_or("bash".to_string());
 
     // Set up environment variables with user agent metadata for CloudTrail tracking
     let env_vars = env_vars_with_user_agent(os);

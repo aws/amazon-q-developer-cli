@@ -232,7 +232,7 @@ impl Cli {
                 ),
                 false => None,
             },
-            log_to_stdout: std::env::var_os("Q_LOG_STDOUT").is_some() || self.verbose > 0,
+            log_to_stdout: std::env::var_os("KIRO_LOG_STDOUT").is_some() || self.verbose > 0,
             log_file_path: match subcommand {
                 RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("qchat.log")),
                 _ => None,

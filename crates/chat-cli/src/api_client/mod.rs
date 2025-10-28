@@ -163,7 +163,7 @@ impl ApiClient {
                 model_cache: Arc::new(RwLock::new(None)),
             };
 
-            if let Ok(json) = env.get("Q_MOCK_CHAT_RESPONSE") {
+            if let Ok(json) = env.get("KIRO_MOCK_CHAT_RESPONSE") {
                 this.set_mock_output(serde_json::from_str(fs.read_to_string(json).await.unwrap().as_str()).unwrap());
             }
 

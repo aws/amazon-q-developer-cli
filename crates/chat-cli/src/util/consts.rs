@@ -34,43 +34,43 @@ pub mod env_var {
         QTERM_SESSION_ID = "QTERM_SESSION_ID",
 
         /// The current parent socket to connect to
-        Q_PARENT = "Q_PARENT",
+        KIRO_PARENT = "KIRO_PARENT",
 
-        /// Set the [`Q_PARENT`] parent socket to connect to
-        Q_SET_PARENT = "Q_SET_PARENT",
+        /// Set the [`KIRO_PARENT`] parent socket to connect to
+        KIRO_SET_PARENT = "KIRO_SET_PARENT",
 
-        /// Guard for the [`Q_SET_PARENT`] check
-        Q_SET_PARENT_CHECK = "Q_SET_PARENT_CHECK",
+        /// Guard for the [`KIRO_SET_PARENT`] check
+        KIRO_SET_PARENT_CHECK = "KIRO_SET_PARENT_CHECK",
 
         /// Set if qterm is running, contains the version
-        Q_TERM = "Q_TERM",
+        KIRO_TERM = "KIRO_TERM",
 
         /// Sets the current log level
-        Q_LOG_LEVEL = "Q_LOG_LEVEL",
+        KIRO_LOG_LEVEL = "KIRO_LOG_LEVEL",
 
         /// Overrides the ZDOTDIR environment variable
-        Q_ZDOTDIR = "Q_ZDOTDIR",
+        KIRO_ZDOTDIR = "KIRO_ZDOTDIR",
 
         /// Indicates a process was launched by Kiro
-        PROCESS_LAUNCHED_BY_Q = "PROCESS_LAUNCHED_BY_Q",
+        PROCESS_LAUNCHED_BY_KIRO = "PROCESS_LAUNCHED_BY_KIRO",
 
         /// The shell to use in qterm
-        Q_SHELL = "Q_SHELL",
+        KIRO_SHELL = "KIRO_SHELL",
 
         /// Indicates the user is debugging the shell
-        Q_DEBUG_SHELL = "Q_DEBUG_SHELL",
+        KIRO_DEBUG_SHELL = "KIRO_DEBUG_SHELL",
 
         /// Indicates the user is using zsh autosuggestions which disables Inline
-        Q_USING_ZSH_AUTOSUGGESTIONS = "Q_USING_ZSH_AUTOSUGGESTIONS",
+        KIRO_USING_ZSH_AUTOSUGGESTIONS = "KIRO_USING_ZSH_AUTOSUGGESTIONS",
 
         /// Overrides the path to the bundle metadata released with certain desktop builds.
-        Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH",
+        KIRO_BUNDLE_METADATA_PATH = "KIRO_BUNDLE_METADATA_PATH",
 
         /// Identifier for the client application or service using the chat-cli
-        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION",
+        KIRO_CLI_CLIENT_APPLICATION = "KIRO_CLI_CLIENT_APPLICATION",
 
         /// Shows continuation IDs in chat output for debugging/development
-        Q_SHOW_CONTINUATION_IDS = "Q_SHOW_CONTINUATION_IDS"
+        KIRO_SHOW_CONTINUATION_IDS = "KIRO_SHOW_CONTINUATION_IDS"
     }
 }
 

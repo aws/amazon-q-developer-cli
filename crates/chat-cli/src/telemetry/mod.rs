@@ -74,7 +74,7 @@ pub use crate::telemetry::core::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
-use crate::util::env_var::Q_CLI_CLIENT_APPLICATION;
+use crate::util::env_var::KIRO_CLI_CLIENT_APPLICATION;
 use crate::util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
@@ -113,7 +113,7 @@ impl From<ApiClientError> for TelemetryError {
 
 const PRODUCT: &str = "CodeWhisperer";
 const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const CLIENT_ID_ENV_VAR: &str = "Q_TELEMETRY_CLIENT_ID";
+const CLIENT_ID_ENV_VAR: &str = "KIRO_TELEMETRY_CLIENT_ID";
 
 /// A IDE toolkit telemetry stage
 #[derive(Debug, Clone)]
@@ -484,7 +484,7 @@ async fn set_event_metadata(database: &Database, event: &mut Event) {
     }
 
     // Set the client application from environment variable
-    if let Ok(client_app) = std::env::var(Q_CLI_CLIENT_APPLICATION) {
+    if let Ok(client_app) = std::env::var(KIRO_CLI_CLIENT_APPLICATION) {
         event.set_client_application(client_app);
     }
 }
@@ -500,7 +500,7 @@ struct TelemetryClient {
 impl TelemetryClient {
     async fn new(env: &Env, fs: &Fs, database: &mut Database) -> Result<Self, TelemetryError> {
         let telemetry_enabled = !cfg!(test)
-            && env.get_os("Q_DISABLE_TELEMETRY").is_none()
+            && env.get_os("KIRO_DISABLE_TELEMETRY").is_none()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
         // If telemetry is disabled we do not emit using toolkit_telemetry
