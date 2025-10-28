@@ -94,12 +94,12 @@ pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result
 
 /// The q data directory
 ///
-/// - Linux: `$XDG_DATA_HOME/amazon-q` or `$HOME/.local/share/amazon-q`
-/// - MacOS: `$HOME/Library/Application Support/amazon-q`
+/// - Linux: `$XDG_DATA_HOME/kiro-cli` or `$HOME/.local/share/kiro-cli`
+/// - MacOS: `$HOME/Library/Application Support/kiro-cli`
 pub fn fig_data_dir() -> Result<PathBuf> {
     Ok(dirs::data_local_dir()
         .ok_or(DirectoryError::NoHomeDirectory)?
-        .join("amazon-q"))
+        .join("kiro-cli"))
 }
 
 /// Get the macos tempdir from the `confstr` function
@@ -146,7 +146,7 @@ pub fn logs_dir() -> Result<PathBuf> {
         if #[cfg(unix)] {
             Ok(runtime_dir()?.join("qlog"))
         } else if #[cfg(windows)] {
-            Ok(std::env::temp_dir().join("amazon-q").join("logs"))
+            Ok(std::env::temp_dir().join("kiro-cli").join("logs"))
         }
     }
 }
@@ -459,16 +459,16 @@ mod tests {
 
     #[test]
     fn snapshot_fig_data_dir() {
-        linux!(fig_data_dir(), @"$HOME/.local/share/amazon-q");
-        macos!(fig_data_dir(), @"$HOME/Library/Application Support/amazon-q");
-        windows!(fig_data_dir(), @r"C:\Users\$USER\AppData\Local\amazon-q");
+        linux!(fig_data_dir(), @"$HOME/.local/share/kiro-cli");
+        macos!(fig_data_dir(), @"$HOME/Library/Application Support/kiro-cli");
+        windows!(fig_data_dir(), @r"C:\Users\$USER\AppData\Local\kiro-cli");
     }
 
     #[test]
     fn snapshot_settings_path() {
-        linux!(settings_path(), @"$HOME/.local/share/amazon-q/settings.json");
-        macos!(settings_path(), @"$HOME/Library/Application Support/amazon-q/settings.json");
-        windows!(settings_path(), @r"C:\Users\$USER\AppData\Local\amazon-q\settings.json");
+        linux!(settings_path(), @"$HOME/.local/share/kiro-cli/settings.json");
+        macos!(settings_path(), @"$HOME/Library/Application Support/kiro-cli/settings.json");
+        windows!(settings_path(), @r"C:\Users\$USER\AppData\Local\kiro-cli\settings.json");
     }
 
     #[test]
