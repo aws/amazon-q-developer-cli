@@ -1,13 +1,23 @@
 use std::collections::HashMap;
 
-use crossterm::event::KeyEvent;
+use crossterm::event::{
+    KeyCode,
+    KeyEvent,
+    KeyEventKind,
+    KeyEventState,
+    KeyModifiers,
+};
 use serde::{
     Deserialize,
     Deserializer,
     Serialize,
 };
 
-use super::action::Action;
+use super::action::{
+    Action,
+    Scroll,
+    ScrollDistance,
+};
 
 #[derive(Default, Debug, Copy, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Mode {
@@ -21,8 +31,37 @@ pub struct Config {
     pub keybindings: KeyBindings,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct KeyBindings(pub HashMap<Mode, HashMap<Vec<KeyEvent>, Action>>);
+
+impl Default for KeyBindings {
+    fn default() -> Self {
+        let mut mapping = HashMap::<Vec<KeyEvent>, Action>::new();
+        mapping.insert(
+            vec![KeyEvent {
+                code: KeyCode::Char('p'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            }],
+            Action::Scroll(Scroll::Up(ScrollDistance::Message)),
+        );
+        mapping.insert(
+            vec![KeyEvent {
+                code: KeyCode::Char('n'),
+                modifiers: KeyModifiers::CONTROL,
+                kind: KeyEventKind::Press,
+                state: KeyEventState::NONE,
+            }],
+            Action::Scroll(Scroll::Down(ScrollDistance::Message)),
+        );
+
+        let mut inner = HashMap::<Mode, _>::new();
+        inner.insert(Default::default(), mapping);
+
+        KeyBindings(inner)
+    }
+}
 
 impl<'de> Deserialize<'de> for KeyBindings {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>

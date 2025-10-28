@@ -156,6 +156,7 @@ impl App {
                         Action::ClearScreen => {},
                         Action::Error(_) => {},
                         Action::Help => {},
+                        Action::Scroll(_) => {},
                         Action::Input(input_event) => {
                             if let Err(e) = self.view_end.sender.send(input_event.clone()).await {
                                 error!("Error sending input event to control end: {:?}", e);

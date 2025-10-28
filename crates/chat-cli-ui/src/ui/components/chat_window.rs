@@ -18,7 +18,11 @@ use crate::protocol::{
     Event as SessionEvent,
     InputEvent,
 };
-use crate::ui::action::Action;
+use crate::ui::action::{
+    Action,
+    Scroll,
+    ScrollDistance,
+};
 
 #[derive(Debug, Clone)]
 struct Message {
@@ -43,6 +47,7 @@ pub struct ChatWindow {
     messages: Vec<Message>,
     current_message: Option<Message>,
     scroll_offset: u16,
+    nearest_message_idx: usize,
     visible: bool,
     // TODO: update on resize
     pub dimension: (u16, u16),
@@ -108,7 +113,7 @@ impl Component for ChatWindow {
                     Style::default().fg(Color::DarkGray),
                 ),
                 Span::styled(format!("{}: ", prefix), style.bold()),
-                Span::raw(&message.content),
+                Span::raw(strip_ansi_escapes::strip_str(&message.content)),
             ]));
             lines.push(Line::from("")); // Empty line between messages
         }
@@ -196,20 +201,63 @@ impl Component for ChatWindow {
     }
 
     fn update(&mut self, action: Action) -> eyre::Result<Option<Action>> {
-        if let Action::Input(input_event) = action {
-            match input_event {
-                InputEvent::Text(text) => {
-                    self.add_message(MessageRole::User, text);
-                    self.scroll_offset = self.messages.last().as_ref().map(|msg| msg.offset).unwrap_or_default();
-                    return Ok(Some(Action::Render));
-                },
-                InputEvent::Interrupt => {
-                    // Handle interrupt - could be used to cancel current streaming message
-                    if self.current_message.is_some() {
-                        self.finalize_current_message();
-                        return Ok(Some(Action::Render));
+        if self.visible {
+            match action {
+                Action::Input(input_event) => {
+                    match input_event {
+                        InputEvent::Text(text) => {
+                            self.add_message(MessageRole::User, text);
+                            self.scroll_offset =
+                                self.messages.last().as_ref().map(|msg| msg.offset).unwrap_or_default();
+                            self.nearest_message_idx = self.messages.len();
+                            return Ok(Some(Action::Render));
+                        },
+                        InputEvent::Interrupt => {
+                            // Handle interrupt - could be used to cancel current streaming message
+                            if self.current_message.is_some() {
+                                self.finalize_current_message();
+                                return Ok(Some(Action::Render));
+                            }
+                        },
                     }
                 },
+                Action::Scroll(scroll) => match scroll {
+                    Scroll::Up(scroll_distance) => match scroll_distance {
+                        ScrollDistance::Message => {
+                            if self.nearest_message_idx == 0 {
+                                return Ok(None);
+                            }
+                            self.nearest_message_idx -= 1;
+                            self.scroll_offset = self
+                                .messages
+                                .get(self.nearest_message_idx)
+                                .as_ref()
+                                .map(|msg| msg.offset)
+                                .unwrap_or_default();
+
+                            return Ok(Some(Action::Render));
+                        },
+                        ScrollDistance::Line(_) => {},
+                    },
+                    Scroll::Down(scroll_distance) => match scroll_distance {
+                        ScrollDistance::Message => {
+                            if self.messages.is_empty() || self.nearest_message_idx == self.messages.len() - 1 {
+                                return Ok(None);
+                            }
+                            self.nearest_message_idx += 1;
+                            self.scroll_offset = self
+                                .messages
+                                .get(self.nearest_message_idx)
+                                .as_ref()
+                                .map(|msg| msg.offset)
+                                .unwrap_or_default();
+
+                            return Ok(Some(Action::Render));
+                        },
+                        ScrollDistance::Line(_) => {},
+                    },
+                },
+                _ => {},
             }
         }
 

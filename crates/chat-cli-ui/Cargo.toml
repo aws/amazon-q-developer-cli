@@ -28,6 +28,7 @@ eyre.workspace = true
 tokio-util.workspace = true
 futures.workspace = true
 rustyline.workspace = true
+strip-ansi-escapes.workspace = true
 ratatui = "0.29.0"
 
 [target.'cfg(unix)'.dependencies]

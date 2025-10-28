@@ -16,4 +16,17 @@ pub enum Action {
     Error(String),
     Help,
     Input(InputEvent),
+    Scroll(Scroll),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Scroll {
+    Up(ScrollDistance),
+    Down(ScrollDistance),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScrollDistance {
+    Message,
+    Line(u16),
 }
