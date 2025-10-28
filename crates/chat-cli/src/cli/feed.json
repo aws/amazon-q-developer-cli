@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-10-28",
+      "version": "1.19.2",
+      "title": "Version 1.19.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "`/model` failing to load Sonnet 4.5 - [#3288](https://github.com/aws/amazon-q-developer-cli/pull/3288)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-10-27",
       "version": "1.19.1",
       "title": "Version 1.19.1",
