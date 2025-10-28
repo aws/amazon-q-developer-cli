@@ -10,25 +10,7 @@ pub(crate) struct Handle {
 ///
 /// Client for invoking operations on AWS CodeWhisperer. Each operation on AWS CodeWhisperer is a
 /// method on this this struct. `.send()` MUST be invoked on the generated operations to dispatch
-/// the request to the service. # Using the `Client`
-///
-/// A client has a function for every operation that can be performed by the service.
-/// For example, the
-/// [`AllowVendedLogDeliveryForResource`](crate::operation::allow_vended_log_delivery_for_resource)
-/// operation has a [`Client::allow_vended_log_delivery_for_resource`], function which returns a
-/// builder for that operation. The fluent builder ultimately has a `send()` function that returns
-/// an async future that returns a result, as illustrated below:
-///
-/// ```rust,ignore
-/// let result = client.allow_vended_log_delivery_for_resource()
-///     .resource_arn_being_authorized("example")
-///     .send()
-///     .await;
-/// ```
-///
-/// The underlying HTTP requests that get made by this can be modified with the
-/// `customize_operation` function on the fluent builder. See the
-/// [`customize`](crate::client::customize) module for more information.
+/// the request to the service.
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct Client {
     handle: ::std::sync::Arc<Handle>,
@@ -103,30 +85,6 @@ mod create_customization;
 mod create_profile;
 
 /// Operation customization and supporting types.
-///
-/// The underlying HTTP requests made during an operation can be customized
-/// by calling the `customize()` method on the builder returned from a client
-/// operation call. For example, this can be used to add an additional HTTP header:
-///
-/// ```ignore
-/// # async fn wrapper() -> ::std::result::Result<(), amzn_consolas_client::Error> {
-/// # let client: amzn_consolas_client::Client = unimplemented!();
-/// use ::http::header::{HeaderName, HeaderValue};
-///
-/// let result = client.allow_vended_log_delivery_for_resource()
-///     .customize()
-///     .mutate_request(|req| {
-///         // Add `x-example-header` with value
-///         req.headers_mut()
-///             .insert(
-///                 HeaderName::from_static("x-example-header"),
-///                 HeaderValue::from_static("1"),
-///             );
-///     })
-///     .send()
-///     .await;
-/// # }
-/// ```
 pub mod customize;
 
 mod delete_customization;

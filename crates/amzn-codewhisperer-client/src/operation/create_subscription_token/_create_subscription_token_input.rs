@@ -11,10 +11,6 @@ pub struct CreateSubscriptionTokenInput {
     pub provider: ::std::option::Option<crate::types::SubscriptionProvider>,
     #[allow(missing_docs)] // documentation missing in model
     pub subscription_type: ::std::option::Option<crate::types::SubscriptionType>,
-    #[allow(missing_docs)] // documentation missing in model
-    pub success_url: ::std::option::Option<::std::string::String>,
-    #[allow(missing_docs)] // documentation missing in model
-    pub cancel_url: ::std::option::Option<::std::string::String>,
 }
 impl CreateSubscriptionTokenInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -36,16 +32,6 @@ impl CreateSubscriptionTokenInput {
     pub fn subscription_type(&self) -> ::std::option::Option<&crate::types::SubscriptionType> {
         self.subscription_type.as_ref()
     }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn success_url(&self) -> ::std::option::Option<&str> {
-        self.success_url.as_deref()
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn cancel_url(&self) -> ::std::option::Option<&str> {
-        self.cancel_url.as_deref()
-    }
 }
 impl CreateSubscriptionTokenInput {
     /// Creates a new builder-style object to manufacture
@@ -64,8 +50,6 @@ pub struct CreateSubscriptionTokenInputBuilder {
     pub(crate) status_only: ::std::option::Option<bool>,
     pub(crate) provider: ::std::option::Option<crate::types::SubscriptionProvider>,
     pub(crate) subscription_type: ::std::option::Option<crate::types::SubscriptionType>,
-    pub(crate) success_url: ::std::option::Option<::std::string::String>,
-    pub(crate) cancel_url: ::std::option::Option<::std::string::String>,
 }
 impl CreateSubscriptionTokenInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -136,40 +120,6 @@ impl CreateSubscriptionTokenInputBuilder {
         &self.subscription_type
     }
 
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn success_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.success_url = ::std::option::Option::Some(input.into());
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_success_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.success_url = input;
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_success_url(&self) -> &::std::option::Option<::std::string::String> {
-        &self.success_url
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn cancel_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.cancel_url = ::std::option::Option::Some(input.into());
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_cancel_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.cancel_url = input;
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_cancel_url(&self) -> &::std::option::Option<::std::string::String> {
-        &self.cancel_url
-    }
-
     /// Consumes the builder and constructs a
     /// [`CreateSubscriptionTokenInput`](crate::operation::create_subscription_token::CreateSubscriptionTokenInput).
     pub fn build(
@@ -184,8 +134,6 @@ impl CreateSubscriptionTokenInputBuilder {
                 status_only: self.status_only,
                 provider: self.provider,
                 subscription_type: self.subscription_type,
-                success_url: self.success_url,
-                cancel_url: self.cancel_url,
             },
         )
     }

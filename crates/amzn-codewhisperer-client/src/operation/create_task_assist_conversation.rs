@@ -55,23 +55,13 @@ impl CreateTaskAssistConversation {
         >,
     > {
         let input = ::aws_smithy_runtime_api::client::interceptors::context::Input::erase(input);
-        use ::tracing::Instrument;
         ::aws_smithy_runtime::client::orchestrator::invoke_with_stop_point(
-            "CodeWhispererRuntime",
+            "codewhispererruntime",
             "CreateTaskAssistConversation",
             input,
             runtime_plugins,
             stop_point,
         )
-        // Create a parent span for the entire operation. Includes a random, internal-only,
-        // seven-digit ID for the operation orchestration so that it can be correlated in the logs.
-        .instrument(::tracing::debug_span!(
-            "CodeWhispererRuntime.CreateTaskAssistConversation",
-            "rpc.service" = "CodeWhispererRuntime",
-            "rpc.method" = "CreateTaskAssistConversation",
-            "sdk_invocation_id" = ::fastrand::u32(1_000_000..10_000_000),
-            "rpc.system" = "aws-api",
-        ))
         .await
     }
 
@@ -81,7 +71,9 @@ impl CreateTaskAssistConversation {
         config_override: ::std::option::Option<crate::config::Builder>,
     ) -> ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins {
         let mut runtime_plugins = client_runtime_plugins.with_operation_plugin(Self::new());
-
+        runtime_plugins = runtime_plugins.with_client_plugin(crate::auth_plugin::DefaultAuthOptionsPlugin::new(vec![
+            ::aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+        ]));
         if let ::std::option::Option::Some(config_override) = config_override {
             for plugin in config_override.runtime_plugins.iter().cloned() {
                 runtime_plugins = runtime_plugins.with_operation_plugin(plugin);
@@ -110,16 +102,13 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for CreateT
 
         cfg.store_put(
             ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
-                crate::config::auth::Params::builder()
-                    .operation_name("CreateTaskAssistConversation")
-                    .build()
-                    .expect("required fields set"),
+                ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
             ),
         );
 
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
             "CreateTaskAssistConversation",
-            "CodeWhispererRuntime",
+            "codewhispererruntime",
         ));
 
         ::std::option::Option::Some(cfg.freeze())
@@ -277,19 +266,12 @@ impl ::aws_smithy_runtime_api::client::interceptors::Intercept
             .downcast_ref::<CreateTaskAssistConversationInput>()
             .ok_or("failed to downcast to CreateTaskAssistConversationInput")?;
 
-        let params = crate::config::endpoint::Params::builder()
-            .set_endpoint(
-                cfg.load::<::aws_types::endpoint_config::EndpointUrl>()
-                    .map(|ty| ty.0.clone()),
+        let params = crate::config::endpoint::Params::builder().build().map_err(|err| {
+            ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new(
+                "endpoint params could not be built",
+                err,
             )
-            .set_region(cfg.load::<::aws_types::region::Region>().map(|r| r.as_ref().to_owned()))
-            .build()
-            .map_err(|err| {
-                ::aws_smithy_runtime_api::client::interceptors::error::ContextAttachedError::new(
-                    "endpoint params could not be built",
-                    err,
-                )
-            })?;
+        })?;
         cfg.interceptor_state()
             .store_put(::aws_smithy_runtime_api::client::endpoint::EndpointResolverParams::new(
                 params,

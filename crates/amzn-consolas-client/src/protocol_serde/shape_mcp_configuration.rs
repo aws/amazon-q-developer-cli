@@ -6,9 +6,6 @@ pub fn ser_mcp_configuration(
     {
         object.key("toggle").string(input.toggle.as_str());
     }
-    if let Some(var_1) = &input.mcp_registry_url {
-        object.key("mcpRegistryUrl").string(var_1.as_str());
-    }
     Ok(())
 }
 
@@ -43,13 +40,6 @@ where
                                             s.to_unescaped()
                                                 .map(|u| crate::types::OptInFeatureToggle::from(u.as_ref()))
                                         })
-                                        .transpose()?,
-                                );
-                            },
-                            "mcpRegistryUrl" => {
-                                builder = builder.set_mcp_registry_url(
-                                    ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                                        .map(|s| s.to_unescaped().map(|u| u.into_owned()))
                                         .transpose()?,
                                 );
                             },
