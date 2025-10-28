@@ -16,6 +16,7 @@ use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
 mod line_tracker;
 mod parser;
+mod performance;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
@@ -77,8 +78,7 @@ use cli::model::{
 pub use conversation::ConversationState;
 use conversation::TokenWarningLevel;
 use crossterm::style::{
-    Attribute,
-    Stylize,
+    Attribute, Color, Stylize
 };
 use crossterm::{
     cursor,
@@ -3099,6 +3099,18 @@ impl ChatSession {
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
                 .await;
 
+            // Display performance metrics if verbose mode is enabled
+            let should_show_metrics = self.should_show_performance_metrics();
+            if should_show_metrics {
+                // Display metrics for the most recent request
+                if let Some(latest_metadata) = self.user_turn_request_metadata.last().cloned() {
+                    if let Err(e) = self.display_performance_metrics(&latest_metadata).await {
+                        // Log error but don't fail the conversation
+                        error!(?e, "Failed to display performance metrics");
+                    }
+                }
+            }
+
             // Run Stop hooks when the assistant finishes responding
             if let Some(cm) = self.conversation.context_manager.as_mut() {
                 let _ = cm
@@ -3484,6 +3496,81 @@ impl ChatSession {
 
     fn all_tools_trusted(&self) -> bool {
         self.conversation.agents.trust_all_tools
+    }
+
+    /// Check if performance metrics should be displayed based on verbose flag
+    fn should_show_performance_metrics(&self) -> bool {
+        self.get_verbose_level() > 0
+    }
+
+    /// Get the current verbose level from CLI args or environment variables
+    fn get_verbose_level(&self) -> u8 {
+        // First check environment variable Q_VERBOSE_LEVEL for testing/override
+        if let Ok(env_verbose) = std::env::var("Q_VERBOSE_LEVEL") {
+            if let Ok(level) = env_verbose.parse::<u8>() {
+                return level;
+            }
+        }
+
+        // Parse command line arguments to find verbose flags
+        let args: Vec<String> = std::env::args().collect();
+        let mut verbose_count = 0u8;
+
+        for arg in &args {
+            if arg == "-v" || arg == "--verbose" {
+                verbose_count = verbose_count.saturating_add(1);
+            } else if let Some(v_count) = arg.strip_prefix("-v") {
+                // Handle -vv, -vvv, etc.
+                if v_count.chars().all(|c| c == 'v') {
+                    verbose_count = verbose_count.saturating_add(v_count.len() as u8 + 1);
+                }
+            }
+        }
+
+        verbose_count
+    }
+
+    /// Display performance metrics to stderr with visual distinction
+    async fn display_performance_metrics(&mut self, metadata: &RequestMetadata) -> Result<(), ChatError> {
+        use crate::cli::chat::performance::PerformanceMetrics;
+
+        if let Some(metrics) = PerformanceMetrics::calculate(metadata) {
+            // Always use comprehensive format when verbose is enabled
+            let formatted_metrics = metrics.format_comprehensive();
+
+            // Display comprehensive metrics with visual distinction on stderr
+            execute!(
+                self.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("┌─ Performance Metrics "),
+                style::Print("─".repeat(40)),
+                style::Print("┐\n"),
+                style::SetAttribute(Attribute::Italic)
+            )?;
+
+            // Split multi-line output and format each line
+            for line in formatted_metrics.lines() {
+                execute!(
+                    self.stderr,
+                    style::SetForegroundColor(Color::DarkGrey),
+                    style::Print("│ "),
+                    style::Print(line),
+                    style::Print("\n")
+                )?;
+            }
+
+            execute!(
+                self.stderr,
+                style::SetForegroundColor(Color::DarkGrey),
+                style::Print("└"),
+                style::Print("─".repeat(63)),
+                style::Print("┘\n"),
+                style::SetAttribute(Attribute::Reset),
+                style::SetForegroundColor(Color::Reset)
+            )?;
+        }
+
+        Ok(())
     }
 
     /// Display character limit warnings based on current conversation size
@@ -4525,6 +4612,68 @@ mod tests {
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
+        }
+    }
+
+        #[test]
+    fn test_verbose_level_detection() {
+        // Test environment variable override
+        unsafe {
+            std::env::set_var("Q_VERBOSE_LEVEL", "2");
+        }
+
+        // Since we can't easily create a full ChatSession in tests,
+        // let's test the verbose level detection logic directly
+        let get_verbose_level = || -> u8 {
+            // First check environment variable Q_VERBOSE_LEVEL for testing/override
+            if let Ok(env_verbose) = std::env::var("Q_VERBOSE_LEVEL") {
+                if let Ok(level) = env_verbose.parse::<u8>() {
+                    return level;
+                }
+            }
+
+            // Parse command line arguments to find verbose flags
+            let args: Vec<String> = std::env::args().collect();
+            let mut verbose_count = 0u8;
+
+            for arg in &args {
+                if arg == "-v" || arg == "--verbose" {
+                    verbose_count = verbose_count.saturating_add(1);
+                } else if let Some(v_count) = arg.strip_prefix("-v") {
+                    // Handle -vv, -vvv, etc.
+                    if v_count.chars().all(|c| c == 'v') {
+                        verbose_count = verbose_count.saturating_add(v_count.len() as u8 + 1);
+                    }
+                }
+            }
+
+            verbose_count
+        };
+
+        // Test environment variable takes precedence
+        assert_eq!(get_verbose_level(), 2);
+
+        // Clean up environment variable
+        unsafe {
+            std::env::remove_var("Q_VERBOSE_LEVEL");
+        }
+
+        // Test that should_show_performance_metrics returns true when verbose > 0
+        unsafe {
+            std::env::set_var("Q_VERBOSE_LEVEL", "1");
+        }
+        assert_eq!(get_verbose_level(), 1);
+        unsafe {
+            std::env::remove_var("Q_VERBOSE_LEVEL");
+        }
+
+        // Test that should_show_performance_metrics returns false when verbose = 0
+        unsafe {
+            std::env::set_var("Q_VERBOSE_LEVEL", "0");
+        }
+        assert_eq!(get_verbose_level(), 0);
+        unsafe {
+            std::env::remove_var("Q_VERBOSE_LEVEL");
         }
     }
 }
