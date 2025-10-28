@@ -6,10 +6,6 @@ use crossterm::style::{
     Attribute,
 };
 use eyre::Result;
-use serde::{
-    Deserialize,
-    Serialize,
-};
 
 use crate::cli::feed::Feed;
 use crate::constants::ui_text;
@@ -158,17 +154,37 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
     Ok(())
 }
 
-#[derive(Default, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum UiMode {
-    #[default]
-    Structured,
-    Passthrough,
-    New,
-}
-
+/// This dictates the event loop's egress behavior. It controls what gets emitted to the UI from the
+/// event loop.
+/// There are three possible potent states:
+/// - structured: This makes the event loop send structured messages where applicable (in addition
+///   to logging ANSI bytes directly where it has not been instrumented)
+/// - new: This spawns the new UI to be used on top of the current event loop (if we end up enabling
+///   this). This would also require the event loop to emit structured events.
+/// - unset: This is the default behavior where everything is unstructured (i.e. ANSI bytes straight
+///   to stderr or stdout)
+///
+/// The reason why this is a setting as opposed to managed input, which is controlled via an env
+/// var, is because the choice of UI is a user concern. Whereas managed input is purely a
+/// development concern.
 pub fn should_send_structured_message(os: &Os) -> bool {
     let ui_mode = os.database.settings.get_string(Setting::UiMode);
 
-    ui_mode.as_deref().is_some_and(|mode| mode == "structured")
+    ui_mode
+        .as_deref()
+        .is_some_and(|mode| mode == "structured" || mode == "new")
+}
+
+/// NOTE: unless you are doing testing work for the new UI, you likely would not need to worry
+/// about setting this environment variable.
+/// This dictates the event loop's ingress behavior. It controls how the event loop receives input
+/// from the user.
+/// A normal input refers to the use of [crate::cli::chat::InputSource], which is owned by
+/// the [crate::cli::chat::ChatSession]. It is not managed by the UI layer (nor is the UI even
+/// aware of its existence).
+/// Conversely, an "ui managed" input is one where stdin is managed by the UI layer. For the event
+/// loop, this effectively means forgoing the ownership of [crate::cli::chat::InputSource] (it is
+/// replaced by a None) and instead delegating the reading of user input to the UI layer.
+pub fn should_use_ui_managed_input() -> bool {
+    std::env::var("Q_UI_MANAGED_INPUT").is_ok()
 }

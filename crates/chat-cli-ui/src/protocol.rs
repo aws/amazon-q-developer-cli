@@ -497,3 +497,8 @@ impl Event {
         )
     }
 }
+
+pub enum InputEvent {
+    Text(String),
+    Interrupt,
+}
