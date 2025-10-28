@@ -47,7 +47,7 @@ pub struct ExecuteCommand {
     pub summary: Option<String>,
 }
 
-impl ExecuteCommand {
+impl ExecuteCommand { //REMOVEMEBUTIMPT actual tool call verification 
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         // Always require acceptance for multi-line commands.
         if self.command.contains("\n") || self.command.contains("\r") {
@@ -294,7 +294,7 @@ mod tests {
     };
 
     #[test]
-    fn test_requires_acceptance_for_readonly_commands() {
+    fn test_requires_acceptance_for_readonly_commands() { //REMOVEMEBUTIMPT tests unit tests you should write some
         let cmds = &[
             // Safe commands
             ("ls ~", false),
@@ -442,7 +442,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm() {
+    async fn test_eval_perm() { 
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let mut agent = Agent {
             name: "test_agent".to_string(),

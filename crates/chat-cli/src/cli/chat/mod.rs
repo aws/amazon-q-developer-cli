@@ -2166,7 +2166,7 @@ impl ChatSession {
                     }
                     tool_use.accepted = true;
 
-                    return Ok(ChatState::ExecuteTools);
+                    return Ok(ChatState::ExecuteTools); //REMOVEMEBUTIMPT
                 }
             } else if !self.pending_prompts.is_empty() {
                 let prompts = self.pending_prompts.drain(0..).collect();
