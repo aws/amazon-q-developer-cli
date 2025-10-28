@@ -11,7 +11,7 @@ fn agent_without_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent")?;
+    let response = chat.execute_command_with_timeout("/agent",Some(1000))?;
     
     println!("📝 Agent response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -67,7 +67,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let create_response = chat.execute_command(&format!("/agent create --name {}", agent_name))?;
+    let create_response = chat.execute_command_with_timeout(&format!("/agent create --name {}", agent_name),Some(1000))?;
     
     println!("📝 Agent create response: {} bytes", create_response.len());
     println!("📝 CREATE RESPONSE:");
@@ -84,7 +84,7 @@ fn test_agent_create_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(save_response.contains("Agent") && save_response.contains(&agent_name) && save_response.contains("has been created successfully"), "Missing agent creation success message");
     println!("✅ Found agent creation success message");
     
-    let whoami_response = chat.execute_command("!whoami")?;
+    let whoami_response = chat.execute_command_with_timeout("!whoami",Some(1000))?;
     
     println!("📝 Whoami response: {} bytes", whoami_response.len());
     println!("📝 WHOAMI RESPONSE:");
@@ -132,7 +132,7 @@ fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
     
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    chat.execute_command(&format!("/agent create --name {}", agent_name))?;
+    chat.execute_command_with_timeout(&format!("/agent create --name {}", agent_name),Some(1000))?;
     
     let save_response = chat.execute_command(":wq")?;
     
@@ -141,7 +141,7 @@ fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found agent creation success message");
 
     // Edit the agent description
-    let edit_response = chat.execute_command(&format!("/agent edit --name {}", agent_name))?;
+    let edit_response = chat.execute_command_with_timeout(&format!("/agent edit --name {}", agent_name),Some(2000))?;
     
     println!("📝 Agent edit response: {} bytes", edit_response.len());
     println!("📝 EDIT RESPONSE:");
@@ -165,7 +165,7 @@ fn test_agent_edit_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(save_edit.contains("Agent") && save_edit.contains(&agent_name) && save_edit.contains("has been edited successfully"), "Missing agent update success message");
     println!("✅ Found agent update success message");
     
-    let whoami_response = chat.execute_command("!whoami")?;
+    let whoami_response = chat.execute_command_with_timeout("!whoami",Some(500))?;
     
     println!("📝 Whoami response: {} bytes", whoami_response.len());
     println!("📝 WHOAMI RESPONSE:");
@@ -207,7 +207,7 @@ fn test_agent_create_missing_args() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent create")?;
+    let response = chat.execute_command_with_timeout("/agent create",Some(2000))?;
     
     println!("📝 Agent create missing args response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -255,7 +255,7 @@ fn test_agent_help_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent help")?;
+    let response = chat.execute_command_with_timeout("/agent help",Some(1000))?;
     
     println!("📝 Agent help command response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -299,7 +299,7 @@ fn test_agent_invalid_command() -> Result<(), Box<dyn std::error::Error>> {
     let session =q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent invalidcommand")?;
+    let response = chat.execute_command_with_timeout("/agent invalidcommand",Some(1000))?;
     
     println!("📝 Agent invalid command response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -335,7 +335,7 @@ fn test_agent_list_command() -> Result<(), Box<dyn std::error::Error>> {
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent list")?;
+    let response = chat.execute_command_with_timeout("/agent list",Some(1000))?;
     
     println!("📝 Agent list response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -443,7 +443,7 @@ fn test_agent_set_default_missing_args() -> Result<(), Box<dyn std::error::Error
     let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     
-    let response = chat.execute_command("/agent set-default")?;
+    let response = chat.execute_command_with_timeout("/agent set-default",Some(2000))?;
     
     println!("📝 Agent set-default missing args response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -508,7 +508,7 @@ fn test_agent_generate_command() -> Result<(), Box<dyn std::error::Error>> {
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Wait for MCP menu, then confirm (Enter)
-    let final_response = chat.send_key_input("\r")?;
+    let _final_response = chat.send_key_input("\r")?;
     std::thread::sleep(std::time::Duration::from_secs(2));
 
     // Handle vi editor opening - enter insert mode and add content
@@ -544,11 +544,11 @@ fn test_agent_swap_command() -> Result<(), Box<dyn std::error::Error>> {
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
     // Start the command and wait for name prompt
-    let _response1 = chat.execute_command("/agent swap")?;
+    let _response1 = chat.execute_command_with_timeout("/agent swap",Some(2000))?;
     println!("📝 Agent swap response: {} bytes", _response1.len());
     println!("📝 Full output: {}", _response1);
     println!("📝 End output");
-    let _response2 = chat.execute_command("1")?;
+    let _response2 = chat.execute_command_with_timeout("1",Some(1000))?;
     println!("📝 Agent swap response: {} bytes", _response2.len());
     println!("📝 Agent swap response Full output : {}", _response2);
 

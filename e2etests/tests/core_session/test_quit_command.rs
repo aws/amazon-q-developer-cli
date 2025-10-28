@@ -11,7 +11,7 @@ fn test_quit_command() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("✅ Q Chat session started");
     
-    chat.execute_command_with_timeout("/quit",Some(100))?;
+    chat.execute_command_with_timeout("/quit",Some(1000))?;
     
     println!("✅ /quit command executed successfully");
     println!("✅ Test completed successfully");

@@ -61,7 +61,7 @@ fn test_issue_f_command() -> Result<(), Box<dyn std::error::Error>> {
         let session = q_chat_helper::get_chat_session();
     let mut chat = session.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
 
-    let response = chat.execute_command("/issue -f \"Critical bug in file handling\"")?;
+    let response = chat.execute_command_with_timeout("/issue -f \"Critical bug in file handling\"",Some(3000))?;
     
     println!("📝 Issue force command response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");

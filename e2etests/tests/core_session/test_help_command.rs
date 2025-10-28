@@ -1,6 +1,7 @@
 #[allow(unused_imports)]
 use q_cli_e2e_tests::q_chat_helper;
 
+#[allow(dead_code)]
 fn clean_terminal_output(input: &str) -> String {
     input.replace("(B", "")
 }
@@ -138,7 +139,7 @@ fn test_ctrls_command() -> Result<(), Box<dyn std::error::Error>> {
     assert!(cleaned_response.contains("context"),"Response should contain /context");
 
     //pressing esc button to close ctrl+s window
-    let esc = chat.execute_command("\x1B")?;
+    let _esc = chat.execute_command("\x1B")?;
 
     drop(chat);
     Ok(())

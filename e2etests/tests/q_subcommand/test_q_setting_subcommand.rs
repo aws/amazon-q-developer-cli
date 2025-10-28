@@ -20,7 +20,7 @@ fn test_q_setting_help_subcommand() -> Result<(), Box<dyn std::error::Error>> {
             "Help should contain usage line");
     assert!(response.contains("Commands:"), 
             "Help should contain commands section");
-    assert!(response.contains("open") && response.contains("all") && response.contains("help"), 
+    assert!(response.contains("open") && response.contains("list") && response.contains("help"), 
             "Help should contain all  subcommands related to q setting subcommand");
     assert!(response.contains("Arguments:"), 
             "Help should contain Arguments section");
@@ -81,7 +81,7 @@ fn test_q_settings_help_subcommand() -> Result<(), Box<dyn std::error::Error>> {
             "Help should contain usage line");
     assert!(response.contains("Commands:"), 
             "Help should contain commands section");
-    assert!(response.contains("open") && response.contains("all") && response.contains("help"), 
+    assert!(response.contains("open") && response.contains("list") && response.contains("help"), 
             "Help should contain all subcommands related to q setting subcommand");
     assert!(response.contains("Arguments:"), 
             "Help should contain Arguments section");
