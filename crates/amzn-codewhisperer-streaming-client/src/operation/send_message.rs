@@ -55,23 +55,13 @@ impl SendMessage {
         >,
     > {
         let input = ::aws_smithy_runtime_api::client::interceptors::context::Input::erase(input);
-        use ::tracing::Instrument;
         ::aws_smithy_runtime::client::orchestrator::invoke_with_stop_point(
-            "CodeWhispererStreaming",
+            "codewhispererstreaming",
             "SendMessage",
             input,
             runtime_plugins,
             stop_point,
         )
-        // Create a parent span for the entire operation. Includes a random, internal-only,
-        // seven-digit ID for the operation orchestration so that it can be correlated in the logs.
-        .instrument(::tracing::debug_span!(
-            "CodeWhispererStreaming.SendMessage",
-            "rpc.service" = "CodeWhispererStreaming",
-            "rpc.method" = "SendMessage",
-            "sdk_invocation_id" = ::fastrand::u32(1_000_000..10_000_000),
-            "rpc.system" = "aws-api",
-        ))
         .await
     }
 
@@ -81,7 +71,9 @@ impl SendMessage {
         config_override: ::std::option::Option<crate::config::Builder>,
     ) -> ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins {
         let mut runtime_plugins = client_runtime_plugins.with_operation_plugin(Self::new());
-
+        runtime_plugins = runtime_plugins.with_client_plugin(crate::auth_plugin::DefaultAuthOptionsPlugin::new(vec![
+            ::aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+        ]));
         if let ::std::option::Option::Some(config_override) = config_override {
             for plugin in config_override.runtime_plugins.iter().cloned() {
                 runtime_plugins = runtime_plugins.with_operation_plugin(plugin);
@@ -108,17 +100,14 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for SendMes
 
         cfg.store_put(
             ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
-                crate::config::auth::Params::builder()
-                    .operation_name("SendMessage")
-                    .build()
-                    .expect("required fields set"),
+                ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
             ),
         );
 
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::SensitiveOutput);
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
             "SendMessage",
-            "CodeWhispererStreaming",
+            "codewhispererstreaming",
         ));
 
         ::std::option::Option::Some(cfg.freeze())
@@ -129,22 +118,26 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for SendMes
         _: &::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder,
     ) -> ::std::borrow::Cow<'_, ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder> {
         #[allow(unused_mut)]
-        let mut rcb =
-            ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new("SendMessage")
-                .with_interceptor(SendMessageEndpointParamsInterceptor)
-                .with_retry_classifier(
-                    ::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
-                        crate::operation::send_message::SendMessageError,
-                    >::new(),
-                )
-                .with_retry_classifier(
-                    ::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
-                        crate::operation::send_message::SendMessageError,
-                    >::new(),
-                )
-                .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
-                    crate::operation::send_message::SendMessageError,
-                >::new());
+        let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new(
+            "SendMessage",
+        )
+        .with_interceptor(
+            ::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default(),
+        )
+        .with_interceptor(SendMessageEndpointParamsInterceptor)
+        .with_retry_classifier(
+            ::aws_smithy_runtime::client::retries::classifiers::TransientErrorClassifier::<
+                crate::operation::send_message::SendMessageError,
+            >::new(),
+        )
+        .with_retry_classifier(
+            ::aws_smithy_runtime::client::retries::classifiers::ModeledAsRetryableClassifier::<
+                crate::operation::send_message::SendMessageError,
+            >::new(),
+        )
+        .with_retry_classifier(::aws_runtime::retries::classifiers::AwsErrorCodeClassifier::<
+            crate::operation::send_message::SendMessageError,
+        >::new());
 
         ::std::borrow::Cow::Owned(rcb)
     }

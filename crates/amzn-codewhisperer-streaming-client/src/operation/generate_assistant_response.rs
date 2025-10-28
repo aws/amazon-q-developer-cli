@@ -55,23 +55,13 @@ impl GenerateAssistantResponse {
         >,
     > {
         let input = ::aws_smithy_runtime_api::client::interceptors::context::Input::erase(input);
-        use ::tracing::Instrument;
         ::aws_smithy_runtime::client::orchestrator::invoke_with_stop_point(
-            "CodeWhispererStreaming",
+            "codewhispererstreaming",
             "GenerateAssistantResponse",
             input,
             runtime_plugins,
             stop_point,
         )
-        // Create a parent span for the entire operation. Includes a random, internal-only,
-        // seven-digit ID for the operation orchestration so that it can be correlated in the logs.
-        .instrument(::tracing::debug_span!(
-            "CodeWhispererStreaming.GenerateAssistantResponse",
-            "rpc.service" = "CodeWhispererStreaming",
-            "rpc.method" = "GenerateAssistantResponse",
-            "sdk_invocation_id" = ::fastrand::u32(1_000_000..10_000_000),
-            "rpc.system" = "aws-api",
-        ))
         .await
     }
 
@@ -81,7 +71,9 @@ impl GenerateAssistantResponse {
         config_override: ::std::option::Option<crate::config::Builder>,
     ) -> ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugins {
         let mut runtime_plugins = client_runtime_plugins.with_operation_plugin(Self::new());
-
+        runtime_plugins = runtime_plugins.with_client_plugin(crate::auth_plugin::DefaultAuthOptionsPlugin::new(vec![
+            ::aws_smithy_runtime_api::client::auth::http::HTTP_BEARER_AUTH_SCHEME_ID,
+        ]));
         if let ::std::option::Option::Some(config_override) = config_override {
             for plugin in config_override.runtime_plugins.iter().cloned() {
                 runtime_plugins = runtime_plugins.with_operation_plugin(plugin);
@@ -110,17 +102,14 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for Generat
 
         cfg.store_put(
             ::aws_smithy_runtime_api::client::auth::AuthSchemeOptionResolverParams::new(
-                crate::config::auth::Params::builder()
-                    .operation_name("GenerateAssistantResponse")
-                    .build()
-                    .expect("required fields set"),
+                ::aws_smithy_runtime_api::client::auth::static_resolver::StaticAuthSchemeOptionResolverParams::new(),
             ),
         );
 
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::SensitiveOutput);
         cfg.store_put(::aws_smithy_runtime_api::client::orchestrator::Metadata::new(
             "GenerateAssistantResponse",
-            "CodeWhispererStreaming",
+            "codewhispererstreaming",
         ));
 
         ::std::option::Option::Some(cfg.freeze())
@@ -133,6 +122,9 @@ impl ::aws_smithy_runtime_api::client::runtime_plugin::RuntimePlugin for Generat
         #[allow(unused_mut)]
         let mut rcb = ::aws_smithy_runtime_api::client::runtime_components::RuntimeComponentsBuilder::new(
             "GenerateAssistantResponse",
+        )
+        .with_interceptor(
+            ::aws_smithy_runtime::client::stalled_stream_protection::StalledStreamProtectionInterceptor::default(),
         )
         .with_interceptor(GenerateAssistantResponseEndpointParamsInterceptor)
         .with_retry_classifier(

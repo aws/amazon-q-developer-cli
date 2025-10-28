@@ -14,7 +14,6 @@
 #![allow(clippy::unnecessary_map_on_constructor)]
 #![allow(rustdoc::bare_urls)]
 #![allow(rustdoc::redundant_explicit_links)]
-#![allow(rustdoc::invalid_html_tags)]
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
@@ -52,24 +51,6 @@ pub use config::Config;
 pub use error_meta::Error;
 
 /// Client for calling Amazon CodeWhisperer Streaming.
-/// # Using the `Client`
-///
-/// A client has a function for every operation that can be performed by the service.
-/// For example, the [`ExportResultArchive`](crate::operation::export_result_archive) operation has
-/// a [`Client::export_result_archive`], function which returns a builder for that operation.
-/// The fluent builder ultimately has a `send()` function that returns an async future that
-/// returns a result, as illustrated below:
-///
-/// ```rust,ignore
-/// let result = client.export_result_archive()
-///     .export_id("example")
-///     .send()
-///     .await;
-/// ```
-///
-/// The underlying HTTP requests that get made by this can be modified with the
-/// `customize_operation` function on the fluent builder. See the
-/// [`customize`](crate::client::customize) module for more information.
 pub mod client;
 
 /// Configuration for Amazon CodeWhisperer Streaming.
@@ -92,7 +73,7 @@ pub mod primitives;
 /// Data structures used by operation inputs/outputs.
 pub mod types;
 
-mod event_receiver;
+mod auth_plugin;
 
 pub(crate) mod protocol_serde;
 
@@ -101,6 +82,8 @@ mod sdk_feature_tracker;
 mod serialization_settings;
 
 mod serde_util;
+
+mod event_receiver;
 
 mod event_stream_serde;
 

@@ -33,13 +33,6 @@ impl GenerateCodeFromCommandsOutput {
     pub fn builder() -> crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder {
         crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder::default()
     }
-
-    #[allow(unused)]
-    pub(crate) fn into_builder(
-        self,
-    ) -> crate::operation::generate_code_from_commands::builders::GenerateCodeFromCommandsOutputBuilder {
-        Self::builder().generated_code_from_commands_response(self.generated_code_from_commands_response)
-    }
 }
 
 /// A builder for

@@ -28,8 +28,6 @@ pub struct Profile {
     #[allow(missing_docs)] // documentation missing in model
     pub opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
     #[allow(missing_docs)] // documentation missing in model
-    pub opt_in_features_type: ::std::option::Option<crate::types::OptInFeaturesType>,
-    #[allow(missing_docs)] // documentation missing in model
     pub permission_update_required: ::std::option::Option<bool>,
     #[allow(missing_docs)] // documentation missing in model
     pub application_properties: ::std::option::Option<::std::vec::Vec<crate::types::ApplicationProperties>>,
@@ -102,11 +100,6 @@ impl Profile {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn opt_in_features_type(&self) -> ::std::option::Option<&crate::types::OptInFeaturesType> {
-        self.opt_in_features_type.as_ref()
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
     pub fn permission_update_required(&self) -> ::std::option::Option<bool> {
         self.permission_update_required
     }
@@ -141,7 +134,6 @@ pub struct ProfileBuilder {
     pub(crate) resource_policy: ::std::option::Option<crate::types::ResourcePolicy>,
     pub(crate) profile_type: ::std::option::Option<crate::types::ProfileType>,
     pub(crate) opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
-    pub(crate) opt_in_features_type: ::std::option::Option<crate::types::OptInFeaturesType>,
     pub(crate) permission_update_required: ::std::option::Option<bool>,
     pub(crate) application_properties: ::std::option::Option<::std::vec::Vec<crate::types::ApplicationProperties>>,
 }
@@ -368,23 +360,6 @@ impl ProfileBuilder {
     }
 
     #[allow(missing_docs)] // documentation missing in model
-    pub fn opt_in_features_type(mut self, input: crate::types::OptInFeaturesType) -> Self {
-        self.opt_in_features_type = ::std::option::Option::Some(input);
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_opt_in_features_type(mut self, input: ::std::option::Option<crate::types::OptInFeaturesType>) -> Self {
-        self.opt_in_features_type = input;
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_opt_in_features_type(&self) -> &::std::option::Option<crate::types::OptInFeaturesType> {
-        &self.opt_in_features_type
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
     pub fn permission_update_required(mut self, input: bool) -> Self {
         self.permission_update_required = ::std::option::Option::Some(input);
         self
@@ -458,7 +433,6 @@ impl ProfileBuilder {
             resource_policy: self.resource_policy,
             profile_type: self.profile_type,
             opt_in_features: self.opt_in_features,
-            opt_in_features_type: self.opt_in_features_type,
             permission_update_required: self.permission_update_required,
             application_properties: self.application_properties,
         })
