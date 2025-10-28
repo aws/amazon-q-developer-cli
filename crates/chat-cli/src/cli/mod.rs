@@ -88,7 +88,7 @@ impl OutputFormat {
     }
 }
 
-/// The Amazon Q CLI
+/// The Kiro CLI
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum RootSubcommand {
@@ -96,9 +96,9 @@ pub enum RootSubcommand {
     Agent(AgentArgs),
     /// AI assistant in your terminal
     Chat(ChatArgs),
-    /// Log in to Amazon Q
+    /// Log in to Kiro
     Login(LoginArgs),
-    /// Log out of Amazon Q
+    /// Log out of Kiro
     Logout,
     /// Print info about the current login session
     Whoami(WhoamiArgs),

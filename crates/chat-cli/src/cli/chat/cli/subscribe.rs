@@ -20,13 +20,13 @@ use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::system_info::is_remote;
 
-const SUBSCRIBE_TITLE_TEXT: &str = color_print::cstr! { "<white!,bold>Subscribe to Q Developer Pro</white!,bold>" };
+const SUBSCRIBE_TITLE_TEXT: &str = color_print::cstr! { "<white!,bold>Subscribe to Kiro Developer Pro</white!,bold>" };
 
 const SUBSCRIBE_TEXT: &str = color_print::cstr! { "During the upgrade, you'll be asked to link your Builder ID to the AWS account that will be billed the monthly subscription fee.
 
 Need help? Visit our subscription support page> <blue!>https://docs.aws.amazon.com/console/amazonq/upgrade-builder-id</blue!>" };
 
-/// Arguments for the subscribe command to manage Q Developer Pro subscriptions
+/// Arguments for the subscribe command to manage Kiro Developer Pro subscriptions
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct SubscribeArgs {
@@ -44,7 +44,7 @@ impl SubscribeArgs {
             execute!(
                 session.stderr,
                 StyledText::warning_fg(),
-                style::Print("\nYour Q Developer Pro subscription is managed through IAM Identity Center.\n\n"),
+                style::Print("\nYour Kiro Developer Pro subscription is managed through IAM Identity Center.\n\n"),
                 StyledText::reset(),
             )?;
         } else if self.manage {
@@ -55,7 +55,7 @@ impl SubscribeArgs {
                         queue!(
                             session.stderr,
                             StyledText::warning_fg(),
-                            style::Print("You don't seem to have a Q Developer Pro subscription. "),
+                            style::Print("You don't seem to have a Kiro Developer Pro subscription. "),
                             StyledText::secondary_fg(),
                             style::Print("Use "),
                             StyledText::success_fg(),
@@ -112,7 +112,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
                 queue!(
                     session.stderr,
                     StyledText::warning_fg(),
-                    style::Print("Your Builder ID already has a Q Developer Pro subscription.\n\n"),
+                    style::Print("Your Builder ID already has a Kiro Developer Pro subscription.\n\n"),
                     StyledText::reset(),
                 )?;
                 return Ok(());

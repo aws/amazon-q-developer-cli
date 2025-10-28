@@ -56,7 +56,7 @@ use crate::cli::issue;
 use crate::constants::ui_text;
 use crate::os::Os;
 
-/// q (Amazon Q Chat)
+/// q (Kiro Chat)
 #[derive(Debug, PartialEq, Parser)]
 #[command(color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help())]
 pub enum SlashCommand {
@@ -90,7 +90,7 @@ pub enum SlashCommand {
     Issue(issue::IssueArgs),
     /// Create a zip file with logs for support investigation
     Logdump(LogdumpArgs),
-    /// View changelog for Amazon Q CLI
+    /// View changelog for Kiro CLI
     #[command(name = "changelog")]
     Changelog(ChangelogArgs),
     /// View and retrieve prompts
@@ -105,7 +105,7 @@ pub enum SlashCommand {
     Model(ModelArgs),
     /// Toggle experimental features
     Experiment(ExperimentArgs),
-    /// Upgrade to a Q Developer Pro subscription for increased query limits
+    /// Upgrade to a Kiro Developer Pro subscription for increased query limits
     Subscribe(SubscribeArgs),
     /// (Beta) Toggle tangent mode for isolated conversations. Requires "q settings
     /// chat.enableTangentMode true"

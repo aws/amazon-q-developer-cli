@@ -3,18 +3,18 @@
 use crate::theme::StyledText;
 
 /// Base product name without any qualifiers
-pub const PRODUCT_NAME: &str = "Amazon Q";
+pub const PRODUCT_NAME: &str = "Kiro";
 
 /// Client name for authentication purposes
-pub const CLIENT_NAME: &str = "Amazon Q Developer for command line";
+pub const CLIENT_NAME: &str = "Kiro Developer for command line";
 
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding
-    pub const TROUBLE_RESPONDING: &str = "Amazon Q is having trouble responding right now";
+    pub const TROUBLE_RESPONDING: &str = "Kiro is having trouble responding right now";
 
     /// Rate limit error message prefix
-    pub const RATE_LIMIT_PREFIX: &str = " ⚠️  Amazon Q rate limit reached:";
+    pub const RATE_LIMIT_PREFIX: &str = " ⚠️  Kiro rate limit reached:";
 }
 
 /// UI text constants
@@ -23,12 +23,12 @@ pub mod ui_text {
 
     /// Welcome text for small screens
     pub fn small_screen_welcome() -> String {
-        format!("Welcome to {}!", StyledText::brand("Amazon Q"))
+        format!("Welcome to {}!", StyledText::brand("Kiro"))
     }
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        format!("{}\n\n", StyledText::emphasis("What's New in Amazon Q CLI"))
+        format!("{}\n\n", StyledText::emphasis("What's New in Kiro CLI"))
     }
 
     /// Trust all tools warning text
@@ -38,7 +38,7 @@ pub mod ui_text {
         warning.push_str(&StyledText::success("All tools are now trusted ("));
         warning.push_str(&StyledText::error("!"));
         warning.push_str(&StyledText::success(
-            "). Amazon Q will execute tools without asking for confirmation.",
+            "). Kiro will execute tools without asking for confirmation.",
         ));
         warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
         warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
@@ -66,7 +66,7 @@ pub mod ui_text {
         help.push_str(&StyledText::brand("MCP:"));
         help.push('\n');
         help.push_str(&StyledText::secondary(
-            "You can now configure the Amazon Q CLI to use MCP servers.",
+            "You can now configure the Kiro CLI to use MCP servers.",
         ));
         help.push_str(&StyledText::secondary(
             "\nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
@@ -182,14 +182,14 @@ pub mod ui_text {
 /// Help text constants for CLI commands
 pub mod help_text {
     /// Context command description
-    pub const CONTEXT_DESCRIPTION: &str = "Subcommands for managing context rules and files in Amazon Q chat sessions";
+    pub const CONTEXT_DESCRIPTION: &str = "Subcommands for managing context rules and files in Kiro chat sessions";
 
     /// Full context command long help text
     pub fn context_long_help() -> String {
         format!("Context rules determine which files are included in your {} session. 
 They are derived from the current active agent.
 The files matched by these rules provide {} with additional information 
-about your project or environment. Adding relevant files helps Q generate 
+about your project or environment. Adding relevant files helps Kiro generate 
 more accurate and helpful responses.
 
 Notes:
@@ -232,7 +232,7 @@ pub mod tips {
                 StyledText::command("q chat --resume")
             ),
             format!(
-                "Get notified whenever Amazon Q CLI finishes responding. Just run {}",
+                "Get notified whenever Kiro CLI finishes responding. Just run {}",
                 StyledText::command("q settings chat.enableNotifications true")
             ),
             format!(
@@ -244,7 +244,7 @@ pub mod tips {
                 StyledText::command("/usage")
             ),
             format!(
-                "Get notified whenever Amazon Q CLI finishes responding. Just run {}",
+                "Get notified whenever Kiro CLI finishes responding. Just run {}",
                 StyledText::command("q settings chat.enableNotifications true")
             ),
             format!(
@@ -252,7 +252,7 @@ pub mod tips {
                 StyledText::command("!")
             ),
             format!(
-                "Q can use tools without asking for confirmation every time. Give {} a try",
+                "Kiro can use tools without asking for confirmation every time. Give {} a try",
                 StyledText::command("/tools trust")
             ),
             format!(
@@ -264,7 +264,7 @@ pub mod tips {
                 StyledText::command("/compact")
             ),
             format!(
-                "If you want to file an issue to the Amazon Q CLI team, just tell me, or run {}",
+                "If you want to file an issue to the Kiro CLI team, just tell me, or run {}",
                 StyledText::command("q issue")
             ),
             format!(
@@ -303,7 +303,7 @@ pub mod tips {
                 StyledText::command("\"Can you save conversations?\"")
             ),
             format!(
-                "Stay up to date with the latest features and improvements! Use {} to see what's new in Amazon Q CLI",
+                "Stay up to date with the latest features and improvements! Use {} to see what's new in Kiro CLI",
                 StyledText::command("/changelog")
             ),
             format!(

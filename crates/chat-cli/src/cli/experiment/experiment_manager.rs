@@ -74,7 +74,7 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     },
     Experiment {
         experiment_name: ExperimentName::TodoList,
-        description: "Enables Q to create todo lists that can be viewed and managed using /todos",
+        description: "Enables Kiro to create todo lists that can be viewed and managed using /todos",
         setting_key: Setting::EnabledTodoList,
         enabled: true,
         commands: &[

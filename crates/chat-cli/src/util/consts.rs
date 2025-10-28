@@ -51,7 +51,7 @@ pub mod env_var {
         /// Overrides the ZDOTDIR environment variable
         Q_ZDOTDIR = "Q_ZDOTDIR",
 
-        /// Indicates a process was launched by Amazon Q
+        /// Indicates a process was launched by Kiro
         PROCESS_LAUNCHED_BY_Q = "PROCESS_LAUNCHED_BY_Q",
 
         /// The shell to use in qterm
