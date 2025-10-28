@@ -72,7 +72,7 @@ impl TodoSubcommand {
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true\n"),
+                style::Print("Todo lists are disabled. Enable them with: kiro-cli settings chat.enableTodoList true\n"),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {

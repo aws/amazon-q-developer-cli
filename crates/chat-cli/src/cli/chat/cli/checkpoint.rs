@@ -91,7 +91,7 @@ impl CheckpointSubcommand {
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print("\nCheckpoint is disabled. Enable it with: q settings chat.enableCheckpoint true\n"),
+                style::Print("\nCheckpoint is disabled. Enable it with: kiro-cli settings chat.enableCheckpoint true\n"),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {

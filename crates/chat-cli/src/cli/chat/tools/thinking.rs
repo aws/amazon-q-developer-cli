@@ -23,7 +23,7 @@ use crate::theme::StyledText;
 /// navigate complex decision trees, and improve the quality of responses in multi-step scenarios.
 ///
 /// This is a beta feature that can be enabled/disabled via settings:
-/// `q settings chat.enableThinking true`
+/// `kiro-cli settings chat.enableThinking true`
 #[derive(Debug, Clone, Deserialize)]
 pub struct Thinking {
     /// The thought content that the model wants to process

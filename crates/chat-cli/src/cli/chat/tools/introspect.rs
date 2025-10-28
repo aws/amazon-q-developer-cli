@@ -95,7 +95,7 @@ impl Introspect {
         // Add settings information dynamically
         documentation.push_str("\n\n--- Available Settings ---\n");
         documentation.push_str(
-            "Q CLI supports these configuration settings (use `q settings` command from terminal, NOT /settings):\n\n",
+            "Q CLI supports these configuration settings (use `kiro-cli settings` command from terminal, NOT /settings):\n\n",
         );
 
         // Automatically iterate over all settings with descriptions
@@ -105,7 +105,7 @@ impl Introspect {
         }
 
         documentation.push_str(
-            "\nNOTE: Settings are managed via `q settings` command from terminal, not slash commands in chat.\n",
+            "\nNOTE: Settings are managed via `kiro-cli settings` command from terminal, not slash commands in chat.\n",
         );
 
         documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");

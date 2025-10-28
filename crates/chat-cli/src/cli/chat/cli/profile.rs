@@ -53,10 +53,10 @@ use crate::util::{
     before_long_help = "Agents allow you to organize and manage different sets of context files for different projects or tasks.
 
 Notes
-• Launch q chat with a specific agent with --agent
+• Launch kiro-cli chat with a specific agent with --agent
 • Construct an agent under ~/.kiro-cli/cli-agents/ (accessible globally) or cwd/.kiro-cli/cli-agents (accessible in workspace)
 • See example config under global directory
-• Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
+• Set default agent to assume with settings by running \"kiro-cli settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
 )]
 /// Subcommands for managing agents in the chat CLI
@@ -98,7 +98,7 @@ pub enum AgentSubcommand {
     },
     /// Show agent config schema
     Schema,
-    /// Define a default agent to use when q chat launches
+    /// Define a default agent to use when kiro-cli chat launches
     SetDefault {
         /// Name of the agent to set as default
         #[arg(long, short)]
@@ -404,7 +404,7 @@ impl AgentSubcommand {
                     session.stderr,
                     StyledText::warning_fg(),
                     style::Print(format!(
-                        "To make changes or create agents, please do so via create the corresponding config in {global_path}, where you would also find an example config for your reference.\nTo switch agent, launch another instance of q chat with --agent.\n\n"
+                        "To make changes or create agents, please do so via create the corresponding config in {global_path}, where you would also find an example config for your reference.\nTo switch agent, launch another instance of kiro-cli chat with --agent.\n\n"
                     )),
                     StyledText::reset_attributes()
                 )?;
@@ -422,7 +422,7 @@ impl AgentSubcommand {
                         StyledText::success_fg(),
                         style::Print("✓ Default agent set to '"),
                         style::Print(&agent.name),
-                        style::Print("'. This will take effect the next time q chat is launched.\n"),
+                        style::Print("'. This will take effect the next time kiro-cli chat is launched.\n"),
                         StyledText::reset(),
                     )?;
                 },

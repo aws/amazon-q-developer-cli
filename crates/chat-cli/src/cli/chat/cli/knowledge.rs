@@ -89,7 +89,7 @@ impl KnowledgeSubcommand {
         queue!(
             session.stderr,
             StyledText::error_fg(),
-            style::Print("\nKnowledge tool is disabled. Enable it with: q settings chat.enableKnowledge true\n"),
+            style::Print("\nKnowledge tool is disabled. Enable it with: kiro-cli settings chat.enableKnowledge true\n"),
             StyledText::warning_fg(),
             style::Print("💡 Your knowledge base data is preserved and will be available when re-enabled.\n\n"),
             StyledText::reset(),

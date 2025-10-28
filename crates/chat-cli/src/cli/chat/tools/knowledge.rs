@@ -29,7 +29,7 @@ use crate::util::tool_permission_checker::is_tool_in_allowlist;
 /// It provides semantic search capabilities for files, directories, and text content.
 ///
 /// This feature can be enabled/disabled via settings:
-/// `q settings chat.enableKnowledge true`
+/// `kiro-cli settings chat.enableKnowledge true`
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "command", rename_all = "lowercase")]
 pub enum Knowledge {

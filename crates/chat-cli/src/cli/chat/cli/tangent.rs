@@ -53,7 +53,7 @@ impl TangentArgs {
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print("\nTangent mode is disabled. Enable it with: q settings chat.enableTangentMode true\n"),
+                style::Print("\nTangent mode is disabled. Enable it with: kiro-cli settings chat.enableTangentMode true\n"),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {

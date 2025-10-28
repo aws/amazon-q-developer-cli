@@ -177,7 +177,7 @@ pub fn chat_global_agent_path(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(GLOBAL_AGENT_DIR_RELATIVE_TO_HOME))
 }
 
-/// The directory to the directory containing config for the `/context` feature in `q chat`.
+/// The directory to the directory containing config for the `/context` feature in `kiro-cli chat`.
 pub fn chat_local_agent_dir(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
     Ok(cwd.join(WORKSPACE_AGENT_DIR_RELATIVE))
@@ -258,7 +258,7 @@ pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<(
 }
 
 /// Derives the absolute path to an agent config directory given a "workspace directory".
-/// A workspace directory is a directory where q chat is to be launched
+/// A workspace directory is a directory where kiro-cli chat is to be launched
 ///
 /// For example, if the given path is /path/one, then the derived config path would be
 /// `/path/one/.kiro-cli/agents`
@@ -266,12 +266,12 @@ pub fn agent_config_dir(workspace_dir: PathBuf) -> Result<PathBuf> {
     Ok(workspace_dir.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
-/// The directory to the directory containing config for the `/context` feature in `q chat`.
+/// The directory to the directory containing config for the `/context` feature in `kiro-cli chat`.
 pub fn chat_global_context_path(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".kiro-cli").join("global_context.json"))
 }
 
-/// The directory to the directory containing config for the `/context` feature in `q chat`.
+/// The directory to the directory containing config for the `/context` feature in `kiro-cli chat`.
 #[allow(dead_code)]
 pub fn chat_profiles_dir(os: &Os) -> Result<PathBuf> {
     Ok(home_dir(os)?.join(".kiro-cli").join("profiles"))

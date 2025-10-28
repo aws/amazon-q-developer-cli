@@ -109,7 +109,7 @@ pub mod ui_text {
         ));
         help.push_str(&format!(
             "\n                    {}",
-            StyledText::secondary("Change the keybind using: q settings chat.skimCommandKey x")
+            StyledText::secondary("Change the keybind using: kiro-cli settings chat.skimCommandKey x")
         ));
         help.push('\n');
 
@@ -121,7 +121,7 @@ pub mod ui_text {
         ));
         help.push_str(&format!(
             "\n                    {}",
-            StyledText::secondary("Change the keybind using: q settings chat.tangentModeKey x")
+            StyledText::secondary("Change the keybind using: kiro-cli settings chat.tangentModeKey x")
         ));
         help.push('\n');
 
@@ -133,7 +133,7 @@ pub mod ui_text {
         ));
         help.push_str(&format!(
             "\n                    {}",
-            StyledText::secondary("Change using: q settings chat.skimCommandKey x")
+            StyledText::secondary("Change using: kiro-cli settings chat.skimCommandKey x")
         ));
 
         help
@@ -141,16 +141,7 @@ pub mod ui_text {
 
     /// Welcome text with ASCII art logo for large screens
     pub fn welcome_text() -> String {
-        StyledText::brand(
-            "
-       ⢠⣶⣶⣦⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣿⣿⣿⣶⣦⡀⠀
-    ⠀⠀⠀⣾⡿⢻⣿⡆⠀⠀⠀⢀⣄⡄⢀⣠⣤⣤⡀⢀⣠⣤⣤⡀⠀⠀⢀⣠⣤⣤⣤⣄⠀⠀⢀⣤⣤⣤⣤⣤⣤⡀⠀⠀⣀⣤⣤⣤⣀⠀⠀⠀⢠⣤⡀⣀⣤⣤⣄⡀⠀⠀⠀⠀⠀⠀⢠⣿⣿⠋⠀⠀⠀⠙⣿⣿⡆
-    ⠀⠀⣼⣿⠇⠀⣿⣿⡄⠀⠀⢸⣿⣿⠛⠉⠻⣿⣿⠛⠉⠛⣿⣿⠀⠀⠘⠛⠉⠉⠻⣿⣧⠀⠈⠛⠛⠛⣻⣿⡿⠀⢀⣾⣿⠛⠉⠻⣿⣷⡀⠀⢸⣿⡟⠛⠉⢻⣿⣷⠀⠀⠀⠀⠀⠀⣼⣿⡏⠀⠀⠀⠀⠀⢸⣿⣿
-    ⠀⢰⣿⣿⣤⣤⣼⣿⣷⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⢀⣴⣶⣶⣶⣿⣿⠀⠀⠀⣠⣾⡿⠋⠀⠀⢸⣿⣿⠀⠀⠀⣿⣿⡇⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⢹⣿⣇⠀⠀⠀⠀⠀⢸⣿⡿
-    ⢀⣿⣿⠋⠉⠉⠉⢻⣿⣇⠀⢸⣿⣿⠀⠀⠀⣿⣿⠀⠀⠀⣿⣿⠀⠀⣿⣿⡀⠀⣠⣿⣿⠀⢀⣴⣿⣋⣀⣀⣀⡀⠘⣿⣿⣄⣀⣠⣿⣿⠃⠀⢸⣿⡇⠀⠀⢸⣿⣿⠀⠀⠀⠀⠀⠀⠈⢿⣿⣦⣀⣀⣀⣴⣿⡿⠃
-    ⠚⠛⠋⠀⠀⠀⠀⠘⠛⠛⠀⠘⠛⠛⠀⠀⠀⠛⠛⠀⠀⠀⠛⠛⠀⠀⠙⠻⠿⠟⠋⠛⠛⠀⠘⠛⠛⠛⠛⠛⠛⠃⠀⠈⠛⠿⠿⠿⠛⠁⠀⠀⠘⠛⠃⠀⠀⠘⠛⠛⠀⠀⠀⠀⠀⠀⠀⠀⠙⠛⠿⢿⣿⣿⣋⠀⠀
-    ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠿⢿⡧",
-        )
+        StyledText::brand("KIRO")
     }
 
     /// Resume conversation text
@@ -229,11 +220,11 @@ pub mod tips {
         vec![
             format!(
                 "You can resume the last conversation from your current directory by launching with {}",
-                StyledText::command("q chat --resume")
+                StyledText::command("kiro-cli chat --resume")
             ),
             format!(
                 "Get notified whenever Kiro CLI finishes responding. Just run {}",
-                StyledText::command("q settings chat.enableNotifications true")
+                StyledText::command("kiro-cli settings chat.enableNotifications true")
             ),
             format!(
                 "You can use {} to edit your prompt with a vim-like experience",
@@ -245,7 +236,7 @@ pub mod tips {
             ),
             format!(
                 "Get notified whenever Kiro CLI finishes responding. Just run {}",
-                StyledText::command("q settings chat.enableNotifications true")
+                StyledText::command("kiro-cli settings chat.enableNotifications true")
             ),
             format!(
                 "You can execute bash commands by typing {} followed by the command",
@@ -265,7 +256,7 @@ pub mod tips {
             ),
             format!(
                 "If you want to file an issue to the Kiro CLI team, just tell me, or run {}",
-                StyledText::command("q issue")
+                StyledText::command("kiro-cli issue")
             ),
             format!(
                 "You can enable custom tools with {}. Learn more with /help",
@@ -273,7 +264,7 @@ pub mod tips {
             ),
             format!(
                 "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
-                StyledText::command("q settings mcp.initTimeout {timeout in int}")
+                StyledText::command("kiro-cli settings mcp.initTimeout {timeout in int}")
             ),
             format!(
                 "You can see the server load status as well as any warnings or errors associated with {}",
@@ -285,7 +276,7 @@ pub mod tips {
             ),
             format!(
                 "Set a default model by running {}. Run {} to learn more.",
-                StyledText::command("q settings chat.defaultModel MODEL"),
+                StyledText::command("kiro-cli settings chat.defaultModel MODEL"),
                 StyledText::command("/model")
             ),
             format!(
@@ -308,7 +299,7 @@ pub mod tips {
             ),
             format!(
                 "Enable workspace checkpoints to snapshot & restore changes. Just run {} {}",
-                StyledText::command("q"),
+                StyledText::command("kiro-cli"),
                 StyledText::command("settings chat.enableCheckpoint true")
             ),
         ]

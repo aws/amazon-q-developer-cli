@@ -224,7 +224,7 @@ impl TodoList {
             queue!(
                 output,
                 StyledText::error_fg(),
-                style::Print("Todo lists are disabled. Enable them with: q settings chat.enableTodoList true"),
+                style::Print("Todo lists are disabled. Enable them with: kiro-cli settings chat.enableTodoList true"),
                 StyledText::reset(),
             )?;
             return Ok(InvokeOutput {
