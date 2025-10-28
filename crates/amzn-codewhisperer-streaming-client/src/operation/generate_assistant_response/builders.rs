@@ -22,11 +22,6 @@ impl crate::operation::generate_assistant_response::builders::GenerateAssistantR
 /// Fluent builder constructing a request to `GenerateAssistantResponse`.
 ///
 /// API to generate assistant response.
-///
-/// [`GenerateAssistantResponseOutput`](crate::operation::generate_assistant_response::GenerateAssistantResponseOutput) contains an event stream field as well as one or more non-event stream fields.
-/// Due to its current implementation, the non-event stream fields are not fully deserialized
-/// until the [`send`](Self::send) method completes. As a result, accessing these fields of the
-/// operation output struct within an interceptor may return uninitialized values.
 #[derive(::std::clone::Clone, ::std::fmt::Debug)]
 pub struct GenerateAssistantResponseFluentBuilder {
     handle: ::std::sync::Arc<crate::client::Handle>,
@@ -95,45 +90,8 @@ impl GenerateAssistantResponseFluentBuilder {
                 &self.handle.conf,
                 self.config_override,
             );
-        let mut output = crate::operation::generate_assistant_response::GenerateAssistantResponse::orchestrate(
-            &runtime_plugins,
-            input,
-        )
-        .await?;
-
-        // Converts any error encountered beyond this point into an `SdkError` response error
-        // with an `HttpResponse`. However, since we have already exited the `orchestrate`
-        // function, the original `HttpResponse` is no longer available and cannot be restored.
-        // This means that header information from the original response has been lost.
-        //
-        // Note that the response body would have been consumed by the deserializer
-        // regardless, even if the initial message was hypothetically processed during
-        // the orchestrator's deserialization phase but later resulted in an error.
-        fn response_error(
-            err: impl ::std::convert::Into<::aws_smithy_runtime_api::box_error::BoxError>,
-        ) -> ::aws_smithy_runtime_api::client::result::SdkError<
-            crate::operation::generate_assistant_response::GenerateAssistantResponseError,
-            ::aws_smithy_runtime_api::client::orchestrator::HttpResponse,
-        > {
-            ::aws_smithy_runtime_api::client::result::SdkError::response_error(
-                err,
-                ::aws_smithy_runtime_api::client::orchestrator::HttpResponse::new(
-                    ::aws_smithy_runtime_api::http::StatusCode::try_from(200).expect("valid successful code"),
-                    ::aws_smithy_types::body::SdkBody::empty(),
-                ),
-            )
-        }
-
-        let message = output
-            .generate_assistant_response_response
-            .try_recv_initial_response()
+        crate::operation::generate_assistant_response::GenerateAssistantResponse::orchestrate(&runtime_plugins, input)
             .await
-            .map_err(response_error)?;
-
-        match message {
-            ::std::option::Option::Some(_message) => ::std::result::Result::Ok(output),
-            ::std::option::Option::None => ::std::result::Result::Ok(output),
-        }
     }
 
     /// Consumes this builder, creating a customizable operation that can be modified before being

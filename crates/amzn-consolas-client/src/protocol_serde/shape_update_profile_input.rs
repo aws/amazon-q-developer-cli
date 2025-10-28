@@ -54,8 +54,5 @@ pub fn ser_update_profile_input_input(
         crate::protocol_serde::shape_opt_in_features::ser_opt_in_features(&mut object_16, var_15)?;
         object_16.finish();
     }
-    if let Some(var_17) = &input.opt_in_features_type {
-        object.key("optInFeaturesType").string(var_17.as_str());
-    }
     Ok(())
 }

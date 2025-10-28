@@ -5,18 +5,11 @@
 pub struct McpConfiguration {
     #[allow(missing_docs)] // documentation missing in model
     pub toggle: crate::types::OptInFeatureToggle,
-    #[allow(missing_docs)] // documentation missing in model
-    pub mcp_registry_url: ::std::option::Option<::std::string::String>,
 }
 impl McpConfiguration {
     #[allow(missing_docs)] // documentation missing in model
     pub fn toggle(&self) -> &crate::types::OptInFeatureToggle {
         &self.toggle
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn mcp_registry_url(&self) -> ::std::option::Option<&str> {
-        self.mcp_registry_url.as_deref()
     }
 }
 impl McpConfiguration {
@@ -32,7 +25,6 @@ impl McpConfiguration {
 #[non_exhaustive]
 pub struct McpConfigurationBuilder {
     pub(crate) toggle: ::std::option::Option<crate::types::OptInFeatureToggle>,
-    pub(crate) mcp_registry_url: ::std::option::Option<::std::string::String>,
 }
 impl McpConfigurationBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -53,23 +45,6 @@ impl McpConfigurationBuilder {
         &self.toggle
     }
 
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn mcp_registry_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.mcp_registry_url = ::std::option::Option::Some(input.into());
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn set_mcp_registry_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
-        self.mcp_registry_url = input;
-        self
-    }
-
-    #[allow(missing_docs)] // documentation missing in model
-    pub fn get_mcp_registry_url(&self) -> &::std::option::Option<::std::string::String> {
-        &self.mcp_registry_url
-    }
-
     /// Consumes the builder and constructs a [`McpConfiguration`](crate::types::McpConfiguration).
     /// This method will fail if any of the following fields are not set:
     /// - [`toggle`](crate::types::builders::McpConfigurationBuilder::toggle)
@@ -83,7 +58,6 @@ impl McpConfigurationBuilder {
                     "toggle was not specified but it is required when building McpConfiguration",
                 )
             })?,
-            mcp_registry_url: self.mcp_registry_url,
         })
     }
 }

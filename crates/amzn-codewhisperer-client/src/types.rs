@@ -107,7 +107,6 @@ pub use crate::types::_notifications_feature::NotificationsFeature;
 pub use crate::types::_operating_system::OperatingSystem;
 pub use crate::types::_opt_in_feature_toggle::OptInFeatureToggle;
 pub use crate::types::_opt_in_features::OptInFeatures;
-pub use crate::types::_opt_in_features_type::OptInFeaturesType;
 pub use crate::types::_opt_out_preference::OptOutPreference;
 pub use crate::types::_origin::Origin;
 pub use crate::types::_overage_capability::OverageCapability;
@@ -442,8 +441,6 @@ mod _operating_system;
 mod _opt_in_feature_toggle;
 
 mod _opt_in_features;
-
-mod _opt_in_features_type;
 
 mod _opt_out_preference;
 
