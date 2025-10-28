@@ -2221,8 +2221,8 @@ mod tests {
         let path = workspace_mcp_config_path(&os)?;
         let path_str = path.to_string_lossy();
 
-        // Should end with either .kiro/mcp.json or .amazonq/mcp.json
-        assert!(path_str.ends_with(".kiro/mcp.json") || path_str.ends_with(".amazonq/mcp.json"));
+        // Should end with either .kiro/mcp.json or .kiro-cli/mcp.json (legacy)
+        assert!(path_str.ends_with(".kiro/mcp.json") || path_str.ends_with(".kiro-cli/mcp.json"));
 
         Ok(())
     }
