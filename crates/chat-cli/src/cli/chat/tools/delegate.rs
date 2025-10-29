@@ -488,7 +488,10 @@ pub async fn request_user_approval(agent: &str, agents: &Agents, task: &str) -> 
         .ok_or(eyre::eyre!("No agent by the name {agent} found"))?
         .into();
     display_agent_info(agent, task, &config)?;
-    get_user_confirmation()?;
+    
+    if !get_user_confirmation()? {
+        return Err(eyre::eyre!("User declined to proceed with delegation"));
+    }
 
     Ok(())
 }
