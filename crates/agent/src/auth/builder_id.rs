@@ -24,7 +24,6 @@
 use aws_sdk_ssooidc::client::Client;
 use aws_sdk_ssooidc::config::retry::RetryConfig;
 use aws_sdk_ssooidc::config::{
-    BehaviorVersion,
     ConfigBag,
     RuntimeComponents,
     SharedAsyncSleep,
@@ -53,7 +52,10 @@ use crate::agent::util::is_integ_test;
 use crate::api_client::stalled_stream_protection_config;
 use crate::auth::AuthError;
 use crate::auth::consts::*;
-use crate::aws_common::app_name;
+use crate::aws_common::{
+    app_name,
+    behavior_version,
+};
 use crate::database::{
     Database,
     Secret,
@@ -82,7 +84,7 @@ pub fn client(region: Region) -> Client {
     Client::new(
         &aws_types::SdkConfig::builder()
             .http_client(crate::aws_common::http_client::client())
-            .behavior_version(BehaviorVersion::v2025_01_17())
+            .behavior_version(behavior_version())
             .endpoint_url(oidc_url(&region))
             .region(region)
             .retry_config(RetryConfig::standard().with_max_attempts(3))
