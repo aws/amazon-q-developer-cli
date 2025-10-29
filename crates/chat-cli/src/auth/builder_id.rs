@@ -611,14 +611,14 @@ impl ResolveIdentity for BearerResolver {
     }
 }
 
-pub async fn is_idc_user(database: &Database) -> Result<bool> {
+pub async fn is_idc_user(database: &Database) -> bool {
     if cfg!(test) {
-        return Ok(false);
+        return false;
     }
     if let Ok(Some(token)) = BuilderIdToken::load(database).await {
-        Ok(token.token_type() == TokenType::IamIdentityCenter)
+        token.token_type() == TokenType::IamIdentityCenter
     } else {
-        Ok(false)
+        false
     }
 }
 

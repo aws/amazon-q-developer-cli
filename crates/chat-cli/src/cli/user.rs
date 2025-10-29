@@ -339,7 +339,7 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if !is_idc_user(&os.database).await? {
+    if !is_idc_user(&os.database).await {
         bail!("This command is only available for IAM Identity Center users");
     }
 

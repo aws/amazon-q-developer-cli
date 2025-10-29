@@ -37,10 +37,7 @@ pub struct SubscribeArgs {
 
 impl SubscribeArgs {
     pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        if is_idc_user(&os.database)
-            .await
-            .map_err(|e| ChatError::Custom(e.to_string().into()))?
-        {
+        if is_idc_user(&os.database).await {
             execute!(
                 session.stderr,
                 StyledText::warning_fg(),
