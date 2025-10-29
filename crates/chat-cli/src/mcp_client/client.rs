@@ -59,7 +59,7 @@ use crate::cli::chat::tools::custom_tool::{
     TransportType,
 };
 use crate::os::Os;
-use crate::util::directories::DirectoryError;
+use crate::util::paths::DirectoryError;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {

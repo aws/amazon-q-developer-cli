@@ -41,11 +41,8 @@ use crate::cli::chat::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories::chat_global_agent_path;
-use crate::util::{
-    NullWriter,
-    directories,
-};
+use crate::util::NullWriter;
+use crate::util::paths::PathResolver;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -54,7 +51,7 @@ use crate::util::{
 
 Notes
 • Launch q chat with a specific agent with --agent
-• Construct an agent under ~/.aws/amazonq/cli-agents/ (accessible globally) or cwd/.amazonq/cli-agents (accessible in workspace)
+• Construct an agent in the global agents directory (accessible globally) or workspace agents directory (accessible in workspace)
 • See example config under global directory
 • Set default agent to assume with settings by running \"q settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
@@ -395,7 +392,7 @@ impl AgentSubcommand {
                 // switch / create profile after a session has started.
                 // TODO: perhaps revive this after we have a decision on profile create /
                 // switch
-                let global_path = if let Ok(path) = chat_global_agent_path(os) {
+                let global_path = if let Ok(path) = PathResolver::new(os).global().agents_dir() {
                     path.to_str().unwrap_or("default global agent path").to_string()
                 } else {
                     "default global agent path".to_string()
@@ -537,8 +534,10 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
         }
     }
 
+    let resolver = PathResolver::new(os);
+
     // 2. Load from workspace legacy config (medium priority)
-    if let Ok(workspace_path) = directories::chat_legacy_workspace_mcp_config(os) {
+    if let Ok(workspace_path) = resolver.workspace().mcp_config() {
         if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
             for (server_name, server_config) in workspace_config.mcp_servers {
                 if !servers.values().any(|s| s.config.command == server_config.command) {
@@ -552,7 +551,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     }
 
     // 3. Load from global legacy config (lowest priority)
-    if let Ok(global_path) = directories::chat_legacy_global_mcp_config(os) {
+    if let Ok(global_path) = resolver.global().mcp_config() {
         if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
             for (server_name, server_config) in global_config.mcp_servers {
                 if !servers.values().any(|s| s.config.command == server_config.command) {

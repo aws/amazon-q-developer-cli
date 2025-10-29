@@ -63,11 +63,12 @@ use crate::cli::agent::hook::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::paths::PathResolver;
 use crate::util::{
     self,
     MCP_SERVER_TOOL_DELIMITER,
-    directories,
     file_uri,
+    paths,
 };
 
 pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
@@ -84,7 +85,7 @@ pub enum AgentConfigError {
         error: Box<jsonschema::ValidationError<'static>>,
     },
     #[error("Encountered directory error: {0}")]
-    Directories(#[from] util::directories::DirectoryError),
+    Directories(#[from] util::paths::DirectoryError),
     #[error("Encountered io error: {0}")]
     Io(#[from] std::io::Error),
     #[error("Failed to parse legacy mcp config: {0}")]
@@ -165,7 +166,7 @@ pub struct Agent {
     #[serde(default)]
     #[schemars(schema_with = "tool_settings_schema")]
     pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
-    /// Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent
+    /// Whether or not to include the legacy global MCP configuration in the agent
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
     #[serde(default)]
@@ -193,15 +194,12 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: vec![
-                "file://AmazonQ.md",
-                "file://AGENTS.md",
-                "file://README.md",
-                "file://.amazonq/rules/**/*.md",
-            ]
-            .into_iter()
-            .map(Into::into)
-            .collect::<Vec<_>>(),
+            resources: {
+                let mut resources = Vec::new();
+                resources.extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
+                resources.push(format!("file://{}", paths::workspace::RULES_PATTERN).into());
+                resources
+            },
             hooks: Default::default(),
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
@@ -342,14 +340,15 @@ impl Agent {
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
+        let resolver = PathResolver::new(os);
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
-            let local_config_dir = directories::chat_local_agent_dir(os)?.join(format!("{agent_name}.json"));
+            let local_config_dir = resolver.workspace().agents_dir()?.join(format!("{agent_name}.json"));
             if os.fs.exists(&local_config_dir) {
                 break 'config Ok(local_config_dir);
             }
 
-            let global_config_dir = directories::chat_global_agent_path(os)?.join(format!("{agent_name}.json"));
+            let global_config_dir = resolver.global().agents_dir()?.join(format!("{agent_name}.json"));
             if os.fs.exists(&global_config_dir) {
                 break 'config Ok(global_config_dir);
             }
@@ -542,12 +541,13 @@ impl Agents {
             vec![]
         };
 
+        let resolver = PathResolver::new(os);
         let mut global_mcp_config = None::<McpServerConfig>;
 
         let mut local_agents = 'local: {
             // We could be launching from the home dir, in which case the global and local agents
             // are the same set of agents. If that is the case, we simply skip this.
-            match (std::env::current_dir(), directories::home_dir(os)) {
+            match (std::env::current_dir(), paths::home_dir(os)) {
                 (Ok(cwd), Ok(home_dir)) if cwd == home_dir => break 'local Vec::<Agent>::new(),
                 _ => {
                     // noop, we keep going with the extraction of local agents (even if we have an
@@ -555,7 +555,7 @@ impl Agents {
                 },
             }
 
-            let Ok(path) = directories::chat_local_agent_dir(os) else {
+            let Ok(path) = resolver.workspace().agents_dir() else {
                 break 'local Vec::<Agent>::new();
             };
             let Ok(files) = os.fs.read_dir(path).await else {
@@ -585,7 +585,7 @@ impl Agents {
         };
 
         let mut global_agents = 'global: {
-            let Ok(path) = directories::chat_global_agent_path(os) else {
+            let Ok(path) = resolver.global().agents_dir() else {
                 break 'global Vec::<Agent>::new();
             };
             let files = match os.fs.read_dir(&path).await {
@@ -629,10 +629,11 @@ impl Agents {
         // there.
         // Note that this config is not what q chat uses. It merely serves as an example.
         'example_config: {
-            let Ok(path) = directories::example_agent_config(os) else {
+            let Ok(agents_dir) = resolver.global().agents_dir() else {
                 error!("Error obtaining example agent path.");
                 break 'example_config;
             };
+            let path = agents_dir.join("agent_config.json.example");
             if os.fs.exists(&path) {
                 break 'example_config;
             }
@@ -744,7 +745,7 @@ impl Agents {
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {
-                            let Ok(global_mcp_path) = directories::chat_legacy_global_mcp_config(os) else {
+                            let Ok(global_mcp_path) = resolver.global().mcp_config() else {
                                 tracing::error!("Error obtaining legacy mcp json path. Skipping");
                                 break 'load_legacy_mcp_json;
                             };
@@ -906,7 +907,8 @@ async fn load_agents_from_entries(
 /// Loads legacy mcp config by combining workspace and global config.
 /// In case of a server naming conflict, the workspace config is prioritized.
 async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>> {
-    let global_mcp_path = directories::chat_legacy_global_mcp_config(os)?;
+    let resolver = PathResolver::new(os);
+    let global_mcp_path = resolver.global().mcp_config()?;
     let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
         Ok(config) => Some(config),
         Err(e) => {
@@ -915,7 +917,7 @@ async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>
         },
     };
 
-    let workspace_mcp_path = directories::chat_legacy_workspace_mcp_config(os)?;
+    let workspace_mcp_path = resolver.workspace().mcp_config()?;
     let workspace_mcp_config = match McpServerConfig::load_from_file(os, workspace_mcp_path).await {
         Ok(config) => Some(config),
         Err(e) => {

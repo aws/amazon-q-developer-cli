@@ -45,7 +45,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories;
+use crate::util::paths;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,10 +141,10 @@ impl FsRead {
             let allow_set = {
                 let mut builder = GlobSetBuilder::new();
                 for path in &allowed_paths {
-                    let Ok(path) = directories::canonicalizes_path(os, path) else {
+                    let Ok(path) = paths::canonicalizes_path(os, path) else {
                         continue;
                     };
-                    if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
+                    if let Err(e) = paths::add_gitignore_globs(&mut builder, path.as_str()) {
                         warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
                     }
                 }
@@ -155,10 +155,10 @@ impl FsRead {
             let deny_set = {
                 let mut builder = GlobSetBuilder::new();
                 for path in &denied_paths {
-                    let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
+                    let Ok(processed_path) = paths::canonicalizes_path(os, path) else {
                         continue;
                     };
-                    match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
+                    match paths::add_gitignore_globs(&mut builder, processed_path.as_str()) {
                         Ok(_) => {
                             // Note that we need to push twice here because for each rule we
                             // are creating two globs (one for file and one for directory)
@@ -181,7 +181,7 @@ impl FsRead {
                             FsReadOperation::Line(FsLine { path, .. })
                             | FsReadOperation::Directory(FsDirectory { path, .. })
                             | FsReadOperation::Search(FsSearch { path, .. }) => {
-                                let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                let Ok(path) = paths::canonicalizes_path(os, path) else {
                                     ask = true;
                                     continue;
                                 };
@@ -208,7 +208,7 @@ impl FsRead {
                                 let denied_match_set = paths
                                     .iter()
                                     .flat_map(|path| {
-                                        let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                        let Ok(path) = paths::canonicalizes_path(os, path) else {
                                             return vec![];
                                         };
                                         deny_set.matches(path.as_ref() as &str)

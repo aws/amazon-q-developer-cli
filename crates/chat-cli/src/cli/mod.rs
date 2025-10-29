@@ -54,7 +54,7 @@ use crate::logging::{
     initialize_logging,
 };
 use crate::os::Os;
-use crate::util::directories::logs_dir;
+use crate::util::paths::logs_dir;
 use crate::util::{
     CLI_BINARY_NAME,
     GOV_REGIONS,
