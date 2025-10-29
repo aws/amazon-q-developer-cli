@@ -143,7 +143,16 @@ impl LoginArgs {
                             ]);
                             let ctrl_c_stream = ctrl_c();
                             tokio::select! {
-                                res = registration.finish(&client, Some(&mut os.database)) => res?,
+                                res = registration.finish(&client, Some(&mut os.database)) => {
+                                    if let Err(err) = res {
+                                        let auth_method = match crate::auth::builder_id::token_type_from_start_url(start_url.as_deref()) {
+                                            crate::auth::builder_id::TokenType::BuilderId => "BuilderId",
+                                            crate::auth::builder_id::TokenType::IamIdentityCenter => "IdentityCenter",
+                                        };
+                                        os.telemetry.send_auth_failed(auth_method, "PKCE", "NewLogin", None).ok();
+                                        return Err(err.into());
+                                    }
+                                },
                                 Ok(_) = ctrl_c_stream => {
                                     #[allow(clippy::exit)]
                                     exit(1);
@@ -194,7 +203,7 @@ pub struct WhoamiArgs {
 
 impl WhoamiArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        let builder_id = BuilderIdToken::load(&os.database).await;
+        let builder_id = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await;
 
         match builder_id {
             Ok(Some(token)) => {
@@ -245,7 +254,7 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if let Ok(Some(token)) = BuilderIdToken::load(&os.database).await {
+    if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await {
         if matches!(token.token_type(), TokenType::BuilderId) {
             bail!("This command is only available for Pro users");
         }
@@ -314,6 +323,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
             device_auth.device_code.clone(),
             start_url.clone(),
             region.clone(),
+            &os.telemetry,
         )
         .await
         {
