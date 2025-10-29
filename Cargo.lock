@@ -39,7 +39,7 @@ dependencies = [
 
 [[package]]
 name = "agent"
-version = "1.18.0"
+version = "1.19.2"
 dependencies = [
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
@@ -76,7 +76,7 @@ dependencies = [
  "globset",
  "http 1.3.1",
  "http-body-util",
- "hyper 1.6.0",
+ "hyper 1.7.0",
  "hyper-util",
  "insta",
  "libc",
@@ -95,8 +95,8 @@ dependencies = [
  "reqwest",
  "rmcp",
  "rusqlite",
- "rustls 0.23.31",
- "rustls-native-certs 0.8.1",
+ "rustls 0.23.33",
+ "rustls-native-certs 0.8.2",
  "schemars",
  "semver",
  "serde",
@@ -108,7 +108,7 @@ dependencies = [
  "syntect",
  "sysinfo",
  "tempfile",
- "thiserror 2.0.14",
+ "thiserror 2.0.17",
  "time",
  "tokio",
  "tokio-stream",
