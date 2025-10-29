@@ -3737,7 +3737,7 @@ enum ActualSubscriptionStatus {
 //
 // Also, it is currently not possible to subscribe or re-subscribe via console, only IDE/CLI.
 async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus> {
-    if is_idc_user(&os.database).await? {
+    if is_idc_user(&os.database).await {
         return Ok(ActualSubscriptionStatus::Active);
     }
 
