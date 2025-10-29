@@ -41,10 +41,7 @@ use aws_smithy_runtime_api::client::identity::{
 };
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::region::Region;
-use eyre::{
-    Result,
-    eyre,
-};
+use eyre::Result;
 use time::OffsetDateTime;
 use tracing::{
     debug,
