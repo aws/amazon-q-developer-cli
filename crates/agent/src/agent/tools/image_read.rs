@@ -257,7 +257,7 @@ mod tests {
         let test_dir = TestDir::new().with_file(("test.png", create_test_png())).await;
 
         let tool = ImageRead {
-            paths: vec![test_dir.path("test.png").to_string_lossy().to_string()],
+            paths: vec![test_dir.join("test.png").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_ok());
@@ -279,8 +279,8 @@ mod tests {
 
         let tool = ImageRead {
             paths: vec![
-                test_dir.path("image1.png").to_string_lossy().to_string(),
-                test_dir.path("image2.png").to_string_lossy().to_string(),
+                test_dir.join("image1.png").to_string_lossy().to_string(),
+                test_dir.join("image2.png").to_string_lossy().to_string(),
             ],
         };
 
@@ -293,7 +293,7 @@ mod tests {
         let test_dir = TestDir::new().with_file(("test.txt", "not an image")).await;
 
         let tool = ImageRead {
-            paths: vec![test_dir.path("test.txt").to_string_lossy().to_string()],
+            paths: vec![test_dir.join("test.txt").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_err());
@@ -313,7 +313,7 @@ mod tests {
         let test_dir = TestDir::new();
 
         let tool = ImageRead {
-            paths: vec![test_dir.path("").to_string_lossy().to_string()],
+            paths: vec![test_dir.join("").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_err());

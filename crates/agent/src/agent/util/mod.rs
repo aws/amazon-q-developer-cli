@@ -5,7 +5,6 @@ pub mod glob;
 pub mod path;
 pub mod providers;
 pub mod request_channel;
-#[cfg(test)]
 pub mod test;
 
 use std::collections::HashMap;
@@ -69,12 +68,18 @@ pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
 /// Truncates `s` to a maximum length of `max_bytes`, appending `suffix` if `s` was truncated. The
 /// result is always guaranteed to be at least less than `max_bytes`.
 ///
-/// If `suffix` is larger than `max_bytes`, or `s` is within `max_bytes`, then this function does
-/// nothing.
+/// If both `s` and `suffix` are larger than `max_bytes`, then `s` is replaced with a truncated
+/// `suffix`.
 pub fn truncate_safe_in_place(s: &mut String, max_bytes: usize, suffix: &str) {
-    // Do nothing if the suffix is too large to be truncated within max_bytes, or s is already small
-    // enough to not be truncated.
-    if suffix.len() > max_bytes || s.len() <= max_bytes {
+    // If `s` doesn't need to be truncated, do nothing.
+    if s.len() <= max_bytes {
+        return;
+    }
+
+    // Replace `s` with a truncated suffix if both are greater than `max_bytes`.
+    if s.len() > max_bytes && suffix.len() > max_bytes {
+        let truncated_suffix = truncate_safe(suffix, max_bytes);
+        s.replace_range(.., truncated_suffix);
         return;
     }
 
@@ -150,9 +155,11 @@ mod tests {
     fn test_truncate_safe_in_place() {
         let suffix = "suffix";
         let tests = &[
-            ("Hello World", 5, "Hello World"),
             ("Hello World", 7, "Hsuffix"),
             ("Hello World", usize::MAX, "Hello World"),
+            // test for when suffix is too large
+            ("hi", 5, "hi"),
+            ("Hello World", 5, "suffi"),
             // α -> 2 byte length
             ("αααααα", 7, "suffix"),
             ("αααααα", 8, "αsuffix"),
@@ -160,14 +167,14 @@ mod tests {
         ];
         assert!("α".len() == 2);
 
-        for (input, max_bytes, expected) in tests {
-            let mut input = (*input).to_string();
+        for (orig_input, max_bytes, expected) in tests {
+            let mut input = (*orig_input).to_string();
             truncate_safe_in_place(&mut input, *max_bytes, suffix);
             assert_eq!(
                 input.as_str(),
                 *expected,
                 "input: {} with max bytes: {} failed",
-                input,
+                orig_input,
                 max_bytes
             );
         }
@@ -198,17 +205,17 @@ mod tests {
         let d = TestDir::new().with_file(("test.txt", &test_file)).await;
 
         // Test not truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 100, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 100, "...").await.unwrap();
         assert_eq!(content, test_file);
         assert_eq!(bytes_truncated, 0);
 
         // Test truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 10, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 10, "...").await.unwrap();
         assert_eq!(content, "1234567...");
         assert_eq!(bytes_truncated, 23);
 
         // Test suffix greater than max length
-        let (content, bytes_truncated) = read_file_with_max_limit(d.path("test.txt"), 1, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 1, "...").await.unwrap();
         assert_eq!(content, "");
         assert_eq!(bytes_truncated, 30);
     }

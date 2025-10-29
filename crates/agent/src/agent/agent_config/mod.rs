@@ -12,7 +12,7 @@ use std::path::{
 };
 
 use definitions::{
-    Config,
+    AgentConfig,
     HookConfig,
     HookTrigger,
     McpServerConfig,
@@ -53,11 +53,11 @@ pub struct LoadedAgentConfig {
     #[allow(dead_code)]
     source: ConfigSource,
     /// The actual config content
-    config: Config,
+    config: AgentConfig,
 }
 
 impl LoadedAgentConfig {
-    pub fn config(&self) -> &Config {
+    pub fn config(&self) -> &AgentConfig {
         &self.config
     }
 
@@ -190,18 +190,18 @@ pub async fn load_agents() -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigErr
     Ok((agent_configs, invalid_agents))
 }
 
-pub async fn load_workspace_agents() -> Result<(Vec<(PathBuf, Config)>, Vec<AgentConfigError>)> {
+pub async fn load_workspace_agents() -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
     load_agents_from_dir(local_agents_path()?, true).await
 }
 
-pub async fn load_global_agents() -> Result<(Vec<(PathBuf, Config)>, Vec<AgentConfigError>)> {
+pub async fn load_global_agents() -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
     load_agents_from_dir(global_agents_path()?, true).await
 }
 
 async fn load_agents_from_dir(
     dir: impl AsRef<Path>,
     create_if_missing: bool,
-) -> Result<(Vec<(PathBuf, Config)>, Vec<AgentConfigError>)> {
+) -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
     let dir = dir.as_ref();
 
     if !dir.exists() && create_if_missing {
@@ -214,7 +214,7 @@ async fn load_agents_from_dir(
         .await
         .with_context(|| format!("failed to read local agents directory {:?}", &dir))?;
 
-    let mut agents: Vec<(PathBuf, Config)> = vec![];
+    let mut agents: Vec<(PathBuf, AgentConfig)> = vec![];
     let mut invalid_agents: Vec<AgentConfigError> = vec![];
 
     loop {
@@ -294,7 +294,7 @@ pub struct LoadedMcpServerConfigs {
 impl LoadedMcpServerConfigs {
     /// Loads MCP configs from the given agent config, taking into consideration global and
     /// workspace MCP config files for when the use_legacy_mcp_json field is true.
-    pub async fn from_agent_config(config: &Config) -> LoadedMcpServerConfigs {
+    pub async fn from_agent_config(config: &AgentConfig) -> LoadedMcpServerConfigs {
         let mut configs = vec![];
         let mut overwritten_configs = vec![];
 

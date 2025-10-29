@@ -34,9 +34,10 @@ pub enum AgentLoopRequest {
         args: SendRequestArgs,
     },
     /// Ends the agent loop
-    Close,
+    Cancel,
 }
 
+/// Represents a request to send to the backend model provider.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SendRequestArgs {
     pub messages: Vec<Message>,
@@ -60,7 +61,7 @@ pub enum AgentLoopResponse {
     ExecutionState(LoopState),
     StreamMetadata(Vec<StreamMetadata>),
     PendingToolUses(Option<Vec<ToolUseBlock>>),
-    Metadata(Box<UserTurnMetadata>),
+    UserTurnMetadata(Box<UserTurnMetadata>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
@@ -114,6 +115,13 @@ pub enum AgentLoopEventKind {
     /// A valid tool use was received
     ToolUse(ToolUseBlock),
     /// A single request/response stream has completed processing.
+    ///
+    /// This event encompasses:
+    /// * Successful requests and response streams
+    /// * Errors in sending the request
+    /// * Errors while processing the response stream
+    ///
+    /// Success or failure is given by the `result` field.
     ///
     /// When emitted, the agent loop is in either of the states:
     /// 1. User turn is ongoing (due to tool uses or a stream error), and the loop is ready to
@@ -223,13 +231,13 @@ pub struct UserTurnMetadata {
     /// Total length of time spent in the user turn until completion
     pub turn_duration: Option<Duration>,
     /// Why the user turn ended
-    pub end_reason: EndReason,
+    pub end_reason: LoopEndReason,
     pub end_timestamp: DateTime<Utc>,
 }
 
 /// The reason why a user turn ended
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub enum EndReason {
+pub enum LoopEndReason {
     /// Loop ended before handling any requests
     DidNotRun,
     /// The loop ended because the model responded with no tool uses
@@ -238,6 +246,6 @@ pub enum EndReason {
     ToolUseRejected,
     /// Loop errored out
     Error,
-    /// Loop was executing but was subsequently cancelled
+    /// Loop was processing a response stream but was cancelled
     Cancelled,
 }

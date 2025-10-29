@@ -58,6 +58,7 @@ rustls-native-certs.workspace = true
 schemars = "1.0.4"
 semver.workspace = true
 serde.workspace = true
+serde_bytes = "0.11.19"
 serde_json.workspace = true
 sha2.workspace = true
 shellexpand.workspace = true

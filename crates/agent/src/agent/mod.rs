@@ -1,6 +1,5 @@
 pub mod agent_config;
 pub mod agent_loop;
-mod compact;
 pub mod consts;
 pub mod mcp;
 mod permissions;
@@ -17,11 +16,12 @@ use std::collections::{
     HashSet,
     VecDeque,
 };
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent_config::LoadedMcpServerConfigs;
 use agent_config::definitions::{
-    Config,
+    AgentConfig,
     HookConfig,
     HookTrigger,
 };
@@ -29,8 +29,6 @@ use agent_config::parse::{
     CanonicalToolName,
     ResourceKind,
     ToolNameKind,
-    ToolParseError,
-    ToolParseErrorKind,
 };
 use agent_loop::model::Model;
 use agent_loop::protocol::{
@@ -39,12 +37,12 @@ use agent_loop::protocol::{
     AgentLoopResponse,
     LoopError,
     SendRequestArgs,
+    UserTurnMetadata,
 };
 use agent_loop::types::{
     ContentBlock,
     Message,
     Role,
-    StreamError,
     StreamErrorKind,
     ToolResultBlock,
     ToolResultContentBlock,
@@ -59,11 +57,6 @@ use agent_loop::{
     LoopState,
 };
 use chrono::Utc;
-use compact::{
-    CompactStrategy,
-    CompactingState,
-    create_summary_prompt,
-};
 use consts::MAX_RESOURCE_FILE_LENGTH;
 use futures::stream::FuturesUnordered;
 use permissions::evaluate_tool_permission;
@@ -72,11 +65,15 @@ use protocol::{
     AgentEvent,
     AgentRequest,
     AgentResponse,
+    AgentStopReason,
     ApprovalResult,
-    InputItem,
+    ContentChunk,
+    InternalEvent,
     PermissionEvalResult,
     SendApprovalResultArgs,
     SendPromptArgs,
+    ToolCall,
+    UpdateEvent,
 };
 use serde::{
     Deserialize,
@@ -114,6 +111,8 @@ use tools::{
     ToolExecutionError,
     ToolExecutionOutput,
     ToolExecutionOutputItem,
+    ToolParseError,
+    ToolParseErrorKind,
 };
 use tracing::{
     debug,
@@ -128,7 +127,6 @@ use types::{
     AgentSnapshot,
     ConversationMetadata,
     ConversationState,
-    ConversationSummary,
 };
 use util::path::canonicalize_path_sys;
 use util::providers::{
@@ -205,12 +203,24 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {:?}", other))),
         }
     }
+
+    pub async fn create_snapshot(&self) -> Result<AgentSnapshot, AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::CreateSnapshot)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Snapshot(snapshot) => Ok(snapshot),
+            other => Err(AgentError::Custom(format!("received unexpected response: {:?}", other))),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct Agent {
     id: AgentId,
-    agent_config: Config,
+    agent_config: AgentConfig,
 
     conversation_state: ConversationState,
     conversation_metadata: ConversationMetadata,
@@ -219,6 +229,9 @@ pub struct Agent {
 
     agent_event_tx: broadcast::Sender<AgentEvent>,
     agent_event_rx: Option<broadcast::Receiver<AgentEvent>>,
+
+    // TODO - use this
+    agent_event_buf: Vec<AgentEvent>,
 
     /// Contains an [AgentLoop] if the agent is in the middle of executing a user turn, otherwise
     /// is [None].
@@ -255,8 +268,13 @@ pub struct Agent {
     /// request.
     cached_mcp_configs: LoadedMcpServerConfigs,
 
+    /// https://agentclientprotocol.com/protocol/session-setup#working-directory
+    ///
+    /// TODO: Figure out how this impacts agent behavior, versus the configured [SystemProvider].
+    #[allow(dead_code)]
+    working_directory: Option<PathBuf>,
     /// Provider for system context like env vars, home dir, current working dir
-    sys_provider: Box<dyn SystemProvider>,
+    sys_provider: Arc<dyn SystemProvider>,
 }
 
 impl Agent {
@@ -276,7 +294,7 @@ impl Agent {
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
-        let (agent_event_tx, agent_event_rx) = broadcast::channel(64);
+        let (agent_event_tx, agent_event_rx) = broadcast::channel(1024);
 
         let agent_config = snapshot.agent_config;
         let cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(&agent_config).await;
@@ -291,6 +309,7 @@ impl Agent {
             tool_state: snapshot.tool_state,
             agent_event_tx,
             agent_event_rx: Some(agent_event_rx),
+            agent_event_buf: Vec::new(),
             agent_loop: None,
             task_executor,
             mcp_manager_handle,
@@ -299,12 +318,13 @@ impl Agent {
             settings: snapshot.settings,
             cached_tool_specs: None,
             cached_mcp_configs,
-            sys_provider: Box::new(RealProvider),
+            working_directory: None,
+            sys_provider: Arc::new(RealProvider),
         })
     }
 
     pub fn set_sys_provider(&mut self, provider: impl SystemProvider) {
-        self.sys_provider = Box::new(provider);
+        self.sys_provider = Arc::new(provider);
     }
 
     /// Starts the agent task, returning a handle from which messages can be sent and events can be
@@ -396,7 +416,7 @@ impl Agent {
         }
 
         // Next, run agent spawn hooks.
-        let hooks = self.get_hooks(HookTrigger::AgentSpawn).await;
+        let hooks = self.get_hooks(HookTrigger::AgentSpawn);
         if !hooks.is_empty() {
             let hooks = hooks
                 .into_iter()
@@ -414,7 +434,7 @@ impl Agent {
                 error!(?err, "failed to execute agent spawn hooks");
             }
         } else {
-            let _ = self.agent_event_tx.send(AgentEvent::Initialized);
+            self.agent_event_buf.push(AgentEvent::Initialized);
         }
     }
 
@@ -422,6 +442,10 @@ impl Agent {
         let mut task_executor_event_buf = Vec::new();
 
         loop {
+            for event in self.agent_event_buf.drain(..) {
+                let _ = self.agent_event_tx.send(event);
+            }
+
             tokio::select! {
                 req = request_rx.recv() => {
                     let Some(req) = req else {
@@ -457,7 +481,7 @@ impl Agent {
                             error!(?e, "failed to handle tool executor event");
                             self.set_active_state(ActiveState::Errored(e)).await;
                         }
-                        let _ = self.agent_event_tx.send(AgentEvent::TaskExecutor(evt));
+                        self.agent_event_buf.push(evt.into());
                     }
                 }
             }
@@ -472,7 +496,8 @@ impl Agent {
         let from = self.execution_state.clone();
         self.execution_state.active_state = new_state;
         let to = self.execution_state.clone();
-        let _ = self.agent_event_tx.send(AgentEvent::StateChange { from, to });
+        self.agent_event_buf
+            .push(AgentEvent::Internal(InternalEvent::StateChange { from, to }));
     }
 
     fn create_snapshot(&self) -> AgentSnapshot {
@@ -481,7 +506,6 @@ impl Agent {
             agent_config: self.agent_config.clone(),
             conversation_state: self.conversation_state.clone(),
             conversation_metadata: self.conversation_metadata.clone(),
-            compaction_snapshots: vec![],
             execution_state: self.execution_state.clone(),
             model_state: self.model.state(),
             tool_state: self.tool_state.clone(),
@@ -489,12 +513,12 @@ impl Agent {
         }
     }
 
-    async fn get_agent_config(&self) -> &Config {
+    async fn get_agent_config(&self) -> &AgentConfig {
         &self.agent_config
     }
 
-    async fn get_hooks(&self, trigger: HookTrigger) -> Vec<Hook> {
-        let config = self.get_agent_config().await;
+    fn get_hooks(&self, trigger: HookTrigger) -> Vec<Hook> {
+        let config = &self.agent_config;
         let hooks_config = config.hooks();
         hooks_config
             .get(&trigger)
@@ -510,22 +534,60 @@ impl Agent {
             .ok_or(AgentError::Custom("Agent is not executing a turn".to_string()))
     }
 
-    /// Ends the current user turn by closing [Self::agent_loop] if it exists.
-    async fn end_current_turn(&mut self) -> Result<(), AgentError> {
+    /// Ends the current user turn by cancelling [Self::agent_loop] if it exists.
+    async fn end_current_turn(&mut self) -> Result<Option<UserTurnMetadata>, AgentError> {
         let Some(mut handle) = self.agent_loop.take() else {
-            return Ok(());
+            return Ok(None);
         };
-        handle.close().await?;
-        while let Some(evt) = handle.recv().await {
-            if let AgentLoopEventKind::UserTurnEnd(md) = &evt {
-                self.conversation_metadata.user_turn_metadatas.push(md.clone());
-            }
-            let _ = self
-                .agent_event_tx
-                .send(AgentEvent::agent_loop(handle.id().clone(), evt));
+
+        if let LoopState::PendingToolUseResults = handle.get_loop_state().await? {
+            // If the agent is in the middle of sending tool uses, then add two new
+            // messages:
+            // 1. user tool results replaced with content: "Tool use was cancelled by the user"
+            // 2. assistant message with content: "Tool uses were interrupted, waiting for the next user prompt"
+            let tool_results = self
+                .conversation_state
+                .messages
+                .last()
+                .iter()
+                .flat_map(|m| {
+                    m.content.iter().filter_map(|c| match c {
+                        ContentBlock::ToolUse(tool_use) => Some(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: tool_use.tool_use_id.clone(),
+                            content: vec![ToolResultContentBlock::Text(
+                                "Tool use was cancelled by the user".to_string(),
+                            )],
+                            status: ToolResultStatus::Error,
+                        })),
+                        _ => None,
+                    })
+                })
+                .collect::<Vec<_>>();
+            self.conversation_state
+                .messages
+                .push(Message::new(Role::User, tool_results, Some(Utc::now())));
+            self.conversation_state.messages.push(Message::new(
+                Role::Assistant,
+                vec![ContentBlock::Text(
+                    "Tool uses were interrupted, waiting for the next user prompt".to_string(),
+                )],
+                Some(Utc::now()),
+            ));
         }
-        self.set_active_state(ActiveState::Idle).await;
-        Ok(())
+
+        handle.cancel().await?;
+        while let Some(evt) = handle.recv().await {
+            self.agent_event_buf
+                .push(AgentLoopEvent::new(handle.id().clone(), evt.clone()).into());
+            if let AgentLoopEventKind::UserTurnEnd(md) = evt {
+                self.conversation_metadata.user_turn_metadatas.push(md.clone());
+                self.agent_event_buf.push(AgentEvent::EndTurn(md.clone()));
+                return Ok(Some(md));
+            }
+        }
+        Err(AgentError::Custom(
+            "agent loop did not return user turn metadata".to_string(),
+        ))
     }
 
     async fn handle_agent_request(&mut self, req: AgentRequest) -> Result<AgentResponse, AgentError> {
@@ -533,13 +595,9 @@ impl Agent {
 
         match req {
             AgentRequest::SendPrompt(args) => self.handle_send_prompt(args).await,
-            AgentRequest::Interrupt => self.handle_interrupt().await,
+            AgentRequest::Cancel => self.handle_cancel_request().await,
             AgentRequest::SendApprovalResult(args) => self.handle_approval_result(args).await,
             AgentRequest::CreateSnapshot => Ok(AgentResponse::Snapshot(self.create_snapshot())),
-            AgentRequest::Compact => {
-                self.compact_history().await?;
-                Ok(AgentResponse::Success)
-            },
             AgentRequest::GetMcpPrompts => {
                 let mut response = HashMap::new();
                 for server_name in self.cached_mcp_configs.server_names() {
@@ -557,73 +615,43 @@ impl Agent {
         }
     }
 
-    /// Handlers for a [AgentRequest::Interrupt] request.
-    async fn handle_interrupt(&mut self) -> Result<AgentResponse, AgentError> {
+    /// Handlers for a [AgentRequest::Cancel] request.
+    async fn handle_cancel_request(&mut self) -> Result<AgentResponse, AgentError> {
         match self.active_state() {
             ActiveState::Idle
             | ActiveState::Errored(_)
             | ActiveState::ExecutingRequest
             | ActiveState::WaitingForApproval { .. } => {},
-            ActiveState::Compacting(_) => {
-                // Compact is special - agent is executing in a different context,
-                if let Some(mut handle) = self.agent_loop.take() {
-                    let _ = handle.close().await;
-                    while handle.recv().await.is_some() {}
-                }
-                self.set_active_state(ActiveState::Idle).await;
-                return Ok(AgentResponse::Success);
-            },
             ActiveState::ExecutingHooks(executing_hooks) => {
-                for id in executing_hooks.hooks.keys() {
-                    self.task_executor.cancel_hook_execution(id);
+                for hook in executing_hooks.hooks() {
+                    self.task_executor.cancel_hook_execution(&hook.id);
                 }
             },
-            ActiveState::ExecutingTools { tools } => {
-                for id in tools.keys() {
-                    self.task_executor.cancel_tool_execution(id);
+            ActiveState::ExecutingTools(executing_tools) => {
+                for tool in executing_tools.tools() {
+                    self.task_executor.cancel_tool_execution(&tool.id);
                 }
             },
         }
-        if let Some(handle) = &self.agent_loop {
-            if let LoopState::PendingToolUseResults = handle.get_loop_state().await? {
-                // If the agent is in the middle of sending tool uses, then add two new
-                // messages:
-                // 1. user tool results replaced with content: "Tool use was cancelled by the user"
-                // 2. assistant message with content: "Tool uses were interrupted, waiting for the next user prompt"
-                let tool_results = self
-                    .conversation_state
-                    .messages
-                    .last()
-                    .iter()
-                    .flat_map(|m| {
-                        m.content.iter().filter_map(|c| match c {
-                            ContentBlock::ToolUse(tool_use) => Some(ContentBlock::ToolResult(ToolResultBlock {
-                                tool_use_id: tool_use.tool_use_id.clone(),
-                                content: vec![ToolResultContentBlock::Text(
-                                    "Tool use was cancelled by the user".to_string(),
-                                )],
-                                status: ToolResultStatus::Error,
-                            })),
-                            _ => None,
-                        })
-                    })
-                    .collect::<Vec<_>>();
-                self.conversation_state
-                    .messages
-                    .push(Message::new(Role::User, tool_results, Some(Utc::now())));
-                self.conversation_state.messages.push(Message::new(
-                    Role::Assistant,
-                    vec![ContentBlock::Text(
-                        "Tool uses were interrupted, waiting for the next user prompt".to_string(),
-                    )],
-                    Some(Utc::now()),
-                ));
-            }
+
+        // Send a stop event if required.
+        if (self.end_current_turn().await?).is_some() {
+            match self.active_state() {
+                ActiveState::WaitingForApproval { .. }
+                | ActiveState::ExecutingHooks(_)
+                | ActiveState::ExecutingRequest
+                | ActiveState::ExecutingTools(_) => {
+                    self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::Cancelled));
+                },
+                // For errored state, we should have already emitted a stop event.
+                ActiveState::Idle | ActiveState::Errored(_) => (),
+            };
         }
-        self.end_current_turn().await?;
+
         if !matches!(self.active_state(), ActiveState::Idle) {
             self.set_active_state(ActiveState::Idle).await;
         }
+
         Ok(AgentResponse::Success)
     }
 
@@ -712,60 +740,10 @@ impl Agent {
             return Ok(());
         };
 
-        // If compacting, then we require some special override logic:
-        if let ActiveState::Compacting(state) = &self.execution_state.active_state {
-            if let AgentLoopEventKind::UserTurnEnd(metadata) = &evt {
-                debug_assert!(
-                    metadata.result.is_some(),
-                    "loop should always have a result when compacting"
-                );
-                let Some(result) = metadata.result.as_ref() else {
-                    warn!(?metadata, "did not receive a result while compacting");
-                    return Ok(());
-                };
-                match result {
-                    Ok(msg) => {
-                        let content = msg
-                            .content
-                            .clone()
-                            .into_iter()
-                            .filter_map(|c| match c {
-                                ContentBlock::Text(t) => Some(t),
-                                _ => None,
-                            })
-                            .collect();
-                        let summary =
-                            ConversationSummary::new(content, self.conversation_state.clone(), Some(Utc::now()));
-                        self.conversation_metadata.summaries.push(summary);
-                        self.conversation_state.messages = vec![];
+        self.agent_event_buf
+            .push(AgentLoopEvent::new(loop_id.clone(), evt.clone()).into());
 
-                        // Continue the user turn if we need to.
-                        // Note: we return early so that we do not emit a UserTurnEnd event
-                        // since we don't consider compaction to end the user turn in this
-                        // instance.
-                        if let Some(prev_msg) = &state.last_user_message {
-                            self.conversation_state.messages.push(prev_msg.clone());
-                            let req = self.format_request().await;
-                            self.send_request(req).await?;
-                            self.set_active_state(ActiveState::ExecutingRequest).await;
-                            return Ok(());
-                        }
-                    },
-                    Err(err) => {
-                        self.set_active_state(ActiveState::Errored(err.clone().into())).await;
-                        let _ = self.agent_event_tx.send(AgentEvent::RequestError(err.clone()));
-                    },
-                }
-            }
-
-            let _ = self
-                .agent_event_tx
-                .send(AgentEvent::AgentLoop(AgentLoopEvent { id: loop_id, kind: evt }));
-
-            return Ok(());
-        }
-
-        match &evt {
+        match evt {
             AgentLoopEventKind::ResponseStreamEnd { result, metadata } => match result {
                 Ok(msg) => {
                     self.conversation_state.messages.push(msg.clone());
@@ -775,21 +753,23 @@ impl Agent {
                 },
                 Err(err) => {
                     error!(?err, ?loop_id, "response stream encountered an error");
-                    self.handle_loop_error_on_stream_end(err).await?;
+                    self.handle_loop_error_on_stream_end(&err).await?;
                 },
             },
-            AgentLoopEventKind::UserTurnEnd(user_turn_metadata) => {
-                self.conversation_metadata
-                    .user_turn_metadatas
-                    .push(user_turn_metadata.clone());
+            AgentLoopEventKind::UserTurnEnd(md) => {
+                self.conversation_metadata.user_turn_metadatas.push(md.clone());
                 self.set_active_state(ActiveState::Idle).await;
+                self.agent_event_buf.push(AgentEvent::EndTurn(md));
+                self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
             },
+            AgentLoopEventKind::AssistantText(text) => self
+                .agent_event_buf
+                .push(AgentEvent::Update(UpdateEvent::AgentContent(text.into()))),
+            AgentLoopEventKind::ReasoningContent(text) => self
+                .agent_event_buf
+                .push(AgentEvent::Update(UpdateEvent::AgentThought(text.into()))),
             _ => (),
         }
-
-        let _ = self
-            .agent_event_tx
-            .send(AgentEvent::AgentLoop(AgentLoopEvent { id: loop_id, kind: evt }));
 
         Ok(())
     }
@@ -882,15 +862,14 @@ impl Agent {
                 StreamErrorKind::Interrupted => {
                     // nothing to do
                 },
-                StreamErrorKind::ContextWindowOverflow => {
-                    self.handle_context_window_overflow(stream_err).await?;
-                },
                 StreamErrorKind::Validation { .. }
                 | StreamErrorKind::ServiceFailure
+                | StreamErrorKind::ContextWindowOverflow
                 | StreamErrorKind::Throttling
                 | StreamErrorKind::Other(_) => {
                     self.set_active_state(ActiveState::Errored(err.clone().into())).await;
-                    let _ = self.agent_event_tx.send(AgentEvent::RequestError(err.clone()));
+                    self.agent_event_buf
+                        .push(AgentEvent::Stop(AgentStopReason::Error(err.clone().into())));
                 },
             },
         }
@@ -901,18 +880,20 @@ impl Agent {
     /// Handler for a [AgentRequest::SendPrompt] request.
     async fn handle_send_prompt(&mut self, args: SendPromptArgs) -> Result<AgentResponse, AgentError> {
         match self.active_state() {
-            ActiveState::Idle | ActiveState::Errored(_) => (),
+            ActiveState::Idle => (),
+            ActiveState::Errored(_) => {
+                if !args.should_continue_turn() {
+                    self.end_current_turn().await?;
+                }
+            },
             ActiveState::WaitingForApproval { .. } => (),
-            ActiveState::ExecutingRequest
-            | ActiveState::ExecutingHooks(_)
-            | ActiveState::ExecutingTools { .. }
-            | ActiveState::Compacting(_) => {
+            ActiveState::ExecutingRequest | ActiveState::ExecutingHooks(_) | ActiveState::ExecutingTools { .. } => {
                 return Err(AgentError::NotIdle);
             },
         }
 
         // Run per-prompt hooks, if required.
-        let hooks = self.get_hooks(HookTrigger::UserPromptSubmit).await;
+        let hooks = self.get_hooks(HookTrigger::UserPromptSubmit);
         if !hooks.is_empty() {
             let hooks = hooks
                 .into_iter()
@@ -940,14 +921,13 @@ impl Agent {
         args: SendPromptArgs,
         prompt_hooks: Vec<String>,
     ) -> Result<AgentResponse, AgentError> {
-        self.end_current_turn().await?;
-
         let mut user_msg_content = args
             .content
             .into_iter()
             .map(|c| match c {
-                InputItem::Text(t) => ContentBlock::Text(t),
-                InputItem::Image(img) => ContentBlock::Image(img),
+                ContentChunk::Text(t) => ContentBlock::Text(t),
+                ContentChunk::Image(img) => ContentBlock::Image(img),
+                ContentChunk::ResourceLink(_) => panic!("resource links are not supported"),
             })
             .collect::<Vec<_>>();
 
@@ -983,7 +963,6 @@ impl Agent {
             VecDeque::from(self.conversation_state.messages.clone()),
             self.make_tool_spec().await,
             &self.agent_config,
-            &self.conversation_metadata,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
             &self.sys_provider,
         )
@@ -991,12 +970,14 @@ impl Agent {
     }
 
     async fn send_request(&mut self, request_args: SendRequestArgs) -> Result<AgentLoopResponse, AgentError> {
+        debug!(?request_args, "sending request");
         let model = Arc::clone(&self.model);
         let res = self
             .agent_loop_handle()?
             .send_request(model, request_args.clone())
             .await?;
-        let _ = self.agent_event_tx.send(AgentEvent::RequestSent(request_args));
+        self.agent_event_buf
+            .push(AgentEvent::Internal(InternalEvent::RequestSent(request_args)));
         Ok(res)
     }
 
@@ -1010,11 +991,14 @@ impl Agent {
     ///    the model.
     /// 5. *Execute tools*
     async fn handle_tool_uses(&mut self, tool_uses: Vec<ToolUseBlock>) -> Result<(), AgentError> {
+        trace!(?tool_uses, "handling tool uses");
         debug_assert!(matches!(self.active_state(), ActiveState::ExecutingRequest));
 
         // First, parse tool uses.
         let (tools, errors) = self.parse_tools(tool_uses).await;
         if !errors.is_empty() {
+            // Send parse errors back to the model.
+            trace!(?errors, "failed to parse tools");
             let content = errors
                 .into_iter()
                 .map(|e| {
@@ -1044,10 +1028,11 @@ impl Agent {
                 PermissionEvalResult::Ask => needs_approval.push(block.tool_use_id.clone()),
                 PermissionEvalResult::Deny { reason } => denied.push((block, tool, reason.clone())),
             }
-            let _ = self.agent_event_tx.send(AgentEvent::ToolPermissionEvalResult {
-                tool: tool.clone(),
-                result,
-            });
+            self.agent_event_buf
+                .push(AgentEvent::Internal(InternalEvent::ToolPermissionEvalResult {
+                    tool: tool.clone(),
+                    result,
+                }));
         }
 
         // Return denied tools immediately back to the model
@@ -1073,7 +1058,7 @@ impl Agent {
         }
 
         // Process PreToolUse hooks, if any.
-        let hooks = self.get_hooks(HookTrigger::PreToolUse).await;
+        let hooks = self.get_hooks(HookTrigger::PreToolUse);
         let mut hooks_to_execute = Vec::new();
         for (block, tool) in &tools {
             hooks_to_execute.extend(hooks.iter().filter(|h| hook_matches_tool(&h.config, tool)).map(|h| {
@@ -1096,16 +1081,34 @@ impl Agent {
             return Ok(());
         }
 
+        self.process_tool_uses(tools, needs_approval).await
+    }
+
+    /// Processes successfully parsed tool uses, requesting permission if required, and then
+    /// executing.
+    async fn process_tool_uses(
+        &mut self,
+        tools: Vec<(ToolUseBlock, Tool)>,
+        needs_approval: Vec<String>,
+    ) -> Result<(), AgentError> {
+        for tool in &tools {
+            self.agent_event_buf.push(
+                ToolCall {
+                    id: tool.0.tool_use_id.clone(),
+                    tool: tool.1.clone(),
+                    tool_use_block: tool.0.clone(),
+                }
+                .into(),
+            );
+        }
+
         // request permission for any asked tools
         if !needs_approval.is_empty() {
             self.request_tool_approvals(tools, needs_approval).await?;
             return Ok(());
         }
 
-        // Start executing the tools, and update the agent state accordingly.
-        self.execute_tools(tools).await?;
-
-        Ok(())
+        self.execute_tools(tools).await
     }
 
     async fn start_hooks_execution(
@@ -1114,13 +1117,18 @@ impl Agent {
         stage: HookStage,
         prompt: Option<String>,
     ) -> Result<(), AgentError> {
-        let mut hooks_state = HashMap::new();
+        let mut hooks_state = Vec::new();
         for (id, tool_ctx) in hooks {
             let req = StartHookExecution {
                 id: id.clone(),
                 prompt: prompt.clone(),
             };
-            hooks_state.insert(id, (tool_ctx, None));
+            hooks_state.push(ExecutingHook {
+                id: id.clone(),
+                tool_use_block: tool_ctx.as_ref().map(|ctx| ctx.0.clone()),
+                tool: tool_ctx.map(|ctx| ctx.1),
+                result: None,
+            });
             self.task_executor.start_hook_execution(req).await;
         }
         self.set_active_state(ActiveState::ExecutingHooks(ExecutingHooks {
@@ -1145,7 +1153,7 @@ impl Agent {
     }
 
     async fn handle_tool_execution_end(&mut self, evt: ToolExecutionEndEvent) -> Result<(), AgentError> {
-        let ActiveState::ExecutingTools { tools } = &mut self.execution_state.active_state else {
+        let ActiveState::ExecutingTools(executing_tools) = &mut self.execution_state.active_state else {
             warn!(
                 ?self.execution_state,
                 ?evt,
@@ -1154,25 +1162,23 @@ impl Agent {
             return Ok(());
         };
 
-        debug_assert!(tools.contains_key(&evt.id));
-        tools.entry(evt.id).and_modify(|(_, res)| *res = Some(evt.result));
+        debug_assert!(executing_tools.get_tool(&evt.id).is_some());
+        if let Some(tool) = executing_tools.get_tool_mut(&evt.id) {
+            tool.result = Some(evt.result);
+        }
 
-        let all_tools_finished = tools.values().all(|(_, res)| res.is_some());
-        if !all_tools_finished {
+        if !executing_tools.all_tools_finished() {
             return Ok(());
         }
 
-        let tools = tools.clone();
-        let tool_results = tools
-            .iter()
-            .map(|(_, (_, res))| res.as_ref().expect("is some").clone())
-            .collect();
+        // Clone to bypass borrow checker
+        let executing_tools = executing_tools.clone();
 
         // Process PostToolUse hooks, if any.
-        let hooks = self.get_hooks(HookTrigger::PostToolUse).await;
+        let hooks = self.get_hooks(HookTrigger::PostToolUse);
         let mut hooks_to_execute = Vec::new();
-        for (_, ((block, tool), result)) in tools.iter() {
-            let Some(result) = result else {
+        for executing_tool in executing_tools.tools() {
+            let Some(result) = executing_tool.result.as_ref() else {
                 continue;
             };
             let Some(output) = result.tool_execution_output() else {
@@ -1181,31 +1187,39 @@ impl Agent {
             let Ok(output) = serde_json::to_value(output) else {
                 continue;
             };
-            hooks_to_execute.extend(hooks.iter().filter(|h| hook_matches_tool(&h.config, tool)).map(|h| {
-                (
-                    HookExecutionId {
-                        hook: h.clone(),
-                        tool_context: Some((block, tool, &output).into()),
-                    },
-                    Some((block.clone(), tool.clone())),
-                )
-            }));
+            hooks_to_execute.extend(
+                hooks
+                    .iter()
+                    .filter(|h| hook_matches_tool(&h.config, &executing_tool.tool))
+                    .map(|h| {
+                        (
+                            HookExecutionId {
+                                hook: h.clone(),
+                                tool_context: Some(
+                                    (&executing_tool.tool_use_block, &executing_tool.tool, &output).into(),
+                                ),
+                            },
+                            Some((executing_tool.tool_use_block.clone(), executing_tool.tool.clone())),
+                        )
+                    }),
+            );
         }
         if !hooks_to_execute.is_empty() {
             debug!("found hooks to execute for postToolUse");
-            let stage = HookStage::PostToolUse { tool_results };
+            let stage = HookStage::PostToolUse {
+                tool_results: executing_tools.tool_results(),
+            };
             self.start_hooks_execution(hooks_to_execute, stage, None).await?;
             return Ok(());
         }
 
         // All tools have finished executing, so send the results back to the model.
-        self.send_tool_results(tool_results).await?;
+        self.send_tool_results(executing_tools.tool_results()).await?;
         Ok(())
     }
 
     async fn handle_hook_finished_event(&mut self, id: HookExecutionId, result: HookResult) -> Result<(), AgentError> {
-        let ActiveState::ExecutingHooks(ExecutingHooks { hooks, stage }) = &mut self.execution_state.active_state
-        else {
+        let ActiveState::ExecutingHooks(executing_hooks) = &mut self.execution_state.active_state else {
             warn!(
                 ?self.execution_state,
                 ?id,
@@ -1214,10 +1228,10 @@ impl Agent {
             return Ok(());
         };
 
-        debug_assert!(hooks.contains_key(&id));
-        hooks
-            .entry(id.clone())
-            .and_modify(|(_, res)| *res = Some(result.clone()));
+        debug_assert!(executing_hooks.get_hook(&id).is_some());
+        if let Some(hook) = executing_hooks.get_hook_mut(&id) {
+            hook.result = Some(result.clone());
+        }
 
         // Cache the hook if it's a successful agent spawn hook.
         if result.is_success()
@@ -1230,56 +1244,35 @@ impl Agent {
             }
         }
 
-        let all_hooks_finished = hooks.values().all(|(_, res)| res.is_some());
-        if !all_hooks_finished {
+        if !executing_hooks.all_hooks_finished() {
             return Ok(());
         }
 
-        // Unwrap the Option around the hook result for ease of use.
-        let hook_results = hooks
-            .iter()
-            .map(|(id, (tool_ctx, res))| (id.clone(), (tool_ctx, res.as_ref().expect("is some").clone())))
-            .collect::<HashMap<_, _>>();
-
         // All hooks have finished executing, so proceed to the next stage.
-        match stage {
+        match &executing_hooks.stage {
             HookStage::AgentSpawn => {
                 self.set_active_state(ActiveState::Idle).await;
-                let _ = self.agent_event_tx.send(AgentEvent::Initialized);
+                self.agent_event_buf.push(AgentEvent::Initialized);
                 Ok(())
             },
             HookStage::PrePrompt { args } => {
                 let args = args.clone(); // borrow checker clone
-                // Filter for only valid hooks.
-                let prompt_hooks = hook_results
-                    .iter()
-                    .filter_map(|(id, (_, res))| {
-                        if id.hook.trigger == HookTrigger::UserPromptSubmit
-                            && res.is_success()
-                            && res.output().is_some()
-                        {
-                            Some(res.output().expect("output is some").to_string())
-                        } else {
-                            None
-                        }
-                    })
-                    .collect();
-                self.send_prompt_impl(args, prompt_hooks).await?;
+                let hooks = executing_hooks.per_prompt_hooks();
+                self.send_prompt_impl(args, hooks).await?;
                 Ok(())
             },
             HookStage::PreToolUse { tools, needs_approval } => {
                 // If any command hooks exited with status 2, then we'll block.
                 // Otherwise, execute the tools.
                 let mut denied_tools = Vec::new();
-                for (block, _) in &*tools {
-                    let hook = hook_results.iter().find(|(_, (t, res))| {
-                        res.exit_code() == Some(2) && t.as_ref().is_some_and(|v| v.0.tool_use_id == block.tool_use_id)
-                    });
-                    if let Some((_, (_, result))) = hook {
-                        denied_tools.push((block.tool_use_id.clone(), result.clone()));
+                for (block, _) in tools {
+                    if let Some(hook) = executing_hooks.has_failure_exit_code_for_tool(&block.tool_use_id) {
+                        denied_tools.push((
+                            block.tool_use_id.clone(),
+                            hook.result.as_ref().cloned().expect("is some"),
+                        ));
                     }
                 }
-
                 if !denied_tools.is_empty() {
                     // Send denied tool results back to the model.
                     let content = denied_tools
@@ -1305,13 +1298,8 @@ impl Agent {
 
                 // Otherwise, continue to the approval stage.
                 let tools = tools.clone();
-                if !needs_approval.is_empty() {
-                    let needs_approval = needs_approval.clone();
-                    self.request_tool_approvals(tools, needs_approval).await?;
-                } else {
-                    self.execute_tools(tools).await?;
-                }
-                Ok(())
+                let needs_approval = needs_approval.clone();
+                Ok(self.process_tool_uses(tools, needs_approval).await?)
             },
             HookStage::PostToolUse { tool_results } => {
                 let tool_results = tool_results.clone();
@@ -1444,7 +1432,6 @@ impl Agent {
         let mut tools: Vec<(ToolUseBlock, Tool)> = Vec::new();
         let mut parse_errors: Vec<ToolParseError> = Vec::new();
 
-        // Next, parse tool from the name.
         for tool_use in tool_uses {
             let canonical_tool_name = match &self.cached_tool_specs {
                 Some(specs) => match specs.tool_map().get(&tool_use.name) {
@@ -1459,6 +1446,7 @@ impl Agent {
                 },
                 None => {
                     // should never happen
+                    debug_assert!(false, "parsing tools without having cached tool specs");
                     continue;
                 },
             };
@@ -1483,10 +1471,19 @@ impl Agent {
     async fn validate_tool(&self, tool: &Tool) -> Result<(), ToolParseErrorKind> {
         match tool.kind() {
             ToolKind::BuiltIn(built_in) => match built_in {
-                BuiltInTool::FileRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
-                BuiltInTool::FileWrite(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::FileRead(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::FileWrite(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Grep(_) => Ok(()),
-                BuiltInTool::Ls(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
+                BuiltInTool::Ls(t) => t
+                    .validate(&self.sys_provider)
+                    .await
+                    .map_err(ToolParseErrorKind::invalid_args),
                 BuiltInTool::Mkdir(_) => Ok(()),
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
@@ -1539,7 +1536,7 @@ impl Agent {
             let Some((block, tool)) = tools.iter().find(|(b, _)| &b.tool_use_id == tool_use_id) else {
                 continue;
             };
-            let _ = self.agent_event_tx.send(AgentEvent::ApprovalRequest {
+            self.agent_event_buf.push(AgentEvent::ApprovalRequest {
                 id: block.tool_use_id.clone(),
                 tool_use: (*block).clone(),
                 context: tool.get_context().await,
@@ -1550,13 +1547,18 @@ impl Agent {
     }
 
     async fn execute_tools(&mut self, tools: Vec<(ToolUseBlock, Tool)>) -> Result<(), AgentError> {
-        let mut tool_state = HashMap::new();
+        let mut tool_state = Vec::new();
         for (block, tool) in tools {
             let id = ToolExecutionId::new(block.tool_use_id.clone());
-            tool_state.insert(id.clone(), ((block.clone(), tool.clone()), None));
+            tool_state.push(ExecutingTool {
+                id: id.clone(),
+                tool_use_block: block.clone(),
+                tool: tool.clone(),
+                result: None,
+            });
             self.start_tool_execution(id.clone(), tool).await?;
         }
-        self.set_active_state(ActiveState::ExecutingTools { tools: tool_state })
+        self.set_active_state(ActiveState::ExecutingTools(ExecutingTools(tool_state)))
             .await;
         Ok(())
     }
@@ -1564,19 +1566,22 @@ impl Agent {
     /// Starts executing a tool for the given agent. Tools are executed in parallel on a background
     /// task.
     async fn start_tool_execution(&mut self, id: ToolExecutionId, tool: Tool) -> Result<(), AgentError> {
+        trace!(?id, ?tool, "starting tool execution");
         let tool_clone = tool.clone();
 
         // Channel for handling tool-specific state updates.
         let (tx, rx) = oneshot::channel::<ToolState>();
 
+        let provider = Arc::clone(&self.sys_provider);
+
         let fut: ToolFuture = match tool.kind {
             ToolKind::BuiltIn(builtin) => match builtin {
-                BuiltInTool::FileRead(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::FileRead(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::FileWrite(t) => {
                     let file_write = self.tool_state.file_write.clone();
                     let mut tool_state = ToolState { file_write };
                     Box::pin(async move {
-                        let res = t.execute(tool_state.file_write.as_mut()).await;
+                        let res = t.execute(tool_state.file_write.as_mut(), &provider).await;
                         if res.is_ok() {
                             let _ = tx.send(tool_state);
                         }
@@ -1587,7 +1592,7 @@ impl Agent {
                 BuiltInTool::ImageRead(t) => Box::pin(async move { t.execute().await }),
                 BuiltInTool::Introspect(_) => panic!("unimplemented"),
                 BuiltInTool::Grep(_) => panic!("unimplemented"),
-                BuiltInTool::Ls(t) => Box::pin(async move { t.execute().await }),
+                BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::SpawnSubagent => panic!("unimplemented"),
             },
@@ -1673,65 +1678,6 @@ impl Agent {
         self.set_active_state(ActiveState::ExecutingRequest).await;
         Ok(())
     }
-
-    /// Handler for [StreamErrorKind::ContextWindowOverflow] errors.
-    async fn handle_context_window_overflow(&mut self, err: &StreamError) -> Result<(), AgentError> {
-        if !self.settings.auto_compact {
-            let loop_err: LoopError = err.clone().into();
-            self.set_active_state(ActiveState::Errored(loop_err.clone().into()))
-                .await;
-            let _ = self.agent_event_tx.send(AgentEvent::RequestError(loop_err));
-            return Ok(());
-        }
-
-        self.compact_history().await
-    }
-
-    async fn compact_history(&mut self) -> Result<(), AgentError> {
-        if self.conversation_state.messages.is_empty() {
-            return Err(AgentError::Custom("Cannot compact an empty conversation".to_string()));
-        }
-
-        // Construct a request to summarize the conversation
-        let prompt = create_summary_prompt(None, self.conversation_metadata.latest_summary());
-        let mut messages = VecDeque::from(self.conversation_state.messages.clone());
-        // Check if the last message is from the user - if so, then we know this caused the context
-        // window overflow.
-        let mut last_user_message = None;
-        if messages.back().is_some_and(|m| m.role == Role::User) {
-            last_user_message = messages.pop_back();
-        }
-
-        // Push the summarize prompt
-        messages.push_back(Message::new(Role::User, vec![prompt.into()], Some(Utc::now())));
-
-        let req = format_request(
-            messages,
-            vec![],
-            &self.agent_config,
-            &self.conversation_metadata,
-            self.agent_spawn_hooks.iter().map(|(_, c)| c),
-            &self.sys_provider,
-        )
-        .await;
-
-        // Create a new agent loop if required.
-        if self.agent_loop.is_none() {
-            let loop_id = AgentLoopId::new(self.id.clone());
-            let cancel_token = CancellationToken::new();
-            self.agent_loop = Some(AgentLoop::new(loop_id.clone(), cancel_token).spawn());
-        }
-
-        self.set_active_state(ActiveState::Compacting(CompactingState {
-            last_user_message,
-            strategy: CompactStrategy::default(),
-            conversation: self.conversation_state.clone(),
-        }))
-        .await;
-
-        self.send_request(req).await?;
-        Ok(())
-    }
 }
 
 /// Creates a request structure for sending to the model.
@@ -1743,8 +1689,7 @@ impl Agent {
 async fn format_request<T, U, P>(
     mut messages: VecDeque<Message>,
     mut tool_spec: Vec<ToolSpec>,
-    agent_config: &Config,
-    conversation_md: &ConversationMetadata,
+    agent_config: &AgentConfig,
     agent_spawn_hooks: T,
     provider: &P,
 ) -> SendRequestArgs
@@ -1755,7 +1700,7 @@ where
 {
     enforce_conversation_invariants(&mut messages, &mut tool_spec);
 
-    let ctx_messages = create_context_messages(agent_config, conversation_md, agent_spawn_hooks, provider).await;
+    let ctx_messages = create_context_messages(agent_config, agent_spawn_hooks, provider).await;
     for msg in ctx_messages.into_iter().rev() {
         messages.push_front(msg);
     }
@@ -1783,8 +1728,7 @@ where
 ///
 /// We use context messages since the API does not allow any system prompt parameterization.
 async fn create_context_messages<T, U, P>(
-    agent_config: &Config,
-    conversation_md: &ConversationMetadata,
+    agent_config: &AgentConfig,
     agent_spawn_hooks: T,
     provider: &P,
 ) -> Vec<Message>
@@ -1793,16 +1737,10 @@ where
     U: AsRef<str>,
     P: SystemProvider,
 {
-    let summary = conversation_md.summaries.last().map(|s| s.content.as_str());
     let system_prompt = agent_config.system_prompt();
     let resources = collect_resources(agent_config.resources(), provider).await;
 
-    let content = format_user_context_message(
-        summary,
-        system_prompt,
-        resources.iter().map(|r| &r.content),
-        agent_spawn_hooks,
-    );
+    let content = format_user_context_message(system_prompt, resources.iter().map(|r| &r.content), agent_spawn_hooks);
     if content.is_empty() {
         return vec![];
     }
@@ -1818,12 +1756,7 @@ where
     vec![user_msg, assistant_msg]
 }
 
-fn format_user_context_message<T, U, S, V>(
-    summary: Option<&str>,
-    system_prompt: Option<&str>,
-    resources: T,
-    agent_spawn_hooks: U,
-) -> String
+fn format_user_context_message<T, U, S, V>(system_prompt: Option<&str>, resources: T, agent_spawn_hooks: U) -> String
 where
     T: IntoIterator<Item = S>,
     U: IntoIterator<Item = V>,
@@ -1831,14 +1764,6 @@ where
     V: AsRef<str>,
 {
     let mut context_content = String::new();
-    if let Some(v) = summary {
-        context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-        context_content.push_str("This summary contains ALL relevant information from our previous conversation including tool uses, results, code analysis, and file operations. YOU MUST reference this information when answering questions and explicitly acknowledge specific details from the summary when they're relevant to the current question.\n\n");
-        context_content.push_str("SUMMARY CONTENT:\n");
-        context_content.push_str(v);
-        context_content.push('\n');
-        context_content.push_str(CONTEXT_ENTRY_END_HEADER);
-    }
 
     if let Some(prompt) = system_prompt {
         context_content.push_str(&format!("Follow this instruction: {}", prompt));
@@ -1871,6 +1796,10 @@ where
 /// - Any tool uses that do not exist in the provided tool specs will have their arguments replaced
 ///   with dummy content.
 fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut Vec<ToolSpec>) {
+    if messages.is_empty() {
+        return;
+    }
+
     // First, trim the conversation history by finding the second oldest message from the user without
     // tool results - this will be the new oldest message in the history.
     //
@@ -1895,6 +1824,54 @@ fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut
                 messages.clear();
                 return;
             },
+        }
+    }
+
+    debug_assert!(messages.front().is_some_and(|msg| msg.role == Role::User));
+
+    // For any user messages that have tool results but the preceding assistant message has no tool
+    // uses, replace the tool result content as normal prompt content.
+    for asst_user_pair in messages.make_contiguous()[1..].chunks_exact_mut(2) {
+        let mut ids = Vec::new();
+        for tool_result in asst_user_pair[1].tool_results_iter() {
+            if asst_user_pair[0].get_tool_use(&tool_result.tool_use_id).is_none() {
+                ids.push(tool_result.tool_use_id.clone());
+            }
+        }
+        for id in ids {
+            asst_user_pair[1].replace_tool_result_as_content(id);
+        }
+    }
+    // Do the same as above but for the first message in the history.
+    {
+        let mut ids = Vec::new();
+        for tool_result in messages[0].tool_results_iter() {
+            ids.push(tool_result.tool_use_id.clone());
+        }
+        for id in ids {
+            messages[0].replace_tool_result_as_content(id);
+        }
+    }
+
+    // For user messages that follow a tool use but have no corresponding tool result, add
+    // "cancelled" tool use results.
+    for asst_user_pair in messages.make_contiguous()[1..].chunks_exact_mut(2) {
+        let mut ids = Vec::new();
+        for tool_use in asst_user_pair[0].tool_uses_iter() {
+            if asst_user_pair[1].get_tool_result(&tool_use.tool_use_id).is_none() {
+                ids.push(tool_use.tool_use_id.clone());
+            }
+        }
+        for id in ids {
+            asst_user_pair[1]
+                .content
+                .push(ContentBlock::ToolResult(ToolResultBlock {
+                    tool_use_id: id,
+                    content: vec![ToolResultContentBlock::Text(
+                        "Tool use was cancelled by the user".to_string(),
+                    )],
+                    status: ToolResultStatus::Error,
+                }));
         }
     }
 
@@ -2042,13 +2019,43 @@ pub enum ActiveState {
     /// The agent is not able to receive new prompts while in this state
     ExecutingRequest,
     /// Agent is executing tools
-    ExecutingTools {
-        tools: HashMap<ToolExecutionId, ((ToolUseBlock, Tool), Option<ToolExecutorResult>)>,
-    },
-    /// Agent is summarizing the conversation history.
-    ///
-    /// The agent is not able to receive new prompts while in this state.
-    Compacting(CompactingState),
+    ExecutingTools(ExecutingTools),
+    // ExecutingTools {
+    //     tools: HashMap<ToolExecutionId, ((ToolUseBlock, Tool), Option<ToolExecutorResult>)>,
+    // },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExecutingTools(Vec<ExecutingTool>);
+
+impl ExecutingTools {
+    fn tools(&self) -> &[ExecutingTool] {
+        &self.0
+    }
+
+    fn get_tool(&self, id: &ToolExecutionId) -> Option<&ExecutingTool> {
+        self.0.iter().find(|tool| &tool.id == id)
+    }
+
+    fn get_tool_mut(&mut self, id: &ToolExecutionId) -> Option<&mut ExecutingTool> {
+        self.0.iter_mut().find(|tool| &tool.id == id)
+    }
+
+    fn all_tools_finished(&self) -> bool {
+        self.0.iter().all(|tool| tool.result.is_some())
+    }
+
+    fn tool_results(&self) -> Vec<ToolExecutorResult> {
+        self.0.iter().filter_map(|tool| tool.result.clone()).collect()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExecutingTool {
+    id: ToolExecutionId,
+    tool_use_block: ToolUseBlock,
+    tool: Tool,
+    result: Option<ToolExecutorResult>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -2059,9 +2066,80 @@ pub struct ExecutingHooks {
     /// Also contains tool context used for the hook execution, if available - used to potentially
     /// block tool execution.
     #[allow(clippy::type_complexity)]
-    hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, Tool)>, Option<HookResult>)>,
+    hooks: Vec<ExecutingHook>,
+    // hooks: HashMap<HookExecutionId, (Option<(ToolUseBlock, Tool)>, Option<HookResult>)>,
     /// See [HookStage].
     stage: HookStage,
+}
+
+impl ExecutingHooks {
+    fn hooks(&self) -> &[ExecutingHook] {
+        &self.hooks
+    }
+
+    fn get_hook(&self, id: &HookExecutionId) -> Option<&ExecutingHook> {
+        self.hooks.iter().find(|hook| &hook.id == id)
+    }
+
+    fn get_hook_mut(&mut self, id: &HookExecutionId) -> Option<&mut ExecutingHook> {
+        self.hooks.iter_mut().find(|hook| &hook.id == id)
+    }
+
+    fn all_hooks_finished(&self) -> bool {
+        self.hooks.iter().all(|hook| hook.result.is_some())
+    }
+
+    /// Returns finished per prompt hooks
+    fn per_prompt_hooks(&self) -> Vec<String> {
+        self.hooks
+            .iter()
+            .filter_map(|hook| {
+                if hook.id.hook.trigger == HookTrigger::UserPromptSubmit
+                    && hook
+                        .result
+                        .as_ref()
+                        .is_some_and(|res| res.is_success() && res.output().is_some())
+                {
+                    Some(
+                        hook.result
+                            .clone()
+                            .expect("result is some")
+                            .output()
+                            .expect("output is some")
+                            .to_string(),
+                    )
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    fn has_failure_exit_code_for_tool(&self, tool_use_id: impl AsRef<str>) -> Option<&ExecutingHook> {
+        self.hooks.iter().find(|hook| {
+            hook.exit_code().is_some_and(|code| code == 2)
+                && hook
+                    .tool_use_block
+                    .as_ref()
+                    .is_some_and(|tool| tool.tool_use_id == tool_use_id.as_ref())
+        })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ExecutingHook {
+    id: HookExecutionId,
+    /// The tool use block requested by the model if this hook is part of a tool use.
+    tool_use_block: Option<ToolUseBlock>,
+    /// The tool that was executed if this hook is part of a tool use.
+    tool: Option<Tool>,
+    result: Option<HookResult>,
+}
+
+impl ExecutingHook {
+    fn exit_code(&self) -> Option<i32> {
+        self.result.as_ref().and_then(|res| res.exit_code())
+    }
 }
 
 /// Stage of execution.

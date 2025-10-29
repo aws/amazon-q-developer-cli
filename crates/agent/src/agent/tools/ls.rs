@@ -26,7 +26,8 @@ use crate::agent::tools::{
     ToolExecutionOutputItem,
 };
 use crate::agent::util::glob::matches_any_pattern;
-use crate::agent::util::path::canonicalize_path;
+use crate::util::path::canonicalize_path_sys;
+use crate::util::providers::SystemProvider;
 
 const LS_TOOL_DESCRIPTION: &str = r#"
 A tool for listing directory contents.
@@ -104,8 +105,8 @@ pub struct Ls {
 impl Ls {
     const DEFAULT_DEPTH: usize = 0;
 
-    pub async fn validate(&self) -> Result<(), String> {
-        let path = self.canonical_path()?;
+    pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
+        let path = self.canonical_path(provider)?;
         if !path.exists() {
             return Err(format!("Directory not found: {}", path.to_string_lossy()));
         }
@@ -125,8 +126,8 @@ impl Ls {
         Ok(())
     }
 
-    pub async fn execute(&self) -> ToolExecutionResult {
-        let path = self.canonical_path()?;
+    pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
+        let path = self.canonical_path(provider)?;
         let max_depth = self.depth();
         debug!(?path, max_depth, "Reading directory at path with depth");
 
@@ -221,8 +222,10 @@ impl Ls {
         }
     }
 
-    fn canonical_path(&self) -> Result<PathBuf, String> {
-        Ok(PathBuf::from(canonicalize_path(&self.path).map_err(|e| e.to_string())?))
+    fn canonical_path<P: SystemProvider>(&self, provider: &P) -> Result<PathBuf, String> {
+        Ok(PathBuf::from(
+            canonicalize_path_sys(&self.path, provider).map_err(|e| e.to_string())?,
+        ))
     }
 
     fn depth(&self) -> usize {
@@ -346,6 +349,7 @@ fn format_mode(mode: u32) -> [char; 9] {
 mod tests {
     use super::*;
     use crate::agent::util::test::TestDir;
+    use crate::util::test::TestProvider;
 
     #[test]
     #[cfg(unix)]
@@ -363,6 +367,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_basic_directory() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
             .with_file(("file1.txt", "content1"))
             .await
@@ -370,13 +375,13 @@ mod tests {
             .await;
 
         let tool = Ls {
-            path: test_dir.path("").to_string_lossy().to_string(),
+            path: test_dir.join("").to_string_lossy().to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate().await.is_ok());
-        let result = tool.execute().await.unwrap();
+        assert!(tool.validate(&test_provider).await.is_ok());
+        let result = tool.execute(&test_provider).await.unwrap();
         assert_eq!(result.items.len(), 1);
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
@@ -387,6 +392,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_recursive() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
             .with_file(("root.txt", "root"))
             .await
@@ -394,12 +400,12 @@ mod tests {
             .await;
 
         let tool = Ls {
-            path: test_dir.path("").to_string_lossy().to_string(),
+            path: test_dir.join("").to_string_lossy().to_string(),
             depth: Some(1),
             ignore: None,
         };
 
-        let result = tool.execute().await.unwrap();
+        let result = tool.execute(&test_provider).await.unwrap();
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert!(content.contains("root.txt"));
@@ -410,6 +416,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_with_ignore_patterns() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
             .with_file(("keep.txt", "keep"))
             .await
@@ -417,12 +424,12 @@ mod tests {
             .await;
 
         let tool = Ls {
-            path: test_dir.path("").to_string_lossy().to_string(),
+            path: test_dir.join("").to_string_lossy().to_string(),
             depth: None,
             ignore: Some(vec!["*.log".to_string()]),
         };
 
-        let result = tool.execute().await.unwrap();
+        let result = tool.execute(&test_provider).await.unwrap();
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert!(content.contains("keep.txt"));
@@ -432,25 +439,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_validate_nonexistent_directory() {
+        let test_provider = TestProvider::new();
         let tool = Ls {
             path: "/nonexistent/directory".to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate().await.is_err());
+        assert!(tool.validate(&test_provider).await.is_err());
     }
 
     #[tokio::test]
     async fn test_ls_validate_file_not_directory() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new().with_file(("file.txt", "content")).await;
 
         let tool = Ls {
-            path: test_dir.path("file.txt").to_string_lossy().to_string(),
+            path: test_dir.join("file.txt").to_string_lossy().to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate().await.is_err());
+        assert!(tool.validate(&test_provider).await.is_err());
     }
 }

@@ -24,7 +24,8 @@ use super::{
     ToolExecutionOutputItem,
     ToolExecutionResult,
 };
-use crate::agent::util::path::canonicalize_path;
+use crate::util::path::canonicalize_path_sys;
+use crate::util::providers::SystemProvider;
 
 const MAX_READ_SIZE: u32 = 250 * 1024;
 
@@ -85,10 +86,10 @@ impl FsRead {
         serde_json::to_value(schema).expect("creating tool schema should not fail")
     }
 
-    pub async fn validate(&self) -> Result<(), String> {
+    pub async fn validate<P: SystemProvider>(&self, provider: &P) -> Result<(), String> {
         let mut errors = Vec::new();
         for op in &self.ops {
-            let path = PathBuf::from(canonicalize_path(&op.path).map_err(|e| e.to_string())?);
+            let path = PathBuf::from(canonicalize_path_sys(&op.path, provider).map_err(|e| e.to_string())?);
             if !path.exists() {
                 errors.push(format!("'{}' does not exist", path.to_string_lossy()));
                 continue;
@@ -112,11 +113,11 @@ impl FsRead {
         }
     }
 
-    pub async fn execute(&self) -> ToolExecutionResult {
+    pub async fn execute<P: SystemProvider>(&self, provider: &P) -> ToolExecutionResult {
         let mut results = Vec::new();
         let mut errors = Vec::new();
         for op in &self.ops {
-            match op.execute().await {
+            match op.execute(provider).await {
                 Ok(res) => results.push(res),
                 Err(err) => errors.push((op.clone(), err)),
             }
@@ -145,8 +146,10 @@ pub struct FsReadOp {
 }
 
 impl FsReadOp {
-    async fn execute(&self) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
-        let path = PathBuf::from(canonicalize_path(&self.path).map_err(|e| ToolExecutionError::Custom(e.to_string()))?);
+    async fn execute<P: SystemProvider>(&self, provider: &P) -> Result<ToolExecutionOutputItem, ToolExecutionError> {
+        let path = PathBuf::from(
+            canonicalize_path_sys(&self.path, provider).map_err(|e| ToolExecutionError::Custom(e.to_string()))?,
+        );
 
         // TODO: add line numbers
         let file_lines = LinesStream::new(
@@ -194,21 +197,23 @@ pub struct FileReadContext {}
 mod tests {
     use super::*;
     use crate::agent::util::test::TestDir;
+    use crate::util::test::TestProvider;
 
     #[tokio::test]
     async fn test_fs_read_single_file() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new().with_file(("test.txt", "line1\nline2\nline3")).await;
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.path("test.txt").to_string_lossy().to_string(),
+                path: test_dir.join("test.txt").to_string_lossy().to_string(),
                 limit: None,
                 offset: None,
             }],
         };
 
-        assert!(tool.validate().await.is_ok());
-        let result = tool.execute().await.unwrap();
+        assert!(tool.validate(&test_provider).await.is_ok());
+        let result = tool.execute(&test_provider).await.unwrap();
         assert_eq!(result.items.len(), 1);
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line1\nline2\nline3");
@@ -217,19 +222,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_fs_read_with_offset_and_limit() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
             .with_file(("test.txt", "line1\nline2\nline3\nline4\nline5"))
             .await;
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.path("test.txt").to_string_lossy().to_string(),
+                path: test_dir.join("test.txt").to_string_lossy().to_string(),
                 limit: Some(2),
                 offset: Some(1),
             }],
         };
 
-        let result = tool.execute().await.unwrap();
+        let result = tool.execute(&test_provider).await.unwrap();
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line2\nline3");
         }
@@ -237,6 +243,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_fs_read_multiple_files() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
             .with_file(("file1.txt", "content1"))
             .await
@@ -246,24 +253,25 @@ mod tests {
         let tool = FsRead {
             ops: vec![
                 FsReadOp {
-                    path: test_dir.path("file1.txt").to_string_lossy().to_string(),
+                    path: test_dir.join("file1.txt").to_string_lossy().to_string(),
                     limit: None,
                     offset: None,
                 },
                 FsReadOp {
-                    path: test_dir.path("file2.txt").to_string_lossy().to_string(),
+                    path: test_dir.join("file2.txt").to_string_lossy().to_string(),
                     limit: None,
                     offset: None,
                 },
             ],
         };
 
-        let result = tool.execute().await.unwrap();
+        let result = tool.execute(&test_provider).await.unwrap();
         assert_eq!(result.items.len(), 2);
     }
 
     #[tokio::test]
     async fn test_fs_read_validate_nonexistent_file() {
+        let test_provider = TestProvider::new();
         let tool = FsRead {
             ops: vec![FsReadOp {
                 path: "/nonexistent/file.txt".to_string(),
@@ -272,21 +280,22 @@ mod tests {
             }],
         };
 
-        assert!(tool.validate().await.is_err());
+        assert!(tool.validate(&test_provider).await.is_err());
     }
 
     #[tokio::test]
     async fn test_fs_read_validate_directory_path() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new();
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.path("").to_string_lossy().to_string(),
+                path: test_dir.join("").to_string_lossy().to_string(),
                 limit: None,
                 offset: None,
             }],
         };
 
-        assert!(tool.validate().await.is_err());
+        assert!(tool.validate(&test_provider).await.is_err());
     }
 }

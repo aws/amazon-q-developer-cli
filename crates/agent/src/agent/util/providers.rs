@@ -1,5 +1,6 @@
 use std::env::VarError;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use super::directories;
 
@@ -26,6 +27,26 @@ impl CwdProvider for Box<dyn SystemProvider> {
 }
 
 impl SystemProvider for Box<dyn SystemProvider> {}
+
+impl EnvProvider for Arc<dyn SystemProvider> {
+    fn var(&self, input: &str) -> Result<String, VarError> {
+        (**self).var(input)
+    }
+}
+
+impl HomeProvider for Arc<dyn SystemProvider> {
+    fn home(&self) -> Option<PathBuf> {
+        (**self).home()
+    }
+}
+
+impl CwdProvider for Arc<dyn SystemProvider> {
+    fn cwd(&self) -> Result<PathBuf, std::io::Error> {
+        (**self).cwd()
+    }
+}
+
+impl SystemProvider for Arc<dyn SystemProvider> {}
 
 /// A trait for accessing environment variables.
 ///

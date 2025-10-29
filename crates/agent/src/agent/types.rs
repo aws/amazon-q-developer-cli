@@ -19,7 +19,7 @@ use super::agent_loop::protocol::{
 use super::agent_loop::types::Message;
 use super::consts::DEFAULT_AGENT_NAME;
 use crate::agent::ExecutionState;
-use crate::agent::agent_config::definitions::Config;
+use crate::agent::agent_config::definitions::AgentConfig;
 use crate::agent::tools::ToolState;
 
 /// A point-in-time snapshot of an agent's state.
@@ -38,13 +38,11 @@ pub struct AgentSnapshot {
     /// Agent id
     pub id: AgentId,
     /// Agent config
-    pub agent_config: Config,
+    pub agent_config: AgentConfig,
     /// Agent conversation state
     pub conversation_state: ConversationState,
     /// Agent conversation metadata
     pub conversation_metadata: ConversationMetadata,
-    /// History of summaries within the agent
-    pub compaction_snapshots: Vec<CompactionSnapshot>,
     /// Agent execution state
     pub execution_state: ExecutionState,
     /// State associated with the model implementation used by the agent
@@ -56,13 +54,12 @@ pub struct AgentSnapshot {
 }
 
 impl AgentSnapshot {
-    pub fn new_empty(agent_config: Config) -> Self {
+    pub fn new_empty(agent_config: AgentConfig) -> Self {
         Self {
             id: agent_config.name().into(),
             agent_config,
             conversation_state: ConversationState::new(),
             conversation_metadata: Default::default(),
-            compaction_snapshots: Default::default(),
             execution_state: Default::default(),
             model_state: Default::default(),
             tool_state: Default::default(),
@@ -72,13 +69,12 @@ impl AgentSnapshot {
 
     /// Creates a new snapshot using the built-in agent default.
     pub fn new_built_in_agent() -> Self {
-        let agent_config = Config::default();
+        let agent_config = AgentConfig::default();
         Self {
             id: agent_config.name().into(),
             agent_config,
             conversation_state: ConversationState::new(),
             conversation_metadata: Default::default(),
-            compaction_snapshots: Default::default(),
             execution_state: Default::default(),
             model_state: Default::default(),
             tool_state: Default::default(),
@@ -86,25 +82,6 @@ impl AgentSnapshot {
         }
     }
 }
-
-// /// A serializable representation of the state contained within [Models].
-// #[derive(Debug, Clone, Serialize, Deserialize)]
-// pub enum ModelsState {
-//     Rts {
-//         conversation_id: Option<String>,
-//         model_id: Option<String>,
-//     },
-//     Test,
-// }
-//
-// impl Default for ModelsState {
-//     fn default() -> Self {
-//         Self::Rts {
-//             conversation_id: None,
-//             model_id: None,
-//         }
-//     }
-// }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompactionSnapshot {
@@ -150,8 +127,6 @@ impl AsRef<str> for ConversationSummary {
 /// Settings to modify the runtime behavior of the agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentSettings {
-    /// Whether or not to automatically perform compaction on context window overflows.
-    pub auto_compact: bool,
     /// Timeout waiting for MCP servers to initialize during agent initialization.
     pub mcp_init_timeout: Duration,
 }
@@ -163,8 +138,6 @@ impl AgentSettings {
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
-            // auto_compact: Default::default(),
-            auto_compact: true,
             mcp_init_timeout: Self::DEFAULT_MCP_INIT_TIMEOUT,
         }
     }
@@ -197,20 +170,12 @@ impl Default for ConversationState {
 pub struct ConversationMetadata {
     /// History of user turns
     pub user_turn_metadatas: Vec<UserTurnMetadata>,
-    /// Summary history
-    pub summaries: Vec<ConversationSummary>,
     /// The request that started the most recent user turn
     pub user_turn_start_request: Option<SendRequestArgs>,
     /// The most recent request sent
     ///
     /// This is equivalent to user_turn_start_request for the first request of a user turn
     pub last_request: Option<SendRequestArgs>,
-}
-
-impl ConversationMetadata {
-    pub fn latest_summary(&self) -> Option<&ConversationSummary> {
-        self.summaries.last()
-    }
 }
 
 /// Unique identifier of an agent instance within a session.

@@ -5,16 +5,19 @@ use std::sync::Arc;
 use agent::agent_config::load_agents;
 use agent::agent_loop::protocol::{
     AgentLoopEventKind,
-    EndReason,
+    LoopEndReason,
 };
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
 use agent::protocol::{
     AgentEvent,
+    AgentStopReason,
     ApprovalResult,
-    InputItem,
+    ContentChunk,
+    InternalEvent,
     SendApprovalResultArgs,
     SendPromptArgs,
+    UpdateEvent,
 };
 use agent::rts::{
     RtsModel,
@@ -116,7 +119,8 @@ impl RunArgs {
 
         agent
             .send_prompt(SendPromptArgs {
-                content: vec![InputItem::Text(initial_prompt)],
+                content: vec![ContentChunk::Text(initial_prompt)],
+                should_continue_turn: None,
             })
             .await?;
 
@@ -135,13 +139,13 @@ impl RunArgs {
 
             // Check for exit conditions
             match &evt {
-                AgentEvent::AgentLoop(evt) => {
-                    if let AgentLoopEventKind::UserTurnEnd(metadata) = &evt.kind {
-                        user_turn_metadata = Some(metadata.clone());
-                        break;
-                    }
+                AgentEvent::EndTurn(metadata) => {
+                    user_turn_metadata = Some(metadata.clone());
+                    break;
                 },
-                AgentEvent::RequestError(loop_error) => bail!("agent encountered an error: {:?}", loop_error),
+                AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
+                    bail!("agent encountered an error: {:?}", agent_error)
+                },
                 AgentEvent::ApprovalRequest { id, tool_use, .. } => {
                     if !self.dangerously_trust_all_tools {
                         bail!("Tool approval is required: {:?}", tool_use);
@@ -161,7 +165,8 @@ impl RunArgs {
 
         if self.output_format == Some(OutputFormat::Json) {
             let md = user_turn_metadata.expect("user turn metadata should exist");
-            let is_error = md.end_reason != EndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
+            println!("user turn metadata: {:?}", md);
+            let is_error = md.end_reason != LoopEndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
             let result = md.result.and_then(|r| r.ok().map(|m| m.text()));
 
             let output = JsonOutput {
@@ -180,14 +185,17 @@ impl RunArgs {
     async fn handle_output_format_printing(&self, evt: &AgentEvent) -> Result<()> {
         match self.output_format.unwrap_or(OutputFormat::Text) {
             OutputFormat::Text => {
-                if let AgentEvent::AgentLoop(evt) = &evt {
-                    match &evt.kind {
-                        AgentLoopEventKind::AssistantText(text) => {
+                if let AgentEvent::Update(evt) = &evt {
+                    match &evt {
+                        UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
                             print!("{}", text);
                             let _ = std::io::stdout().flush();
                         },
-                        AgentLoopEventKind::ToolUse(tool_use) => {
-                            print!("\n{}\n", serde_json::to_string_pretty(tool_use).expect("does not fail"));
+                        UpdateEvent::ToolCall(tool_call) => {
+                            print!(
+                                "\n{}\n",
+                                serde_json::to_string_pretty(&tool_call.tool_use_block).expect("does not fail")
+                            );
                         },
                         _ => (),
                     }
@@ -196,7 +204,7 @@ impl RunArgs {
             },
             OutputFormat::Json => Ok(()), // output will be dealt with after exiting the main loop
             OutputFormat::JsonStreaming => {
-                if let AgentEvent::AgentLoop(evt) = &evt {
+                if let AgentEvent::Internal(InternalEvent::AgentLoop(evt)) = &evt {
                     if let AgentLoopEventKind::Stream(stream_event) = &evt.kind {
                         println!("{}", serde_json::to_string(stream_event)?);
                     }

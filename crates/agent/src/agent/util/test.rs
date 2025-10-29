@@ -25,8 +25,12 @@ impl TestDir {
         }
     }
 
+    pub fn path(&self) -> &Path {
+        self.temp_dir.path()
+    }
+
     /// Returns a resolved path using the generated temporary directory as the base.
-    pub fn path(&self, path: impl AsRef<Path>) -> PathBuf {
+    pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
         self.temp_dir.path().join(path)
     }
 
@@ -99,18 +103,22 @@ impl TestProvider {
     }
 
     /// Creates a new implementation of [SystemProvider] with the following defaults:
-    /// - env vars: HOME=$base/home/testuser
-    /// - cwd: $base/home/testuser
-    /// - home: $base/home/testuser
+    /// - env vars: HOME=$base
+    /// - cwd: $base
+    /// - home: $base
+    ///
+    /// `base` must be an absolute path, otherwise this method panics.
     pub fn new_with_base(base: impl AsRef<Path>) -> Self {
         let base = base.as_ref();
-        let home = base.join("home/testuser");
+        if !base.is_absolute() {
+            panic!("only absolute base paths are supported");
+        }
         let mut env = std::collections::HashMap::new();
-        env.insert("HOME".to_string(), home.to_string_lossy().to_string());
+        env.insert("HOME".to_string(), base.to_string_lossy().to_string());
         Self {
             env,
-            home: Some(home.clone()),
-            cwd: Some(home),
+            home: Some(base.to_owned()),
+            cwd: Some(base.to_owned()),
         }
     }
 

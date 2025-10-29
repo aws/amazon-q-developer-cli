@@ -30,15 +30,15 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
     match tool {
         ToolKind::BuiltIn(built_in) => match built_in {
             BuiltInTool::FileRead(file_read) => evaluate_permission_for_paths(
-                &settings.file_read.allowed_paths,
-                &settings.file_read.denied_paths,
+                &settings.fs_read.allowed_paths,
+                &settings.fs_read.denied_paths,
                 file_read.ops.iter().map(|op| &op.path),
                 is_allowed,
                 provider,
             ),
             BuiltInTool::FileWrite(file_write) => evaluate_permission_for_paths(
-                &settings.file_write.allowed_paths,
-                &settings.file_write.denied_paths,
+                &settings.fs_write.allowed_paths,
+                &settings.fs_write.denied_paths,
                 [file_write.path()],
                 is_allowed,
                 provider,
@@ -46,15 +46,15 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
 
             // Reuse the same settings for fs read
             BuiltInTool::Ls(ls) => evaluate_permission_for_paths(
-                &settings.file_write.allowed_paths,
-                &settings.file_write.denied_paths,
+                &settings.fs_write.allowed_paths,
+                &settings.fs_write.denied_paths,
                 [&ls.path],
                 is_allowed,
                 provider,
             ),
             BuiltInTool::ImageRead(image_read) => evaluate_permission_for_paths(
-                &settings.file_write.allowed_paths,
-                &settings.file_write.denied_paths,
+                &settings.fs_write.allowed_paths,
+                &settings.fs_write.denied_paths,
                 &image_read.paths,
                 is_allowed,
                 provider,

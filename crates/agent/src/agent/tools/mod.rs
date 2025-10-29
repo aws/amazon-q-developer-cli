@@ -32,10 +32,8 @@ use serde::{
 };
 use strum::IntoEnumIterator;
 
-use super::agent_config::parse::{
-    CanonicalToolName,
-    ToolParseErrorKind,
-};
+use super::agent_config::parse::CanonicalToolName;
+use super::agent_loop::types::ToolUseBlock;
 use super::consts::TOOL_USE_PURPOSE_FIELD_NAME;
 use super::protocol::AgentError;
 use crate::agent::agent_loop::types::{
@@ -413,6 +411,51 @@ impl ToolExecutionError {
             context: context.into(),
             source: Some(Arc::new(source)),
         }
+    }
+}
+
+#[derive(Debug, Clone, thiserror::Error)]
+#[error("Failed to parse the tool use: {}", .kind)]
+pub struct ToolParseError {
+    pub tool_use: ToolUseBlock,
+    #[source]
+    pub kind: ToolParseErrorKind,
+}
+
+impl ToolParseError {
+    pub fn new(tool_use: ToolUseBlock, kind: ToolParseErrorKind) -> Self {
+        Self { tool_use, kind }
+    }
+}
+
+/// Errors associated with parsing a tool use as requested by the model into a tool ready to be
+/// executed.
+///
+/// Captures any errors that can occur right up to tool execution.
+///
+/// Tool parsing failures can occur in different stages:
+/// - Mapping the tool name to an actual tool JSON schema
+/// - Parsing the tool input arguments according to the tool's JSON schema
+/// - Tool-specific semantic validation of the input arguments
+#[derive(Debug, Clone, thiserror::Error)]
+pub enum ToolParseErrorKind {
+    #[error("A tool with the name '{}' does not exist", .0)]
+    NameDoesNotExist(String),
+    #[error("The tool input does not match the tool schema: {}", .0)]
+    SchemaFailure(String),
+    #[error("The tool arguments failed validation: {}", .0)]
+    InvalidArgs(String),
+    #[error("An unexpected error occurred parsing the tools: {}", .0)]
+    Other(#[from] AgentError),
+}
+
+impl ToolParseErrorKind {
+    pub fn schema_failure<T: std::error::Error>(error: T) -> Self {
+        Self::SchemaFailure(error.to_string())
+    }
+
+    pub fn invalid_args(error_message: String) -> Self {
+        Self::InvalidArgs(error_message)
     }
 }
 

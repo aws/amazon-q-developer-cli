@@ -14,78 +14,77 @@ use crate::agent::consts::DEFAULT_AGENT_NAME;
 use crate::agent::tools::BuiltInToolName;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-// #[serde(tag = "specVersion")]
 #[serde(untagged)]
-pub enum Config {
+pub enum AgentConfig {
     #[serde(rename = "2025_08_22")]
     V2025_08_22(AgentConfigV2025_08_22),
 }
 
-impl Default for Config {
+impl Default for AgentConfig {
     fn default() -> Self {
         Self::V2025_08_22(AgentConfigV2025_08_22::default())
     }
 }
 
-impl Config {
+impl AgentConfig {
     pub fn name(&self) -> &str {
         match self {
-            Config::V2025_08_22(a) => a.name.as_str(),
+            AgentConfig::V2025_08_22(a) => a.name.as_str(),
         }
     }
 
     pub fn system_prompt(&self) -> Option<&str> {
         match self {
-            Config::V2025_08_22(a) => a.system_prompt.as_deref(),
+            AgentConfig::V2025_08_22(a) => a.system_prompt.as_deref(),
         }
     }
 
     pub fn tools(&self) -> Vec<String> {
         match self {
-            Config::V2025_08_22(a) => a.tools.clone(),
+            AgentConfig::V2025_08_22(a) => a.tools.clone(),
         }
     }
 
     pub fn tool_aliases(&self) -> &HashMap<String, String> {
         match self {
-            Config::V2025_08_22(a) => &a.tool_aliases,
+            AgentConfig::V2025_08_22(a) => &a.tool_aliases,
         }
     }
 
     pub fn tool_settings(&self) -> Option<&ToolSettings> {
         match self {
-            Config::V2025_08_22(a) => a.tool_settings.as_ref(),
+            AgentConfig::V2025_08_22(a) => a.tool_settings.as_ref(),
         }
     }
 
     pub fn allowed_tools(&self) -> &HashSet<String> {
         match self {
-            Config::V2025_08_22(a) => &a.allowed_tools,
+            AgentConfig::V2025_08_22(a) => &a.allowed_tools,
         }
     }
 
     pub fn hooks(&self) -> &HashMap<HookTrigger, Vec<HookConfig>> {
         match self {
-            Config::V2025_08_22(a) => &a.hooks,
+            AgentConfig::V2025_08_22(a) => &a.hooks,
         }
     }
 
     // pub fn resources(&self) -> &[impl AsRef<str>] {
     pub fn resources(&self) -> &[impl AsRef<str>] {
         match self {
-            Config::V2025_08_22(a) => a.resources.as_slice(),
+            AgentConfig::V2025_08_22(a) => a.resources.as_slice(),
         }
     }
 
     pub fn mcp_servers(&self) -> &HashMap<String, McpServerConfig> {
         match self {
-            Config::V2025_08_22(a) => &a.mcp_servers,
+            AgentConfig::V2025_08_22(a) => &a.mcp_servers,
         }
     }
 
     pub fn use_legacy_mcp_json(&self) -> bool {
         match self {
-            Config::V2025_08_22(a) => a.use_legacy_mcp_json,
+            AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
         }
     }
 }
@@ -112,7 +111,6 @@ pub struct AgentConfigV2025_08_22 {
     ///
     /// fs_read
     /// fs_write
-    /// directory
     /// @mcp_server_name/tool_name
     /// #agent_name
     #[serde(default)]
@@ -193,18 +191,18 @@ impl Default for AgentConfigV2025_08_22 {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
 pub struct ToolSettings {
-    pub file_read: FileReadSettings,
-    pub file_write: FileWriteSettings,
+    pub fs_read: FsReadSettings,
+    pub fs_write: FsWriteSettings,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct FileReadSettings {
+pub struct FsReadSettings {
     pub allowed_paths: Vec<String>,
     pub denied_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct FileWriteSettings {
+pub struct FsWriteSettings {
     pub allowed_paths: Vec<String>,
     pub denied_paths: Vec<String>,
 }
@@ -392,6 +390,6 @@ mod tests {
             "description": "The orchestrator agent",
         });
 
-        let _: Config = serde_json::from_value(agent).unwrap();
+        let _: AgentConfig = serde_json::from_value(agent).unwrap();
     }
 }

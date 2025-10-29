@@ -18,7 +18,7 @@ use protocol::{
     AgentLoopRequest,
     AgentLoopResponse,
     AgentLoopResponseError,
-    EndReason,
+    LoopEndReason,
     LoopError,
     SendRequestArgs,
     StreamMetadata,
@@ -257,7 +257,7 @@ impl AgentLoop {
         &mut self,
         req: AgentLoopRequest,
     ) -> Result<AgentLoopResponse, AgentLoopResponseError> {
-        debug!(?self, ?req, "agent loop handling new request");
+        debug!(?req, "agent loop handling new request");
         match req {
             AgentLoopRequest::GetExecutionState => Ok(AgentLoopResponse::ExecutionState(self.execution_state)),
             AgentLoopRequest::SendRequest { model, args } => {
@@ -298,7 +298,7 @@ impl AgentLoop {
                 Ok(AgentLoopResponse::Success)
             },
 
-            AgentLoopRequest::Close => {
+            AgentLoopRequest::Cancel => {
                 let mut buf = Vec::new();
                 // If there's an active stream, then interrupt it.
                 if let Some((mut parse_state, mut fut)) = self.curr_stream.take() {
@@ -321,7 +321,7 @@ impl AgentLoop {
                     self.loop_event_tx.send(ev).await.ok();
                 }
 
-                Ok(AgentLoopResponse::Metadata(Box::new(metadata)))
+                Ok(AgentLoopResponse::UserTurnMetadata(Box::new(metadata)))
             },
         }
     }
@@ -356,15 +356,15 @@ impl AgentLoop {
                 (Some(start), Some(end)) => Some(end.duration_since(start)),
                 _ => None,
             },
-            end_reason: self.stream_states.last().map_or(EndReason::DidNotRun, |s| {
+            end_reason: self.stream_states.last().map_or(LoopEndReason::DidNotRun, |s| {
                 if s.interrupted() {
-                    EndReason::Cancelled
+                    LoopEndReason::Cancelled
                 } else if s.errored() {
-                    EndReason::Error
+                    LoopEndReason::Error
                 } else if s.has_tool_uses() {
-                    EndReason::ToolUseRejected
+                    LoopEndReason::ToolUseRejected
                 } else {
-                    EndReason::UserTurnEnd
+                    LoopEndReason::UserTurnEnd
                 }
             }),
             end_timestamp: Utc::now(),
@@ -681,14 +681,14 @@ impl AgentLoopHandle {
     }
 
     /// Ends the agent loop
-    pub async fn close(&self) -> Result<UserTurnMetadata, AgentLoopResponseError> {
+    pub async fn cancel(&self) -> Result<UserTurnMetadata, AgentLoopResponseError> {
         match self
             .sender
-            .send_recv(AgentLoopRequest::Close)
+            .send_recv(AgentLoopRequest::Cancel)
             .await
             .unwrap_or(Err(AgentLoopResponseError::AgentLoopExited))?
         {
-            AgentLoopResponse::Metadata(md) => Ok(*md),
+            AgentLoopResponse::UserTurnMetadata(md) => Ok(*md),
             other => Err(AgentLoopResponseError::Custom(format!(
                 "unknown response getting execution state: {:?}",
                 other,
@@ -703,3 +703,29 @@ impl Drop for AgentLoopHandle {
         self.handle.abort();
     }
 }
+
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use crate::agent_loop::model::MockModel;
+//
+//     #[tokio::test]
+//     async fn test_agent_loop() {
+//         let mut handle = AgentLoop::new(AgentLoopId::new("test".into()),
+//         CancellationToken::new()).spawn(); let model = MockModel::new();
+//
+//         handle
+//             .send_request(Arc::new(model.clone()), SendRequestArgs {
+//                 messages: vec![Message {
+//                     id: None,
+//                     role: Role::User,
+//                     content: vec!["test input".to_string().into()],
+//                     timestamp: None,
+//                 }],
+//                 tool_specs: None,
+//                 system_prompt: None,
+//             })
+//             .await
+//             .unwrap();
+//     }
+// }

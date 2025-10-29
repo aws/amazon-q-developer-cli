@@ -11,6 +11,7 @@ use serde::{
     Serialize,
 };
 use serde_json::Map;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::api_client::error::{
@@ -178,10 +179,12 @@ impl StreamErrorSource for ApiClientError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Message {
+    #[serde(default)]
     pub id: Option<String>,
     pub role: Role,
     pub content: Vec<ContentBlock>,
     #[serde(with = "chrono::serde::ts_seconds_option")]
+    #[serde(default)]
     pub timestamp: Option<DateTime<Utc>>,
 }
 
@@ -220,6 +223,21 @@ impl Message {
         if results.is_empty() { None } else { Some(results) }
     }
 
+    pub fn tool_uses_iter(&self) -> impl Iterator<Item = &ToolUseBlock> {
+        self.content.iter().filter_map(|c| match c {
+            ContentBlock::ToolUse(block) => Some(block),
+            _ => None,
+        })
+    }
+
+    /// Returns a [ToolUseBlock] for the given `tool_use_id` if it exists.
+    pub fn get_tool_use(&self, tool_use_id: impl AsRef<str>) -> Option<&ToolUseBlock> {
+        self.content.iter().find_map(|v| match v {
+            ContentBlock::ToolUse(block) if block.tool_use_id == tool_use_id.as_ref() => Some(block),
+            _ => None,
+        })
+    }
+
     /// Returns a non-empty vector of [ToolResultBlock] if this message contains tool results,
     /// otherwise [None].
     pub fn tool_results(&self) -> Option<Vec<ToolResultBlock>> {
@@ -230,6 +248,68 @@ impl Message {
             }
         }
         if results.is_empty() { None } else { Some(results) }
+    }
+
+    pub fn tool_results_iter(&self) -> impl Iterator<Item = &ToolResultBlock> {
+        self.content.iter().filter_map(|c| match c {
+            ContentBlock::ToolResult(block) => Some(block),
+            _ => None,
+        })
+    }
+
+    /// Returns a [ToolResultBlock] for the given `tool_use_id` if it exists.
+    pub fn get_tool_result(&self, tool_use_id: impl AsRef<str>) -> Option<&ToolResultBlock> {
+        self.content.iter().find_map(|v| match v {
+            ContentBlock::ToolResult(block) if block.tool_use_id == tool_use_id.as_ref() => Some(block),
+            _ => None,
+        })
+    }
+
+    /// Replaces the [ContentBlock::ToolResult] with the given `tool_use_id` to instead be a
+    /// [ContentBlock::Text] and [ContentBlock::Image].
+    pub fn replace_tool_result_as_content(&mut self, tool_use_id: impl AsRef<str>) {
+        let res = self
+            .content
+            .iter_mut()
+            .enumerate()
+            .find_map(|(i, content_block)| match content_block {
+                ContentBlock::ToolResult(block) if block.tool_use_id == tool_use_id.as_ref() => {
+                    let mut tool_imgs = Vec::new();
+                    let mut tool_strs = Vec::new();
+                    for v in &block.content {
+                        match v {
+                            ToolResultContentBlock::Text(s) => tool_strs.push(s.clone()),
+                            ToolResultContentBlock::Json(value) => tool_strs.push(
+                                serde_json::to_string(value)
+                                    .map_err(|err| error!(?err, "failed to serialize tool result"))
+                                    .unwrap_or_default(),
+                            ),
+                            ToolResultContentBlock::Image(img) => {
+                                tool_imgs.push(ContentBlock::Image(img.clone()));
+                            },
+                        }
+                    }
+                    Some((
+                        i,
+                        if tool_strs.is_empty() {
+                            None
+                        } else {
+                            Some(tool_strs.join(" "))
+                        },
+                        if tool_imgs.is_empty() { None } else { Some(tool_imgs) },
+                    ))
+                },
+                _ => None,
+            });
+        if let Some((i, text, imgs)) = res {
+            if let Some(text) = text {
+                self.content.push(ContentBlock::Text(text));
+            }
+            if let Some(mut imgs) = imgs {
+                self.content.append(&mut imgs);
+            }
+            self.content.swap_remove(i);
+        }
     }
 
     /// Returns a non-empty vector of [ImageBlock] if this message contains images,
@@ -252,6 +332,29 @@ pub enum ContentBlock {
     ToolUse(ToolUseBlock),
     ToolResult(ToolResultBlock),
     Image(ImageBlock),
+}
+
+impl ContentBlock {
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            ContentBlock::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    pub fn tool_result(&self) -> Option<&ToolResultBlock> {
+        match self {
+            ContentBlock::ToolResult(block) => Some(block),
+            _ => None,
+        }
+    }
+
+    pub fn image(&self) -> Option<&ImageBlock> {
+        match self {
+            ContentBlock::Image(block) => Some(block),
+            _ => None,
+        }
+    }
 }
 
 impl From<String> for ContentBlock {
@@ -284,7 +387,7 @@ pub enum ImageFormat {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum ImageSource {
-    Bytes(Vec<u8>),
+    Bytes(#[serde(with = "serde_bytes")] Vec<u8>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -322,8 +425,24 @@ pub enum ToolResultContentBlock {
     Image(ImageBlock),
 }
 
+impl ToolResultContentBlock {
+    pub fn text(&self) -> Option<&str> {
+        match self {
+            ToolResultContentBlock::Text(text) => Some(text),
+            _ => None,
+        }
+    }
+
+    pub fn json(&self) -> Option<&serde_json::Value> {
+        match self {
+            ToolResultContentBlock::Json(json) => Some(json),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Copy, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "lowercase")]
 pub enum ToolResultStatus {
     Error,
     Success,

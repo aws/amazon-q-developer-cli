@@ -3,12 +3,21 @@ use serde::{
     Serialize,
 };
 
-use super::agent_loop::types::Message;
+use super::agent_loop::protocol::SendRequestArgs;
+use super::agent_loop::types::{
+    ContentBlock,
+    Message,
+    ToolResultContentBlock,
+};
 use super::types::ConversationState;
+use super::util::truncate_safe_in_place;
 use super::{
     CONTEXT_ENTRY_END_HEADER,
     CONTEXT_ENTRY_START_HEADER,
 };
+
+const TRUNCATED_SUFFIX: &str = "...truncated due to length";
+const DEFAULT_MAX_MESSAGE_LEN: usize = 25_000;
 
 /// State associated with an agent compacting its conversation state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -28,22 +37,96 @@ pub struct CompactingState {
     // pub result_tx: Option<oneshot::Sender<()>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CompactStrategy {
-    /// Number of user/assistant pairs to exclude from the history as part of compaction.
-    pub messages_to_exclude: usize,
+    // /// Number of user/assistant pairs to exclude from the history as part of compaction.
+    // pub messages_to_exclude: usize,
     /// Whether or not to truncate large messages in the history.
     pub truncate_large_messages: bool,
-    /// Maximum allowed size of messages in the conversation history.
+    /// Maximum allowed size of messages in the conversation history. Only applied when
+    /// [Self::truncate_large_messages] is true.
     pub max_message_length: usize,
+}
+
+impl CompactStrategy {
+    /// Modifies the given request in order to apply the compaction strategy.
+    pub fn apply_strategy(&self, request: &mut SendRequestArgs) {
+        if self.truncate_large_messages {
+            for msg in &mut request.messages {
+                // Truncate each content block equally
+                let mut total_len = 0;
+                let mut total_items = 0;
+                // First pass - calculate total length
+                for c in &msg.content {
+                    match c {
+                        ContentBlock::Text(text) => {
+                            total_len += text.len();
+                            total_items += 1;
+                        },
+                        ContentBlock::ToolResult(block) => {
+                            for c in &block.content {
+                                match c {
+                                    ToolResultContentBlock::Text(text) => {
+                                        total_len += text.len();
+                                        total_items += 1;
+                                    },
+                                    ToolResultContentBlock::Json(value) => {
+                                        total_len += serde_json::to_string(value).unwrap_or_default().len();
+                                        total_items += 1;
+                                    },
+                                    ToolResultContentBlock::Image(_) => (),
+                                }
+                            }
+                        },
+                        ContentBlock::ToolUse(_) | ContentBlock::Image(_) => (),
+                    }
+                }
+                if total_len <= self.max_message_length {
+                    continue;
+                }
+                // Second pass - perform truncation
+                let max_bytes = self.max_message_length / total_items;
+                for c in &mut msg.content {
+                    match c {
+                        ContentBlock::Text(text) => {
+                            truncate_safe_in_place(text, max_bytes, TRUNCATED_SUFFIX);
+                        },
+                        ContentBlock::ToolResult(block) => {
+                            for c in &mut block.content {
+                                match c {
+                                    ToolResultContentBlock::Text(text) => {
+                                        truncate_safe_in_place(text, max_bytes, TRUNCATED_SUFFIX);
+                                    },
+                                    val @ ToolResultContentBlock::Json(_) => {
+                                        // For simplicity, convert the JSON to text in order to truncate the
+                                        // amount. Otherwise, we'd need to iterate through the JSON
+                                        // value itself to find fields to truncate.
+                                        let serde_val = if let ToolResultContentBlock::Json(v) = &val {
+                                            let mut s = serde_json::to_string(v).unwrap_or_default();
+                                            truncate_safe_in_place(&mut s, max_bytes, TRUNCATED_SUFFIX);
+                                            s
+                                        } else {
+                                            String::new()
+                                        };
+                                        *val = ToolResultContentBlock::Text(serde_val);
+                                    },
+                                    ToolResultContentBlock::Image(_) => (),
+                                }
+                            }
+                        },
+                        ContentBlock::ToolUse(_) | ContentBlock::Image(_) => (),
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl Default for CompactStrategy {
     fn default() -> Self {
         Self {
-            messages_to_exclude: 0,
             truncate_large_messages: false,
-            max_message_length: 25_000,
+            max_message_length: DEFAULT_MAX_MESSAGE_LEN,
         }
     }
 }
@@ -109,4 +192,138 @@ pub fn create_summary_prompt(custom_prompt: Option<String>, latest_summary: Opti
     }
 
     summary_content
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TEST_MESSAGES: &str = r#"
+[
+    {
+        "role": "user",
+        "content": [
+            {
+                "text": "01234567890123456789012345678901234567890123456789"
+            },
+            {
+                "image": {
+                    "format": "jpg",
+                    "source": {
+                        "bytes": "01234567890123456789012345678901234567890123456789"
+                    }
+                }
+            }
+        ]
+    },
+    {
+        "role": "assistant",
+        "content": [
+            {
+                "text": "01234567890123456789012345678901234567890123456789"
+            }
+        ]
+    },
+    {
+        "role": "user",
+        "content": [
+            {
+                "toolResult": {
+                    "toolUseId": "testid",
+                    "status": "success",
+                    "content": [
+                        {
+                            "text": "01234567890123456789012345678901234567890123456789"
+                        },
+                        {
+                            "json": {
+                                "testkey": "01234567890123456789012345678901234567890123456789"
+                            }
+                        },
+                        {
+                            "image": {
+                                "format": "jpg",
+                                "source": {
+                                    "bytes": "01234567890123456789012345678901234567890123456789"
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    }
+]
+"#;
+
+    #[test]
+    fn test_compact_strategy_truncates_messages() {
+        const TRUNCATED_TEXT: &str = "...truncated";
+
+        // GIVEN
+        let strategy = CompactStrategy {
+            truncate_large_messages: true,
+            max_message_length: 40,
+        };
+        let mut request = SendRequestArgs {
+            messages: serde_json::from_str(TEST_MESSAGES).unwrap(),
+            tool_specs: None,
+            system_prompt: None,
+        };
+
+        // WHEN
+        strategy.apply_strategy(&mut request);
+
+        // THEN
+
+        // assertions for first user message
+        // text should be truncated, image left alone.
+        let user_msg = request.messages.first().unwrap();
+        let text = user_msg.content[0].text().unwrap();
+        assert!(
+            text.len() <= strategy.max_message_length,
+            "len should be <= {}, instead found: {}",
+            strategy.max_message_length,
+            text
+        );
+        assert!(
+            text.ends_with(TRUNCATED_SUFFIX),
+            "should end with {}, instead found: {}",
+            TRUNCATED_SUFFIX,
+            text
+        );
+        user_msg.content[1].image().expect("should be an image");
+
+        // assertions for second user message
+        // multiple items are truncated - standard truncated suffix shouldn't entirely fit.
+        let tool_result = request.messages[2].content[0].tool_result().unwrap();
+        let tool_result_text = tool_result.content[0].text().unwrap();
+        assert!(
+            tool_result_text.len() <= strategy.max_message_length,
+            "len should be <= {}, instead found: {}",
+            strategy.max_message_length,
+            tool_result_text
+        );
+        assert!(
+            tool_result_text.contains(TRUNCATED_TEXT),
+            "expected to find {}, instead found: {}",
+            TRUNCATED_TEXT,
+            tool_result_text
+        );
+        let tool_result_json = tool_result.content[1]
+            .text()
+            .expect("json should have been converted to text");
+        assert!(
+            tool_result_json.len() <= strategy.max_message_length,
+            "len should be <= {}, instead found: {}",
+            strategy.max_message_length,
+            tool_result_json
+        );
+        assert!(
+            tool_result_json.contains(TRUNCATED_TEXT),
+            "expected to find {}, instead found: {}",
+            TRUNCATED_TEXT,
+            tool_result_json
+        );
+    }
 }
