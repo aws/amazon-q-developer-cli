@@ -47,7 +47,7 @@ pub struct ExecuteCommand {
     pub summary: Option<String>,
 }
 
-impl ExecuteCommand { //REMOVEMEBUTIMPT actual tool call verification 
+impl ExecuteCommand { //REMOVEME guard point
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         // Always require acceptance for multi-line commands.
         if self.command.contains("\n") || self.command.contains("\r") {
@@ -55,17 +55,6 @@ impl ExecuteCommand { //REMOVEMEBUTIMPT actual tool call verification
         }
 
         let default_arr = vec![];
-        let allowed_commands = allowed_commands.unwrap_or(&default_arr);
-
-        let has_regex_match = allowed_commands
-            .iter()
-            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
-            .filter(Result::is_ok)
-            .flatten()
-            .any(|regex| regex.is_match(&self.command));
-        if has_regex_match {
-            return false;
-        }
 
         let Some(args) = shlex::split(&self.command) else {
             return true;
@@ -99,6 +88,17 @@ impl ExecuteCommand { //REMOVEMEBUTIMPT actual tool call verification
         }
         if !current_cmd.is_empty() {
             all_commands.push(current_cmd);
+        }
+        let allowed_commands = allowed_commands.unwrap_or(&default_arr);
+
+        let has_regex_match = allowed_commands
+            .iter()
+            .map(|cmd| Regex::new(&format!(r"\A{}\z", cmd)))
+            .filter(Result::is_ok)
+            .flatten()
+            .any(|regex| regex.is_match(&self.command));
+        if has_regex_match {
+            return false;
         }
 
         // Check if each command in the pipe chain starts with a safe command
@@ -294,7 +294,7 @@ mod tests {
     };
 
     #[test]
-    fn test_requires_acceptance_for_readonly_commands() { //REMOVEMEBUTIMPT tests unit tests you should write some
+    fn test_requires_acceptance_for_readonly_commands() { 
         let cmds = &[
             // Safe commands
             ("ls ~", false),
@@ -423,8 +423,19 @@ mod tests {
             ("command subcommand a=0123456789 b=0123456789", false),
             ("command subcommand a=0123456789 b=012345678", true),
             ("command subcommand alternate a=0123456789 b=0123456789", true),
-            // Control characters ignored due to direct allowed_command_regex match
-            ("command subcommand && command subcommand", false),
+            // dangerous patterns
+            ("echo 'test<(data'", true),
+            ("echo 'test$(data)'", true),
+            ("echo 'test`data`'", true),
+            ("echo 'test' > output.txt", true),
+            ("echo 'test data' && touch main.py", true), 
+            ("echo 'test' || rm file", true),
+            ("echo 'test' & background", true),
+            ("echo 'test data'; touch main.py", true), 
+            ("echo $HOME", true),
+            ("echo 'test\nrm file'", true),
+            ("echo 'test\rrm file'", true),
+            ("IFS=/ malicious", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
