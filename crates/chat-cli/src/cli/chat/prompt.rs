@@ -130,7 +130,7 @@ pub const COMMANDS: &[&str] = &[
     "/context rm",
     "/context clear",
     "/hooks",
-    // "/hooks help", // currently not implemented
+    "/hooks help",
     "/hooks add",
     "/hooks rm",
     "/hooks enable",
