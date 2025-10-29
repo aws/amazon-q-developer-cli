@@ -605,6 +605,7 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    prompt_ack_rx: std::sync::mpsc::Receiver<()>,
 }
 
 impl ChatSession {
@@ -630,11 +631,12 @@ impl ChatSession {
         let should_send_structured_msg = should_send_structured_message(os);
         let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
+        let (prompt_ack_tx, prompt_ack_rx) = std::sync::mpsc::channel::<()>();
 
         tokio::task::spawn_blocking(move || {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
+            if let Err(e) = view_end.into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout) {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });
@@ -739,6 +741,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            prompt_ack_rx,
         })
     }
 
@@ -1942,6 +1945,25 @@ impl ChatSession {
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
         let prompt = self.generate_tool_trust_prompt(os).await;
+
+        // Here we are signaling to the ui layer that the event loop wants to prompt user
+        // This is necessitated by the fact that what is actually writing to stderr or stdout is
+        // not on the same thread as what is prompting the user (in an ideal world they would be).
+        // As a bandaid fix (to hold us until we move to the new event loop where everything is in
+        // their rightful place), we are first signaling to the ui layer we are about to prompt
+        // users, and we are going to wait until the ui layer acknowledges.
+        // Note that this works because [std::sync::mpsc] preserves order between sending and
+        // receiving
+        self.stderr
+            .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }))
+            .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+        if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+        }
+
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
