@@ -621,7 +621,7 @@ pub async fn is_idc_user(database: &Database) -> Result<bool> {
     if let Ok(Some(token)) = BuilderIdToken::load(database).await {
         Ok(token.token_type() == TokenType::IamIdentityCenter)
     } else {
-        Err(eyre!("No auth token found - is the user signed in?"))
+        Ok(false)
     }
 }
 

@@ -32,6 +32,7 @@ use crate::auth::builder_id::{
     BuilderIdToken,
     PollCreateToken,
     TokenType,
+    is_idc_user,
     poll_create_token,
     start_device_authorization,
 };
@@ -338,10 +339,8 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if let Ok(Some(token)) = BuilderIdToken::load(&os.database).await {
-        if matches!(token.token_type(), TokenType::BuilderId) {
-            bail!("This command is only available for Pro users");
-        }
+    if !is_idc_user(&os.database).await? {
+        bail!("This command is only available for IAM Identity Center users");
     }
 
     select_profile_interactive(os, false).await?;
