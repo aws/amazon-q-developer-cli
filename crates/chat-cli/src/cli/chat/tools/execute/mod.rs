@@ -294,7 +294,7 @@ mod tests {
     };
 
     #[test]
-    fn test_requires_acceptance_for_readonly_commands() { 
+    fn test_requires_acceptance_for_readonly_commands() {
         let cmds = &[
             // Safe commands
             ("ls ~", false),
@@ -428,10 +428,10 @@ mod tests {
             ("echo 'test$(data)'", true),
             ("echo 'test`data`'", true),
             ("echo 'test' > output.txt", true),
-            ("echo 'test data' && touch main.py", true), 
+            ("echo 'test data' && touch main.py", true),
             ("echo 'test' || rm file", true),
             ("echo 'test' & background", true),
-            ("echo 'test data'; touch main.py", true), 
+            ("echo 'test data'; touch main.py", true),
             ("echo $HOME", true),
             ("echo 'test\nrm file'", true),
             ("echo 'test\rrm file'", true),
@@ -453,7 +453,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm() { 
+    async fn test_eval_perm() {
         let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         let mut agent = Agent {
             name: "test_agent".to_string(),
