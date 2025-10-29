@@ -666,18 +666,18 @@ fn print_diff(
     for change in diff.iter_all_changes() {
         // Define the colors per line.
         let (text_color, gutter_bg_color, line_bg_color) = match (change.tag(), new_str.truecolor) {
-            (similar::ChangeTag::Equal, true) => (theme().ui.secondary_text, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Equal, true) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
             (similar::ChangeTag::Delete, true) => (
-                theme().ui.secondary_text,
+                style::Color::Reset,
                 style::Color::Rgb { r: 79, g: 40, b: 40 },
                 style::Color::Rgb { r: 36, g: 25, b: 28 },
             ),
             (similar::ChangeTag::Insert, true) => (
-                theme().ui.secondary_text,
+                style::Color::Reset,
                 style::Color::Rgb { r: 40, g: 67, b: 43 },
                 style::Color::Rgb { r: 24, g: 38, b: 30 },
             ),
-            (similar::ChangeTag::Equal, false) => (theme().ui.secondary_text, new_str.gutter_bg, new_str.line_bg),
+            (similar::ChangeTag::Equal, false) => (style::Color::Reset, new_str.gutter_bg, new_str.line_bg),
             (similar::ChangeTag::Delete, false) => (theme().status.error, new_str.gutter_bg, new_str.line_bg),
             (similar::ChangeTag::Insert, false) => (theme().status.success, new_str.gutter_bg, new_str.line_bg),
         };
@@ -775,8 +775,8 @@ fn stylize_output_if_able(os: &Os, path: impl AsRef<Path>, file_text: &str) -> S
     StylizedFile {
         truecolor: false,
         content: file_text.to_string(),
-        gutter_bg: theme().ui.secondary_text,
-        line_bg: theme().ui.secondary_text,
+        gutter_bg: style::Color::Reset,
+        line_bg: style::Color::Reset,
     }
 }
 
@@ -799,8 +799,8 @@ impl Default for StylizedFile {
         Self {
             truecolor: false,
             content: Default::default(),
-            gutter_bg: theme().ui.secondary_text,
-            line_bg: theme().ui.secondary_text,
+            gutter_bg: style::Color::Reset,
+            line_bg: style::Color::Reset,
         }
     }
 }

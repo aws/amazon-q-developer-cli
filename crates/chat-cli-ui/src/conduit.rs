@@ -298,7 +298,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
             if byte == &10 || byte == &13 {
                 if self.current_event.is_none() {
                     self.current_event
-                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                             Default::default(),
                         )));
                 }
@@ -323,7 +323,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
         if start < end {
             if self.current_event.is_none() {
                 self.current_event
-                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                         Default::default(),
                     )));
             }

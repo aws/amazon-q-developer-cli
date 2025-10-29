@@ -5,6 +5,7 @@ use crossterm::style::{
 };
 
 use crate::cli::ConversationState;
+use crate::cli::chat::context::ContextFilePath;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -102,6 +103,21 @@ impl PersistSubcommand {
                 std::mem::swap(&mut new_state.tool_manager, &mut session.conversation.tool_manager);
                 std::mem::swap(&mut new_state.mcp_enabled, &mut session.conversation.mcp_enabled);
                 std::mem::swap(&mut new_state.model_info, &mut session.conversation.model_info);
+                // For context, we would only take paths that are not in the current agent
+                // And we'll place them as temporary context
+                // Note that we are NOT doing the same with hooks because hooks are more
+                // instrinsically linked to agent and it affects the behavior of an agent
+                if let Some(cm) = &new_state.context_manager {
+                    if let Some(existing_cm) = &mut session.conversation.context_manager {
+                        let existing_paths = &mut existing_cm.paths;
+                        for incoming_path in &cm.paths {
+                            if !existing_paths.contains(incoming_path) {
+                                existing_paths
+                                    .push(ContextFilePath::Session(incoming_path.get_path_as_str().to_string()));
+                            }
+                        }
+                    }
+                }
                 std::mem::swap(
                     &mut new_state.context_manager,
                     &mut session.conversation.context_manager,

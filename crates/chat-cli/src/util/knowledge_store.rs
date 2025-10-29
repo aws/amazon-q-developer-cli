@@ -169,9 +169,14 @@ impl KnowledgeStore {
                     let files_to_migrate: Vec<_> = entries
                         .flatten()
                         .filter(|entry| {
+                            let path = entry.path();
                             let name = entry.file_name();
                             let name_str = name.to_string_lossy();
-                            name_str != current_agent_id && name_str != DEFAULT_AGENT_NAME && !name_str.starts_with('.')
+                            // Only migrate FILES, not directories (to avoid moving other agent directories)
+                            path.is_file()
+                                && name_str != current_agent_id
+                                && name_str != DEFAULT_AGENT_NAME
+                                && !name_str.starts_with('.')
                         })
                         .collect();
 
