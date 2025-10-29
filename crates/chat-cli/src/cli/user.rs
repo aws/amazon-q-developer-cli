@@ -145,7 +145,7 @@ impl LoginArgs {
                             tokio::select! {
                                 res = registration.finish(&client, Some(&mut os.database)) => {
                                     if let Err(err) = res {
-                                        let auth_method = match crate::auth::builder_id::token_type_from_start_url(start_url.as_deref()) {
+                                        let auth_method = match crate::auth::builder_id::TokenType::from(start_url.as_deref()) {
                                             crate::auth::builder_id::TokenType::BuilderId => "BuilderId",
                                             crate::auth::builder_id::TokenType::IamIdentityCenter => "IdentityCenter",
                                         };

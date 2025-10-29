@@ -273,6 +273,16 @@ pub enum TokenType {
     IamIdentityCenter,
 }
 
+impl From<Option<&str>> for TokenType {
+    fn from(start_url: Option<&str>) -> Self {
+        match start_url {
+            Some(url) if url == START_URL => TokenType::BuilderId,
+            None => TokenType::BuilderId,
+            Some(_) => TokenType::IamIdentityCenter,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuilderIdToken {
     pub access_token: Secret,
@@ -494,7 +504,7 @@ impl BuilderIdToken {
     }
 
     pub fn token_type(&self) -> TokenType {
-        token_type_from_start_url(self.start_url.as_deref())
+        TokenType::from(self.start_url.as_deref())
     }
 
     /// Check if the token is for the internal amzn start URL (`https://amzn.awsapps.com/start`),
@@ -502,14 +512,6 @@ impl BuilderIdToken {
     #[allow(dead_code)]
     pub fn is_amzn_user(&self) -> bool {
         matches!(&self.start_url, Some(url) if url == AMZN_START_URL)
-    }
-}
-
-pub fn token_type_from_start_url(start_url: Option<&str>) -> TokenType {
-    match start_url {
-        Some(url) if url == START_URL => TokenType::BuilderId,
-        None => TokenType::BuilderId,
-        Some(_) => TokenType::IamIdentityCenter,
     }
 }
 
@@ -568,7 +570,7 @@ pub async fn poll_create_token(
             error!(?err, "Failed to poll for builder id token");
 
             // Send telemetry for device code failure
-            let auth_method = match token_type_from_start_url(start_url.as_deref()) {
+            let auth_method = match TokenType::from(start_url.as_deref()) {
                 TokenType::BuilderId => "BuilderId",
                 TokenType::IamIdentityCenter => "IdentityCenter",
             };
