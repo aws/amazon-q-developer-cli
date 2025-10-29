@@ -28,6 +28,8 @@ pub struct UiColors {
     pub emphasis: Color,
     /// Color for highlighting commands and code examples (typically green)
     pub command_highlight: Color,
+    /// Color for highlighting current/active items
+    pub current_item: Color,
 }
 
 /// Colors for interactive elements and user interface indicators
@@ -61,11 +63,13 @@ impl Default for StatusColors {
 impl Default for UiColors {
     fn default() -> Self {
         Self {
-            primary_brand: Color::Cyan,
-            primary_text: Color::White,
-            secondary_text: Color::DarkGrey,
-            emphasis: Color::Magenta,
-            command_highlight: Color::Green,
+            primary_brand: Color::AnsiValue(141),
+
+            primary_text: Color::AnsiValue(252),
+            secondary_text: Color::AnsiValue(248),
+            emphasis: Color::AnsiValue(252),
+            command_highlight: Color::AnsiValue(141),
+            current_item: Color::AnsiValue(13),
         }
     }
 }
@@ -73,9 +77,9 @@ impl Default for UiColors {
 impl Default for InteractiveColors {
     fn default() -> Self {
         Self {
-            prompt_symbol: Color::Magenta,
-            profile_indicator: Color::Cyan,
-            tangent_indicator: Color::Yellow,
+            prompt_symbol: Color::AnsiValue(13),
+            profile_indicator: Color::AnsiValue(141),
+            tangent_indicator: Color::AnsiValue(13),
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
             usage_high: Color::Red,

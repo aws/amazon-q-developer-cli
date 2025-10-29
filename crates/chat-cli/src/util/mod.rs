@@ -98,8 +98,14 @@ pub fn input(prompt: &str, initial_text: Option<&str>) -> Result<String> {
 }
 
 pub fn dialoguer_theme() -> ColorfulTheme {
+    use crate::theme::BRAND_COLOR_ANSI;
+
     ColorfulTheme {
-        prompt_prefix: dialoguer::console::style("?".into()).for_stderr().magenta(),
+        prompt_prefix: dialoguer::console::style("".into()).for_stderr(),
+        active_item_prefix: dialoguer::console::style("❯".into())
+            .for_stderr()
+            .color256(BRAND_COLOR_ANSI),
+        active_item_style: dialoguer::console::Style::new().color256(BRAND_COLOR_ANSI),
         ..ColorfulTheme::default()
     }
 }

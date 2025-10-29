@@ -67,11 +67,19 @@ pub fn get_available_commands(os: &Os) -> Vec<String> {
 /// Format commands for skim display
 /// Create a standard set of skim options with consistent styling
 fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
+    use crate::theme::{
+        BRAND_COLOR_ANSI,
+        SECONDARY_COLOR_ANSI,
+    };
+
     SkimOptionsBuilder::default()
         .height("100%".to_string())
         .prompt(prompt.to_string())
         .reverse(true)
         .multi(multi)
+        .color(Some(format!(
+            "current:{BRAND_COLOR_ANSI}:bold,pointer:{BRAND_COLOR_ANSI},prompt:{SECONDARY_COLOR_ANSI}"
+        )))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
 }
@@ -210,7 +218,11 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
 pub fn select_command(os: &Os, context_manager: &ContextManager, tools: &[String]) -> Result<Option<String>> {
     let commands = get_available_commands(os);
 
-    match launch_skim_selector(&commands, "Select command: ", false)? {
+    match launch_skim_selector(
+        &commands,
+        "Commands: Press (↑↓) to navigate · Enter(⏎) to select command",
+        false,
+    )? {
         Some(selections) if !selections.is_empty() => {
             let selected_command = &selections[0];
 
