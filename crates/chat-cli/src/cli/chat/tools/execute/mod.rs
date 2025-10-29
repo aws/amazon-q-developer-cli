@@ -47,7 +47,7 @@ pub struct ExecuteCommand {
     pub summary: Option<String>,
 }
 
-impl ExecuteCommand { //REMOVEME guard point
+impl ExecuteCommand {
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         // Always require acceptance for multi-line commands.
         if self.command.contains("\n") || self.command.contains("\r") {
