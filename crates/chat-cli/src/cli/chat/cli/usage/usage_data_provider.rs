@@ -1,10 +1,19 @@
 use crate::cli::chat::cli::model::context_window_tokens;
-use crate::cli::chat::token_counter::{CharCount, TokenCount};
-use crate::cli::chat::{ChatError, ChatSession};
+use crate::cli::chat::token_counter::{
+    CharCount,
+    TokenCount,
+};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+};
 use crate::os::Os;
 
 /// Get detailed usage data for context window analysis
-pub(super) async fn get_detailed_usage_data(session: &mut ChatSession, os: &Os) -> Result<super::DetailedUsageData, ChatError> {
+pub(super) async fn get_detailed_usage_data(
+    session: &mut ChatSession,
+    os: &Os,
+) -> Result<super::DetailedUsageData, ChatError> {
     let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
 
     let state = session
