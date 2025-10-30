@@ -225,7 +225,6 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
                 },
             }
 
-            os.telemetry.send_user_logged_in().ok();
             spinner.stop_with_message("Logged in".into());
 
             let _ = os.database.set_start_url(issuer_url.clone());
@@ -416,7 +415,6 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
         {
             PollCreateToken::Pending => {},
             PollCreateToken::Complete => {
-                os.telemetry.send_user_logged_in().ok();
                 spinner.stop_with_message("Logged in".into());
                 break;
             },
