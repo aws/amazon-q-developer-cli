@@ -21,7 +21,7 @@ use crate::cli::chat::{
 };
 use crate::constants::context_text;
 use crate::constants::help_text::{
-    CONTEXT_DESCRIPTION,
+    context_description,
     context_long_help,
 };
 use crate::os::Os;
@@ -30,7 +30,7 @@ use crate::theme::StyledText;
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
-    about = CONTEXT_DESCRIPTION,
+    about = context_description(),
     before_long_help = context_long_help()
 )]
 /// Context subcommands

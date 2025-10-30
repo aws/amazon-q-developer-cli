@@ -24,17 +24,21 @@ pub mod error_messages {
 pub mod ui_text {
     use super::{
         CLI_NAME,
+        PRODUCT_NAME,
         StyledText,
     };
 
     /// Welcome text for small screens
     pub fn small_screen_welcome() -> String {
-        format!("Welcome to {}!", StyledText::brand("Kiro"))
+        format!("Welcome to {}!", StyledText::brand(PRODUCT_NAME))
     }
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        format!("{}\n\n", StyledText::primary("✨ What's New in Kiro CLI"))
+        format!(
+            "{}\n\n",
+            StyledText::primary(&format!("✨ What's New in {PRODUCT_NAME} CLI"))
+        )
     }
 
     /// Trust all tools warning text
@@ -43,9 +47,9 @@ pub mod ui_text {
 
         warning.push_str(&StyledText::success("All tools are now trusted ("));
         warning.push_str(&StyledText::error("!"));
-        warning.push_str(&StyledText::success(
-            "). Kiro will execute tools without asking for confirmation.",
-        ));
+        warning.push_str(&StyledText::success(&format!(
+            "). {PRODUCT_NAME} will execute tools without asking for confirmation.",
+        )));
         warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
         warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
 
@@ -69,9 +73,9 @@ pub mod ui_text {
 
         // MCP section
         help.push('\n');
-        help.push_str(&StyledText::primary(
-            "💡 Did you know, You can now configure Kiro to use MCP servers. Learn how at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
-        ));
+        help.push_str(&StyledText::primary(&format!(
+            "💡 Did you know, You can now configure {PRODUCT_NAME} to use MCP servers. Learn how at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
+        )));
 
         // Shortcuts section
         help.push_str("\n\n");
@@ -208,21 +212,25 @@ pub mod context_text {
 
 /// Help text constants for CLI commands
 pub mod help_text {
+    use super::PRODUCT_NAME;
+
     /// Context command description
-    pub const CONTEXT_DESCRIPTION: &str = "Subcommands for managing context rules and files in Kiro chat sessions";
+    pub fn context_description() -> String {
+        format!("Subcommands for managing context rules and files in {PRODUCT_NAME} chat sessions")
+    }
 
     /// Full context command long help text
     pub fn context_long_help() -> String {
-        format!("Context rules determine which files are included in your {} session. 
+        format!("Context rules determine which files are included in your {PRODUCT_NAME} session. 
 They are derived from the current active agent.
-The files matched by these rules provide {} with additional information 
-about your project or environment. Adding relevant files helps Kiro generate 
+The files matched by these rules provide {PRODUCT_NAME} with additional information 
+about your project or environment. Adding relevant files helps {PRODUCT_NAME} generate 
 more accurate and helpful responses.
 
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
 • Agent rules apply only to the current agent 
-• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file.", super::PRODUCT_NAME, super::PRODUCT_NAME)
+• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file.")
     }
 
     /// Full tools command long help text
@@ -251,6 +259,7 @@ Notes:
 pub mod tips {
     use super::{
         CLI_NAME,
+        PRODUCT_NAME,
         StyledText,
     };
 
@@ -262,7 +271,7 @@ pub mod tips {
                 StyledText::command(&format!("{CLI_NAME} chat --resume"))
             ),
             format!(
-                "Get notified whenever Kiro CLI finishes responding. Just run {}",
+                "Get notified whenever {PRODUCT_NAME} CLI finishes responding. Just run {}",
                 StyledText::command(&format!("{CLI_NAME} settings chat.enableNotifications true"))
             ),
             format!(
@@ -274,7 +283,7 @@ pub mod tips {
                 StyledText::command("/usage")
             ),
             format!(
-                "Get notified whenever Kiro CLI finishes responding. Just run {}",
+                "Get notified whenever {PRODUCT_NAME} CLI finishes responding. Just run {}",
                 StyledText::command(&format!("{CLI_NAME} settings chat.enableNotifications true"))
             ),
             format!(
@@ -282,7 +291,7 @@ pub mod tips {
                 StyledText::command("!")
             ),
             format!(
-                "Kiro can use tools without asking for confirmation every time. Give {} a try",
+                "{PRODUCT_NAME} can use tools without asking for confirmation every time. Give {} a try",
                 StyledText::command("/tools trust")
             ),
             format!(
@@ -294,7 +303,7 @@ pub mod tips {
                 StyledText::command("/compact")
             ),
             format!(
-                "If you want to file an issue to the Kiro CLI team, just tell me, or run {}",
+                "If you want to file an issue to the {PRODUCT_NAME} CLI team, just tell me, or run {}",
                 StyledText::command(&format!("{CLI_NAME} issue"))
             ),
             format!(
@@ -333,7 +342,7 @@ pub mod tips {
                 StyledText::command("\"Can you save conversations?\"")
             ),
             format!(
-                "Stay up to date with the latest features and improvements! Use {} to see what's new in Kiro CLI",
+                "Stay up to date with the latest features and improvements! Use {} to see what's new in {PRODUCT_NAME} CLI",
                 StyledText::command("/changelog")
             ),
             format!(

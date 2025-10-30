@@ -26,6 +26,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
 };
+use crate::constants::CLI_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::directories::get_shadow_repo_dir;
@@ -91,9 +92,9 @@ impl CheckpointSubcommand {
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print(
-                    "\nCheckpoint is disabled. Enable it with: kiro-cli settings chat.enableCheckpoint true\n"
-                ),
+                style::Print(&format!(
+                    "\nCheckpoint is disabled. Enable it with: {CLI_NAME} settings chat.enableCheckpoint true\n"
+                )),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
