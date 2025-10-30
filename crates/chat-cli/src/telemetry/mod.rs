@@ -540,7 +540,7 @@ impl TelemetryClient {
                 return Ok(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff"));
             }
 
-            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(Some(env)) {
+            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(env) {
                 if let Ok(uuid) = Uuid::from_str(&client_id) {
                     return Ok(uuid);
                 }
@@ -565,7 +565,7 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = if crate::util::env_var::is_sigv4_enabled(None) {
+        let codewhisperer_client = if crate::util::env_var::is_sigv4_enabled(&Env::new()) {
             None
         } else {
             Some(ApiClient::new(env, fs, database, None).await?)

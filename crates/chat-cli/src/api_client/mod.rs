@@ -138,7 +138,7 @@ impl ApiClient {
                 model_cache: Arc::new(RwLock::new(None)),
             };
 
-            if let Some(json) = crate::util::env_var::get_mock_chat_response(Some(env)) {
+            if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
                 this.set_mock_output(serde_json::from_str(fs.read_to_string(json).await.unwrap().as_str()).unwrap());
             }
 
@@ -148,7 +148,7 @@ impl ApiClient {
         // If SIGV4_AUTH_ENABLED is true, use Q developer client
         let mut streaming_client = None;
         let mut sigv4_streaming_client = None;
-        match crate::util::env_var::is_sigv4_enabled(Some(env)) {
+        match crate::util::env_var::is_sigv4_enabled(env) {
             true => {
                 let credentials_chain = CredentialsChain::new().await;
                 if let Err(err) = credentials_chain.provide_credentials().await {

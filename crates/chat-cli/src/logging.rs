@@ -196,7 +196,7 @@ pub fn get_log_level() -> String {
         .lock()
         .unwrap()
         .clone()
-        .unwrap_or_else(|| get_env_log_level().unwrap_or_else(|_| DEFAULT_FILTER.to_string()))
+        .unwrap_or_else(|| get_env_log_level(&crate::os::Env::new()).unwrap_or_else(|_| DEFAULT_FILTER.to_string()))
 }
 
 /// Set the log level to the given level.
@@ -247,7 +247,7 @@ fn create_filter_layer() -> EnvFilter {
         .lock()
         .unwrap()
         .clone()
-        .or_else(|| get_env_log_level().ok());
+        .or_else(|| get_env_log_level(&crate::os::Env::new()).ok());
 
     match log_level {
         Some(level) => EnvFilter::builder()
