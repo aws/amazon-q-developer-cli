@@ -10,7 +10,6 @@ use crossterm::style::Stylize;
 use eyre::{
     Result,
     WrapErr,
-    bail,
 };
 use globset::Glob;
 use serde_json::json;
@@ -190,12 +189,11 @@ impl SettingsArgs {
         match self.cmd {
             Some(SettingsSubcommands::Open) => {
                 let file = directories::settings_path().context("Could not get settings path")?;
-                if let Ok(editor) = os.env.get("EDITOR") {
-                    tokio::process::Command::new(editor).arg(file).spawn()?.wait().await?;
-                    Ok(ExitCode::SUCCESS)
-                } else {
-                    bail!("The EDITOR environment variable is not set")
-                }
+
+                let editor =
+                    crate::util::env_var::try_get_editor().context("The EDITOR environment variable is not set")?;
+                tokio::process::Command::new(editor).arg(file).spawn()?.wait().await?;
+                Ok(ExitCode::SUCCESS)
             },
             Some(SettingsSubcommands::List { all, format, state }) => {
                 if state {

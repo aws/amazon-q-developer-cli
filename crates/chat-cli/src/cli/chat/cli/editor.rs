@@ -11,6 +11,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::theme::StyledText;
+use crate::util::env_var::get_editor;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -86,7 +87,7 @@ impl EditorArgs {
 /// Launch the user's preferred editor with the given file path
 fn launch_editor(file_path: &std::path::Path) -> Result<(), ChatError> {
     // Get the editor from environment variable or use a default
-    let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let editor_cmd = get_editor();
 
     // Parse the editor command to handle arguments
     let mut parts =

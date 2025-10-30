@@ -41,6 +41,7 @@ use crate::cli::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::env_var::get_all_env_vars;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
@@ -333,7 +334,7 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
-    cmd.envs(std::env::vars());
+    cmd.envs(get_all_env_vars());
 
     #[cfg(not(windows))]
     cmd.process_group(0);

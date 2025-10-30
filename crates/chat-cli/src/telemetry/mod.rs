@@ -74,7 +74,7 @@ pub use crate::telemetry::core::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
-use crate::util::env_var::Q_CLI_CLIENT_APPLICATION;
+use crate::util::env_var::get_cli_client_application;
 use crate::util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
@@ -113,7 +113,6 @@ impl From<ApiClientError> for TelemetryError {
 
 const PRODUCT: &str = "CodeWhisperer";
 const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const CLIENT_ID_ENV_VAR: &str = "Q_TELEMETRY_CLIENT_ID";
 
 /// A IDE toolkit telemetry stage
 #[derive(Debug, Clone)]
@@ -484,7 +483,7 @@ async fn set_event_metadata(database: &Database, event: &mut Event) {
     }
 
     // Set the client application from environment variable
-    if let Ok(client_app) = std::env::var(Q_CLI_CLIENT_APPLICATION) {
+    if let Some(client_app) = get_cli_client_application() {
         event.set_client_application(client_app);
     }
 }
@@ -500,7 +499,7 @@ struct TelemetryClient {
 impl TelemetryClient {
     async fn new(env: &Env, fs: &Fs, database: &mut Database) -> Result<Self, TelemetryError> {
         let telemetry_enabled = !cfg!(test)
-            && env.get_os("Q_DISABLE_TELEMETRY").is_none()
+            && !crate::util::env_var::is_telemetry_disabled()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
         // If telemetry is disabled we do not emit using toolkit_telemetry
@@ -526,7 +525,7 @@ impl TelemetryClient {
                 return Ok(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff"));
             }
 
-            if let Ok(client_id) = env.get(CLIENT_ID_ENV_VAR) {
+            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(Some(env)) {
                 if let Ok(uuid) = Uuid::from_str(&client_id) {
                     return Ok(uuid);
                 }
@@ -551,7 +550,7 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = if env.get("AMAZON_Q_SIGV4").is_ok() {
+        let codewhisperer_client = if crate::util::env_var::is_sigv4_enabled(None) {
             None
         } else {
             Some(ApiClient::new(env, fs, database, None).await?)
