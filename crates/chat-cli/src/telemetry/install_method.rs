@@ -7,7 +7,7 @@ use serde::{
 };
 
 static INSTALL_METHOD: LazyLock<InstallMethod> = LazyLock::new(|| {
-    if let Ok(output) = Command::new("brew").args(["list", "kiro-cli", "-1"]).output() {
+    if let Ok(output) = Command::new("brew").args(["list", "amazon-q", "-1"]).output() {
         if output.status.success() {
             return InstallMethod::Brew;
         }
