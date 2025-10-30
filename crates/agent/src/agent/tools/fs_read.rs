@@ -196,11 +196,7 @@ pub struct FileReadContext {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestDir;
-    use crate::util::test::{
-        TestBase,
-        TestProvider,
-    };
+    use crate::util::test::TestBase;
 
     #[tokio::test]
     async fn test_fs_read_single_file() {
@@ -227,20 +223,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_fs_read_with_offset_and_limit() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("test.txt", "line1\nline2\nline3\nline4\nline5"), &test_provider)
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "line1\nline2\nline3\nline4\nline5"))
             .await;
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.join("test.txt").to_string_lossy().to_string(),
+                path: test_base.join("test.txt").to_string_lossy().to_string(),
                 limit: Some(2),
                 offset: Some(1),
             }],
         };
 
-        let result = tool.execute(&test_provider).await.unwrap();
+        let result = tool.execute(&test_base).await.unwrap();
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line2\nline3");
         }
@@ -248,35 +244,35 @@ mod tests {
 
     #[tokio::test]
     async fn test_fs_read_multiple_files() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("file1.txt", "content1"), &test_provider)
+        let test_base = TestBase::new()
             .await
-            .with_file_sys(("file2.txt", "content2"), &test_provider)
+            .with_file(("file1.txt", "content1"))
+            .await
+            .with_file(("file2.txt", "content2"))
             .await;
 
         let tool = FsRead {
             ops: vec![
                 FsReadOp {
-                    path: test_dir.join("file1.txt").to_string_lossy().to_string(),
+                    path: test_base.join("file1.txt").to_string_lossy().to_string(),
                     limit: None,
                     offset: None,
                 },
                 FsReadOp {
-                    path: test_dir.join("file2.txt").to_string_lossy().to_string(),
+                    path: test_base.join("file2.txt").to_string_lossy().to_string(),
                     limit: None,
                     offset: None,
                 },
             ],
         };
 
-        let result = tool.execute(&test_provider).await.unwrap();
+        let result = tool.execute(&test_base).await.unwrap();
         assert_eq!(result.items.len(), 2);
     }
 
     #[tokio::test]
     async fn test_fs_read_validate_nonexistent_file() {
-        let test_provider = TestProvider::new();
+        let test_base = TestBase::new().await;
         let tool = FsRead {
             ops: vec![FsReadOp {
                 path: "/nonexistent/file.txt".to_string(),
@@ -285,22 +281,21 @@ mod tests {
             }],
         };
 
-        assert!(tool.validate(&test_provider).await.is_err());
+        assert!(tool.validate(&test_base).await.is_err());
     }
 
     #[tokio::test]
     async fn test_fs_read_validate_directory_path() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new();
+        let test_base = TestBase::new().await;
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.join("").to_string_lossy().to_string(),
+                path: test_base.join("").to_string_lossy().to_string(),
                 limit: None,
                 offset: None,
             }],
         };
 
-        assert!(tool.validate(&test_provider).await.is_err());
+        assert!(tool.validate(&test_base).await.is_err());
     }
 }

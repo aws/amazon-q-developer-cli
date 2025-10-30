@@ -229,8 +229,7 @@ pub fn is_supported_image_type(path: impl AsRef<Path>) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestDir;
-    use crate::util::test::TestProvider;
+    use crate::util::test::TestBase;
 
     // Create a minimal valid PNG for testing
     fn create_test_png() -> Vec<u8> {
@@ -255,12 +254,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_valid_image() {
-        let test_dir = TestDir::new()
-            .with_file_sys(("test.png", create_test_png()), &TestProvider::new())
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.png", create_test_png()))
             .await;
 
         let tool = ImageRead {
-            paths: vec![test_dir.join("test.png").to_string_lossy().to_string()],
+            paths: vec![test_base.join("test.png").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_ok());
@@ -274,17 +274,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_multiple_images() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("image1.png", create_test_png()), &test_provider)
+        let test_base = TestBase::new()
             .await
-            .with_file_sys(("image2.png", create_test_png()), &test_provider)
+            .with_file(("image1.png", create_test_png()))
+            .await
+            .with_file(("image2.png", create_test_png()))
             .await;
 
         let tool = ImageRead {
             paths: vec![
-                test_dir.join("image1.png").to_string_lossy().to_string(),
-                test_dir.join("image2.png").to_string_lossy().to_string(),
+                test_base.join("image1.png").to_string_lossy().to_string(),
+                test_base.join("image2.png").to_string_lossy().to_string(),
             ],
         };
 
@@ -294,12 +294,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_unsupported_format() {
-        let test_dir = TestDir::new()
-            .with_file_sys(("test.txt", "not an image"), &TestProvider::new())
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "not an image"))
             .await;
 
         let tool = ImageRead {
-            paths: vec![test_dir.join("test.txt").to_string_lossy().to_string()],
+            paths: vec![test_base.join("test.txt").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_err());
@@ -316,10 +317,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_directory_path() {
-        let test_dir = TestDir::new();
+        let test_base = TestBase::new().await;
 
         let tool = ImageRead {
-            paths: vec![test_dir.join("").to_string_lossy().to_string()],
+            paths: vec![test_base.join("").to_string_lossy().to_string()],
         };
 
         assert!(tool.validate().await.is_err());

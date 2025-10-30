@@ -141,7 +141,7 @@ pub fn is_integ_test() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestDir;
+
 
     #[test]
     fn test_truncate_safe() {
@@ -202,21 +202,23 @@ mod tests {
     async fn test_read_file_with_max_limit() {
         // Test file with 30 bytes in length
         let test_file = "123456789\n".repeat(3);
-        let test_provider = crate::util::test::TestProvider::new();
-        let d = TestDir::new().with_file_sys(("test.txt", &test_file), &test_provider).await;
+        let test_base = crate::util::test::TestBase::new()
+            .await
+            .with_file(("test.txt", &test_file))
+            .await;
 
         // Test not truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 100, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 100, "...").await.unwrap();
         assert_eq!(content, test_file);
         assert_eq!(bytes_truncated, 0);
 
         // Test truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 10, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 10, "...").await.unwrap();
         assert_eq!(content, "1234567...");
         assert_eq!(bytes_truncated, 23);
 
         // Test suffix greater than max length
-        let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 1, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 1, "...").await.unwrap();
         assert_eq!(content, "");
         assert_eq!(bytes_truncated, 30);
     }

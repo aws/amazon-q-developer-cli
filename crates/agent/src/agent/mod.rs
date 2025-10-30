@@ -2171,15 +2171,11 @@ pub enum HookStage {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::util::test::{
-        TestDir,
-        TestProvider,
-    };
+    use crate::util::test::TestBase;
 
     #[tokio::test]
     async fn test_collect_resources() {
-        let mut test_dir = TestDir::new();
-        let test_provider = TestProvider::new_with_base(test_dir.path());
+        let mut test_base = TestBase::new().await;
 
         let files = [
             (".amazonq/rules/first.md", "first"),
@@ -2188,10 +2184,10 @@ mod tests {
         ];
 
         for file in files {
-            test_dir = test_dir.with_file_sys(file, &test_provider).await;
+            test_base = test_base.with_file(file).await;
         }
 
-        let resources = collect_resources(["file://.amazonq/rules/**/*.md", "file://~/home.txt"], &test_provider).await;
+        let resources = collect_resources(["file://.amazonq/rules/**/*.md", "file://~/home.txt"], &test_base).await;
 
         for file in files {
             assert!(resources.iter().any(|r| r.content == file.1));

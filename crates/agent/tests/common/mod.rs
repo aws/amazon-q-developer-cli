@@ -33,9 +33,8 @@ use agent::protocol::{
 };
 use agent::types::AgentSnapshot;
 use agent::util::test::{
-    TestDir,
+    TestBase,
     TestFile,
-    TestProvider,
 };
 use agent::{
     Agent,
@@ -103,13 +102,12 @@ impl TestCaseBuilder {
 
         let mut agent = Agent::new(snapshot, Arc::new(model), McpManager::new().spawn()).await?;
 
-        let mut temp_dir = TestDir::new();
-        let test_provider = TestProvider::new_with_base(temp_dir.path());
+        let mut test_base = TestBase::new().await;
         for file in self.files {
-            temp_dir = temp_dir.with_file_sys(file, &test_provider).await;
+            test_base = test_base.with_file(file).await;
         }
 
-        agent.set_sys_provider(TestProvider::new_with_base(temp_dir.path()));
+        agent.set_sys_provider(test_base.provider().clone());
 
         let test_name = self.test_name.unwrap_or(format!(
             "test_{}",
@@ -123,7 +121,7 @@ impl TestCaseBuilder {
         Ok(TestCase {
             test_name,
             agent: agent.spawn(),
-            temp_dir,
+            test_base,
             sent_requests: Vec::new(),
             agent_events: Vec::new(),
             trust_all_tools: self.trust_all_tools,
@@ -138,7 +136,7 @@ pub struct TestCase {
     test_name: String,
 
     agent: AgentHandle,
-    temp_dir: TestDir,
+    test_base: TestBase,
 
     tool_use_approvals: Vec<SendApprovalResultArgs>,
     curr_approval_index: usize,

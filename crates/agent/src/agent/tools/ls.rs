@@ -348,8 +348,7 @@ fn format_mode(mode: u32) -> [char; 9] {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agent::util::test::TestDir;
-    use crate::util::test::TestProvider;
+    use crate::util::test::TestBase;
 
     #[test]
     #[cfg(unix)]
@@ -367,21 +366,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_basic_directory() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("file1.txt", "content1"), &test_provider)
+        let test_base = TestBase::new()
             .await
-            .with_file_sys(("file2.txt", "content2"), &test_provider)
+            .with_file(("file1.txt", "content1"))
+            .await
+            .with_file(("file2.txt", "content2"))
             .await;
 
         let tool = Ls {
-            path: test_dir.join("").to_string_lossy().to_string(),
+            path: test_base.join("").to_string_lossy().to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate(&test_provider).await.is_ok());
-        let result = tool.execute(&test_provider).await.unwrap();
+        assert!(tool.validate(&test_base).await.is_ok());
+        let result = tool.execute(&test_base).await.unwrap();
         assert_eq!(result.items.len(), 1);
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
@@ -392,20 +391,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_recursive() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("root.txt", "root"), &test_provider)
+        let test_base = TestBase::new()
             .await
-            .with_file_sys(("subdir/nested.txt", "nested"), &test_provider)
+            .with_file(("root.txt", "root"))
+            .await
+            .with_file(("subdir/nested.txt", "nested"))
             .await;
 
         let tool = Ls {
-            path: test_dir.join("").to_string_lossy().to_string(),
+            path: test_base.join("").to_string_lossy().to_string(),
             depth: Some(1),
             ignore: None,
         };
 
-        let result = tool.execute(&test_provider).await.unwrap();
+        let result = tool.execute(&test_base).await.unwrap();
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert!(content.contains("root.txt"));
@@ -416,20 +415,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_with_ignore_patterns() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new()
-            .with_file_sys(("keep.txt", "keep"), &test_provider)
+        let test_base = TestBase::new()
             .await
-            .with_file_sys(("ignore.log", "ignore"), &test_provider)
+            .with_file(("keep.txt", "keep"))
+            .await
+            .with_file(("ignore.log", "ignore"))
             .await;
 
         let tool = Ls {
-            path: test_dir.join("").to_string_lossy().to_string(),
+            path: test_base.join("").to_string_lossy().to_string(),
             depth: None,
             ignore: Some(vec!["*.log".to_string()]),
         };
 
-        let result = tool.execute(&test_provider).await.unwrap();
+        let result = tool.execute(&test_base).await.unwrap();
 
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert!(content.contains("keep.txt"));
@@ -439,27 +438,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_validate_nonexistent_directory() {
-        let test_provider = TestProvider::new();
+        let test_base = TestBase::new().await;
         let tool = Ls {
             path: "/nonexistent/directory".to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate(&test_provider).await.is_err());
+        assert!(tool.validate(&test_base).await.is_err());
     }
 
     #[tokio::test]
     async fn test_ls_validate_file_not_directory() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file_sys(("file.txt", "content"), &test_provider).await;
+        let test_base = TestBase::new()
+            .await
+            .with_file(("file.txt", "content"))
+            .await;
 
         let tool = Ls {
-            path: test_dir.join("file.txt").to_string_lossy().to_string(),
+            path: test_base.join("file.txt").to_string_lossy().to_string(),
             depth: None,
             ignore: None,
         };
 
-        assert!(tool.validate(&test_provider).await.is_err());
+        assert!(tool.validate(&test_base).await.is_err());
     }
 }

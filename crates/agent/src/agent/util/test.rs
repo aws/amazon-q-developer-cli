@@ -38,7 +38,11 @@ impl TestBase {
 
     /// Returns a resolved path using the generated temporary directory as the base.
     pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.test_dir.path().join(path)
+        self.test_dir.join(path)
+    }
+
+    pub fn provider(&self) -> &TestProvider {
+        &self.provider
     }
 
     pub async fn with_file(mut self, file: impl TestFile) -> Self {
