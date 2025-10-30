@@ -19,6 +19,7 @@ use agent::agent_loop::protocol::{
 };
 use agent::agent_loop::types::{
     ContentBlock,
+    Message,
     Role,
     ToolSpec,
 };
@@ -44,6 +45,8 @@ use eyre::Result;
 use rand::Rng as _;
 use rand::distr::Alphanumeric;
 use serde::Serialize;
+
+type MockResponseStreams = Vec<Vec<StreamResult>>;
 
 #[derive(Default)]
 pub struct TestCaseBuilder {
@@ -99,7 +102,13 @@ impl TestCaseBuilder {
         }
 
         let mut agent = Agent::new(snapshot, Arc::new(model), McpManager::new().spawn()).await?;
-        let temp_dir = TestDir::new();
+
+        let mut temp_dir = TestDir::new();
+        let test_provider = TestProvider::new_with_base(temp_dir.path());
+        for file in self.files {
+            temp_dir = temp_dir.with_file_sys(file, &test_provider).await;
+        }
+
         agent.set_sys_provider(TestProvider::new_with_base(temp_dir.path()));
 
         let test_name = self.test_name.unwrap_or(format!(
@@ -234,6 +243,10 @@ pub struct SentRequest {
 }
 
 impl SentRequest {
+    pub fn messages(&self) -> &[Message] {
+        &self.original.messages
+    }
+
     pub fn prompt_contains_text(&self, text: impl AsRef<str>) -> bool {
         let text = text.as_ref();
         let prompt = self.original.messages.last().unwrap();
@@ -278,5 +291,3 @@ pub async fn parse_response_streams(content: impl AsRef<str>) -> Result<MockResp
     }
     Ok(stream)
 }
-
-type MockResponseStreams = Vec<Vec<StreamResult>>;

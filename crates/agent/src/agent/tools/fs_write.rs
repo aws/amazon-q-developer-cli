@@ -65,6 +65,10 @@ const FS_WRITE_SCHEMA: &str = r#"
             "description": "Required parameter of `strReplace` command containing the string in `path` to replace.",
             "type": "string"
         },
+        "replaceAll": {
+            "description": "Optional parameter of `strReplace` command. Default is false. When true, all instances of `oldStr` will be replaced with `newStr`.",
+            "type": "boolean"
+        },
         "path": {
             "description": "Path to the file",
             "type": "string"
@@ -204,6 +208,7 @@ pub struct StrReplace {
     path: String,
     old_str: String,
     new_str: String,
+    #[serde(default)]
     replace_all: bool,
 }
 

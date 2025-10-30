@@ -1645,18 +1645,20 @@ impl Agent {
             match result {
                 ToolExecutorResult::Completed { id, result } => match result {
                     Ok(res) => {
+                        let mut content_items = Vec::new();
                         for item in &res.items {
                             let content_item = match item {
                                 ToolExecutionOutputItem::Text(s) => ToolResultContentBlock::Text(s.clone()),
                                 ToolExecutionOutputItem::Json(v) => ToolResultContentBlock::Json(v.clone()),
                                 ToolExecutionOutputItem::Image(i) => ToolResultContentBlock::Image(i.clone()),
                             };
-                            content.push(ContentBlock::ToolResult(ToolResultBlock {
-                                tool_use_id: id.tool_use_id().to_string(),
-                                content: vec![content_item],
-                                status: ToolResultStatus::Success,
-                            }));
+                            content_items.push(content_item);
                         }
+                        content.push(ContentBlock::ToolResult(ToolResultBlock {
+                            tool_use_id: id.tool_use_id().to_string(),
+                            content: content_items,
+                            status: ToolResultStatus::Success,
+                        }));
                     },
                     Err(err) => content.push(ContentBlock::ToolResult(ToolResultBlock {
                         tool_use_id: id.tool_use_id().to_string(),
@@ -1916,7 +1918,7 @@ where
 
     let mut return_val = Vec::new();
     for resource in resources {
-        let Ok(kind) = ResourceKind::parse(resource.as_ref()) else {
+        let Ok(kind) = ResourceKind::parse(resource.as_ref(), provider) else {
             continue;
         };
         match kind {
@@ -2164,4 +2166,35 @@ pub enum HookStage {
     },
     /// Hooks after executing tool uses
     PostToolUse { tool_results: Vec<ToolExecutorResult> },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::util::test::{
+        TestDir,
+        TestProvider,
+    };
+
+    #[tokio::test]
+    async fn test_collect_resources() {
+        let mut test_dir = TestDir::new();
+        let test_provider = TestProvider::new_with_base(test_dir.path());
+
+        let files = [
+            (".amazonq/rules/first.md", "first"),
+            (".amazonq/rules/dir/subdir.md", "subdir"),
+            ("~/home.txt", "home"),
+        ];
+
+        for file in files {
+            test_dir = test_dir.with_file_sys(file, &test_provider).await;
+        }
+
+        let resources = collect_resources(["file://.amazonq/rules/**/*.md", "file://~/home.txt"], &test_provider).await;
+
+        for file in files {
+            assert!(resources.iter().any(|r| r.content == file.1));
+        }
+    }
 }

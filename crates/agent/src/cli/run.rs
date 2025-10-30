@@ -165,7 +165,6 @@ impl RunArgs {
 
         if self.output_format == Some(OutputFormat::Json) {
             let md = user_turn_metadata.expect("user turn metadata should exist");
-            println!("user turn metadata: {:?}", md);
             let is_error = md.end_reason != LoopEndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
             let result = md.result.and_then(|r| r.ok().map(|m| m.text()));
 

@@ -6,6 +6,7 @@ use std::path::{
     PathBuf,
 };
 
+use super::path::canonicalize_path_sys;
 use super::providers::{
     CwdProvider,
     EnvProvider,
@@ -37,10 +38,11 @@ impl TestDir {
     /// Writes the given file under the test directory. Creates parent directories if needed.
     ///
     /// The path given by `file` is *not* canonicalized.
+    #[deprecated]
     pub async fn with_file(self, file: impl TestFile) -> Self {
         let file_path = file.path();
-        if file_path.is_absolute() {
-            panic!("absolute paths are currently not supported");
+        if file_path.is_absolute() && !file_path.starts_with(self.temp_dir.path()) {
+            panic!("path falls outside of the temp dir");
         }
 
         let path = self.temp_dir.path().join(file_path);
@@ -50,6 +52,28 @@ impl TestDir {
             }
         }
         tokio::fs::write(path, file.content()).await.unwrap();
+        self
+    }
+
+    /// Writes the given file under the test directory. Creates parent directories if needed.
+    ///
+    /// This function panics if the file path is outside of the test directory.
+    pub async fn with_file_sys<P: SystemProvider>(self, file: impl TestFile, provider: &P) -> Self {
+        let file_path = canonicalize_path_sys(file.path().to_string_lossy(), provider).unwrap();
+
+        // Check to ensure that the file path resolves under the test directory.
+        if !file_path.starts_with(&self.temp_dir.path().to_string_lossy().to_string()) {
+            panic!("outside of temp dir");
+        }
+
+        let file_path = PathBuf::from(file_path);
+        if let Some(parent) = file_path.parent() {
+            if !parent.exists() {
+                tokio::fs::create_dir_all(parent).await.unwrap();
+            }
+        }
+
+        tokio::fs::write(file_path, file.content()).await.unwrap();
         self
     }
 }
@@ -76,6 +100,16 @@ where
 
     fn content(&self) -> Vec<u8> {
         self.1.as_ref().to_vec()
+    }
+}
+
+impl TestFile for Box<dyn TestFile> {
+    fn path(&self) -> PathBuf {
+        (**self).path()
+    }
+
+    fn content(&self) -> Vec<u8> {
+        (**self).content()
     }
 }
 
@@ -161,3 +195,34 @@ impl CwdProvider for TestProvider {
 }
 
 impl SystemProvider for TestProvider {}
+
+#[cfg(test)]
+mod tests {
+    use tokio::fs;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_tempdir_files() {
+        let mut test_dir = TestDir::new();
+        let test_provider = TestProvider::new_with_base(test_dir.path());
+
+        let files = [("base", "base"), ("~/tilde", "tilde"), ("$HOME/home", "home")];
+        for file in files {
+            test_dir = test_dir.with_file_sys(file, &test_provider).await;
+        }
+
+        assert_eq!(fs::read_to_string(test_dir.join("base")).await.unwrap(), "base");
+        assert_eq!(fs::read_to_string(test_dir.join("tilde")).await.unwrap(), "tilde");
+        assert_eq!(fs::read_to_string(test_dir.join("home")).await.unwrap(), "home");
+    }
+
+    #[tokio::test]
+    #[should_panic]
+    async fn test_tempdir_write_file_outside() {
+        let test_dir = TestDir::new();
+        let test_provider = TestProvider::new_with_base(test_dir.path());
+
+        let _ = test_dir.with_file_sys(("..", "hello"), &test_provider).await;
+    }
+}

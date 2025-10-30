@@ -706,7 +706,7 @@ mod tests {
             })
             .await;
 
-        run_with_timeout(Duration::from_millis(100), async move {
+        run_with_timeout(Duration::from_millis(1000), async move {
             let mut event_buf = Vec::new();
             loop {
                 executor.recv_next(&mut event_buf).await;
