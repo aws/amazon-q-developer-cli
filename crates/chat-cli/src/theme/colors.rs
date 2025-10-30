@@ -2,6 +2,16 @@
 
 use crossterm::style::Color;
 
+// ANSI color value constants
+/// Purple brand color
+pub const BRAND_PURPLE: u8 = 141;
+/// Light grey for primary text
+pub const LIGHT_GREY: u8 = 252;
+/// Medium-light grey for secondary text
+pub const MEDIUM_LIGHT_GREY: u8 = 248;
+/// Bright magenta for emphasis and current items
+pub const BRIGHT_MAGENTA: u8 = 13;
+
 /// Colors for status messages and feedback
 #[derive(Debug, Clone)]
 pub struct StatusColors {
@@ -63,13 +73,12 @@ impl Default for StatusColors {
 impl Default for UiColors {
     fn default() -> Self {
         Self {
-            primary_brand: Color::AnsiValue(141),
-
-            primary_text: Color::AnsiValue(252),
-            secondary_text: Color::AnsiValue(248),
-            emphasis: Color::AnsiValue(252),
-            command_highlight: Color::AnsiValue(141),
-            current_item: Color::AnsiValue(13),
+            primary_brand: Color::AnsiValue(BRAND_PURPLE),
+            primary_text: Color::AnsiValue(LIGHT_GREY),
+            secondary_text: Color::AnsiValue(MEDIUM_LIGHT_GREY),
+            emphasis: Color::AnsiValue(LIGHT_GREY),
+            command_highlight: Color::AnsiValue(BRAND_PURPLE),
+            current_item: Color::AnsiValue(BRIGHT_MAGENTA),
         }
     }
 }
@@ -77,9 +86,9 @@ impl Default for UiColors {
 impl Default for InteractiveColors {
     fn default() -> Self {
         Self {
-            prompt_symbol: Color::AnsiValue(13),
-            profile_indicator: Color::AnsiValue(141),
-            tangent_indicator: Color::AnsiValue(13),
+            prompt_symbol: Color::AnsiValue(BRIGHT_MAGENTA),
+            profile_indicator: Color::AnsiValue(BRAND_PURPLE),
+            tangent_indicator: Color::AnsiValue(BRIGHT_MAGENTA),
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
             usage_high: Color::Red,
