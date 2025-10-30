@@ -107,7 +107,6 @@ impl LoginArgs {
             match start_unified_auth(&mut os.database).await? {
                 PortalResult::Social(provider) => {
                     pre_portal_spinner.stop_with_message(format!("Logged in with {provider}"));
-                    os.telemetry.send_user_logged_in().ok();
                     return Ok(ExitCode::SUCCESS);
                 },
                 PortalResult::BuilderId { issuer_url, idc_region } => {
@@ -118,10 +117,6 @@ impl LoginArgs {
                 PortalResult::AwsIdc { issuer_url, idc_region } => {
                     pre_portal_spinner.stop_with_message("".into());
                     info!("Completing AWS Identity Center authentication");
-                    // Save IdC credentials for future use
-                    let _ = os.database.set_start_url(issuer_url.clone());
-                    let _ = os.database.set_idc_region(idc_region.clone());
-
                     complete_sso_auth(os, issuer_url, idc_region, true).await?;
                 },
                 PortalResult::Internal { issuer_url, idc_region } => {
@@ -200,6 +195,8 @@ impl LoginArgs {
             }
         }
 
+        os.telemetry.send_user_logged_in().ok();
+
         Ok(ExitCode::SUCCESS)
     }
 }
@@ -230,6 +227,9 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
 
             os.telemetry.send_user_logged_in().ok();
             spinner.stop_with_message("Logged in".into());
+
+            let _ = os.database.set_start_url(issuer_url.clone());
+            let _ = os.database.set_idc_region(idc_region.clone());
 
             // Prompt for profile selection if needed (IdC only)
             if requires_profile {
