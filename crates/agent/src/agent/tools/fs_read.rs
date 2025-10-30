@@ -197,23 +197,28 @@ pub struct FileReadContext {}
 mod tests {
     use super::*;
     use crate::agent::util::test::TestDir;
-    use crate::util::test::TestProvider;
+    use crate::util::test::{
+        TestBase,
+        TestProvider,
+    };
 
     #[tokio::test]
     async fn test_fs_read_single_file() {
-        let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "line1\nline2\nline3")).await;
+        let test_base = TestBase::new()
+            .await
+            .with_file(("test.txt", "line1\nline2\nline3"))
+            .await;
 
         let tool = FsRead {
             ops: vec![FsReadOp {
-                path: test_dir.join("test.txt").to_string_lossy().to_string(),
+                path: test_base.join("test.txt").to_string_lossy().to_string(),
                 limit: None,
                 offset: None,
             }],
         };
 
-        assert!(tool.validate(&test_provider).await.is_ok());
-        let result = tool.execute(&test_provider).await.unwrap();
+        assert!(tool.validate(&test_base).await.is_ok());
+        let result = tool.execute(&test_base).await.unwrap();
         assert_eq!(result.items.len(), 1);
         if let ToolExecutionOutputItem::Text(content) = &result.items[0] {
             assert_eq!(content, "line1\nline2\nline3");
@@ -224,7 +229,7 @@ mod tests {
     async fn test_fs_read_with_offset_and_limit() {
         let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("test.txt", "line1\nline2\nline3\nline4\nline5"))
+            .with_file_sys(("test.txt", "line1\nline2\nline3\nline4\nline5"), &test_provider)
             .await;
 
         let tool = FsRead {
@@ -245,9 +250,9 @@ mod tests {
     async fn test_fs_read_multiple_files() {
         let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("file1.txt", "content1"))
+            .with_file_sys(("file1.txt", "content1"), &test_provider)
             .await
-            .with_file(("file2.txt", "content2"))
+            .with_file_sys(("file2.txt", "content2"), &test_provider)
             .await;
 
         let tool = FsRead {

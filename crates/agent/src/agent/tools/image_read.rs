@@ -230,6 +230,7 @@ pub fn is_supported_image_type(path: impl AsRef<Path>) -> bool {
 mod tests {
     use super::*;
     use crate::agent::util::test::TestDir;
+    use crate::util::test::TestProvider;
 
     // Create a minimal valid PNG for testing
     fn create_test_png() -> Vec<u8> {
@@ -254,7 +255,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_valid_image() {
-        let test_dir = TestDir::new().with_file(("test.png", create_test_png())).await;
+        let test_dir = TestDir::new()
+            .with_file_sys(("test.png", create_test_png()), &TestProvider::new())
+            .await;
 
         let tool = ImageRead {
             paths: vec![test_dir.join("test.png").to_string_lossy().to_string()],
@@ -271,10 +274,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_multiple_images() {
+        let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("image1.png", create_test_png()))
+            .with_file_sys(("image1.png", create_test_png()), &test_provider)
             .await
-            .with_file(("image2.png", create_test_png()))
+            .with_file_sys(("image2.png", create_test_png()), &test_provider)
             .await;
 
         let tool = ImageRead {
@@ -290,7 +294,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_unsupported_format() {
-        let test_dir = TestDir::new().with_file(("test.txt", "not an image")).await;
+        let test_dir = TestDir::new()
+            .with_file_sys(("test.txt", "not an image"), &TestProvider::new())
+            .await;
 
         let tool = ImageRead {
             paths: vec![test_dir.join("test.txt").to_string_lossy().to_string()],

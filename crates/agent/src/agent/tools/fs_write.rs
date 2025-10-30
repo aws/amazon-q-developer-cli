@@ -393,7 +393,7 @@ mod tests {
     #[tokio::test]
     async fn test_str_replace_single_occurrence() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "hello world")).await;
+        let test_dir = TestDir::new().with_file_sys(("test.txt", "hello world"), &test_provider).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_dir.join("test.txt").to_string_lossy().to_string(),
@@ -411,7 +411,7 @@ mod tests {
     #[tokio::test]
     async fn test_str_replace_multiple_occurrences() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "foo bar foo")).await;
+        let test_dir = TestDir::new().with_file_sys(("test.txt", "foo bar foo"), &test_provider).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_dir.join("test.txt").to_string_lossy().to_string(),
@@ -429,7 +429,7 @@ mod tests {
     #[tokio::test]
     async fn test_str_replace_no_match() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "hello world")).await;
+        let test_dir = TestDir::new().with_file_sys(("test.txt", "hello world"), &test_provider).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_dir.join("test.txt").to_string_lossy().to_string(),
@@ -444,7 +444,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_at_line() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "line1\nline2\nline3")).await;
+        let test_dir = TestDir::new().with_file_sys(("test.txt", "line1\nline2\nline3"), &test_provider).await;
 
         let tool = FsWrite::Insert(Insert {
             path: test_dir.join("test.txt").to_string_lossy().to_string(),
@@ -461,7 +461,7 @@ mod tests {
     #[tokio::test]
     async fn test_insert_append() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("test.txt", "existing")).await;
+        let test_dir = TestDir::new().with_file_sys(("test.txt", "existing"), &test_provider).await;
 
         let tool = FsWrite::Insert(Insert {
             path: test_dir.join("test.txt").to_string_lossy().to_string(),

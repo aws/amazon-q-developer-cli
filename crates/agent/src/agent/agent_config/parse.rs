@@ -221,7 +221,7 @@ mod tests {
         let resource = "file://project/README.md";
         assert_eq!(ResourceKind::parse(resource, &sys).unwrap(), ResourceKind::File {
             original: resource,
-            file_path: "project/README.md".to_string()
+            file_path: "/home/testuser/project/README.md".to_string()
         });
 
         let resource = "file://~/project/**/*.rs";

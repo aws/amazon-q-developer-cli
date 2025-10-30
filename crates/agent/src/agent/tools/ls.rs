@@ -369,9 +369,9 @@ mod tests {
     async fn test_ls_basic_directory() {
         let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("file1.txt", "content1"))
+            .with_file_sys(("file1.txt", "content1"), &test_provider)
             .await
-            .with_file(("file2.txt", "content2"))
+            .with_file_sys(("file2.txt", "content2"), &test_provider)
             .await;
 
         let tool = Ls {
@@ -394,9 +394,9 @@ mod tests {
     async fn test_ls_recursive() {
         let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("root.txt", "root"))
+            .with_file_sys(("root.txt", "root"), &test_provider)
             .await
-            .with_file(("subdir/nested.txt", "nested"))
+            .with_file_sys(("subdir/nested.txt", "nested"), &test_provider)
             .await;
 
         let tool = Ls {
@@ -418,9 +418,9 @@ mod tests {
     async fn test_ls_with_ignore_patterns() {
         let test_provider = TestProvider::new();
         let test_dir = TestDir::new()
-            .with_file(("keep.txt", "keep"))
+            .with_file_sys(("keep.txt", "keep"), &test_provider)
             .await
-            .with_file(("ignore.log", "ignore"))
+            .with_file_sys(("ignore.log", "ignore"), &test_provider)
             .await;
 
         let tool = Ls {
@@ -452,7 +452,7 @@ mod tests {
     #[tokio::test]
     async fn test_ls_validate_file_not_directory() {
         let test_provider = TestProvider::new();
-        let test_dir = TestDir::new().with_file(("file.txt", "content")).await;
+        let test_dir = TestDir::new().with_file_sys(("file.txt", "content"), &test_provider).await;
 
         let tool = Ls {
             path: test_dir.join("file.txt").to_string_lossy().to_string(),

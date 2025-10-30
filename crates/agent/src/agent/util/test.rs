@@ -14,6 +14,59 @@ use super::providers::{
     SystemProvider,
 };
 
+/// Test helper that wraps a temporary directory and test [SystemProvider].
+#[derive(Debug)]
+pub struct TestBase {
+    test_dir: TestDir,
+    provider: TestProvider,
+}
+
+impl TestBase {
+    /// Creates a new temporary directory with the following defaults configured:
+    /// - env vars: HOME=$tempdir_path/home/testuser
+    /// - cwd: $tempdir_path
+    /// - home: $tempdir_path/home/testuser
+    pub async fn new() -> Self {
+        let test_dir = TestDir::new();
+        let home_path = test_dir.path().join("home/testuser");
+        tokio::fs::create_dir_all(&home_path)
+            .await
+            .expect("failed to create test home directory");
+        let provider = TestProvider::new_with_base(home_path).with_cwd(test_dir.path());
+        Self { test_dir, provider }
+    }
+
+    /// Returns a resolved path using the generated temporary directory as the base.
+    pub fn join(&self, path: impl AsRef<Path>) -> PathBuf {
+        self.test_dir.path().join(path)
+    }
+
+    pub async fn with_file(mut self, file: impl TestFile) -> Self {
+        self.test_dir = self.test_dir.with_file_sys(file, &self.provider).await;
+        self
+    }
+}
+
+impl EnvProvider for TestBase {
+    fn var(&self, input: &str) -> Result<String, VarError> {
+        self.provider.var(input)
+    }
+}
+
+impl HomeProvider for TestBase {
+    fn home(&self) -> Option<PathBuf> {
+        self.provider.home()
+    }
+}
+
+impl CwdProvider for TestBase {
+    fn cwd(&self) -> Result<PathBuf, std::io::Error> {
+        self.provider.cwd()
+    }
+}
+
+impl SystemProvider for TestBase {}
+
 #[derive(Debug)]
 pub struct TestDir {
     temp_dir: tempfile::TempDir,

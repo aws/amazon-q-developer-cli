@@ -202,7 +202,8 @@ mod tests {
     async fn test_read_file_with_max_limit() {
         // Test file with 30 bytes in length
         let test_file = "123456789\n".repeat(3);
-        let d = TestDir::new().with_file(("test.txt", &test_file)).await;
+        let test_provider = crate::util::test::TestProvider::new();
+        let d = TestDir::new().with_file_sys(("test.txt", &test_file), &test_provider).await;
 
         // Test not truncated
         let (content, bytes_truncated) = read_file_with_max_limit(d.join("test.txt"), 100, "...").await.unwrap();
