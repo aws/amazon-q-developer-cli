@@ -12,6 +12,7 @@ use serde::{
 use super::types::ResourcePath;
 use crate::agent::consts::DEFAULT_AGENT_NAME;
 use crate::agent::tools::BuiltInToolName;
+use crate::mcp::oauth_util::OAuthConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -215,13 +216,16 @@ pub struct McpServers {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
+#[serde(tag = "type")]
 pub enum McpServerConfig {
+    #[serde(rename = "stdio")]
     Local(LocalMcpServerConfig),
-    StreamableHTTP(StreamableHTTPMcpServerConfig),
+    #[serde(rename = "http")]
+    Remote(RemoteMcpServerConfig),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalMcpServerConfig {
     /// The command string used to initialize the mcp server
     pub command: String,
@@ -241,7 +245,8 @@ pub struct LocalMcpServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct StreamableHTTPMcpServerConfig {
+#[serde(rename_all = "camelCase")]
+pub struct RemoteMcpServerConfig {
     /// The URL endpoint for HTTP-based MCP servers
     pub url: String,
     /// HTTP headers to include when communicating with HTTP-based MCP servers
@@ -251,6 +256,12 @@ pub struct StreamableHTTPMcpServerConfig {
     #[serde(alias = "timeout")]
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+    /// OAuth scopes required for authentication with the remote MCP server
+    #[serde(default)]
+    pub oauth_scopes: Vec<String>,
+    /// OAuth configuration for this server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
 }
 
 pub fn default_timeout() -> u64 {
@@ -391,5 +402,95 @@ mod tests {
         });
 
         let _: AgentConfig = serde_json::from_value(agent).unwrap();
+    }
+
+    #[test]
+    fn test_mcp_server_config_http_deser() {
+        // Test HTTP server without oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.api.coingecko.com/sse"
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://mcp.api.coingecko.com/sse");
+                assert!(remote.oauth_scopes.is_empty());
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+
+        // Test HTTP server with oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+            "oauthScopes": ["mcp", "profile", "email"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp");
+                assert_eq!(remote.oauth_scopes, vec!["mcp", "profile", "email"]);
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+
+        // Test HTTP server with empty oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://example-server.modelcontextprotocol.io/mcp",
+            "oauthScopes": []
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://example-server.modelcontextprotocol.io/mcp");
+                assert!(remote.oauth_scopes.is_empty());
+            },
+            _ => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_config_stdio_deser() {
+        let config = serde_json::json!({
+            "type": "stdio",
+            "command": "node",
+            "args": ["server.js"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Local(local) => {
+                assert_eq!(local.command, "node");
+                assert_eq!(local.args, vec!["server.js"]);
+            },
+            _ => panic!("Expected Local variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_servers_map_deser() {
+        let servers = serde_json::json!({
+            "coin-gecko": {
+                "type": "http",
+                "url": "https://mcp.api.coingecko.com/sse"
+            },
+            "datadog": {
+                "type": "http",
+                "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+                "oauthScopes": ["mcp", "profile", "email"]
+            },
+            "local-server": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+            }
+        });
+
+        let result: HashMap<String, McpServerConfig> = serde_json::from_value(servers).unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result.contains_key("coin-gecko"));
+        assert!(result.contains_key("datadog"));
+        assert!(result.contains_key("local-server"));
     }
 }

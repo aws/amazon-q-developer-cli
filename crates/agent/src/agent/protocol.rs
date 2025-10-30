@@ -18,6 +18,7 @@ use super::agent_loop::types::{
     ToolUseBlock,
 };
 use super::mcp::McpManagerError;
+use super::mcp::actor::McpServerActorEvent;
 use super::mcp::types::Prompt;
 use super::task_executor::TaskExecutorEvent;
 use super::tools::{
@@ -73,6 +74,9 @@ pub enum AgentEvent {
     /// Lower-level events associated with the agent's execution. Generally only useful for
     /// debugging or telemetry purposes.
     Internal(InternalEvent),
+
+    /// Events from MCP (Model Context Protocol) servers
+    Mcp(McpServerActorEvent),
 }
 
 impl From<TaskExecutorEvent> for AgentEvent {
