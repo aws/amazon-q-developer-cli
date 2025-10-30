@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use spinners::{
     Spinner,
     Spinners,
@@ -199,10 +201,9 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
-use crate::util::directories::get_shadow_repo_dir;
+use crate::util::paths::PathResolver;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
-    directories,
     ui,
 };
 
@@ -214,6 +215,10 @@ pub enum WrapMode {
     Never,
     /// Auto-detect based on output target (default)
     Auto,
+}
+
+fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crate::util::paths::DirectoryError> {
+    Ok(PathResolver::new(os).global().shadow_repo_dir()?.join(conversation_id))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
@@ -605,6 +610,7 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    prompt_ack_rx: std::sync::mpsc::Receiver<()>,
 }
 
 impl ChatSession {
@@ -630,11 +636,12 @@ impl ChatSession {
         let should_send_structured_msg = should_send_structured_message(os);
         let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
+        let (prompt_ack_tx, prompt_ack_rx) = std::sync::mpsc::channel::<()>();
 
         tokio::task::spawn_blocking(move || {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
+            if let Err(e) = view_end.into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout) {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });
@@ -739,6 +746,7 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            prompt_ack_rx,
         })
     }
 
@@ -1942,6 +1950,25 @@ impl ChatSession {
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
         let prompt = self.generate_tool_trust_prompt(os).await;
+
+        // Here we are signaling to the ui layer that the event loop wants to prompt user
+        // This is necessitated by the fact that what is actually writing to stderr or stdout is
+        // not on the same thread as what is prompting the user (in an ideal world they would be).
+        // As a bandaid fix (to hold us until we move to the new event loop where everything is in
+        // their rightful place), we are first signaling to the ui layer we are about to prompt
+        // users, and we are going to wait until the ui layer acknowledges.
+        // Note that this works because [std::sync::mpsc] preserves order between sending and
+        // receiving
+        self.stderr
+            .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }))
+            .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+        if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+        }
+
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -3450,7 +3477,7 @@ impl ChatSession {
 
         // Check if context usage indicator is enabled
         let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
-            use crate::cli::chat::cli::usage::get_total_usage_percentage;
+            use crate::cli::chat::cli::usage::usage_data_provider::get_total_usage_percentage;
             get_total_usage_percentage(self, os).await.ok()
         } else {
             None
@@ -3799,11 +3826,16 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
 
 // Helper method to save the agent config to file
 async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+    let resolver = PathResolver::new(os);
     let config_dir = if is_global {
-        directories::chat_global_agent_path(os)
+        resolver
+            .global()
+            .agents_dir()
             .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
     } else {
-        directories::chat_local_agent_dir(os)
+        resolver
+            .workspace()
+            .agents_dir()
             .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
     };
 

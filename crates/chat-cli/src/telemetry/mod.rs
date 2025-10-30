@@ -234,6 +234,21 @@ impl TelemetryThread {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
     }
 
+    pub fn send_auth_failed(
+        &self,
+        auth_method: &str,
+        oauth_flow: &str,
+        error_type: &str,
+        error_code: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::AuthFailed {
+            auth_method: auth_method.to_string(),
+            oauth_flow: oauth_flow.to_string(),
+            error_type: error_type.to_string(),
+            error_code,
+        }))?)
+    }
+
     pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::DailyHeartbeat {}))?)
     }

@@ -40,6 +40,9 @@ pub fn resolve_file_uri(uri: &str, base_path: &Path) -> Result<String, FileUriEr
         return Err(FileUriError::InvalidUri { uri: uri.to_string() });
     }
 
+    // Expand tilde to home directory
+    let path_str = shellexpand::tilde(path_str).to_string();
+
     // Resolve the path
     let resolved_path = if path_str.starts_with('/') {
         // Absolute path
@@ -139,6 +142,30 @@ mod tests {
 
         let result = resolve_file_uri(&uri, base);
         assert!(matches!(result, Err(FileUriError::FileNotFound { .. })));
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_tilde_expansion() -> Result<(), Box<dyn std::error::Error>> {
+        // Test that tilde gets expanded by verifying the path is absolute after expansion
+        // We can't easily mock HOME and don't want to write test files there, but we can verify
+        // the expansion behavior using error messages
+        let uri = "file://~/test.txt";
+        let base = Path::new("/some/other/path");
+        
+        // This will fail to find the file (expected), but the error should show
+        // an expanded absolute path, not a path with literal ~
+        let result = resolve_file_uri(uri, base);
+        
+        match result {
+            Err(FileUriError::FileNotFound { path }) => {
+                // Verify the path was expanded (should start with / not ~)
+                assert!(path.starts_with("/"), "Path should be absolute after tilde expansion, got: {:?}", path);
+                assert!(!path.to_string_lossy().contains("~"), "Path should not contain literal tilde, got: {:?}", path);
+            },
+            _ => panic!("Expected FileNotFound error"),
+        }
 
         Ok(())
     }

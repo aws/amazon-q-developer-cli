@@ -47,7 +47,7 @@ use crate::theme::{
     StyledText,
     theme,
 };
-use crate::util::directories;
+use crate::util::paths;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
@@ -489,10 +489,10 @@ impl FsWrite {
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
-                        let Ok(path) = directories::canonicalizes_path(os, path) else {
+                        let Ok(path) = paths::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
+                        if let Err(e) = paths::add_gitignore_globs(&mut builder, path.as_str()) {
                             warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
                         }
                     }
@@ -503,10 +503,10 @@ impl FsWrite {
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
-                        let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
+                        let Ok(processed_path) = paths::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
+                        match paths::add_gitignore_globs(&mut builder, processed_path.as_str()) {
                             Ok(_) => {
                                 // Note that we need to push twice here because for each rule we
                                 // are creating two globs (one for file and one for directory)
@@ -526,7 +526,7 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                let Ok(path) = paths::canonicalizes_path(os, path) else {
                                     return PermissionEvalResult::Ask;
                                 };
                                 let denied_match_set = deny_set.matches(path.as_ref() as &str);

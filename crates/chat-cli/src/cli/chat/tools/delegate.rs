@@ -42,6 +42,7 @@ use crate::cli::{
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
+use crate::util::paths::PathResolver;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
@@ -51,7 +52,7 @@ use crate::util::env_var::get_all_env_vars;
 /// - status: Check agent status (agent optional - defaults to 'all')
 /// - list: Show available agents
 ///
-/// Only one task per agent. Files stored in ~/.aws/amazonq/.subagents/
+/// Only one task per agent. Files stored in the workspace subagents directory
 ///
 /// Examples:
 /// - Launch: {"operation": "launch", "agent": "rust-agent", "task": "Create snake game"}
@@ -381,7 +382,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
                 format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
             };
 
-            // Save to ~/.aws/amazonq/.subagents/{agent}.json
+            // Save to workspace subagents directory
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
@@ -392,7 +393,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             execution.exit_code = Some(-1);
             execution.output = format!("Failed to wait for process: {}", e);
 
-            // Save to ~/.aws/amazonq/.subagents/{agent}.json
+            // Save to workspace subagents directory
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
             }
@@ -519,11 +520,7 @@ pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
-    let subagents_dir = os.env.current_dir()?.join(".amazonq").join(".subagents");
-    if !subagents_dir.exists() {
-        os.fs.create_dir_all(&subagents_dir).await?;
-    }
-    Ok(subagents_dir)
+    Ok(PathResolver::new(os).workspace().ensure_subagents_dir().await?)
 }
 
 #[cfg(test)]

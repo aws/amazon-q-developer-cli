@@ -36,7 +36,7 @@ use crate::cli::chat::tools::custom_tool::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories;
+use crate::util::paths::PathResolver;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
 pub enum Scope {
@@ -154,9 +154,10 @@ impl AddArgs {
                 writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
             },
             None => {
+                let resolver = PathResolver::new(os);
                 let legacy_mcp_config_path = match self.scope {
-                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
-                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                    Some(Scope::Workspace) => resolver.workspace().mcp_config()?,
+                    _ => resolver.global().mcp_config()?,
                 };
                 if !legacy_mcp_config_path.exists() {
                     // Create an empty config file that won't fail to deserialize.
@@ -251,9 +252,10 @@ impl RemoveArgs {
                 }
             },
             None => {
+                let resolver = PathResolver::new(os);
                 let legacy_mcp_config_path = match self.scope {
-                    Some(Scope::Workspace) => directories::chat_legacy_workspace_mcp_config(os)?,
-                    _ => directories::chat_legacy_global_mcp_config(os)?,
+                    Some(Scope::Workspace) => resolver.workspace().mcp_config()?,
+                    _ => resolver.global().mcp_config()?,
                 };
                 let mut config = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
@@ -441,7 +443,7 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
         },
     };
     let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
-    let global_path = directories::chat_global_agent_path(os)?;
+    let global_path = PathResolver::new(os).global().agents_dir()?;
     for (_, agent) in agents.agents {
         let scope = if agent
             .path

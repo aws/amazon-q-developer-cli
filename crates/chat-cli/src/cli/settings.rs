@@ -18,7 +18,7 @@ use strum::IntoEnumIterator;
 use super::OutputFormat;
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories;
+use crate::util::paths::GlobalPaths;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum SettingsSubcommands {
@@ -188,8 +188,7 @@ impl SettingsArgs {
     pub async fn execute(&self, os: &mut Os) -> Result<ExitCode> {
         match self.cmd {
             Some(SettingsSubcommands::Open) => {
-                let file = directories::settings_path().context("Could not get settings path")?;
-
+                let file = GlobalPaths::settings_path().context("Could not get settings path")?;
                 let editor =
                     crate::util::env_var::try_get_editor().context("The EDITOR environment variable is not set")?;
                 tokio::process::Command::new(editor).arg(file).spawn()?.wait().await?;

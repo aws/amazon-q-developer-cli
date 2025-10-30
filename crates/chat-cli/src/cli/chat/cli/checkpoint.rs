@@ -28,7 +28,7 @@ use crate::cli::experiment::experiment_manager::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories::get_shadow_repo_dir;
+use crate::util::paths::PathResolver;
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CheckpointSubcommand {
@@ -134,8 +134,11 @@ impl CheckpointSubcommand {
                 StyledText::reset(),
             )?;
         } else {
-            let path = get_shadow_repo_dir(os, session.conversation.conversation_id().to_string())
-                .map_err(|e| ChatError::Custom(e.to_string().into()))?;
+            let path = PathResolver::new(os)
+                .global()
+                .shadow_repo_dir()
+                .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                .join(session.conversation.conversation_id());
 
             let start = std::time::Instant::now();
             session.conversation.checkpoint_manager = Some(

@@ -274,6 +274,16 @@ pub enum TokenType {
     IamIdentityCenter,
 }
 
+impl From<Option<&str>> for TokenType {
+    fn from(start_url: Option<&str>) -> Self {
+        match start_url {
+            Some(url) if url == START_URL => TokenType::BuilderId,
+            None => TokenType::BuilderId,
+            Some(_) => TokenType::IamIdentityCenter,
+        }
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct BuilderIdToken {
     pub access_token: Secret,
@@ -303,7 +313,10 @@ impl BuilderIdToken {
     }
 
     /// Load the token from the keychain, refresh the token if it is expired and return it
-    pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
+    pub async fn load(
+        database: &Database,
+        telemetry: Option<&crate::telemetry::TelemetryThread>,
+    ) -> Result<Option<Self>, AuthError> {
         // Can't use #[cfg(test)] without breaking lints, and we don't want to require
         // authentication in order to run ChatSession tests. Hence, adding this here with cfg!(test)
         if cfg!(test) {
@@ -329,7 +342,7 @@ impl BuilderIdToken {
 
                         if token.is_expired() {
                             trace!("token is expired, refreshing");
-                            token.refresh_token(&client, database, &region).await
+                            token.refresh_token(&client, database, &region, telemetry).await
                         } else {
                             trace!(?token, "found a valid token");
                             Ok(Some(token))
@@ -358,6 +371,7 @@ impl BuilderIdToken {
         client: &Client,
         database: &Database,
         region: &Region,
+        telemetry: Option<&crate::telemetry::TelemetryThread>,
     ) -> Result<Option<Self>, AuthError> {
         let Some(refresh_token) = &self.refresh_token else {
             warn!("no refresh token was found");
@@ -417,6 +431,25 @@ impl BuilderIdToken {
                 let display_err = DisplayErrorContext(&err);
                 error!("Failed to refresh builder id access token: {}", display_err);
 
+                // Send telemetry for refresh failure
+                if let Some(telemetry) = telemetry {
+                    let auth_method = match self.token_type() {
+                        TokenType::BuilderId => "BuilderId",
+                        TokenType::IamIdentityCenter => "IdentityCenter",
+                    };
+                    let oauth_flow = match self.oauth_flow {
+                        OAuthFlow::DeviceCode => "DeviceCode",
+                        OAuthFlow::Pkce => "PKCE",
+                    };
+                    let error_code = match &err {
+                        SdkError::ServiceError(service_err) => service_err.err().meta().code().map(|s| s.to_string()),
+                        _ => None,
+                    };
+                    telemetry
+                        .send_auth_failed(auth_method, oauth_flow, "TokenRefresh", error_code)
+                        .ok();
+                }
+
                 // if the error is the client's fault, clear the token
                 if let SdkError::ServiceError(service_err) = &err {
                     if !service_err.err().is_slow_down_exception() {
@@ -472,11 +505,7 @@ impl BuilderIdToken {
     }
 
     pub fn token_type(&self) -> TokenType {
-        match &self.start_url {
-            Some(url) if url == START_URL => TokenType::BuilderId,
-            None => TokenType::BuilderId,
-            Some(_) => TokenType::IamIdentityCenter,
-        }
+        TokenType::from(self.start_url.as_deref())
     }
 
     /// Check if the token is for the internal amzn start URL (`https://amzn.awsapps.com/start`),
@@ -499,6 +528,7 @@ pub async fn poll_create_token(
     device_code: String,
     start_url: Option<String>,
     region: Option<String>,
+    telemetry: &crate::telemetry::TelemetryThread,
 ) -> PollCreateToken {
     let region = region.clone().map_or(OIDC_BUILDER_ID_REGION, Region::new);
     let client = client(region.clone());
@@ -539,6 +569,20 @@ pub async fn poll_create_token(
         },
         Err(err) => {
             error!(?err, "Failed to poll for builder id token");
+
+            // Send telemetry for device code failure
+            let auth_method = match TokenType::from(start_url.as_deref()) {
+                TokenType::BuilderId => "BuilderId",
+                TokenType::IamIdentityCenter => "IdentityCenter",
+            };
+            let error_code = match &err {
+                SdkError::ServiceError(service_err) => service_err.err().meta().code().map(|s| s.to_string()),
+                _ => None,
+            };
+            telemetry
+                .send_auth_failed(auth_method, "DeviceCode", "NewLogin", error_code)
+                .ok();
+
             PollCreateToken::Error(err.into())
         },
     }
@@ -551,7 +595,7 @@ pub async fn is_logged_in(database: &mut Database) -> bool {
         return true;
     }
 
-    match BuilderIdToken::load(database).await {
+    match BuilderIdToken::load(database, None).await {
         Ok(Some(_)) => true,
         Ok(None) => {
             info!("not logged in - no valid token found");
@@ -586,7 +630,7 @@ pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
 pub async fn get_start_url_and_region(database: &Database) -> (Option<String>, Option<String>) {
     // NOTE: Database provides direct methods to access the start_url and region, but they are not
     // guaranteed to be up to date in the chat session. Example: login is changed mid-chat session.
-    let token = BuilderIdToken::load(database).await;
+    let token = BuilderIdToken::load(database, None).await;
     match token {
         Ok(Some(t)) => (t.start_url, t.region),
         _ => (None, None),
@@ -604,7 +648,7 @@ impl ResolveIdentity for BearerResolver {
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
             let database = Database::new().await?;
-            match BuilderIdToken::load(&database).await? {
+            match BuilderIdToken::load(&database, None).await? {
                 Some(token) => Ok(Identity::new(
                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
                     Some(token.expires_at.into()),
@@ -619,7 +663,7 @@ pub async fn is_idc_user(database: &Database) -> Result<bool> {
     if cfg!(test) {
         return Ok(false);
     }
-    if let Ok(Some(token)) = BuilderIdToken::load(database).await {
+    if let Ok(Some(token)) = BuilderIdToken::load(database, None).await {
         Ok(token.token_type() == TokenType::IamIdentityCenter)
     } else {
         Err(eyre!("No auth token found - is the user signed in?"))

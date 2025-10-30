@@ -59,6 +59,7 @@ use crate::cli::chat::tools::custom_tool::{
     TransportType,
 };
 use crate::os::Os;
+<<<<<<< HEAD
 use crate::util::directories::DirectoryError;
 use crate::util::env_var::get_all_env_vars;
 
