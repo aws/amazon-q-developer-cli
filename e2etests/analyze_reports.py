@@ -47,6 +47,9 @@ def analyze_reports(directory_path):
                 for result in data.get('detailed_results', []):
                     duration += result.get('duration', 0)
                 
+                # Extract Q version from system_info
+                q_version = data.get('system_info', {}).get('q_version', 'Unknown')
+                
                 report_info = {
                     'filename': filename,
                     'date': file_date,
@@ -55,6 +58,7 @@ def analyze_reports(directory_path):
                     'failed': data.get('summary', {}).get('failed', 0),
                     'success_rate': data.get('summary', {}).get('success_rate', 0),
                     'duration': duration,
+                    'q_version': q_version,
                     'features': {}
                 }
                 
@@ -261,6 +265,7 @@ def generate_analytics(reports_data):
             'best_current_minutes': round(best_with_current / 60, 2),
             'curr_duration_minutes': round(curr_duration / 60, 2),
             'total_tests': reports_data[i]['total_tests'],
+            'q_version': reports_data[i]['q_version'],
             'significant_test': f"Duration changed by {change:+.1f}%",
             'feature_breakdown': feature_breakdown
         })
@@ -326,6 +331,7 @@ def generate_html_report(reports_data, analytics, output_file):
         test_summary.append({
             'date': report['date'].strftime('%m/%d/%y'),
             'total_tests': report['total_tests'],
+            'total_failed': report['failed'],
             'duration_minutes': duration_minutes,
             'duration_hours': round(report['duration'] / 3600, 2),
             'avg_comparison': round(diff_from_avg, 1),
@@ -364,6 +370,28 @@ def generate_html_report(reports_data, analytics, output_file):
             'test_counts': feature_test_counts
         }
     
+    # Prepare feature histogram data
+    feature_histogram_data = {
+        'labels': [],
+        'values': [],
+        'colors': []
+    }
+    
+    for feature in sorted(analytics['all_features']):
+        if feature in analytics['feature_analytics']:
+            data = analytics['feature_analytics'][feature]
+            latest_duration = data['latest_duration']
+            avg_last_3 = data['avg_last_3']
+            
+            feature_histogram_data['labels'].append(feature)
+            feature_histogram_data['values'].append(latest_duration)
+            
+            # Color coding: red if duration higher than last 3 average, else green
+            if avg_last_3 > 0 and latest_duration > avg_last_3:
+                feature_histogram_data['colors'].append('rgba(220, 53, 69, 0.8)')  # Red
+            else:
+                feature_histogram_data['colors'].append('rgba(40, 167, 69, 0.8)')  # Green
+    
     # Replace placeholders
     html_content = template.replace('{{DATES}}', str(dates))
     html_content = html_content.replace('{{DURATIONS}}', str(durations))
@@ -374,6 +402,7 @@ def generate_html_report(reports_data, analytics, output_file):
     html_content = html_content.replace('{{ANALYTICS}}', json.dumps(analytics, default=str))
     html_content = html_content.replace('{{TEST_SUMMARY}}', json.dumps(test_summary))
     html_content = html_content.replace('{{FEATURE_TRENDS}}', json.dumps(feature_trends))
+    html_content = html_content.replace('{{FEATURE_HISTOGRAM_DATA}}', json.dumps(feature_histogram_data))
     
     with open(output_file, 'w') as f:
         f.write(html_content)

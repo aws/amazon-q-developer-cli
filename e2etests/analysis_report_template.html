@@ -12,114 +12,183 @@
         .chart-container { width: 100%; height: 400px; margin: 20px 0; }
         .analytics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
         .analytics-card { background: #f8f9fa; padding: 15px; border-radius: 5px; border-left: 4px solid #ff9900; }
-        .matrix-table { width: 100%; border-collapse: collapse; margin: 20px 0; font-size: 12px; }
+        .matrix-table { width: 100%; border-collapse: collapse; margin: 0; font-size: 12px; }
         .matrix-table th, .matrix-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
-        .matrix-table th { background-color: #232f3e; color: white; }
+        .matrix-table th { background-color: #232f3e; color: white; position: sticky; top: 0; z-index: 10; }
         .pass { background-color: #d4edda; color: #155724; }
         .fail { background-color: #f8d7da; color: #721c24; }
         .na { background-color: #e2e3e5; color: #6c757d; }
         .feature-name { text-align: left !important; font-weight: bold; }
         .summary-stats { display: flex; justify-content: space-around; margin: 20px 0; }
-        .stat-box { text-align: center; padding: 15px; background: #e8f4fd; border-radius: 5px; }
+        .stat-box { text-align: center; padding: 15px; background: #e8f4fd; border-radius: 5px; cursor: help; position: relative; }
+        .stat-box:hover { background: #d1ecf1; transition: background-color 0.2s; }
+        .stat-box.good-performance { background: #d4edda !important; color: #155724 !important; }
+        .stat-box.poor-performance { background: #f8d7da !important; color: #721c24 !important; }
+        .stat-box.good-performance:hover { background: #c3e6cb !important; }
+        .stat-box.poor-performance:hover { background: #f1b0b7 !important; }
+        .tooltip { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 8px 12px; border-radius: 4px; font-size: 12px; white-space: nowrap; opacity: 0; visibility: hidden; transition: opacity 0.3s; z-index: 1000; }
+        .tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 5px solid transparent; border-top-color: #333; }
+        .stat-box:hover .tooltip { opacity: 1; visibility: visible; }
         .stat-number { font-size: 24px; font-weight: bold; color: #232f3e; }
         .stat-label { color: #666; }
-        .test-summary-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .table-container { max-height: 400px; overflow: auto; border: 1px solid #ddd; }
+        .test-summary-table { width: 100%; border-collapse: collapse; margin: 0; }
         .test-summary-table th, .test-summary-table td { border: 1px solid #ddd; padding: 10px; text-align: center; }
-        .test-summary-table th { background-color: #232f3e; color: white; }
-        .duration-changes-table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        .test-summary-table th { background-color: #232f3e; color: white; position: sticky; top: 0; z-index: 10; }
+        .duration-changes-table { width: 100%; border-collapse: collapse; margin: 0; }
         .duration-changes-table th, .duration-changes-table td { border: 1px solid #ddd; padding: 8px; text-align: center; }
         .duration-changes-table td:last-child { text-align: left; font-size: 11px; }
-        .duration-changes-table th { background-color: #232f3e; color: white; }
+        .duration-changes-table th { background-color: #232f3e; color: white; position: sticky; top: 0; z-index: 10; }
         .test-increase { background-color: #f8d7da; color: #721c24; }
         .test-decrease { background-color: #d4edda; color: #155724; }
         .test-no-change { background-color: #e2e3e5; color: #6c757d; }
+        .feature-tabs { display: flex; flex-wrap: wrap; gap: 5px; margin: 10px 0; border-bottom: 2px solid #ddd; }
+        .feature-tab { padding: 8px 16px; background: #f8f9fa; border: 1px solid #ddd; border-bottom: none; border-radius: 5px 5px 0 0; cursor: pointer; font-size: 14px; transition: all 0.2s; }
+        .feature-tab:hover { background: #e9ecef; }
+        .feature-tab.active { background: #232f3e; color: white; border-color: #232f3e; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Amazon Q CLI Test Analysis Report</h1>
+        <h1>Test Automation Performance Dashboard</h1>
+        <h2 style="color: #666; font-size: 18px; margin-top: -10px; margin-bottom: 20px;">Amazon Q Developer CLI - Quality Assurance Analytics</h2>
         <p>Generated on: <span id="reportDate"></span></p>
         
-        <h2>Overall Execution Statistics</h2>
+        <h2>Key Performance Indicators (KPIs)</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            Critical performance metrics across all test executions, providing executive-level insights and benchmarks for comparison.
+        </p>
         <div class="summary-stats">
             <div class="stat-box">
                 <div class="stat-number" id="totalReports">0</div>
                 <div class="stat-label">Total Reports</div>
+                <div class="tooltip">Total number of test execution reports analyzed</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="totalFeatures">0</div>
                 <div class="stat-label">Features Tracked</div>
+                <div class="tooltip">Number of unique features being tracked across all reports</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="avgDuration">0</div>
                 <div class="stat-label">Avg Duration (min)</div>
+                <div class="tooltip">Average execution time across all test runs</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="bestTime">0</div>
                 <div class="stat-label">Best Time (min)</div>
+                <div class="tooltip">Fastest execution time recorded across all test runs</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="bestWithCurrentTests">0</div>
-                <div class="stat-label">Best w/ Current Tests (min)</div>
+                <div class="stat-label" id="bestWithCurrentTestsLabel">Best w/ Current Tests# (min)</div>
+                <div class="tooltip">Best execution time with test count ≥ latest execution</div>
             </div>
-            <div class="stat-box">
+            <div class="stat-box" id="latestExecutionBox">
                 <div class="stat-number" id="latestExecution">0</div>
                 <div class="stat-label">Latest Execution (min)</div>
+                <div class="tooltip">Execution time of the most recent test run</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="avgLast3">0</div>
                 <div class="stat-label">Avg Last 3 (min)</div>
+                <div class="tooltip">Average execution time of the last 3 test runs</div>
             </div>
             <div class="stat-box">
                 <div class="stat-number" id="avgLast5">0</div>
                 <div class="stat-label">Avg Last 5 (min)</div>
+                <div class="tooltip">Average execution time of the last 5 test runs</div>
+            </div>
+            <div class="stat-box" id="performanceImprovementBox">
+                <div class="stat-number" id="performanceImprovement">0%</div>
+                <div class="stat-label">Last 3 vs Overall Avg</div>
+                <div class="tooltip">Performance change: negative % = faster (good), positive % = slower (bad)</div>
             </div>
         </div>
 
-        <h2>Duration and Test Count Trends</h2>
+        <h2>Performance Trend Analysis</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            Historical view of test execution duration and test count over time, helping identify performance trends and test suite growth.
+        </p>
         <div class="chart-container">
             <canvas id="trendsChart"></canvas>
         </div>
         
-        <h2>Feature-wise Trends</h2>
-        <div style="margin: 10px 0;">
-            <label for="featureSelect">Select Feature: </label>
-            <select id="featureSelect" onchange="updateFeatureChart()" style="padding: 5px; font-size: 14px;">
-                <option value="">-- Select a Feature --</option>
-            </select>
+        <h2>Feature Performance Tracking</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            Individual feature performance tracking over time. Select a feature to view its execution duration and test count history.
+        </p>
+        <div class="feature-tabs" id="featureTabs">
+            <!-- Feature tabs will be populated by JavaScript -->
         </div>
         <div class="chart-container">
             <canvas id="featureTrendsChart"></canvas>
         </div>
         
-        <h2>Test Execution Summary</h2>
-        <table class="test-summary-table" id="testSummaryTable">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Total Tests</th>
-                    <th>Duration (minutes)</th>
-                    <th>Duration (hours)</th>
-                    <th>vs Average</th>
-                </tr>
-            </thead>
-            <tbody></tbody>
-        </table>
-
-        <div class="analytics-card">
-            <h3>Average Duration by Feature</h3>
-            <table class="test-summary-table" id="featureDurationsTable">
+        <h2 id="histogramTitle">Performance Baseline Comparison</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            This histogram compares the latest execution time of each feature against its average of the last 3 executions. 
+            Green bars indicate features performing at or better than their recent average, while red bars show features 
+            taking longer than their recent average performance.
+        </p>
+        <div style="margin: 10px 0; display: flex; align-items: center; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; background-color: #28a745;"></div>
+                <span>Duration ≤ Last 3 Avg (Good Performance)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; background-color: #dc3545;"></div>
+                <span>Duration > Last 3 Avg (Performance Regression)</span>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="featureHistogramChart"></canvas>
+        </div>
+        
+        <h2 id="multiHistogramTitle">Multi-Metric Performance Analysis</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            This chart shows multiple performance metrics for each feature side by side. Latest execution uses red/green logic 
+            (red if > last 3 avg, green otherwise), while other metrics use consistent colors for easy comparison.
+        </p>
+        <div style="margin: 10px 0; display: flex; align-items: center; gap: 15px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; position: relative; border: 1px solid #ccc;">
+                    <div style="position: absolute; top: 0; left: 0; width: 0; height: 0; border-left: 15px solid #00C851; border-bottom: 15px solid transparent;"></div>
+                    <div style="position: absolute; top: 0; right: 0; width: 0; height: 0; border-right: 15px solid #FF4444; border-top: 15px solid transparent;"></div>
+                </div>
+                <span>Latest Execution (Green: ≤ Last 3 Avg, Red: > Last 3 Avg)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; background-color: #1f77b4;"></div>
+                <span>Overall Average</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; background-color: #ff7f0e;"></div>
+                <span>Recent Average (Last 3)</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <div style="width: 15px; height: 15px; background-color: #2ca02c;"></div>
+                <span>Extended Average (Last 5)</span>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="multiFeatureHistogramChart"></canvas>
+        </div>
+        
+        <h2>Execution History & Analytics</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            Chronological summary of all test executions with duration comparisons against historical averages. Recent executions shown first.
+        </p>
+        <div class="table-container">
+            <table class="test-summary-table" id="testSummaryTable">
                 <thead>
                     <tr>
-                        <th onclick="sortTable(0, 'featureDurationsTable')" style="cursor: pointer;">Feature ↕</th>
-                        <th onclick="sortTable(1, 'featureDurationsTable')" style="cursor: pointer;">Avg Duration (min) ↕</th>
-                        <th onclick="sortTable(2, 'featureDurationsTable')" style="cursor: pointer;">Best Time (min) ↕</th>
-                        <th onclick="sortTable(3, 'featureDurationsTable')" style="cursor: pointer;">Best w/ Current Tests ↕</th>
-                        <th onclick="sortTable(4, 'featureDurationsTable')" style="cursor: pointer;">Latest Time (min) ↕</th>
-                        <th onclick="sortTable(5, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 3 (min) ↕</th>
-                        <th onclick="sortTable(6, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 5 (min) ↕</th>
-                        <th onclick="sortTable(7, 'featureDurationsTable')" style="cursor: pointer;">Latest Tests ↕</th>
-                        <th onclick="sortTable(8, 'featureDurationsTable')" style="cursor: pointer;">Max Tests ↕</th>
+                        <th>Date</th>
+                        <th>Total Tests</th>
+                        <th>Total Failed</th>
+                        <th>Duration (minutes)</th>
+                        <th>Duration (hours)</th>
+                        <th id="vsAverageHeader">vs Average</th>
                     </tr>
                 </thead>
                 <tbody></tbody>
@@ -127,12 +196,40 @@
         </div>
 
         <div class="analytics-card">
-            <h3>All Duration Changes</h3>
+            <h3>Performance Metrics Analysis</h3>
+            <p style="margin: 10px 0; color: #666; font-size: 14px;">
+                Detailed performance metrics for each feature including latest execution time with color-coded performance indicators.
+            </p>
+            <div class="table-container">
+                <table class="test-summary-table" id="featureDurationsTable">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0, 'featureDurationsTable')" style="cursor: pointer;">Feature ↕</th>
+                            <th onclick="sortTable(1, 'featureDurationsTable')" style="cursor: pointer;">Latest Time (min) ↕</th>
+                            <th onclick="sortTable(2, 'featureDurationsTable')" style="cursor: pointer;">Avg Duration (min) ↕</th>
+                            <th onclick="sortTable(3, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 3 (min) ↕</th>
+                            <th onclick="sortTable(4, 'featureDurationsTable')" style="cursor: pointer;">Avg Last 5 (min) ↕</th>
+                            <th onclick="sortTable(5, 'featureDurationsTable')" style="cursor: pointer;">Best w/ Same Tests ↕</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="analytics-card">
+            <h3>Performance Change Analysis</h3>
+            <p style="margin: 10px 0; color: #666; font-size: 14px;">
+                Comprehensive analysis of execution time changes with comparisons against multiple baselines and feature-level breakdowns.
+            </p>
             <div id="durationChanges"></div>
         </div>
 
-        <h2>Feature Status Matrix</h2>
-        <div style="overflow-x: auto;">
+        <h2>Quality Assurance Matrix</h2>
+        <p style="margin: 10px 0; color: #666; font-size: 14px;">
+            Pass/fail status matrix showing feature reliability over time. Green indicates pass, red indicates failure, gray indicates not tested.
+        </p>
+        <div class="table-container">
             <table class="matrix-table" id="featureMatrix">
                 <thead>
                     <tr>
@@ -144,18 +241,23 @@
         </div>
         
         <div class="analytics-card">
-            <h3>Feature Failure Analysis</h3>
-            <table class="test-summary-table" id="failureRatesTable">
-                <thead>
-                    <tr>
-                        <th onclick="sortTable(0, 'failureRatesTable')" style="cursor: pointer;">Feature ↕</th>
-                        <th onclick="sortTable(1, 'failureRatesTable')" style="cursor: pointer;">Failure Rate (%) ↕</th>
-                        <th onclick="sortTable(2, 'failureRatesTable')" style="cursor: pointer;">Total Runs ↕</th>
-                        <th onclick="sortTable(3, 'failureRatesTable')" style="cursor: pointer;">Failed Runs ↕</th>
-                    </tr>
-                </thead>
-                <tbody></tbody>
-            </table>
+            <h3>Reliability & Risk Assessment</h3>
+            <p style="margin: 10px 0; color: #666; font-size: 14px;">
+                Statistical analysis of feature failure rates, helping identify the most problematic features requiring attention.
+            </p>
+            <div class="table-container">
+                <table class="test-summary-table" id="failureRatesTable">
+                    <thead>
+                        <tr>
+                            <th onclick="sortTable(0, 'failureRatesTable')" style="cursor: pointer;">Feature ↕</th>
+                            <th onclick="sortTable(1, 'failureRatesTable')" style="cursor: pointer;">Failure Rate (%) ↕</th>
+                            <th onclick="sortTable(2, 'failureRatesTable')" style="cursor: pointer;">Total Runs ↕</th>
+                            <th onclick="sortTable(3, 'failureRatesTable')" style="cursor: pointer;">Failed Runs ↕</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -168,9 +270,18 @@
         const analytics = {{ANALYTICS}};
         const testSummary = {{TEST_SUMMARY}};
         const featureTrends = {{FEATURE_TRENDS}};
+        const featureHistogramData = {{FEATURE_HISTOGRAM_DATA}};
 
-        // Set report date
-        document.getElementById('reportDate').textContent = new Date().toLocaleString();
+        // Set report date and update histogram title with latest execution date
+        const reportDate = new Date().toLocaleString();
+        document.getElementById('reportDate').textContent = reportDate;
+        
+        // Update histogram title with latest execution date
+        if (dates.length > 0) {
+            const latestDate = dates[dates.length - 1];
+            document.getElementById('histogramTitle').textContent = 
+                `Feature Execution Time Histogram - Latest Execution (${latestDate}) vs Last 3 Average`;
+        }
 
         // Update summary stats
         document.getElementById('totalReports').textContent = analytics.total_reports;
@@ -178,13 +289,51 @@
         const avgDuration = durations.reduce((a, b) => a + b, 0) / durations.length;
         document.getElementById('avgDuration').textContent = avgDuration.toFixed(1);
         
+        // Update vs Average header with average time
+        document.getElementById('vsAverageHeader').textContent = `vs Average (${avgDuration.toFixed(1)} min)`;
+        
         // Update overall execution stats
         if (analytics.overall_stats) {
             document.getElementById('bestTime').textContent = analytics.overall_stats.best_time;
             document.getElementById('bestWithCurrentTests').textContent = analytics.overall_stats.best_with_current_tests;
-            document.getElementById('latestExecution').textContent = analytics.overall_stats.latest_execution;
+            
+            // Latest execution with color coding
+            const latestExecution = analytics.overall_stats.latest_execution;
+            const avgLast3 = analytics.overall_stats.avg_last_3;
+            document.getElementById('latestExecution').textContent = latestExecution;
+            
+            // Color code Latest Execution KPI box
+            const latestBox = document.getElementById('latestExecutionBox');
+            const latestTooltip = latestBox.querySelector('.tooltip');
+            if (avgLast3 > 0 && latestExecution > avgLast3) {
+                latestBox.classList.add('poor-performance');
+                latestTooltip.textContent = 'Latest execution time (SLOWER than last 3 avg - needs attention)';
+            } else {
+                latestBox.classList.add('good-performance');
+                latestTooltip.textContent = 'Latest execution time (FASTER than or equal to last 3 avg - good performance)';
+            }
+            
             document.getElementById('avgLast3').textContent = analytics.overall_stats.avg_last_3;
             document.getElementById('avgLast5').textContent = analytics.overall_stats.avg_last_5;
+            
+            // Calculate performance improvement: Last 3 vs Overall Average
+            const overallAvg = analytics.overall_stats.avg_duration;
+            const last3Avg = analytics.overall_stats.avg_last_3;
+            let improvement = 0;
+            if (overallAvg > 0 && last3Avg > 0) {
+                improvement = ((overallAvg - last3Avg) / overallAvg) * 100;
+            }
+            const improvementElement = document.getElementById('performanceImprovement');
+            const improvementText = improvement > 0 ? `-${improvement.toFixed(1)}%` : `+${Math.abs(improvement).toFixed(1)}%`;
+            improvementElement.textContent = improvementText;
+            
+            // Color coding: negative % = faster execution = good (green)
+            const perfBox = document.getElementById('performanceImprovementBox');
+            if (improvement > 0) {
+                perfBox.classList.add('good-performance');
+            } else if (improvement < 0) {
+                perfBox.classList.add('poor-performance');
+            }
         }
 
         // Create trends chart
@@ -240,19 +389,226 @@
             row.insertCell(3).textContent = data.failed_runs;
         });
 
-        // Populate feature durations table
+        // Populate feature durations table with new column order
         const featureDurationsTable = document.getElementById('featureDurationsTable').querySelector('tbody');
         Object.entries(analytics.feature_analytics).forEach(([feature, data]) => {
             const row = featureDurationsTable.insertRow();
             row.insertCell(0).textContent = feature;
-            row.insertCell(1).textContent = data.avg_duration;
-            row.insertCell(2).textContent = data.best_duration;
-            row.insertCell(3).textContent = data.best_duration_with_tests;
-            row.insertCell(4).textContent = data.latest_duration;
-            row.insertCell(5).textContent = data.avg_last_3;
-            row.insertCell(6).textContent = data.avg_last_5;
-            row.insertCell(7).textContent = data.latest_test_count;
-            row.insertCell(8).textContent = data.max_tests;
+            
+            // Latest time with color coding
+            const latestCell = row.insertCell(1);
+            latestCell.textContent = data.latest_duration;
+            if (data.avg_last_3 > 0 && data.latest_duration > data.avg_last_3) {
+                latestCell.style.backgroundColor = '#f8d7da';
+                latestCell.style.color = '#721c24';
+            } else {
+                latestCell.style.backgroundColor = '#d4edda';
+                latestCell.style.color = '#155724';
+            }
+            
+            row.insertCell(2).textContent = data.avg_duration;
+            row.insertCell(3).textContent = data.avg_last_3;
+            row.insertCell(4).textContent = data.avg_last_5;
+            row.insertCell(5).textContent = data.best_duration_with_tests;
+        });
+        
+        // Create feature histogram chart
+        const histogramCtx = document.getElementById('featureHistogramChart').getContext('2d');
+        new Chart(histogramCtx, {
+            type: 'bar',
+            data: {
+                labels: featureHistogramData.labels,
+                datasets: [{
+                    label: 'Latest Execution Time (min)',
+                    data: featureHistogramData.values,
+                    backgroundColor: featureHistogramData.colors,
+                    borderColor: featureHistogramData.colors.map(color => color.replace('0.8', '1')),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterLabel: function(context) {
+                                const feature = context.label;
+                                const data = analytics.feature_analytics[feature];
+                                if (data) {
+                                    return [
+                                        `Avg Duration: ${data.avg_duration} min`,
+                                        `Avg Last 3: ${data.avg_last_3} min`,
+                                        `Avg Last 5: ${data.avg_last_5} min`,
+                                        `Best w/ Same Tests: ${data.best_duration_with_tests}`
+                                    ];
+                                }
+                                return [];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Duration (minutes)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Features'
+                        },
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    }
+                }
+            }
+        });
+        
+        // Create multi-column feature histogram chart
+        const multiHistogramCtx = document.getElementById('multiFeatureHistogramChart').getContext('2d');
+        
+        // Prepare datasets for multi-column chart
+        const latestData = [];
+        const latestColors = [];
+        const avgData = [];
+        const avg3Data = [];
+        const avg5Data = [];
+        const features = featureHistogramData.labels;
+        
+        features.forEach(feature => {
+            const data = analytics.feature_analytics[feature];
+            if (data) {
+                latestData.push(data.latest_duration);
+                avgData.push(data.avg_duration);
+                avg3Data.push(data.avg_last_3);
+                avg5Data.push(data.avg_last_5);
+                
+                // Red/green logic for latest value using professional colors
+                if (data.avg_last_3 > 0 && data.latest_duration > data.avg_last_3) {
+                    latestColors.push('rgba(255, 68, 68, 0.8)'); // Professional red
+                } else {
+                    latestColors.push('rgba(0, 200, 81, 0.8)'); // Professional green
+                }
+            }
+        });
+        
+        new Chart(multiHistogramCtx, {
+            type: 'bar',
+            data: {
+                labels: features,
+                datasets: [
+                    {
+                        label: 'Latest Execution',
+                        data: latestData,
+                        backgroundColor: latestColors,
+                        borderColor: latestColors.map(color => color.replace('0.8', '1')),
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Overall Average',
+                        data: avgData,
+                        backgroundColor: 'rgba(31, 119, 180, 0.3)', // More transparent
+                        borderColor: 'rgba(31, 119, 180, 0.7)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Recent Average (Last 3)',
+                        data: avg3Data,
+                        backgroundColor: 'rgba(255, 127, 14, 0.3)', // More transparent
+                        borderColor: 'rgba(255, 127, 14, 0.7)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'Extended Average (Last 5)',
+                        data: avg5Data,
+                        backgroundColor: 'rgba(44, 160, 44, 0.3)', // More transparent
+                        borderColor: 'rgba(44, 160, 44, 0.7)',
+                        borderWidth: 1
+                    }
+                ]
+            },
+            plugins: [{
+                id: 'alertIcons',
+                afterDraw: function(chart) {
+                    const ctx = chart.ctx;
+                    const meta = chart.getDatasetMeta(0);
+                    
+                    meta.data.forEach((bar, index) => {
+                        const feature = features[index];
+                        const data = analytics.feature_analytics[feature];
+                        
+                        if (data && data.avg_last_3 > 0 && data.latest_duration > data.avg_last_3) {
+                            const x = bar.x;
+                            const y = bar.y - 15;
+                            
+                            ctx.fillStyle = '#FF4444';
+                            ctx.beginPath();
+                            ctx.moveTo(x, y);
+                            ctx.lineTo(x - 8, y + 12);
+                            ctx.lineTo(x + 8, y + 12);
+                            ctx.closePath();
+                            ctx.fill();
+                            
+                            ctx.fillStyle = 'white';
+                            ctx.font = 'bold 10px Arial';
+                            ctx.textAlign = 'center';
+                            ctx.fillText('!', x, y + 9);
+                        }
+                    });
+                }
+            }],
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    },
+                    tooltip: {
+                        callbacks: {
+                            afterLabel: function(context) {
+                                const feature = context.label;
+                                const data = analytics.feature_analytics[feature];
+                                if (data && context.datasetIndex === 0) {
+                                    const status = data.avg_last_3 > 0 && data.latest_duration > data.avg_last_3 ? 
+                                        'Performance Regression' : 'Good Performance';
+                                    return [`Status: ${status}`];
+                                }
+                                return [];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: {
+                            display: true,
+                            text: 'Duration (minutes)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Features'
+                        },
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    }
+                }
+            }
         });
         
         // Sort table function
@@ -278,20 +634,34 @@
         // Make sortTable globally available
         window.sortTable = sortTable;
         
-        // Populate feature dropdown
-        const featureSelect = document.getElementById('featureSelect');
-        analytics.all_features.forEach(feature => {
-            const option = document.createElement('option');
-            option.value = feature;
-            option.textContent = feature;
-            featureSelect.appendChild(option);
+        // Populate feature tabs
+        const featureTabs = document.getElementById('featureTabs');
+        analytics.all_features.forEach((feature, index) => {
+            const tab = document.createElement('div');
+            tab.className = 'feature-tab';
+            tab.textContent = feature;
+            tab.onclick = () => selectFeatureTab(feature, tab);
+            if (index === 0) {
+                tab.classList.add('active');
+            }
+            featureTabs.appendChild(tab);
         });
         
         // Feature trends chart
         let featureTrendsChart = null;
         
-        function updateFeatureChart() {
-            const selectedFeature = featureSelect.value;
+        function selectFeatureTab(feature, tabElement) {
+            // Remove active class from all tabs
+            document.querySelectorAll('.feature-tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            // Add active class to selected tab
+            tabElement.classList.add('active');
+            // Update chart
+            updateFeatureChart(feature);
+        }
+        
+        function updateFeatureChart(selectedFeature) {
             if (!selectedFeature) {
                 if (featureTrendsChart) {
                     featureTrendsChart.destroy();
@@ -348,11 +718,13 @@
         }
         
         window.updateFeatureChart = updateFeatureChart;
+        window.selectFeatureTab = selectFeatureTab;
+        window.sortTable = sortTable;
 
         // Populate duration changes
         const durationChangesDiv = document.getElementById('durationChanges');
         if (analytics.all_duration_changes && analytics.all_duration_changes.length > 0) {
-            let changesHtml = '<table class="duration-changes-table"><thead><tr><th>Date</th><th>Total Time (min)</th><th>Total Tests</th><th>vs Previous</th><th>vs Prev 3 Avg</th><th>vs Prev 5 Avg</th><th>vs Average</th><th>vs Best Time</th><th>vs Best w/ Same test counts</th><th>Contributing Features</th></tr></thead><tbody>';
+            let changesHtml = '<table class="duration-changes-table"><thead><tr><th>Date</th><th>Total Time (min)</th><th>Total Tests</th><th>Q Version</th><th>vs Previous</th><th>vs Prev 3 Avg</th><th>vs Prev 5 Avg</th><th>vs Average</th><th>vs Best Time</th><th>vs Best w/ Same test counts</th><th>Contributing Features</th></tr></thead><tbody>';
             analytics.all_duration_changes.forEach(change => {
                 const changeDate = new Date(change.date).toLocaleDateString();
                 const changeClass = change.change_percent > 0 ? 'fail' : 'pass';
@@ -401,7 +773,7 @@
                 const vsBest = formatComparison(change.change_vs_best, change.best_time_minutes, change.curr_duration_minutes);
                 const vsBestCurrent = formatComparison(change.change_vs_best_current, change.best_current_minutes, change.curr_duration_minutes);
                 
-                changesHtml += `<tr><td>${changeDate}</td><td>${change.curr_duration_minutes}</td><td>${change.total_tests}</td><td class="${changeClass}">${vsPrevious}</td><td class="${changeClass3}">${vsPrev3}</td><td class="${changeClass5}">${vsPrev5}</td><td class="${changeClassAvg}">${vsAvg}</td><td class="${changeClassBest}">${vsBest}</td><td class="${changeClassBestCurrent}">${vsBestCurrent}</td><td style="text-align: left; padding:5px;">${featureBreakdown}</td></tr>`;
+                changesHtml += `<tr><td>${changeDate}</td><td>${change.curr_duration_minutes}</td><td>${change.total_tests}</td><td>${change.q_version || 'Unknown'}</td><td class="${changeClass}">${vsPrevious}</td><td class="${changeClass3}">${vsPrev3}</td><td class="${changeClass5}">${vsPrev5}</td><td class="${changeClassAvg}">${vsAvg}</td><td class="${changeClassBest}">${vsBest}</td><td class="${changeClassBestCurrent}">${vsBestCurrent}</td><td style="text-align: left; padding:5px;">${featureBreakdown}</td></tr>`;
             });
             changesHtml += '</tbody></table>';
             durationChangesDiv.innerHTML = changesHtml;
@@ -416,11 +788,17 @@
             const row = testSummaryTable.insertRow();
             row.insertCell(0).textContent = summary.date;
             row.insertCell(1).textContent = summary.total_tests;
-            row.insertCell(2).textContent = summary.duration_minutes;
-            row.insertCell(3).textContent = summary.duration_hours;
+            const failedCell = row.insertCell(2);
+            failedCell.textContent = summary.total_failed;
+            if (summary.total_failed > 0) {
+                failedCell.style.backgroundColor = '#f8d7da';
+                failedCell.style.color = '#721c24';
+            }
+            row.insertCell(3).textContent = summary.duration_minutes;
+            row.insertCell(4).textContent = summary.duration_hours;
             
             // Add comparison column with color coding
-            const comparisonCell = row.insertCell(4);
+            const comparisonCell = row.insertCell(5);
             const comparisonText = summary.avg_comparison > 0 ? `+${summary.avg_comparison}%` : `${summary.avg_comparison}%`;
             comparisonCell.textContent = comparisonText;
             
@@ -472,8 +850,7 @@
         
         // Auto-select first feature and show its chart (after all data is loaded)
         if (analytics.all_features.length > 0) {
-            featureSelect.value = analytics.all_features[0];
-            updateFeatureChart();
+            updateFeatureChart(analytics.all_features[0]);
         }
     </script>
 </body>
