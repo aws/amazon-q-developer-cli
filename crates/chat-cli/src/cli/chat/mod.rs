@@ -3447,7 +3447,7 @@ impl ChatSession {
                         self.stderr,
                         style::Print(format!(
                             "\n(To exit the CLI, press Ctrl+C or Ctrl+D again or type {})\n\n",
-                            "/quit".green()
+                            StyledText::brand("/quit")
                         ))
                     )
                     .unwrap_or_default();

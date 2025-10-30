@@ -2,6 +2,16 @@
 
 use crossterm::style::Color;
 
+// ANSI color value constants
+/// Purple brand color
+pub const BRAND_PURPLE: u8 = 141;
+/// Light grey for primary text
+pub const LIGHT_GREY: u8 = 252;
+/// Medium-light grey for secondary text
+pub const MEDIUM_LIGHT_GREY: u8 = 248;
+/// Bright magenta for emphasis and current items
+pub const BRIGHT_MAGENTA: u8 = 13;
+
 /// Colors for status messages and feedback
 #[derive(Debug, Clone)]
 pub struct StatusColors {
@@ -28,6 +38,8 @@ pub struct UiColors {
     pub emphasis: Color,
     /// Color for highlighting commands and code examples (typically green)
     pub command_highlight: Color,
+    /// Color for highlighting current/active items
+    pub current_item: Color,
 }
 
 /// Colors for interactive elements and user interface indicators
@@ -61,11 +73,12 @@ impl Default for StatusColors {
 impl Default for UiColors {
     fn default() -> Self {
         Self {
-            primary_brand: Color::Cyan,
-            primary_text: Color::White,
-            secondary_text: Color::DarkGrey,
-            emphasis: Color::Magenta,
-            command_highlight: Color::Green,
+            primary_brand: Color::AnsiValue(BRAND_PURPLE),
+            primary_text: Color::AnsiValue(LIGHT_GREY),
+            secondary_text: Color::AnsiValue(MEDIUM_LIGHT_GREY),
+            emphasis: Color::AnsiValue(LIGHT_GREY),
+            command_highlight: Color::AnsiValue(BRAND_PURPLE),
+            current_item: Color::AnsiValue(BRIGHT_MAGENTA),
         }
     }
 }
@@ -73,9 +86,9 @@ impl Default for UiColors {
 impl Default for InteractiveColors {
     fn default() -> Self {
         Self {
-            prompt_symbol: Color::Magenta,
-            profile_indicator: Color::Cyan,
-            tangent_indicator: Color::Yellow,
+            prompt_symbol: Color::AnsiValue(BRIGHT_MAGENTA),
+            profile_indicator: Color::AnsiValue(BRAND_PURPLE),
+            tangent_indicator: Color::AnsiValue(BRIGHT_MAGENTA),
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
             usage_high: Color::Red,

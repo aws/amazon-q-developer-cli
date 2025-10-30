@@ -35,9 +35,9 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
         // Show version header
         execute!(
             output,
-            StyledText::info_fg(),
+            StyledText::primary_fg(),
             style::SetAttribute(Attribute::Bold),
-            style::Print(format!("## {} ({})\n", entry.version, entry.date)),
+            style::Print(format!("{} ({})\n", entry.version, entry.date)),
             StyledText::reset_attributes(),
             StyledText::reset(),
         )?;
@@ -49,14 +49,19 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
             let cleaned_description = clean_pr_links(&change.description);
             let processed_description = process_bold_text(&cleaned_description);
             let capitalized_type = capitalize_first_word(&change.change_type);
-            execute!(output, style::Print("• ["))?;
+            execute!(
+                output,
+                StyledText::success_fg(),
+                style::Print("✔ "),
+                StyledText::reset(),
+            )?;
             execute!(
                 output,
                 StyledText::emphasis_fg(),
                 style::Print(&capitalized_type),
                 StyledText::reset(),
             )?;
-            execute!(output, style::Print("] "))?;
+            execute!(output, style::Print(": "))?;
             print_with_bold(output, &processed_description)?;
             execute!(output, style::Print("\n"))?;
         }
@@ -65,7 +70,10 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
 
     execute!(
         output,
-        style::Print("\nRun `/changelog` anytime to see the latest updates and features!\n\n")
+        style::Print(format!(
+            "\n{}\n\n",
+            StyledText::secondary("💡 Run `/changelog` anytime to see the latest updates and features!")
+        ))
     )?;
     Ok(())
 }

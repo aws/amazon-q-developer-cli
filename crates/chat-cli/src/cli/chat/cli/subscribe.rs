@@ -16,17 +16,12 @@ use crate::cli::chat::{
     get_subscription_status_with_spinner,
     with_spinner,
 };
+use crate::constants::subscription_text;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::system_info::is_remote;
 
-const SUBSCRIBE_TITLE_TEXT: &str = color_print::cstr! { "<white!,bold>Subscribe to Kiro Developer Pro</white!,bold>" };
-
-const SUBSCRIBE_TEXT: &str = color_print::cstr! { "During the upgrade, you'll be asked to link your Builder ID to the AWS account that will be billed the monthly subscription fee.
-
-Need help? Visit our subscription support page> <blue!>https://docs.aws.amazon.com/console/amazonq/upgrade-builder-id</blue!>" };
-
-/// Arguments for the subscribe command to manage Kiro Developer Pro subscriptions
+/// Arguments for the subscribe command to manage Developer Pro subscriptions
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
 pub struct SubscribeArgs {
@@ -41,7 +36,7 @@ impl SubscribeArgs {
             execute!(
                 session.stderr,
                 StyledText::warning_fg(),
-                style::Print("\nYour Kiro Developer Pro subscription is managed through IAM Identity Center.\n\n"),
+                style::Print(format!("\n{}\n\n", subscription_text::idc_subscription_message())),
                 StyledText::reset(),
             )?;
         } else if self.manage {
@@ -52,7 +47,7 @@ impl SubscribeArgs {
                         queue!(
                             session.stderr,
                             StyledText::warning_fg(),
-                            style::Print("You don't seem to have a Kiro Developer Pro subscription. "),
+                            style::Print(format!("{}. ", subscription_text::no_subscription_message())),
                             StyledText::secondary_fg(),
                             style::Print("Use "),
                             StyledText::success_fg(),
@@ -109,7 +104,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
                 queue!(
                     session.stderr,
                     StyledText::warning_fg(),
-                    style::Print("Your Builder ID already has a Kiro Developer Pro subscription.\n\n"),
+                    style::Print(format!("{}\n\n", subscription_text::already_subscribed_message())),
                     StyledText::reset(),
                 )?;
                 return Ok(());
@@ -129,9 +124,10 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     // Upgrade information
     queue!(
         session.stderr,
-        style::Print(SUBSCRIBE_TITLE_TEXT),
+        StyledText::primary_fg(),
+        style::Print(subscription_text::subscribe_title()),
         StyledText::secondary_fg(),
-        style::Print(format!("\n\n{SUBSCRIBE_TEXT}\n\n")),
+        style::Print(format!("\n\n{}\n\n", subscription_text::SUBSCRIBE_INFO)),
         StyledText::reset(),
         cursor::Show
     )?;

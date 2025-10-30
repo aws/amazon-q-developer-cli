@@ -109,12 +109,24 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             let description = model.description();
             if Some(model.model_id.as_str()) == active_model_id {
                 if let Some(desc) = description {
-                    format!("{display_name} (active) | {desc}")
+                    if desc.to_lowercase().contains("experimental") {
+                        format!(
+                            "{display_name} {} {}",
+                            StyledText::current_item("(current)"),
+                            StyledText::secondary("-- experimental")
+                        )
+                    } else {
+                        format!("{display_name} {} | {desc}", StyledText::current_item("(current)"))
+                    }
                 } else {
-                    format!("{display_name} (active)")
+                    format!("{display_name} {}", StyledText::current_item("(current)"))
                 }
             } else if let Some(desc) = description {
-                format!("{display_name} | {desc}")
+                if desc.to_lowercase().contains("experimental") {
+                    format!("{display_name} {}", StyledText::secondary("-- experimental"))
+                } else {
+                    format!("{display_name} | {desc}")
+                }
             } else {
                 display_name.to_string()
             }
@@ -122,7 +134,11 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         .collect();
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt("Select a model for this chat session")
+        .with_prompt(format!(
+            "Press ({}) to navigate · Enter({}) to select model",
+            StyledText::current_item("↑↓"),
+            StyledText::current_item("⏎")
+        ))
         .items(&labels)
         .default(0)
         .interact_on_opt(&dialoguer::console::Term::stdout())

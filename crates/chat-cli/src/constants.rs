@@ -5,6 +5,9 @@ use crate::theme::StyledText;
 /// Base product name without any qualifiers
 pub const PRODUCT_NAME: &str = "Kiro";
 
+/// CLI binary name
+pub const CLI_NAME: &str = "kiro-cli";
+
 /// Client name for authentication purposes
 pub const CLIENT_NAME: &str = "Kiro Developer for command line";
 
@@ -19,16 +22,23 @@ pub mod error_messages {
 
 /// UI text constants
 pub mod ui_text {
-    use super::StyledText;
+    use super::{
+        CLI_NAME,
+        PRODUCT_NAME,
+        StyledText,
+    };
 
     /// Welcome text for small screens
     pub fn small_screen_welcome() -> String {
-        format!("Welcome to {}!", StyledText::brand("Kiro"))
+        format!("Welcome to {}!", StyledText::brand(PRODUCT_NAME))
     }
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        format!("{}\n\n", StyledText::emphasis("What's New in Kiro CLI"))
+        format!(
+            "{}\n\n",
+            StyledText::primary(&format!("✨ What's New in {PRODUCT_NAME} CLI"))
+        )
     }
 
     /// Trust all tools warning text
@@ -37,9 +47,9 @@ pub mod ui_text {
 
         warning.push_str(&StyledText::success("All tools are now trusted ("));
         warning.push_str(&StyledText::error("!"));
-        warning.push_str(&StyledText::success(
-            "). Kiro will execute tools without asking for confirmation.",
-        ));
+        warning.push_str(&StyledText::success(&format!(
+            "). {PRODUCT_NAME} will execute tools without asking for confirmation.",
+        )));
         warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
         warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
 
@@ -63,65 +73,38 @@ pub mod ui_text {
 
         // MCP section
         help.push('\n');
-        help.push_str(&StyledText::brand("MCP:"));
-        help.push('\n');
-        help.push_str(&StyledText::secondary(
-            "You can now configure the Kiro CLI to use MCP servers.",
-        ));
-        help.push_str(&StyledText::secondary(
-            "\nLearn how: https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
-        ));
+        help.push_str(&StyledText::primary(&format!(
+            "💡 Did you know, You can now configure {PRODUCT_NAME} to use MCP servers. Learn how at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
+        )));
 
-        // Tips section
+        // Shortcuts section
         help.push_str("\n\n");
-        help.push_str(&StyledText::brand("Tips:"));
+        help.push_str(&StyledText::clap_heading("Shortcuts:"));
         help.push('\n');
 
-        // Command execution tip
+        // Multi-line prompt shortcut
         help.push_str(&format!(
-            "{}          {}",
-            StyledText::primary("!{command}"),
-            StyledText::secondary("Quickly execute a command in your current session")
-        ));
-        help.push('\n');
-
-        // Multi-line prompt tip
-        help.push_str(&format!(
-            "{}         {}",
-            StyledText::primary("Ctrl(^) + j"),
-            StyledText::secondary("Insert new-line to provide multi-line prompt")
-        ));
-        help.push_str(&format!(
-            "\n                    {}",
-            StyledText::secondary("Alternatively, [Alt(⌥) + Enter(⏎)]")
+            "{}        {}",
+            StyledText::primary("^ + J"),
+            StyledText::secondary("Ctrl(^) + J or Alt(⌥) + Enter(⏎) to insert new-line for multi-line prompt")
         ));
         help.push('\n');
 
-        // Fuzzy search tip
+        // Fuzzy search shortcut
         help.push_str(&format!(
-            "{}         {}",
-            StyledText::primary("Ctrl(^) + s"),
-            StyledText::secondary("Fuzzy search commands and context files")
-        ));
-        help.push_str(&format!(
-            "\n                    {}",
-            StyledText::secondary("Use Tab to select multiple items")
-        ));
-        help.push_str(&format!(
-            "\n                    {}",
-            StyledText::secondary("Change the keybind using: kiro-cli settings chat.skimCommandKey x")
+            "{}        {}",
+            StyledText::primary("^ + s"),
+            StyledText::secondary(
+                "Ctrl(^) + s for fuzzy search commands and context files, use tab to select multiple items"
+            )
         ));
         help.push('\n');
 
-        // Tangent mode tip
+        // Tangent mode shortcut
         help.push_str(&format!(
-            "{}         {}",
-            StyledText::primary("Ctrl(^) + t"),
-            StyledText::secondary("Toggle tangent mode for isolated conversations")
-        ));
-        help.push_str(&format!(
-            "\n                    {}",
-            StyledText::secondary("Change the keybind using: kiro-cli settings chat.tangentModeKey x")
+            "{}        {}",
+            StyledText::primary("^ + t"),
+            StyledText::secondary("Ctrl(^) + t to toggle tangent mode for isolated conversations")
         ));
         help.push('\n');
 
@@ -133,7 +116,9 @@ pub mod ui_text {
         ));
         help.push_str(&format!(
             "\n                    {}",
-            StyledText::secondary("Change using: kiro-cli settings chat.skimCommandKey x")
+            StyledText::secondary(&format!(
+                "Change these keybinding at anytime using: {CLI_NAME} settings chat.skimCommandKey x"
+            ))
         ));
 
         help
@@ -141,7 +126,20 @@ pub mod ui_text {
 
     /// Welcome text with ASCII art logo for large screens
     pub fn welcome_text() -> String {
-        StyledText::brand("KIRO")
+        StyledText::brand(
+            "⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣀⠀⠀⠀⠀⠀⠀⢀⣤⣤⣄⡀⠀⠀⠀⣀⣤⣤⣄⡀⠀⠀⠀⢀⣠⣤⣤⣤⣤⣤⣤⣤⣤⣄⣀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣤⣤⣤⣄⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⠀⣾⠟⠉⠉⠻⣷⡄⠀⠀⢀⣾⠟⠋⠉⠻⣿⡄⠀⣼⡟⠉⠉⠙⣿⡆⠀⢠⣿⠋⠉⠉⠉⠉⠉⠉⠉⠉⠙⠛⠿⣶⣄⠀⠀⠀⠀⢀⣴⡿⠟⠋⠉⠉⠉⠉⠛⠻⣷⣄⠀⠀⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⣿⡇⢀⣴⡿⠃⠀⠀⠀⢠⣿⠇⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡟⠀⠀⠀⠀⣀⣀⣀⣀⠀⠀⠀⠀⠈⢿⣆⠀⠀⣰⡿⠋⠀⠀⠀⠀⣀⡀⠀⠀⠀⠀⠹⣷⡄⠀⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⣿⣿⡿⠋⠀⠀⠀⣀⣴⡿⠃⠀⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡇⠀⠀⠀⠀⣿⡟⠛⠛⣿⡆⠀⠀⠀⢸⣿⠀⣸⡿⠁⠀⠀⢀⣶⡿⠛⠻⢿⣦⠀⠀⠀⠘⣿⡄⠀⠀⠀⠀
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⠙⠋⠀⠀⠀⢠⣾⡟⠁⠀⠀⠀⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡇⠀⠀⠀⠀⣿⣷⣶⣶⠿⠃⠀⠀⠀⢸⣿⠀⣿⡇⠀⠀⠀⣾⡟⠀⠀⠀⠈⢿⡇⠀⠀⠀⢻⣧
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢻⣧⡀⠀⠀⠀⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣠⣿⠃⠀⣿⡇⠀⠀⠀⣿⡇⠀⠀⠀⠀⢸⡇⠀⠀⠀⢸⣿
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⠀⣠⣶⡀⠀⠀⠀⠹⣷⣄⠀⠀⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡇⠀⠀⠀⠀⣤⣤⣄⠀⠀⠀⠀⢿⣿⠁⠀⠀⣿⡇⠀⠀⠀⢿⣇⠀⠀⠀⠀⣼⡇⠀⠀⠀⣸⡿
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⣾⡟⠹⣿⡄⠀⠀⠀⠘⢿⣦⠀⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⡇⠀⠀⠀⠀⣿⡏⢿⣦⠀⠀⠀⠀⠻⣷⡀⠀⢹⣷⠀⠀⠀⠘⢿⣦⣤⣤⣾⠟⠀⠀⠀⢠⣿⠇
+⠀⠀⠀⠀⠀⠀⠀⢸⣿⠀⠀⠀⠀⣿⡇⠀⠘⣿⣄⠀⠀⠀⠀⢿⣧⠀⣿⡇⠀⠀⠀⢸⣿⠀⢸⣇⠀⠀⠀⠀⣿⡇⠈⢻⣧⠀⠀⠀⠀⢹⣷⠀⠀⢻⣧⡀⠀⠀⠀⠉⠉⠉⠁⠀⠀⠀⣠⣾⠏
+⠀⠀⠀⠀⠀⠀⠀⠈⣿⣄⡀⢀⣠⣿⠃⠀⠀⠈⢿⣦⡀⠀⣀⣾⠏⠀⢿⣧⡀⠀⣀⣾⠏⠀⠸⣿⣄⠀⢀⣼⡿⠀⠀⠀⢻⣷⣀⠀⣀⣼⡿⠀⠀⠀⠙⠿⣦⣄⣀⡀⠀⠀⣀⣀⣤⣾⠟⠁
+⠀⠀⠀⠀⠀⠀⠀⠀⠈⠛⠛⠛⠛⠁⠀⠀⠀⠀⠀⠙⠛⠛⠛⠉⠀⠀⠀⠙⠛⠛⠛⠉⠀⠀⠀⠈⠛⠛⠛⠋⠀⠀⠀⠀⠀⠉⠛⠛⠛⠋⠀⠀⠀⠀⠀⠀⠈⠙⠛⠛⠛⠛⠛⠛⠉",
+        )
     }
 
     /// Resume conversation text
@@ -170,23 +168,69 @@ pub mod ui_text {
     }
 }
 
+/// Subscription-related text constants
+pub mod subscription_text {
+    use super::PRODUCT_NAME;
+
+    /// Title for subscription upgrade dialog
+    pub fn subscribe_title() -> String {
+        format!("Subscribe to {PRODUCT_NAME} Pro")
+    }
+
+    /// Subscription upgrade information text
+    pub const SUBSCRIBE_INFO: &str = "During the upgrade, you'll be asked to link your Builder ID to the AWS account that will be billed the monthly subscription fee.
+
+Need help? Visit our subscription support page> https://docs.aws.amazon.com/console/amazonq/upgrade-builder-id";
+
+    /// Message for IDC users about subscription management
+    pub fn idc_subscription_message() -> String {
+        format!("Your {PRODUCT_NAME} Pro subscription is managed through IAM Identity Center.")
+    }
+
+    /// Message when user doesn't have an active subscription
+    pub fn no_subscription_message() -> String {
+        format!("You don't seem to have a {PRODUCT_NAME} Pro subscription.")
+    }
+
+    /// Message when user already has an active subscription
+    pub fn already_subscribed_message() -> String {
+        format!("Your Builder ID already has a {PRODUCT_NAME} Pro subscription.")
+    }
+}
+
+/// Context-related text constants
+pub mod context_text {
+    use super::PRODUCT_NAME;
+
+    /// Warning message when context files exceed token limit
+    pub fn context_limit_warning(context_files_max_size: usize) -> String {
+        format!(
+            "Total token count exceeds limit: {context_files_max_size}. The following files will be automatically dropped when interacting with {PRODUCT_NAME}. Consider removing them."
+        )
+    }
+}
+
 /// Help text constants for CLI commands
 pub mod help_text {
+    use super::PRODUCT_NAME;
+
     /// Context command description
-    pub const CONTEXT_DESCRIPTION: &str = "Subcommands for managing context rules and files in Kiro chat sessions";
+    pub fn context_description() -> String {
+        format!("Subcommands for managing context rules and files in {PRODUCT_NAME} chat sessions")
+    }
 
     /// Full context command long help text
     pub fn context_long_help() -> String {
-        format!("Context rules determine which files are included in your {} session. 
+        format!("Context rules determine which files are included in your {PRODUCT_NAME} session. 
 They are derived from the current active agent.
-The files matched by these rules provide {} with additional information 
-about your project or environment. Adding relevant files helps Kiro generate 
+The files matched by these rules provide {PRODUCT_NAME} with additional information 
+about your project or environment. Adding relevant files helps {PRODUCT_NAME} generate 
 more accurate and helpful responses.
 
 Notes:
 • You can add specific files or use glob patterns (e.g., \"*.py\", \"src/**/*.js\")
 • Agent rules apply only to the current agent 
-• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file.", super::PRODUCT_NAME, super::PRODUCT_NAME)
+• Context changes are NOT preserved between chat sessions. To make these changes permanent, edit the agent config file.")
     }
 
     /// Full tools command long help text
@@ -213,18 +257,22 @@ Notes:
 
 /// Tips and rotating messages
 pub mod tips {
-    use super::StyledText;
+    use super::{
+        CLI_NAME,
+        PRODUCT_NAME,
+        StyledText,
+    };
 
     /// Get rotating tips shown to users
     pub fn get_rotating_tips() -> Vec<String> {
         vec![
             format!(
                 "You can resume the last conversation from your current directory by launching with {}",
-                StyledText::command("kiro-cli chat --resume")
+                StyledText::command(&format!("{CLI_NAME} chat --resume"))
             ),
             format!(
-                "Get notified whenever Kiro CLI finishes responding. Just run {}",
-                StyledText::command("kiro-cli settings chat.enableNotifications true")
+                "Get notified whenever {PRODUCT_NAME} CLI finishes responding. Just run {}",
+                StyledText::command(&format!("{CLI_NAME} settings chat.enableNotifications true"))
             ),
             format!(
                 "You can use {} to edit your prompt with a vim-like experience",
@@ -235,15 +283,15 @@ pub mod tips {
                 StyledText::command("/usage")
             ),
             format!(
-                "Get notified whenever Kiro CLI finishes responding. Just run {}",
-                StyledText::command("kiro-cli settings chat.enableNotifications true")
+                "Get notified whenever {PRODUCT_NAME} CLI finishes responding. Just run {}",
+                StyledText::command(&format!("{CLI_NAME} settings chat.enableNotifications true"))
             ),
             format!(
                 "You can execute bash commands by typing {} followed by the command",
                 StyledText::command("!")
             ),
             format!(
-                "Kiro can use tools without asking for confirmation every time. Give {} a try",
+                "{PRODUCT_NAME} can use tools without asking for confirmation every time. Give {} a try",
                 StyledText::command("/tools trust")
             ),
             format!(
@@ -255,8 +303,8 @@ pub mod tips {
                 StyledText::command("/compact")
             ),
             format!(
-                "If you want to file an issue to the Kiro CLI team, just tell me, or run {}",
-                StyledText::command("kiro-cli issue")
+                "If you want to file an issue to the {PRODUCT_NAME} CLI team, just tell me, or run {}",
+                StyledText::command(&format!("{CLI_NAME} issue"))
             ),
             format!(
                 "You can enable custom tools with {}. Learn more with /help",
@@ -264,7 +312,7 @@ pub mod tips {
             ),
             format!(
                 "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
-                StyledText::command("kiro-cli settings mcp.initTimeout {timeout in int}")
+                StyledText::command(&format!("{CLI_NAME} settings mcp.initTimeout {{timeout in int}}"))
             ),
             format!(
                 "You can see the server load status as well as any warnings or errors associated with {}",
@@ -276,7 +324,7 @@ pub mod tips {
             ),
             format!(
                 "Set a default model by running {}. Run {} to learn more.",
-                StyledText::command("kiro-cli settings chat.defaultModel MODEL"),
+                StyledText::command(&format!("{CLI_NAME} settings chat.defaultModel MODEL")),
                 StyledText::command("/model")
             ),
             format!(
@@ -294,12 +342,12 @@ pub mod tips {
                 StyledText::command("\"Can you save conversations?\"")
             ),
             format!(
-                "Stay up to date with the latest features and improvements! Use {} to see what's new in Kiro CLI",
+                "Stay up to date with the latest features and improvements! Use {} to see what's new in {PRODUCT_NAME} CLI",
                 StyledText::command("/changelog")
             ),
             format!(
                 "Enable workspace checkpoints to snapshot & restore changes. Just run {} {}",
-                StyledText::command("kiro-cli"),
+                StyledText::command(CLI_NAME),
                 StyledText::command("settings chat.enableCheckpoint true")
             ),
         ]

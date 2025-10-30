@@ -16,6 +16,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
 };
+use crate::constants::CLI_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
 
@@ -53,7 +54,9 @@ impl TangentArgs {
             execute!(
                 session.stderr,
                 StyledText::error_fg(),
-                style::Print("\nTangent mode is disabled. Enable it with: kiro-cli settings chat.enableTangentMode true\n"),
+                style::Print(&format!(
+                    "\nTangent mode is disabled. Enable it with: {CLI_NAME} settings chat.enableTangentMode true\n"
+                )),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {

@@ -19,24 +19,24 @@ impl StyledText {
 
     /// Create error-styled text
     pub fn error(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().status.error), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().status.error), text)
     }
 
     /// Create info-styled text
     pub fn info(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().status.info), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().status.info), text)
     }
 
     /// Create emphasis-styled text
     pub fn emphasis(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.emphasis), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.emphasis), text)
     }
 
     /// Create command-styled text
     pub fn command(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().ui.command_highlight),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().ui.command_highlight),
             text
         )
     }
@@ -47,8 +47,8 @@ impl StyledText {
     /// Create prompt-styled text
     pub fn prompt(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.prompt_symbol),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.prompt_symbol),
             text
         )
     }
@@ -56,8 +56,8 @@ impl StyledText {
     /// Create profile-styled text
     pub fn profile(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.profile_indicator),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.profile_indicator),
             text
         )
     }
@@ -65,8 +65,8 @@ impl StyledText {
     /// Create tangent-styled text
     pub fn tangent(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.tangent_indicator),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.tangent_indicator),
             text
         )
     }
@@ -74,8 +74,8 @@ impl StyledText {
     /// Create usage-low-styled text
     pub fn usage_low(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.usage_low),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.usage_low),
             text
         )
     }
@@ -83,8 +83,8 @@ impl StyledText {
     /// Create usage-medium-styled text
     pub fn usage_medium(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.usage_medium),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.usage_medium),
             text
         )
     }
@@ -92,30 +92,45 @@ impl StyledText {
     /// Create usage-high-styled text
     pub fn usage_high(text: &str) -> String {
         format!(
-            "\x1b[{}m{}\x1b[0m",
-            color_to_ansi_code(theme().interactive.usage_high),
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.usage_high),
             text
         )
     }
 
     /// Create brand-styled text (primary brand color)
     pub fn brand(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.primary_brand), text)
+        format!(
+            "{}{}{}",
+            color_to_ansi_sequence(theme().ui.primary_brand),
+            text,
+            "\x1b[0m"
+        )
     }
 
     /// Create primary-styled text (primary text color)
     pub fn primary(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.primary_text), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.primary_text), text)
     }
 
     /// Create secondary-styled text (muted/helper text)
     pub fn secondary(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().ui.secondary_text), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.secondary_text), text)
     }
 
     /// Create success-styled text
     pub fn success(text: &str) -> String {
-        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().status.success), text)
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().status.success), text)
+    }
+
+    /// Create clap-style heading text (bold and underline)
+    pub fn clap_heading(text: &str) -> String {
+        format!("\x1b[1m\x1b[4m{text}\x1b[0m")
+    }
+
+    /// Create current item styled text
+    pub fn current_item(text: &str) -> String {
+        format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.current_item), text)
     }
 
     // ===== Low-level crossterm command methods =====
@@ -149,6 +164,11 @@ impl StyledText {
     /// Set foreground to secondary text color
     pub fn secondary_fg() -> SetForegroundColor {
         SetForegroundColor(theme().ui.secondary_text)
+    }
+
+    /// Set foreground to primary text color
+    pub fn primary_fg() -> SetForegroundColor {
+        SetForegroundColor(theme().ui.primary_text)
     }
 
     /// Set foreground to emphasis color
@@ -258,6 +278,15 @@ impl ThemeSource for StyledText {
 
     fn reset_attributes(&self) -> SetAttribute {
         StyledText::reset_attributes()
+    }
+}
+
+/// Convert a crossterm Color to ANSI escape sequence
+fn color_to_ansi_sequence(color: Color) -> String {
+    match color {
+        Color::AnsiValue(val) => format!("\x1b[38;5;{val}m"),
+        Color::Rgb { r, g, b } => format!("\x1b[38;2;{r};{g};{b}m"),
+        _ => format!("\x1b[{}m", color_to_ansi_code(color)),
     }
 }
 

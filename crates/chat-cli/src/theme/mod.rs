@@ -13,6 +13,13 @@ use std::sync::LazyLock;
 pub use colors::*;
 pub use crossterm_ext::*;
 
+/// ANSI color value for the primary brand color (purple)
+pub const BRAND_COLOR_ANSI: u8 = 141;
+
+/// ANSI color value for the secondary text color (muted)
+#[cfg(unix)]
+pub const SECONDARY_COLOR_ANSI: u8 = 248;
+
 /// Main theme configuration containing all color categories
 #[derive(Debug, Clone)]
 pub struct Theme {

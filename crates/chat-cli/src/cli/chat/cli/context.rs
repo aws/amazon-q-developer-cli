@@ -19,8 +19,9 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::constants::context_text;
 use crate::constants::help_text::{
-    CONTEXT_DESCRIPTION,
+    context_description,
     context_long_help,
 };
 use crate::os::Os;
@@ -29,7 +30,7 @@ use crate::theme::StyledText;
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
 #[command(
-    about = CONTEXT_DESCRIPTION,
+    about = context_description(),
     before_long_help = context_long_help()
 )]
 /// Context subcommands
@@ -238,7 +239,8 @@ impl ContextSubcommand {
                                 session.stderr,
                                 StyledText::warning_fg(),
                                 style::Print(format!(
-                                    "Total token count exceeds limit: {context_files_max_size}. The following files will be automatically dropped when interacting with Kiro. Consider removing them. \n\n"
+                                    "{} \n\n",
+                                    context_text::context_limit_warning(context_files_max_size)
                                 )),
                                 StyledText::reset(),
                             )?;
