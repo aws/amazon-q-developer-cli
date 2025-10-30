@@ -389,10 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_str_replace_single_occurrence() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.txt", "hello world"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.txt", "hello world")).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
@@ -409,10 +406,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_str_replace_multiple_occurrences() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.txt", "foo bar foo"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.txt", "foo bar foo")).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
@@ -429,10 +423,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_str_replace_no_match() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.txt", "hello world"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.txt", "hello world")).await;
 
         let tool = FsWrite::StrReplace(StrReplace {
             path: test_base.join("test.txt").to_string_lossy().to_string(),
@@ -465,10 +456,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_insert_append() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.txt", "existing"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.txt", "existing")).await;
 
         let tool = FsWrite::Insert(Insert {
             path: test_base.join("test.txt").to_string_lossy().to_string(),

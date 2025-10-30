@@ -450,10 +450,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ls_validate_file_not_directory() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("file.txt", "content"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("file.txt", "content")).await;
 
         let tool = Ls {
             path: test_base.join("file.txt").to_string_lossy().to_string(),

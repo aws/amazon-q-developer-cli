@@ -142,7 +142,6 @@ pub fn is_integ_test() -> bool {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_truncate_safe() {
         assert_eq!(truncate_safe("Hello World", 5), "Hello");
@@ -208,17 +207,23 @@ mod tests {
             .await;
 
         // Test not truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 100, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 100, "...")
+            .await
+            .unwrap();
         assert_eq!(content, test_file);
         assert_eq!(bytes_truncated, 0);
 
         // Test truncated
-        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 10, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 10, "...")
+            .await
+            .unwrap();
         assert_eq!(content, "1234567...");
         assert_eq!(bytes_truncated, 23);
 
         // Test suffix greater than max length
-        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 1, "...").await.unwrap();
+        let (content, bytes_truncated) = read_file_with_max_limit(test_base.join("test.txt"), 1, "...")
+            .await
+            .unwrap();
         assert_eq!(content, "");
         assert_eq!(bytes_truncated, 30);
     }

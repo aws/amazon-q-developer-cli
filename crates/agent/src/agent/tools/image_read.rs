@@ -254,10 +254,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_valid_image() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.png", create_test_png()))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.png", create_test_png())).await;
 
         let tool = ImageRead {
             paths: vec![test_base.join("test.png").to_string_lossy().to_string()],
@@ -294,10 +291,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_validate_unsupported_format() {
-        let test_base = TestBase::new()
-            .await
-            .with_file(("test.txt", "not an image"))
-            .await;
+        let test_base = TestBase::new().await.with_file(("test.txt", "not an image")).await;
 
         let tool = ImageRead {
             paths: vec![test_base.join("test.txt").to_string_lossy().to_string()],
