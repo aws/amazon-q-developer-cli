@@ -89,7 +89,6 @@ impl ExecuteCommand {
         if !current_cmd.is_empty() {
             all_commands.push(current_cmd);
         }
-        
 
         // Check if each command in the pipe chain starts with a safe command
         for cmd_args in &all_commands {
