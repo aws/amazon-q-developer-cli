@@ -1447,6 +1447,7 @@ dependencies = [
 name = "chat_cli"
 version = "1.19.3"
 dependencies = [
+ "agent",
  "amzn-codewhisperer-client",
  "amzn-codewhisperer-streaming-client",
  "amzn-consolas-client",
@@ -1549,6 +1550,7 @@ dependencies = [
  "thiserror 2.0.17",
  "time",
  "tokio",
+ "tokio-stream",
  "tokio-tungstenite",
  "tokio-util",
  "toml",

@@ -5,6 +5,7 @@ use spinners::{
     Spinners,
 };
 
+use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 pub mod cli;
@@ -915,10 +916,10 @@ impl ChatSession {
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
             },
-            ChatError::SendMessage(err) => match err.source {
+            ChatError::SendMessage(err) => match &err.source.kind {
                 // Errors from attempting to send too large of a conversation history. In
                 // this case, attempt to automatically compact the history for the user.
-                ApiClientError::ContextWindowOverflow { .. } => {
+                ConverseStreamErrorKind::ContextWindowOverflow => {
                     if os
                         .database
                         .settings
@@ -961,10 +962,7 @@ impl ChatSession {
                         return Ok(());
                     }
                 },
-                ApiClientError::QuotaBreach {
-                    message: _,
-                    status_code: _,
-                } => {
+                ConverseStreamErrorKind::Throttling => {
                     let err = "Request quota exceeded. Please wait a moment and try again.".to_string();
                     self.conversation.append_transcript(err.clone());
                     execute!(
@@ -979,7 +977,7 @@ impl ChatSession {
                     )?;
                     (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
-                ApiClientError::ModelOverloadedError { request_id, .. } => {
+                ConverseStreamErrorKind::ModelOverloadedError => {
                     if self.interactive {
                         execute!(
                             self.stderr,
@@ -992,7 +990,7 @@ impl ChatSession {
                             StyledText::reset(),
                         )?;
 
-                        if let Some(id) = request_id {
+                        if let Some(id) = err.source.request_id {
                             self.conversation
                                 .append_transcript(format!("Model unavailable (Request ID: {})", id));
                         }
@@ -1007,7 +1005,7 @@ impl ChatSession {
                     let err = format!(
                         "The model you've selected is temporarily unavailable. {}{}\n\n",
                         model_instruction,
-                        match request_id {
+                        match err.source.request_id {
                             Some(id) => format!("\n    Request ID: {}", id),
                             None => "".to_owned(),
                         }
@@ -1024,7 +1022,7 @@ impl ChatSession {
                     )?;
                     (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
-                ApiClientError::MonthlyLimitReached { .. } => {
+                ConverseStreamErrorKind::MonthlyLimitReached => {
                     let subscription_status = get_subscription_status(os).await;
                     if subscription_status.is_err() {
                         execute!(
@@ -1484,7 +1482,7 @@ impl ChatSession {
                 let history_len = self.conversation.history().len();
                 match err {
                     ChatError::SendMessage(err)
-                        if matches!(err.source, ApiClientError::ContextWindowOverflow { .. }) =>
+                        if matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow) =>
                     {
                         error!(?strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to

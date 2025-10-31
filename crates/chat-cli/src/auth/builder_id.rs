@@ -63,6 +63,7 @@ use crate::database::{
     Database,
     Secret,
 };
+use crate::util::is_integ_test;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -318,7 +319,7 @@ impl BuilderIdToken {
     ) -> Result<Option<Self>, AuthError> {
         // Can't use #[cfg(test)] without breaking lints, and we don't want to require
         // authentication in order to run ChatSession tests. Hence, adding this here with cfg!(test)
-        if cfg!(test) {
+        if cfg!(test) && !is_integ_test() {
             return Ok(Some(Self {
                 access_token: Secret("test_access_token".to_string()),
                 expires_at: time::OffsetDateTime::now_utc() + time::Duration::minutes(60),
