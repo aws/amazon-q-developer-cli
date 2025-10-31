@@ -750,8 +750,8 @@ IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO 
 Your task is to generate an agent configuration file for an agent named '{}' with the following description: {}\n\n\
 The configuration must conform to this JSON schema:\n{}\n\n\
 We have a prepopulated template: {} \n\n\
-Please change the useLegacyMcpJson field to false. 
-Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}. 
+Please change the useLegacyMcpJson field to false.
+Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {}.
 Return only the JSON configuration, no additional text.",
    agent_name, agent_description, schema, prepopulated_content, selected_servers
         );
@@ -940,7 +940,7 @@ Return only the JSON configuration, no additional text.",
         output: &mut impl Write,
         agent_name: &str,
     ) -> Result<(), ChatError> {
-        let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
+        let agent = self.agents.switch(os, agent_name).map_err(ChatError::AgentSwapError)?;
         self.context_manager.replace({
             ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
@@ -1490,10 +1490,11 @@ mod tests {
         let agents = {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
+            agent.name = "TestAgent".to_string();
             agent.resources.push(AMAZONQ_FILENAME.into());
             agent.resources.push(AGENTS_FILENAME.into());
             agents.agents.insert("TestAgent".to_string(), agent);
-            agents.switch("TestAgent").expect("Agent switch failed");
+            agents.switch(&os, "TestAgent").expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();

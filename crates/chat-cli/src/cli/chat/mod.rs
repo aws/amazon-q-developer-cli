@@ -661,7 +661,7 @@ impl ChatSession {
                         input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                         cs.tool_manager = tool_manager;
                         if let Some(profile) = cs.current_profile() {
-                            if agents.switch(profile).is_err() {
+                            if agents.switch(os, profile).is_err() {
                                 execute!(
                                     &mut control_end_stderr,
                                     StyledText::error_fg(),
@@ -671,7 +671,7 @@ impl ChatSession {
                                         ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                                     ))
                                 )?;
-                                let _ = agents.switch(DEFAULT_AGENT_NAME);
+                                let _ = agents.switch(os, DEFAULT_AGENT_NAME);
                             }
                         }
                         cs.agents = agents;
@@ -3702,7 +3702,7 @@ impl ChatSession {
         };
         let request_content = format!(
             "[SYSTEM NOTE: This is an automated request, not from the user]\n
-            Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n 
+            Read the TODO list contents below and understand the task description, completed tasks, and provided context.\n
             Call the `load` command of the todo_list tool with the given ID as an argument to display the TODO list to the user and officially resume execution of the TODO list tasks.\n
             You do not need to display the tasks to the user yourself. You can begin completing the tasks after calling the `load` command.\n
             TODO LIST CONTENTS: {}\n
@@ -3885,7 +3885,7 @@ mod tests {
                 .expect("Failed to write test agent to file");
         }
         agents.agents.insert("TestAgent".to_string(), agent);
-        agents.switch("TestAgent").expect("Failed to switch agent");
+        agents.switch(os, "TestAgent").expect("Failed to switch agent");
         agents
     }
 
@@ -4375,7 +4375,7 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("TestAgent".to_string(), agent);
-        agents.switch("TestAgent").expect("Failed to switch agent");
+        agents.switch(&os, "TestAgent").expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
@@ -4509,7 +4509,7 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("SecurityAgent".to_string(), agent);
-        agents.switch("SecurityAgent").expect("Failed to switch agent");
+        agents.switch(&os, "SecurityAgent").expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
