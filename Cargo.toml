@@ -129,7 +129,7 @@ walkdir = "2.5.0"
 webpki-roots = "=0.26.8"
 whoami = "1.6.0"
 windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessStatus", "Win32_System_Kernel", "Win32_System_Threading", "Wdk_System_Threading"] }
-winnow = "=0.6.2"
+winnow = "=0.7.13"
 winreg = "0.55.0"
 schemars = "1.0.4"
 jsonschema = "0.30.0"
