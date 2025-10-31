@@ -5,6 +5,7 @@ use crossterm::{
     queue,
     style,
 };
+use std::env;
 
 use crate::auth::builder_id::is_idc_user;
 use crate::auth::social::is_social_logged_in;
@@ -19,6 +20,13 @@ use crate::constants::subscription_text;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::system_info::is_remote;
+
+const DEFAULT_SUBSCRIPTION_DOMAIN: &str = "app.kiro.dev";
+
+fn get_subscription_url() -> String {
+    let domain = env::var("KIRO_SUBSCRIPTION_DOMAIN").unwrap_or_else(|_| DEFAULT_SUBSCRIPTION_DOMAIN.to_string());
+    format!("https://{}/account/usage", domain)
+}
 
 /// Arguments for the subscribe command to manage Developer Pro subscriptions
 #[deny(missing_docs)]
@@ -71,6 +79,8 @@ impl SubscribeArgs {
 }
 
 async fn redirect_to_kiro_dev(session: &mut ChatSession) -> Result<(), ChatError> {
+    let url = get_subscription_url();
+    
     execute!(
         session.stderr,
         style::Print("\n"),
@@ -79,8 +89,7 @@ async fn redirect_to_kiro_dev(session: &mut ChatSession) -> Result<(), ChatError
         StyledText::reset(),
     )?;
 
-    let url = "https://app.kiro.dev/account/usage";
-    if is_remote() || crate::util::open::open_url_async(url).await.is_err() {
+    if is_remote() || crate::util::open::open_url_async(&url).await.is_err() {
         execute!(
             session.stderr,
             style::Print(format!("Open this URL: {}\n\n", url.blue())),
