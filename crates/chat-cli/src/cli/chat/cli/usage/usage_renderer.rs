@@ -11,7 +11,6 @@ fn calculate_usage_percentage(tokens: TokenCount, context_window_size: usize) ->
 }
 
 /// Render billing information section
-/// Render billing information section
 pub async fn render_billing_info(billing_data: &super::BillingUsageData, session: &mut ChatSession, show_unsupported_message: bool) -> Result<(), ChatError> {
     match &billing_data.status {
         super::BillingDataStatus::Available => {

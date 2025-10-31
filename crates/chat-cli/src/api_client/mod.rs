@@ -382,7 +382,7 @@ impl ApiClient {
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::from("KIRO_CLI")))
             .send()
             .await
-            .map_err(ApiClientError::GetUsageLimits)
+            .map_err(ApiClientError::GetUsageLimitsError)
     }
 
     pub async fn send_message(&self, conversation: ConversationState) -> Result<SendMessageOutput, ApiClientError> {

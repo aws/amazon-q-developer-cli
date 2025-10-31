@@ -69,7 +69,7 @@ pub enum ApiClientError {
     CreateSubscriptionToken(#[from] SdkError<CreateSubscriptionTokenError, HttpResponse>),
 
     #[error("{}", SdkErrorDisplay(.0))]
-    GetUsageLimits(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
+    GetUsageLimitsError(#[from] SdkError<GetUsageLimitsError, HttpResponse>),
 
     /// Returned from the backend when the user input is too large to fit within the model context
     /// window.
@@ -134,7 +134,7 @@ impl ApiClientError {
             Self::ListAvailableModelsError(e) => sdk_status_code(e),
             Self::DefaultModelNotFound => None,
             Self::GetProfileError(e) => sdk_status_code(e),
-            Self::GetUsageLimits(e) => sdk_status_code(e),
+            Self::GetUsageLimitsError(e) => sdk_status_code(e),
         }
     }
 }
@@ -163,7 +163,7 @@ impl ReasonCode for ApiClientError {
             Self::ListAvailableModelsError(e) => sdk_error_code(e),
             Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
             Self::GetProfileError(e) => sdk_error_code(e),
-            Self::GetUsageLimits(e) => sdk_error_code(e),
+            Self::GetUsageLimitsError(e) => sdk_error_code(e),
         }
     }
 }
