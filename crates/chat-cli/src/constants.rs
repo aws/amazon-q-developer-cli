@@ -172,15 +172,7 @@ pub mod ui_text {
 pub mod subscription_text {
     use super::PRODUCT_NAME;
 
-    /// Title for subscription upgrade dialog
-    pub fn subscribe_title() -> String {
-        format!("Subscribe to {PRODUCT_NAME} Pro")
-    }
 
-    /// Subscription upgrade information text
-    pub const SUBSCRIBE_INFO: &str = "During the upgrade, you'll be asked to link your Builder ID to the AWS account that will be billed the monthly subscription fee.
-
-Need help? Visit our subscription support page> https://docs.aws.amazon.com/console/amazonq/upgrade-builder-id";
 
     /// Message for IDC users about subscription management
     pub fn idc_subscription_message() -> String {

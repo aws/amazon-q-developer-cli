@@ -25,7 +25,7 @@ const DEFAULT_SUBSCRIPTION_DOMAIN: &str = "app.kiro.dev";
 
 fn get_subscription_url() -> String {
     let domain = env::var("KIRO_SUBSCRIPTION_DOMAIN").unwrap_or_else(|_| DEFAULT_SUBSCRIPTION_DOMAIN.to_string());
-    format!("https://{}/account/usage", domain)
+    format!("https://{domain}/account/usage")
 }
 
 /// Arguments for the subscribe command to manage Developer Pro subscriptions
