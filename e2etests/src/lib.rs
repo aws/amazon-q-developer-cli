@@ -241,6 +241,13 @@ pub mod q_chat_helper {
         })
     }
     
+    /// Create a new isolated chat session (not shared)
+    pub fn get_new_chat_session() -> Result<Mutex<QChatSession>, Error> {
+        let chat = QChatSession::new()?;
+        println!("✅ New isolated Q Chat session created");
+        Ok(Mutex::new(chat))
+    }
+    
     /// Close the global chat session
     pub fn close_session() -> Result<(), Error> {
         if let Some(session) = GLOBAL_CHAT_SESSION.get() {
