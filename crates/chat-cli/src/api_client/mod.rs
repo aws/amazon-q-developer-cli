@@ -14,7 +14,7 @@ use std::time::Duration;
 
 use amzn_codewhisperer_client::Client as CodewhispererClient;
 use amzn_codewhisperer_client::operation::create_subscription_token::CreateSubscriptionTokenOutput;
-use amzn_codewhisperer_client::types::Origin::Cli;
+use amzn_codewhisperer_client::types::Origin;
 use amzn_codewhisperer_client::types::{
     Model,
     OptInFeatureToggle,
@@ -25,7 +25,7 @@ use amzn_codewhisperer_client::types::{
 };
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
-use amzn_qdeveloper_streaming_client::types::Origin;
+use amzn_qdeveloper_streaming_client::types::Origin as QDeveloperOrigin;
 use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_credential_types::Credentials;
@@ -288,7 +288,7 @@ impl ApiClient {
         let request = self
             .client
             .list_available_models()
-            .set_origin(Some(Cli))
+            .set_origin(Some(Origin::from("KIRO_CLI")))
             .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
         let mut paginator = request.into_paginator().send();
 
@@ -511,7 +511,7 @@ impl ApiClient {
             match client
                 .send_message()
                 .conversation_state(conversation_state)
-                .set_source(Some(Origin::from("CLI")))
+                .set_source(Some(QDeveloperOrigin::from("KIRO_CLI")))
                 .send()
                 .await
             {
