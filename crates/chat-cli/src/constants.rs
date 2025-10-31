@@ -35,10 +35,7 @@ pub mod ui_text {
 
     /// Changelog header text
     pub fn changelog_header() -> String {
-        format!(
-            "{}\n\n",
-            StyledText::primary(&format!("✨ What's New in {PRODUCT_NAME} CLI"))
-        )
+        format!("{}\n\n", &format!("✨ What's New in {PRODUCT_NAME} CLI"))
     }
 
     /// Trust all tools warning text
@@ -73,9 +70,9 @@ pub mod ui_text {
 
         // MCP section
         help.push('\n');
-        help.push_str(&StyledText::primary(&format!(
+        help.push_str(&format!(
             "💡 Did you know, You can now configure {PRODUCT_NAME} to use MCP servers. Learn how at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
-        )));
+        ));
 
         // Shortcuts section
         help.push_str("\n\n");
@@ -85,7 +82,7 @@ pub mod ui_text {
         // Multi-line prompt shortcut
         help.push_str(&format!(
             "{}        {}",
-            StyledText::primary("^ + J"),
+            "^ + J",
             StyledText::secondary("Ctrl(^) + J or Alt(⌥) + Enter(⏎) to insert new-line for multi-line prompt")
         ));
         help.push('\n');
@@ -93,7 +90,7 @@ pub mod ui_text {
         // Fuzzy search shortcut
         help.push_str(&format!(
             "{}        {}",
-            StyledText::primary("^ + s"),
+            "^ + s",
             StyledText::secondary(
                 "Ctrl(^) + s for fuzzy search commands and context files, use tab to select multiple items"
             )
@@ -103,7 +100,7 @@ pub mod ui_text {
         // Tangent mode shortcut
         help.push_str(&format!(
             "{}        {}",
-            StyledText::primary("^ + t"),
+            "^ + t",
             StyledText::secondary("Ctrl(^) + t to toggle tangent mode for isolated conversations")
         ));
         help.push('\n');
@@ -111,7 +108,7 @@ pub mod ui_text {
         // Edit mode tip
         help.push_str(&format!(
             "{}       {}",
-            StyledText::primary("chat.editMode"),
+            "chat.editMode",
             StyledText::secondary("The prompt editing mode (vim or emacs)")
         ));
         help.push_str(&format!(
@@ -144,7 +141,7 @@ pub mod ui_text {
 
     /// Resume conversation text
     pub fn resume_text() -> String {
-        StyledText::emphasis("Picking up where we left off...")
+        "Picking up where we left off...".to_string()
     }
 
     /// Popular shortcuts text for large screens

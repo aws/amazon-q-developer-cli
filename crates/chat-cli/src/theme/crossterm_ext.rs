@@ -176,6 +176,11 @@ impl StyledText {
         SetForegroundColor(theme().ui.emphasis)
     }
 
+    /// Set foreground to current item color
+    pub fn current_item_fg() -> SetForegroundColor {
+        SetForegroundColor(theme().ui.current_item)
+    }
+
     /// Reset all styling to default
     pub fn reset() -> ResetColor {
         ResetColor

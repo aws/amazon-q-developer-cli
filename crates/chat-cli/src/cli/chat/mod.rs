@@ -463,9 +463,8 @@ fn trust_all_text() -> String {
     ui_text::trust_all_warning()
 }
 
-const TOOL_BULLET: &str = " ● ";
+const TOOL_BULLET: &str = "- ";
 const CONTINUATION_LINE: &str = " ⋮ ";
-const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
 const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
@@ -1906,19 +1905,19 @@ impl ChatSession {
                 self.stderr,
                 StyledText::secondary_fg(),
                 style::Print("\nAllow this action? Use '"),
-                StyledText::success_fg(),
+                StyledText::current_item_fg(),
                 style::Print("t"),
                 StyledText::secondary_fg(),
                 style::Print("' to trust (always allow) this tool for the session. ["),
-                StyledText::success_fg(),
+                StyledText::current_item_fg(),
                 style::Print("y"),
                 StyledText::secondary_fg(),
                 style::Print("/"),
-                StyledText::success_fg(),
+                StyledText::current_item_fg(),
                 style::Print("n"),
                 StyledText::secondary_fg(),
                 style::Print("/"),
-                StyledText::success_fg(),
+                StyledText::current_item_fg(),
                 style::Print("t"),
                 StyledText::secondary_fg(),
                 style::Print("]:\n\n"),
@@ -2496,12 +2495,8 @@ impl ChatSession {
                     debug!("tool result output: {:#?}", result);
                     execute!(
                         self.stdout,
-                        style::Print(CONTINUATION_LINE),
+                        style::Print(format!(" - Completed in {tool_time}s")),
                         style::Print("\n"),
-                        StyledText::success_fg(),
-                        style::SetAttribute(Attribute::Bold),
-                        style::Print(format!(" ● Completed in {tool_time}s")),
-                        StyledText::reset(),
                     )?;
                     if let Some(tag) = checkpoint_tag {
                         execute!(
@@ -3386,34 +3381,14 @@ impl ChatSession {
                 parent_message_id: None,
             };
             self.stdout.send(Event::ToolCallStart(tool_call_start))?;
-        } else {
+        } else if let Tool::Custom(ref tool) = tool_use.tool {
             queue!(
                 self.stdout,
-                StyledText::emphasis_fg(),
-                style::Print(format!(
-                    "🛠️  Using tool: {}{}",
-                    tool_use.tool.display_name(),
-                    if trusted { " (trusted)".dark_green() } else { "".reset() }
-                )),
                 StyledText::reset(),
-            )?;
-            if let Tool::Custom(ref tool) = tool_use.tool {
-                queue!(
-                    self.stdout,
-                    StyledText::reset(),
-                    style::Print(" from mcp server "),
-                    StyledText::emphasis_fg(),
-                    style::Print(&tool.server_name),
-                    StyledText::reset(),
-                )?;
-            }
-
-            execute!(
-                self.stdout,
-                style::Print("\n"),
-                style::Print(CONTINUATION_LINE),
-                style::Print("\n"),
-                style::Print(TOOL_BULLET)
+                style::Print(" from mcp server "),
+                StyledText::emphasis_fg(),
+                style::Print(&tool.server_name),
+                StyledText::reset(),
             )?;
         }
 

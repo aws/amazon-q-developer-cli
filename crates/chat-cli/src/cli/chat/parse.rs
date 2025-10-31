@@ -238,8 +238,8 @@ fn bulleted_item<'a, 'b>(
             return Err(ErrMode::from_error_kind(i, ErrorKind::Fail));
         }
 
-        let ws = (space0, alt(("-", "*")), space1).parse_next(i)?.0;
-        let print = format!("{ws}• ");
+        let (ws, bullet_char, _) = (space0, alt(("-", "*")), space1).parse_next(i)?;
+        let print = format!("{ws}{bullet_char} ");
 
         queue_newline_or_advance(&mut o, state, print.width())?;
         queue(&mut o, style::Print(print))
@@ -296,7 +296,7 @@ fn code<'a, 'b>(
         let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
-        queue(&mut o, StyledText::success_fg())?;
+        queue(&mut o, StyledText::brand_fg())?;
         queue(&mut o, style::Print(out))?;
         queue(&mut o, StyledText::reset())
     }
@@ -572,7 +572,7 @@ fn codeblock_begin<'a, 'b>(
             queue(&mut o, style::Print(format!("{language}\n").bold()))?;
         }
 
-        queue(&mut o, StyledText::success_fg())?;
+        queue(&mut o, StyledText::brand_fg())?;
 
         Ok(())
     }
@@ -709,12 +709,12 @@ mod tests {
         style::SetAttribute(Attribute::Bold),
         style::Print("java\n"),
         StyledText::reset_attributes(),
-        StyledText::success_fg(),
+        StyledText::brand_fg(),
         style::Print("hello world!"),
         StyledText::reset(),
     ]);
     validate!(code_1, "`print`", [
-        StyledText::success_fg(),
+        StyledText::brand_fg(),
         style::Print("print"),
         StyledText::reset(),
     ]);
@@ -756,8 +756,8 @@ mod tests {
         style::SetAttribute(Attribute::Bold),
         style::Print("# Hello World"),
     ]);
-    validate!(bulleted_item_1, "- bullet", [style::Print("• bullet")]);
-    validate!(bulleted_item_2, "* bullet", [style::Print("• bullet")]);
+    validate!(bulleted_item_1, "- bullet", [style::Print("- bullet")]);
+    validate!(bulleted_item_2, "* bullet", [style::Print("* bullet")]);
     validate!(numbered_item_1, "1. number", [style::Print("1. number")]);
     validate!(blockquote_1, "> hello", [
         StyledText::secondary_fg(),
