@@ -1,5 +1,6 @@
 pub mod consts;
 pub mod editor;
+pub mod env_var;
 pub mod file_uri;
 pub mod knowledge_store;
 pub mod open;
@@ -31,12 +32,6 @@ use eyre::{
 };
 use thiserror::Error;
 use tracing::warn;
-
-use self::env_var::CLI_IS_INTEG_TEST;
-
-pub fn is_integ_test() -> bool {
-    std::env::var_os(CLI_IS_INTEG_TEST).is_some_and(|s| !s.is_empty())
-}
 
 #[derive(Debug, Error)]
 pub enum UtilError {

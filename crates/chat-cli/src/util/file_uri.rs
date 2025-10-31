@@ -162,7 +162,7 @@ mod tests {
             Err(FileUriError::FileNotFound { path }) => {
                 // Verify the path was expanded (should start with / not ~)
                 assert!(
-                    path.starts_with("/"),
+                    path.is_absolute(),
                     "Path should be absolute after tilde expansion, got: {:?}",
                     path
                 );

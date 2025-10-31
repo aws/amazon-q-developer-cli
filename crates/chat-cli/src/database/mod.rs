@@ -35,7 +35,7 @@ use tracing::{
 use uuid::Uuid;
 
 use crate::cli::ConversationState;
-use crate::util::is_integ_test;
+use crate::util::env_var::is_integ_test;
 use crate::util::paths::{
     DirectoryError,
     GlobalPaths,

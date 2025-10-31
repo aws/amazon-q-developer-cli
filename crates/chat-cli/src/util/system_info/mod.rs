@@ -12,6 +12,7 @@ use serde::{
 };
 
 use crate::os::Env;
+use crate::util::env_var::is_remote_fake;
 
 /// Fields for OS release information
 /// Fields from <https://www.man7.org/linux/man-pages/man5/os-release.5.html>
@@ -175,16 +176,15 @@ pub fn in_wsl() -> bool {
 /// Is the calling binary running on a remote instance
 pub fn is_remote() -> bool {
     // TODO(chay): Add detection for inside docker container
-    in_ssh() || in_wsl() || std::env::var_os("Q_FAKE_IS_REMOTE").is_some()
+    in_ssh() || in_wsl() || is_remote_fake()
 }
 
 pub fn in_codespaces() -> bool {
     static IN_CODESPACES: OnceLock<bool> = OnceLock::new();
-    *IN_CODESPACES
-        .get_or_init(|| std::env::var_os("CODESPACES").is_some() || std::env::var_os("Q_CODESPACES").is_some())
+    *IN_CODESPACES.get_or_init(crate::util::env_var::in_codespaces)
 }
 
 pub fn in_ci() -> bool {
     static IN_CI: OnceLock<bool> = OnceLock::new();
-    *IN_CI.get_or_init(|| std::env::var_os("CI").is_some() || std::env::var_os("Q_CI").is_some())
+    *IN_CI.get_or_init(crate::util::env_var::in_ci)
 }

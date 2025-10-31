@@ -40,7 +40,7 @@ use windows::{
     symlink_sync,
 };
 
-use crate::util::is_integ_test;
+use crate::util::env_var::is_integ_test;
 
 /// Rust path handling is hard coded to work specific ways depending on the
 /// OS that is being executed on. Because of this, if Unix paths are provided,

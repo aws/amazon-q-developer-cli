@@ -70,7 +70,7 @@ use crate::os::{
     Env,
     Fs,
 };
-use crate::util::is_integ_test;
+use crate::util::env_var::is_integ_test;
 
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
@@ -144,7 +144,7 @@ impl ApiClient {
                 model_cache: Arc::new(RwLock::new(None)),
             };
 
-            if let Ok(json) = env.get("Q_MOCK_CHAT_RESPONSE") {
+            if let Some(json) = crate::util::env_var::get_mock_chat_response(env) {
                 this.set_mock_output(serde_json::from_str(fs.read_to_string(json).await.unwrap().as_str()).unwrap());
             }
 
@@ -154,7 +154,7 @@ impl ApiClient {
         // If SIGV4_AUTH_ENABLED is true, use Q developer client
         let mut streaming_client = None;
         let mut sigv4_streaming_client = None;
-        match env.get("AMAZON_Q_SIGV4").is_ok() {
+        match crate::util::env_var::is_sigv4_enabled(env) {
             true => {
                 let credentials_chain = CredentialsChain::new().await;
                 if let Err(err) = credentials_chain.provide_credentials().await {

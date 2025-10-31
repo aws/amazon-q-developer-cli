@@ -63,7 +63,11 @@ use crate::database::{
     Database,
     Secret,
 };
-use crate::util::is_integ_test;
+use crate::os::Env;
+use crate::util::env_var::{
+    is_integ_test,
+    is_sigv4_enabled,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -590,7 +594,7 @@ pub async fn poll_create_token(
 
 pub async fn is_logged_in(database: &mut Database) -> bool {
     // Check for BuilderId if not using Sigv4
-    if std::env::var("AMAZON_Q_SIGV4").is_ok_and(|v| !v.is_empty()) {
+    if is_sigv4_enabled(&Env::new()) {
         debug!("logged in using sigv4 credentials");
         return true;
     }

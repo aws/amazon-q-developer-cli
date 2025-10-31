@@ -112,7 +112,7 @@ impl EnvVarDiagnostic {
     fn new() -> EnvVarDiagnostic {
         let env_vars = std::env::vars()
             .filter(|(key, _)| {
-                let fig_var = crate::util::env_var::ALL.contains(&key.as_str());
+                let fig_var = crate::util::consts::env_var::ALL.contains(&key.as_str());
                 let other_var = [
                     // General env vars
                     "SHELL",

@@ -697,7 +697,7 @@ mod tests {
         Env,
         Fs,
     };
-    use crate::util::is_integ_test;
+    use crate::util::env_var::is_integ_test;
 
     /// Manual test to verify cancellation succeeds in a timely manner.
     #[tokio::test]
