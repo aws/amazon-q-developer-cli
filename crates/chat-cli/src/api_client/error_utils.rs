@@ -14,20 +14,15 @@ pub fn classify_get_usage_limits_error(api_error: &ApiClientError) -> GetUsageLi
     match api_error {
         ApiClientError::GetUsageLimitsError(sdk_err) => {
             match sdk_err.as_service_error() {
-                Some(service_err) => {
-                    match service_err {
-                        GetUsageLimitsError::AccessDeniedError(access_denied) => {
-                            match access_denied.reason() {
-                                Some(AccessDeniedExceptionReason::FeatureNotSupported) => {
-                                    GetUsageLimitsErrorType::FeatureNotSupported
-                                },
-                                _ => GetUsageLimitsErrorType::Other,
-                            }
+                Some(GetUsageLimitsError::AccessDeniedError(access_denied)) => {
+                    match access_denied.reason() {
+                        Some(AccessDeniedExceptionReason::FeatureNotSupported) => {
+                            GetUsageLimitsErrorType::FeatureNotSupported
                         },
                         _ => GetUsageLimitsErrorType::Other,
                     }
                 },
-                None => GetUsageLimitsErrorType::Other,
+                _ => GetUsageLimitsErrorType::Other,
             }
         },
         _ => GetUsageLimitsErrorType::Other,

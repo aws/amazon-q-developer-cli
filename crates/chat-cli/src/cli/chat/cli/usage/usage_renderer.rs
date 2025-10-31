@@ -31,7 +31,7 @@ pub async fn render_billing_info(billing_data: &super::BillingUsageData, session
                 style::SetForegroundColor(style::Color::Yellow),
                 style::Print("⚠️  Warning: Could not retrieve usage information from backend\n"),
                 style::SetForegroundColor(style::Color::DarkGrey),
-                style::Print(format!("Error: {}\n\n", error_msg)),
+                style::Print(format!("Error: {error_msg}\n\n")),
                 style::ResetColor,
             )?;
             Ok(())

@@ -45,23 +45,23 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
             
             // Get plan info
             let plan_name = usage_limits.subscription_info()
-                .map(|si| si.subscription_title())
-                .unwrap_or("Unknown")
+                .map_or("Unknown", |si| si.subscription_title())
                 .to_string();
 
             // Get overage status
             let overages_enabled = usage_limits.overage_configuration()
-                .map(|config| config.overage_status().as_str() == "ENABLED")
-                .unwrap_or(false);
+                .is_some_and(|config| config.overage_status().as_str() == "ENABLED");
 
             // Get billing cycle reset date from main object
             let billing_cycle_reset = usage_limits.next_date_reset()
-                .map(|next_reset| {
-                    let reset_secs = next_reset.secs();
-                    let reset_date = DateTime::from_timestamp(reset_secs, 0).unwrap_or_else(|| Utc::now());
-                    format!("Billing cycle reset: {}", reset_date.format("%m/%d"))
-                })
-                .unwrap_or_else(|| "Billing cycle reset: Unknown".to_string());
+                .map_or_else(
+                    || "Billing cycle reset: Unknown".to_string(),
+                    |next_reset| {
+                        let reset_secs = next_reset.secs();
+                        let reset_date = DateTime::from_timestamp(reset_secs, 0).unwrap_or_else(Utc::now);
+                        format!("Billing cycle reset: {}", reset_date.format("%m/%d"))
+                    }
+                );
 
             // Process all usage breakdowns
             let mut usage_breakdowns = Vec::new();
@@ -74,8 +74,7 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                 }
 
                 let resource_type = item.resource_type()
-                    .map(|rt| rt.as_str())
-                    .unwrap_or("Unknown")
+                    .map_or("Unknown", |rt| rt.as_str())
                     .to_string();
                 let display_name = item.display_name_plural()
                     .or_else(|| item.display_name())
@@ -101,7 +100,7 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                         
                         if let Some(expiry_timestamp) = free_trial_info.free_trial_expiry() {
                             let expiry_secs = expiry_timestamp.secs();
-                            let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(|| Utc::now());
+                            let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(Utc::now);
                             let now = Utc::now();
                             let days_until_expiry = (expiry_date - now).num_days().max(0);
                             
