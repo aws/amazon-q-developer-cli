@@ -3,6 +3,7 @@ pub mod customization;
 mod delay_interceptor;
 mod endpoints;
 mod error;
+pub mod error_utils;
 pub mod model;
 mod opt_out;
 pub mod profile;
@@ -373,6 +374,15 @@ impl ApiClient {
             .send()
             .await
             .map_err(ApiClientError::CreateSubscriptionToken)
+    }
+
+    pub async fn get_usage_limits(&self) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
+        self.client
+            .get_usage_limits()
+            .set_origin(Some(amzn_codewhisperer_client::types::Origin::from("KIRO_CLI")))
+            .send()
+            .await
+            .map_err(ApiClientError::GetUsageLimitsError)
     }
 
     pub async fn send_message(&self, conversation: ConversationState) -> Result<SendMessageOutput, ApiClientError> {
