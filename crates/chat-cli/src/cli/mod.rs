@@ -133,17 +133,23 @@ impl RootSubcommand {
         matches!(self, Self::Chat(_) | Self::Login(_) | Self::Profile | Self::Issue(_))
     }
 
-    pub fn requires_auth(&self) -> bool {
-        matches!(self, Self::Chat(_) | Self::Profile)
-    }
-
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Check for auth on subcommands that require it.
-        if self.requires_auth() && !is_logged_in(&mut os.database).await {
-            bail!(
-                "You are not logged in, please log in with {}",
-                StyledText::command(&format!("{CLI_BINARY_NAME} login"))
-            );
+        if !is_logged_in(&mut os.database).await {
+            if matches!(self, Self::Chat(_)) {
+                let options = ["Yes", "No"];
+                match crate::util::choose(" You are not logged in. Login now?", &options)? {
+                    Some(0) => {},
+                    _ => bail!("Login is required to use chat"),
+                }
+
+                LoginArgs::default().execute(os).await?;
+            } else if matches!(self, Self::Profile) {
+                bail!(
+                    "You are not logged in, please log in with {}",
+                    StyledText::command(&format!("{CLI_BINARY_NAME} login"))
+                );
+            }
         }
 
         // Daily heartbeat check
