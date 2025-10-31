@@ -209,6 +209,19 @@ impl Tool {
                 Tool::Todo(_) => Ok(()),
                 Tool::Delegate(delegate) => delegate.queue_description(output),
             }?;
+
+            use crossterm::{
+                queue,
+                style,
+            };
+            queue!(
+                output,
+                StyledText::secondary_fg(),
+                style::Print(" (using tool: "),
+                style::Print(self.display_name()),
+                style::Print(")"),
+                StyledText::reset(),
+            )?;
         };
 
         Ok(())
@@ -455,12 +468,7 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
     if let Some(purpose) = purpose {
         queue!(
             updates,
-            style::Print(super::CONTINUATION_LINE),
-            style::Print("\n"),
-            style::Print(super::PURPOSE_ARROW),
-            StyledText::info_fg(),
             style::Print("Purpose: "),
-            StyledText::reset(),
             style::Print(purpose),
             style::Print("\n"),
         )?;

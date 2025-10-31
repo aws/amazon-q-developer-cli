@@ -84,7 +84,7 @@ impl FsRead {
             queue!(
                 updates,
                 style::Print("Batch fs_read operation with "),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(self.operations.len()),
                 StyledText::reset(),
                 style::Print(" operations:\n")
@@ -425,7 +425,7 @@ impl FsImage {
         queue!(
             updates,
             style::Print("Reading images: "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.image_paths.join("\n")),
             style::Print("\n"),
             StyledText::reset(),
@@ -466,7 +466,7 @@ impl FsLine {
         queue!(
             updates,
             style::Print("Reading file: "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.path),
             StyledText::reset(),
             style::Print(", "),
@@ -479,7 +479,7 @@ impl FsLine {
             _ if end == line_count => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(start),
                 StyledText::reset(),
                 style::Print(" to end of file"),
@@ -487,11 +487,11 @@ impl FsLine {
             _ => Ok(queue!(
                 updates,
                 style::Print("from line "),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(start),
                 StyledText::reset(),
                 style::Print(" to "),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(end),
                 StyledText::reset(),
             )?),
@@ -595,11 +595,11 @@ impl FsSearch {
         queue!(
             updates,
             style::Print("Searching: "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.path),
             StyledText::reset(),
             style::Print(" for pattern: "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.pattern.to_lowercase()),
             StyledText::reset(),
         )?;
@@ -691,7 +691,7 @@ impl FsDirectory {
         queue!(
             updates,
             style::Print("Reading directory: "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.path),
             StyledText::reset(),
             style::Print(" "),
@@ -784,16 +784,14 @@ impl FsDirectory {
             );
         }
 
-        super::queue_function_result(
-            &format!(
-                "Successfully read directory {} ({} entries)",
-                &path.display(),
-                file_count
-            ),
-            updates,
-            false,
-            false,
-        )?;
+        // Format the message with brand color for the path
+        let formatted_message = format!(
+            "Successfully read directory {} ({} entries)",
+            StyledText::brand(&path.display().to_string()),
+            file_count
+        );
+
+        super::queue_function_result(&formatted_message, updates, false, false)?;
 
         Ok(InvokeOutput {
             output: OutputKind::Text(result),

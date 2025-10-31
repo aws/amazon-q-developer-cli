@@ -5,10 +5,10 @@ use crossterm::style::Color;
 // ANSI color value constants
 /// Purple brand color
 pub const BRAND_PURPLE: u8 = 141;
-/// Light grey for primary text
+/// Light grey for emphasis text
 pub const LIGHT_GREY: u8 = 252;
 /// Medium-light grey for secondary text
-pub const MEDIUM_LIGHT_GREY: u8 = 248;
+pub const MEDIUM_LIGHT_GREY: u8 = 244;
 /// Bright magenta for emphasis and current items
 pub const BRIGHT_MAGENTA: u8 = 13;
 

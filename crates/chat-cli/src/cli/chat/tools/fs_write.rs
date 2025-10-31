@@ -123,7 +123,7 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print(invoke_description),
-                    StyledText::success_fg(),
+                    StyledText::brand_fg(),
                     style::Print(format_path(cwd, &path)),
                     StyledText::reset(),
                     style::Print("\n"),
@@ -137,7 +137,7 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Updating: "),
-                    StyledText::success_fg(),
+                    StyledText::brand_fg(),
                     style::Print(format_path(cwd, &path)),
                     StyledText::reset(),
                     style::Print("\n"),
@@ -158,7 +158,7 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Updating: "),
-                    StyledText::success_fg(),
+                    StyledText::brand_fg(),
                     style::Print(format_path(cwd, &path)),
                     StyledText::reset(),
                     style::Print("\n"),
@@ -179,12 +179,11 @@ impl FsWrite {
                 queue!(
                     output,
                     style::Print("Appending to: "),
-                    StyledText::success_fg(),
+                    StyledText::brand_fg(),
                     style::Print(format_path(cwd, &path)),
                     StyledText::reset(),
                     style::Print("\n"),
                 )?;
-
                 let mut file = os.fs.read_to_string(&path).await?;
                 if !file.ends_with_newline() {
                     file.push('\n');
@@ -318,9 +317,6 @@ impl FsWrite {
                 let new = stylize_output_if_able(os, &relative_path, &file_text);
                 print_diff(output, &prev, &new, 1)?;
 
-                // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
-
                 Ok(())
             },
             FsWrite::Insert {
@@ -347,9 +343,6 @@ impl FsWrite {
                 let new = stylize_output_if_able(os, &relative_path, &new);
                 print_diff(output, &old, &new, start_line)?;
 
-                // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
-
                 Ok(())
             },
             FsWrite::StrReplace {
@@ -366,9 +359,6 @@ impl FsWrite {
                 let new_str = stylize_output_if_able(os, &relative_path, new_str);
                 print_diff(output, &old_str, &new_str, start_line)?;
 
-                // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
-
                 Ok(())
             },
             FsWrite::Append { path, new_str, .. } => {
@@ -377,9 +367,6 @@ impl FsWrite {
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
                 let file = stylize_output_if_able(os, &relative_path, new_str);
                 print_diff(output, &Default::default(), &file, start_line)?;
-
-                // Display summary as purpose if available after the diff
-                super::display_purpose(self.get_summary(), output)?;
 
                 Ok(())
             },
@@ -420,17 +407,39 @@ impl FsWrite {
             FsWrite::Insert { path, .. } => path,
             FsWrite::Append { path, .. } => path,
         };
+
+        let action = match self {
+            FsWrite::Create { .. } => "I'll create the following file: ",
+            FsWrite::StrReplace { .. } => "I'll modify the following file: ",
+            FsWrite::Insert { .. } => "I'll insert content into file: ",
+            FsWrite::Append { .. } => "I'll append content to file: ",
+        };
+
         // Sanitize the path to handle tilde expansion
         let path = sanitize_path_tool_arg(os, path);
         let relative_path = format_path(cwd, &path);
+
         queue!(
             output,
-            style::Print("Path: "),
-            StyledText::success_fg(),
+            style::Print(action),
+            StyledText::brand_fg(),
             style::Print(&relative_path),
             StyledText::reset(),
-            style::Print("\n\n"),
+            style::Print("\n"),
         )?;
+
+        if let Some(summary) = self.get_summary() {
+            queue!(
+                output,
+                style::Print("Purpose: "),
+                style::Print(summary),
+                style::Print("\n\n"),
+            )?;
+        } else {
+            // Add extra newline even if no purpose to separate from diff
+            queue!(output, style::Print("\n"))?;
+        }
+
         Ok(())
     }
 

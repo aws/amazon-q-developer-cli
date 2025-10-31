@@ -158,24 +158,23 @@ impl ExecuteCommand {
     }
 
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
-        queue!(output, style::Print("I will run the following shell command: "),)?;
-
-        // TODO: Could use graphemes for a better heuristic
-        if self.command.len() > 20 {
-            queue!(output, style::Print("\n"),)?;
-        }
-
+        queue!(output, style::Print("I will run the following command: "),)?;
         queue!(
             output,
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.command),
-            style::Print("\n"),
             StyledText::reset(),
+            style::Print("\n"),
         )?;
 
-        // Add the summary if available
+        // Add the summary as purpose if available on a separate line
         if let Some(ref summary) = self.summary {
-            super::display_purpose(Some(summary), output)?;
+            queue!(
+                output,
+                style::Print("Purpose: "),
+                style::Print(summary),
+                style::Print("\n"),
+            )?;
         }
 
         queue!(output, style::Print("\n"))?;
