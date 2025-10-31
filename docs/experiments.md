@@ -109,11 +109,50 @@ Amazon Q CLI includes experimental features that can be toggled on/off using the
 **When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
 
 ### Delegate
-**Description:** Launch and manage asynchronous task processes. Enables running Q chat sessions with specific agents in parallel to the main conversation.
+**Tool name**: `delegate`  
+**Description:** Launch and manage asynchronous background tasks. Enables running Q chat sessions with specific agents in parallel to your main conversation.
+
+**Features:**
+- Run tasks in the background while continuing your main conversation
+- Automatic notifications when tasks complete
+- Task summaries included in conversation context
+- Support for custom agents with specific tool permissions
+- Persistent task history and status tracking
+
+**Operations:**
+- `launch` - Start a new background task (requires task description, optional agent name)
+- `status` - Check status of a specific agent or all agents. Reading specific agents automatically reads the full std output from disk of the run.
+- `list` - Show available agents for delegation
+
 **Usage:**
-Use natural language to ask the model to launch a background task. Once the task is ready, you can then ask the model to check on the result
-**Agent Approval Flow:**
-**When enabled:** Tasks with agents require explicit approval and show agent details. Tasks without agents run with a warning about trust-all permissions. Once delegated, tasks work independently and you can check progress, read results, or delete them as needed.
+Use natural language to delegate tasks:
+```
+"Delegate a task to create a snake game in the test folder"
+"Check the status of the rust-agent task"
+"What agents are available for delegation?"
+```
+
+**Notifications:**
+When a background task completes, you'll see a notification at your next prompt showing:
+- Task status (SUCCESS/FAILED)
+- Completion time
+- Task description
+- AI-generated summary of what happened
+
+The summary is automatically added to your conversation context, so you can ask follow-up questions about the task.
+
+**Agent Approval:**
+- Tasks with specific agents require explicit approval showing agent details and permissions
+- Tasks without an agent (default) run with trust-all permissions and show a warning
+- Only one task can run per agent at a time
+
+**Task Storage:**
+Task execution details are stored in `.amazonq/.subagents/` in your current directory. Files persist until the same agent runs a new task.
+
+**Settings:**
+- `chat.enableDelegate` - Enable/disable delegate feature (boolean)
+
+**When enabled:** You can delegate long-running or independent tasks to background agents. You'll be notified when tasks complete, and can ask about results in your main conversation.
 
 ### TODO Lists
 **Tool name**: `todo_list`

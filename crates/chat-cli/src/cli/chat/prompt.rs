@@ -459,14 +459,14 @@ impl Highlighter for ChatHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
         use crate::theme::StyledText;
 
-        // Parse the plain text prompt to extract profile and warning information
-        // and apply colors using crossterm's ANSI escape codes
+        // Parse the plain text prompt to extract components
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add notifier part if present (info blue)
+            // Add delegate notifier if present (colored as warning)
             if let Some(notifier) = components.delegate_notifier {
-                result.push_str(&StyledText::info(&format!("[{}]\n", notifier)));
+                result.push_str(&StyledText::warning(&notifier));
+                result.push('\n');
             }
 
             // Add profile part if present (profile indicator cyan)
