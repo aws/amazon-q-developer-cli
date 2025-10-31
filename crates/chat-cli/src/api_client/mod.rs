@@ -633,6 +633,7 @@ mod tests {
         IdeCategory,
         OperatingSystem,
     };
+    use bstr::ByteSlice;
 
     use super::*;
     use crate::api_client::model::UserInputMessage;
@@ -707,5 +708,101 @@ mod tests {
             output_content.push_str(&content);
         }
         assert_eq!(output_content, "Hello! How can I assist you today?");
+    }
+
+    #[test]
+    fn test_classify_error_kind() {
+        use aws_smithy_runtime_api::http::Response;
+        use aws_smithy_types::body::SdkBody;
+
+        use crate::api_client::error::{
+            GenerateAssistantResponseError,
+            SdkError,
+        };
+
+        let mock_sdk_error = || {
+            SdkError::service_error(
+                GenerateAssistantResponseError::unhandled("test"),
+                Response::new(500.try_into().unwrap(), SdkBody::empty()),
+            )
+        };
+
+        let test_cases: Vec<(Option<u16>, &[u8], Option<&str>, ConverseStreamErrorKind)> = vec![
+            (
+                Some(400),
+                b"Input is too long.",
+                None,
+                ConverseStreamErrorKind::ContextWindowOverflow,
+            ),
+            (
+                Some(500),
+                b"INSUFFICIENT_MODEL_CAPACITY",
+                Some("model-1"),
+                ConverseStreamErrorKind::ModelOverloadedError,
+            ),
+            (
+                Some(500),
+                b"Encountered unexpectedly high load when processing the request, please try again.",
+                Some("model-1"),
+                ConverseStreamErrorKind::ModelOverloadedError,
+            ),
+            (
+                Some(429),
+                b"Rate limit exceeded",
+                None,
+                ConverseStreamErrorKind::Throttling,
+            ),
+            (
+                Some(400),
+                b"MONTHLY_REQUEST_COUNT exceeded",
+                None,
+                ConverseStreamErrorKind::MonthlyLimitReached,
+            ),
+            (
+                Some(429),
+                b"Input is too long.",
+                None,
+                ConverseStreamErrorKind::ContextWindowOverflow,
+            ),
+            (
+                Some(429),
+                b"INSUFFICIENT_MODEL_CAPACITY",
+                Some("model-1"),
+                ConverseStreamErrorKind::ModelOverloadedError,
+            ),
+            (
+                Some(500),
+                b"Encountered unexpectedly high load when processing the request, please try again.",
+                None,
+                ConverseStreamErrorKind::Unknown {
+                    reason_code: "test".to_string(),
+                },
+            ),
+            (
+                Some(400),
+                b"Encountered unexpectedly high load when processing the request, please try again.",
+                Some("model-1"),
+                ConverseStreamErrorKind::Unknown {
+                    reason_code: "test".to_string(),
+                },
+            ),
+            (Some(500), b"Some other error", None, ConverseStreamErrorKind::Unknown {
+                reason_code: "test".to_string(),
+            }),
+        ];
+
+        for (status_code, body, model_id, expected) in test_cases {
+            let result = classify_error_kind(status_code, body, model_id, &mock_sdk_error());
+            assert_eq!(
+                std::mem::discriminant(&result),
+                std::mem::discriminant(&expected),
+                "expected '{}', got '{}' | status_code: {:?}, body: '{}', model_id: '{:?}'",
+                expected,
+                result,
+                status_code,
+                body.to_str_lossy(),
+                model_id
+            );
+        }
     }
 }
