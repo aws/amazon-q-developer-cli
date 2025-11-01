@@ -18,6 +18,8 @@ struct AcpSession {
     session_id: acp::SessionId,
     request_rx: mpsc::UnboundedReceiver<(acp::PromptRequest, oneshot::Sender<()>)>,
     session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+    session_update_rx: mpsc::UnboundedReceiver<(acp::SessionNotification, oneshot::Sender<()>)>,
+    conn: acp::AgentSideConnection,
 }
 
 impl AcpSession {
@@ -25,15 +27,21 @@ impl AcpSession {
         session_id: acp::SessionId,
         request_rx: mpsc::UnboundedReceiver<(acp::PromptRequest, oneshot::Sender<()>)>,
         session_update_tx: mpsc::UnboundedSender<(acp::SessionNotification, oneshot::Sender<()>)>,
+        session_update_rx: mpsc::UnboundedReceiver<(acp::SessionNotification, oneshot::Sender<()>)>,
+        conn: acp::AgentSideConnection,
     ) -> Self {
         Self {
             session_id,
             request_rx,
             session_update_tx,
+            session_update_rx,
+            conn,
         }
     }
 
-    /// Event loop that processes user requests from the channel
+    /// Event loop that processes user requests and output events
+    /// - Receives user requests from request_rx and processes them
+    /// - Receives session updates from session_update_rx and sends notifications to ACP client
     async fn run(&mut self) -> Result<(), acp::Error> {
         loop {
             tokio::select! {
@@ -41,7 +49,20 @@ impl AcpSession {
                     match request {
                         Some((request, done_tx)) => {
                             self.process_request(request).await?;
+                            // TODO: Only call done_tx.send when the conversation is truly done,
+                            // not immediately after processing the request
                             done_tx.send(()).ok(); // Signal completion
+                        }
+                        None => break, // Channel closed
+                    }
+                }
+                update = self.session_update_rx.recv() => {
+                    match update {
+                        Some((session_notification, tx)) => {
+                            if acp::Client::session_notification(&self.conn, session_notification).await.is_err() {
+                                break;
+                            }
+                            tx.send(()).ok();
                         }
                         None => break, // Channel closed
                     }
@@ -55,17 +76,15 @@ impl AcpSession {
     async fn process_request(&self, request: acp::PromptRequest) -> Result<(), acp::Error> {
         // Echo back the request content
         for content in request.prompt {
-            let (tx, rx) = oneshot::channel();
             self.session_update_tx
                 .send((
                     acp::SessionNotification {
                         session_id: self.session_id.clone(),
                         update: acp::SessionUpdate::AgentMessageChunk { content }
                     },
-                    tx,
+                    oneshot::channel().0,
                 ))
                 .map_err(|_| acp::Error::internal_error())?;
-            rx.await.map_err(|_| acp::Error::internal_error())?;
         }
         Ok(())
     }
@@ -126,8 +145,10 @@ pub async fn execute() -> Result<ExitCode> {
     let outgoing = tokio::io::stdout().compat_write();
     let incoming = tokio::io::stdin().compat();
 
-    let (session_update_tx, mut session_update_rx) = tokio::sync::mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
+    // request from ACP Client
     let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let (session_update_tx, session_update_rx) = tokio::sync::mpsc::unbounded_channel::<(acp::SessionNotification, oneshot::Sender<()>)>();
     let agent = AcpAgent::new(request_tx);
 
     let local_set = tokio::task::LocalSet::new();
@@ -139,22 +160,13 @@ pub async fn execute() -> Result<ExitCode> {
             |fut| { tokio::task::spawn_local(fut); }
         );
 
-        // Session update handler
-        tokio::task::spawn_local(async move {
-            while let Some((session_notification, tx)) = session_update_rx.recv().await {
-                if acp::Client::session_notification(&conn, session_notification).await.is_err() {
-                    break;
-                }
-                tx.send(()).ok();
-            }
-        });
-
         // Session event loop
-        // Erben: why do we need to run AcpSession in this local_set?
         let mut session = AcpSession::new(
             acp::SessionId("42".into()),
             request_rx,
             session_update_tx,
+            session_update_rx,
+            conn,
         );
         tokio::task::spawn_local(async move {
             if let Err(e) = session.run().await {
