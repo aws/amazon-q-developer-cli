@@ -4,7 +4,6 @@ pub mod consts;
 pub mod mcp;
 mod permissions;
 pub mod protocol;
-pub mod rts;
 pub mod task_executor;
 mod tool_utils;
 pub mod tools;

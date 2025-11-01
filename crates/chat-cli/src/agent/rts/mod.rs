@@ -770,4 +770,17 @@ mod tests {
             panic!("stream was never cancelled");
         }
     }
+
+    #[test]
+    fn test_other_stream_err_downcasting() {
+        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
+            ConverseStreamErrorKind::ModelOverloadedError,
+            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
+                                                                     * required */
+        )));
+        assert!(
+            err.as_concrete_error::<ConverseStreamError>()
+                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
+        );
+    }
 }
