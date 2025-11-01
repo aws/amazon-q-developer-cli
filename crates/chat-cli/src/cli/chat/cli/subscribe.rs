@@ -162,7 +162,7 @@ async fn upgrade_to_pro(os: &mut Os, session: &mut ChatSession) -> Result<(), Ch
     }
 
     // Create a subscription token and open the webpage
-    let r = os.client.create_subscription_token().await?;
+    let r = os.client.as_ref().unwrap().create_subscription_token().await?;
 
     let url = with_spinner(&mut session.stderr, "Preparing to upgrade...", || async move {
         r.encoded_verification_url()

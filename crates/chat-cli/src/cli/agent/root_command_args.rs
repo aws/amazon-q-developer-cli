@@ -81,10 +81,16 @@ pub struct AgentArgs {
 impl AgentArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         let mut stderr = std::io::stderr();
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+        let mcp_enabled = match os.client.as_ref() {
+            Some(client) => match client.is_mcp_enabled().await {
+                Ok(enabled) => enabled,
+                Err(err) => {
+                    tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                    true
+                },
+            },
+            None => {
+                tracing::debug!("API client not available, defaulting MCP to enabled");
                 true
             },
         };
