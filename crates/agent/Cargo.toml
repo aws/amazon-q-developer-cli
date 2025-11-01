@@ -8,6 +8,7 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
+agent-client-protocol = "0.1.0"
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
 amzn-consolas-client.workspace = true
