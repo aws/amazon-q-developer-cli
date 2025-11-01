@@ -119,7 +119,7 @@ dependencies = [
  "tracing-test",
  "url",
  "uuid",
- "webpki-roots 0.26.8",
+ "webpki-roots",
  "whoami",
 ]
 
@@ -1563,7 +1563,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
- "webpki-roots 0.26.8",
+ "webpki-roots",
  "whoami",
  "windows 0.61.3",
  "winnow 0.6.2",
@@ -3543,7 +3543,7 @@ dependencies = [
  "tokio",
  "tokio-rustls 0.26.4",
  "tower-service",
- "webpki-roots 1.0.3",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -6044,7 +6044,7 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams",
  "web-sys",
- "webpki-roots 1.0.3",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -8218,15 +8218,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.26.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2210b291f7ea53617fbafcc4939f10914214ec15aace5ba62293a668f322c5c9"
-dependencies = [
- "rustls-pki-types",
 ]
 
 [[package]]
