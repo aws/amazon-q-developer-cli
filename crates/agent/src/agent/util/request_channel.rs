@@ -89,7 +89,6 @@ where
         }
     }
 
-    /// Send a request without waiting for a response (fire and forget)
     pub async fn send_async(&self, payload: Req) -> Result<(), mpsc::error::SendError<Request<Req, Res, Err>>> {
         let (res_tx, _res_rx) = oneshot::channel();
         let request = Request { payload, res_tx };

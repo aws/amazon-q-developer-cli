@@ -134,14 +134,6 @@ impl AcpSession {
             },
             _ => {
                 // Handle other agent events if needed
-                match &event {
-                    AgentEvent::Internal(_) => {
-                        // Skip internal events - too noisy for debugging
-                    },
-                    _ => {
-                        eprintln!("DEBUG: Unhandled agent event: {:?}", event);
-                    },
-                }
             },
         }
         Ok(())
