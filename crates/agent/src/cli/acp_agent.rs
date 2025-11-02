@@ -7,18 +7,18 @@
 //!
 //! The agent communicates over stdin/stdout and will echo back any prompt content received.
 
-use std::process::ExitCode;
-use std::sync::Arc;
-use agent_client_protocol as acp;
-use eyre::Result;
-use tokio::sync::{mpsc, oneshot};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
-use agent::{Agent, AgentHandle};
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
+use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
 use agent::rts::{RtsModel, RtsModelState};
 use agent::types::AgentSnapshot;
-use agent::protocol::{ContentChunk, SendPromptArgs, AgentEvent, UpdateEvent, AgentStopReason};
+use agent::{Agent, AgentHandle};
+use agent_client_protocol as acp;
+use eyre::Result;
+use std::process::ExitCode;
+use std::sync::Arc;
+use tokio::sync::{mpsc, oneshot};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 /// Session that processes user requests in an event loop
 struct AcpSession {
@@ -71,8 +71,7 @@ impl AcpSession {
                         Some((request, done_tx)) => {
                             // Store completion signal
                             self.done_tx = Some(done_tx);
-                            
-                            // Send prompt asynchronously (fire and forget)
+                            // Send request asynchronously
                             self.send_request(request).await?;
                         }
                         None => break, // Channel closed
@@ -91,60 +90,11 @@ impl AcpSession {
         Ok(())
     }
 
-    /// Handle agent events
-    async fn handle_agent_event(&mut self, event: AgentEvent) -> Result<(), acp::Error> {
-        match event {
-            AgentEvent::Update(update_event) => {
-                self.handle_agent_update(update_event).await?;
-            }
-            AgentEvent::EndTurn(_metadata) => {
-                // Conversation complete - signal done
-                if let Some(done_tx) = self.done_tx.take() {
-                    done_tx.send(()).ok();
-                }
-            }
-            AgentEvent::Stop(AgentStopReason::Error(_err)) => {
-                // Agent error - signal done and return error
-                if let Some(done_tx) = self.done_tx.take() {
-                    done_tx.send(()).ok();
-                }
-                return Err(acp::Error::internal_error());
-            }
-            _ => {
-                // Handle other agent events if needed
-            }
-        }
-        Ok(())
-    }
-
-    /// Handle agent update events and send to ACP client
-    async fn handle_agent_update(&self, update_event: UpdateEvent) -> Result<(), acp::Error> {
-        let content = match update_event {
-            UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
-                acp::ContentBlock::Text(acp::TextContent {
-                    text,
-                    annotations: None,
-                })
-            }
-            _ => return Ok(()), // Skip non-text updates for now
-        };
-
-        let session_notification = acp::SessionNotification {
-            session_id: self.session_id.clone(),
-            update: acp::SessionUpdate::AgentMessageChunk { content },
-        };
-
-        acp::Client::session_notification(&self.conn, session_notification)
-            .await
-            .map_err(|_| acp::Error::internal_error())?;
-
-        Ok(())
-    }
-
-    /// Send request to agent (fire and forget)
+    /// This call does not block
     async fn send_request(&self, request: acp::PromptRequest) -> Result<(), acp::Error> {
         // Convert ACP prompt to agent format
-        let content: Vec<ContentChunk> = request.prompt
+        let content: Vec<ContentChunk> = request
+            .prompt
             .into_iter()
             .filter_map(|block| match block {
                 acp::ContentBlock::Text(text_content) => Some(ContentChunk::Text(text_content.text)),
@@ -158,6 +108,53 @@ impl AcpSession {
                 content,
                 should_continue_turn: None,
             })
+            .await
+            .map_err(|_| acp::Error::internal_error())?;
+
+        Ok(())
+    }
+
+    async fn handle_agent_event(&mut self, event: AgentEvent) -> Result<(), acp::Error> {
+        match event {
+            AgentEvent::Update(update_event) => {
+                self.handle_agent_update_event(update_event).await?;
+            },
+            AgentEvent::EndTurn(_metadata) => {
+                // Conversation complete - signal done
+                if let Some(done_tx) = self.done_tx.take() {
+                    done_tx.send(()).ok();
+                }
+            },
+            AgentEvent::Stop(AgentStopReason::Error(_err)) => {
+                // Agent error - signal done and return error
+                if let Some(done_tx) = self.done_tx.take() {
+                    done_tx.send(()).ok();
+                }
+                return Err(acp::Error::internal_error());
+            },
+            _ => {
+                // Handle other agent events if needed
+            },
+        }
+        Ok(())
+    }
+
+    /// Convert agent event to ACP session update and send back to ACP client
+    async fn handle_agent_update_event(&self, update_event: UpdateEvent) -> Result<(), acp::Error> {
+        let content = match update_event {
+            UpdateEvent::AgentContent(ContentChunk::Text(text)) => acp::ContentBlock::Text(acp::TextContent {
+                text,
+                annotations: None,
+            }),
+            _ => return Ok(()), // Skip non-text updates for now
+        };
+
+        let session_notification = acp::SessionNotification {
+            session_id: self.session_id.clone(),
+            update: acp::SessionUpdate::AgentMessageChunk { content },
+        };
+
+        acp::Client::session_notification(&self.conn, session_notification)
             .await
             .map_err(|_| acp::Error::internal_error())?;
 
@@ -204,8 +201,10 @@ impl acp::Agent for AcpAgent {
         self.request_tx
             .send((args, tx))
             .map_err(|_| acp::Error::internal_error())?;
+
+        // Wait for completion signal from session when conversation ends
         rx.await.map_err(|_| acp::Error::internal_error())?;
-        
+
         Ok(acp::PromptResponse {
             stop_reason: acp::StopReason::EndTurn,
         })
@@ -225,29 +224,23 @@ pub async fn execute() -> Result<ExitCode> {
     let agent = AcpAgent::new(request_tx);
 
     let local_set = tokio::task::LocalSet::new();
-    local_set.run_until(async move {
-        let (conn, handle_io) = acp::AgentSideConnection::new(
-            agent,
-            outgoing,
-            incoming,
-            |fut| { tokio::task::spawn_local(fut); }
-        );
+    local_set
+        .run_until(async move {
+            let (conn, handle_io) = acp::AgentSideConnection::new(agent, outgoing, incoming, |fut| {
+                tokio::task::spawn_local(fut);
+            });
 
-        // Session event loop
-        let mut session = AcpSession::new(
-            acp::SessionId("42".into()),
-            request_rx,
-            conn,
-        ).await?;
-        tokio::task::spawn_local(async move {
-            if let Err(e) = session.run_event_loop().await {
-                eprintln!("Session error: {}", e);
-            }
-        });
+            // Session event loop
+            let mut session = AcpSession::new(acp::SessionId("42".into()), request_rx, conn).await?;
+            tokio::task::spawn_local(async move {
+                if let Err(e) = session.run_event_loop().await {
+                    eprintln!("Session error: {}", e);
+                }
+            });
 
-        handle_io.await.map_err(|e| eyre::eyre!("IO error: {}", e))
-    }).await?;
+            handle_io.await.map_err(|e| eyre::eyre!("IO error: {}", e))
+        })
+        .await?;
 
     Ok(ExitCode::SUCCESS)
 }
-
