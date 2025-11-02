@@ -18,7 +18,7 @@ use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
 use agent::rts::{RtsModel, RtsModelState};
 use agent::types::AgentSnapshot;
-use agent::protocol::{ContentChunk, SendPromptArgs, AgentEvent, UpdateEvent};
+use agent::protocol::{ContentChunk, SendPromptArgs, AgentEvent, UpdateEvent, AgentStopReason};
 
 /// Session that processes user requests in an event loop
 struct AcpSession {
@@ -26,6 +26,9 @@ struct AcpSession {
     request_rx: mpsc::UnboundedReceiver<(acp::PromptRequest, oneshot::Sender<()>)>,
     conn: acp::AgentSideConnection,
     agent: AgentHandle,
+    // Assumption: Only one conversation prompt active at a time per session
+    // This allows us to use a single global done_tx instead of tracking multiple requests
+    done_tx: Option<oneshot::Sender<()>>, // Current request's completion signal
 }
 
 impl AcpSession {
@@ -53,36 +56,62 @@ impl AcpSession {
             request_rx,
             conn,
             agent,
+            done_tx: None,
         })
     }
 
-    /// Event loop that processes user requests and agent events
-    /// - Receives user requests from request_rx and processes them
-    /// - Receives agent events and sends updates to ACP client
-    async fn run(&mut self) -> Result<(), acp::Error> {
+    /// Main event loop that handles user requests and agent events
+    /// - Receives user requests: stores completion signal and sends to agent asynchronously
+    /// - Receives agent events: forwards updates to ACP client and signals completion on EndTurn
+    async fn run_event_loop(&mut self) -> Result<(), acp::Error> {
         loop {
             tokio::select! {
                 request = self.request_rx.recv() => {
                     match request {
                         Some((request, done_tx)) => {
-                            self.process_request(request).await?;
-                            // Signal completion since send_prompt blocks until conversation is done
-                            done_tx.send(()).ok();
+                            // Store completion signal
+                            self.done_tx = Some(done_tx);
+                            
+                            // Send prompt asynchronously (fire and forget)
+                            self.send_request(request).await?;
                         }
                         None => break, // Channel closed
                     }
                 }
                 agent_event = self.agent.recv() => {
                     match agent_event {
-                        Ok(AgentEvent::Update(update_event)) => {
-                            self.handle_agent_update(update_event).await?;
-                        }
-                        Ok(_) => {
-                            // Handle other agent events if needed
+                        Ok(event) => {
+                            self.handle_agent_event(event).await?;
                         }
                         Err(_) => break, // Agent channel closed
                     }
                 }
+            }
+        }
+        Ok(())
+    }
+
+    /// Handle agent events
+    async fn handle_agent_event(&mut self, event: AgentEvent) -> Result<(), acp::Error> {
+        match event {
+            AgentEvent::Update(update_event) => {
+                self.handle_agent_update(update_event).await?;
+            }
+            AgentEvent::EndTurn(_metadata) => {
+                // Conversation complete - signal done
+                if let Some(done_tx) = self.done_tx.take() {
+                    done_tx.send(()).ok();
+                }
+            }
+            AgentEvent::Stop(AgentStopReason::Error(_err)) => {
+                // Agent error - signal done and return error
+                if let Some(done_tx) = self.done_tx.take() {
+                    done_tx.send(()).ok();
+                }
+                return Err(acp::Error::internal_error());
+            }
+            _ => {
+                // Handle other agent events if needed
             }
         }
         Ok(())
@@ -112,8 +141,8 @@ impl AcpSession {
         Ok(())
     }
 
-    /// Process a user request (prompt or slash command)
-    async fn process_request(&self, request: acp::PromptRequest) -> Result<(), acp::Error> {
+    /// Send request to agent (fire and forget)
+    async fn send_request(&self, request: acp::PromptRequest) -> Result<(), acp::Error> {
         // Convert ACP prompt to agent format
         let content: Vec<ContentChunk> = request.prompt
             .into_iter()
@@ -123,9 +152,9 @@ impl AcpSession {
             })
             .collect();
 
-        // Send prompt to agent (this blocks until conversation is complete)
+        // Send prompt to agent asynchronously (fire and forget)
         self.agent
-            .send_prompt(SendPromptArgs {
+            .send_prompt_async(SendPromptArgs {
                 content,
                 should_continue_turn: None,
             })
@@ -211,7 +240,7 @@ pub async fn execute() -> Result<ExitCode> {
             conn,
         ).await?;
         tokio::task::spawn_local(async move {
-            if let Err(e) = session.run().await {
+            if let Err(e) = session.run_event_loop().await {
                 eprintln!("Session error: {}", e);
             }
         });
