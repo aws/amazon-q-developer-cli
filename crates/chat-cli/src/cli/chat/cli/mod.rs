@@ -4,6 +4,7 @@ pub mod checkpoint;
 pub mod clear;
 pub mod compact;
 pub mod context;
+pub mod diff_tool;
 pub mod editor;
 pub mod experiment;
 pub mod hooks;

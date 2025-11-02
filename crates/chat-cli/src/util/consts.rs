@@ -102,6 +102,9 @@ pub mod env_var {
         /// Editor environment variable
         EDITOR = "EDITOR",
 
+        /// Custom diff tool command
+        Q_DIFF_TOOL = "Q_DIFF_TOOL",
+
         /// Terminal type
         TERM = "TERM",
 
