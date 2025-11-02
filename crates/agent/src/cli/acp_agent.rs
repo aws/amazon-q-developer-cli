@@ -134,6 +134,14 @@ impl AcpSession {
             },
             _ => {
                 // Handle other agent events if needed
+                match &event {
+                    AgentEvent::Internal(_) => {
+                        // Skip internal events - too noisy for debugging
+                    },
+                    _ => {
+                        eprintln!("DEBUG: Unhandled agent event: {:?}", event);
+                    },
+                }
             },
         }
         Ok(())
@@ -141,17 +149,36 @@ impl AcpSession {
 
     /// Convert agent event to ACP session update and send back to ACP client
     async fn handle_agent_update_event(&self, update_event: UpdateEvent) -> Result<(), acp::Error> {
-        let content = match update_event {
-            UpdateEvent::AgentContent(ContentChunk::Text(text)) => acp::ContentBlock::Text(acp::TextContent {
-                text,
-                annotations: None,
-            }),
-            _ => return Ok(()), // Skip non-text updates for now
+        let session_update = match update_event {
+            // Supported events
+            UpdateEvent::AgentContent(ContentChunk::Text(text)) => acp::SessionUpdate::AgentMessageChunk {
+                content: acp::ContentBlock::Text(acp::TextContent {
+                    text,
+                    annotations: None,
+                }),
+            },
+            UpdateEvent::ToolCall(tool_call) => {
+                // Convert agent ToolCall to ACP ToolCall
+                let acp_tool_call = acp::ToolCall {
+                    id: acp::ToolCallId(tool_call.id.into()),
+                    title: tool_call.tool_use_block.name.clone(),
+                    kind: acp::ToolKind::default(), // TODO: fix tool type
+                    status: acp::ToolCallStatus::Pending,
+                    content: vec![],
+                    locations: vec![],
+                    raw_input: Some(tool_call.tool_use_block.input.clone()),
+                    raw_output: None,
+                };
+                acp::SessionUpdate::ToolCall(acp_tool_call)
+            },
+
+            // Skip other events for now
+            _ => return Ok(()),
         };
 
         let session_notification = acp::SessionNotification {
             session_id: self.session_id.clone(),
-            update: acp::SessionUpdate::AgentMessageChunk { content },
+            update: session_update,
         };
 
         acp::Client::session_notification(&self.conn, session_notification)
