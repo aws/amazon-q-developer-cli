@@ -733,10 +733,13 @@ impl PromptsArgs {
             }
 
             if !global_prompts.is_empty() {
+                let global_dir = PathResolver::new(os).global().prompts_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "global prompts".to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Global ({}):", crate::util::paths::global::PROMPTS_DIR)),
+                    style::Print(&format!("Global ({}):", global_dir)),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -750,10 +753,13 @@ impl PromptsArgs {
                 if !global_prompts.is_empty() {
                     queue!(session.stderr, style::Print("\n"))?;
                 }
+                let local_dir = PathResolver::new(os).workspace().prompts_dir()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|_| "local prompts".to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Local ({}):", crate::util::paths::workspace::PROMPTS_DIR)),
+                    style::Print(&format!("Local ({}):", local_dir)),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -2069,8 +2075,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create test prompts in temp directory structure
-        let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
-        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
+        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
 
         create_prompt_file(&global_dir, "global_only", "Global content");
         create_prompt_file(&global_dir, "shared", "Global shared");
@@ -2090,8 +2096,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create global and local directories
-        let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
-        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
+        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
+        let local_dir = temp_dir.path().join(".amazonq/prompts");
 
         // Create prompts: one with same name in both directories, one unique to each
         create_prompt_file(&global_dir, "shared", "Global version");

@@ -25,7 +25,6 @@ use super::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::paths;
 use crate::util::paths::PathResolver;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
@@ -337,7 +336,7 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        path.join(paths::workspace::AGENTS_DIR)
+        PathResolver::new(os).workspace().agents_dir()?
     } else {
         PathResolver::new(os).global().agents_dir()?
     };

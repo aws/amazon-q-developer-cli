@@ -5,12 +5,15 @@ use std::path::{
     PathBuf,
     StripPrefixError,
 };
+#[cfg(test)]
+use std::collections::HashSet;
 
 use globset::{
     Glob,
     GlobSetBuilder,
 };
 use thiserror::Error;
+use tracing::{debug, info, warn};
 
 use crate::os::Os;
 
@@ -43,12 +46,8 @@ pub enum DirectoryError {
 
 pub mod workspace {
     //! Project-level paths (relative to current working directory)
-    pub const AGENTS_DIR: &str = ".amazonq/cli-agents";
-    pub const PROMPTS_DIR: &str = ".amazonq/prompts";
-    pub const MCP_CONFIG: &str = ".amazonq/mcp.json";
     pub const TODO_LISTS_DIR: &str = ".amazonq/cli-todo-lists";
     pub const SUBAGENTS_DIR: &str = ".amazonq/.subagents";
-    pub const RULES_PATTERN: &str = ".amazonq/rules/**/*.md";
 
     // Default documentation files for agent resources
     pub const DEFAULT_AGENT_RESOURCES: &[&str] = &["file://AmazonQ.md", "file://AGENTS.md", "file://README.md"];
@@ -56,17 +55,111 @@ pub mod workspace {
 
 pub mod global {
     //! User-level paths (relative to home directory)
-    pub const AGENTS_DIR: &str = ".aws/amazonq/cli-agents";
-    pub const PROMPTS_DIR: &str = ".aws/amazonq/prompts";
-    pub const MCP_CONFIG: &str = ".aws/amazonq/mcp.json";
     pub const SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-checkouts";
     pub const CLI_BASH_HISTORY: &str = ".aws/amazonq/.cli_bash_history";
-    pub const GLOBAL_CONTEXT: &str = ".aws/amazonq/global_context.json";
-    pub const PROFILES_DIR: &str = ".aws/amazonq/profiles";
-    pub const KNOWLEDGE_BASES_DIR: &str = ".aws/amazonq/knowledge_bases";
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
+
+/// Trait for filesystem operations needed by migration logic
+trait FileSystemChecker {
+    fn exists(&self, path: &std::path::Path) -> bool;
+}
+
+/// Real filesystem implementation
+struct RealFileSystem;
+
+impl FileSystemChecker for RealFileSystem {
+    fn exists(&self, path: &std::path::Path) -> bool {
+        path.exists()
+    }
+}
+
+/// Test filesystem implementation
+#[cfg(test)]
+struct TestFileSystem {
+    existing_paths: HashSet<PathBuf>,
+}
+
+#[cfg(test)]
+impl TestFileSystem {
+    fn new() -> Self {
+        Self {
+            existing_paths: HashSet::new(),
+        }
+    }
+    
+    fn add_path(&mut self, path: impl Into<PathBuf>) {
+        self.existing_paths.insert(path.into());
+    }
+}
+
+#[cfg(test)]
+impl FileSystemChecker for TestFileSystem {
+    fn exists(&self, path: &std::path::Path) -> bool {
+        self.existing_paths.contains(path)
+    }
+}
+
+fn resolve_migrated_path_with_fs(
+    fs: &dyn FileSystemChecker,
+    home_dir: &std::path::Path,
+    current_dir: &std::path::Path,
+    is_global: bool,
+    subpath: &str,
+) -> std::path::PathBuf {
+    let (kiro_base, amazonq_base) = if is_global {
+        (home_dir.join(".aws/kiro"), home_dir.join(".aws/amazonq"))
+    } else {
+        (current_dir.join(".kiro"), current_dir.join(".amazonq"))
+    };
+    
+    let scope = if is_global { "global" } else { "workspace" };
+    
+    debug!(
+        "Checking migration paths for {} {}: kiro={}, amazonq={}",
+        scope,
+        subpath,
+        kiro_base.display(),
+        amazonq_base.display()
+    );
+    
+    let (kiro_exists, amazonq_exists) = (fs.exists(&kiro_base), fs.exists(&amazonq_base));
+    debug!(
+        "Path existence check for {} {}: kiro_exists={}, amazonq_exists={}",
+        scope, subpath, kiro_exists, amazonq_exists
+    );
+    
+    let result_path = match (kiro_exists, amazonq_exists) {
+        (true, false) => {
+            info!("Using .kiro {} configuration at: {}", scope, kiro_base.display());
+            kiro_base.join(subpath)
+        },
+        (false, true) => {
+            warn!("Migration notice: Using .amazonq {} configs at: {}", scope, amazonq_base.display());
+            amazonq_base.join(subpath)
+        },
+        (true, true) => {
+            warn!("Config conflict: Both .amazonq and .kiro {} configs exist, using .amazonq at: {}", scope, amazonq_base.display());
+            amazonq_base.join(subpath)
+        },
+        (false, false) => {
+            debug!("No existing configs found, defaulting to .kiro {} at: {}", scope, kiro_base.display());
+            kiro_base.join(subpath)
+        }
+    };
+    
+    debug!("Resolved {} {} path: {}", scope, subpath, result_path.display());
+    result_path
+}
+
+fn resolve_migrated_path(os: &Os, is_global: bool, subpath: &str) -> Result<PathBuf> {
+    let fs = RealFileSystem;
+    let home = home_dir(os)?;
+    let current = os.env.current_dir()?;
+    
+    Ok(resolve_migrated_path_with_fs(&fs, &home, &current, is_global, subpath))
+}
 
 /// The directory of the users home
 /// - Linux: /home/Alice
@@ -230,15 +323,19 @@ pub struct WorkspacePaths<'a> {
 
 impl<'a> WorkspacePaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(workspace::AGENTS_DIR))
+        resolve_migrated_path(self.os, false, "cli-agents")
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(workspace::PROMPTS_DIR))
+        resolve_migrated_path(self.os, false, "prompts")
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(workspace::MCP_CONFIG))
+        resolve_migrated_path(self.os, false, "mcp.json")
+    }
+
+    pub fn rules_dir(&self) -> Result<PathBuf> {
+        resolve_migrated_path(self.os, false, "rules")
     }
 
     pub fn todo_lists_dir(&self) -> Result<PathBuf> {
@@ -265,15 +362,19 @@ pub struct GlobalPaths<'a> {
 
 impl<'a> GlobalPaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::AGENTS_DIR))
+        resolve_migrated_path(self.os, true, "cli-agents")
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::PROMPTS_DIR))
+        resolve_migrated_path(self.os, true, "prompts")
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::MCP_CONFIG))
+        resolve_migrated_path(self.os, true, "mcp.json")
+    }
+
+    pub fn profiles_dir(&self) -> Result<PathBuf> {
+        resolve_migrated_path(self.os, true, "profiles")
     }
 
     pub fn shadow_repo_dir(&self) -> Result<PathBuf> {
@@ -285,15 +386,11 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn global_context(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::GLOBAL_CONTEXT))
-    }
-
-    pub fn profiles_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::PROFILES_DIR))
+        resolve_migrated_path(self.os, true, "global_context.json")
     }
 
     pub fn knowledge_bases_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(global::KNOWLEDGE_BASES_DIR))
+        resolve_migrated_path(self.os, true, "knowledge_bases")
     }
 
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
@@ -329,5 +426,164 @@ impl<'a> GlobalPaths<'a> {
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("amazon-q")
             .join("data.sqlite3"))
+    }
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    use std::path::Path;
+    
+    #[test]
+    fn test_kiro_only_workspace() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/current/.kiro");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
+        assert_eq!(path, Path::new("/current/.kiro/cli-agents"));
+    }
+    
+    #[test]
+    fn test_amazonq_only_workspace() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/current/.amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
+        assert_eq!(path, Path::new("/current/.amazonq/cli-agents"));
+    }
+    
+    #[test]
+    fn test_both_exist_workspace() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/current/.kiro");
+        fs.add_path("/current/.amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
+        // Should prefer .amazonq when both exist
+        assert_eq!(path, Path::new("/current/.amazonq/cli-agents"));
+    }
+    
+    #[test]
+    fn test_neither_exist_workspace() {
+        let fs = TestFileSystem::new();
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
+        // Should default to .kiro when neither exists
+        assert_eq!(path, Path::new("/current/.kiro/cli-agents"));
+    }
+    
+    #[test]
+    fn test_kiro_only_global() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/home/user/.aws/kiro");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "cli-agents");
+        assert_eq!(path, Path::new("/home/user/.aws/kiro/cli-agents"));
+    }
+    
+    #[test]
+    fn test_amazonq_only_global() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/home/user/.aws/amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "cli-agents");
+        assert_eq!(path, Path::new("/home/user/.aws/amazonq/cli-agents"));
+    }
+    
+    #[test]
+    fn test_both_exist_global() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/home/user/.aws/kiro");
+        fs.add_path("/home/user/.aws/amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "cli-agents");
+        // Should prefer .amazonq when both exist
+        assert_eq!(path, Path::new("/home/user/.aws/amazonq/cli-agents"));
+    }
+    
+    #[test]
+    fn test_neither_exist_global() {
+        let fs = TestFileSystem::new();
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "cli-agents");
+        // Should default to .kiro when neither exists
+        assert_eq!(path, Path::new("/home/user/.aws/kiro/cli-agents"));
+    }
+    
+    #[test]
+    fn test_different_subpaths() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/current/.amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let agents_path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
+        let prompts_path = resolve_migrated_path_with_fs(&fs, home, current, false, "prompts");
+        let mcp_path = resolve_migrated_path_with_fs(&fs, home, current, false, "mcp.json");
+        
+        assert_eq!(agents_path, Path::new("/current/.amazonq/cli-agents"));
+        assert_eq!(prompts_path, Path::new("/current/.amazonq/prompts"));
+        assert_eq!(mcp_path, Path::new("/current/.amazonq/mcp.json"));
+    }
+    
+    #[test]
+    fn test_global_context_migration() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/home/user/.aws/kiro");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "global_context.json");
+        assert_eq!(path, Path::new("/home/user/.aws/kiro/global_context.json"));
+    }
+    
+    #[test]
+    fn test_knowledge_bases_migration() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/home/user/.aws/amazonq");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, true, "knowledge_bases");
+        assert_eq!(path, Path::new("/home/user/.aws/amazonq/knowledge_bases"));
+    }
+    
+    #[test]
+    fn test_rules_dir_migration() {
+        let mut fs = TestFileSystem::new();
+        fs.add_path("/current/.kiro");
+        
+        let home = Path::new("/home/user");
+        let current = Path::new("/current");
+        
+        let path = resolve_migrated_path_with_fs(&fs, home, current, false, "rules");
+        assert_eq!(path, Path::new("/current/.kiro/rules"));
     }
 }
