@@ -518,7 +518,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found success indication");
 
     // Test fs_read tool by asking to read the created file
-    let response = chat.execute_command_with_timeout(&format!("Read file {}'", save_path),Some(2000))?;
+    let response = chat.execute_command_with_timeout(&format!("Read file {}", save_path),Some(2000))?;
 
     println!("📝 fs_read response: {} bytes", response.len());
     println!("📝 FULL OUTPUT:");
@@ -534,7 +534,7 @@ fn test_fs_write_and_fs_read_tools() -> Result<(), Box<dyn std::error::Error>> {
     println!("✅ Found expected file path in response");
     
     // Verify content reference
-    assert!(allow_response.contains("Hello World"), "Missing expected content reference");
+    assert!(response.contains("Hello World"), "Missing expected content reference");
     println!("✅ Found expected content reference");
     
     println!("✅ All fs_write and fs_read tool functionality verified!");
