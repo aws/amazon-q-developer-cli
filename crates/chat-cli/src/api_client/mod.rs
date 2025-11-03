@@ -8,6 +8,7 @@ mod opt_out;
 pub mod profile;
 mod retry_classifier;
 pub mod send_message_output;
+pub mod bedrock;
 use std::sync::Arc;
 use std::time::Duration;
 
