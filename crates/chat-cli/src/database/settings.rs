@@ -91,6 +91,22 @@ pub enum Setting {
     EnabledDelegate,
     #[strum(message = "Specify UI variant to use (string)")]
     UiMode,
+    
+    // Bedrock-specific settings
+    #[strum(message = "Enable Bedrock backend mode (boolean)")]
+    BedrockEnabled,
+    #[strum(message = "AWS region for Bedrock API calls (string)")]
+    BedrockRegion,
+    #[strum(message = "Bedrock model ID to use (string)")]
+    BedrockModel,
+    #[strum(message = "Context window size for Bedrock (number)")]
+    BedrockContextWindow,
+    #[strum(message = "Enable extended thinking mode for Bedrock (boolean)")]
+    BedrockThinkingEnabled,
+    #[strum(message = "Temperature setting for Bedrock (0.0-1.0)")]
+    BedrockTemperature,
+    #[strum(message = "Active custom system prompt name (string)")]
+    BedrockSystemPromptActive,
 }
 
 impl AsRef<str> for Setting {
@@ -133,6 +149,15 @@ impl AsRef<str> for Setting {
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
             Self::UiMode => "chat.uiMode",
+            
+            // Bedrock settings
+            Self::BedrockEnabled => "bedrock.enabled",
+            Self::BedrockRegion => "bedrock.region",
+            Self::BedrockModel => "bedrock.model",
+            Self::BedrockContextWindow => "bedrock.contextWindow",
+            Self::BedrockThinkingEnabled => "bedrock.thinkingEnabled",
+            Self::BedrockTemperature => "bedrock.temperature",
+            Self::BedrockSystemPromptActive => "bedrock.systemPrompt.active",
         }
     }
 }
@@ -183,6 +208,17 @@ impl TryFrom<&str> for Setting {
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             "chat.uiMode" => Ok(Self::UiMode),
+            "chat.enableDelegate" => Ok(Self::EnabledDelegate),
+            
+            // Bedrock settings
+            "bedrock.enabled" => Ok(Self::BedrockEnabled),
+            "bedrock.region" => Ok(Self::BedrockRegion),
+            "bedrock.model" => Ok(Self::BedrockModel),
+            "bedrock.contextWindow" => Ok(Self::BedrockContextWindow),
+            "bedrock.thinkingEnabled" => Ok(Self::BedrockThinkingEnabled),
+            "bedrock.temperature" => Ok(Self::BedrockTemperature),
+            "bedrock.systemPrompt.active" => Ok(Self::BedrockSystemPromptActive),
+            
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
