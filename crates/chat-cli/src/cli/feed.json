@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-11-03",
+      "version": "1.999.0",
+      "title": "Version 1.999.0",
+      "changes": [
+        {
+          "type": "changed",
+          "description": "Updated version for qv2 branch"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-10-27",
       "version": "1.19.1",
       "title": "Version 1.19.1",
