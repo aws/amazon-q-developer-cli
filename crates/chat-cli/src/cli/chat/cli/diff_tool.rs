@@ -28,16 +28,11 @@ pub fn launch_diff_tool(before_path: &Path, after_path: &Path) -> Result<(), Cha
         cmd.arg(arg);
     }
 
-    // Wait for the process to complete so files aren't deleted while tool is reading them
-    let status = cmd
+    cmd
         .arg(before_path)
         .arg(after_path)
         .status()
         .map_err(|e| ChatError::Custom(format!("Failed to launch diff tool: {}", e).into()))?;
-
-    if !status.success() {
-        return Err(ChatError::Custom("Diff tool exited with non-zero status".into()));
-    }
 
     Ok(())
 }
