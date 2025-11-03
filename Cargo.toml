@@ -131,7 +131,7 @@ whoami = "1.6.0"
 windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessStatus", "Win32_System_Kernel", "Win32_System_Threading", "Wdk_System_Threading"] }
 winnow = "=0.6.2"
 winreg = "0.55.0"
-schemars = "1.0.4"
+schemars = "1.0.5"
 jsonschema = "0.30.0"
 zip = "2.2.0"
 rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
