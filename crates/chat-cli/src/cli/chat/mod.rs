@@ -2165,8 +2165,11 @@ impl ChatSession {
                 skip_printing_tools: false,
             })
         } else if let Some(command) = input.strip_prefix("@") {
-            let input_parts =
-                shlex::split(command).ok_or(ChatError::Custom("Error splitting prompt command".into()))?;
+            let input_parts = shlex::split(command).ok_or_else(|| {
+                ChatError::Custom(
+                    "Invalid prompt command syntax. Check for unmatched quotes or escape characters.".into()
+                )
+            })?;
 
             let mut iter = input_parts.into_iter();
             let prompt_name = iter
@@ -4641,6 +4644,34 @@ mod tests {
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
+        }
+    }
+
+    #[test]
+    fn test_shlex_parsing_failures() {
+        // Test cases that should cause shlex::split to return None
+        let failing_cases = vec![
+            "prompt \"unmatched",        // Unmatched double quote
+            "prompt 'unmatched",         // Unmatched single quote  
+            "prompt trailing\\",         // Trailing backslash
+            "prompt \"nested 'quote",    // Nested unmatched quotes
+        ];
+
+        for case in failing_cases {
+            assert_eq!(shlex::split(case), None, "Expected shlex::split to fail for: {}", case);
+        }
+
+        // Test cases that should work
+        let working_cases = vec![
+            "prompt normal",
+            "prompt \"matched quotes\"",
+            "prompt 'matched quotes'",
+            "prompt \"nested 'quotes'\"",
+            "", // empty string
+        ];
+
+        for case in working_cases {
+            assert!(shlex::split(case).is_some(), "Expected shlex::split to succeed for: {}", case);
         }
     }
 }
