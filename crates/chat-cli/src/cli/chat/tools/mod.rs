@@ -459,7 +459,7 @@ fn format_path(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
 
 fn supports_truecolor(os: &Os) -> bool {
     // Simple override to disable truecolor since shell_color doesn't use Context.
-    !os.env.get("KIRO_DISABLE_TRUECOLOR").is_ok_and(|s| !s.is_empty())
+    !os.env.get("Q_DISABLE_TRUECOLOR").is_ok_and(|s| !s.is_empty())
         && shell_color::get_color_support().contains(shell_color::ColorSupport::TERM24BIT)
 }
 

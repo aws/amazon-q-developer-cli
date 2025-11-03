@@ -177,18 +177,18 @@ pub fn in_wsl() -> bool {
 /// Is the calling binary running on a remote instance
 pub fn is_remote() -> bool {
     // TODO(chay): Add detection for inside docker container
-    in_ssh() || in_wsl() || std::env::var_os("KIRO_FAKE_IS_REMOTE").is_some()
+    in_ssh() || in_wsl() || std::env::var_os("Q_FAKE_IS_REMOTE").is_some()
 }
 
 pub fn in_codespaces() -> bool {
     static IN_CODESPACES: OnceLock<bool> = OnceLock::new();
     *IN_CODESPACES
-        .get_or_init(|| std::env::var_os("CODESPACES").is_some() || std::env::var_os("KIRO_CODESPACES").is_some())
+        .get_or_init(|| std::env::var_os("CODESPACES").is_some() || std::env::var_os("Q_CODESPACES").is_some())
 }
 
 pub fn in_ci() -> bool {
     static IN_CI: OnceLock<bool> = OnceLock::new();
-    *IN_CI.get_or_init(|| std::env::var_os("CI").is_some() || std::env::var_os("KIRO_CI").is_some())
+    *IN_CI.get_or_init(|| std::env::var_os("CI").is_some() || std::env::var_os("Q_CI").is_some())
 }
 
 pub fn is_mwinit_available() -> bool {

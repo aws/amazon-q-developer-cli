@@ -14,7 +14,7 @@ use tracing_subscriber::{
     fmt,
 };
 
-use crate::util::env_var::KIRO_LOG_LEVEL;
+use crate::util::env_var::Q_LOG_LEVEL;
 
 const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024;
 const DEFAULT_FILTER: LevelFilter = LevelFilter::ERROR;
@@ -196,7 +196,7 @@ pub fn get_log_level() -> String {
         .lock()
         .unwrap()
         .clone()
-        .unwrap_or_else(|| std::env::var(KIRO_LOG_LEVEL).unwrap_or_else(|_| DEFAULT_FILTER.to_string()))
+        .unwrap_or_else(|| std::env::var(Q_LOG_LEVEL).unwrap_or_else(|_| DEFAULT_FILTER.to_string()))
 }
 
 /// Set the log level to the given level.
@@ -247,7 +247,7 @@ fn create_filter_layer() -> EnvFilter {
         .lock()
         .unwrap()
         .clone()
-        .or_else(|| std::env::var(KIRO_LOG_LEVEL).ok());
+        .or_else(|| std::env::var(Q_LOG_LEVEL).ok());
 
     match log_level {
         Some(level) => EnvFilter::builder()

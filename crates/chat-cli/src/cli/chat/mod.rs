@@ -3026,7 +3026,7 @@ impl ChatSession {
                 }
 
                 // Display continuation ID if available and debug mode is enabled
-                if std::env::var_os("KIRO_SHOW_CONTINUATION_IDS").is_some() {
+                if std::env::var_os("Q_SHOW_CONTINUATION_IDS").is_some() {
                     queue!(
                         self.stdout,
                         style::Print(format!("({})\n", self.conversation.current_continuation_id())),
