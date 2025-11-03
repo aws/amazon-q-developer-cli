@@ -197,7 +197,8 @@ impl Default for Agent {
             resources: {
                 let mut resources = Vec::new();
                 resources.extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
-                resources.push(format!("file://{}", paths::workspace::RULES_PATTERN).into());
+                // Default fallback pattern - will be updated dynamically in load() function
+                resources.push("file://.amazonq/rules/**/*.md".into());
                 resources
             },
             hooks: Default::default(),
@@ -740,6 +741,16 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
+                
+                // Update rules pattern to use dynamic path resolution
+                if let Ok(rules_dir) = resolver.workspace().rules_dir() {
+                    let rules_pattern = format!("{}/**/*.md", rules_dir.display());
+                    // Replace the hardcoded rules pattern with the dynamic one
+                    if let Some(pos) = agent.resources.iter().position(|r| r.as_str().contains(".amazonq/rules/")) {
+                        agent.resources[pos] = format!("file://{}", rules_pattern).into();
+                    }
+                }
+                
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {
