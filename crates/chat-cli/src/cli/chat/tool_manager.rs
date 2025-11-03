@@ -113,13 +113,13 @@ pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
     if kiro_path.exists() {
         Ok(kiro_path)
     } else {
-        // Fallback to .kiro-cli (legacy format)
-        Ok(current_dir.join(".kiro-cli").join("mcp.json"))
+        // Fallback to .amazonq (legacy format)
+        Ok(current_dir.join(".amazonq").join("mcp.json"))
     }
 }
 
 pub fn global_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("mcp.json"))
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
 }
 
 /// Messages used for communication between the tool initialization thread and the loading

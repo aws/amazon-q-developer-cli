@@ -165,7 +165,7 @@ pub struct Agent {
     #[serde(default)]
     #[schemars(schema_with = "tool_settings_schema")]
     pub tools_settings: HashMap<ToolSettingTarget, serde_json::Value>,
-    /// Whether or not to include the legacy ~/.kiro-cli/mcp.json in the agent
+    /// Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
     #[serde(default)]
@@ -197,7 +197,7 @@ impl Default for Agent {
                 "file://AmazonQ.md",
                 "file://AGENTS.md",
                 "file://README.md",
-                "file://.kiro-cli/rules/**/*.md",
+                "file://.amazonq/rules/**/*.md",
                 "file://.kiro/steering/**/*.md",
             ]
             .into_iter()

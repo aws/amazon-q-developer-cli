@@ -42,12 +42,12 @@ pub enum DirectoryError {
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
 
-const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".kiro-cli/cli-agents";
-const GLOBAL_SHADOW_REPO_DIR: &str = ".kiro-cli/cli-checkpoints";
-const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".kiro-cli/cli-agents";
-const WORKSPACE_PROMPTS_DIR_RELATIVE: &str = ".kiro-cli/prompts";
-const GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME: &str = ".kiro-cli/prompts";
-const CLI_BASH_HISTORY_PATH: &str = ".kiro-cli/.cli_bash_history";
+const WORKSPACE_AGENT_DIR_RELATIVE: &str = ".amazonq/cli-agents";
+const GLOBAL_SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-checkpoints";
+const GLOBAL_AGENT_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/cli-agents";
+const WORKSPACE_PROMPTS_DIR_RELATIVE: &str = ".amazonq/prompts";
+const GLOBAL_PROMPTS_DIR_RELATIVE_TO_HOME: &str = ".aws/amazonq/prompts";
+const CLI_BASH_HISTORY_PATH: &str = ".aws/amazonq/.cli_bash_history";
 
 /// The directory of the users home
 ///
@@ -159,7 +159,7 @@ pub fn example_agent_config(os: &Os) -> Result<PathBuf> {
 
 /// Legacy global MCP server config path
 pub fn chat_legacy_global_mcp_config(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("mcp.json"))
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("mcp.json"))
 }
 
 pub fn chat_cli_bash_history_path(os: &Os) -> Result<PathBuf> {
@@ -169,7 +169,7 @@ pub fn chat_cli_bash_history_path(os: &Os) -> Result<PathBuf> {
 /// Legacy workspace MCP server config path
 pub fn chat_legacy_workspace_mcp_config(os: &Os) -> Result<PathBuf> {
     let cwd = os.env.current_dir()?;
-    Ok(cwd.join(".kiro-cli").join("mcp.json"))
+    Ok(cwd.join(".amazonq").join("mcp.json"))
 }
 
 /// The directory to the directory containing global agents
@@ -261,25 +261,25 @@ pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<(
 /// A workspace directory is a directory where kiro-cli chat is to be launched
 ///
 /// For example, if the given path is /path/one, then the derived config path would be
-/// `/path/one/.kiro-cli/agents`
+/// `/path/one/.amazonq/agents`
 pub fn agent_config_dir(workspace_dir: PathBuf) -> Result<PathBuf> {
     Ok(workspace_dir.join(WORKSPACE_AGENT_DIR_RELATIVE))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `kiro-cli chat`.
 pub fn chat_global_context_path(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("global_context.json"))
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("global_context.json"))
 }
 
 /// The directory to the directory containing config for the `/context` feature in `kiro-cli chat`.
 #[allow(dead_code)]
 pub fn chat_profiles_dir(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("profiles"))
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("profiles"))
 }
 
 /// The directory for knowledge base storage
 pub fn knowledge_bases_dir(os: &Os) -> Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("knowledge_bases"))
+    Ok(home_dir(os)?.join(".aws").join("amazonq").join("knowledge_bases"))
 }
 
 /// The directory for agent-specific knowledge base storage

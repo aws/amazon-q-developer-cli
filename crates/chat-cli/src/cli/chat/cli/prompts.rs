@@ -731,7 +731,7 @@ impl PromptsArgs {
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print("Global (.kiro-cli/prompts):"),
+                    style::Print("Global (.aws/amazonq/prompts):"),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -748,7 +748,7 @@ impl PromptsArgs {
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print("Local (.kiro-cli/prompts):"),
+                    style::Print("Local (.amazonq/prompts):"),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
