@@ -201,6 +201,86 @@ use crate::telemetry::core::{
     RecordUserTurnCompletionArgs,
     ToolUseEventBuilder,
 };
+
+/// Wraps ToolUseEventBuilder with user interaction data for complete tracking
+#[derive(Debug)]
+pub struct AgentContributionMetric {
+    pub base: ToolUseEventBuilder,
+    pub user_decision: Option<UserDecision>,
+    pub lines_suggested: Option<usize>,
+    pub lines_accepted: Option<usize>,
+    pub lines_rejected: Option<usize>,
+}
+
+/// User's final decision on tool execution after seeing preview
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UserDecision {
+    Accept,  // 'y' - user accepted the tool
+    Reject,  // 'n' - user rejected the tool
+    Trust,   // 't' - user trusted and accepted the tool
+}
+
+impl AgentContributionMetric {
+    pub fn new(conv_id: String, tool_use_id: String, model: Option<String>) -> Self {
+        Self {
+            base: ToolUseEventBuilder::new(conv_id, tool_use_id, model),
+            user_decision: None,
+            lines_suggested: None,
+            lines_accepted: None,
+            lines_rejected: None,
+        }
+    }
+
+    /// Initialize metric with tool content during validation phase (step 1)
+    pub fn init_with_tool_content(&mut self, tool_name: &str, content: &str) {
+        self.base.tool_name = Some(tool_name.to_string());
+        self.lines_suggested = Some(content.lines().count());
+    }
+
+    /// Finalize metric with user decision after y/n/t response (step 5)
+    pub fn finalize_with_user_decision(&mut self, decision: UserDecision) {
+        self.user_decision = Some(decision);
+        
+        match decision {
+            UserDecision::Accept => {
+                self.base.is_accepted = true;
+                self.base.is_trusted = false;
+                self.lines_accepted = self.lines_suggested;
+                self.lines_rejected = Some(0);
+            },
+            UserDecision::Trust => {
+                self.base.is_accepted = true;
+                self.base.is_trusted = true;
+                self.lines_accepted = self.lines_suggested;
+                self.lines_rejected = Some(0);
+            },
+            UserDecision::Reject => {
+                self.base.is_accepted = false;
+                self.base.is_trusted = false;
+                self.lines_accepted = Some(0);
+                self.lines_rejected = self.lines_suggested;
+            }
+        }
+    }
+}
+
+/// Extract content from tool input for line counting
+/// Supports fs_write (file_text) and execute_bash (command) tools
+fn extract_tool_content(tool_name: &str, tool_input: &serde_json::Value) -> Option<String> {
+    match tool_name {
+        "fs_write" => {
+            tool_input.get("file_text")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        },
+        "execute_bash" => {
+            tool_input.get("command")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string())
+        },
+        _ => None
+    }
+}
 use crate::telemetry::{
     ReasonCode,
     TelemetryResult,
@@ -662,8 +742,9 @@ pub struct ChatSession {
     tool_turn_start_time: Option<Instant>,
     /// [RequestMetadata] about the ongoing operation.
     user_turn_request_metadata: Vec<RequestMetadata>,
-    /// Telemetry events to be sent as part of the conversation. The HashMap key is tool_use_id.
-    tool_use_telemetry_events: HashMap<String, ToolUseEventBuilder>,
+    /// Enhanced telemetry events for agent contribution tracking. The HashMap key is tool_use_id.
+    /// Tracks complete user interaction flow: suggestion → preview → decision → execution
+    tool_use_telemetry_events: HashMap<String, AgentContributionMetric>,
     /// State used to keep track of tool use relation
     tool_use_status: ToolUseStatus,
     /// Any failed requests that could be useful for error report/debugging
@@ -2228,11 +2309,32 @@ impl ChatSession {
                 }
             }
 
-            // Check for a pending tool approval
+            // Check for a pending tool approval (step 3: user decision)
             if let Some(index) = self.pending_tool_index {
                 let is_trust = ["t", "T"].contains(&input);
+                let is_accept = ["y", "Y"].contains(&input);
+                let is_reject = ["n", "N"].contains(&input);
+                
                 let tool_use = &mut self.tool_uses[index];
-                if ["y", "Y"].contains(&input) || is_trust {
+                
+                // Finalize telemetry with user decision (step 5: complete metric)
+                if let Some(metric) = self.tool_use_telemetry_events.get_mut(&tool_use.id) {
+                    let decision = if is_trust {
+                        UserDecision::Trust
+                    } else if is_accept {
+                        UserDecision::Accept
+                    } else if is_reject {
+                        UserDecision::Reject
+                    } else {
+                        // Invalid input, don't finalize yet - return to prompt
+                        return Ok(ChatState::PromptUser { skip_printing_tools: false });
+                    };
+                    
+                    // Complete the metric with final user decision and line counts
+                    metric.finalize_with_user_decision(decision);
+                }
+                
+                if is_accept || is_trust {
                     if is_trust {
                         let formatted_tool_name = self
                             .conversation
@@ -2408,7 +2510,7 @@ impl ChatSession {
                 tool.accepted = true;
                 self.tool_use_telemetry_events
                     .entry(tool.id.clone())
-                    .and_modify(|ev| ev.is_trusted = true);
+                    .and_modify(|metric| metric.base.is_trusted = true);
                 continue;
             }
 
@@ -2427,19 +2529,19 @@ impl ChatSession {
         for tool in &self.tool_uses {
             let tool_start = std::time::Instant::now();
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
-            tool_telemetry = tool_telemetry.and_modify(|ev| {
-                ev.is_accepted = true;
+            tool_telemetry = tool_telemetry.and_modify(|metric| {
+                metric.base.is_accepted = true;
             });
 
             // Extract AWS service name and operation name if available
             if let Some(additional_info) = tool.tool.get_additional_info() {
                 if let Some(aws_service_name) = additional_info.get("aws_service_name").and_then(|v| v.as_str()) {
                     tool_telemetry =
-                        tool_telemetry.and_modify(|ev| ev.aws_service_name = Some(aws_service_name.to_string()));
+                        tool_telemetry.and_modify(|metric| metric.base.aws_service_name = Some(aws_service_name.to_string()));
                 }
                 if let Some(aws_operation_name) = additional_info.get("aws_operation_name").and_then(|v| v.as_str()) {
                     tool_telemetry =
-                        tool_telemetry.and_modify(|ev| ev.aws_operation_name = Some(aws_operation_name.to_string()));
+                        tool_telemetry.and_modify(|metric| metric.base.aws_operation_name = Some(aws_operation_name.to_string()));
                 }
             }
 
@@ -2546,16 +2648,16 @@ impl ChatSession {
 
             let tool_end_time = Instant::now();
             let tool_time = tool_end_time.duration_since(tool_start);
-            tool_telemetry = tool_telemetry.and_modify(|ev| {
-                ev.execution_duration = Some(tool_time);
-                ev.turn_duration = self.tool_turn_start_time.map(|t| tool_end_time.duration_since(t));
+            tool_telemetry = tool_telemetry.and_modify(|metric| {
+                metric.base.execution_duration = Some(tool_time);
+                metric.base.turn_duration = self.tool_turn_start_time.map(|t| tool_end_time.duration_since(t));
             });
             if let Tool::Custom(ct) = &tool.tool {
-                tool_telemetry = tool_telemetry.and_modify(|ev| {
-                    ev.is_custom_tool = true;
+                tool_telemetry = tool_telemetry.and_modify(|metric| {
+                    metric.base.is_custom_tool = true;
                     // legacy fields previously implemented for only MCP tools
-                    ev.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
-                    ev.input_token_size = Some(ct.get_input_token_size());
+                    metric.base.custom_tool_call_latency = Some(tool_time.as_secs() as usize);
+                    metric.base.input_token_size = Some(ct.get_input_token_size());
                 });
             }
             let tool_time = format!("{}.{}", tool_time.as_secs(), tool_time.subsec_millis());
@@ -2599,10 +2701,10 @@ impl ChatSession {
                     }
                     execute!(self.stdout, style::Print("\n\n"))?;
 
-                    tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
+                    tool_telemetry = tool_telemetry.and_modify(|metric| metric.base.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {
                         tool_telemetry
-                            .and_modify(|ev| ev.output_token_size = Some(TokenCounter::count_tokens(&result.as_str())));
+                            .and_modify(|metric| metric.base.output_token_size = Some(TokenCounter::count_tokens(&result.as_str())));
                     }
 
                     // Send telemetry for agent contribution
@@ -2653,9 +2755,9 @@ impl ChatSession {
                         style::Print("\n\n"),
                     )?;
 
-                    tool_telemetry.and_modify(|ev| {
-                        ev.is_success = Some(false);
-                        ev.reason_desc = Some(err.to_string());
+                    tool_telemetry.and_modify(|metric| {
+                        metric.base.is_success = Some(false);
+                        metric.base.reason_desc = Some(err.to_string());
                     });
                     tool_results.push(ToolUseResult {
                         tool_use_id: tool.id.clone(),
@@ -3225,14 +3327,22 @@ impl ChatSession {
             let tool_use_id = tool_use.id.clone();
             let tool_use_name = tool_use.name.clone();
             let tool_input = tool_use.args.clone();
-            let mut tool_telemetry = ToolUseEventBuilder::new(
+            // Create enhanced metric for agent contribution tracking (step 1: validation)
+            let mut tool_telemetry = AgentContributionMetric::new(
                 conv_id.clone(),
                 tool_use.id.clone(),
                 self.conversation.model_info.as_ref().map(|m| m.model_id.clone()),
-            )
-            .set_tool_use_id(tool_use_id.clone())
-            .set_tool_name(tool_use.name.clone())
-            .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
+            );
+            tool_telemetry.base = tool_telemetry.base
+                .set_tool_use_id(tool_use_id.clone())
+                .set_tool_name(tool_use.name.clone())
+                .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
+
+            // Initialize with tool content for line counting (step 2: content analysis)
+            if let Some(content) = extract_tool_content(&tool_use_name, &tool_input) {
+                tool_telemetry.init_with_tool_content(&tool_use_name, &content);
+            }
+
             match self.conversation.tool_manager.get_tool_from_tool_use(tool_use).await {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
@@ -3240,7 +3350,7 @@ impl ChatSession {
 
                     match tool.validate(os).await {
                         Ok(()) => {
-                            tool_telemetry.is_valid = Some(true);
+                            tool_telemetry.base.is_valid = Some(true);
                             queued_tools.push(QueuedTool {
                                 id: tool_use_id.clone(),
                                 name: tool_use_name,
@@ -3250,7 +3360,7 @@ impl ChatSession {
                             });
                         },
                         Err(err) => {
-                            tool_telemetry.is_valid = Some(false);
+                            tool_telemetry.base.is_valid = Some(false);
                             tool_results.push(ToolUseResult {
                                 tool_use_id: tool_use_id.clone(),
                                 content: vec![ToolUseResultBlock::Text(format!(
@@ -3262,7 +3372,7 @@ impl ChatSession {
                     };
                 },
                 Err(err) => {
-                    tool_telemetry.is_valid = Some(false);
+                    tool_telemetry.base.is_valid = Some(false);
                     tool_results.push(err.into());
                 },
             }
@@ -3577,15 +3687,18 @@ impl ChatSession {
         generated_prompt
     }
 
+    /// Send enhanced agent contribution telemetry with complete user interaction data
+    /// Approach 2: Single metric per tool with all information (suggestion + decision + execution)
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
-        for (_, mut event) in self.tool_use_telemetry_events.drain() {
-            event.user_input_id = match self.tool_use_status {
+        for (_, mut metric) in self.tool_use_telemetry_events.drain() {
+            metric.base.user_input_id = match self.tool_use_status {
                 ToolUseStatus::Idle => self.conversation.message_id(),
                 ToolUseStatus::RetryInProgress(ref id) => Some(id.as_str()),
             }
             .map(|v| v.to_string());
 
-            os.telemetry.send_tool_use_suggested(&os.database, event).await.ok();
+            // Send complete metric via existing ToolUseSuggested event
+            os.telemetry.send_tool_use_suggested(&os.database, metric.base).await.ok();
         }
     }
 
