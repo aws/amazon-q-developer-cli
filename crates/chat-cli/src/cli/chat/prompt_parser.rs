@@ -1,4 +1,4 @@
-use crate::cli::agent::DEFAULT_AGENT_NAME;
+use crate::constants::DEFAULT_AGENT_NAME;
 
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]

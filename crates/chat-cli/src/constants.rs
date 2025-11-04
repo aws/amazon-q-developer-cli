@@ -14,6 +14,9 @@ pub const CLIENT_NAME: &str = "Kiro Developer for command line";
 /// GitHub issues URL for bug reports and feature requests
 pub const GITHUB_ISSUES_URL: &str = "https://github.com/kirodotdev/Kiro/issues/new";
 
+/// Default agent name
+pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding

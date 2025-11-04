@@ -60,6 +60,7 @@ use crate::cli::agent::hook::{
     Hook,
     HookTrigger,
 };
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -70,8 +71,6 @@ use crate::util::{
     file_uri,
     paths,
 };
-
-pub const DEFAULT_AGENT_NAME: &str = "default";
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {

@@ -23,6 +23,7 @@ use strum::{
     EnumString,
 };
 
+use crate::cli::Agent;
 use crate::cli::agent::Agents;
 use crate::cli::chat::tools::{
     InvokeOutput,
@@ -32,10 +33,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
 };
-use crate::cli::{
-    Agent,
-    DEFAULT_AGENT_NAME,
-};
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
