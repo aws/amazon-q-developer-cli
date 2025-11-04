@@ -1,7 +1,5 @@
 //! Hierarchical path management for the application
 
-#[cfg(test)]
-use std::collections::HashSet;
 use std::env::VarError;
 use std::path::{
     PathBuf,
@@ -85,32 +83,6 @@ impl FileSystemChecker for RealFileSystem {
     }
 }
 
-/// Test filesystem implementation
-#[cfg(test)]
-struct TestFileSystem {
-    existing_paths: HashSet<PathBuf>,
-}
-
-#[cfg(test)]
-impl TestFileSystem {
-    fn new() -> Self {
-        Self {
-            existing_paths: HashSet::new(),
-        }
-    }
-
-    fn add_path(&mut self, path: impl Into<PathBuf>) {
-        self.existing_paths.insert(path.into());
-    }
-}
-
-#[cfg(test)]
-impl FileSystemChecker for TestFileSystem {
-    fn exists(&self, path: &std::path::Path) -> bool {
-        self.existing_paths.contains(path)
-    }
-}
-
 fn resolve_migrated_path_with_fs(
     fs: &dyn FileSystemChecker,
     home_dir: &std::path::Path,
@@ -155,11 +127,11 @@ fn resolve_migrated_path_with_fs(
         },
         (true, true) => {
             warn!(
-                "Config conflict: Both .amazonq and .kiro {} configs exist, using .amazonq at: {}",
+                "Config conflict: Both .amazonq and .kiro {} configs exist, using .kiro at: {}",
                 scope,
-                amazonq_base.display()
+                kiro_base.display()
             );
-            amazonq_base.join(subpath)
+            kiro_base.join(subpath)
         },
         (false, false) => {
             debug!(
@@ -461,9 +433,36 @@ impl<'a> GlobalPaths<'a> {
 
 #[cfg(test)]
 mod migration_tests {
-    use std::path::Path;
+    use std::collections::HashSet;
+    use std::path::{
+        Path,
+        PathBuf,
+    };
 
     use super::*;
+
+    /// Test filesystem implementation
+    struct TestFileSystem {
+        existing_paths: HashSet<PathBuf>,
+    }
+
+    impl TestFileSystem {
+        fn new() -> Self {
+            Self {
+                existing_paths: HashSet::new(),
+            }
+        }
+
+        fn add_path(&mut self, path: impl Into<PathBuf>) {
+            self.existing_paths.insert(path.into());
+        }
+    }
+
+    impl FileSystemChecker for TestFileSystem {
+        fn exists(&self, path: &std::path::Path) -> bool {
+            self.existing_paths.contains(path)
+        }
+    }
 
     #[test]
     fn test_kiro_only_workspace() {
@@ -499,8 +498,8 @@ mod migration_tests {
         let current = Path::new("/current");
 
         let path = resolve_migrated_path_with_fs(&fs, home, current, false, "cli-agents");
-        // Should prefer .amazonq when both exist
-        assert_eq!(path, Path::new("/current/.amazonq/cli-agents"));
+        // Should prefer .kiro when both exist
+        assert_eq!(path, Path::new("/current/.kiro/cli-agents"));
     }
 
     #[test]
@@ -549,8 +548,8 @@ mod migration_tests {
         let current = Path::new("/current");
 
         let path = resolve_migrated_path_with_fs(&fs, home, current, true, "cli-agents");
-        // Should prefer .amazonq when both exist
-        assert_eq!(path, Path::new("/home/user/.aws/amazonq/cli-agents"));
+        // Should prefer .kiro when both exist
+        assert_eq!(path, Path::new("/home/user/.aws/kiro/cli-agents"));
     }
 
     #[test]
