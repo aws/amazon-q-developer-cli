@@ -5,9 +5,9 @@ use anstream::{
 use crossterm::style::Stylize;
 use eyre::Result;
 
+use crate::constants::GITHUB_ISSUES_URL;
 use crate::os::Os;
 use crate::os::diagnostics::Diagnostics;
-use crate::util::GITHUB_REPO_NAME;
 use crate::util::system_info::is_remote;
 
 const TEMPLATE_NAME: &str = "1_bug_report_template.yml";
@@ -70,10 +70,7 @@ impl IssueCreator {
             params.push(("reproduce", warning(t)));
         }
 
-        let url = url::Url::parse_with_params(
-            &format!("https://github.com/{GITHUB_REPO_NAME}/issues/new"),
-            params.iter(),
-        )?;
+        let url = url::Url::parse_with_params(GITHUB_ISSUES_URL, params.iter())?;
 
         if is_remote() || crate::util::open::open_url_async(url.as_str()).await.is_err() {
             println!("Issue Url: {}", url.as_str().underlined());
