@@ -61,6 +61,27 @@ impl BedrockApiClient {
         // Build messages from history and current message
         let mut messages = Vec::new();
 
+        // Debug: Log what's in the history
+        if let Some(ref hist) = history {
+            eprintln!("=== HISTORY DEBUG ===");
+            for (i, msg) in hist.iter().enumerate() {
+                match msg {
+                    crate::api_client::model::ChatMessage::UserInputMessage(u) => {
+                        eprintln!("History[{}]: User - content_len={}, has_context={}", 
+                            i, u.content.len(), u.user_input_message_context.is_some());
+                        if let Some(ref ctx) = u.user_input_message_context {
+                            eprintln!("  - tool_results: {:?}", ctx.tool_results.as_ref().map(|r| r.len()));
+                        }
+                    }
+                    crate::api_client::model::ChatMessage::AssistantResponseMessage(a) => {
+                        eprintln!("History[{}]: Assistant - content_len={}, tool_uses={}", 
+                            i, a.content.len(), a.tool_uses.as_ref().map(|t| t.len()).unwrap_or(0));
+                    }
+                }
+            }
+            eprintln!("=== END HISTORY ===");
+        }
+
         // Add history messages
         if let Some(hist) = history {
             for msg in hist {
@@ -88,14 +109,25 @@ impl BedrockApiClient {
         messages = filtered_messages;
 
         // Add current user message
-        let user_content = ContentBlock::Text(user_input_message.content.clone());
-        messages.push(
-            Message::builder()
-                .role(ConversationRole::User)
-                .content(user_content)
-                .build()
-                .map_err(|e| eyre::eyre!("Failed to build message: {}", e))?,
-        );
+        eprintln!("=== CURRENT MESSAGE ===");
+        eprintln!("User content_len={}, has_context={}", 
+            user_input_message.content.len(), 
+            user_input_message.user_input_message_context.is_some());
+        if let Some(ref ctx) = user_input_message.user_input_message_context {
+            eprintln!("  - tool_results: {:?}", ctx.tool_results.as_ref().map(|r| r.len()));
+            eprintln!("  - tools: {:?}", ctx.tools.as_ref().map(|t| t.len()));
+        }
+        
+        let converted_current = self.convert_chat_message_to_bedrock(
+            crate::api_client::model::ChatMessage::UserInputMessage(user_input_message.clone())
+        )?;
+        eprintln!("Converted current message to {} Bedrock messages", converted_current.len());
+        for (i, msg) in converted_current.iter().enumerate() {
+            eprintln!("  Converted[{}]: role={:?}, content_blocks={}", i, msg.role(), msg.content().len());
+        }
+        eprintln!("=== END CURRENT ===");
+        
+        messages.extend(converted_current);
 
         tracing::debug!("Sending {} messages to Bedrock", messages.len());
         for (i, msg) in messages.iter().enumerate() {
@@ -208,13 +240,13 @@ impl BedrockApiClient {
                     content_blocks.push(ContentBlock::Text(user_msg.content.clone()));
                 }
                 
-                // Add tool results if present
-                if let Some(ctx) = user_msg.user_input_message_context {
+                // Add tool results if present (use as_ref to avoid moving)
+                if let Some(ref ctx) = user_msg.user_input_message_context {
                     tracing::debug!("Has context, tool_results present: {}", ctx.tool_results.is_some());
-                    if let Some(tool_results) = ctx.tool_results {
+                    if let Some(ref tool_results) = ctx.tool_results {
                         tracing::debug!("Processing {} tool results", tool_results.len());
                         for result in tool_results {
-                            let tool_result_content: Vec<_> = result.content.into_iter().filter_map(|c| {
+                            let tool_result_content: Vec<_> = result.content.iter().filter_map(|c| {
                                 match c {
                                     crate::api_client::model::ToolResultContentBlock::Json(doc) => {
                                         // Convert JSON to text representation
@@ -223,7 +255,7 @@ impl BedrockApiClient {
                                         ))
                                     }
                                     crate::api_client::model::ToolResultContentBlock::Text(text) => {
-                                        Some(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(text))
+                                        Some(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(text.clone()))
                                     }
                                 }
                             }).collect();
@@ -239,7 +271,7 @@ impl BedrockApiClient {
                             
                             content_blocks.push(ContentBlock::ToolResult(
                                 aws_sdk_bedrockruntime::types::ToolResultBlock::builder()
-                                    .tool_use_id(result.tool_use_id)
+                                    .tool_use_id(result.tool_use_id.clone())
                                     .set_content(Some(tool_result_content))
                                     .status(status)
                                     .build()
