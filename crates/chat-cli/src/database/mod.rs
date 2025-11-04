@@ -63,6 +63,7 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 const HEARTBEAT_DATE_KEY: &str = "telemetry.lastHeartbeatDate";
+const KIRO_MIGRATION_KEY: &str = "migration.kiro.completed";
 
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
@@ -196,7 +197,7 @@ impl Database {
                 }
                 .migrate();
             },
-            false => GlobalPaths::database_path_static()?,
+            false => GlobalPaths::database_path()?,
         };
 
         // make the parent dir if it doesnt exist
@@ -352,6 +353,19 @@ impl Database {
         use chrono::Utc;
         let today = Utc::now().format("%Y-%m-%d").to_string();
         self.set_entry(Table::State, HEARTBEAT_DATE_KEY, today)?;
+        Ok(())
+    }
+
+    /// Check if kiro migration has been completed
+    pub fn is_kiro_migration_completed(&self) -> Result<bool, DatabaseError> {
+        Ok(self
+            .get_entry::<bool>(Table::State, KIRO_MIGRATION_KEY)?
+            .unwrap_or(false))
+    }
+
+    /// Mark kiro migration as completed
+    pub fn set_kiro_migration_completed(&self) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, KIRO_MIGRATION_KEY, true)?;
         Ok(())
     }
 

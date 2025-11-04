@@ -65,6 +65,8 @@ pub mod global {
     //! User-level paths (relative to home directory)
     pub const SHADOW_REPO_DIR: &str = ".aws/amazonq/cli-checkouts";
     pub const CLI_BASH_HISTORY: &str = ".aws/amazonq/.cli_bash_history";
+    pub const SETTINGS_FILE: &str = ".aws/kiro-cli/settings.json";
+    pub const MIGRATION_LOCK_FILE: &str = ".aws/kiro-cli/.migration.lock";
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
@@ -403,31 +405,46 @@ impl<'a> GlobalPaths<'a> {
         Ok(dir)
     }
 
+    /// Get settings path (new location with fallback to old)
     pub fn settings_path() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
+        Ok(dirs::home_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("settings.json"))
+            .join(global::SETTINGS_FILE))
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
         Ok(home_dir(self.os)?.join(".aws").join("sso").join("cache"))
     }
 
-    /// Static method for settings path that doesn't require Os (to avoid circular dependency)
-    pub fn settings_path_static() -> Result<PathBuf> {
+    /// Get database path (new location with fallback to old)
+    pub fn database_path() -> Result<PathBuf> {
+        Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("kiro-cli")
+            .join("data.sqlite3"))
+    }
+
+    /// Get old database path (amazon-q location)
+    pub fn old_database_path() -> Result<PathBuf> {
+        Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("amazon-q")
+            .join("data.sqlite3"))
+    }
+
+    /// Get old settings path (amazon-q location)
+    pub fn old_settings_path() -> Result<PathBuf> {
         Ok(dirs::data_local_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("amazon-q")
             .join("settings.json"))
     }
 
-    /// Static method for database path that doesn't require Os (to avoid circular dependency)
-    pub fn database_path_static() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
+    /// Get migration lock file path
+    pub fn migration_lock_path() -> Result<PathBuf> {
+        Ok(dirs::home_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("data.sqlite3"))
+            .join(global::MIGRATION_LOCK_FILE))
     }
 }
 

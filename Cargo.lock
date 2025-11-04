@@ -1532,6 +1532,7 @@ dependencies = [
  "ring",
  "rmcp",
  "rusqlite",
+ "rustix 1.1.2",
  "rustls 0.23.34",
  "rustls-native-certs 0.8.2",
  "rustls-pemfile 2.2.0",
