@@ -64,7 +64,7 @@ impl acp::Client for AcpClient {
 
 pub async fn execute(agent_path: String) -> Result<ExitCode> {
     let mut child = tokio::process::Command::new(&agent_path)
-        .arg("sacp")  // Add the acp subcommand
+        .arg("acp")  // Add the acp subcommand
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .kill_on_drop(true)

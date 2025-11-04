@@ -1,7 +1,6 @@
 mod acp_agent;
 mod acp_client;
 mod run;
-mod sacp_agent;
 
 use std::process::ExitCode;
 
@@ -64,24 +63,21 @@ impl CliArgs {
 pub enum RootSubcommand {
     /// Run a single prompt
     Run(RunArgs),
-    /// Agent Client Protocol server
-    Acp,
     /// Test ACP client
     AcpClient {
         /// Path to the ACP agent executable
         agent_path: String,
     },
-    /// SACP server
-    Sacp,
+    /// ACP server
+    Acp,
 }
 
 impl RootSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
         match self {
             RootSubcommand::Run(run_args) => run_args.execute().await,
-            RootSubcommand::Acp => acp_agent::execute().await,
             RootSubcommand::AcpClient { agent_path } => acp_client::execute(agent_path).await,
-            RootSubcommand::Sacp => sacp_agent::execute().await,
+            RootSubcommand::Acp => acp_agent::execute().await,
         }
     }
 }
