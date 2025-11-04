@@ -1,0 +1,33 @@
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"Hello"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"! I'm Amazon"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" Q"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":", an"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" AI assistant built"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" by AWS"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":". I'm here to"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" help you with AWS"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" services"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":", software"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" development, infrastructure"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":", and system"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" administration tasks"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"."},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" \n\nWhat"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" can I help"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" you with today?"},"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"endTurn"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-11-04T00:44:30.186448Z","requestEndTime":"2025-11-04T00:44:32.273193Z","timeToFirstChunk":{"secs":2,"nanos":20987458},"timeBetweenChunks":[{"secs":0,"nanos":341542},{"secs":0,"nanos":211875},{"secs":0,"nanos":66500},{"secs":0,"nanos":101291},{"secs":0,"nanos":54459},{"secs":0,"nanos":90250},{"secs":0,"nanos":160875},{"secs":0,"nanos":137292},{"secs":0,"nanos":47357041},{"secs":0,"nanos":138042},{"secs":0,"nanos":662833},{"secs":0,"nanos":14983000},{"secs":0,"nanos":246042},{"secs":0,"nanos":57667},{"secs":0,"nanos":243500},{"secs":0,"nanos":62292},{"secs":0,"nanos":33791},{"secs":0,"nanos":30750},{"secs":0,"nanos":9292},{"secs":0,"nanos":750}],"responseStreamLen":195},"usage":null,"service":{"requestId":"5d05238c-e41c-4c0f-94a4-ab7ddcd4a880","statusCode":null}}}
+
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"Goodbye! Feel"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" free to come"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" back anytime if"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" you need help with AWS"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":","},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" coding"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":", or system"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" administration tasks"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"."},"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"endTurn"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-11-04T00:44:34.096012Z","requestEndTime":"2025-11-04T00:44:36.149234Z","timeToFirstChunk":{"secs":2,"nanos":26682459},"timeBetweenChunks":[{"secs":0,"nanos":277500},{"secs":0,"nanos":191416},{"secs":0,"nanos":45791},{"secs":0,"nanos":35875},{"secs":0,"nanos":38708},{"secs":0,"nanos":376417},{"secs":0,"nanos":80500},{"secs":0,"nanos":32375},{"secs":0,"nanos":33458},{"secs":0,"nanos":50375},{"secs":0,"nanos":24768792},{"secs":0,"nanos":5042}],"responseStreamLen":106},"usage":null,"service":{"requestId":"d66155e6-4641-4795-92a6-021fbe5ff5c7","statusCode":null}}}

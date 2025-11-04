@@ -164,6 +164,19 @@ impl TestCase {
         &self.sent_requests
     }
 
+    pub async fn wait_until_agent_initializes(&mut self, timeout: Duration) {
+        let timeout_at = Instant::now() + timeout;
+        loop {
+            let evt = tokio::time::timeout_at(timeout_at.into(), self.recv_agent_event())
+                .await 
+                .expect("timed out");
+            match &evt {
+                AgentEvent::Initialized => break,
+                _ => (),
+            }
+        }
+    }
+
     pub async fn wait_until_agent_stop(&mut self, timeout: Duration) {
         let timeout_at = Instant::now() + timeout;
         loop {

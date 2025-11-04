@@ -49,9 +49,11 @@ async fn test_agent_defaults() {
         .build()
         .await
         .unwrap();
+    
+    test.wait_until_agent_initializes(Duration::from_millis(100)).await;
 
     test.send_prompt("start turn".to_string()).await;
-
+    
     test.wait_until_agent_stop(Duration::from_secs(2)).await;
 
     for req in test.requests() {
