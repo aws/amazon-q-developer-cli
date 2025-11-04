@@ -52,6 +52,7 @@ pub mod workspace {
     //! Project-level paths (relative to current working directory)
     pub const TODO_LISTS_DIR: &str = ".amazonq/cli-todo-lists";
     pub const SUBAGENTS_DIR: &str = ".amazonq/.subagents";
+    pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources
     pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
@@ -174,12 +175,20 @@ fn resolve_migrated_path_with_fs(
     result_path
 }
 
-fn resolve_migrated_path(os: &Os, is_global: bool, subpath: &str) -> Result<PathBuf> {
+fn resolve_global_migrated_path(os: &Os, subpath: &str) -> Result<PathBuf> {
     let fs = RealFileSystem;
     let home = home_dir(os)?;
     let current = os.env.current_dir()?;
 
-    Ok(resolve_migrated_path_with_fs(&fs, &home, &current, is_global, subpath))
+    Ok(resolve_migrated_path_with_fs(&fs, &home, &current, true, subpath))
+}
+
+fn resolve_local_migrated_path(os: &Os, subpath: &str) -> Result<PathBuf> {
+    let fs = RealFileSystem;
+    let home = home_dir(os)?;
+    let current = os.env.current_dir()?;
+
+    Ok(resolve_migrated_path_with_fs(&fs, &home, &current, false, subpath))
 }
 
 /// The directory of the users home
@@ -344,19 +353,19 @@ pub struct WorkspacePaths<'a> {
 
 impl<'a> WorkspacePaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, false, "cli-agents")
+        resolve_local_migrated_path(self.os, "cli-agents")
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, false, "prompts")
+        resolve_local_migrated_path(self.os, "prompts")
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, false, "mcp.json")
+        resolve_local_migrated_path(self.os, "mcp.json")
     }
 
     pub fn rules_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, false, "rules")
+        resolve_local_migrated_path(self.os, "rules")
     }
 
     pub fn todo_lists_dir(&self) -> Result<PathBuf> {
@@ -383,19 +392,19 @@ pub struct GlobalPaths<'a> {
 
 impl<'a> GlobalPaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "cli-agents")
+        resolve_global_migrated_path(self.os, "cli-agents")
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "prompts")
+        resolve_global_migrated_path(self.os, "prompts")
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "mcp.json")
+        resolve_global_migrated_path(self.os, "mcp.json")
     }
 
     pub fn profiles_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "profiles")
+        resolve_global_migrated_path(self.os, "profiles")
     }
 
     pub fn shadow_repo_dir(&self) -> Result<PathBuf> {
@@ -407,11 +416,11 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn global_context(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "global_context.json")
+        resolve_global_migrated_path(self.os, "global_context.json")
     }
 
     pub fn knowledge_bases_dir(&self) -> Result<PathBuf> {
-        resolve_migrated_path(self.os, true, "knowledge_bases")
+        resolve_global_migrated_path(self.os, "knowledge_bases")
     }
 
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
