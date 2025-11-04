@@ -135,12 +135,15 @@ impl McpService {
                 let start_time = Instant::now();
                 info!(?self.server_name, "Launching MCP server");
 
+                let mut processed_headers = headers.clone();
+                expand_env_vars(&mut processed_headers);
+
                 let http_service_builder = HttpServiceBuilder::new(
                     &self.server_name,
                     url,
                     *timeout,
                     scopes,
-                    headers,
+                    &processed_headers,
                     oauth_config,
                     event_tx,
                 );
