@@ -1,54 +1,62 @@
 use crate::os::Env;
 use crate::util::consts::env_var::*;
 
-/// Get log level from environment
+/// Get log level from environment with fallback
 pub fn get_log_level(env: &Env) -> Result<String, std::env::VarError> {
-    env.get(Q_LOG_LEVEL)
+    env.get(KIRO_LOG_LEVEL).or_else(|_| env.get(Q_LOG_LEVEL))
 }
 
 /// Get chat shell with default fallback
 #[cfg(unix)]
 pub fn get_chat_shell() -> String {
-    Env::new()
-        .get(AMAZON_Q_CHAT_SHELL)
+    let env = Env::new();
+    env.get(KIRO_CHAT_SHELL)
+        .or_else(|_| env.get(AMAZON_Q_CHAT_SHELL))
         .unwrap_or_else(|_| "bash".to_string())
 }
 
 /// Check if stdout logging is enabled
 pub fn is_log_stdout_enabled() -> bool {
-    Env::new().get_os(Q_LOG_STDOUT).is_some()
+    let env = Env::new();
+    env.get_os(KIRO_LOG_STDOUT).is_some() || env.get_os(Q_LOG_STDOUT).is_some()
 }
 
 /// Check if telemetry is disabled
 pub fn is_telemetry_disabled() -> bool {
-    Env::new().get_os(Q_DISABLE_TELEMETRY).is_some()
+    let env = Env::new();
+    env.get_os(KIRO_DISABLE_TELEMETRY).is_some() || env.get_os(Q_DISABLE_TELEMETRY).is_some()
 }
 
 /// Get mock chat response for testing
 pub fn get_mock_chat_response(env: &Env) -> Option<String> {
-    env.get(Q_MOCK_CHAT_RESPONSE).ok()
+    env.get(KIRO_MOCK_CHAT_RESPONSE)
+        .or_else(|_| env.get(Q_MOCK_CHAT_RESPONSE))
+        .ok()
 }
 
 /// Check if truecolor is disabled
 pub fn is_truecolor_disabled() -> bool {
-    Env::new().get_os(Q_DISABLE_TRUECOLOR).is_some_and(|s| !s.is_empty())
+    let env = Env::new();
+    env.get_os(KIRO_DISABLE_TRUECOLOR).is_some_and(|s| !s.is_empty())
+        || env.get_os(Q_DISABLE_TRUECOLOR).is_some_and(|s| !s.is_empty())
 }
 
 /// Check if remote environment is faked
 pub fn is_remote_fake() -> bool {
-    Env::new().get_os(Q_FAKE_IS_REMOTE).is_some()
+    let env = Env::new();
+    env.get_os(KIRO_FAKE_IS_REMOTE).is_some() || env.get_os(Q_FAKE_IS_REMOTE).is_some()
 }
 
 /// Check if running in Codespaces
 pub fn in_codespaces() -> bool {
     let env = Env::new();
-    env.get_os(CODESPACES).is_some() || env.get_os(Q_CODESPACES).is_some()
+    env.get_os(CODESPACES).is_some() || env.get_os(KIRO_CODESPACES).is_some() || env.get_os(Q_CODESPACES).is_some()
 }
 
 /// Check if running in CI
 pub fn in_ci() -> bool {
     let env = Env::new();
-    env.get_os(CI).is_some() || env.get_os(Q_CI).is_some()
+    env.get_os(CI).is_some() || env.get_os(KIRO_CI).is_some() || env.get_os(Q_CI).is_some()
 }
 
 pub fn is_integ_test() -> bool {
@@ -57,7 +65,10 @@ pub fn is_integ_test() -> bool {
 
 /// Get CLI client application
 pub fn get_cli_client_application() -> Option<String> {
-    Env::new().get(Q_CLI_CLIENT_APPLICATION).ok()
+    let env = Env::new();
+    env.get(KIRO_CLI_CLIENT_APPLICATION)
+        .or_else(|_| env.get(Q_CLI_CLIENT_APPLICATION))
+        .ok()
 }
 
 /// Get editor with default fallback
@@ -92,5 +103,6 @@ pub fn get_all_env_vars() -> std::env::Vars {
 
 /// Get telemetry client ID
 pub fn get_telemetry_client_id(env: &Env) -> Result<String, std::env::VarError> {
-    env.get(Q_TELEMETRY_CLIENT_ID)
+    env.get(KIRO_TELEMETRY_CLIENT_ID)
+        .or_else(|_| env.get(Q_TELEMETRY_CLIENT_ID))
 }

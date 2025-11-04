@@ -15,7 +15,7 @@ use semantic_search_client::types::{
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::cli::DEFAULT_AGENT_NAME;
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::paths;
 use crate::util::paths::PathResolver;

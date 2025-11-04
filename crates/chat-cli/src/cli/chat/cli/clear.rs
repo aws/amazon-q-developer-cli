@@ -29,11 +29,11 @@ impl ClearArgs {
                 "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
             ),
             style::Print("["),
-            StyledText::success_fg(),
+            StyledText::current_item_fg(),
             style::Print("y"),
             StyledText::secondary_fg(),
             style::Print("/"),
-            StyledText::success_fg(),
+            StyledText::current_item_fg(),
             style::Print("n"),
             StyledText::secondary_fg(),
             style::Print("]:\n\n"),
