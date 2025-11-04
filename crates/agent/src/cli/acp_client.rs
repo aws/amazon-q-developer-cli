@@ -41,12 +41,16 @@ impl acp::Client for AcpClient {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> Result<acp::RequestPermissionResponse, acp::Error> {
+        eprintln!("ACP Client received permission request: {:?}", args);
+        
         // Auto-approve first option if available
         let option_id = args
             .options
             .first()
             .map(|opt| opt.id.clone())
             .ok_or_else(|| acp::Error::internal_error())?;
+
+        eprintln!("ACP Client auto-approving with option: {:?}", option_id);
 
         Ok(acp::RequestPermissionResponse {
             outcome: acp::RequestPermissionOutcome::Selected { option_id },

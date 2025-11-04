@@ -42,8 +42,12 @@ use sacp::{
     JrRequestCx,
     NewSessionRequest,
     NewSessionResponse,
+    PermissionOption,
+    PermissionOptionId,
+    PermissionOptionKind,
     PromptRequest,
     PromptResponse,
+    RequestPermissionRequest,
     SessionId,
     SessionNotification,
     SessionUpdate,
@@ -52,6 +56,8 @@ use sacp::{
     ToolCall,
     ToolCallId,
     ToolCallStatus,
+    ToolCallUpdate,
+    ToolCallUpdateFields,
     ToolKind,
     V1,
 };
@@ -115,6 +121,7 @@ impl AcpSession {
                 match agent.recv().await {
                     Ok(event) => match event {
                         AgentEvent::Update(update_event) => {
+                            eprintln!("Received update_event: {:?}", update_event);
                             // Forward updates to ACP client via notifications
                             if let Some(session_update) = convert_update_event(update_event) {
                                 request_cx.send_notification(SessionNotification {
@@ -123,6 +130,51 @@ impl AcpSession {
                                     meta: None,
                                 })?;
                             }
+                        },
+                        AgentEvent::ApprovalRequest { id, tool_use, context } => {
+                            eprintln!("Received ApprovalRequest: id={}, tool_use={:?}, context={:?}", id, tool_use, context);
+                            
+                            let permission_request = RequestPermissionRequest {
+                                session_id: session_id.clone(),
+                                tool_call: ToolCallUpdate {
+                                    id: ToolCallId(tool_use.tool_use_id.clone().into()),
+                                    fields: ToolCallUpdateFields {
+                                        status: Some(ToolCallStatus::Pending),
+                                        title: Some(tool_use.name.clone()),
+                                        raw_input: Some(tool_use.input.clone()),
+                                        ..Default::default()
+                                    },
+                                    meta: None,
+                                },
+                                options: vec![
+                                    PermissionOption {
+                                        id: PermissionOptionId("allow".into()),
+                                        name: "Allow".to_string(),
+                                        kind: PermissionOptionKind::AllowOnce,
+                                        meta: None,
+                                    },
+                                    PermissionOption {
+                                        id: PermissionOptionId("deny".into()),
+                                        name: "Deny".to_string(),
+                                        kind: PermissionOptionKind::RejectOnce,
+                                        meta: None,
+                                    },
+                                ],
+                                meta: None,
+                            };
+                            
+                            eprintln!("Sending permission_request: {:?}", permission_request);
+                            
+                            match request_cx.send_request(permission_request).block_task().await {
+                                Ok(response) => {
+                                    eprintln!("Permission response: {:?}", response);
+                                },
+                                Err(err) => {
+                                    eprintln!("Permission request failed: {:?}", err);
+                                }
+                            }
+
+                            eprintln!("End permission_request");
                         },
                         AgentEvent::EndTurn(_metadata) => {
                             // Conversation complete - respond and exit task
