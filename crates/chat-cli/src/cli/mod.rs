@@ -11,6 +11,7 @@ pub mod experiment;
 pub mod feed;
 mod issue;
 mod mcp;
+mod migrate;
 mod settings;
 mod user;
 
@@ -127,6 +128,9 @@ pub enum RootSubcommand {
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
     Mcp(McpSubcommand),
+    /// Migrate data from amazon-q to kiro-cli (hidden)
+    #[command(hide = true)]
+    Migrate(migrate::MigrateArgs),
 }
 
 impl RootSubcommand {
@@ -181,6 +185,7 @@ impl RootSubcommand {
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
+            Self::Migrate(args) => args.execute(os).await,
         }
     }
 }
@@ -205,6 +210,7 @@ impl Display for RootSubcommand {
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
+            Self::Migrate(_) => "migrate",
         };
 
         write!(f, "{name}")
@@ -260,6 +266,16 @@ impl Cli {
         debug!(command =? std::env::args().collect::<Vec<_>>(), "Command being ran");
 
         let mut os = Os::new().await?;
+
+        // Run migration silently on startup (skips if already completed or locked)
+        let _ = migrate::MigrateArgs {
+            force: false,
+            dry_run: false,
+            yes: true,
+        }
+        .execute(&mut os)
+        .await;
+
         let result = subcommand.execute(&mut os).await;
 
         let telemetry_result = os.telemetry.finish().await;

@@ -69,6 +69,8 @@ pub mod global {
     pub const GLOBAL_CONTEXT: &str = ".aws/amazonq/global_context.json";
     pub const PROFILES_DIR: &str = ".aws/amazonq/profiles";
     pub const KNOWLEDGE_BASES_DIR: &str = ".aws/amazonq/knowledge_bases";
+    pub const SETTINGS_FILE: &str = ".aws/kiro-cli/settings.json";
+    pub const MIGRATION_LOCK_FILE: &str = ".aws/kiro-cli/.migration.lock";
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
@@ -309,30 +311,93 @@ impl<'a> GlobalPaths<'a> {
         Ok(dir)
     }
 
+    /// Get settings path (new location with fallback to old)
     pub fn settings_path() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("settings.json"))
+        let new_path = Self::new_settings_path()?;
+        if new_path.exists() {
+            return Ok(new_path);
+        }
+
+        let old_path = Self::old_settings_path()?;
+        if old_path.exists() {
+            return Ok(old_path);
+        }
+
+        Ok(new_path)
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
         Ok(home_dir(self.os)?.join(".aws").join("sso").join("cache"))
     }
 
-    /// Static method for settings path that doesn't require Os (to avoid circular dependency)
-    pub fn settings_path_static() -> Result<PathBuf> {
+    /// Get database path (new location with fallback to old)
+    pub fn database_path() -> Result<PathBuf> {
+        let new_path = Self::new_database_path()?;
+        if new_path.exists() {
+            return Ok(new_path);
+        }
+
+        let old_path = Self::old_database_path()?;
+        if old_path.exists() {
+            return Ok(old_path);
+        }
+
+        Ok(new_path)
+    }
+
+    /// Get old database path (amazon-q location)
+    pub fn old_database_path() -> Result<PathBuf> {
+        Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("amazon-q")
+            .join("data.sqlite3"))
+    }
+
+    /// Get new database path (kiro-cli location)
+    pub fn new_database_path() -> Result<PathBuf> {
+        Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("kiro-cli")
+            .join("data.sqlite3"))
+    }
+
+    /// Get old settings path (amazon-q location)
+    pub fn old_settings_path() -> Result<PathBuf> {
         Ok(dirs::data_local_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("amazon-q")
             .join("settings.json"))
     }
 
-    /// Static method for database path that doesn't require Os (to avoid circular dependency)
-    pub fn database_path_static() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
+    /// Get new settings path (kiro-cli location in home)
+    pub fn new_settings_path() -> Result<PathBuf> {
+        Ok(dirs::home_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("data.sqlite3"))
+            .join(global::SETTINGS_FILE))
+    }
+
+    /// Check if migration completed by reading settings file
+    pub fn is_migration_completed_static() -> Result<bool> {
+        let new_settings = Self::new_settings_path()?;
+        if !new_settings.exists() {
+            return Ok(false);
+        }
+
+        let content = std::fs::read_to_string(&new_settings)?;
+        let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) else {
+            return Ok(false);
+        };
+
+        Ok(settings
+            .get("migration.kiro.completed")
+            .and_then(|c| c.as_bool())
+            .unwrap_or(false))
+    }
+
+    /// Get migration lock file path
+    pub fn migration_lock_path() -> Result<PathBuf> {
+        Ok(dirs::home_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join(global::MIGRATION_LOCK_FILE))
     }
 }

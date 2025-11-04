@@ -196,7 +196,7 @@ impl Database {
                 }
                 .migrate();
             },
-            false => GlobalPaths::database_path_static()?,
+            false => GlobalPaths::database_path()?,
         };
 
         // make the parent dir if it doesnt exist
