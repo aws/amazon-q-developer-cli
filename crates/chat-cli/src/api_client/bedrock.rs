@@ -6,6 +6,7 @@ use aws_sdk_bedrockruntime::types::{
     ToolInputSchema, ToolSpecification,
 };
 use eyre::Result;
+use std::io::Write;
 
 use crate::api_client::model::{ConversationState, UserInputMessageContext};
 use crate::database::settings::Setting;
@@ -110,6 +111,47 @@ impl BedrockApiClient {
         let temperature = self.get_temperature();
         let max_tokens = self.get_max_tokens();
 
+        // Log the full request to a file for debugging
+        let debug_file = std::path::Path::new("/tmp/bedrock_api_calls.json");
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(debug_file)
+        {
+            let debug_data = serde_json::json!({
+                "timestamp": format!("{:?}", std::time::SystemTime::now()),
+                "model_id": &self.model_id,
+                "message_count": messages.len(),
+                "messages": messages.iter().map(|m| {
+                    serde_json::json!({
+                        "role": format!("{:?}", m.role()),
+                        "content_blocks": m.content().iter().map(|c| {
+                            match c {
+                                ContentBlock::Text(t) => serde_json::json!({"type": "text", "text": t}),
+                                ContentBlock::ToolUse(tu) => serde_json::json!({
+                                    "type": "toolUse",
+                                    "toolUseId": tu.tool_use_id(),
+                                    "name": tu.name(),
+                                    "input": format!("{:?}", tu.input())
+                                }),
+                                ContentBlock::ToolResult(tr) => serde_json::json!({
+                                    "type": "toolResult",
+                                    "toolUseId": tr.tool_use_id(),
+                                    "status": format!("{:?}", tr.status()),
+                                    "content_len": tr.content().len()
+                                }),
+                                _ => serde_json::json!({"type": "unknown"})
+                            }
+                        }).collect::<Vec<_>>()
+                    })
+                }).collect::<Vec<_>>(),
+                "tool_config_present": tool_config.is_some(),
+                "temperature": temperature,
+                "max_tokens": max_tokens
+            });
+            let _ = writeln!(file, "{}", serde_json::to_string_pretty(&debug_data).unwrap());
+        }
+
         // Build the request
         let mut request = self
             .client
@@ -157,7 +199,10 @@ impl BedrockApiClient {
                     .map(|results| !results.is_empty())
                     .unwrap_or(false);
                 
-                // Only add text content if we don't have tool results
+                tracing::debug!("UserInputMessage: has_tool_results={}, content_len={}", 
+                    has_tool_results, user_msg.content.len());
+                
+                // Only add text content if we don't have tool results AND text is not empty
                 // (Bedrock expects tool results in a separate user message without text)
                 if !has_tool_results && !user_msg.content.is_empty() {
                     content_blocks.push(ContentBlock::Text(user_msg.content.clone()));
@@ -165,7 +210,9 @@ impl BedrockApiClient {
                 
                 // Add tool results if present
                 if let Some(ctx) = user_msg.user_input_message_context {
+                    tracing::debug!("Has context, tool_results present: {}", ctx.tool_results.is_some());
                     if let Some(tool_results) = ctx.tool_results {
+                        tracing::debug!("Processing {} tool results", tool_results.len());
                         for result in tool_results {
                             let tool_result_content: Vec<_> = result.content.into_iter().filter_map(|c| {
                                 match c {
@@ -203,6 +250,20 @@ impl BedrockApiClient {
                 }
                 
                 // Don't send message if no content blocks
+                if content_blocks.is_empty() {
+                    return Ok(vec![]);
+                }
+                
+                // Filter out any empty text blocks
+                content_blocks.retain(|block| {
+                    if let ContentBlock::Text(t) = block {
+                        !t.is_empty()
+                    } else {
+                        true
+                    }
+                });
+                
+                // Check again after filtering
                 if content_blocks.is_empty() {
                     return Ok(vec![]);
                 }
