@@ -10,3 +10,4 @@ pub mod test_q_restart_subcommand;
 pub mod test_q_user_subcommand;
 pub mod test_q_settings_format_command;
 pub mod test_q_settings_deletecommand;
+pub mod test_q_quit_subcommand;

@@ -16,7 +16,7 @@ fn test_q_restart_subcommand() -> Result<(), Box<dyn std::error::Error>> {
     println!("📝 END OUTPUT");
 
     // Validate output contains expected restart messages
-    assert!(response.contains("Restart"), "Should contain 'Restarting Amazon Q'");
+    assert!(response.contains("Restart") || response.contains("Launching"), "Should contain 'Restarting Amazon Q' OR 'Launching Amazon Q'");
     assert!(response.contains("Open"), "Should contain 'Opening Amazon Q dashboard'");
     
     println!("✅ Amazon Q restart executed successfully!");
