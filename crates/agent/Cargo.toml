@@ -56,6 +56,7 @@ rmcp = { version = "0.8.0", features = ["client", "transport-async-rw", "transpo
 rusqlite.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
+sacp = "0.1"
 schemars = "1.0.4"
 semver.workspace = true
 serde.workspace = true
