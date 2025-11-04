@@ -2213,8 +2213,8 @@ mod tests {
         let path = workspace_mcp_config_path(&os)?;
         let path_str = path.to_string_lossy();
 
-        // Should end with .amazonq/mcp.json
-        assert!(path_str.ends_with(".amazonq/mcp.json"));
+        // Should end with .kiro/mcp.json (default fallback)
+        assert!(path_str.ends_with(".kiro/mcp.json"));
 
         Ok(())
     }

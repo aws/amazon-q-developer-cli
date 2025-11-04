@@ -197,7 +197,6 @@ impl Default for Agent {
             resources: {
                 let mut resources = Vec::new();
                 resources.extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
-                resources.push(format!("file://{}", paths::workspace::RULES_PATTERN).into());
                 resources
             },
             hooks: Default::default(),
@@ -740,6 +739,13 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
+
+                // Add rules pattern using dynamic path resolution
+                if let Ok(rules_dir) = resolver.workspace().rules_dir() {
+                    let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
+                    agent.resources.push(rules_pattern.into());
+                }
+
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {

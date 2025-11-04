@@ -34,8 +34,6 @@ use tracing::{
 use super::util::directories::{
     global_agents_path,
     legacy_global_mcp_config_path,
-};
-use crate::agent::util::directories::{
     legacy_workspace_mcp_config_path,
     local_agents_path,
 };
