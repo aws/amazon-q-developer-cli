@@ -27,14 +27,14 @@ use std::process::ExitCode;
 use std::sync::Arc;
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
-/// SACP Agent handler that processes requests using Amazon Q agent
-struct SacpAgentHandler {
+/// ACP Session that processes requests using Amazon Q agent
+struct AcpSession {
     agent: AgentHandle,
     session_id: SessionId,
 }
 
-impl SacpAgentHandler {
-    /// Create a new SACP agent handler with Amazon Q backend
+impl AcpSession {
+    /// Create a new ACP session handler with Amazon Q backend
     async fn new() -> Result<Self> {
         // Create agent snapshot
         let snapshot = AgentSnapshot::default();
@@ -58,7 +58,10 @@ impl SacpAgentHandler {
         })
     }
 
-    /// Handle prompt request - returns immediately after spawning background task
+    /// Handle prompt request. Overall we do the following:
+    ///  - submit the request to the agent
+    ///  - convert agent events to ACP events and send them back to ACP client
+    ///  - tell ACP client that the request is completed
     async fn handle_prompt_request(
         &self,
         request: PromptRequest,
@@ -74,8 +77,8 @@ impl SacpAgentHandler {
         // Move request_cx into the task for responding
         let conn_cx = request_cx.connection_cx();
 
-        // Spawn task to handle agent events
-        // This task will run until the agent completes or errors
+        // AVOID blocking the main event loop because it needs to do other work!
+        // Wait for the conversation turn to be completed in a different task
         let _ = conn_cx.spawn(async move {
             loop {
                 match agent.recv().await {
@@ -182,7 +185,7 @@ pub async fn execute() -> Result<ExitCode> {
     let incoming = tokio::io::stdin().compat();
 
     // Create handler
-    let handler = Arc::new(SacpAgentHandler::new().await?);
+    let session = Arc::new(AcpSession::new().await?);
 
     let local_set = tokio::task::LocalSet::new();
     local_set
@@ -218,10 +221,10 @@ pub async fn execute() -> Result<ExitCode> {
                 })
                 // Handle prompt request
                 .on_receive_request({
-                    let handler = Arc::clone(&handler);
+                    let session = Arc::clone(&session);
                     async move |request: PromptRequest, request_cx| {
                         eprintln!("Received prompt request");
-                        handler.handle_prompt_request(request, request_cx).await
+                        session.handle_prompt_request(request, request_cx).await
                     }
                 })
                 // Handle cancel notification
