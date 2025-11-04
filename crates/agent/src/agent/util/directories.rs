@@ -61,13 +61,12 @@ fn resolve_migrated_path(is_global: bool, subpath: &str) -> Result<PathBuf> {
         let home = home_dir()?;
         (home.join(".aws/kiro"), home.join(".aws/amazonq"))
     } else {
-        let cwd = env::current_dir()
-            .context("unable to get the current directory")?;
+        let cwd = env::current_dir().context("unable to get the current directory")?;
         (cwd.join(".kiro"), cwd.join(".amazonq"))
     };
-    
+
     let scope = if is_global { "global" } else { "workspace" };
-    
+
     match (kiro_base.exists(), amazonq_base.exists()) {
         (true, false) => {
             warn!("Using .kiro {} configuration", scope);

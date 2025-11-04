@@ -733,13 +733,14 @@ impl PromptsArgs {
             }
 
             if !global_prompts.is_empty() {
-                let global_dir = PathResolver::new(os).global().prompts_dir()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| "global prompts".to_string());
+                let global_dir = PathResolver::new(os)
+                    .global()
+                    .prompts_dir()
+                    .map_or_else(|_| "global prompts".to_string(), |p| p.display().to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Global ({}):", global_dir)),
+                    style::Print(&format!("Global ({global_dir}):")),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -753,13 +754,14 @@ impl PromptsArgs {
                 if !global_prompts.is_empty() {
                     queue!(session.stderr, style::Print("\n"))?;
                 }
-                let local_dir = PathResolver::new(os).workspace().prompts_dir()
-                    .map(|p| p.display().to_string())
-                    .unwrap_or_else(|_| "local prompts".to_string());
+                let local_dir = PathResolver::new(os)
+                    .workspace()
+                    .prompts_dir()
+                    .map_or_else(|_| "local prompts".to_string(), |p| p.display().to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Local ({}):", local_dir)),
+                    style::Print(&format!("Local ({local_dir}):")),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;

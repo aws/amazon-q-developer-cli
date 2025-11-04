@@ -741,16 +741,20 @@ impl Agents {
 
             all_agents.push({
                 let mut agent = Agent::default();
-                
+
                 // Update rules pattern to use dynamic path resolution
                 if let Ok(rules_dir) = resolver.workspace().rules_dir() {
                     let rules_pattern = format!("{}/**/*.md", rules_dir.display());
                     // Replace the hardcoded rules pattern with the dynamic one
-                    if let Some(pos) = agent.resources.iter().position(|r| r.as_str().contains(".amazonq/rules/")) {
-                        agent.resources[pos] = format!("file://{}", rules_pattern).into();
+                    if let Some(pos) = agent
+                        .resources
+                        .iter()
+                        .position(|r| r.as_str().contains(".amazonq/rules/"))
+                    {
+                        agent.resources[pos] = format!("file://{rules_pattern}").into();
                     }
                 }
-                
+
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {
