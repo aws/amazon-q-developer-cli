@@ -165,14 +165,48 @@ impl AcpSession {
                             
                             eprintln!("Sending permission_request: {:?}", permission_request);
                             
-                            match request_cx.send_request(permission_request).block_task().await {
-                                Ok(response) => {
-                                    eprintln!("Permission response: {:?}", response);
-                                },
-                                Err(err) => {
-                                    eprintln!("Permission request failed: {:?}", err);
+                            let agent_for_approval = agent.clone();
+                            request_cx.send_request(permission_request).await_when_result_received(|result| async move {
+                                match result {
+                                    Ok(response) => {
+                                        match &response.outcome {
+                                            sacp::RequestPermissionOutcome::Selected { option_id } => {
+                                                let approval_result = if option_id.0.as_ref() == "allow" {
+                                                    agent::protocol::ApprovalResult::Approve
+                                                } else {
+                                                    agent::protocol::ApprovalResult::Deny { reason: None }
+                                                };
+                                                
+                                                if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                                                    id: id.clone(),
+                                                    result: approval_result,
+                                                }).await {
+                                                    eprintln!("Failed to send approval result: {:?}", e);
+                                                }
+                                            },
+                                            sacp::RequestPermissionOutcome::Cancelled => {
+                                                if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                                                    id: id.clone(),
+                                                    result: agent::protocol::ApprovalResult::Deny { reason: Some("Cancelled".to_string()) },
+                                                }).await {
+                                                    eprintln!("Failed to send cancellation result: {:?}", e);
+                                                }
+                                            },
+                                        }
+                                        eprintln!("Permission response: {:?}", response);
+                                    },
+                                    Err(err) => {
+                                        eprintln!("Permission request failed: {:?}", err);
+                                        if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                                            id: id.clone(),
+                                            result: agent::protocol::ApprovalResult::Deny { reason: Some("Request failed".to_string()) },
+                                        }).await {
+                                            eprintln!("Failed to send error result: {:?}", e);
+                                        }
+                                    }
                                 }
-                            }
+                                Ok(())
+                            })?;
 
                             eprintln!("End permission_request");
                         },
