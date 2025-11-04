@@ -677,6 +677,8 @@ pub struct ChatSession {
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
+    /// Tools used in the current turn (for non-verbose completion messages)
+    tools_used_in_turn: Vec<String>,
 }
 
 impl ChatSession {
@@ -814,6 +816,7 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
+            tools_used_in_turn: Vec::new(),
         })
     }
 
@@ -2443,6 +2446,14 @@ impl ChatSession {
                 }
             }
 
+            // Determine if we should show detailed output (same logic as print_tool_description)
+            let verbose = os.database
+                .settings
+                .get_bool(Setting::ChatToolOutputVerbose)
+                .unwrap_or(true);
+            // tool.accepted is true if the tool was trusted (allowed without permission)
+            let show_details = verbose || !tool.accepted;
+
             let invoke_result = tool
                 .tool
                 .invoke(
@@ -2450,6 +2461,7 @@ impl ChatSession {
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
+                    show_details,
                 )
                 .await;
 
@@ -2578,13 +2590,28 @@ impl ChatSession {
                     }
 
                     debug!("tool result output: {:#?}", result);
+                    
+                    // Check verbose setting
+                    let verbose = os.database
+                        .settings
+                        .get_bool(Setting::ChatToolOutputVerbose)
+                        .unwrap_or(true);
+                    
+                    // Build completion message
+                    let completion_msg = if verbose || self.tools_used_in_turn.is_empty() {
+                        format!(" ● Completed in {}s", tool_time)
+                    } else {
+                        let tools = self.tools_used_in_turn.join(", ");
+                        format!(" ● Completed in {}s ({})", tool_time, tools)
+                    };
+                    
                     execute!(
                         self.stdout,
                         style::Print(CONTINUATION_LINE),
                         style::Print("\n"),
                         StyledText::success_fg(),
                         style::SetAttribute(Attribute::Bold),
-                        style::Print(format!(" ● Completed in {}s", tool_time)),
+                        style::Print(completion_msg),
                         StyledText::reset(),
                     )?;
                     if let Some(tag) = checkpoint_tag {
@@ -3137,6 +3164,7 @@ impl ChatSession {
             self.tool_uses.clear();
             self.pending_tool_index = None;
             self.tool_turn_start_time = None;
+            self.tools_used_in_turn.clear();
 
             // Create turn checkpoint if tools were used
             if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
@@ -3450,6 +3478,19 @@ impl ChatSession {
 
     async fn print_tool_description(&mut self, os: &Os, tool_index: usize, trusted: bool) -> Result<(), ChatError> {
         let tool_use = &self.tool_uses[tool_index];
+        let tool_name = tool_use.tool.display_name();
+        
+        // Always track tool usage for completion message
+        self.tools_used_in_turn.push(tool_name.clone());
+        
+        // Determine if we should show detailed output
+        let verbose = os.database
+            .settings
+            .get_bool(Setting::ChatToolOutputVerbose)
+            .unwrap_or(true); // Default to verbose
+        
+        // Show details if: verbose mode is on OR tool requires permission
+        let show_details = verbose || !trusted;
 
         if self.stderr.should_send_structured_event {
             let tool_call_start = ToolCallStart {
@@ -3464,7 +3505,7 @@ impl ChatSession {
                 parent_message_id: None,
             };
             self.stdout.send(Event::ToolCallStart(tool_call_start))?;
-        } else {
+        } else if show_details {
             queue!(
                 self.stdout,
                 StyledText::emphasis_fg(),
@@ -3495,11 +3536,13 @@ impl ChatSession {
             )?;
         }
 
-        tool_use
-            .tool
-            .queue_description(os, &mut self.stdout)
-            .await
-            .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
+        if show_details {
+            tool_use
+                .tool
+                .queue_description(os, &mut self.stdout)
+                .await
+                .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
+        }
 
         self.stdout.flush()?;
 

@@ -266,10 +266,10 @@ impl FsRead {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         if self.operations.len() == 1 {
             // Single operation - return result directly
-            self.operations[0].invoke(os, updates).await
+            self.operations[0].invoke(os, updates, show_details).await
         } else {
             // Multiple operations - combine results
             let mut combined_results = Vec::new();
@@ -279,7 +279,7 @@ impl FsRead {
             let mut failed_ops = 0usize;
 
             for (i, op) in self.operations.iter().enumerate() {
-                match op.invoke(os, updates).await {
+                match op.invoke(os, updates, show_details).await {
                     Ok(result) => {
                         success_ops += 1;
 
@@ -333,6 +333,7 @@ impl FsRead {
                 updates,
                 false,
                 true,
+                show_details,
             )?;
 
             let combined_text = combined_results.join("\n\n");
@@ -376,12 +377,12 @@ impl FsReadOperation {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         match self {
-            FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates).await,
-            FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates).await,
-            FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates).await,
-            FsReadOperation::Image(fs_image) => fs_image.invoke(updates).await,
+            FsReadOperation::Line(fs_line) => fs_line.invoke(os, updates, show_details).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.invoke(os, updates, show_details).await,
+            FsReadOperation::Search(fs_search) => fs_search.invoke(os, updates, show_details).await,
+            FsReadOperation::Image(fs_image) => fs_image.invoke(updates, show_details).await,
         }
     }
 }
@@ -412,10 +413,10 @@ impl FsImage {
         Ok(())
     }
 
-    pub async fn invoke(&self, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         let pre_processed_paths: Vec<String> = self.image_paths.iter().map(|path| pre_process(path)).collect();
         let valid_images = handle_images_from_paths(updates, &pre_processed_paths);
-        super::queue_function_result("Successfully read image", updates, false, false)?;
+        super::queue_function_result("Successfully read image", updates, false, false, show_details)?;
         Ok(InvokeOutput {
             output: OutputKind::Images(valid_images),
         })
@@ -498,7 +499,7 @@ impl FsLine {
         }
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         debug!(?path, "Reading");
         let file_bytes = os.fs.read(&path).await?;
@@ -547,6 +548,7 @@ time. You tried to read {byte_count} bytes. Try executing with fewer lines speci
             updates,
             false,
             false,
+            show_details,
         )?;
 
         Ok(InvokeOutput {
@@ -606,7 +608,7 @@ impl FsSearch {
         Ok(())
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         let file_path = sanitize_path_tool_arg(os, &self.path);
         let pattern = &self.pattern;
 
@@ -653,6 +655,7 @@ impl FsSearch {
             updates,
             false,
             false,
+            show_details,
         )?;
 
         Ok(InvokeOutput {
@@ -703,7 +706,7 @@ impl FsDirectory {
         )?)
     }
 
-    pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, updates: &mut impl Write, show_details: bool) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         let max_depth = self.depth();
         debug!(?path, max_depth, "Reading directory at path with depth");
@@ -796,6 +799,7 @@ impl FsDirectory {
             updates,
             false,
             false,
+            show_details,
         )?;
 
         Ok(InvokeOutput {
