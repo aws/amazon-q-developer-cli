@@ -1,7 +1,4 @@
-//! SACP Agent that forwards prompts to Amazon Q agent
-//!
-//! This is a simplified version of acp_agent.rs using SACP's request context pattern.
-//! No manual queues, event loops, or completion signaling needed!
+//! ACP Agent interface for Q CLI agent
 //!
 //! Usage (from workspace root):
 //! ```bash
@@ -11,60 +8,23 @@
 use std::process::ExitCode;
 use std::sync::Arc;
 
+use agent::agent_loop::types::ToolUseBlock;
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
-use agent::protocol::{
-    AgentEvent,
-    AgentStopReason,
-    ContentChunk,
-    SendPromptArgs,
-    UpdateEvent,
-};
-use agent::rts::{
-    RtsModel,
-    RtsModelState,
-};
+use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
+use agent::rts::{RtsModel, RtsModelState};
 use agent::types::AgentSnapshot;
-use agent::{
-    Agent,
-    AgentHandle,
-};
+use agent::{Agent, AgentHandle};
 use eyre::Result;
 use sacp::{
-    AgentCapabilities,
-    CancelNotification,
-    ContentBlock,
-    ContentChunk as SacpContentChunk,
-    Implementation,
-    InitializeRequest,
-    InitializeResponse,
-    JrConnection,
-    JrRequestCx,
-    NewSessionRequest,
-    NewSessionResponse,
-    PermissionOption,
-    PermissionOptionId,
-    PermissionOptionKind,
-    PromptRequest,
-    PromptResponse,
-    RequestPermissionRequest,
-    SessionId,
-    SessionNotification,
-    SessionUpdate,
-    StopReason,
-    TextContent,
-    ToolCall,
-    ToolCallId,
-    ToolCallStatus,
-    ToolCallUpdate,
-    ToolCallUpdateFields,
-    ToolKind,
-    V1,
+    AgentCapabilities, CancelNotification, ContentBlock, ContentChunk as SacpContentChunk, Implementation,
+    InitializeRequest, InitializeResponse, JrConnection, JrRequestCx, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionRequest, SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall,
+    ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, V1,
 };
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt,
-    TokioAsyncWriteCompatExt,
-};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tracing::info;
 
 /// ACP Session that processes requests using Amazon Q agent
 struct AcpSession {
@@ -95,9 +55,9 @@ impl AcpSession {
         })
     }
 
-    /// Handle prompt request. Overall we do the following:
+    /// Handle user request from ACP client:
     ///  - submit the request to the agent
-    ///  - convert agent update events to ACP update events and send them back to ACP client
+    ///  - poll agent update events, convert them to ACP events, and send them back to ACP client
     ///  - tell ACP client that the request is completed
     async fn handle_prompt_request(
         &self,
@@ -110,18 +70,13 @@ impl AcpSession {
         // Send prompt to agent (non-blocking)
         self.send_to_agent(&request).await?;
 
-        // Get connection context (Clone) for spawning
-        // Move request_cx into the task for responding
-        let conn_cx = request_cx.connection_cx();
-
         // AVOID blocking the main event loop because it needs to do other work!
         // Wait for the conversation turn to be completed in a different task
-        let _ = conn_cx.spawn(async move {
+        let _ = request_cx.clone().spawn(async move {
             loop {
                 match agent.recv().await {
                     Ok(event) => match event {
                         AgentEvent::Update(update_event) => {
-                            eprintln!("Received update_event: {:?}", update_event);
                             // Forward updates to ACP client via notifications
                             if let Some(session_update) = convert_update_event(update_event) {
                                 request_cx.send_notification(SessionNotification {
@@ -132,83 +87,11 @@ impl AcpSession {
                             }
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, context } => {
-                            eprintln!("Received ApprovalRequest: id={}, tool_use={:?}, context={:?}", id, tool_use, context);
-                            
-                            let permission_request = RequestPermissionRequest {
-                                session_id: session_id.clone(),
-                                tool_call: ToolCallUpdate {
-                                    id: ToolCallId(tool_use.tool_use_id.clone().into()),
-                                    fields: ToolCallUpdateFields {
-                                        status: Some(ToolCallStatus::Pending),
-                                        title: Some(tool_use.name.clone()),
-                                        raw_input: Some(tool_use.input.clone()),
-                                        ..Default::default()
-                                    },
-                                    meta: None,
-                                },
-                                options: vec![
-                                    PermissionOption {
-                                        id: PermissionOptionId("allow".into()),
-                                        name: "Allow".to_string(),
-                                        kind: PermissionOptionKind::AllowOnce,
-                                        meta: None,
-                                    },
-                                    PermissionOption {
-                                        id: PermissionOptionId("deny".into()),
-                                        name: "Deny".to_string(),
-                                        kind: PermissionOptionKind::RejectOnce,
-                                        meta: None,
-                                    },
-                                ],
-                                meta: None,
-                            };
-                            
-                            eprintln!("Sending permission_request: {:?}", permission_request);
-                            
-                            let agent_for_approval = agent.clone();
-                            request_cx.send_request(permission_request).await_when_result_received(|result| async move {
-                                match result {
-                                    Ok(response) => {
-                                        match &response.outcome {
-                                            sacp::RequestPermissionOutcome::Selected { option_id } => {
-                                                let approval_result = if option_id.0.as_ref() == "allow" {
-                                                    agent::protocol::ApprovalResult::Approve
-                                                } else {
-                                                    agent::protocol::ApprovalResult::Deny { reason: None }
-                                                };
-                                                
-                                                if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
-                                                    id: id.clone(),
-                                                    result: approval_result,
-                                                }).await {
-                                                    eprintln!("Failed to send approval result: {:?}", e);
-                                                }
-                                            },
-                                            sacp::RequestPermissionOutcome::Cancelled => {
-                                                if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
-                                                    id: id.clone(),
-                                                    result: agent::protocol::ApprovalResult::Deny { reason: Some("Cancelled".to_string()) },
-                                                }).await {
-                                                    eprintln!("Failed to send cancellation result: {:?}", e);
-                                                }
-                                            },
-                                        }
-                                        eprintln!("Permission response: {:?}", response);
-                                    },
-                                    Err(err) => {
-                                        eprintln!("Permission request failed: {:?}", err);
-                                        if let Err(e) = agent_for_approval.send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
-                                            id: id.clone(),
-                                            result: agent::protocol::ApprovalResult::Deny { reason: Some("Request failed".to_string()) },
-                                        }).await {
-                                            eprintln!("Failed to send error result: {:?}", e);
-                                        }
-                                    }
-                                }
-                                Ok(())
-                            })?;
-
-                            eprintln!("End permission_request");
+                            info!(
+                                "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
+                                id, tool_use, context
+                            );
+                            handle_approval_request(id, tool_use, session_id.clone(), agent.clone(), &request_cx)?;
                         },
                         AgentEvent::EndTurn(_metadata) => {
                             // Conversation complete - respond and exit task
@@ -292,6 +175,75 @@ fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
         },
         _ => None, // Skip other events
     }
+}
+
+/// Handle tool use approval request
+fn handle_approval_request(
+    id: String,
+    tool_use: ToolUseBlock,
+    session_id: SessionId,
+    agent: AgentHandle,
+    request_cx: &JrRequestCx<PromptResponse>,
+) -> Result<(), sacp::Error> {
+    let permission_request = RequestPermissionRequest {
+        session_id,
+        tool_call: ToolCallUpdate {
+            id: ToolCallId(tool_use.tool_use_id.clone().into()),
+            fields: ToolCallUpdateFields {
+                status: Some(ToolCallStatus::Pending),
+                title: Some(tool_use.name.clone()),
+                raw_input: Some(tool_use.input.clone()),
+                ..Default::default()
+            },
+            meta: None,
+        },
+        options: vec![
+            PermissionOption {
+                id: PermissionOptionId("allow".into()),
+                name: "Allow".to_string(),
+                kind: PermissionOptionKind::AllowOnce,
+                meta: None,
+            },
+            PermissionOption {
+                id: PermissionOptionId("deny".into()),
+                name: "Deny".to_string(),
+                kind: PermissionOptionKind::RejectOnce,
+                meta: None,
+            },
+        ],
+        meta: None,
+    };
+
+    request_cx
+        .send_request(permission_request)
+        .await_when_result_received(|result| async move {
+            info!("Permission request result: {:?}", result);
+            let approval_result = match result {
+                Ok(response) => match &response.outcome {
+                    sacp::RequestPermissionOutcome::Selected { option_id } => {
+                        if option_id.0.as_ref() == "allow" {
+                            agent::protocol::ApprovalResult::Approve
+                        } else {
+                            agent::protocol::ApprovalResult::Deny { reason: None }
+                        }
+                    },
+                    sacp::RequestPermissionOutcome::Cancelled => agent::protocol::ApprovalResult::Deny {
+                        reason: Some("Cancelled".to_string()),
+                    },
+                },
+                Err(_) => agent::protocol::ApprovalResult::Deny {
+                    reason: Some("Request failed".to_string()),
+                },
+            };
+
+            let _ = agent
+                .send_tool_use_approval_result(agent::protocol::SendApprovalResultArgs {
+                    id,
+                    result: approval_result,
+                })
+                .await;
+            Ok(())
+        })
 }
 
 /// Entry point for SACP agent

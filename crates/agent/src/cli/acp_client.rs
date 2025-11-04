@@ -2,9 +2,6 @@
 //!
 //! Usage (from workspace root):
 //! ```bash
-//! # Build the agent
-//! cargo build
-//!
 //! # Run the interactive test client (from workspace root)
 //! cargo run -p agent -- acp-client ./target/debug/agent
 //! ```
@@ -44,6 +41,7 @@ impl acp::Client for AcpClient {
         &self,
         args: acp::RequestPermissionRequest,
     ) -> acp::Result<acp::RequestPermissionResponse> {
+        println!("Permission request from server: {:?}", args);
         
         // Auto-approve first option if available
         let option_id = args
