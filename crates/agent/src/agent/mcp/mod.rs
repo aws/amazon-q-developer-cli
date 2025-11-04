@@ -1,3 +1,108 @@
+//! # MCP (Model Context Protocol) Module
+//!
+//! This module provides a manager for launching and interacting with multiple MCP servers.
+//! It implements a multi-layered architecture with asynchronous communication between components.
+//!
+//! ## Architecture Overview
+//!
+//! The module consists of the following key constructs organized in multiple layers:
+//!
+//! ### Management Layer
+//!
+//! - **[`McpManager`]**: The central manager that runs in its own async task. It maintains the
+//!   lifecycle of multiple MCP server instances and routes requests to the appropriate servers.
+//!
+//! - **[`McpManagerHandle`]**: A cloneable handle for interacting with the `McpManager` from other
+//!   parts of the application. It provides a safe, async API for launching servers, querying tool
+//!   specifications, executing tools, and receiving server events.
+//!
+//! ### Actor Layer
+//!
+//! - **[`McpServerActor`]** (in [`actor`] module): Individual server actors that manage the
+//!   lifecycle of a single MCP server process. Each actor handles initialization, tool execution,
+//!   and communication with its associated server.
+//!
+//! - **[`McpServerActorHandle`]** (in [`actor`] module): A handle for interacting with a specific
+//!   `McpServerActor`. Used internally by `McpManager` to communicate with servers.
+//!
+//! ### Service Layer
+//!
+//! - **`McpService`** (in `service` module): Implements the `rmcp::Service` trait to handle
+//!   server-to-client requests and notifications. Created during server launch and consumed by the
+//!   rmcp crate.
+//!
+//! - **`RunningMcpService`** (in `service` module): A handle to a running MCP server that wraps the
+//!   rmcp service. Provides methods for calling tools, listing tools/prompts, and handles
+//!   authentication/token refresh for remote servers.
+//!
+//! - **`rmcp::RunningService`** (from rmcp crate): The underlying service from the rmcp library
+//!   that handles the actual MCP protocol communication over stdio (for local servers) or HTTP (for
+//!   remote servers).
+//!
+//! ## Communication Patterns
+//!
+//! The module uses two primary communication patterns:
+//!
+//! ### 1. Request/Response Pattern
+//!
+//! ```text
+//! McpManagerHandle      McpManager      McpServerActor    RunningMcpService    rmcp::RunningService
+//!       |                    |                 |                  |                     |
+//!       |--[LaunchServer]--->|                 |                  |                     |
+//!       |                    |----[spawn]----->|                  |                     |
+//!       |                    |                 |--[McpService]--->|                     |
+//!       |                    |                 |                  |--[serve]----------->|
+//!       |<--[response]-------| (initializing)  |                  |                     |
+//!       |                    |                 |<--[initialized]--|                     |
+//!       |                    |                 |                  |                     |
+//!       |--[GetToolSpecs]--->|                 |                  |                     |
+//!       |                    |--[get_tools]--->|                  |                     |
+//!       |                    |                 | (returns cached) |                     |
+//!       |                    |<--[tools]-------|                  |                     |
+//!       |<--[tools]----------|                 |                  |                     |
+//!       |                    |                 |                  |                     |
+//!       |--[ExecuteTool]---->|                 |                  |                     |
+//!       |                    |--[execute]----->|                  |                     |
+//!       |                    |                 |--[call_tool]---->|                     |
+//!       |                    |                 |                  |--[call_tool]------->|
+//!       |<--[oneshot rx]-----|                 |                  |                     |
+//!       |                    |                 |                  |<--[result]----------|
+//!       |                    |                 |<--[result]-------|                     |
+//!       |<--[result via rx]------------------------[async]--------|                     |
+//! ```
+//!
+//! ### 2. Event Broadcasting Pattern
+//!
+//! ```text
+//! McpServerActor              McpManager              McpManagerHandle
+//!       |                          |                         |
+//!       |--[Initialized event]---->|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          | (moves server from      |
+//!       |                          |  initializing_servers   |
+//!       |                          |  to servers HashMap)    |
+//!       |                          |                         |
+//!       |--[OauthRequest event]--->|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          |                         |
+//!       |--[InitializeError]------>|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          | (removes from           |
+//!       |                          |  initializing_servers)  |
+//! ```
+//!
+//! ## Server Lifecycle
+//!
+//! MCP servers go through the following states:
+//!
+//! 1. **Not Launched**: Server configuration exists but no actor has been spawned
+//! 2. **Initializing**: `McpServerActor` has been spawned and is stored in
+//!    `McpManager::initializing_servers`. The actor is establishing connection and fetching initial
+//!    metadata (tools, prompts)
+//! 3. **Initialized**: Server is ready and stored in `McpManager::servers`. Tools can now be
+//!    executed
+//! 4. **Error**: Initialization failed, server is removed from `initializing_servers`
+
 pub mod actor;
 pub mod oauth_util;
 mod service;
