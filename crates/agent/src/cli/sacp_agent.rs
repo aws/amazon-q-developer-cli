@@ -8,24 +8,57 @@
 //! cargo run -p agent -- sacp
 //! ```
 
-use agent::api_client::ApiClient;
-use agent::mcp::McpManager;
-use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
-use agent::rts::{RtsModel, RtsModelState};
-use agent::types::AgentSnapshot;
-use agent::{Agent, AgentHandle};
-use eyre::Result;
-use sacp::{JrConnection, JrRequestCx};
-use sacp::{
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PromptRequest, PromptResponse, CancelNotification, SessionNotification,
-    SessionUpdate, ContentChunk as SacpContentChunk, ContentBlock, TextContent, ToolCall, ToolCallId,
-    ToolKind, ToolCallStatus, SessionId, V1, AgentCapabilities, Implementation,
-    StopReason,
-};
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+use agent::api_client::ApiClient;
+use agent::mcp::McpManager;
+use agent::protocol::{
+    AgentEvent,
+    AgentStopReason,
+    ContentChunk,
+    SendPromptArgs,
+    UpdateEvent,
+};
+use agent::rts::{
+    RtsModel,
+    RtsModelState,
+};
+use agent::types::AgentSnapshot;
+use agent::{
+    Agent,
+    AgentHandle,
+};
+use eyre::Result;
+use sacp::{
+    AgentCapabilities,
+    CancelNotification,
+    ContentBlock,
+    ContentChunk as SacpContentChunk,
+    Implementation,
+    InitializeRequest,
+    InitializeResponse,
+    JrConnection,
+    JrRequestCx,
+    NewSessionRequest,
+    NewSessionResponse,
+    PromptRequest,
+    PromptResponse,
+    SessionId,
+    SessionNotification,
+    SessionUpdate,
+    StopReason,
+    TextContent,
+    ToolCall,
+    ToolCallId,
+    ToolCallStatus,
+    ToolKind,
+    V1,
+};
+use tokio_util::compat::{
+    TokioAsyncReadCompatExt,
+    TokioAsyncWriteCompatExt,
+};
 
 /// ACP Session that processes requests using Amazon Q agent
 struct AcpSession {
@@ -48,9 +81,7 @@ impl AcpSession {
         ));
 
         // Spawn agent
-        let agent = Agent::new(snapshot, model, McpManager::new().spawn())
-            .await?
-            .spawn();
+        let agent = Agent::new(snapshot, model, McpManager::new().spawn()).await?.spawn();
 
         Ok(Self {
             agent,
@@ -92,26 +123,26 @@ impl AcpSession {
                                     meta: None,
                                 })?;
                             }
-                        }
+                        },
                         AgentEvent::EndTurn(_metadata) => {
                             // Conversation complete - respond and exit task
                             return request_cx.respond(PromptResponse {
                                 stop_reason: StopReason::EndTurn,
                                 meta: None,
                             });
-                        }
+                        },
                         AgentEvent::Stop(AgentStopReason::Error(_)) => {
                             // Agent error - respond with error
-                        return request_cx.respond_with_error(sacp::Error::internal_error());
-                        }
+                            return request_cx.respond_with_error(sacp::Error::internal_error());
+                        },
                         _ => {
                             // Handle other agent events if needed
-                        }
+                        },
                     },
                     Err(_) => {
                         // Agent channel closed unexpectedly
                         return request_cx.respond_with_error(sacp::Error::internal_error());
-                    }
+                    },
                 }
             }
         });
@@ -128,7 +159,7 @@ impl AcpSession {
             .filter_map(|block| match block {
                 ContentBlock::Text(text_content) => {
                     Some(agent::protocol::ContentChunk::Text(text_content.text.clone()))
-                }
+                },
                 _ => None, // Skip non-text content for now
             })
             .collect();
@@ -158,7 +189,7 @@ fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
                 }),
                 meta: None,
             }))
-        }
+        },
         UpdateEvent::ToolCall(tool_call) => {
             let sacp_tool_call = ToolCall {
                 id: ToolCallId(tool_call.id.into()),
@@ -172,7 +203,7 @@ fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
                 meta: None,
             };
             Some(SessionUpdate::ToolCall(sacp_tool_call))
-        }
+        },
         _ => None, // Skip other events
     }
 }
@@ -180,7 +211,7 @@ fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
 /// Entry point for SACP agent
 pub async fn execute() -> Result<ExitCode> {
     eprintln!("Starting SACP agent");
-    
+
     let outgoing = tokio::io::stdout().compat_write();
     let incoming = tokio::io::stdin().compat();
 

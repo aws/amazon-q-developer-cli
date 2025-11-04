@@ -8,12 +8,15 @@
 //! # Run the interactive test client (from workspace root)
 //! cargo run -p agent -- acp-client ./target/debug/agent
 //! ```
-//!
+
+use std::process::ExitCode;
 
 use agent_client_protocol as acp;
 use eyre::Result;
-use std::process::ExitCode;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{
+    TokioAsyncReadCompatExt,
+    TokioAsyncWriteCompatExt,
+};
 
 struct AcpClient;
 
@@ -80,23 +83,17 @@ pub async fn execute(agent_path: String) -> Result<ExitCode> {
             tokio::task::spawn_local(handle_io);
 
             // Initialize connection
-            acp::Agent::initialize(
-                &conn,
-                acp::InitializeRequest {
-                    protocol_version: acp::V1,
-                    client_capabilities: acp::ClientCapabilities::default(),
-                },
-            )
+            acp::Agent::initialize(&conn, acp::InitializeRequest {
+                protocol_version: acp::V1,
+                client_capabilities: acp::ClientCapabilities::default(),
+            })
             .await?;
 
             // Create session
-            let session = acp::Agent::new_session(
-                &conn,
-                acp::NewSessionRequest {
-                    mcp_servers: Vec::new(),
-                    cwd: std::env::current_dir()?,
-                },
-            )
+            let session = acp::Agent::new_session(&conn, acp::NewSessionRequest {
+                mcp_servers: Vec::new(),
+                cwd: std::env::current_dir()?,
+            })
             .await?;
 
             // Interactive prompt loop
@@ -115,16 +112,13 @@ pub async fn execute(agent_path: String) -> Result<ExitCode> {
                     continue;
                 }
 
-                acp::Agent::prompt(
-                    &conn,
-                    acp::PromptRequest {
-                        session_id: session.session_id.clone(),
-                        prompt: vec![acp::ContentBlock::Text(acp::TextContent {
-                            text: input.to_string(),
-                            annotations: None,
-                        })],
-                    },
-                )
+                acp::Agent::prompt(&conn, acp::PromptRequest {
+                    session_id: session.session_id.clone(),
+                    prompt: vec![acp::ContentBlock::Text(acp::TextContent {
+                        text: input.to_string(),
+                        annotations: None,
+                    })],
+                })
                 .await?;
             }
 

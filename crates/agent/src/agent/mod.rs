@@ -191,8 +191,11 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {:?}", other))),
         }
     }
+
     pub async fn send_prompt_async(&self, args: SendPromptArgs) -> Result<(), AgentError> {
-        self.sender.send_async(AgentRequest::SendPrompt(args)).await
+        self.sender
+            .send_async(AgentRequest::SendPrompt(args))
+            .await
             .map_err(|_| AgentError::Channel)?;
         Ok(())
     }

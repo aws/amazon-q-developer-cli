@@ -7,18 +7,37 @@
 //!
 //! The agent communicates over stdin/stdout and will echo back any prompt content received.
 
-use agent::api_client::ApiClient;
-use agent::mcp::McpManager;
-use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
-use agent::rts::{RtsModel, RtsModelState};
-use agent::types::AgentSnapshot;
-use agent::{Agent, AgentHandle};
-use agent_client_protocol as acp;
-use eyre::Result;
 use std::process::ExitCode;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+
+use agent::api_client::ApiClient;
+use agent::mcp::McpManager;
+use agent::protocol::{
+    AgentEvent,
+    AgentStopReason,
+    ContentChunk,
+    SendPromptArgs,
+    UpdateEvent,
+};
+use agent::rts::{
+    RtsModel,
+    RtsModelState,
+};
+use agent::types::AgentSnapshot;
+use agent::{
+    Agent,
+    AgentHandle,
+};
+use agent_client_protocol as acp;
+use eyre::Result;
+use tokio::sync::{
+    mpsc,
+    oneshot,
+};
+use tokio_util::compat::{
+    TokioAsyncReadCompatExt,
+    TokioAsyncWriteCompatExt,
+};
 
 /// Session that processes user requests in an event loop
 struct AcpSession {
