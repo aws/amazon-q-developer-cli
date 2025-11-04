@@ -49,3 +49,4 @@ book/
 .env*
 
 run-build.sh
+.amazonq/

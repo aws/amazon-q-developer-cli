@@ -19,7 +19,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::theme::StyledText;
-use crate::util::directories::logs_dir;
+use crate::util::paths::logs_dir;
 
 /// Arguments for the logdump command that collects logs for support investigation
 #[derive(Debug, PartialEq, Args)]

@@ -23,6 +23,7 @@ use crate::telemetry::definitions::metrics::{
     CodewhispererterminalAddChatMessage,
     CodewhispererterminalAgentConfigInit,
     CodewhispererterminalAgentContribution,
+    CodewhispererterminalAuthFailed,
     CodewhispererterminalChatSlashCommandExecuted,
     CodewhispererterminalCliSubcommandExecuted,
     CodewhispererterminalMcpServerInit,
@@ -500,6 +501,24 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::AuthFailed {
+                auth_method,
+                oauth_flow,
+                error_type,
+                error_code,
+            } => Some(
+                CodewhispererterminalAuthFailed {
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    codewhispererterminal_in_cloudshell: None,
+                    codewhispererterminal_auth_method: Some(auth_method.into()),
+                    oauth_flow: Some(oauth_flow.into()),
+                    codewhispererterminal_error_type: Some(error_type.into()),
+                    codewhispererterminal_error_code: error_code.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
             EventType::DailyHeartbeat {} => Some(
                 AmazonqcliDailyHeartbeat {
                     create_time: self.created_time,
@@ -594,6 +613,12 @@ pub struct AgentConfigInitArgs {
 #[serde(tag = "type")]
 pub enum EventType {
     UserLoggedIn {},
+    AuthFailed {
+        auth_method: String,
+        oauth_flow: String,
+        error_type: String,
+        error_code: Option<String>,
+    },
     RefreshCredentials {
         request_id: String,
         result: TelemetryResult,

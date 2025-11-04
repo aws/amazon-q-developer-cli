@@ -1,8 +1,18 @@
-use crossterm::style::{Attribute, Color};
-use crossterm::{execute, queue, style};
+use crossterm::style::{
+    Attribute,
+    Color,
+};
+use crossterm::{
+    execute,
+    queue,
+    style,
+};
 
 use crate::cli::chat::token_counter::TokenCount;
-use crate::cli::chat::{ChatError, ChatSession};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+};
 use crate::theme::StyledText;
 
 /// Calculate usage percentage from token counts (private utility)
@@ -11,11 +21,13 @@ fn calculate_usage_percentage(tokens: TokenCount, context_window_size: usize) ->
 }
 
 /// Render billing information section
-pub async fn render_billing_info(billing_data: &super::BillingUsageData, session: &mut ChatSession, show_unsupported_message: bool) -> Result<(), ChatError> {
+pub async fn render_billing_info(
+    billing_data: &super::BillingUsageData,
+    session: &mut ChatSession,
+    show_unsupported_message: bool,
+) -> Result<(), ChatError> {
     match &billing_data.status {
-        super::BillingDataStatus::Available => {
-            render_available_billing(billing_data, session).await
-        },
+        super::BillingDataStatus::Available => render_available_billing(billing_data, session).await,
         super::BillingDataStatus::FeatureNotSupported => {
             if show_unsupported_message {
                 execute!(
@@ -40,7 +52,10 @@ pub async fn render_billing_info(billing_data: &super::BillingUsageData, session
 }
 
 /// Render available billing information
-async fn render_available_billing(billing_data: &super::BillingUsageData, session: &mut ChatSession) -> Result<(), ChatError> {
+async fn render_available_billing(
+    billing_data: &super::BillingUsageData,
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
     // Header
     execute!(
         session.stderr,
@@ -64,17 +79,21 @@ async fn render_available_billing(billing_data: &super::BillingUsageData, sessio
             style::SetAttribute(style::Attribute::Bold),
             style::Print("Bonus credits: "),
             style::SetAttribute(style::Attribute::Reset),
-            style::Print("You have bonus credits applied to your account, we will use these first, then your plan credits.\n"),
+            style::Print(
+                "You have bonus credits applied to your account, we will use these first, then your plan credits.\n"
+            ),
         )?;
 
         for bonus in &billing_data.bonus_credits {
             execute!(
                 session.stderr,
-                style::Print(format!("{}: {:.2}/{:.0} credits used, expires in {} days\n", 
-                    bonus.name, bonus.used, bonus.total, bonus.days_until_expiry)),
+                style::Print(format!(
+                    "{}: {:.2}/{:.0} credits used, expires in {} days\n",
+                    bonus.name, bonus.used, bonus.total, bonus.days_until_expiry
+                )),
             )?;
         }
-        
+
         execute!(session.stderr, style::Print("\n"))?;
     }
 
@@ -87,7 +106,10 @@ async fn render_available_billing(billing_data: &super::BillingUsageData, sessio
     // Overage information
     execute!(
         session.stderr,
-        style::Print(format!("Overages: {}\n", if billing_data.overages_enabled { "On" } else { "Off" })),
+        style::Print(format!(
+            "Overages: {}\n",
+            if billing_data.overages_enabled { "On" } else { "Off" }
+        )),
     )?;
 
     execute!(
@@ -99,10 +121,12 @@ async fn render_available_billing(billing_data: &super::BillingUsageData, sessio
     for breakdown in &billing_data.usage_breakdowns {
         execute!(
             session.stderr,
-            style::Print(format!("Current {} usage ({:.2} of {:.0} used)\n", 
-                breakdown.display_name.to_lowercase(), 
-                breakdown.used, 
-                breakdown.limit)),
+            style::Print(format!(
+                "Current {} usage ({:.2} of {:.0} used)\n",
+                breakdown.display_name.to_lowercase(),
+                breakdown.used,
+                breakdown.limit
+            )),
         )?;
 
         // Progress bar
@@ -125,7 +149,10 @@ async fn render_available_billing(billing_data: &super::BillingUsageData, sessio
 }
 
 /// Render context window information section
-pub async fn render_context_window(usage_data: &super::DetailedUsageData, session: &mut ChatSession) -> Result<(), ChatError> {
+pub async fn render_context_window(
+    usage_data: &super::DetailedUsageData,
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
     if !usage_data.dropped_context_files.is_empty() {
         execute!(
             session.stderr,

@@ -438,6 +438,10 @@ impl ConversationState {
     }
 
     pub async fn set_next_user_message(&mut self, input: String) {
+        self.set_next_user_message_with_context(input, String::new()).await;
+    }
+
+    pub async fn set_next_user_message_with_context(&mut self, input: String, additional_context: String) {
         debug_assert!(self.next_message.is_none(), "next_message should not exist");
         if let Some(next_message) = self.next_message.as_ref() {
             warn!(?next_message, "next_message should not exist");
@@ -450,7 +454,8 @@ impl ConversationState {
             input
         };
 
-        let msg = UserMessage::new_prompt(input, Some(Local::now().fixed_offset()));
+        let mut msg = UserMessage::new_prompt(input, Some(Local::now().fixed_offset()));
+        msg.additional_context = additional_context;
         self.next_message = Some(msg);
     }
 

@@ -1,0 +1,55 @@
+// tool call to fs_read ./399k
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"I"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"'ll read the file `./399k`"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" for you and explain its contents."},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse__tTCAiy2StKmyjSXGhzF5A","name":"fsRead"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"__tool_us"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"e_purpose\":"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":" \"Readi"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"ng the f"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"ile ./399k t"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"o e"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"xamine a"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"nd "}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"exp"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"lain it"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"s "}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"contents\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":", \"ops\": [{\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"pat"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"h\":\"./"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"399k"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\"}]}"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStop":{"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"toolUse"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-23T21:04:30.656466Z","requestEndTime":"2025-10-23T21:04:43.106650Z","timeToFirstChunk":{"secs":10,"nanos":221917208},"timeBetweenChunks":[{"secs":0,"nanos":204458},{"secs":0,"nanos":72329166},{"secs":0,"nanos":128680083},{"secs":0,"nanos":192548375},{"secs":0,"nanos":483264583},{"secs":1,"nanos":199131167},{"secs":0,"nanos":76536417},{"secs":0,"nanos":4478041},{"secs":0,"nanos":8827166},{"secs":0,"nanos":141708},{"secs":0,"nanos":58526041},{"secs":0,"nanos":206083},{"secs":0,"nanos":114541},{"secs":0,"nanos":153000},{"secs":0,"nanos":195459},{"secs":0,"nanos":159333},{"secs":0,"nanos":119167},{"secs":0,"nanos":106167},{"secs":0,"nanos":151666},{"secs":0,"nanos":94375},{"secs":0,"nanos":92083},{"secs":0,"nanos":99583},{"secs":0,"nanos":100375},{"secs":0,"nanos":12875},{"secs":0,"nanos":1667}],"responseStreamLen":174},"usage":null,"service":{"requestId":"4c94518b-c4ca-4c7e-ac9a-ca1ba35e5fea","statusCode":null}}}
+
+// ls tool call to '.'
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"The"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" file is too large to read in full. Let me check its"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" size and read just the beginning to understand what it contains:"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_kexAaD9RRkyTgeHlCu7bRA","name":"ls"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"__too"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"l_use_p"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"urpose"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\":"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":" \"Checki"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"ng th"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"e size a"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"nd deta"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"ils of"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":" the ./"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"39"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"9k file\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":", "}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\"path\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":": \"."}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\"}"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStop":{"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"toolUse"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-23T21:04:43.135755Z","requestEndTime":"2025-10-23T21:04:52.526457Z","timeToFirstChunk":{"secs":7,"nanos":501846708},"timeBetweenChunks":[{"secs":0,"nanos":93917},{"secs":0,"nanos":41792},{"secs":0,"nanos":282979833},{"secs":0,"nanos":119417},{"secs":0,"nanos":618208541},{"secs":0,"nanos":454502666},{"secs":0,"nanos":503416},{"secs":0,"nanos":166936334},{"secs":0,"nanos":231000},{"secs":0,"nanos":219834},{"secs":0,"nanos":203375},{"secs":0,"nanos":221000},{"secs":0,"nanos":176959},{"secs":0,"nanos":154917},{"secs":0,"nanos":230500},{"secs":0,"nanos":128750},{"secs":0,"nanos":113459},{"secs":0,"nanos":130291},{"secs":0,"nanos":101250},{"secs":0,"nanos":140042},{"secs":0,"nanos":360821000},{"secs":0,"nanos":251959},{"secs":0,"nanos":204208},{"secs":0,"nanos":2375}],"responseStreamLen":207},"usage":null,"service":{"requestId":"c734df8f-9873-4f6b-8f68-5509e1fe04c5","statusCode":null}}}
+
+// contextWindowOverflow
+{"result":"error","original_request_id":"b67f27d1-0180-4d57-baef-a005327fb0ec","original_status_code":400,"original_message":null,"kind":"contextWindowOverflow"}

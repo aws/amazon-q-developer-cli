@@ -14,6 +14,8 @@ use std::sync::{
     Mutex,
 };
 
+use agent::util::is_integ_test;
+
 use crate::os::ACTIVE_USER_HOME;
 
 #[derive(Debug, Clone)]
@@ -43,7 +45,7 @@ mod inner {
 
 impl Env {
     pub fn new() -> Self {
-        if cfg!(test) {
+        if cfg!(test) && !is_integ_test() {
             match cfg!(windows) {
                 true => Env::from_slice(&[
                     ("USERPROFILE", ACTIVE_USER_HOME),

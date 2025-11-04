@@ -1,4 +1,8 @@
 use crate::theme::StyledText;
+use crate::util::env_var::{
+    get_aws_region,
+    is_log_stdout_enabled,
+};
 mod agent;
 pub mod chat;
 mod debug;
@@ -55,7 +59,7 @@ use crate::logging::{
     initialize_logging,
 };
 use crate::os::Os;
-use crate::util::directories::logs_dir;
+use crate::util::paths::logs_dir;
 use crate::util::{
     CLI_BINARY_NAME,
     GOV_REGIONS,
@@ -238,7 +242,7 @@ impl Cli {
                 ),
                 false => None,
             },
-            log_to_stdout: std::env::var_os("Q_LOG_STDOUT").is_some() || self.verbose > 0,
+            log_to_stdout: is_log_stdout_enabled() || self.verbose > 0,
             log_file_path: match subcommand {
                 RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("qchat.log")),
                 _ => None,
@@ -247,7 +251,7 @@ impl Cli {
         });
 
         // Check for region support.
-        if let Ok(region) = std::env::var("AWS_REGION") {
+        if let Ok(region) = get_aws_region() {
             if GOV_REGIONS.contains(&region.as_str()) {
                 bail!("AWS GovCloud ({region}) is not supported.")
             }

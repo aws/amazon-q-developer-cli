@@ -40,6 +40,8 @@ use windows::{
     symlink_sync,
 };
 
+use crate::util::env_var::is_integ_test;
+
 /// Rust path handling is hard coded to work specific ways depending on the
 /// OS that is being executed on. Because of this, if Unix paths are provided,
 /// they aren't recognized. For example a leading prefix of '/' isn't considered
@@ -97,7 +99,7 @@ pub enum Fs {
 
 impl Fs {
     pub fn new() -> Self {
-        match cfg!(test) {
+        match cfg!(test) && !is_integ_test() {
             true => {
                 let tempdir = tempfile::tempdir().expect("failed creating temporary directory");
                 let fs = Self::Chroot(tempdir.into());

@@ -323,6 +323,12 @@ pub enum Tool {
     ToolSpecification(ToolSpecification),
 }
 
+impl From<ToolSpecification> for Tool {
+    fn from(value: ToolSpecification) -> Self {
+        Self::ToolSpecification(value)
+    }
+}
+
 impl From<Tool> for amzn_codewhisperer_streaming_client::types::Tool {
     fn from(value: Tool) -> Self {
         match value {
@@ -584,6 +590,35 @@ pub enum ChatResponseStream {
 
     #[non_exhaustive]
     Unknown,
+}
+
+impl ChatResponseStream {
+    /// Returns the length of the content of the message event - ie, the number of bytes of content
+    /// contained within the message.
+    ///
+    /// This doesn't reflect the actual number of bytes the message took up being serialized over
+    /// the network.
+    pub fn len(&self) -> usize {
+        match self {
+            ChatResponseStream::AssistantResponseEvent { content } => content.len(),
+            ChatResponseStream::CodeEvent { content } => content.len(),
+            ChatResponseStream::CodeReferenceEvent(_) => 0,
+            ChatResponseStream::FollowupPromptEvent(_) => 0,
+            ChatResponseStream::IntentsEvent(_) => 0,
+            ChatResponseStream::InvalidStateEvent { .. } => 0,
+            ChatResponseStream::MessageMetadataEvent { .. } => 0,
+            ChatResponseStream::SupplementaryWebLinksEvent(_) => 0,
+            ChatResponseStream::ToolUseEvent { input, .. } => input.as_ref().map(|s| s.len()).unwrap_or_default(),
+            ChatResponseStream::MetadataEvent { .. } => 0,
+            ChatResponseStream::MeteringEvent { .. } => 0,
+            ChatResponseStream::Unknown => 0,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for ChatResponseStream {

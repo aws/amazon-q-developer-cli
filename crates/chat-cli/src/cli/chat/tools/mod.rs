@@ -457,9 +457,9 @@ fn format_path(cwd: impl AsRef<Path>, path: impl AsRef<Path>) -> String {
         .unwrap_or(path.as_ref().to_string_lossy().to_string())
 }
 
-fn supports_truecolor(os: &Os) -> bool {
+fn supports_truecolor() -> bool {
     // Simple override to disable truecolor since shell_color doesn't use Context.
-    !os.env.get("Q_DISABLE_TRUECOLOR").is_ok_and(|s| !s.is_empty())
+    !crate::util::env_var::is_truecolor_disabled()
         && shell_color::get_color_support().contains(shell_color::ColorSupport::TERM24BIT)
 }
 
@@ -522,7 +522,7 @@ pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: b
 
 /// Helper function to set up environment variables with user agent metadata for CloudTrail tracking
 pub fn env_vars_with_user_agent(os: &Os) -> std::collections::HashMap<String, String> {
-    let mut env_vars: std::collections::HashMap<String, String> = std::env::vars().collect();
+    let mut env_vars: std::collections::HashMap<String, String> = crate::util::env_var::get_all_env_vars().collect();
 
     // Set up additional metadata for the AWS CLI user agent
     let user_agent_metadata_value =

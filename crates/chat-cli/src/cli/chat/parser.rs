@@ -29,15 +29,13 @@ use super::message::{
     AssistantMessage,
     AssistantToolUse,
 };
+use crate::api_client::ApiClient;
+use crate::api_client::error::ConverseStreamError;
 use crate::api_client::model::{
     ChatResponseStream,
     ConversationState,
 };
 use crate::api_client::send_message_output::SendMessageOutput;
-use crate::api_client::{
-    ApiClient,
-    ApiClientError,
-};
 use crate::telemetry::ReasonCode;
 use crate::telemetry::core::{
     ChatConversationType,
@@ -48,13 +46,13 @@ use crate::telemetry::core::{
 #[derive(Debug, Error)]
 pub struct SendMessageError {
     #[source]
-    pub source: ApiClientError,
+    pub source: ConverseStreamError,
     pub request_metadata: RequestMetadata,
 }
 
 impl SendMessageError {
     pub fn status_code(&self) -> Option<u16> {
-        self.source.status_code()
+        self.source.status_code
     }
 }
 
