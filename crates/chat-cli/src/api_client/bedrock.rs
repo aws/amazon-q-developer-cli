@@ -63,9 +63,28 @@ impl BedrockApiClient {
         // Add history messages
         if let Some(hist) = history {
             for msg in hist {
-                messages.extend(self.convert_chat_message_to_bedrock(msg)?);
+                let converted = self.convert_chat_message_to_bedrock(msg)?;
+                // Only add non-empty messages
+                if !converted.is_empty() {
+                    messages.extend(converted);
+                }
             }
         }
+
+        // Ensure we have alternating user/assistant messages
+        // Bedrock requires strict alternation
+        let mut filtered_messages = Vec::new();
+        let mut last_role: Option<ConversationRole> = None;
+        
+        for msg in messages {
+            let current_role = msg.role().clone();
+            if Some(&current_role) != last_role.as_ref() {
+                filtered_messages.push(msg);
+                last_role = Some(current_role);
+            }
+        }
+        
+        messages = filtered_messages;
 
         // Add current user message
         let user_content = ContentBlock::Text(user_input_message.content.clone());
@@ -76,6 +95,11 @@ impl BedrockApiClient {
                 .build()
                 .map_err(|e| eyre::eyre!("Failed to build message: {}", e))?,
         );
+
+        tracing::debug!("Sending {} messages to Bedrock", messages.len());
+        for (i, msg) in messages.iter().enumerate() {
+            tracing::debug!("Message {}: role={:?}, content_blocks={}", i, msg.role(), msg.content().len());
+        }
 
         // Build tool configuration if tools are present
         let tool_config = user_input_message
@@ -126,8 +150,16 @@ impl BedrockApiClient {
             ChatMessage::UserInputMessage(user_msg) => {
                 let mut content_blocks = vec![];
                 
-                // Add text content
-                if !user_msg.content.is_empty() {
+                // Check if we have tool results
+                let has_tool_results = user_msg.user_input_message_context
+                    .as_ref()
+                    .and_then(|ctx| ctx.tool_results.as_ref())
+                    .map(|results| !results.is_empty())
+                    .unwrap_or(false);
+                
+                // Only add text content if we don't have tool results
+                // (Bedrock expects tool results in a separate user message without text)
+                if !has_tool_results && !user_msg.content.is_empty() {
                     content_blocks.push(ContentBlock::Text(user_msg.content.clone()));
                 }
                 
@@ -170,6 +202,11 @@ impl BedrockApiClient {
                     }
                 }
                 
+                // Don't send message if no content blocks
+                if content_blocks.is_empty() {
+                    return Ok(vec![]);
+                }
+                
                 Ok(vec![Message::builder()
                     .role(ConversationRole::User)
                     .set_content(Some(content_blocks))
@@ -196,6 +233,11 @@ impl BedrockApiClient {
                                 .map_err(|e| eyre::eyre!("Failed to build tool use: {}", e))?
                         ));
                     }
+                }
+                
+                // Don't send message if no content blocks
+                if content_blocks.is_empty() {
+                    return Ok(vec![]);
                 }
                 
                 Ok(vec![Message::builder()
