@@ -742,7 +742,7 @@ impl Agents {
 
                 // Add rules pattern using dynamic path resolution
                 if let Ok(rules_dir) = resolver.workspace().rules_dir() {
-                    let rules_pattern = format!(paths::workspace::RULES_PATTERN, rules_dir.display());
+                    let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
                     agent.resources.push(rules_pattern.into());
                 }
 
