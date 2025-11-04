@@ -162,7 +162,6 @@ use winnow::stream::Offset;
 
 use super::agent::{
     Agent,
-    DEFAULT_AGENT_NAME,
     PermissionEvalResult,
 };
 use crate::api_client::model::ToolResultStatus;
@@ -191,6 +190,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentName,
 };
 use crate::constants::{
+    DEFAULT_AGENT_NAME,
     error_messages,
     tips,
 };

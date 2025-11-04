@@ -15,10 +15,7 @@ use crossterm::{
 };
 
 use crate::api_client::model::Tool as FigTool;
-use crate::cli::agent::{
-    Agent,
-    DEFAULT_AGENT_NAME,
-};
+use crate::cli::agent::Agent;
 use crate::cli::chat::consts::{
     AGENT_FORMAT_TOOLS_DOC_URL,
     DUMMY_TOOL_NAME,
@@ -30,6 +27,7 @@ use crate::cli::chat::{
     ChatState,
     trust_all_text,
 };
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::constants::help_text::tools_long_help;
 use crate::theme::StyledText;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;

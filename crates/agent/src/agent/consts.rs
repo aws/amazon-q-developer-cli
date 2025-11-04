@@ -1,5 +1,4 @@
-/// Name of the default agent.
-pub const DEFAULT_AGENT_NAME: &str = "q_cli_default";
+pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 
 pub const MAX_CONVERSATION_STATE_HISTORY_LEN: usize = 500;
 

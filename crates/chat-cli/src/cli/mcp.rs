@@ -23,7 +23,6 @@ use eyre::{
 use super::agent::{
     Agent,
     Agents,
-    DEFAULT_AGENT_NAME,
     McpServerConfig,
 };
 use crate::cli::chat::tool_manager::{
@@ -34,6 +33,7 @@ use crate::cli::chat::tools::custom_tool::{
     CustomToolConfig,
     default_timeout,
 };
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::paths::PathResolver;
 

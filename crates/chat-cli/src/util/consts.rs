@@ -2,8 +2,6 @@
 pub const CLI_BINARY_NAME: &str = "kiro-cli";
 pub const CHAT_BINARY_NAME: &str = "kiro-cli-chat";
 
-pub const GITHUB_REPO_NAME: &str = "aws/amazon-q-developer-cli";
-
 pub const MCP_SERVER_TOOL_DELIMITER: &str = "/";
 
 pub const GOV_REGIONS: &[&str] = &["us-gov-east-1", "us-gov-west-1"];
