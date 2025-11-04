@@ -302,3 +302,12 @@ pub async fn parse_response_streams(content: impl AsRef<str>) -> Result<MockResp
     }
     Ok(stream)
 }
+
+pub fn assert_contains(text: &str, expected: &str) {
+    assert!(
+        text.contains(expected), 
+        "expected to find '{}' inside content: '{}'",
+        expected,
+        text 
+    );
+}

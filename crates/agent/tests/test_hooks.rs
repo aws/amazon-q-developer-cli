@@ -45,7 +45,8 @@ async fn test_agent_spawn_hook() {
     info!("before stop");
     test.wait_until_agent_stop(Duration::from_secs(10)).await;
     info!("after stop");
-    for (i, req) in test.requests().iter().enumerate() {
-        info!("Request {}: {:#?}", i, req);
+    for req in test.requests() {
+        let first_msg = req.messages().first().expect("first message should exist").text(); 
+        assert_contains(&first_msg, "Agent initialized");
     }
 }

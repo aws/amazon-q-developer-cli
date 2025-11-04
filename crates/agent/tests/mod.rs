@@ -58,18 +58,10 @@ async fn test_agent_defaults() {
 
     for req in test.requests() {
         let first_msg = req.messages().first().expect("first message should exist").text();
-        let assert_contains = |expected: &str| {
-            assert!(
-                first_msg.contains(expected),
-                "expected to find '{}' inside content: '{}'",
-                expected,
-                first_msg
-            );
-        };
-        assert_contains(AMAZON_Q_MD_CONTENT);
-        assert_contains(AGENTS_MD_CONTENT);
-        assert_contains(README_MD_CONTENT);
-        assert_contains(LOCAL_RULE_MD_CONTENT);
-        assert_contains(SUB_LOCAL_RULE_MD_CONTENT);
+        assert_contains(&first_msg, AMAZON_Q_MD_CONTENT);
+        assert_contains(&first_msg,AGENTS_MD_CONTENT);
+        assert_contains(&first_msg,README_MD_CONTENT);
+        assert_contains(&first_msg,LOCAL_RULE_MD_CONTENT);
+        assert_contains(&first_msg,SUB_LOCAL_RULE_MD_CONTENT);
     }
 }
