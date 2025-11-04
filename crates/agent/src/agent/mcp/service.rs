@@ -122,7 +122,6 @@ impl McpService {
                 (service, stderr, None)
             },
             McpServerConfig::Remote(config) => {
-                // TODO: process headers
                 let RemoteMcpServerConfig {
                     url,
                     headers,

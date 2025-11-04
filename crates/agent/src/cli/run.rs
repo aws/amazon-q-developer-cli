@@ -124,6 +124,7 @@ impl RunArgs {
         while let Ok(evt) = agent.recv().await {
             if matches!(evt, AgentEvent::Mcp(_)) {
                 info!(?evt, "received mcp agent event");
+                // TODO: Send it through conduit
             }
             if matches!(evt, AgentEvent::Initialized) {
                 break;
