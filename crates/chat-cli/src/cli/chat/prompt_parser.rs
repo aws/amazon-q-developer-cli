@@ -18,21 +18,22 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
     let mut warning = false;
     let mut tangent_mode = false;
     let mut usage_percentage = None;
-    let mut remaining = prompt.trim();
 
-    // Check for delegate notifier first
-    if let Some(start) = remaining.find('[') {
-        if let Some(end) = remaining.find(']') {
-            if start < end {
-                let content = &remaining[start + 1..end];
-                // Only set profile if it's not "BACKGROUND TASK READY" or if it doesn't end with newline
-                if content == "BACKGROUND TASK READY" && remaining[end + 1..].starts_with('\n') {
-                    delegate_notifier = Some(content.to_string());
-                    remaining = remaining[end + 1..].trim_start();
-                }
-            }
+    // Check if multi-line prompt (e.g., with rich notification)
+    // Everything before the last line is treated as delegate_notifier
+    let remaining = if prompt.contains('\n') {
+        let lines: Vec<&str> = prompt.lines().collect();
+        if lines.len() > 1 {
+            // Everything except last line is the notification
+            delegate_notifier = Some(lines[..lines.len() - 1].join("\n"));
         }
-    }
+        // Parse only the last line for prompt components
+        lines.last().unwrap_or(&"").trim()
+    } else {
+        prompt.trim()
+    };
+
+    let mut remaining = remaining;
 
     // Check for agent pattern [agent] first
     if let Some(start) = remaining.find('[') {

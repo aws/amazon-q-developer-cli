@@ -32,7 +32,6 @@ use crate::auth::builder_id::{
     BuilderIdToken,
     PollCreateToken,
     TokenType,
-    is_idc_user,
     poll_create_token,
     start_device_authorization,
 };
@@ -209,13 +208,12 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
     let (client, registration) = start_pkce_authorization(Some(issuer_url.clone()), Some(idc_region.clone())).await?;
 
     match crate::util::open::open_url_async(&registration.url).await {
+        // If it succeeded, finish PKCE.
         Ok(()) => {
-            // Browser opened successfully, wait for PKCE flow to complete
             let mut spinner = Spinner::new(vec![
                 SpinnerComponent::Spinner,
                 SpinnerComponent::Text(" Logging in...".into()),
             ]);
-
             let ctrl_c_stream = ctrl_c();
             tokio::select! {
                 res = registration.finish(&client, Some(&mut os.database)) => res?,
@@ -224,27 +222,21 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
                     exit(1);
                 },
             }
-
             os.telemetry.send_user_logged_in().ok();
             spinner.stop_with_message("Logged in".into());
-
-            let _ = os.database.set_start_url(issuer_url.clone());
-            let _ = os.database.set_idc_region(idc_region.clone());
-
-            // Prompt for profile selection if needed (IdC only)
-            if requires_profile {
-                select_profile_interactive(os, true).await?;
-            }
         },
+        // If we are unable to open the link with the browser, then fallback to
+        // the device code flow.
         Err(err) => {
-            // Failed to open browser, fallback to device code flow
-            error!(%err, "Failed to open URL, falling back to device code flow");
-            try_device_authorization(os, Some(issuer_url), Some(idc_region)).await?;
+            error!(%err, "Failed to open URL with browser, falling back to device code flow");
 
-            if requires_profile {
-                select_profile_interactive(os, true).await?;
-            }
+            // Try device code flow.
+            try_device_authorization(os, Some(issuer_url.clone()), Some(idc_region.clone())).await?;
         },
+    }
+
+    if requires_profile {
+        select_profile_interactive(os, true).await?;
     }
 
     Ok(())
@@ -278,8 +270,9 @@ pub struct WhoamiArgs {
 
 impl WhoamiArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        // Check for BuilderId/IDC token
-        if let Ok(Some(token)) = BuilderIdToken::load(&os.database).await {
+        let builder_id = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await;
+
+        if let Ok(Some(token)) = builder_id {
             self.format.print(
                 || match token.token_type() {
                     TokenType::BuilderId => "Logged in with Builder ID".into(),
@@ -339,8 +332,10 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if !is_idc_user(&os.database).await {
-        bail!("This command is only available for IAM Identity Center users");
+    if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await {
+        if matches!(token.token_type(), TokenType::BuilderId) {
+            bail!("This command is only available for Pro users");
+        }
     }
 
     select_profile_interactive(os, false).await?;
@@ -411,6 +406,7 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
             device_auth.device_code.clone(),
             start_url.clone(),
             region.clone(),
+            &os.telemetry,
         )
         .await
         {

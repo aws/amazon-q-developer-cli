@@ -47,7 +47,7 @@ use crate::theme::{
     StyledText,
     theme,
 };
-use crate::util::directories;
+use crate::util::paths;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 static SYNTAX_SET: LazyLock<SyntaxSet> = LazyLock::new(SyntaxSet::load_defaults_newlines);
@@ -310,11 +310,11 @@ impl FsWrite {
                 let relative_path = format_path(cwd, &path);
                 let prev = if os.fs.exists(&path) {
                     let file = os.fs.read_to_string_sync(&path)?;
-                    stylize_output_if_able(os, &path, &file)
+                    stylize_output_if_able(&path, &file)
                 } else {
                     Default::default()
                 };
-                let new = stylize_output_if_able(os, &relative_path, &file_text);
+                let new = stylize_output_if_able(&relative_path, &file_text);
                 print_diff(output, &prev, &new, 1)?;
 
                 Ok(())
@@ -339,8 +339,8 @@ impl FsWrite {
                 let old = [prefix, insert_line_content, suffix].join("");
                 let new = [prefix, insert_line_content, new_str, suffix].join("");
 
-                let old = stylize_output_if_able(os, &relative_path, &old);
-                let new = stylize_output_if_able(os, &relative_path, &new);
+                let old = stylize_output_if_able(&relative_path, &old);
+                let new = stylize_output_if_able(&relative_path, &new);
                 print_diff(output, &old, &new, start_line)?;
 
                 Ok(())
@@ -355,8 +355,8 @@ impl FsWrite {
                     Some((start_line, end_line)) => (start_line, end_line),
                     _ => (0, 0),
                 };
-                let old_str = stylize_output_if_able(os, &relative_path, old_str);
-                let new_str = stylize_output_if_able(os, &relative_path, new_str);
+                let old_str = stylize_output_if_able(&relative_path, old_str);
+                let new_str = stylize_output_if_able(&relative_path, new_str);
                 print_diff(output, &old_str, &new_str, start_line)?;
 
                 Ok(())
@@ -365,7 +365,7 @@ impl FsWrite {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
-                let file = stylize_output_if_able(os, &relative_path, new_str);
+                let file = stylize_output_if_able(&relative_path, new_str);
                 print_diff(output, &Default::default(), &file, start_line)?;
 
                 Ok(())
@@ -498,10 +498,10 @@ impl FsWrite {
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
-                        let Ok(path) = directories::canonicalizes_path(os, path) else {
+                        let Ok(path) = paths::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        if let Err(e) = directories::add_gitignore_globs(&mut builder, path.as_str()) {
+                        if let Err(e) = paths::add_gitignore_globs(&mut builder, path.as_str()) {
                             warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
                         }
                     }
@@ -512,10 +512,10 @@ impl FsWrite {
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
-                        let Ok(processed_path) = directories::canonicalizes_path(os, path) else {
+                        let Ok(processed_path) = paths::canonicalizes_path(os, path) else {
                             continue;
                         };
-                        match directories::add_gitignore_globs(&mut builder, processed_path.as_str()) {
+                        match paths::add_gitignore_globs(&mut builder, processed_path.as_str()) {
                             Ok(_) => {
                                 // Note that we need to push twice here because for each rule we
                                 // are creating two globs (one for file and one for directory)
@@ -535,7 +535,7 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                let Ok(path) = directories::canonicalizes_path(os, path) else {
+                                let Ok(path) = paths::canonicalizes_path(os, path) else {
                                     return PermissionEvalResult::Ask;
                                 };
                                 let denied_match_set = deny_set.matches(path.as_ref() as &str);
@@ -758,8 +758,8 @@ fn terminal_width_required_for_line_count(line_count: usize) -> usize {
     line_count.to_string().chars().count()
 }
 
-fn stylize_output_if_able(os: &Os, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
-    if supports_truecolor(os) {
+fn stylize_output_if_able(path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
+    if supports_truecolor() {
         match stylized_file(path, file_text) {
             Ok(s) => return s,
             Err(err) => {

@@ -14,6 +14,8 @@ use std::sync::{
     Mutex,
 };
 
+use agent::util::is_integ_test;
+
 use crate::os::ACTIVE_USER_HOME;
 
 #[derive(Debug, Clone)]
@@ -43,7 +45,7 @@ mod inner {
 
 impl Env {
     pub fn new() -> Self {
-        if cfg!(test) {
+        if cfg!(test) && !is_integ_test() {
             match cfg!(windows) {
                 true => Env::from_slice(&[
                     ("USERPROFILE", ACTIVE_USER_HOME),
@@ -152,11 +154,11 @@ impl Env {
     }
 
     pub fn in_codespaces(&self) -> bool {
-        self.get_os("CODESPACES").is_some() || self.get_os("KIRO_CODESPACES").is_some()
+        self.get_os("CODESPACES").is_some() || self.get_os("Q_CODESPACES").is_some()
     }
 
     pub fn in_ci(&self) -> bool {
-        self.get_os("CI").is_some() || self.get_os("KIRO_CI").is_some()
+        self.get_os("CI").is_some() || self.get_os("Q_CI").is_some()
     }
 
     /// Whether or not the current executable is run from an AppImage.

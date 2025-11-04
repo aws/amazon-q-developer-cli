@@ -1,3 +1,5 @@
+use std::env;
+
 use clap::Args;
 use crossterm::style::Stylize;
 use crossterm::{
@@ -5,7 +7,6 @@ use crossterm::{
     queue,
     style,
 };
-use std::env;
 
 use crate::auth::builder_id::is_idc_user;
 use crate::auth::social::is_social_logged_in;
@@ -80,7 +81,7 @@ impl SubscribeArgs {
 
 async fn redirect_to_kiro_dev(session: &mut ChatSession) -> Result<(), ChatError> {
     let url = get_subscription_url();
-    
+
     execute!(
         session.stderr,
         style::Print("\n"),

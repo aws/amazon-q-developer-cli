@@ -102,7 +102,7 @@ impl ExecuteCommand {
         }
 
         // Check if each command in the pipe chain starts with a safe command
-        for cmd_args in all_commands {
+        for cmd_args in &all_commands {
             match cmd_args.first() {
                 // Special casing for `find` so that we support most cases while safeguarding
                 // against unwanted mutations
@@ -129,12 +129,27 @@ impl ExecuteCommand {
                     {
                         return true;
                     }
-                    let is_cmd_read_only = READONLY_COMMANDS.contains(&cmd.as_str());
-                    if !allow_read_only || !is_cmd_read_only {
-                        return true;
-                    }
                 },
-                None => return true,
+                None => {},
+            }
+        }
+
+        let has_regex_match = allowed_commands
+            .iter()
+            .map(|cmd| Regex::new(&format!(r"\A{cmd}\z")))
+            .filter(Result::is_ok)
+            .flatten()
+            .any(|regex| regex.is_match(&self.command));
+        if has_regex_match {
+            return false;
+        }
+
+        for cmd_args in all_commands {
+            if let Some(cmd) = cmd_args.first() {
+                let is_cmd_read_only = READONLY_COMMANDS.contains(&cmd.as_str());
+                if !allow_read_only || !is_cmd_read_only {
+                    return true;
+                }
             }
         }
 
@@ -418,8 +433,19 @@ mod tests {
             ("command subcommand a=0123456789 b=0123456789", false),
             ("command subcommand a=0123456789 b=012345678", true),
             ("command subcommand alternate a=0123456789 b=0123456789", true),
-            // Control characters ignored due to direct allowed_command_regex match
-            ("command subcommand && command subcommand", false),
+            // dangerous patterns
+            ("echo 'test<(data'", true),
+            ("echo 'test$(data)'", true),
+            ("echo 'test`data`'", true),
+            ("echo 'test' > output.txt", true),
+            ("echo 'test data' && touch main.py", true),
+            ("echo 'test' || rm file", true),
+            ("echo 'test' & background", true),
+            ("echo 'test data'; touch main.py", true),
+            ("echo $HOME", true),
+            ("echo 'test\nrm file'", true),
+            ("echo 'test\rrm file'", true),
+            ("IFS=/ malicious", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({

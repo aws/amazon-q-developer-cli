@@ -1,9 +1,16 @@
 use clap::Args;
 use crossterm::style::Color;
-use crossterm::{execute, style};
+use crossterm::{
+    execute,
+    style,
+};
 
 use crate::cli::chat::token_counter::TokenCount;
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 use crate::os::Os;
 
 pub mod usage_data_provider;
@@ -98,21 +105,27 @@ impl UsageArgs {
                     style::Print("Error: Cannot specify both --context and --credits flags\n"),
                     style::SetForegroundColor(Color::Reset),
                 )?;
-                Ok(ChatState::PromptUser { skip_printing_tools: true })
-            }
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
         }
     }
 
     async fn show_context_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
         usage_renderer::render_context_window(&usage_data, session).await?;
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 
     async fn show_credits_info(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let billing_data = usage_data_provider::get_billing_usage_data(os).await?;
         usage_renderer::render_billing_info(&billing_data, session, true).await?;
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 
     async fn show_full_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
@@ -125,7 +138,9 @@ impl UsageArgs {
 
         // Render context window information
         usage_renderer::render_context_window(&usage_data, session).await?;
-        
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 }

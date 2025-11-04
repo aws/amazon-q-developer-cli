@@ -163,10 +163,11 @@ pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
     Ok(())
 }
 
+use crate::util::paths::PathResolver;
+
 /// Returns the local todo list storage directory
 pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
-    let cwd = os.env.current_dir()?;
-    Ok(cwd.join(".kiro-cli").join("cli-todo-lists"))
+    Ok(PathResolver::new(os).workspace().todo_lists_dir()?)
 }
 
 /// Contains the command definitions that allow the model to create,

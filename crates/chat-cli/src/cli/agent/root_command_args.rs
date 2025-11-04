@@ -25,7 +25,8 @@ use super::{
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories;
+use crate::util::paths;
+use crate::util::paths::PathResolver;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum AgentSubcommands {
@@ -335,9 +336,9 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        directories::agent_config_dir(path)?
+        path.join(paths::workspace::AGENTS_DIR)
     } else {
-        directories::chat_global_agent_path(os)?
+        PathResolver::new(os).global().agents_dir()?
     };
 
     if let Some((name, _)) = agents.agents.iter().find(|(agent_name, agent)| {

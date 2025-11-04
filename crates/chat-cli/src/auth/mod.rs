@@ -44,7 +44,7 @@ pub enum AuthError {
     #[error(transparent)]
     TimeComponentRange(#[from] time::error::ComponentRange),
     #[error(transparent)]
-    Directories(#[from] crate::util::directories::DirectoryError),
+    Directories(#[from] crate::util::paths::DirectoryError),
     #[error(transparent)]
     SerdeJson(#[from] serde_json::Error),
     #[error(transparent)]
@@ -105,7 +105,7 @@ impl ResolveIdentity for UnifiedBearerResolver {
         IdentityFuture::new_boxed(Box::pin(async {
             let database = Database::new().await?;
 
-            if let Ok(Some(token)) = builder_id::BuilderIdToken::load(&database).await {
+            if let Ok(Some(token)) = builder_id::BuilderIdToken::load(&database, None).await {
                 return Ok(Identity::new(
                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),
                     Some(token.expires_at.into()),

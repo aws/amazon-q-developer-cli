@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/semantic-search-client", "crates/chat-cli-ui"]
+members = ["crates/amzn-codewhisperer-client", "crates/amzn-codewhisperer-streaming-client", "crates/amzn-consolas-client", "crates/amzn-qdeveloper-streaming-client", "crates/amzn-toolkit-telemetry-client", "crates/aws-toolkit-telemetry-definitions", "crates/chat-cli", "crates/semantic-search-client", "crates/chat-cli-ui", "crates/agent"]
 default-members = ["crates/chat-cli"]
 
 [workspace.package]
@@ -12,6 +12,7 @@ version = "1.999.0"
 license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+agent = { path = "crates/agent" }
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
@@ -112,6 +113,7 @@ tempfile = "3.18.0"
 thiserror = "2.0.12"
 time = { version = "0.3.39", features = ["parsing", "formatting", "local-offset", "macros", "serde"] }
 tokio = { version = "1.45.0", features = ["full"] }
+tokio-stream = { version = "0.1.17", features = ["io-util"] }
 tokio-tungstenite = "0.26.2"
 tokio-util = { version = "0.7.15", features = ["codec", "compat"] }
 toml = "0.8.12"
@@ -217,7 +219,4 @@ lto = "off"
 opt-level = 3
 
 [profile.dev.package.similar]
-opt-level = 3
-
-[profile.dev.package.backtrace]
 opt-level = 3

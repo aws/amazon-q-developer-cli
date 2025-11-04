@@ -16,6 +16,7 @@ use eyre::Result;
 
 use super::ChatError;
 use super::token_counter::TokenCounter;
+use crate::util::env_var::get_term;
 
 pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
     if s.len() <= max_bytes {
@@ -119,7 +120,7 @@ pub fn play_notification_bell(requires_confirmation: bool) {
 /// Determine if we should play the bell based on terminal type
 fn should_play_bell() -> bool {
     // Get the TERM environment variable
-    if let Ok(term) = std::env::var("TERM") {
+    if let Some(term) = get_term() {
         // List of terminals known to handle bell character well
         let bell_compatible_terms = [
             "xterm",

@@ -34,43 +34,91 @@ pub mod env_var {
         QTERM_SESSION_ID = "QTERM_SESSION_ID",
 
         /// The current parent socket to connect to
-        KIRO_PARENT = "KIRO_PARENT",
+        Q_PARENT = "Q_PARENT",
 
-        /// Set the [`KIRO_PARENT`] parent socket to connect to
-        KIRO_SET_PARENT = "KIRO_SET_PARENT",
+        /// Set the [`Q_PARENT`] parent socket to connect to
+        Q_SET_PARENT = "Q_SET_PARENT",
 
-        /// Guard for the [`KIRO_SET_PARENT`] check
-        KIRO_SET_PARENT_CHECK = "KIRO_SET_PARENT_CHECK",
+        /// Guard for the [`Q_SET_PARENT`] check
+        Q_SET_PARENT_CHECK = "Q_SET_PARENT_CHECK",
 
         /// Set if qterm is running, contains the version
-        KIRO_TERM = "KIRO_TERM",
+        Q_TERM = "Q_TERM",
 
         /// Sets the current log level
-        KIRO_LOG_LEVEL = "KIRO_LOG_LEVEL",
+        Q_LOG_LEVEL = "Q_LOG_LEVEL",
 
         /// Overrides the ZDOTDIR environment variable
-        KIRO_ZDOTDIR = "KIRO_ZDOTDIR",
+        Q_ZDOTDIR = "Q_ZDOTDIR",
 
         /// Indicates a process was launched by Kiro
-        PROCESS_LAUNCHED_BY_KIRO = "PROCESS_LAUNCHED_BY_KIRO",
+        PROCESS_LAUNCHED_BY_Q = "PROCESS_LAUNCHED_BY_Q",
 
         /// The shell to use in qterm
-        KIRO_SHELL = "KIRO_SHELL",
+        Q_SHELL = "Q_SHELL",
 
         /// Indicates the user is debugging the shell
-        KIRO_DEBUG_SHELL = "KIRO_DEBUG_SHELL",
+        Q_DEBUG_SHELL = "Q_DEBUG_SHELL",
 
         /// Indicates the user is using zsh autosuggestions which disables Inline
-        KIRO_USING_ZSH_AUTOSUGGESTIONS = "KIRO_USING_ZSH_AUTOSUGGESTIONS",
+        Q_USING_ZSH_AUTOSUGGESTIONS = "Q_USING_ZSH_AUTOSUGGESTIONS",
 
         /// Overrides the path to the bundle metadata released with certain desktop builds.
-        KIRO_BUNDLE_METADATA_PATH = "KIRO_BUNDLE_METADATA_PATH",
+        Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH",
 
         /// Identifier for the client application or service using the chat-cli
-        KIRO_CLI_CLIENT_APPLICATION = "KIRO_CLI_CLIENT_APPLICATION",
+        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION",
 
         /// Shows continuation IDs in chat output for debugging/development
-        KIRO_SHOW_CONTINUATION_IDS = "KIRO_SHOW_CONTINUATION_IDS"
+        Q_SHOW_CONTINUATION_IDS = "Q_SHOW_CONTINUATION_IDS",
+
+        /// Flag for running integration tests
+        CLI_IS_INTEG_TEST = "Q_CLI_IS_INTEG_TEST",
+
+        /// Enable logging to stdout
+        Q_LOG_STDOUT = "Q_LOG_STDOUT",
+
+        /// Disable telemetry collection
+        Q_DISABLE_TELEMETRY = "Q_DISABLE_TELEMETRY",
+
+        /// Mock chat response for testing
+        Q_MOCK_CHAT_RESPONSE = "Q_MOCK_CHAT_RESPONSE",
+
+        /// Disable truecolor terminal support
+        Q_DISABLE_TRUECOLOR = "Q_DISABLE_TRUECOLOR",
+
+        /// Fake remote environment for testing
+        Q_FAKE_IS_REMOTE = "Q_FAKE_IS_REMOTE",
+
+        /// Codespaces environment indicator
+        Q_CODESPACES = "Q_CODESPACES",
+
+        /// CI environment indicator
+        Q_CI = "Q_CI",
+
+        /// Telemetry client ID
+        Q_TELEMETRY_CLIENT_ID = "Q_TELEMETRY_CLIENT_ID",
+
+        /// Amazon Q SigV4 authentication
+        AMAZON_Q_SIGV4 = "AMAZON_Q_SIGV4",
+
+        /// Amazon Q chat shell
+        AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
+
+        /// Editor environment variable
+        EDITOR = "EDITOR",
+
+        /// Terminal type
+        TERM = "TERM",
+
+        /// AWS region
+        AWS_REGION = "AWS_REGION",
+
+        /// GitHub Codespaces environment
+        CODESPACES = "CODESPACES",
+
+        /// CI environment
+        CI = "CI"
     }
 }
 

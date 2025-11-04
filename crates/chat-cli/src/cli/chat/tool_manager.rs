@@ -98,28 +98,20 @@ use crate::os::Os;
 use crate::telemetry::TelemetryThread;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
-use crate::util::directories::home_dir;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    let current_dir = os.env.current_dir()?;
+use crate::util::paths::PathResolver;
 
-    // Check for .kiro first (new format)
-    let kiro_path = current_dir.join(".kiro").join("mcp.json");
-    if kiro_path.exists() {
-        Ok(kiro_path)
-    } else {
-        // Fallback to .kiro-cli (legacy format)
-        Ok(current_dir.join(".kiro-cli").join("mcp.json"))
-    }
+pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
+    Ok(PathResolver::new(os).workspace().mcp_config()?)
 }
 
 pub fn global_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    Ok(home_dir(os)?.join(".kiro-cli").join("mcp.json"))
+    Ok(PathResolver::new(os).global().mcp_config()?)
 }
 
 /// Messages used for communication between the tool initialization thread and the loading
@@ -1981,7 +1973,7 @@ fn queue_failure_message(
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
-            " - run with KIRO_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
+            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
         )),
         StyledText::reset(),
     )?)
@@ -2221,8 +2213,8 @@ mod tests {
         let path = workspace_mcp_config_path(&os)?;
         let path_str = path.to_string_lossy();
 
-        // Should end with either .kiro/mcp.json or .kiro-cli/mcp.json (legacy)
-        assert!(path_str.ends_with(".kiro/mcp.json") || path_str.ends_with(".kiro-cli/mcp.json"));
+        // Should end with .amazonq/mcp.json
+        assert!(path_str.ends_with(".amazonq/mcp.json"));
 
         Ok(())
     }

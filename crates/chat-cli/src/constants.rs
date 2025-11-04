@@ -169,8 +169,6 @@ pub mod ui_text {
 pub mod subscription_text {
     use super::PRODUCT_NAME;
 
-
-
     /// Message for IDC users about subscription management
     pub fn idc_subscription_message() -> String {
         format!("Your {PRODUCT_NAME} Pro subscription is managed through IAM Identity Center.")

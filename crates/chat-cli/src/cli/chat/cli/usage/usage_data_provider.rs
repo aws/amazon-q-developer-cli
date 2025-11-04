@@ -1,13 +1,28 @@
-use chrono::{DateTime, Utc};
+use chrono::{
+    DateTime,
+    Utc,
+};
 
-use crate::api_client::error_utils::{classify_get_usage_limits_error, GetUsageLimitsErrorType};
+use crate::api_client::error_utils::{
+    GetUsageLimitsErrorType,
+    classify_get_usage_limits_error,
+};
 use crate::cli::chat::cli::model::context_window_tokens;
-use crate::cli::chat::token_counter::{CharCount, TokenCount};
-use crate::cli::chat::{ChatError, ChatSession};
+use crate::cli::chat::token_counter::{
+    CharCount,
+    TokenCount,
+};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+};
 use crate::os::Os;
 
 /// Get detailed usage data for context window analysis
-pub(super) async fn get_detailed_usage_data(session: &mut ChatSession, os: &Os) -> Result<super::DetailedUsageData, ChatError> {
+pub(super) async fn get_detailed_usage_data(
+    session: &mut ChatSession,
+    os: &Os,
+) -> Result<super::DetailedUsageData, ChatError> {
     let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
 
     let state = session
@@ -42,26 +57,27 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
     match os.client.get_usage_limits().await {
         Ok(usage_limits) => {
             let usage_breakdown = usage_limits.usage_breakdown_list();
-            
+
             // Get plan info
-            let plan_name = usage_limits.subscription_info()
+            let plan_name = usage_limits
+                .subscription_info()
                 .map_or("Unknown", |si| si.subscription_title())
                 .to_string();
 
             // Get overage status
-            let overages_enabled = usage_limits.overage_configuration()
+            let overages_enabled = usage_limits
+                .overage_configuration()
                 .is_some_and(|config| config.overage_status().as_str() == "ENABLED");
 
             // Get billing cycle reset date from main object
-            let billing_cycle_reset = usage_limits.next_date_reset()
-                .map_or_else(
-                    || "Billing cycle reset: Unknown".to_string(),
-                    |next_reset| {
-                        let reset_secs = next_reset.secs();
-                        let reset_date = DateTime::from_timestamp(reset_secs, 0).unwrap_or_else(Utc::now);
-                        format!("Billing cycle reset: {}", reset_date.format("%m/%d"))
-                    }
-                );
+            let billing_cycle_reset = usage_limits.next_date_reset().map_or_else(
+                || "Billing cycle reset: Unknown".to_string(),
+                |next_reset| {
+                    let reset_secs = next_reset.secs();
+                    let reset_date = DateTime::from_timestamp(reset_secs, 0).unwrap_or_else(Utc::now);
+                    format!("Billing cycle reset: {}", reset_date.format("%m/%d"))
+                },
+            );
 
             // Process all usage breakdowns
             let mut usage_breakdowns = Vec::new();
@@ -73,10 +89,9 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                     continue;
                 }
 
-                let resource_type = item.resource_type()
-                    .map_or("Unknown", |rt| rt.as_str())
-                    .to_string();
-                let display_name = item.display_name_plural()
+                let resource_type = item.resource_type().map_or("Unknown", |rt| rt.as_str()).to_string();
+                let display_name = item
+                    .display_name_plural()
                     .or_else(|| item.display_name())
                     .unwrap_or(&resource_type)
                     .to_string();
@@ -97,13 +112,13 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                     if free_trial_info.free_trial_status().map(|s| s.as_str()) == Some("ACTIVE") {
                         let bonus_used = free_trial_info.current_usage_with_precision().unwrap_or(0.0);
                         let bonus_total = free_trial_info.usage_limit_with_precision().unwrap_or(0.0);
-                        
+
                         if let Some(expiry_timestamp) = free_trial_info.free_trial_expiry() {
                             let expiry_secs = expiry_timestamp.secs();
                             let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(Utc::now);
                             let now = Utc::now();
                             let days_until_expiry = (expiry_date - now).num_days().max(0);
-                            
+
                             bonus_credits.push(super::BonusCredit {
                                 name: display_name,
                                 used: bonus_used,
@@ -127,10 +142,10 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
         Err(err) => {
             // Check if this is an AccessDeniedError with FEATURE_NOT_SUPPORTED reason
             let is_feature_not_supported = matches!(
-                classify_get_usage_limits_error(&err), 
+                classify_get_usage_limits_error(&err),
                 GetUsageLimitsErrorType::FeatureNotSupported
             );
-            
+
             let status = if is_feature_not_supported {
                 super::BillingDataStatus::FeatureNotSupported
             } else {

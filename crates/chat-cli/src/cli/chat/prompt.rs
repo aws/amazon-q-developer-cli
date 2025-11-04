@@ -60,7 +60,7 @@ use crate::cli::experiment::experiment_manager::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::directories::chat_cli_bash_history_path;
+use crate::util::paths::PathResolver;
 
 /// Shared state for clipboard paste operations triggered by Ctrl+V
 #[derive(Clone, Debug)]
@@ -459,14 +459,14 @@ impl Highlighter for ChatHelper {
     fn highlight_prompt<'b, 's: 'b, 'p: 'b>(&'s self, prompt: &'p str, _default: bool) -> Cow<'b, str> {
         use crate::theme::StyledText;
 
-        // Parse the plain text prompt to extract profile and warning information
-        // and apply colors using crossterm's ANSI escape codes
+        // Parse the plain text prompt to extract components
         if let Some(components) = parse_prompt_components(prompt) {
             let mut result = String::new();
 
-            // Add notifier part if present (info blue)
+            // Add delegate notifier if present (colored as warning)
             if let Some(notifier) = components.delegate_notifier {
-                result.push_str(&StyledText::info(&format!("[{notifier}]\n")));
+                result.push_str(&StyledText::warning(&notifier));
+                result.push('\n');
             }
 
             // Add profile part if present (profile indicator cyan)
@@ -572,7 +572,7 @@ pub fn rl(
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
 
-    let history_path = chat_cli_bash_history_path(os)?;
+    let history_path = PathResolver::new(os).global().cli_bash_history()?;
 
     // Generate available commands based on enabled experiments
     let available_commands = get_available_commands(os);
@@ -586,7 +586,7 @@ pub fn rl(
     let mut rl = Editor::with_config(config)?;
     rl.set_helper(Some(h));
 
-    // Load history from ~/.kiro-cli/cli_history
+    // Load history from CLI bash history file
     if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
         if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
             eprintln!("Warning: Failed to load history: {e}");

@@ -41,10 +41,7 @@ use crate::cli::chat::{
 use crate::mcp_client::McpClientError;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories::{
-    chat_global_prompts_dir,
-    chat_local_prompts_dir,
-};
+use crate::util::paths::PathResolver;
 
 /// Maximum allowed length for prompt names
 const MAX_PROMPT_NAME_LENGTH: usize = 50;
@@ -136,8 +133,15 @@ struct Prompts {
 impl Prompts {
     /// Create a new Prompts instance for the given name
     fn new(name: &str, os: &Os) -> Result<Self, GetPromptError> {
-        let local_dir = chat_local_prompts_dir(os).map_err(|e| GetPromptError::General(e.into()))?;
-        let global_dir = chat_global_prompts_dir(os).map_err(|e| GetPromptError::General(e.into()))?;
+        let resolver = PathResolver::new(os);
+        let local_dir = resolver
+            .workspace()
+            .prompts_dir()
+            .map_err(|e| GetPromptError::General(e.into()))?;
+        let global_dir = resolver
+            .global()
+            .prompts_dir()
+            .map_err(|e| GetPromptError::General(e.into()))?;
 
         Ok(Self {
             local: Prompt::new(name, local_dir),
@@ -165,6 +169,7 @@ impl Prompts {
 
     /// Get all available prompt names from both directories
     fn get_available_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
+        let resolver = PathResolver::new(os);
         let mut prompt_names = std::collections::HashSet::new();
 
         // Helper function to collect prompt names from a directory
@@ -186,12 +191,12 @@ impl Prompts {
             };
 
         // Check global prompts
-        if let Ok(global_dir) = chat_global_prompts_dir(os) {
+        if let Ok(global_dir) = resolver.global().prompts_dir() {
             collect_from_dir(global_dir, &mut prompt_names)?;
         }
 
         // Check local prompts
-        if let Ok(local_dir) = chat_local_prompts_dir(os) {
+        if let Ok(local_dir) = resolver.workspace().prompts_dir() {
             collect_from_dir(local_dir, &mut prompt_names)?;
         }
 
@@ -701,8 +706,8 @@ impl PromptsArgs {
 
         if !filtered_names.is_empty() {
             // Separate global and local prompts for display
-            let _global_dir = chat_global_prompts_dir(os).ok();
-            let _local_dir = chat_local_prompts_dir(os).ok();
+            let _global_dir = PathResolver::new(os).global().prompts_dir().ok();
+            let _local_dir = PathResolver::new(os).workspace().prompts_dir().ok();
 
             let mut global_prompts = Vec::new();
             let mut local_prompts = Vec::new();
@@ -731,7 +736,7 @@ impl PromptsArgs {
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print("Global (.kiro-cli/prompts):"),
+                    style::Print(&format!("Global ({}):", crate::util::paths::global::PROMPTS_DIR)),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -748,7 +753,7 @@ impl PromptsArgs {
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print("Local (.kiro-cli/prompts):"),
+                    style::Print(&format!("Local ({}):", crate::util::paths::workspace::PROMPTS_DIR)),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
@@ -2064,8 +2069,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create test prompts in temp directory structure
-        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
-        let local_dir = temp_dir.path().join(".amazonq/prompts");
+        let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
+        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
 
         create_prompt_file(&global_dir, "global_only", "Global content");
         create_prompt_file(&global_dir, "shared", "Global shared");
@@ -2085,8 +2090,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
 
         // Create global and local directories
-        let global_dir = temp_dir.path().join(".aws/amazonq/prompts");
-        let local_dir = temp_dir.path().join(".amazonq/prompts");
+        let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
+        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
 
         // Create prompts: one with same name in both directories, one unique to each
         create_prompt_file(&global_dir, "shared", "Global version");
@@ -2482,7 +2487,7 @@ mod tests {
             prompt_get: prompt1,
         };
 
-        let bundles = vec![&bundle1, &bundle2];
+        let bundles = [&bundle1, &bundle2];
 
         // Test filtering by server
         let filtered: Vec<&PromptBundle> = bundles.iter().filter(|b| b.server_name == "server1").copied().collect();
@@ -2490,7 +2495,7 @@ mod tests {
         assert_eq!(filtered[0].server_name, "server1");
 
         // Test no filtering (all bundles)
-        let all: Vec<&PromptBundle> = bundles.iter().copied().collect();
+        let all: Vec<&PromptBundle> = bundles.to_vec();
         assert_eq!(all.len(), 2);
     }
 
@@ -2498,7 +2503,7 @@ mod tests {
     fn test_ambiguous_prompt_message_generation() {
         // Test generating disambiguation message
         let prompt_name = "test_prompt";
-        let server_names = vec!["server1", "server2", "server3"];
+        let server_names = ["server1", "server2", "server3"];
 
         let alt_names: Vec<String> = server_names.iter().map(|s| format!("- @{s}/{prompt_name}")).collect();
         let alt_msg = format!("\n{}\n", alt_names.join("\n"));
