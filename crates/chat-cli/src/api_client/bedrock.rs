@@ -124,16 +124,85 @@ impl BedrockApiClient {
 
         match msg {
             ChatMessage::UserInputMessage(user_msg) => {
-                let content = ContentBlock::Text(user_msg.content);
+                let mut content_blocks = vec![];
+                
+                // Add text content
+                if !user_msg.content.is_empty() {
+                    content_blocks.push(ContentBlock::Text(user_msg.content.clone()));
+                }
+                
+                // Add tool results if present
+                if let Some(ctx) = user_msg.user_input_message_context {
+                    if let Some(tool_results) = ctx.tool_results {
+                        for result in tool_results {
+                            let tool_result_content: Vec<_> = result.content.into_iter().filter_map(|c| {
+                                match c {
+                                    crate::api_client::model::ToolResultContentBlock::Json(doc) => {
+                                        // Convert JSON to text representation
+                                        Some(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(
+                                            format!("{:?}", doc)
+                                        ))
+                                    }
+                                    crate::api_client::model::ToolResultContentBlock::Text(text) => {
+                                        Some(aws_sdk_bedrockruntime::types::ToolResultContentBlock::Text(text))
+                                    }
+                                }
+                            }).collect();
+                            
+                            let status = match result.status {
+                                crate::api_client::model::ToolResultStatus::Success => {
+                                    aws_sdk_bedrockruntime::types::ToolResultStatus::Success
+                                }
+                                crate::api_client::model::ToolResultStatus::Error => {
+                                    aws_sdk_bedrockruntime::types::ToolResultStatus::Error
+                                }
+                            };
+                            
+                            content_blocks.push(ContentBlock::ToolResult(
+                                aws_sdk_bedrockruntime::types::ToolResultBlock::builder()
+                                    .tool_use_id(result.tool_use_id)
+                                    .set_content(Some(tool_result_content))
+                                    .status(status)
+                                    .build()
+                                    .map_err(|e| eyre::eyre!("Failed to build tool result: {}", e))?
+                            ));
+                        }
+                    }
+                }
+                
                 Ok(vec![Message::builder()
                     .role(ConversationRole::User)
-                    .content(content)
+                    .set_content(Some(content_blocks))
                     .build()
                     .map_err(|e| eyre::eyre!("Failed to build user message: {}", e))?])
             }
-            ChatMessage::AssistantResponseMessage(_assistant_msg) => {
-                // For now, simplified - will need to handle tool use/results
-                Ok(vec![])
+            ChatMessage::AssistantResponseMessage(assistant_msg) => {
+                let mut content_blocks = vec![];
+                
+                // Add text content
+                if !assistant_msg.content.is_empty() {
+                    content_blocks.push(ContentBlock::Text(assistant_msg.content));
+                }
+                
+                // Add tool uses
+                if let Some(tool_uses) = assistant_msg.tool_uses {
+                    for tool_use in tool_uses {
+                        content_blocks.push(ContentBlock::ToolUse(
+                            aws_sdk_bedrockruntime::types::ToolUseBlock::builder()
+                                .tool_use_id(tool_use.tool_use_id)
+                                .name(tool_use.name)
+                                .input(tool_use.input.into())
+                                .build()
+                                .map_err(|e| eyre::eyre!("Failed to build tool use: {}", e))?
+                        ));
+                    }
+                }
+                
+                Ok(vec![Message::builder()
+                    .role(ConversationRole::Assistant)
+                    .set_content(Some(content_blocks))
+                    .build()
+                    .map_err(|e| eyre::eyre!("Failed to build assistant message: {}", e))?])
             }
         }
     }
