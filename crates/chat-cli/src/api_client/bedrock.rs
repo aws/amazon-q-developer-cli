@@ -216,4 +216,41 @@ impl BedrockApiClient {
     pub fn client(&self) -> &BedrockClient {
         &self.client
     }
+
+    pub async fn list_foundation_models(&self) -> Result<Vec<String>> {
+        use aws_sdk_bedrockruntime::config::Region;
+        
+        // Create a Bedrock client (not runtime) for listing models
+        let bedrock_config = aws_config::defaults(BehaviorVersion::latest())
+            .region(Region::new(
+                self.database
+                    .settings
+                    .get(Setting::BedrockRegion)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("us-east-1")
+                    .to_string(),
+            ))
+            .load()
+            .await;
+
+        let bedrock_client = aws_sdk_bedrock::Client::new(&bedrock_config);
+
+        let response = bedrock_client
+            .list_foundation_models()
+            .send()
+            .await?;
+
+        let models: Vec<String> = response
+            .model_summaries()
+            .iter()
+            .filter(|m| {
+                // Filter for Claude models that support converse
+                m.model_id().contains("anthropic.claude") && 
+                m.inference_types_supported().contains(&aws_sdk_bedrock::types::InferenceType::OnDemand)
+            })
+            .map(|m| m.model_id().to_string())
+            .collect();
+
+        Ok(models)
+    }
 }
