@@ -11,6 +11,7 @@ use crate::api_client::model::{ConversationState, UserInputMessageContext};
 use crate::database::settings::Setting;
 use crate::database::Database;
 
+#[derive(Clone, Debug)]
 pub struct BedrockApiClient {
     client: BedrockClient,
     model_id: String,
