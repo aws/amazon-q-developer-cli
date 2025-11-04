@@ -313,17 +313,9 @@ impl<'a> GlobalPaths<'a> {
 
     /// Get settings path (new location with fallback to old)
     pub fn settings_path() -> Result<PathBuf> {
-        let new_path = Self::new_settings_path()?;
-        if new_path.exists() {
-            return Ok(new_path);
-        }
-
-        let old_path = Self::old_settings_path()?;
-        if old_path.exists() {
-            return Ok(old_path);
-        }
-
-        Ok(new_path)
+        Ok(dirs::home_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join(global::SETTINGS_FILE))
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
@@ -332,17 +324,10 @@ impl<'a> GlobalPaths<'a> {
 
     /// Get database path (new location with fallback to old)
     pub fn database_path() -> Result<PathBuf> {
-        let new_path = Self::new_database_path()?;
-        if new_path.exists() {
-            return Ok(new_path);
-        }
-
-        let old_path = Self::old_database_path()?;
-        if old_path.exists() {
-            return Ok(old_path);
-        }
-
-        Ok(new_path)
+        Ok(dirs::data_local_dir()
+            .ok_or(DirectoryError::NoHomeDirectory)?
+            .join("kiro-cli")
+            .join("data.sqlite3"))
     }
 
     /// Get old database path (amazon-q location)
@@ -353,45 +338,12 @@ impl<'a> GlobalPaths<'a> {
             .join("data.sqlite3"))
     }
 
-    /// Get new database path (kiro-cli location)
-    pub fn new_database_path() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("kiro-cli")
-            .join("data.sqlite3"))
-    }
-
     /// Get old settings path (amazon-q location)
     pub fn old_settings_path() -> Result<PathBuf> {
         Ok(dirs::data_local_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("amazon-q")
             .join("settings.json"))
-    }
-
-    /// Get new settings path (kiro-cli location in home)
-    pub fn new_settings_path() -> Result<PathBuf> {
-        Ok(dirs::home_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join(global::SETTINGS_FILE))
-    }
-
-    /// Check if migration completed by reading settings file
-    pub fn is_migration_completed_static() -> Result<bool> {
-        let new_settings = Self::new_settings_path()?;
-        if !new_settings.exists() {
-            return Ok(false);
-        }
-
-        let content = std::fs::read_to_string(&new_settings)?;
-        let Ok(settings) = serde_json::from_str::<serde_json::Value>(&content) else {
-            return Ok(false);
-        };
-
-        Ok(settings
-            .get("migration.kiro.completed")
-            .and_then(|c| c.as_bool())
-            .unwrap_or(false))
     }
 
     /// Get migration lock file path

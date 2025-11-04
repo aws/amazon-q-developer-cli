@@ -18,7 +18,6 @@ use serde_json::{
     Value,
 };
 use tokio::fs;
-use tracing::debug;
 
 use crate::os::Os;
 use crate::util::paths::GlobalPaths;
@@ -39,14 +38,32 @@ pub struct MigrateArgs {
 }
 
 impl MigrateArgs {
-    pub async fn execute(self, _os: &mut Os) -> Result<ExitCode> {
+    pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         // Try to acquire migration lock
         let _lock = match acquire_migration_lock()? {
             Some(lock) => lock,
             None => {
-                // Another process is migrating, skip silently
+                println!("Migration already in progress by another process");
                 return Ok(ExitCode::SUCCESS);
             },
+        };
+
+        let status = detect_migration(os).await?;
+
+        if !self.force && matches!(status, MigrationStatus::Completed) {
+            println!("✓ Migration already completed");
+            return Ok(ExitCode::SUCCESS);
+        }
+
+        let MigrationStatus::Needed {
+            old_db,
+            old_settings,
+            new_db,
+            new_settings,
+        } = status
+        else {
+            println!("✓ No migration needed (fresh install)");
+            return Ok(ExitCode::SUCCESS);
         };
 
         if !self.yes && !self.dry_run {
@@ -64,40 +81,28 @@ impl MigrateArgs {
             }
         }
 
-        let status = detect_migration()?;
-
-        if !self.force && matches!(status, MigrationStatus::Completed) {
-            debug!("✓ Migration already completed");
-            return Ok(ExitCode::SUCCESS);
-        }
-
-        let MigrationStatus::Needed {
-            old_db,
-            old_settings,
-            new_db,
-            new_settings,
-        } = status
-        else {
-            debug!("✓ No migration needed (fresh install)");
-            return Ok(ExitCode::SUCCESS);
-        };
-
         // Migrate database
         let db_result = migrate_database(&old_db, &new_db, self.dry_run).await?;
-        debug!("✓ Database: {}", db_result.message);
+        println!("✓ Database: {}", db_result.message);
+
+        // Reload database connection after copying the file
+        if !self.dry_run && db_result.bytes_copied > 0 {
+            os.database = crate::database::Database::new().await?;
+        }
 
         // Migrate settings
         let settings_result = migrate_settings(&old_settings, &new_settings, self.dry_run).await?;
-        debug!("✓ Settings: {}", settings_result.message);
+        println!("✓ Settings: {}", settings_result.message);
         if !settings_result.transformations.is_empty() {
-            debug!("  Transformations applied:");
+            println!("  Transformations applied:");
             for t in &settings_result.transformations {
-                debug!("    - {t}");
+                println!("    - {t}");
             }
         }
 
         if !self.dry_run {
-            debug!("\n✓ Migration completed successfully!");
+            os.database.set_kiro_migration_completed()?;
+            println!("\n✓ Migration completed successfully!");
         } else {
             println!("\n(Dry run - no changes made)");
         }
@@ -119,14 +124,14 @@ enum MigrationStatus {
     Completed,
 }
 
-fn detect_migration() -> Result<MigrationStatus> {
+async fn detect_migration(os: &mut Os) -> Result<MigrationStatus> {
     let old_db = GlobalPaths::old_database_path()?;
     let old_settings = GlobalPaths::old_settings_path()?;
-    let new_db = GlobalPaths::new_database_path()?;
-    let new_settings = GlobalPaths::new_settings_path()?;
+    let new_db = GlobalPaths::database_path()?;
+    let new_settings = GlobalPaths::settings_path()?;
 
     let old_exists = old_db.exists() || old_settings.exists();
-    let migration_completed = GlobalPaths::is_migration_completed_static().unwrap_or(false);
+    let migration_completed = os.database.is_kiro_migration_completed().unwrap_or(false);
 
     if migration_completed {
         Ok(MigrationStatus::Completed)
@@ -180,7 +185,7 @@ async fn migrate_database(old_path: &Path, new_path: &Path, dry_run: bool) -> Re
     if let Some(parent) = new_path.parent() {
         fs::create_dir_all(parent)
             .await
-            .context("Failed to create target directory")?;
+            .context(format!("Failed to create target directory: {}", parent.display()))?;
     }
 
     let bytes = fs::copy(old_path, new_path).await.context("Failed to copy database")?;
@@ -248,7 +253,7 @@ async fn migrate_settings(old_path: &Path, new_path: &Path, dry_run: bool) -> Re
     if let Some(parent) = new_path.parent() {
         fs::create_dir_all(parent)
             .await
-            .context("Failed to create target directory")?;
+            .context(format!("Failed to create target directory: {}", parent.display()))?;
     }
 
     let json = serde_json::to_string_pretty(&transformed).context("Failed to serialize settings")?;
@@ -257,14 +262,25 @@ async fn migrate_settings(old_path: &Path, new_path: &Path, dry_run: bool) -> Re
         .context("Failed to write settings file")?;
 
     Ok(SettingsMigrationResult {
-        message: format!("Settings migrated successfully ({} settings)", transformed.len()),
+        message: "Settings migrated successfully".to_string(),
         settings_count: transformed.len(),
         transformations,
     })
 }
 
 // File locking
-fn acquire_migration_lock() -> Result<Option<std::fs::File>> {
+struct MigrationLock {
+    _file: std::fs::File,
+    path: PathBuf,
+}
+
+impl Drop for MigrationLock {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn acquire_migration_lock() -> Result<Option<MigrationLock>> {
     let lock_path = GlobalPaths::migration_lock_path()?;
 
     if let Some(parent) = lock_path.parent() {
@@ -275,10 +291,38 @@ fn acquire_migration_lock() -> Result<Option<std::fs::File>> {
         .create(true)
         .write(true)
         .truncate(false)
-        .open(lock_path)?;
+        .open(&lock_path)?;
 
     match flock(&file, FlockOperation::NonBlockingLockExclusive) {
-        Ok(()) => Ok(Some(file)),
-        Err(_) => Ok(None),
+        Ok(()) => Ok(Some(MigrationLock {
+            _file: file,
+            path: lock_path,
+        })),
+        Err(_) => {
+            // Check if lock is stale (older than 1 minute)
+            if let Ok(metadata) = std::fs::metadata(&lock_path) {
+                if let Ok(modified) = metadata.modified() {
+                    if let Ok(elapsed) = modified.elapsed() {
+                        if elapsed.as_secs() > 60 {
+                            // Stale lock - remove and retry
+                            std::fs::remove_file(&lock_path)?;
+                            let file = std::fs::OpenOptions::new()
+                                .create(true)
+                                .write(true)
+                                .truncate(false)
+                                .open(&lock_path)?;
+                            return match flock(&file, FlockOperation::NonBlockingLockExclusive) {
+                                Ok(()) => Ok(Some(MigrationLock {
+                                    _file: file,
+                                    path: lock_path,
+                                })),
+                                Err(_) => Ok(None),
+                            };
+                        }
+                    }
+                }
+            }
+            Ok(None)
+        },
     }
 }
