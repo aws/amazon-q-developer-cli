@@ -114,6 +114,7 @@ use tools::{
 use tracing::{
     debug,
     error,
+    info,
     trace,
     warn,
 };
@@ -343,13 +344,30 @@ impl Agent {
                 warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
             }
 
-            for config in &self.cached_mcp_configs.configs {
+            let mut total_servers_to_be_loaded = 0_usize;
+
+            for config in self
+                .cached_mcp_configs
+                .configs
+                .iter()
+                .filter(|config| match &config.config {
+                    agent_config::definitions::McpServerConfig::Local(local_mcp_server_config) => {
+                        !local_mcp_server_config.disabled
+                    },
+                    agent_config::definitions::McpServerConfig::Remote(remote_mcp_server_config) => {
+                        !remote_mcp_server_config.disabled
+                    },
+                })
+                .collect::<Vec<_>>()
+            {
                 if let Err(e) = self
                     .mcp_manager_handle
                     .launch_server(config.server_name.clone(), config.config.clone())
                     .await
                 {
                     warn!(?config.server_name, ?e, "failed to launch MCP config, skipping");
+                } else {
+                    total_servers_to_be_loaded += 1;
                 }
             }
 
@@ -361,7 +379,16 @@ impl Agent {
                             error!("mcp manager handle channel closed");
                             break;
                         };
+
+                        if matches!(evt, McpServerActorEvent::Initialized{ .. } | McpServerActorEvent::InitializeError { .. }) {
+                             total_servers_to_be_loaded = total_servers_to_be_loaded.saturating_sub(1);
+                        }
                         self.handle_mcp_server_actor_events(evt).await;
+
+                        if total_servers_to_be_loaded == 0 {
+                            info!("all mcp servers loaded before timeout");
+                            break;
+                        }
                     },
 
                     _ = tokio::time::sleep_until(timeout_at) => {

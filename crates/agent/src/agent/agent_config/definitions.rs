@@ -262,6 +262,9 @@ pub struct RemoteMcpServerConfig {
     /// OAuth configuration for this server
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthConfig>,
+    /// A boolean flag to denote whether or not to load this mcp server
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 pub fn default_timeout() -> u64 {

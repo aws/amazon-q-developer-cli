@@ -129,6 +129,7 @@ impl McpService {
                     timeout_ms: timeout,
                     oauth_scopes: scopes,
                     oauth: oauth_config,
+                    disabled: _,
                 } = config;
 
                 let start_time = Instant::now();
