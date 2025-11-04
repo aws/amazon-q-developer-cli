@@ -141,8 +141,16 @@ impl RootSubcommand {
     }
 
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
-        // Check for auth on subcommands that require it.
-        if self.requires_auth() && !crate::auth::is_logged_in(&mut os.database).await {
+        // Check if Bedrock mode is enabled
+        let bedrock_enabled = os
+            .database
+            .settings
+            .get(crate::database::settings::Setting::BedrockEnabled)
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        // Check for auth on subcommands that require it (skip if Bedrock mode is enabled)
+        if !bedrock_enabled && self.requires_auth() && !crate::auth::is_logged_in(&mut os.database).await {
             bail!(
                 "You are not logged in, please log in with {}",
                 StyledText::command(&format!("{CLI_BINARY_NAME} login"))
