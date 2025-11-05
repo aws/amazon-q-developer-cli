@@ -404,22 +404,15 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn settings_path() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
+        Ok(dirs::home_dir()
             .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("settings.json"))
+            .join(".kiro")
+            .join("settings")
+            .join("cli.json"))
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
         Ok(home_dir(self.os)?.join(".aws").join("sso").join("cache"))
-    }
-
-    /// Static method for settings path that doesn't require Os (to avoid circular dependency)
-    pub fn settings_path_static() -> Result<PathBuf> {
-        Ok(dirs::data_local_dir()
-            .ok_or(DirectoryError::NoHomeDirectory)?
-            .join("amazon-q")
-            .join("settings.json"))
     }
 
     /// Static method for database path that doesn't require Os (to avoid circular dependency)
