@@ -353,6 +353,15 @@ impl ChatHinter {
             return None;
         }
 
+        // Check for unclosed triple backticks
+        if line.contains("```") {
+            let triple_backtick_count = line.matches("```").count();
+            if triple_backtick_count % 2 == 1 {
+                // We have an odd number of ```, meaning we're in multiline mode
+                return Some("in multiline mode, waiting for closing backticks ```".to_string());
+            }
+        }
+
         // If line starts with a slash, try to find a command hint
         if line.starts_with('/') {
             return self
