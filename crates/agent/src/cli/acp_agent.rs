@@ -5,7 +5,10 @@
 //! cargo run -p agent -- acp
 //! ```
 
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::process::ExitCode;
+use std::rc::Rc;
 use std::sync::Arc;
 
 use agent::agent_loop::types::ToolUseBlock;
@@ -29,7 +32,6 @@ use tracing::info;
 /// ACP Session that processes requests using Amazon Q agent
 struct AcpSession {
     agent: AgentHandle,
-    session_id: SessionId,
 }
 
 impl AcpSession {
@@ -49,10 +51,7 @@ impl AcpSession {
         // Spawn agent
         let agent = Agent::new(snapshot, model, McpManager::new().spawn()).await?.spawn();
 
-        Ok(Self {
-            agent,
-            session_id: SessionId("42".into()),
-        })
+        Ok(Self { agent })
     }
 
     /// Handle user request from ACP client:
@@ -64,14 +63,14 @@ impl AcpSession {
         request: PromptRequest,
         request_cx: JrRequestCx<PromptResponse>,
     ) -> Result<(), sacp::Error> {
-        let session_id = self.session_id.clone();
+        let session_id = request.session_id.clone();
         let mut agent = self.agent.clone();
 
-        // Send prompt to agent (non-blocking)
-        self.send_to_agent(&request).await?;
+        // Send user request to agent (non-blocking)
+        self.send_request_async(&request).await?;
 
-        // AVOID blocking the main event loop because it needs to do other work!
-        // Wait for the conversation turn to be completed in a different task
+        // We want to avoid blocking the main event loop because it needs to do other work!
+        // so spawn a new task and wait for end of turn
         let _ = request_cx.clone().spawn(async move {
             loop {
                 match agent.recv().await {
@@ -119,9 +118,9 @@ impl AcpSession {
         Ok(())
     }
 
-    /// Send prompt to the Amazon Q agent
-    async fn send_to_agent(&self, request: &PromptRequest) -> Result<(), sacp::Error> {
-        // Convert SACP prompt to agent format
+    /// Send user request to agent
+    async fn send_request_async(&self, request: &PromptRequest) -> Result<(), sacp::Error> {
+        // Convert ACP prompt request to agent format
         let content: Vec<agent::protocol::ContentChunk> = request
             .prompt
             .iter()
@@ -146,7 +145,7 @@ impl AcpSession {
     }
 }
 
-/// Convert agent UpdateEvent to SessionUpdate
+/// Convert agent UpdateEvent to ACP SessionUpdate
 fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
     match update_event {
         UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
@@ -251,8 +250,8 @@ pub async fn execute() -> Result<ExitCode> {
     let outgoing = tokio::io::stdout().compat_write();
     let incoming = tokio::io::stdin().compat();
 
-    // Create handler
-    let session = Arc::new(AcpSession::new().await?);
+    // Create session manager
+    let sessions = Rc::new(RefCell::new(HashMap::new()));
 
     let local_set = tokio::task::LocalSet::new();
     local_set
@@ -277,9 +276,15 @@ pub async fn execute() -> Result<ExitCode> {
                 })
                 // Handle new_session request
                 .on_receive_request({
+                    let sessions = Rc::clone(&sessions);
                     async move |_request: NewSessionRequest, request_cx| {
+                        let session_id = SessionId(uuid::Uuid::new_v4().to_string().into());
+                        let session = Rc::new(AcpSession::new().await.map_err(|_| sacp::Error::internal_error())?);
+
+                        sessions.borrow_mut().insert(session_id.clone(), session);
+
                         request_cx.respond(NewSessionResponse {
-                            session_id: SessionId("42".into()),
+                            session_id,
                             modes: None,
                             meta: None,
                         })
@@ -287,9 +292,14 @@ pub async fn execute() -> Result<ExitCode> {
                 })
                 // Handle prompt request
                 .on_receive_request({
-                    let session = Arc::clone(&session);
+                    let sessions = Rc::clone(&sessions);
                     async move |request: PromptRequest, request_cx| {
-                        session.handle_prompt_request(request, request_cx).await
+                        let session = sessions.borrow().get(&request.session_id).cloned();
+
+                        match session {
+                            Some(session) => session.handle_prompt_request(request, request_cx).await,
+                            None => request_cx.respond_with_error(sacp::Error::invalid_request()),
+                        }
                     }
                 })
                 // Handle cancel notification
