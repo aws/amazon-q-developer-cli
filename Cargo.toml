@@ -87,7 +87,6 @@ regex = "1.7.0"
 reqwest = { version = "0.12.14", default-features = false, features = ["http2", "charset", "rustls-tls", "rustls-tls-native-roots", "gzip", "json", "socks", "cookies", "stream"] }
 ring = "0.17.14"
 rusqlite = { version = "0.32.1", features = ["bundled", "serde_json"] }
-rustix = { version = "1.1.2", features = ["fs"] }
 rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1.0"

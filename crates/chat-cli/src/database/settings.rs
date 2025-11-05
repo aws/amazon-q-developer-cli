@@ -197,7 +197,7 @@ impl Settings {
             return Ok(Self::default());
         }
 
-        let path = GlobalPaths::settings_path()?;
+        let path = GlobalPaths::settings_path_static()?;
 
         // If the folder doesn't exist, create it.
         if let Some(parent) = path.parent() {
@@ -261,7 +261,7 @@ impl Settings {
             return Ok(());
         }
 
-        let path = GlobalPaths::settings_path()?;
+        let path = GlobalPaths::settings_path_static()?;
 
         // If the folder doesn't exist, create it.
         if let Some(parent) = path.parent() {

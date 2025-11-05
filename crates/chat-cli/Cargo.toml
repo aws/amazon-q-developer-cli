@@ -80,7 +80,6 @@ regex.workspace = true
 reqwest.workspace = true
 ring.workspace = true
 rusqlite.workspace = true
-rustix.workspace = true
 rustls.workspace = true
 rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
