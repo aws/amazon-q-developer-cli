@@ -421,7 +421,7 @@ impl Validator for MultiLineValidator {
                 return Ok(ValidationResult::Incomplete);
             }
         }
-        
+
         // Check for backslash continuation
         if input.ends_with('\\') {
             return Ok(ValidationResult::Incomplete);
