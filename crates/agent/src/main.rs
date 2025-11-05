@@ -1,3 +1,4 @@
+mod acp;
 mod cli;
 
 use std::process::ExitCode;

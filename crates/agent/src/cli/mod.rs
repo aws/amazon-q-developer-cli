@@ -27,6 +27,11 @@ use tracing_subscriber::{
     Registry,
 };
 
+use crate::acp::{
+    acp_agent,
+    acp_client,
+};
+
 #[derive(Debug, Clone, Parser)]
 pub struct CliArgs {
     #[command(subcommand)]
@@ -61,12 +66,21 @@ impl CliArgs {
 pub enum RootSubcommand {
     /// Run a single prompt
     Run(RunArgs),
+    /// Test ACP client
+    AcpClient {
+        /// Path to the ACP agent executable
+        agent_path: String,
+    },
+    /// ACP server
+    Acp,
 }
 
 impl RootSubcommand {
     pub async fn execute(self) -> Result<ExitCode> {
         match self {
             RootSubcommand::Run(run_args) => run_args.execute().await,
+            RootSubcommand::AcpClient { agent_path } => acp_client::execute(agent_path).await,
+            RootSubcommand::Acp => acp_agent::execute().await,
         }
     }
 }
