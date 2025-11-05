@@ -19,7 +19,7 @@ use crate::cli::chat::{
 use crate::os::Os;
 
 /// Get detailed usage data for context window analysis
-pub(super) async fn get_detailed_usage_data(
+pub async fn get_detailed_usage_data(
     session: &mut ChatSession,
     os: &Os,
 ) -> Result<super::DetailedUsageData, ChatError> {

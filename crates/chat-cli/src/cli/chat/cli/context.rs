@@ -1,12 +1,19 @@
 use std::collections::HashSet;
 
-use clap::Subcommand;
+use clap::{
+    Args,
+    Subcommand,
+};
 use crossterm::style::Attribute;
 use crossterm::{
     execute,
     style,
 };
 
+use crate::cli::chat::cli::usage::{
+    usage_data_provider,
+    usage_renderer,
+};
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::context::{
     ContextFilePath,
@@ -27,12 +34,43 @@ use crate::constants::help_text::{
 use crate::os::Os;
 use crate::theme::StyledText;
 
-#[deny(missing_docs)]
-#[derive(Debug, PartialEq, Subcommand)]
+/// Context command for viewing token usage and managing context files.
+/// Without subcommands: displays context window token usage breakdown by component
+/// (context files, tools, assistant responses, user prompts).
+/// With subcommands: manages context file rules (show, add, remove, clear).
+#[derive(Debug, PartialEq, Args)]
 #[command(
     about = context_description(),
     before_long_help = context_long_help()
 )]
+pub struct ContextArgs {
+    #[command(subcommand)]
+    pub subcommand: Option<ContextSubcommand>,
+}
+
+impl ContextArgs {
+    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        match self.subcommand {
+            Some(subcommand) => subcommand.execute(os, session).await,
+            None => {
+                // No subcommand - show context window usage (replaces /usage --context)
+                let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
+                usage_renderer::render_context_window(&usage_data, session).await?;
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
+        }
+    }
+
+    pub fn subcommand_name(&self) -> Option<&'static str> {
+        self.subcommand.as_ref().map(|s| s.name())
+    }
+}
+
+#[deny(missing_docs)]
+#[derive(Debug, PartialEq, Subcommand)]
 /// Context subcommands
 pub enum ContextSubcommand {
     /// Display the context rule configuration and matched files

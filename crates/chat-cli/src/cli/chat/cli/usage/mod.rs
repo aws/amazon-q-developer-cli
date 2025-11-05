@@ -1,9 +1,4 @@
 use clap::Args;
-use crossterm::style::Color;
-use crossterm::{
-    execute,
-    style,
-};
 
 use crate::cli::chat::token_counter::TokenCount;
 use crate::cli::chat::{
@@ -66,79 +61,16 @@ pub struct BonusCredit {
     pub days_until_expiry: i64,
 }
 
-/// Arguments for the usage command that displays token usage statistics and context window
-/// information.
-///
-/// This command shows how many tokens are being used by different components (context files, tools,
-/// assistant responses, and user prompts) within the current chat session's context window.
+/// Arguments for the usage command that displays credits and billing information.
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
-pub struct UsageArgs {
-    /// Show only context window usage
-    #[arg(long)]
-    context: bool,
-    /// Show only credits and billing information
-    #[arg(long)]
-    credits: bool,
-}
+pub struct UsageArgs {}
 
 impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        match (self.context, self.credits) {
-            (true, false) => {
-                // Show only context window usage
-                self.show_context_usage(os, session).await
-            },
-            (false, true) => {
-                // Show only credits/billing information
-                self.show_credits_info(os, session).await
-            },
-            (false, false) => {
-                // Show both (default behavior)
-                self.show_full_usage(os, session).await
-            },
-            (true, true) => {
-                // Both flags specified - show error
-                execute!(
-                    session.stderr,
-                    style::SetForegroundColor(Color::Red),
-                    style::Print("Error: Cannot specify both --context and --credits flags\n"),
-                    style::SetForegroundColor(Color::Reset),
-                )?;
-                Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                })
-            },
-        }
-    }
-
-    async fn show_context_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
-        usage_renderer::render_context_window(&usage_data, session).await?;
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
-    }
-
-    async fn show_credits_info(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        // Only show credits/billing information
         let billing_data = usage_data_provider::get_billing_usage_data(os).await?;
         usage_renderer::render_billing_info(&billing_data, session, true).await?;
-        Ok(ChatState::PromptUser {
-            skip_printing_tools: true,
-        })
-    }
-
-    async fn show_full_usage(&self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // Get both billing and context data
-        let billing_data = usage_data_provider::get_billing_usage_data(os).await?;
-        let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
-
-        // Render billing information
-        usage_renderer::render_billing_info(&billing_data, session, false).await?;
-
-        // Render context window information
-        usage_renderer::render_context_window(&usage_data, session).await?;
-
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
