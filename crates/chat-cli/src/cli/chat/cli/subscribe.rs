@@ -22,7 +22,7 @@ use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::system_info::is_remote;
 
-const DEFAULT_SUBSCRIPTION_DOMAIN: &str = "gamma.app.kiro.dev";
+const DEFAULT_SUBSCRIPTION_DOMAIN: &str = "app.kiro.dev";
 
 fn get_subscription_url() -> String {
     let domain = env::var("KIRO_SUBSCRIPTION_DOMAIN").unwrap_or_else(|_| DEFAULT_SUBSCRIPTION_DOMAIN.to_string());
