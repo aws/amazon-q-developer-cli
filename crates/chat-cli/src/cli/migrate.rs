@@ -18,7 +18,6 @@ use serde_json::{
     Value,
 };
 use tokio::fs;
-use tracing::debug;
 
 use crate::os::Os;
 use crate::util::paths::GlobalPaths;
@@ -40,10 +39,19 @@ pub struct MigrateArgs {
 
 impl MigrateArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
+        // Try to acquire migration lock
+        let _lock = match acquire_migration_lock()? {
+            Some(lock) => lock,
+            None => {
+                println!("Migration already in progress by another process");
+                return Ok(ExitCode::SUCCESS);
+            },
+        };
+
         let status = detect_migration(os).await?;
 
         if !self.force && matches!(status, MigrationStatus::Completed) {
-            debug!("✓ Migration already completed");
+            println!("✓ Migration already completed");
             return Ok(ExitCode::SUCCESS);
         }
 
@@ -54,7 +62,7 @@ impl MigrateArgs {
             new_settings,
         } = status
         else {
-            debug!("✓ No migration needed (fresh install)");
+            println!("✓ No migration needed (fresh install)");
             return Ok(ExitCode::SUCCESS);
         };
 
@@ -73,26 +81,17 @@ impl MigrateArgs {
             }
         }
 
-        // Try to acquire migration lock
-        let _lock = match acquire_migration_lock()? {
-            Some(lock) => lock,
-            None => {
-                debug!("Migration already in progress by another process");
-                return Ok(ExitCode::SUCCESS);
-            },
-        };
-
         // Migrate database
         let db_result = migrate_database(&old_db, &new_db, self.dry_run).await?;
-        debug!("✓ Database: {}", db_result.message);
+        println!("✓ Database: {}", db_result.message);
 
         // Migrate settings
         let settings_result = migrate_settings(&old_settings, &new_settings, self.dry_run).await?;
-        debug!("✓ Settings: {}", settings_result.message);
+        println!("✓ Settings: {}", settings_result.message);
         if !settings_result.transformations.is_empty() {
-            debug!("  Transformations applied:");
+            println!("  Transformations applied:");
             for t in &settings_result.transformations {
-                debug!("    - {t}");
+                println!("    - {t}");
             }
         }
 
@@ -100,9 +99,9 @@ impl MigrateArgs {
             os.database = crate::database::Database::new().await?;
             os.database.set_kiro_migration_completed()?;
 
-            debug!("\n✓ Migration completed successfully!");
+            println!("\n✓ Migration completed successfully!");
         } else {
-            debug!("\n(Dry run - no changes made)");
+            println!("\n(Dry run - no changes made)");
         }
 
         Ok(ExitCode::SUCCESS)

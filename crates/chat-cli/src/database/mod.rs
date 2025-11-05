@@ -359,13 +359,13 @@ impl Database {
     /// Check if kiro migration has been completed
     pub fn is_kiro_migration_completed(&self) -> Result<bool, DatabaseError> {
         Ok(self
-            .get_json_entry::<bool>(Table::State, KIRO_MIGRATION_KEY)?
+            .get_entry::<bool>(Table::State, KIRO_MIGRATION_KEY)?
             .unwrap_or(false))
     }
 
     /// Mark kiro migration as completed
     pub fn set_kiro_migration_completed(&self) -> Result<(), DatabaseError> {
-        self.set_json_entry(Table::State, KIRO_MIGRATION_KEY, true)?;
+        self.set_entry(Table::State, KIRO_MIGRATION_KEY, true)?;
         Ok(())
     }
 
