@@ -85,6 +85,11 @@ impl MigrateArgs {
         let db_result = migrate_database(&old_db, &new_db, self.dry_run).await?;
         println!("✓ Database: {}", db_result.message);
 
+        // Reload database connection after copying the file
+        if !self.dry_run && db_result.bytes_copied > 0 {
+            os.database = crate::database::Database::new().await?;
+        }
+
         // Migrate settings
         let settings_result = migrate_settings(&old_settings, &new_settings, self.dry_run).await?;
         println!("✓ Settings: {}", settings_result.message);
@@ -96,9 +101,7 @@ impl MigrateArgs {
         }
 
         if !self.dry_run {
-            os.database = crate::database::Database::new().await?;
             os.database.set_kiro_migration_completed()?;
-
             println!("\n✓ Migration completed successfully!");
         } else {
             println!("\n(Dry run - no changes made)");
