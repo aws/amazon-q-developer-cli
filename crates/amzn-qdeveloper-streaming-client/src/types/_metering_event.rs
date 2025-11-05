@@ -8,6 +8,8 @@ pub struct MeteringEvent {
     pub usage: ::std::option::Option<f64>,
     #[allow(missing_docs)] // documentation missing in model
     pub unit: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub unit_plural: ::std::option::Option<::std::string::String>,
 }
 impl MeteringEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -18,6 +20,11 @@ impl MeteringEvent {
     #[allow(missing_docs)] // documentation missing in model
     pub fn unit(&self) -> ::std::option::Option<&str> {
         self.unit.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn unit_plural(&self) -> ::std::option::Option<&str> {
+        self.unit_plural.as_deref()
     }
 }
 impl MeteringEvent {
@@ -34,6 +41,7 @@ impl MeteringEvent {
 pub struct MeteringEventBuilder {
     pub(crate) usage: ::std::option::Option<f64>,
     pub(crate) unit: ::std::option::Option<::std::string::String>,
+    pub(crate) unit_plural: ::std::option::Option<::std::string::String>,
 }
 impl MeteringEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -70,11 +78,29 @@ impl MeteringEventBuilder {
         &self.unit
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn unit_plural(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.unit_plural = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_unit_plural(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.unit_plural = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_unit_plural(&self) -> &::std::option::Option<::std::string::String> {
+        &self.unit_plural
+    }
+
     /// Consumes the builder and constructs a [`MeteringEvent`](crate::types::MeteringEvent).
     pub fn build(self) -> crate::types::MeteringEvent {
         crate::types::MeteringEvent {
             usage: self.usage,
             unit: self.unit,
+            unit_plural: self.unit_plural,
         }
     }
 }

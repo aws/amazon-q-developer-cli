@@ -9,6 +9,8 @@ pub struct ListProfilesInput {
     pub include_management_account: ::std::option::Option<bool>,
     #[allow(missing_docs)] // documentation missing in model
     pub next_token: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub opt_in_features_type: ::std::option::Option<crate::types::OptInFeaturesType>,
 }
 impl ListProfilesInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -24,6 +26,11 @@ impl ListProfilesInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn next_token(&self) -> ::std::option::Option<&str> {
         self.next_token.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn opt_in_features_type(&self) -> ::std::option::Option<&crate::types::OptInFeaturesType> {
+        self.opt_in_features_type.as_ref()
     }
 }
 impl ListProfilesInput {
@@ -41,6 +48,7 @@ pub struct ListProfilesInputBuilder {
     pub(crate) max_results: ::std::option::Option<i32>,
     pub(crate) include_management_account: ::std::option::Option<bool>,
     pub(crate) next_token: ::std::option::Option<::std::string::String>,
+    pub(crate) opt_in_features_type: ::std::option::Option<crate::types::OptInFeaturesType>,
 }
 impl ListProfilesInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -94,6 +102,23 @@ impl ListProfilesInputBuilder {
         &self.next_token
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn opt_in_features_type(mut self, input: crate::types::OptInFeaturesType) -> Self {
+        self.opt_in_features_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_opt_in_features_type(mut self, input: ::std::option::Option<crate::types::OptInFeaturesType>) -> Self {
+        self.opt_in_features_type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_opt_in_features_type(&self) -> &::std::option::Option<crate::types::OptInFeaturesType> {
+        &self.opt_in_features_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`ListProfilesInput`](crate::operation::list_profiles::ListProfilesInput).
     pub fn build(
@@ -106,6 +131,7 @@ impl ListProfilesInputBuilder {
             max_results: self.max_results,
             include_management_account: self.include_management_account,
             next_token: self.next_token,
+            opt_in_features_type: self.opt_in_features_type,
         })
     }
 }

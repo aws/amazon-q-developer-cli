@@ -15,6 +15,7 @@ impl super::Client {
     ///   - [`resource_policy(ResourcePolicy)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::resource_policy) / [`set_resource_policy(Option<ResourcePolicy>)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::set_resource_policy):<br>required: **false**<br>(undocumented)<br>
     ///   - [`target_profile_type(ProfileType)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::target_profile_type) / [`set_target_profile_type(Option<ProfileType>)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::set_target_profile_type):<br>required: **false**<br>(undocumented)<br>
     ///   - [`opt_in_features(OptInFeatures)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::opt_in_features) / [`set_opt_in_features(Option<OptInFeatures>)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::set_opt_in_features):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`opt_in_features_type(OptInFeaturesType)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::opt_in_features_type) / [`set_opt_in_features_type(Option<OptInFeaturesType>)`](crate::operation::update_profile::builders::UpdateProfileFluentBuilder::set_opt_in_features_type):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`UpdateProfileOutput`](crate::operation::update_profile::UpdateProfileOutput) with
     ///   field(s):

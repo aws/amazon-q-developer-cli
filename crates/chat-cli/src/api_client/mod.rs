@@ -24,6 +24,12 @@ use amzn_codewhisperer_client::types::{
     UserContext,
 };
 use amzn_codewhisperer_streaming_client::Client as CodewhispererStreamingClient;
+use amzn_codewhisperer_streaming_client::config::endpoint::{
+    Endpoint as StreamingEndpoint,
+    EndpointFuture,
+    Params,
+    ResolveEndpoint,
+};
 use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
 use amzn_qdeveloper_streaming_client::types::Origin as QDeveloperOrigin;
 use aws_config::retry::RetryConfig;
@@ -72,6 +78,71 @@ use crate::os::{
     Fs,
 };
 use crate::util::env_var::is_integ_test;
+
+#[derive(Debug)]
+struct StaticEndpointResolver {
+    url: String,
+}
+
+impl StaticEndpointResolver {
+    fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
+impl ResolveEndpoint for StaticEndpointResolver {
+    fn resolve_endpoint<'a>(&'a self, _params: &'a Params) -> EndpointFuture<'a> {
+        let url = self.url.clone();
+        let endpoint = StreamingEndpoint::builder().url(url).build();
+        EndpointFuture::ready(Ok(endpoint))
+    }
+}
+
+#[derive(Debug)]
+struct StaticCodewhispererEndpointResolver {
+    url: String,
+}
+
+impl StaticCodewhispererEndpointResolver {
+    fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
+impl amzn_codewhisperer_client::config::endpoint::ResolveEndpoint for StaticCodewhispererEndpointResolver {
+    fn resolve_endpoint<'a>(
+        &'a self,
+        _params: &'a amzn_codewhisperer_client::config::endpoint::Params,
+    ) -> EndpointFuture<'a> {
+        use aws_smithy_types::endpoint::Endpoint;
+        let url = self.url.clone();
+        let endpoint = Endpoint::builder().url(url).build();
+        EndpointFuture::ready(Ok(endpoint))
+    }
+}
+
+#[derive(Debug)]
+struct StaticQDeveloperEndpointResolver {
+    url: String,
+}
+
+impl StaticQDeveloperEndpointResolver {
+    fn new(url: String) -> Self {
+        Self { url }
+    }
+}
+
+impl amzn_qdeveloper_streaming_client::config::endpoint::ResolveEndpoint for StaticQDeveloperEndpointResolver {
+    fn resolve_endpoint<'a>(
+        &'a self,
+        _params: &'a amzn_qdeveloper_streaming_client::config::endpoint::Params,
+    ) -> EndpointFuture<'a> {
+        use aws_smithy_types::endpoint::Endpoint;
+        let url = self.url.clone();
+        let endpoint = Endpoint::builder().url(url).build();
+        EndpointFuture::ready(Ok(endpoint))
+    }
+}
 
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
@@ -131,7 +202,7 @@ impl ApiClient {
                 .interceptor(UserAgentOverrideInterceptor::new())
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(app_name())
-                .endpoint_url(endpoint.url())
+                .endpoint_resolver(StaticCodewhispererEndpointResolver::new(endpoint.url().to_string()))
                 .build(),
         );
 
@@ -177,7 +248,7 @@ impl ApiClient {
                     .interceptor(UserAgentOverrideInterceptor::new())
                     .interceptor(DelayTrackingInterceptor::new())
                     .app_name(app_name())
-                    .endpoint_url(endpoint.url())
+                    .endpoint_resolver(StaticQDeveloperEndpointResolver::new(endpoint.url().to_string()))
                     .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                     .stalled_stream_protection(stalled_stream_protection_config())
                     .build(),
@@ -192,8 +263,7 @@ impl ApiClient {
                         .interceptor(DelayTrackingInterceptor::new())
                         .bearer_token_resolver(UnifiedBearerResolver)
                         .app_name(app_name())
-                        .endpoint_url(endpoint.url())
-                        .endpoint_url(endpoint.url())
+                        .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
                         .retry_classifier(retry_classifier::QCliRetryClassifier::new())
                         .stalled_stream_protection(stalled_stream_protection_config())
                         .build(),
