@@ -21,6 +21,7 @@ pub mod tangent;
 pub mod todos;
 pub mod tools;
 pub mod usage;
+
 use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
