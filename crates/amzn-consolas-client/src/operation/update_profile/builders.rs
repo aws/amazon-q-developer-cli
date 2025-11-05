@@ -301,4 +301,21 @@ impl UpdateProfileFluentBuilder {
     pub fn get_opt_in_features(&self) -> &::std::option::Option<crate::types::OptInFeatures> {
         self.inner.get_opt_in_features()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn opt_in_features_type(mut self, input: crate::types::OptInFeaturesType) -> Self {
+        self.inner = self.inner.opt_in_features_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_opt_in_features_type(mut self, input: ::std::option::Option<crate::types::OptInFeaturesType>) -> Self {
+        self.inner = self.inner.set_opt_in_features_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_opt_in_features_type(&self) -> &::std::option::Option<crate::types::OptInFeaturesType> {
+        self.inner.get_opt_in_features_type()
+    }
 }

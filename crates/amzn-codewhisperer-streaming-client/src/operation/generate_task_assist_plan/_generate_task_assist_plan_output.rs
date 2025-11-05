@@ -33,6 +33,13 @@ impl GenerateTaskAssistPlanOutput {
     pub fn builder() -> crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder {
         crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder::default()
     }
+
+    #[allow(unused)]
+    pub(crate) fn into_builder(
+        self,
+    ) -> crate::operation::generate_task_assist_plan::builders::GenerateTaskAssistPlanOutputBuilder {
+        Self::builder().planning_response_stream(self.planning_response_stream)
+    }
 }
 
 /// A builder for

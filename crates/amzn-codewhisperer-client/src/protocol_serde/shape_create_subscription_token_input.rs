@@ -15,5 +15,11 @@ pub fn ser_create_subscription_token_input_input(
     if let Some(var_4) = &input.subscription_type {
         object.key("subscriptionType").string(var_4.as_str());
     }
+    if let Some(var_5) = &input.success_url {
+        object.key("successUrl").string(var_5.as_str());
+    }
+    if let Some(var_6) = &input.cancel_url {
+        object.key("cancelUrl").string(var_6.as_str());
+    }
     Ok(())
 }

@@ -186,4 +186,38 @@ impl CreateSubscriptionTokenFluentBuilder {
     pub fn get_subscription_type(&self) -> &::std::option::Option<crate::types::SubscriptionType> {
         self.inner.get_subscription_type()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn success_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.success_url(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_success_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_success_url(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_success_url(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_success_url()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn cancel_url(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.inner = self.inner.cancel_url(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_cancel_url(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.inner = self.inner.set_cancel_url(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_cancel_url(&self) -> &::std::option::Option<::std::string::String> {
+        self.inner.get_cancel_url()
+    }
 }
