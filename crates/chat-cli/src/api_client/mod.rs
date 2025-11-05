@@ -365,7 +365,7 @@ impl ApiClient {
         let request = self
             .client
             .list_available_models()
-            .set_origin(Some(Origin::from("KIRO_CLI")))
+            .set_origin(Some(Origin::KiroCli))
             .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
         let mut paginator = request.into_paginator().send();
 
@@ -458,7 +458,7 @@ impl ApiClient {
     ) -> Result<amzn_codewhisperer_client::operation::get_usage_limits::GetUsageLimitsOutput, ApiClientError> {
         self.client
             .get_usage_limits()
-            .set_origin(Some(amzn_codewhisperer_client::types::Origin::from("KIRO_CLI")))
+            .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
             .send()
             .await
             .map_err(ApiClientError::GetUsageLimitsError)
@@ -543,7 +543,7 @@ impl ApiClient {
             match client
                 .send_message()
                 .conversation_state(conversation_state)
-                .set_source(Some(QDeveloperOrigin::from("KIRO_CLI")))
+                .set_source(Some(QDeveloperOrigin::KiroCli))
                 .send()
                 .await
             {
