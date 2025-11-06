@@ -1,11 +1,11 @@
 # Built-in Tools
 
-Amazon Q CLI includes several built-in tools that agents can use. This document describes each tool and its configuration options.
+KIRO CLI includes several built-in tools that agents can use. This document describes each tool and its configuration options.
 
 - [`execute_bash`](#execute_bash-tool) — Execute a shell command.
 - [`fs_read`](#fs_read-tool) — Read files, directories, and images.
 - [`fs_write`](#fs_write-tool) — Create and edit files.
-- [`introspect`](#introspect-tool) — Provide information about Q CLI capabilities and documentation.
+- [`introspect`](#introspect-tool) — Provide information about KIRO CLI capabilities and documentation.
 - [`report_issue`](#report_issue-tool) — Open a GitHub issue template.
 - [`knowledge`](#knowledge-tool) — Store and retrieve information in a knowledge base.
 - [`thinking`](#thinking-tool) — Internal reasoning mechanism.
@@ -91,11 +91,11 @@ Tool for creating and editing files.
 
 ## Introspect Tool
 
-Provide information about Q CLI capabilities, features, commands, and documentation. This tool accesses Q CLI's built-in documentation and help content to answer questions about the CLI's functionality.
+Provide information about KIRO CLI capabilities, features, commands, and documentation. This tool accesses KIRO CLI's built-in documentation and help content to answer questions about the CLI's functionality.
 
 ### Usage
 
-The introspect tool is automatically used when you ask questions about Q CLI itself, such as:
+The introspect tool is automatically used when you ask questions about KIRO CLI itself, such as:
 - "What can you do?"
 - "How do I save conversations?"
 - "What commands are available?"

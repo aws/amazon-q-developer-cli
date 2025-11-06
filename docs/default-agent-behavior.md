@@ -1,19 +1,19 @@
 # Default Agent Behavior
 
-When no specific agent is configured or when the specified agent cannot be found, Q CLI follows a fallback hierarchy to determine which agent to use.
+When no specific agent is configured or when the specified agent cannot be found, KIRO CLI follows a fallback hierarchy to determine which agent to use.
 
 ## Agent Selection Priority
 
-Q CLI selects an agent in the following order of priority:
+KIRO CLI selects an agent in the following order of priority:
 
 ### 1. Command-Line Specified Agent
-The agent specified via the `--agent` flag when starting Q CLI:
+The agent specified via the `--agent` flag when starting KIRO CLI:
 
 ```bash
 q chat --agent my-custom-agent
 ```
 
-If this agent exists, it will be used. If not, Q CLI will display an error and fall back to the next option.
+If this agent exists, it will be used. If not, KIRO CLI will display an error and fall back to the next option.
 
 ### 2. User-Defined Default Agent
 The default agent configured via the settings system:
@@ -22,12 +22,12 @@ The default agent configured via the settings system:
 q settings chat.defaultAgent my-preferred-agent
 ```
 
-This setting is stored in your Q CLI configuration and will be used across all sessions unless overridden by the `--agent` flag.
+This setting is stored in your KIRO CLI configuration and will be used across all sessions unless overridden by the `--agent` flag.
 
-If the configured default agent cannot be found, Q CLI will display an error and fall back to the built-in default.
+If the configured default agent cannot be found, KIRO CLI will display an error and fall back to the built-in default.
 
 ### 3. Built-in Default Agent
-If no agent is specified or found, Q CLI uses a built-in default agent with the following configuration:
+If no agent is specified or found, KIRO CLI uses a built-in default agent with the following configuration:
 
 ```json
 {

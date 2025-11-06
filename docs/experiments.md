@@ -1,6 +1,6 @@
 # Experimental Features
 
-Amazon Q CLI includes experimental features that can be toggled on/off using the `/experiment` command. These features are in active development and may change or be removed at any time.
+KIRO CLI includes experimental features that can be toggled on/off using the `/experiment` command. These features are in active development and may change or be removed at any time.
 
 ## Available Experiments
 

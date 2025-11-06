@@ -95,7 +95,7 @@ impl Introspect {
         // Add settings information dynamically
         documentation.push_str("\n\n--- Available Settings ---\n");
         documentation.push_str(
-            "Q CLI supports these configuration settings (use `kiro-cli settings` command from terminal, NOT /settings):\n\n",
+            "KIRO CLI supports these configuration settings (use `kiro-cli settings` command from terminal, NOT /settings):\n\n",
         );
 
         // Automatically iterate over all settings with descriptions
@@ -111,25 +111,10 @@ impl Introspect {
         documentation.push_str("\n\n--- CRITICAL INSTRUCTION ---\n");
         documentation.push_str("YOU MUST ONLY provide information that is explicitly documented in the sections above. If specific details about any tool, feature, or command are not documented, you MUST clearly state that the information is not available in the documentation. DO NOT generate plausible-sounding information or make assumptions about undocumented features.\n\n");
 
-        documentation.push_str("--- GitHub References ---\n");
-        documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
-        documentation.push_str("• README.md: https://github.com/aws/amazon-q-developer-cli/blob/main/README.md\n");
-        documentation.push_str(
-            "• Built-in Tools: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/built-in-tools.md\n",
-        );
-        documentation
-            .push_str("• Experiments: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/experiments.md\n");
-        documentation.push_str("• Agent File Locations: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-file-locations.md\n");
-        documentation
-            .push_str("• Tangent Mode: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/tangent-mode.md\n");
-        documentation.push_str(
-            "• Introspect Tool: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/introspect-tool.md\n",
-        );
-        documentation
-            .push_str("• Todo Lists: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/todo-lists.md\n");
-        documentation.push_str("• Hooks: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/hooks.md\n");
-        documentation
-            .push_str("• Contributing: https://github.com/aws/amazon-q-developer-cli/blob/main/CONTRIBUTING.md\n");
+        // TODO: Add KIRO CLI documentation links when available
+        // documentation.push_str("--- GitHub References ---\n");
+        // documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
+        // documentation.push_str("• README.md: https://github.com/kiro-cli/kiro-cli/blob/main/README.md\n");
 
         let response = IntrospectResponse {
             built_in_help: Some(help_content),

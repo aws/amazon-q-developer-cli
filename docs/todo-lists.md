@@ -1,6 +1,6 @@
 # TODO Management
 
-The `/todos` command provides persistent TODO list management for Amazon Q CLI, allowing you to view, resume, and manage TODO lists created during chat sessions.
+The `/todos` command provides persistent TODO list management for KIRO CLI, allowing you to view, resume, and manage TODO lists created during chat sessions.
 
 ## Getting Started
 

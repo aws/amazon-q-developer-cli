@@ -8,7 +8,7 @@ Tangent mode is experimental and must be enabled:
 
 **Via Experiment Command**: Run `/experiment` and select tangent mode from the list.
 
-**Via Settings**: `q settings chat.enableTangentMode true`
+**Via Settings**: `kiro-cli settings chat.enableTangentMode true`
 
 ## Basic Usage
 
@@ -60,7 +60,7 @@ Restored conversation from checkpoint (↯).
 > Thanks! I'll go with pandas. Can you show me error handling?
 ```
 
-### Example 2: Getting Q CLI Help
+### Example 2: Getting KIRO CLI Help
 ```
 > Help me write a deployment script
 
@@ -69,9 +69,9 @@ I can help you create a deployment script...
 > /tangent
 Created a conversation checkpoint (↯).
 
-↯ > What Q CLI commands are available for file operations?
+↯ > What KIRO CLI commands are available for file operations?
 
-Q CLI provides fs_read, fs_write, execute_bash...
+KIRO CLI provides fs_read, fs_write, execute_bash...
 
 ↯ > /tangent
 Restored conversation from checkpoint (↯).
@@ -128,13 +128,13 @@ Restored conversation from checkpoint (↯) with last conversation entry preserv
 ### Keyboard Shortcut
 ```bash
 # Change shortcut key (default: t)
-q settings chat.tangentModeKey y
+kiro-cli settings chat.tangentModeKey y
 ```
 
 ### Auto-Tangent for Introspect
 ```bash
-# Auto-enter tangent mode for Q CLI help questions
-q settings introspect.tangentMode true
+# Auto-enter tangent mode for KIRO CLI help questions
+kiro-cli settings introspect.tangentMode true
 ```
 
 ## Visual Indicators
@@ -148,7 +148,7 @@ q settings introspect.tangentMode true
 ### When to Use Tangent Mode
 - Asking clarifying questions about the current topic
 - Exploring alternative approaches before deciding
-- Getting help with Q CLI commands or features
+- Getting help with KIRO CLI commands or features
 - Testing understanding of concepts
 
 ### When NOT to Use
@@ -178,13 +178,13 @@ q settings introspect.tangentMode true
 /experiment
 
 # Or enable via settings
-q settings chat.enableTangentMode true
+kiro-cli settings chat.enableTangentMode true
 ```
 
 ### Keyboard Shortcut Not Working
 ```bash
 # Check/reset shortcut key
-q settings chat.tangentModeKey t
+kiro-cli settings chat.tangentModeKey t
 ```
 
 ### Lost in Tangent Mode
@@ -192,5 +192,5 @@ Look for the `↯` symbol in your prompt. Use `/tangent` to exit and return to m
 
 ## Related Features
 
-- **Introspect**: Q CLI help (auto-enters tangent if configured)
+- **Introspect**: KIRO CLI help (auto-enters tangent if configured)
 - **Experiments**: Manage experimental features with `/experiment`

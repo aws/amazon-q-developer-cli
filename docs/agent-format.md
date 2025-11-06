@@ -363,7 +363,7 @@ The `model` field specifies the model ID to use for this agent. If not specified
 }
 ```
 
-The model ID must match one of the available models returned by the Q CLI's model service. You can see available models by using the `/model` command in an active chat session.
+The model ID must match one of the available models returned by the KIRO CLI's model service. You can see available models by using the `/model` command in an active chat session.
 
 If the specified model is not available, the agent will fall back to the default model and display a warning.
 

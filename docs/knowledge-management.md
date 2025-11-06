@@ -1,6 +1,6 @@
 # Knowledge Management
 
-The /knowledge command provides persistent knowledge base functionality for Amazon Q CLI, allowing you to store, search, and manage contextual information that persists across chat sessions.
+The /knowledge command provides persistent knowledge base functionality for KIRO CLI, allowing you to store, search, and manage contextual information that persists across chat sessions.
 
 > [!NOTE]
 > This is a beta feature that must be enabled before use.

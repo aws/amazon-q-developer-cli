@@ -1,4 +1,4 @@
-# Amazon Q CLI
+# KIRO CLI
 
 ## Installation
 
@@ -12,7 +12,7 @@
 
 ## Contributing
 
-Thank you so much for considering to contribute to Amazon Q.
+Thank you so much for considering to contribute to KIRO CLI.
 
 Before getting started, see our [contributing docs](CONTRIBUTING.md#security-issue-notifications).
 
@@ -48,7 +48,7 @@ cargo install typos-cli
 
 ## Project Layout
 
-- [`chat_cli`](crates/chat-cli/) - the `q` CLI, allows users to interface with Amazon Q Developer from
+- [`chat_cli`](crates/chat-cli/) - the `kiro` CLI, allows users to interface with KIRO Developer from
   the command line
 - [`scripts/`](scripts/) - Contains ops and build related scripts
 - [`crates/`](crates/) - Contains all rust crates

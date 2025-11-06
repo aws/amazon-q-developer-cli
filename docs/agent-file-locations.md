@@ -10,7 +10,7 @@ Local agents are stored in the current working directory under:
 .amazonq/cli-agents/
 ```
 
-These agents are specific to the current workspace or project and are only available when running Q CLI from that directory or its subdirectories.
+These agents are specific to the current workspace or project and are only available when running KIRO CLI from that directory or its subdirectories.
 
 **Example structure:**
 ```
@@ -33,7 +33,7 @@ Global agents are stored in your home directory under:
 
 Note: For globally available agents, the `amazonq` directory is in the `.aws` folder. 
 
-These agents are available from any directory when using Q CLI.
+These agents are available from any directory when using KIRO CLI.
 
 **Example structure:**
 ```
@@ -45,14 +45,14 @@ These agents are available from any directory when using Q CLI.
 
 ## Agent Precedence
 
-When Q CLI looks for an agent, it follows this precedence order:
+When KIRO CLI looks for an agent, it follows this precedence order:
 
 1. **Local first**: Checks `.amazonq/cli-agents/` in the current working directory
 2. **Global fallback**: If not found locally, checks `~/.aws/amazonq/cli-agents/` in the home directory
 
 ## Naming Conflicts
 
-If both local and global directories contain agents with the same name, the **local agent takes precedence**. When this happens, Q CLI will display a warning message:
+If both local and global directories contain agents with the same name, the **local agent takes precedence**. When this happens, KIRO CLI will display a warning message:
 
 ```
 WARNING: Agent conflict for my-agent. Using workspace version.
@@ -107,4 +107,4 @@ EOF
 
 ## Directory Creation
 
-Q CLI will automatically create the global agents directory (`~/.aws/amazonq/cli-agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.amazonq/cli-agents/`) in your workspace if you want to use local agents.
+KIRO CLI will automatically create the global agents directory (`~/.aws/amazonq/cli-agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.amazonq/cli-agents/`) in your workspace if you want to use local agents.
