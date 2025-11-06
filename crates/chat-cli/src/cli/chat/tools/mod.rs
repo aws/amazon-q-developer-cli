@@ -220,8 +220,6 @@ impl Tool {
                     StyledText::secondary_fg(),
                     style::Print(" (from mcp server: "),
                     style::Print(&tool.server_name),
-                    style::Print(", using tool: "),
-                    style::Print(self.display_name()),
                     style::Print(")"),
                     StyledText::reset(),
                 )?;

@@ -113,8 +113,8 @@ impl Introspect {
 
         // TODO: Add KIRO CLI documentation links when available
         // documentation.push_str("--- GitHub References ---\n");
-        // documentation.push_str("INSTRUCTION: When your response uses information from any of these documentation files, include the relevant GitHub link(s) at the end:\n");
-        // documentation.push_str("• README.md: https://github.com/kiro-cli/kiro-cli/blob/main/README.md\n");
+        // documentation.push_str("INSTRUCTION: When your response uses information from any of these
+        // documentation files, include the relevant GitHub link(s) at the end:\n"); documentation.push_str("• README.md: https://github.com/kiro-cli/kiro-cli/blob/main/README.md\n");
 
         let response = IntrospectResponse {
             built_in_help: Some(help_content),
