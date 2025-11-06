@@ -155,7 +155,6 @@ use crate::agent::util::request_channel::{
 pub struct McpManagerHandle {
     /// Sender for sending requests to the tool manager task
     request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
-    server_to_handle_server_event_tx: mpsc::Sender<McpServerActorEvent>,
     mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
 }
 
@@ -163,7 +162,6 @@ impl Clone for McpManagerHandle {
     fn clone(&self) -> Self {
         Self {
             request_tx: self.request_tx.clone(),
-            server_to_handle_server_event_tx: self.server_to_handle_server_event_tx.clone(),
             mcp_main_loop_to_handle_server_event_rx: self.mcp_main_loop_to_handle_server_event_rx.resubscribe(),
         }
     }
@@ -172,12 +170,10 @@ impl Clone for McpManagerHandle {
 impl McpManagerHandle {
     fn new(
         request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
-        server_to_handle_server_event_tx: mpsc::Sender<McpServerActorEvent>,
         mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
     ) -> Self {
         Self {
             request_tx,
-            server_to_handle_server_event_tx,
             mcp_main_loop_to_handle_server_event_rx,
         }
     }
@@ -187,12 +183,9 @@ impl McpManagerHandle {
         name: String,
         config: McpServerConfig,
     ) -> Result<McpManagerResponse, McpManagerError> {
-        let server_event_sender = self.server_to_handle_server_event_tx.clone();
-
         self.request_tx
             .send_recv(McpManagerRequest::LaunchServer {
                 server_name: name,
-                server_event_sender,
                 config,
             })
             .await
@@ -291,7 +284,6 @@ impl McpManager {
 
     pub fn spawn(self) -> McpManagerHandle {
         let request_tx = self.request_tx.clone();
-        let server_to_handle_server_event_tx = self.server_event_tx.clone();
         let (mcp_main_loop_to_handle_server_event_tx, mcp_main_loop_to_handle_server_event_rx) =
             broadcast::channel::<McpServerActorEvent>(100);
 
@@ -299,11 +291,7 @@ impl McpManager {
             self.main_loop(mcp_main_loop_to_handle_server_event_tx).await;
         });
 
-        McpManagerHandle::new(
-            request_tx,
-            server_to_handle_server_event_tx,
-            mcp_main_loop_to_handle_server_event_rx,
-        )
+        McpManagerHandle::new(request_tx, mcp_main_loop_to_handle_server_event_rx)
     }
 
     async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerActorEvent>) {
@@ -339,13 +327,13 @@ impl McpManager {
             McpManagerRequest::LaunchServer {
                 server_name: name,
                 config,
-                server_event_sender: event_tx,
             } => {
                 if self.initializing_servers.contains_key(&name) {
                     return Err(McpManagerError::ServerCurrentlyInitializing { name });
                 } else if self.servers.contains_key(&name) {
                     return Err(McpManagerError::ServerAlreadyLaunched { name });
                 }
+                let event_tx = self.server_event_tx.clone();
                 let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
                 self.initializing_servers.insert(name, handle);
                 Ok(McpManagerResponse::LaunchServer)
@@ -417,8 +405,6 @@ pub enum McpManagerRequest {
         server_name: String,
         /// Config to use
         config: McpServerConfig,
-        /// Channel for sending server events back to the manager
-        server_event_sender: mpsc::Sender<McpServerActorEvent>,
     },
     GetToolSpecs {
         server_name: String,
