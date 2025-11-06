@@ -98,11 +98,13 @@ impl PasteState {
     }
 }
 
-/// Cache for dynamically generated commands
+/// Cache for static slash commands from SlashCommand enum
 static COMMANDS_CACHE: OnceLock<Vec<String>> = OnceLock::new();
 
-/// Generate command list from SlashCommand enum using clap introspection
-fn generate_commands() -> &'static Vec<String> {
+/// Returns a cached list of static slash commands from SlashCommand enum.
+/// This list is generated once at first call and never changes during runtime.
+/// Does NOT include experiment-based commands.
+fn get_static_slash_commands() -> &'static Vec<String> {
     COMMANDS_CACHE.get_or_init(|| {
         use clap::CommandFactory;
 
@@ -149,10 +151,16 @@ fn generate_commands() -> &'static Vec<String> {
     })
 }
 
-/// Generate dynamic command list including experiment-based commands when enabled
+/// Returns the complete list of available commands including:
+/// - Static slash commands (cached from SlashCommand enum)
+/// - Experiment-based commands (dynamically evaluated based on current experiment status)
 pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
-    let mut commands: Vec<&'static str> = generate_commands().iter().map(|s| s.as_str()).collect();
+    // Get static slash commands (cached)
+    let mut commands: Vec<&'static str> = get_static_slash_commands().iter().map(|s| s.as_str()).collect();
+
+    // Add experiment-based commands (dynamically evaluated)
     commands.extend(ExperimentManager::get_commands(os));
+
     commands.sort();
     commands
 }
