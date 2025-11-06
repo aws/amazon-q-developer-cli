@@ -110,7 +110,6 @@ pub mod types;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use actor::{
     McpServerActor,
@@ -124,8 +123,9 @@ use serde::{
     Serialize,
 };
 use serde_json::Value;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::sync::{
-    Mutex,
+    broadcast,
     mpsc,
     oneshot,
 };
@@ -138,6 +138,8 @@ use types::Prompt;
 
 use super::agent_loop::types::ToolSpec;
 use super::consts::DEFAULT_MCP_CREDENTIAL_PATH;
+use super::util::path::expand_path;
+use super::util::providers::RealProvider;
 use super::util::request_channel::{
     RequestReceiver,
     new_request_channel,
@@ -148,22 +150,30 @@ use crate::agent::util::request_channel::{
     respond,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct McpManagerHandle {
     /// Sender for sending requests to the tool manager task
     request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
     server_to_handle_server_event_tx: mpsc::Sender<McpServerActorEvent>,
-    mcp_main_loop_to_handle_server_event_rx: Arc<Mutex<mpsc::Receiver<McpServerActorEvent>>>,
+    mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
+}
+
+impl Clone for McpManagerHandle {
+    fn clone(&self) -> Self {
+        Self {
+            request_tx: self.request_tx.clone(),
+            server_to_handle_server_event_tx: self.server_to_handle_server_event_tx.clone(),
+            mcp_main_loop_to_handle_server_event_rx: self.mcp_main_loop_to_handle_server_event_rx.resubscribe(),
+        }
+    }
 }
 
 impl McpManagerHandle {
     fn new(
         request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
         server_to_handle_server_event_tx: mpsc::Sender<McpServerActorEvent>,
-        mcp_main_loop_to_handle_server_event_rx: mpsc::Receiver<McpServerActorEvent>,
+        mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
     ) -> Self {
-        let mcp_main_loop_to_handle_server_event_rx = Arc::new(Mutex::new(mcp_main_loop_to_handle_server_event_rx));
-
         Self {
             request_tx,
             server_to_handle_server_event_tx,
@@ -242,9 +252,8 @@ impl McpManagerHandle {
         }
     }
 
-    pub async fn recv(&self) -> Option<McpServerActorEvent> {
-        let mut rx = self.mcp_main_loop_to_handle_server_event_rx.lock().await;
-        rx.recv().await
+    pub async fn recv(&mut self) -> Result<McpServerActorEvent, RecvError> {
+        self.mcp_main_loop_to_handle_server_event_rx.recv().await
     }
 }
 
@@ -281,7 +290,7 @@ impl McpManager {
         let request_tx = self.request_tx.clone();
         let server_to_handle_server_event_tx = self.server_event_tx.clone();
         let (mcp_main_loop_to_handle_server_event_tx, mcp_main_loop_to_handle_server_event_rx) =
-            mpsc::channel::<McpServerActorEvent>(100);
+            broadcast::channel::<McpServerActorEvent>(100);
 
         tokio::spawn(async move {
             self.main_loop(mcp_main_loop_to_handle_server_event_tx).await;
@@ -294,7 +303,7 @@ impl McpManager {
         )
     }
 
-    async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: mpsc::Sender<McpServerActorEvent>) {
+    async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerActorEvent>) {
         loop {
             tokio::select! {
                 req = self.request_rx.recv() => {
@@ -307,7 +316,7 @@ impl McpManager {
                 },
                 res = self.server_event_rx.recv() => {
                     if let Some(evt) = res {
-                        self.handle_mcp_actor_event(evt, &mcp_main_loop_to_handle_server_event_tx).await;
+                        self.handle_mcp_actor_event(evt, &mcp_main_loop_to_handle_server_event_tx);
                     }
                 }
             }
@@ -355,10 +364,10 @@ impl McpManager {
         }
     }
 
-    async fn handle_mcp_actor_event(
+    fn handle_mcp_actor_event(
         &mut self,
         evt: McpServerActorEvent,
-        mcp_main_loop_to_handle_server_event_tx: &mpsc::Sender<McpServerActorEvent>,
+        mcp_main_loop_to_handle_server_event_tx: &broadcast::Sender<McpServerActorEvent>,
     ) {
         // TODO: keep a record of all the different server events received in this layer?
         match &evt {
@@ -384,7 +393,7 @@ impl McpManager {
                 tracing::info!(?server_name, ?oauth_url, "received oauth request");
             },
         }
-        let _ = mcp_main_loop_to_handle_server_event_tx.send(evt).await;
+        let _ = mcp_main_loop_to_handle_server_event_tx.send(evt);
     }
 }
 
