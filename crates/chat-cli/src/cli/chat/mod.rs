@@ -1179,6 +1179,12 @@ impl ChatSession {
     }
 
     async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
+        let has_used_before = os.database.has_used_chat_before()?;
+        if !has_used_before {
+            os.database.mark_chat_as_used()?;
+            return Ok(());
+        }
+
         let current_version = env!("CARGO_PKG_VERSION");
         let last_version = os.database.get_changelog_last_version()?;
         let show_count = os.database.get_changelog_show_count()?.unwrap_or(0);
