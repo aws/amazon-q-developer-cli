@@ -163,7 +163,11 @@ impl UserTurnMetadata {
     }
 
     pub fn add_usage(&mut self, value: f64, unit: String, unit_plural: String) {
-        self.usage_info.push(MeteringUsageInfo { value, unit, unit_plural });
+        self.usage_info.push(MeteringUsageInfo {
+            value,
+            unit,
+            unit_plural,
+        });
     }
 
     pub fn total_usage(&self) -> Vec<MeteringUsageInfo> {

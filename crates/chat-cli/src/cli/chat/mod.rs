@@ -15,8 +15,8 @@ pub mod context;
 mod conversation;
 mod input_source;
 mod message;
-mod turn_summary;
 mod parse;
+mod turn_summary;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
 mod line_tracker;
@@ -829,7 +829,7 @@ impl ChatSession {
                 if self.tool_uses.is_empty() {
                     turn_summary::display_turn_usage_summary(&mut self.stderr, &self.conversation.user_turn_metadata)?;
                 }
-                
+
                 match (self.interactive, self.tool_uses.is_empty()) {
                     (false, true) => {
                         self.inner = Some(ChatState::Exit);
@@ -2813,8 +2813,14 @@ impl ChatSession {
                     trace!("Consumed: {:?}", msg_event);
 
                     match msg_event {
-                        parser::ResponseEvent::MeteringUsage { value, unit, unit_plural } => {
-                            self.conversation.user_turn_metadata.add_usage(value, unit.clone(), unit_plural.clone());
+                        parser::ResponseEvent::MeteringUsage {
+                            value,
+                            unit,
+                            unit_plural,
+                        } => {
+                            self.conversation
+                                .user_turn_metadata
+                                .add_usage(value, unit.clone(), unit_plural.clone());
                         },
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be

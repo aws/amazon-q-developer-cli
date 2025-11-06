@@ -1,5 +1,9 @@
-use crossterm::{execute, style};
 use std::io::Write;
+
+use crossterm::{
+    execute,
+    style,
+};
 
 use crate::cli::chat::conversation::UserTurnMetadata;
 
@@ -15,7 +19,7 @@ pub fn capitalize_first(s: &str) -> String {
             let mut result = first.to_uppercase().collect::<String>();
             result.push_str(chars.as_str());
             result
-        }
+        },
     }
 }
 
@@ -36,19 +40,19 @@ pub fn display_turn_usage_summary<W: Write>(
 ) -> Result<(), std::io::Error> {
     let totals = user_turn_metadata.total_usage();
     let mut parts = Vec::new();
-    
+
     // Add usage info
     for usage in totals {
         let formatted = format_number(usage.value);
         let capitalized_unit = capitalize_first(&usage.unit_plural);
         parts.push(format!("{capitalized_unit} used: {formatted}"));
     }
-    
+
     // Add elapsed time
     if let Some(elapsed_ms) = user_turn_metadata.total_elapsed_time_ms() {
         parts.push(format!("Elapsed time: {}", format_elapsed_time(elapsed_ms)));
     }
-    
+
     if !parts.is_empty() {
         execute!(
             stderr,

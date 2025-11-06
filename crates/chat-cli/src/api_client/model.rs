@@ -667,8 +667,17 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
                 cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::MeteringEvent(
-                amzn_codewhisperer_streaming_client::types::MeteringEvent { usage, unit, unit_plural, .. },
-            ) => ChatResponseStream::MeteringEvent { usage, unit, unit_plural },
+                amzn_codewhisperer_streaming_client::types::MeteringEvent {
+                    usage,
+                    unit,
+                    unit_plural,
+                    ..
+                },
+            ) => ChatResponseStream::MeteringEvent {
+                usage,
+                unit,
+                unit_plural,
+            },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_codewhisperer_streaming_client::types::ToolUseEvent {
                     tool_use_id,
@@ -735,8 +744,17 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
                 cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::MeteringEvent(
-                amzn_qdeveloper_streaming_client::types::MeteringEvent { usage, unit, unit_plural, .. },
-            ) => ChatResponseStream::MeteringEvent { usage, unit, unit_plural },
+                amzn_qdeveloper_streaming_client::types::MeteringEvent {
+                    usage,
+                    unit,
+                    unit_plural,
+                    ..
+                },
+            ) => ChatResponseStream::MeteringEvent {
+                usage,
+                unit,
+                unit_plural,
+            },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_qdeveloper_streaming_client::types::ToolUseEvent {
                     tool_use_id,
