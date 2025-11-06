@@ -350,15 +350,7 @@ impl Agent {
                 .cached_mcp_configs
                 .configs
                 .iter()
-                .filter(|config| match &config.config {
-                    agent_config::definitions::McpServerConfig::Local(local_mcp_server_config) => {
-                        !local_mcp_server_config.disabled
-                    },
-                    agent_config::definitions::McpServerConfig::Remote(remote_mcp_server_config) => {
-                        !remote_mcp_server_config.disabled
-                    },
-                })
-                .collect::<Vec<_>>()
+                .filter(|config| config.is_enabled())
             {
                 if let Err(e) = self
                     .mcp_manager_handle
@@ -1674,12 +1666,10 @@ impl Agent {
     }
 
     async fn handle_mcp_server_actor_events(&self, evt: McpServerActorEvent) {
-        tracing::info!(?evt, "received mcp actor event");
         let converted_evt = AgentEvent::Mcp(evt);
         if let Err(e) = self.agent_event_tx.send(converted_evt) {
             error!(?e, "failed to emit agent event");
         }
-        tracing::info!("event sent to agent loop");
     }
 }
 
