@@ -8,6 +8,10 @@ version.workspace = true
 license.workspace = true
 default-run = "chat_cli"
 
+[[bin]]
+name = "temp_bin"
+path = "src/bin/temp_bin.rs"
+
 [lints]
 workspace = true
 
