@@ -78,7 +78,7 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
         .reverse(true)
         .multi(multi)
         .color(Some(format!(
-            "current:{BRAND_COLOR_ANSI}:bold,pointer:{BRAND_COLOR_ANSI},prompt:{SECONDARY_COLOR_ANSI}"
+            "current:{BRAND_COLOR_ANSI}:bold,pointer:{BRAND_COLOR_ANSI},prompt:{SECONDARY_COLOR_ANSI},current_bg:-1"
         )))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))

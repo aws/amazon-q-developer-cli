@@ -2214,7 +2214,7 @@ mod tests {
         let path_str = path.to_string_lossy();
 
         // Should end with .kiro/mcp.json (default fallback)
-        assert!(path_str.ends_with(".kiro/mcp.json"));
+        assert!(path_str.ends_with(".kiro/settings/mcp.json"));
 
         Ok(())
     }
