@@ -369,6 +369,8 @@ impl Event {
                 tool_name,
                 lines_by_agent,
                 lines_by_user,
+                lines_retained: _,
+                total_lines: _,
             } => Some(
                 CodewhispererterminalAgentContribution {
                     create_time: self.created_time,
@@ -686,6 +688,8 @@ pub enum EventType {
         tool_name: Option<String>,
         lines_by_agent: Option<isize>,
         lines_by_user: Option<isize>,
+        lines_retained: Option<usize>,
+        total_lines: Option<usize>,
     },
     McpServerInit {
         conversation_id: String,

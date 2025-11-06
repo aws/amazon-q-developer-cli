@@ -1509,6 +1509,11 @@ impl ChatSession {
 
         while !matches!(self.inner, Some(ChatState::Exit)) {
             self.next(os).await?;
+            
+            // Check for due retention metrics on each interaction
+            if let Err(e) = self.conversation.check_due_retention_metrics(os).await {
+                debug!("Failed to check retention metrics: {}", e);
+            }
         }
 
         Ok(())
@@ -2719,15 +2724,23 @@ impl ChatSession {
                             os.telemetry
                                 .send_agent_contribution_metric(
                                     &os.database,
-                                    conversation_id,
+                                    conversation_id.clone(),
                                     message_id,
                                     Some(tool.id.clone()),   // Already a String
                                     Some(tool.name.clone()), // Already a String
                                     Some(lines_by_agent),
                                     Some(lines_by_user),
+                                    None, // lines_retained - not retention metric  
+                                    None, // total_lines - not retention metric
                                 )
                                 .await
                                 .ok();
+
+                            // Schedule retention check for 15 minutes
+                            let agent_lines = w.extract_agent_lines();
+                            if !agent_lines.is_empty() {
+                                tracker.schedule_retention_check(agent_lines, conversation_id);
+                            }
 
                             tracker.prev_fswrite_lines = tracker.after_fswrite_lines;
                         }

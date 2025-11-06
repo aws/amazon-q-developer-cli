@@ -960,6 +960,34 @@ Return only the JSON configuration, no additional text.",
 
         Ok(())
     }
+
+    pub async fn check_due_retention_metrics(&mut self, os: &Os) -> Result<(), ChatError> {
+        for (path, tracker) in &mut self.file_line_tracker {
+            if let Ok(content) = os.fs.read_to_string(path).await {
+                let results = tracker.check_due_retention(&content);
+                
+                for (conversation_id, _file_length, retained, total) in results {
+                    debug!("Retention check for {}: {}/{} lines retained", path, retained, total);
+                    
+                    // Send retention metric using AgentContribution event
+                    if let Err(e) = os.telemetry.send_agent_contribution_metric(
+                        &os.database,
+                        conversation_id,
+                        None, // utterance_id
+                        None, // tool_use_id  
+                        None, // tool_name
+                        None, // lines_by_agent
+                        None, // lines_by_user
+                        Some(retained), // lines_retained
+                        Some(total), // total_lines
+                    ).await {
+                        debug!("Failed to send retention metric: {}", e);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 pub fn format_tool_spec(tool_spec: HashMap<String, ToolSpec>) -> HashMap<ToolOrigin, Vec<Tool>> {

@@ -296,6 +296,8 @@ impl TelemetryThread {
         tool_name: Option<String>,
         lines_by_agent: Option<isize>,
         lines_by_user: Option<isize>,
+        lines_retained: Option<usize>,
+        total_lines: Option<usize>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::AgentContribution {
             conversation_id,
@@ -304,6 +306,8 @@ impl TelemetryThread {
             tool_name,
             lines_by_agent,
             lines_by_user,
+            lines_retained,
+            total_lines,
         });
         set_event_metadata(database, &mut telemetry_event).await;
         Ok(self.tx.send(telemetry_event)?)
@@ -648,6 +652,8 @@ impl TelemetryClient {
                 conversation_id,
                 utterance_id,
                 lines_by_agent,
+                lines_retained,
+                total_lines,
                 ..
             } => {
                 let user_context = self.user_context().unwrap();
@@ -671,6 +677,8 @@ impl TelemetryClient {
                     ?event,
                     ?user_context,
                     telemetry_enabled = self.telemetry_enabled,
+                    lines_retained = ?lines_retained,
+                    total_lines = ?total_lines,
                     "Sending cw telemetry event"
                 );
                 if let Err(err) = codewhisperer_client
