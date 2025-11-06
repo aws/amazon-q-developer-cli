@@ -74,7 +74,7 @@ pub use crate::telemetry::core::{
     QProfileSwitchIntent,
     TelemetryResult,
 };
-use crate::util::env_var::Q_CLI_CLIENT_APPLICATION;
+use crate::util::env_var::get_cli_client_application;
 use crate::util::system_info::os_version;
 
 #[derive(thiserror::Error, Debug)]
@@ -113,7 +113,6 @@ impl From<ApiClientError> for TelemetryError {
 
 const PRODUCT: &str = "CodeWhisperer";
 const PRODUCT_VERSION: &str = env!("CARGO_PKG_VERSION");
-const CLIENT_ID_ENV_VAR: &str = "Q_TELEMETRY_CLIENT_ID";
 
 /// A IDE toolkit telemetry stage
 #[derive(Debug, Clone)]
@@ -233,6 +232,21 @@ impl TelemetryThread {
 
     pub fn send_user_logged_in(&self) -> Result<(), TelemetryError> {
         Ok(self.tx.send(Event::new(EventType::UserLoggedIn {}))?)
+    }
+
+    pub fn send_auth_failed(
+        &self,
+        auth_method: &str,
+        oauth_flow: &str,
+        error_type: &str,
+        error_code: Option<String>,
+    ) -> Result<(), TelemetryError> {
+        Ok(self.tx.send(Event::new(EventType::AuthFailed {
+            auth_method: auth_method.to_string(),
+            oauth_flow: oauth_flow.to_string(),
+            error_type: error_type.to_string(),
+            error_code,
+        }))?)
     }
 
     pub fn send_daily_heartbeat(&self) -> Result<(), TelemetryError> {
@@ -484,7 +498,7 @@ async fn set_event_metadata(database: &Database, event: &mut Event) {
     }
 
     // Set the client application from environment variable
-    if let Ok(client_app) = std::env::var(Q_CLI_CLIENT_APPLICATION) {
+    if let Some(client_app) = get_cli_client_application() {
         event.set_client_application(client_app);
     }
 }
@@ -500,7 +514,7 @@ struct TelemetryClient {
 impl TelemetryClient {
     async fn new(env: &Env, fs: &Fs, database: &mut Database) -> Result<Self, TelemetryError> {
         let telemetry_enabled = !cfg!(test)
-            && env.get_os("Q_DISABLE_TELEMETRY").is_none()
+            && !crate::util::env_var::is_telemetry_disabled()
             && database.settings.get_bool(Setting::TelemetryEnabled).unwrap_or(true);
 
         // If telemetry is disabled we do not emit using toolkit_telemetry
@@ -508,7 +522,7 @@ impl TelemetryClient {
             Some(ToolkitTelemetryClient::from_conf(
                 Config::builder()
                     .http_client(crate::aws_common::http_client::client())
-                    .behavior_version(BehaviorVersion::v2025_01_17())
+                    .behavior_version(BehaviorVersion::v2025_08_07())
                     .endpoint_resolver(StaticEndpoint(TelemetryStage::EXTERNAL_PROD.endpoint))
                     .app_name(app_name())
                     .region(TelemetryStage::EXTERNAL_PROD.region.clone())
@@ -526,7 +540,7 @@ impl TelemetryClient {
                 return Ok(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff"));
             }
 
-            if let Ok(client_id) = env.get(CLIENT_ID_ENV_VAR) {
+            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(env) {
                 if let Ok(uuid) = Uuid::from_str(&client_id) {
                     return Ok(uuid);
                 }
@@ -551,7 +565,7 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = if env.get("AMAZON_Q_SIGV4").is_ok() {
+        let codewhisperer_client = if crate::util::env_var::is_sigv4_enabled(&Env::new()) {
             None
         } else {
             Some(ApiClient::new(env, fs, database, None).await?)

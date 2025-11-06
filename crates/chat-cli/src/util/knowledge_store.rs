@@ -17,7 +17,36 @@ use uuid::Uuid;
 
 use crate::cli::DEFAULT_AGENT_NAME;
 use crate::os::Os;
-use crate::util::directories;
+use crate::util::paths;
+use crate::util::paths::PathResolver;
+
+/// Generate a unique identifier for an agent based on its path and name
+fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{
+        Hash,
+        Hasher,
+    };
+
+    if let Some(path) = &agent.path {
+        let mut hasher = DefaultHasher::new();
+        path.hash(&mut hasher);
+        let path_hash = hasher.finish();
+        format!("{}_{:x}", agent.name, path_hash)
+    } else {
+        agent.name.clone()
+    }
+}
+
+/// Get the knowledge base directory path for a specific agent
+fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<PathBuf, paths::DirectoryError> {
+    let unique_id = if let Some(agent) = agent {
+        generate_agent_unique_id(agent)
+    } else {
+        DEFAULT_AGENT_NAME.to_string()
+    };
+    Ok(PathResolver::new(os).global().knowledge_bases_dir()?.join(unique_id))
+}
 
 /// Configuration for adding knowledge contexts
 #[derive(Default)]
@@ -115,7 +144,7 @@ impl KnowledgeStore {
     pub async fn get_async_instance(
         os: &Os,
         agent: Option<&crate::cli::Agent>,
-    ) -> Result<Arc<Mutex<Self>>, directories::DirectoryError> {
+    ) -> Result<Arc<Mutex<Self>>, paths::DirectoryError> {
         static ASYNC_INSTANCE: Lazy<tokio::sync::Mutex<Option<Arc<Mutex<KnowledgeStore>>>>> =
             Lazy::new(|| tokio::sync::Mutex::new(None));
 
@@ -123,10 +152,10 @@ impl KnowledgeStore {
             // For tests, create a new instance each time
             let store = Self::new_with_os_settings(os, agent)
                 .await
-                .map_err(|_e| directories::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
+                .map_err(|_e| paths::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
             Ok(Arc::new(Mutex::new(store)))
         } else {
-            let current_agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)?;
+            let current_agent_dir = agent_knowledge_dir(os, agent)?;
 
             let mut instance_guard = ASYNC_INSTANCE.lock().await;
 
@@ -144,7 +173,7 @@ impl KnowledgeStore {
 
                 let store = Self::new_with_os_settings(os, agent)
                     .await
-                    .map_err(|_e| directories::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
+                    .map_err(|_e| paths::DirectoryError::Io(std::io::Error::other("Failed to create store")))?;
                 *instance_guard = Some(Arc::new(Mutex::new(store)));
             }
 
@@ -169,9 +198,14 @@ impl KnowledgeStore {
                     let files_to_migrate: Vec<_> = entries
                         .flatten()
                         .filter(|entry| {
+                            let path = entry.path();
                             let name = entry.file_name();
                             let name_str = name.to_string_lossy();
-                            name_str != current_agent_id && name_str != DEFAULT_AGENT_NAME && !name_str.starts_with('.')
+                            // Only migrate FILES, not directories (to avoid moving other agent directories)
+                            path.is_file()
+                                && name_str != current_agent_id
+                                && name_str != DEFAULT_AGENT_NAME
+                                && !name_str.starts_with('.')
                         })
                         .collect();
 
@@ -238,7 +272,7 @@ impl KnowledgeStore {
 
     /// Create instance with database settings from OS
     async fn new_with_os_settings(os: &crate::os::Os, agent: Option<&crate::cli::Agent>) -> Result<Self> {
-        let agent_dir = crate::util::directories::agent_knowledge_dir(os, agent)?;
+        let agent_dir = agent_knowledge_dir(os, agent)?;
         let agent_config = Self::create_config_from_db_settings(os, agent_dir.clone());
         let agent_client = AsyncSemanticSearchClient::with_config(&agent_dir, agent_config)
             .await
@@ -582,7 +616,10 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let os = create_test_os(&temp_dir).await;
 
-        let base_dir = crate::util::directories::knowledge_bases_dir(&os).unwrap();
+        let base_dir = crate::util::paths::PathResolver::new(&os)
+            .global()
+            .knowledge_bases_dir()
+            .unwrap();
 
         // Verify directory structure
         assert!(base_dir.to_string_lossy().contains("knowledge_bases"));

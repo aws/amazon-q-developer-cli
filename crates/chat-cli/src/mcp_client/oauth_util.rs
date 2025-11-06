@@ -57,9 +57,9 @@ use url::Url;
 
 use super::messenger::Messenger;
 use crate::os::Os;
-use crate::util::directories::{
+use crate::util::paths::{
     DirectoryError,
-    get_mcp_auth_dir,
+    PathResolver,
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -240,7 +240,7 @@ impl<'a> HttpServiceBuilder<'a> {
         } = self;
 
         let mut state = HttpServiceBuilderState::AttemptConnection(TransportType::Http, false);
-        let cred_dir = get_mcp_auth_dir(os)?;
+        let cred_dir = PathResolver::new(os).global().mcp_auth_dir()?;
         let url = Url::from_str(url)?;
         let key = compute_key(&url);
         let cred_full_path = cred_dir.join(format!("{key}.token.json"));
