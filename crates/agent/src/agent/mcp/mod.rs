@@ -400,7 +400,7 @@ impl McpManager {
 impl Default for McpManager {
     fn default() -> Self {
         let expanded_path =
-            shellexpand::full(DEFAULT_MCP_CREDENTIAL_PATH).expect("failed to expand default credential path");
+            expand_path(DEFAULT_MCP_CREDENTIAL_PATH, &RealProvider).expect("failed to expand default credential path");
         let default_path = PathBuf::from(expanded_path.as_ref());
 
         Self::new(default_path)
