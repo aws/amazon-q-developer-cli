@@ -2598,7 +2598,7 @@ impl ChatSession {
                             StyledText::reset_attributes(),
                         )?;
                     }
-                    execute!(self.stdout, style::Print("\n\n"))?;
+                    execute!(self.stdout, style::Print("\n"))?;
 
                     tool_telemetry = tool_telemetry.and_modify(|ev| ev.is_success = Some(true));
                     if let Tool::Custom(_) = &tool.tool {

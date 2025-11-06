@@ -95,7 +95,7 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     StyledText::emphasis_fg(),
-                    style::Print(format!("👤 Agent ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("Agent ({}):\n", context_manager.current_profile)),
                     StyledText::reset_attributes(),
                 )?;
 
@@ -108,7 +108,10 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &agent_owned_list {
-                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        execute!(
+                            session.stderr,
+                            style::Print(format!("    - {} ", path.get_path_as_str()))
+                        )?;
                         if let Ok(context_files) = context_manager
                             .get_context_files_by_path(os, path.get_path_as_str())
                             .await
@@ -135,7 +138,7 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     StyledText::emphasis_fg(),
-                    style::Print("💬 Session (temporary):\n"),
+                    style::Print("Session (temporary):\n"),
                     StyledText::reset_attributes(),
                 )?;
 
@@ -148,7 +151,10 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &session_owned_list {
-                        execute!(session.stderr, style::Print(format!("    {} ", path.get_path_as_str())))?;
+                        execute!(
+                            session.stderr,
+                            style::Print(format!("    - {} ", path.get_path_as_str()))
+                        )?;
                         if let Ok(context_files) = context_manager
                             .get_context_files_by_path(os, path.get_path_as_str())
                             .await
@@ -197,12 +203,11 @@ impl ContextSubcommand {
                         StyledText::reset_attributes()
                     )?;
 
-                    for (filename, content, is_temporary) in &profile_context_files {
+                    for (filename, content, _is_temporary) in &profile_context_files {
                         let est_tokens = TokenCounter::count_tokens(content);
-                        let icon = if *is_temporary { "💬" } else { "👤" };
                         execute!(
                             session.stderr,
-                            style::Print(format!("{icon} {filename} ")),
+                            style::Print(format!("- {filename} ")),
                             StyledText::secondary_fg(),
                             style::Print(format!("(~{est_tokens} tkns)\n")),
                             StyledText::reset(),

@@ -88,7 +88,7 @@ impl Default for InteractiveColors {
         Self {
             prompt_symbol: Color::AnsiValue(BRIGHT_MAGENTA),
             profile_indicator: Color::AnsiValue(BRAND_PURPLE),
-            tangent_indicator: Color::AnsiValue(BRIGHT_MAGENTA),
+            tangent_indicator: Color::Yellow,
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
             usage_high: Color::Red,
