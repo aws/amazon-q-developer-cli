@@ -58,7 +58,7 @@ use agent_loop::{
 use chrono::Utc;
 use consts::MAX_RESOURCE_FILE_LENGTH;
 use futures::stream::FuturesUnordered;
-use mcp::actor::McpServerActorEvent;
+use mcp::McpServerEvent;
 use permissions::evaluate_tool_permission;
 use protocol::{
     AgentError,
@@ -494,7 +494,7 @@ impl Agent {
                 evt = self.mcp_manager_handle.recv() => {
                     match evt {
                         Ok(evt) => {
-                            self.handle_mcp_server_actor_events(evt).await;
+                            self.handle_mcp_events(evt).await;
                         },
                         Err(e) => {
                             error!(?e, "mcp manager handle closed");
@@ -1698,11 +1698,9 @@ impl Agent {
         Ok(())
     }
 
-    async fn handle_mcp_server_actor_events(&self, evt: McpServerActorEvent) {
+    async fn handle_mcp_events(&mut self, evt: McpServerEvent) {
         let converted_evt = AgentEvent::Mcp(evt);
-        if let Err(e) = self.agent_event_tx.send(converted_evt) {
-            error!(?e, "failed to emit agent event");
-        }
+        self.agent_event_buf.push(converted_evt);
     }
 }
 

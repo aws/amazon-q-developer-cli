@@ -110,6 +110,7 @@ pub mod types;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use actor::{
     McpServerActor,
@@ -254,8 +255,11 @@ impl McpManagerHandle {
         }
     }
 
-    pub async fn recv(&mut self) -> Result<McpServerActorEvent, RecvError> {
-        self.mcp_main_loop_to_handle_server_event_rx.recv().await
+    pub async fn recv(&mut self) -> Result<McpServerEvent, RecvError> {
+        self.mcp_main_loop_to_handle_server_event_rx
+            .recv()
+            .await
+            .map(|evt| evt.into())
     }
 }
 
@@ -463,4 +467,50 @@ pub enum McpManagerError {
     Channel,
     #[error("{}", .0)]
     Custom(String),
+}
+
+/// MCP events relevant to agent operations.
+/// Provides abstraction over [McpServerActorEvent] to avoid leaking implementation details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum McpServerEvent {
+    /// The MCP server has launched successfully
+    Initialized {
+        server_name: String,
+        /// Time taken to launch the server
+        serve_duration: Duration,
+        /// Time taken to list all tools.
+        ///
+        /// None if the server does not support tools, or there was an error fetching tools.
+        list_tools_duration: Option<Duration>,
+        /// Time taken to list all prompts
+        ///
+        /// None if the server does not support prompts, or there was an error fetching prompts.
+        list_prompts_duration: Option<Duration>,
+    },
+    /// The MCP server failed to initialize successfully
+    InitializeError { server_name: String, error: String },
+    /// An OAuth authentication request from the MCP server
+    OauthRequest { server_name: String, oauth_url: String },
+}
+
+impl From<McpServerActorEvent> for McpServerEvent {
+    fn from(value: McpServerActorEvent) -> Self {
+        match value {
+            McpServerActorEvent::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            } => Self::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            },
+            McpServerActorEvent::InitializeError { server_name, error } => Self::InitializeError { server_name, error },
+            McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
+                Self::OauthRequest { server_name, oauth_url }
+            },
+        }
+    }
 }
