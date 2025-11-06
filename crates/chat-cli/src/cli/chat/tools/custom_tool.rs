@@ -150,7 +150,7 @@ impl CustomTool {
         queue!(
             output,
             style::Print("Running "),
-            StyledText::success_fg(),
+            StyledText::brand_fg(),
             style::Print(&self.name),
             StyledText::reset(),
         )?;
