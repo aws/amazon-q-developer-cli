@@ -10,10 +10,9 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::cli::usage::{
-    usage_data_provider,
-    usage_renderer,
-};
+pub mod context_data_provider;
+pub mod context_renderer;
+
 use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::context::{
     ContextFilePath,
@@ -54,8 +53,8 @@ impl ContextArgs {
             Some(subcommand) => subcommand.execute(os, session).await,
             None => {
                 // No subcommand - show context window usage (replaces /usage --context)
-                let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
-                usage_renderer::render_context_window(&usage_data, session).await?;
+                let contexet_data = context_data_provider::get_detailed_context_data(session, os).await?;
+                context_renderer::render_context_window(&contexet_data, session).await?;
 
                 Ok(ChatState::PromptUser {
                     skip_printing_tools: true,
