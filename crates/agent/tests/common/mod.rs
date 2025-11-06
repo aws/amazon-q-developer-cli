@@ -47,8 +47,8 @@ use serde::Serialize;
 
 type MockResponseStreams = Vec<Vec<StreamResult>>;
 
-#[derive(Default)]
 pub struct TestCaseBuilder {
+    test_base: TestBase,
     test_name: Option<String>,
     agent_config: Option<AgentConfig>,
     files: Vec<Box<dyn TestFile>>,
@@ -58,6 +58,10 @@ pub struct TestCaseBuilder {
 }
 
 impl TestCaseBuilder {
+    pub async fn new() -> Self {
+Self { test_base: TestBase::new().await, test_name: Default::default(), agent_config: todo!(), files: todo!(), mock_responses: todo!(), trust_all_tools: todo!(), tool_use_approvals: todo!() }
+    }
+
     pub fn test_name<'a>(mut self, name: impl Into<Cow<'a, str>>) -> Self {
         self.test_name = Some(name.into().to_string());
         self
@@ -92,6 +96,10 @@ impl TestCaseBuilder {
         self
     }
 
+    pub fn with_test_perprompt_hook(mut self) -> Self {
+        
+    }
+
     pub async fn build(self) -> Result<TestCase> {
         let snapshot = AgentSnapshot::new_empty(self.agent_config.unwrap_or_default());
 
@@ -102,7 +110,6 @@ impl TestCaseBuilder {
 
         let mut agent = Agent::new(snapshot, Arc::new(model), McpManager::new().spawn()).await?;
 
-        let mut test_base = TestBase::new().await;
         for file in self.files {
             test_base = test_base.with_file(file).await;
         }
