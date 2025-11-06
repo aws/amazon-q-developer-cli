@@ -63,7 +63,6 @@ const IDC_REGION_KEY: &str = "auth.idc.region";
 const CUSTOMIZATION_STATE_KEY: &str = "api.selectedCustomization";
 const PROFILE_MIGRATION_KEY: &str = "profile.Migrated";
 const HEARTBEAT_DATE_KEY: &str = "telemetry.lastHeartbeatDate";
-const CHAT_USED_BEFORE_KEY: &str = "chat.usedBefore";
 
 const MIGRATIONS: &[Migration] = migrations![
     "000_migration_table",
@@ -507,20 +506,6 @@ impl Database {
         }
 
         Ok(map)
-    }
-
-    /// Check if chat has been used before
-    /// Returns true if user has used chat before, false if this is the first time
-    pub fn has_used_chat_before(&self) -> Result<bool, DatabaseError> {
-        Ok(self
-            .get_entry::<bool>(Table::State, CHAT_USED_BEFORE_KEY)?
-            .unwrap_or(false))
-    }
-
-    /// Mark that chat has been used
-    pub fn mark_chat_as_used(&self) -> Result<(), DatabaseError> {
-        self.set_entry(Table::State, CHAT_USED_BEFORE_KEY, true)?;
-        Ok(())
     }
 }
 
