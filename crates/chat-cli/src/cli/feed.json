@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2025-11-06",
+      "version": "1.19.4",
+      "title": "Version 1.19.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enhanced `delegate` tool UX and mechanics - [#3337](https://github.com/aws/amazon-q-developer-cli/pull/3337)"
+        },
+        {
+          "type": "added",
+          "description": "Warning when duplicate agents are loaded from the same directory - [#3335](https://github.com/aws/amazon-q-developer-cli/pull/3335)"
+        },
+        {
+          "type": "changed",
+          "description": "Block potentially dangerous commands from executing with the configured `execute_bash.allowedCommands` - [#3335](https://github.com/aws/amazon-q-developer-cli/pull/3335)"
+        },
+        {
+          "type": "fixed",
+          "description": "Expanding `~` in prompt `file:://` URIs - [#3301](https://github.com/aws/amazon-q-developer-cli/pull/3301)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-10-29",
       "version": "1.19.3",
       "title": "Version 1.19.3",
