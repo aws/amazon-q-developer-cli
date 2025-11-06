@@ -11,18 +11,22 @@ pub fn capitalize_first(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
         None => String::new(),
-        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+        Some(first) => {
+            let mut result = first.to_uppercase().collect::<String>();
+            result.push_str(chars.as_str());
+            result
+        }
     }
 }
 
 pub fn format_elapsed_time(elapsed_ms: u64) -> String {
     let elapsed_s = elapsed_ms / 1000;
     if elapsed_s < 60 {
-        format!("{}s", elapsed_s)
+        format!("{elapsed_s}s")
     } else {
         let minutes = elapsed_s / 60;
         let seconds = elapsed_s % 60;
-        format!("{}m {}s", minutes, seconds)
+        format!("{minutes}m {seconds}s")
     }
 }
 
@@ -37,7 +41,7 @@ pub fn display_turn_usage_summary<W: Write>(
     for usage in totals {
         let formatted = format_number(usage.value);
         let capitalized_unit = capitalize_first(&usage.unit_plural);
-        parts.push(format!("{} used: {}", capitalized_unit, formatted));
+        parts.push(format!("{capitalized_unit} used: {formatted}"));
     }
     
     // Add elapsed time
