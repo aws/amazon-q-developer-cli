@@ -3471,15 +3471,6 @@ impl ChatSession {
                 parent_message_id: None,
             };
             self.stdout.send(Event::ToolCallStart(tool_call_start))?;
-        } else if let Tool::Custom(ref tool) = tool_use.tool {
-            queue!(
-                self.stdout,
-                StyledText::reset(),
-                style::Print(" from mcp server "),
-                StyledText::emphasis_fg(),
-                style::Print(&tool.server_name),
-                StyledText::reset(),
-            )?;
         }
 
         tool_use

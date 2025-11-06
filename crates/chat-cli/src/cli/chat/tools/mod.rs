@@ -214,14 +214,27 @@ impl Tool {
                 queue,
                 style,
             };
-            queue!(
-                output,
-                StyledText::secondary_fg(),
-                style::Print(" (using tool: "),
-                style::Print(self.display_name()),
-                style::Print(")"),
-                StyledText::reset(),
-            )?;
+            if let Tool::Custom(tool) = self {
+                queue!(
+                    output,
+                    StyledText::secondary_fg(),
+                    style::Print(" (from mcp server: "),
+                    style::Print(&tool.server_name),
+                    style::Print(", using tool: "),
+                    style::Print(self.display_name()),
+                    style::Print(")"),
+                    StyledText::reset(),
+                )?;
+            } else {
+                queue!(
+                    output,
+                    StyledText::secondary_fg(),
+                    style::Print(" (using tool: "),
+                    style::Print(self.display_name()),
+                    style::Print(")"),
+                    StyledText::reset(),
+                )?;
+            }
         };
 
         Ok(())
