@@ -132,6 +132,7 @@ use tokio::sync::{
 use tracing::{
     debug,
     error,
+    info,
     warn,
 };
 use types::Prompt;
@@ -265,6 +266,7 @@ pub struct McpManager {
 
     initializing_servers: HashMap<String, McpServerActorHandle>,
     servers: HashMap<String, McpServerActorHandle>,
+    event_buf: Vec<McpServerActorEvent>,
 }
 
 impl McpManager {
@@ -280,6 +282,7 @@ impl McpManager {
             cred_path,
             initializing_servers: HashMap::new(),
             servers: HashMap::new(),
+            event_buf: Vec::<McpServerActorEvent>::new(),
         }
     }
 
@@ -302,6 +305,10 @@ impl McpManager {
 
     async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerActorEvent>) {
         loop {
+            self.event_buf
+                .drain(..)
+                .for_each(|evt| _ = mcp_main_loop_to_handle_server_event_tx.send(evt));
+
             tokio::select! {
                 req = self.request_rx.recv() => {
                     let Some(req) = req else {
@@ -313,7 +320,7 @@ impl McpManager {
                 },
                 res = self.server_event_rx.recv() => {
                     if let Some(evt) = res {
-                        self.handle_mcp_actor_event(evt, &mcp_main_loop_to_handle_server_event_tx);
+                        self.handle_mcp_actor_event(evt);
                     }
                 }
             }
@@ -361,11 +368,7 @@ impl McpManager {
         }
     }
 
-    fn handle_mcp_actor_event(
-        &mut self,
-        evt: McpServerActorEvent,
-        mcp_main_loop_to_handle_server_event_tx: &broadcast::Sender<McpServerActorEvent>,
-    ) {
+    fn handle_mcp_actor_event(&mut self, evt: McpServerActorEvent) {
         // TODO: keep a record of all the different server events received in this layer?
         match &evt {
             McpServerActorEvent::Initialized {
@@ -387,10 +390,10 @@ impl McpManager {
                 self.initializing_servers.remove(server_name);
             },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
-                tracing::info!(?server_name, ?oauth_url, "received oauth request");
+                info!(?server_name, ?oauth_url, "received oauth request");
             },
         }
-        let _ = mcp_main_loop_to_handle_server_event_tx.send(evt);
+        self.event_buf.push(evt);
     }
 }
 
