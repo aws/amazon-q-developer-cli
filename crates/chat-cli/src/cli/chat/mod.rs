@@ -1186,7 +1186,13 @@ impl ChatSession {
         // Check if version changed or if we haven't shown it max times yet
         let should_show = match &last_version {
             Some(last) if last == current_version => show_count < CHANGELOG_MAX_SHOW_COUNT,
-            _ => true, // New version or no previous version
+            Some(_) => true, // New version only
+            None => {
+                // Don't show on first time but record the version
+                os.database.set_changelog_last_version(current_version)?;
+                os.database.set_changelog_show_count(0)?;
+                false
+            },
         };
 
         if should_show {
