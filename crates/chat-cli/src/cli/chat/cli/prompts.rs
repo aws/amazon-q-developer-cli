@@ -37,7 +37,6 @@ use crate::cli::chat::prompt_args::{
     has_args_placeholder,
     substitute_arguments,
     validate_placeholders,
-    ArgumentError,
 };
 use crate::cli::chat::tool_manager::PromptBundle;
 use crate::cli::chat::{
