@@ -17,9 +17,11 @@ use super::agent_loop::types::{
     ImageBlock,
     ToolUseBlock,
 };
-use super::mcp::McpManagerError;
-use super::mcp::actor::McpServerActorEvent;
 use super::mcp::types::Prompt;
+use super::mcp::{
+    McpManagerError,
+    McpServerEvent,
+};
 use super::task_executor::TaskExecutorEvent;
 use super::tools::{
     Tool,
@@ -76,7 +78,7 @@ pub enum AgentEvent {
     Internal(InternalEvent),
 
     /// Events from MCP (Model Context Protocol) servers
-    Mcp(McpServerActorEvent),
+    Mcp(McpServerEvent),
 }
 
 impl From<TaskExecutorEvent> for AgentEvent {
