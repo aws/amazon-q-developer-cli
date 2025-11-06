@@ -1190,7 +1190,6 @@ impl ChatSession {
             None => {
                 // Don't show on first time but record the version
                 os.database.set_changelog_last_version(current_version)?;
-                os.database.set_changelog_show_count(0)?;
                 false
             },
         };
