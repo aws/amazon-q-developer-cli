@@ -182,14 +182,22 @@ impl McpManagerHandle {
         &mut self,
         name: String,
         config: McpServerConfig,
-    ) -> Result<McpManagerResponse, McpManagerError> {
-        self.request_tx
+    ) -> Result<oneshot::Receiver<LaunchServerResult>, McpManagerError> {
+        match self
+            .request_tx
             .send_recv(McpManagerRequest::LaunchServer {
                 server_name: name,
                 config,
             })
             .await
-            .unwrap_or(Err(McpManagerError::Channel))
+            .unwrap_or(Err(McpManagerError::Channel))?
+        {
+            McpManagerResponse::LaunchServer(rx) => Ok(rx),
+            other => Err(McpManagerError::Custom(format!(
+                "received unexpected response: {:?}",
+                other
+            ))),
+        }
     }
 
     pub async fn get_tool_specs(&self, server_name: String) -> Result<Vec<ToolSpec>, McpManagerError> {
@@ -260,7 +268,7 @@ pub struct McpManager {
 
     cred_path: PathBuf,
 
-    initializing_servers: HashMap<String, McpServerActorHandle>,
+    initializing_servers: HashMap<String, (McpServerActorHandle, oneshot::Sender<LaunchServerResult>)>,
     servers: HashMap<String, McpServerActorHandle>,
     event_buf: Vec<McpServerActorEvent>,
 }
@@ -335,8 +343,10 @@ impl McpManager {
                 }
                 let event_tx = self.server_event_tx.clone();
                 let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
-                self.initializing_servers.insert(name, handle);
-                Ok(McpManagerResponse::LaunchServer)
+                let (tx, rx) = oneshot::channel();
+
+                self.initializing_servers.insert(name, (handle, tx));
+                Ok(McpManagerResponse::LaunchServer(rx))
             },
             McpManagerRequest::GetToolSpecs { server_name } => match self.servers.get(&server_name) {
                 Some(handle) => Ok(McpManagerResponse::ToolSpecs(handle.get_tool_specs().await?)),
@@ -368,17 +378,25 @@ impl McpManager {
                 list_tools_duration: _,
                 list_prompts_duration: _,
             } => {
-                let Some(handle) = self.initializing_servers.remove(server_name) else {
+                let Some((handle, result_tx)) = self.initializing_servers.remove(server_name) else {
                     warn!(?server_name, ?evt, "event was not from an initializing MCP server");
                     return;
                 };
+
+                if let Err(e) = result_tx.send(Ok(())) {
+                    error!(?server_name, ?e, "failed to send server initialized message");
+                }
 
                 if self.servers.insert(server_name.clone(), handle).is_some() {
                     warn!(?server_name, "duplicated server. old server dropped");
                 }
             },
-            McpServerActorEvent::InitializeError { server_name, error: _ } => {
-                self.initializing_servers.remove(server_name);
+            McpServerActorEvent::InitializeError { server_name, error } => {
+                if let Some((_, result_tx)) = self.initializing_servers.remove(server_name) {
+                    if let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone()))) {
+                        error!(?server_name, ?e, "failed to send server initialized message");
+                    }
+                }
             },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
                 info!(?server_name, ?oauth_url, "received oauth request");
@@ -421,13 +439,15 @@ pub enum McpManagerRequest {
 
 #[derive(Debug)]
 pub enum McpManagerResponse {
-    LaunchServer,
+    LaunchServer(oneshot::Receiver<LaunchServerResult>),
     ToolSpecs(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
 }
 
 pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;
+
+type LaunchServerResult = Result<(), McpManagerError>;
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
 pub enum McpManagerError {

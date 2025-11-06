@@ -57,6 +57,7 @@ use agent_loop::{
 };
 use chrono::Utc;
 use consts::MAX_RESOURCE_FILE_LENGTH;
+use futures::stream::FuturesUnordered;
 use mcp::actor::McpServerActorEvent;
 use permissions::evaluate_tool_permission;
 use protocol::{
@@ -94,9 +95,11 @@ use task_executor::{
 };
 use tokio::sync::{
     broadcast,
+    mpsc,
     oneshot,
 };
 use tokio::time::Instant;
+use tokio_stream::StreamExt as _;
 use tokio_util::sync::CancellationToken;
 use tool_utils::{
     SanitizedToolSpecs,
@@ -344,7 +347,7 @@ impl Agent {
                 warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
             }
 
-            let mut total_servers_to_be_loaded = 0_usize;
+            let mut results = FuturesUnordered::new();
 
             for config in self
                 .cached_mcp_configs
@@ -352,46 +355,70 @@ impl Agent {
                 .iter()
                 .filter(|config| config.is_enabled())
             {
-                if let Err(e) = self
+                let Ok(rx) = self
                     .mcp_manager_handle
                     .launch_server(config.server_name.clone(), config.config.clone())
                     .await
-                {
-                    warn!(?config.server_name, ?e, "failed to launch MCP config, skipping");
-                } else {
-                    total_servers_to_be_loaded += 1;
-                }
+                else {
+                    warn!(?config.server_name, "failed to launch MCP config, skipping");
+                    continue;
+                };
+                let name = config.server_name.clone();
+                results.push(async move { (name, rx.await) });
             }
+
+            // Continually loop through the receivers until all have completed.
+            let mut launched_servers = Vec::new();
+            let (success_tx, mut success_rx) = mpsc::channel(8);
+            let mut failed_servers = Vec::new();
+            let (failed_tx, mut failed_rx) = mpsc::channel(8);
+            let init_results_handle = tokio::spawn(async move {
+                while let Some((name, res)) = results.next().await {
+                    debug!(?name, ?res, "received result from LaunchServer request");
+                    let Ok(res) = res else {
+                        warn!(?name, "channel unexpectedly dropped during MCP initialization");
+                        let _ = failed_tx.send(name).await;
+                        continue;
+                    };
+                    match res {
+                        Ok(_) => {
+                            let _ = success_tx.send(name).await;
+                        },
+                        Err(err) => {
+                            error!(?name, ?err, "failed to launch MCP server");
+                            let _ = failed_tx.send(name).await;
+                        },
+                    }
+                }
+            });
 
             let timeout_at = Instant::now() + self.settings.mcp_init_timeout;
             loop {
                 tokio::select! {
-                    evt = self.mcp_manager_handle.recv() => {
-                        let evt = match evt {
-                            Ok(evt) => evt,
-                            Err(e) => {
-                                error!(?e, "mcp manager handle channel closed");
-                                break;
-                            }
-                        };
-
-                        if matches!(evt, McpServerActorEvent::Initialized{ .. } | McpServerActorEvent::InitializeError { .. }) {
-                             total_servers_to_be_loaded = total_servers_to_be_loaded.saturating_sub(1);
-                        }
-                        self.handle_mcp_server_actor_events(evt).await;
-
-                        if total_servers_to_be_loaded == 0 {
-                            info!("all mcp servers loaded before timeout");
+                    name = success_rx.recv() => {
+                        let Some(name) = name else {
+                            // If None is returned in either success/failed receivers, then the
+                            // senders have dropped, meaning initialization has completed.
                             break;
-                        }
+                        };
+                        debug!(?name, "MCP server successfully initialized");
+                        launched_servers.push(name);
                     },
-
+                    name = failed_rx.recv() => {
+                        let Some(name) = name else {
+                            break;
+                        };
+                        warn!(?name, "MCP server failed initialization");
+                        failed_servers.push(name);
+                    },
                     _ = tokio::time::sleep_until(timeout_at) => {
                         warn!("timed out before all MCP servers could be initialized");
                         break;
                     },
                 }
             }
+            info!(?launched_servers, ?failed_servers, "MCP server initialization finished");
+            init_results_handle.abort();
         }
 
         // Next, run agent spawn hooks.
