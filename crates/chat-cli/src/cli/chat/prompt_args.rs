@@ -1,6 +1,7 @@
-use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;
+
+use regex::Regex;
 use thiserror::Error;
 
 /// Maximum number of arguments supported (${1} through ${10})
@@ -10,24 +11,16 @@ const MAX_ARGUMENT_POSITION: u8 = 10;
 const MAX_ARGUMENT_LENGTH: usize = 10000;
 
 /// Regex for validating argument placeholders: ${1} through ${10}
-static PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\{([1-9]|10)\}").unwrap()
-});
+static PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{([1-9]|10)\}").unwrap());
 
 /// Regex for validating $ARGS placeholder
-static ARGS_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$ARGS").unwrap()
-});
+static ARGS_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$ARGS").unwrap());
 
 /// Regex for validating ${@} placeholder
-static AT_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\{@\}").unwrap()
-});
+static AT_PLACEHOLDER_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{@\}").unwrap());
 
 /// Regex for finding all placeholders in content (${n}, $ARGS, and ${@})
-static PLACEHOLDER_FINDER: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\$\{(\d+|@)\}|\$ARGS").unwrap()
-});
+static PLACEHOLDER_FINDER: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\$\{(\d+|@)\}|\$ARGS").unwrap());
 
 #[derive(Debug, Error)]
 pub enum ArgumentError {
@@ -44,39 +37,39 @@ pub enum ArgumentError {
 /// Validates that a prompt content contains only valid argument placeholders
 pub fn validate_placeholders(content: &str) -> Result<Vec<u8>, ArgumentError> {
     let mut positions = Vec::new();
-    
+
     for cap in PLACEHOLDER_FINDER.captures_iter(content) {
         let full_match = cap.get(0).unwrap().as_str();
-        
+
         if full_match == "$ARGS" || full_match == "${@}" {
             // $ARGS and ${@} are always valid, no position to track
             continue;
         }
-        
+
         if let Some(position_match) = cap.get(1) {
             let position_str = position_match.as_str();
-            
+
             // Parse position number
-            let position: u8 = position_str.parse().map_err(|_| {
-                ArgumentError::InvalidPlaceholder(full_match.to_string())
-            })?;
-            
+            let position: u8 = position_str
+                .parse()
+                .map_err(|_| ArgumentError::InvalidPlaceholder(full_match.to_string()))?;
+
             // Validate position is in range 1-10
             if position == 0 || position > MAX_ARGUMENT_POSITION {
                 return Err(ArgumentError::InvalidPosition(position));
             }
-            
+
             // Check if it matches our strict regex (no leading zeros, valid format)
             if !PLACEHOLDER_REGEX.is_match(full_match) {
                 return Err(ArgumentError::InvalidPlaceholder(full_match.to_string()));
             }
-            
+
             if !positions.contains(&position) {
                 positions.push(position);
             }
         }
     }
-    
+
     positions.sort();
     Ok(positions)
 }
@@ -87,20 +80,31 @@ pub fn validate_argument(arg: &str, position: usize) -> Result<(), ArgumentError
     if arg.len() > MAX_ARGUMENT_LENGTH {
         return Err(ArgumentError::ArgumentTooLong(position, MAX_ARGUMENT_LENGTH));
     }
-    
+
     // Basic security validation - reject obvious injection attempts
     let dangerous_patterns = [
-        "$(", "`", "${", "eval", "exec", "system", "shell",
-        "rm -rf", "del /", "format c:", "; rm", "| rm", "&& rm"
+        "$(",
+        "`",
+        "${",
+        "eval",
+        "exec",
+        "system",
+        "shell",
+        "rm -rf",
+        "del /",
+        "format c:",
+        "; rm",
+        "| rm",
+        "&& rm",
     ];
-    
+
     let arg_lower = arg.to_lowercase();
     for pattern in &dangerous_patterns {
         if arg_lower.contains(pattern) {
             return Err(ArgumentError::UnsafeContent(position));
         }
     }
-    
+
     Ok(())
 }
 
@@ -111,21 +115,21 @@ pub fn substitute_arguments(content: &str, arguments: &[String]) -> Result<(Stri
     for (i, arg) in arguments.iter().enumerate() {
         validate_argument(arg, i + 1)?;
     }
-    
+
     // Get expected argument positions and check for $ARGS or ${@}
     let expected_positions = validate_placeholders(content)?;
     let has_args_placeholder = content.contains("$ARGS") || content.contains("${@}");
-    
+
     // If $ARGS or ${@} is used, no excess arguments warning needed
     let max_expected = expected_positions.iter().max().copied().unwrap_or(0);
     let has_excess_args = !has_args_placeholder && arguments.len() > max_expected as usize;
-    
+
     // Create argument map for substitution
     let mut arg_map = HashMap::new();
     for (i, arg) in arguments.iter().enumerate() {
         arg_map.insert((i + 1) as u8, arg.as_str());
     }
-    
+
     // First replace $ARGS and ${@} with all arguments joined by spaces
     let mut result = if has_args_placeholder {
         let args_joined = arguments.join(" ");
@@ -134,15 +138,17 @@ pub fn substitute_arguments(content: &str, arguments: &[String]) -> Result<(Stri
     } else {
         content.to_string()
     };
-    
+
     // Then replace positional placeholders
-    result = PLACEHOLDER_REGEX.replace_all(&result, |caps: &regex::Captures<'_>| {
-        let position_str = &caps[1];
-        let position: u8 = position_str.parse().unwrap(); // Safe because regex already validated
-        
-        arg_map.get(&position).unwrap_or(&"").to_string()
-    }).to_string();
-    
+    result = PLACEHOLDER_REGEX
+        .replace_all(&result, |caps: &regex::Captures<'_>| {
+            let position_str = &caps[1];
+            let position: u8 = position_str.parse().unwrap(); // Safe because regex already validated
+
+            (*arg_map.get(&position).unwrap_or(&"")).to_string()
+        })
+        .to_string();
+
     Ok((result, has_excess_args))
 }
 
@@ -150,7 +156,7 @@ pub fn substitute_arguments(content: &str, arguments: &[String]) -> Result<(Stri
 pub fn count_arguments(content: &str) -> usize {
     let positional_count = validate_placeholders(content).unwrap_or_default().len();
     let has_args = content.contains("$ARGS") || content.contains("${@}");
-    
+
     if has_args && positional_count > 0 {
         positional_count + 1 // Both positional and all-args placeholder
     } else if has_args {
@@ -173,28 +179,28 @@ mod tests {
     fn test_validate_placeholders_with_args() {
         // Valid $ARGS only
         assert_eq!(validate_placeholders("Hello $ARGS").unwrap(), Vec::<u8>::new());
-        
+
         // Valid ${@} only
         assert_eq!(validate_placeholders("Hello ${@}").unwrap(), Vec::<u8>::new());
-        
+
         // Valid mixed placeholders with $ARGS
         assert_eq!(validate_placeholders("${1} and $ARGS").unwrap(), vec![1u8]);
-        
+
         // Valid mixed placeholders with ${@}
         assert_eq!(validate_placeholders("${1} and ${@}").unwrap(), vec![1u8]);
-        
+
         // Valid multiple with $ARGS
         assert_eq!(validate_placeholders("${1} ${2} $ARGS").unwrap(), vec![1u8, 2u8]);
-        
+
         // Valid multiple with ${@}
         assert_eq!(validate_placeholders("${1} ${2} ${@}").unwrap(), vec![1u8, 2u8]);
-        
+
         // Multiple $ARGS (should work)
         assert_eq!(validate_placeholders("$ARGS and $ARGS").unwrap(), Vec::<u8>::new());
-        
+
         // Multiple ${@} (should work)
         assert_eq!(validate_placeholders("${@} and ${@}").unwrap(), Vec::<u8>::new());
-        
+
         // Mixed $ARGS and ${@}
         assert_eq!(validate_placeholders("$ARGS and ${@}").unwrap(), Vec::<u8>::new());
     }
@@ -205,52 +211,55 @@ mod tests {
         let (result, excess) = substitute_arguments("Hello $ARGS", &["world".to_string(), "test".to_string()]).unwrap();
         assert_eq!(result, "Hello world test");
         assert!(!excess); // No excess when using $ARGS
-        
+
         // Basic ${@} substitution
         let (result, excess) = substitute_arguments("Hello ${@}", &["world".to_string(), "test".to_string()]).unwrap();
         assert_eq!(result, "Hello world test");
         assert!(!excess); // No excess when using ${@}
-        
+
         // Mixed substitution with $ARGS
         let (result, excess) = substitute_arguments("${1}: $ARGS", &[
             "Command".to_string(),
             "arg1".to_string(),
-            "arg2".to_string()
-        ]).unwrap();
+            "arg2".to_string(),
+        ])
+        .unwrap();
         assert_eq!(result, "Command: Command arg1 arg2");
         assert!(!excess);
-        
+
         // Mixed substitution with ${@}
         let (result, excess) = substitute_arguments("${1}: ${@}", &[
             "Command".to_string(),
             "arg1".to_string(),
-            "arg2".to_string()
-        ]).unwrap();
+            "arg2".to_string(),
+        ])
+        .unwrap();
         assert_eq!(result, "Command: Command arg1 arg2");
         assert!(!excess);
-        
+
         // $ARGS with no arguments
         let (result, excess) = substitute_arguments("Command: $ARGS", &[]).unwrap();
         assert_eq!(result, "Command: ");
         assert!(!excess);
-        
+
         // ${@} with no arguments
         let (result, excess) = substitute_arguments("Command: ${@}", &[]).unwrap();
         assert_eq!(result, "Command: ");
         assert!(!excess);
-        
+
         // Multiple $ARGS
         let (result, excess) = substitute_arguments("$ARGS and $ARGS", &["test".to_string()]).unwrap();
         assert_eq!(result, "test and test");
         assert!(!excess);
-        
+
         // Multiple ${@}
         let (result, excess) = substitute_arguments("${@} and ${@}", &["test".to_string()]).unwrap();
         assert_eq!(result, "test and test");
         assert!(!excess);
-        
+
         // Mixed $ARGS and ${@}
-        let (result, excess) = substitute_arguments("$ARGS then ${@}", &["arg1".to_string(), "arg2".to_string()]).unwrap();
+        let (result, excess) =
+            substitute_arguments("$ARGS then ${@}", &["arg1".to_string(), "arg2".to_string()]).unwrap();
         assert_eq!(result, "arg1 arg2 then arg1 arg2");
         assert!(!excess);
     }
@@ -284,19 +293,19 @@ mod tests {
     fn test_validate_placeholders_valid() {
         // Valid single placeholder
         assert_eq!(validate_placeholders("Hello ${1}").unwrap(), vec![1u8]);
-        
+
         // Valid multiple placeholders
         assert_eq!(validate_placeholders("${1} and ${2}").unwrap(), vec![1u8, 2u8]);
-        
+
         // Valid out-of-order placeholders
         assert_eq!(validate_placeholders("${3} ${1} ${2}").unwrap(), vec![1u8, 2u8, 3u8]);
-        
+
         // Valid duplicate placeholders
         assert_eq!(validate_placeholders("${1} ${1} ${2}").unwrap(), vec![1u8, 2u8]);
-        
+
         // Valid max position
         assert_eq!(validate_placeholders("${10}").unwrap(), vec![10u8]);
-        
+
         // No placeholders
         assert_eq!(validate_placeholders("No placeholders here").unwrap(), Vec::<u8>::new());
     }
@@ -305,16 +314,16 @@ mod tests {
     fn test_validate_placeholders_invalid() {
         // Invalid position 0
         assert!(validate_placeholders("${0}").is_err());
-        
+
         // Invalid position > 10
         assert!(validate_placeholders("${11}").is_err());
-        
+
         // Invalid leading zeros
         assert!(validate_placeholders("${01}").is_err());
-        
+
         // Invalid format with spaces - should be ignored, not error
         assert!(validate_placeholders("${ 1 }").is_ok());
-        
+
         // Invalid format with letters - should be ignored, not error
         assert!(validate_placeholders("${a}").is_ok());
     }
@@ -325,11 +334,11 @@ mod tests {
         assert!(validate_argument("normal text", 1).is_ok());
         assert!(validate_argument("file.txt", 1).is_ok());
         assert!(validate_argument("some code snippet", 1).is_ok());
-        
+
         // Too long argument
         let long_arg = "a".repeat(MAX_ARGUMENT_LENGTH + 1);
         assert!(validate_argument(&long_arg, 1).is_err());
-        
+
         // Dangerous patterns
         assert!(validate_argument("$(malicious)", 1).is_err());
         assert!(validate_argument("rm -rf /", 1).is_err());
@@ -342,40 +351,35 @@ mod tests {
         let (result, excess) = substitute_arguments("Hello ${1}", &["World".to_string()]).unwrap();
         assert_eq!(result, "Hello World");
         assert!(!excess);
-        
+
         // Multiple arguments
         let (result, excess) = substitute_arguments("${1} ${2} ${3}", &[
             "First".to_string(),
-            "Second".to_string(), 
-            "Third".to_string()
-        ]).unwrap();
+            "Second".to_string(),
+            "Third".to_string(),
+        ])
+        .unwrap();
         assert_eq!(result, "First Second Third");
         assert!(!excess);
-        
+
         // Out of order
-        let (result, excess) = substitute_arguments("${3} ${1} ${2}", &[
-            "A".to_string(),
-            "B".to_string(),
-            "C".to_string()
-        ]).unwrap();
+        let (result, excess) =
+            substitute_arguments("${3} ${1} ${2}", &["A".to_string(), "B".to_string(), "C".to_string()]).unwrap();
         assert_eq!(result, "C A B");
         assert!(!excess);
-        
+
         // Duplicate placeholders
         let (result, excess) = substitute_arguments("${1} and ${1}", &["test".to_string()]).unwrap();
         assert_eq!(result, "test and test");
         assert!(!excess);
-        
+
         // Missing arguments (should be empty strings)
         let (result, excess) = substitute_arguments("${1} ${2} ${3}", &["only".to_string()]).unwrap();
         assert_eq!(result, "only  ");
         assert!(!excess);
-        
+
         // Extra arguments (should be ignored with excess flag)
-        let (result, excess) = substitute_arguments("${1}", &[
-            "used".to_string(),
-            "unused".to_string()
-        ]).unwrap();
+        let (result, excess) = substitute_arguments("${1}", &["used".to_string(), "unused".to_string()]).unwrap();
         assert_eq!(result, "used");
         assert!(excess);
     }

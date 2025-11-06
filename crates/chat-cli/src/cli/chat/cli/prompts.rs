@@ -118,11 +118,12 @@ impl Prompt {
     fn save_content(&self, content: &str) -> Result<(), GetPromptError> {
         // Validate argument placeholders before saving
         if let Err(arg_error) = validate_placeholders(content) {
-            return Err(GetPromptError::General(
-                eyre::eyre!("Invalid argument placeholders: {}", arg_error)
-            ));
+            return Err(GetPromptError::General(eyre::eyre!(
+                "Invalid argument placeholders: {}",
+                arg_error
+            )));
         }
-        
+
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             fs::create_dir_all(parent).map_err(GetPromptError::Io)?;
@@ -755,12 +756,15 @@ impl PromptsArgs {
                 )?;
                 for name in &global_prompts {
                     let prompts = Prompts::new(name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-                    let arg_count = if let Some((content, _)) = prompts.load_existing().map_err(|e| ChatError::Custom(e.to_string().into()))? {
+                    let arg_count = if let Some((content, _)) = prompts
+                        .load_existing()
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
                         count_arguments(&content)
                     } else {
                         0
                     };
-                    
+
                     queue!(session.stderr, style::Print("- "), style::Print(name))?;
                     if arg_count > 0 {
                         queue!(
@@ -788,12 +792,15 @@ impl PromptsArgs {
                 for name in &local_prompts {
                     let has_global_version = overridden_globals.contains(name);
                     let prompts = Prompts::new(name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-                    let arg_count = if let Some((content, _)) = prompts.load_existing().map_err(|e| ChatError::Custom(e.to_string().into()))? {
+                    let arg_count = if let Some((content, _)) = prompts
+                        .load_existing()
+                        .map_err(|e| ChatError::Custom(e.to_string().into()))?
+                    {
                         count_arguments(&content)
                     } else {
                         0
                     };
-                    
+
                     queue!(session.stderr, style::Print("- "), style::Print(name),)?;
                     if arg_count > 0 {
                         queue!(
@@ -1299,7 +1306,7 @@ impl PromptsSubcommand {
             style::Print("@"),
             style::Print(name),
         )?;
-        
+
         // Show argument placeholders if any exist
         if arg_count > 0 {
             if has_args {
@@ -1316,12 +1323,8 @@ impl PromptsSubcommand {
                 }
             }
         }
-        
-        queue!(
-            session.stderr,
-            StyledText::reset(),
-            style::Print("\n\n"),
-        )?;
+
+        queue!(session.stderr, StyledText::reset(), style::Print("\n\n"),)?;
 
         // Display argument information
         if arg_count > 0 {
@@ -1332,7 +1335,7 @@ impl PromptsSubcommand {
                 StyledText::reset_attributes(),
                 style::Print("\n"),
             )?;
-            
+
             if has_args {
                 queue!(
                     session.stderr,
@@ -1345,7 +1348,7 @@ impl PromptsSubcommand {
                     style::Print(" - All provided arguments\n"),
                 )?;
             }
-            
+
             if let Ok(positions) = validate_placeholders(content) {
                 for pos in positions {
                     queue!(
@@ -1447,7 +1450,9 @@ impl PromptsSubcommand {
                                 session.stderr,
                                 style::Print("\n"),
                                 StyledText::warning_fg(),
-                                style::Print("⚠ Warning: More arguments provided than expected. Ignoring extra arguments.\n"),
+                                style::Print(
+                                    "⚠ Warning: More arguments provided than expected. Ignoring extra arguments.\n"
+                                ),
                                 StyledText::reset(),
                             )?;
                             execute!(session.stderr)?;
@@ -1468,7 +1473,7 @@ impl PromptsSubcommand {
                         return Ok(ChatState::PromptUser {
                             skip_printing_tools: true,
                         });
-                    }
+                    },
                 }
             } else {
                 content.clone()
