@@ -579,6 +579,8 @@ pub enum ChatResponseStream {
     },
     MeteringEvent {
         usage: Option<f64>,
+        unit: Option<String>,
+        unit_plural: Option<String>,
     },
     SupplementaryWebLinksEvent(()),
     ToolUseEvent {
@@ -665,8 +667,8 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
                 cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::MeteringEvent(
-                amzn_codewhisperer_streaming_client::types::MeteringEvent { usage, .. },
-            ) => ChatResponseStream::MeteringEvent { usage },
+                amzn_codewhisperer_streaming_client::types::MeteringEvent { usage, unit, unit_plural, .. },
+            ) => ChatResponseStream::MeteringEvent { usage, unit, unit_plural },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_codewhisperer_streaming_client::types::ToolUseEvent {
                     tool_use_id,
@@ -733,8 +735,8 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
                 cache_write_input_tokens: token_usage.as_ref().and_then(|t| t.cache_write_input_tokens),
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::MeteringEvent(
-                amzn_qdeveloper_streaming_client::types::MeteringEvent { usage, .. },
-            ) => ChatResponseStream::MeteringEvent { usage },
+                amzn_qdeveloper_streaming_client::types::MeteringEvent { usage, unit, unit_plural, .. },
+            ) => ChatResponseStream::MeteringEvent { usage, unit, unit_plural },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_qdeveloper_streaming_client::types::ToolUseEvent {
                     tool_use_id,
@@ -940,7 +942,7 @@ impl From<UserInputMessage> for amzn_codewhisperer_streaming_client::types::User
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .set_model_id(value.model_id)
-            .origin(amzn_codewhisperer_streaming_client::types::Origin::KiroCli)
+            .origin(amzn_codewhisperer_streaming_client::types::Origin::AiEditor)
             .build()
             .expect("Failed to build UserInputMessage")
     }
@@ -954,7 +956,7 @@ impl From<UserInputMessage> for amzn_qdeveloper_streaming_client::types::UserInp
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .set_model_id(value.model_id)
-            .origin(amzn_qdeveloper_streaming_client::types::Origin::KiroCli)
+            .origin(amzn_qdeveloper_streaming_client::types::Origin::AiEditor)
             .build()
             .expect("Failed to build UserInputMessage")
     }

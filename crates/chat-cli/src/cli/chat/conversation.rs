@@ -103,10 +103,19 @@ pub struct McpServerInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MeteringUsageInfo {
+    pub value: f64,
+    pub unit: String,
+    pub unit_plural: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UserTurnMetadata {
     continuation_id: String,
     /// [RequestMetadata] about the ongoing operation.
     requests: Vec<RequestMetadata>,
+    /// Individual usage info consumed in this user turn
+    pub usage_info: Vec<MeteringUsageInfo>,
 }
 
 impl Default for UserTurnMetadata {
@@ -121,6 +130,7 @@ impl UserTurnMetadata {
         Self {
             continuation_id: uuid::Uuid::new_v4().to_string(),
             requests: vec![],
+            usage_info: vec![],
         }
     }
 
@@ -150,6 +160,31 @@ impl UserTurnMetadata {
 
     pub fn last(&self) -> Option<&RequestMetadata> {
         self.requests.last()
+    }
+
+    pub fn add_usage(&mut self, value: f64, unit: String, unit_plural: String) {
+        self.usage_info.push(MeteringUsageInfo { value, unit, unit_plural });
+    }
+
+    pub fn total_usage(&self) -> Vec<MeteringUsageInfo> {
+        let mut totals = std::collections::HashMap::new();
+        for usage in &self.usage_info {
+            let entry = totals.entry(&usage.unit_plural).or_insert(MeteringUsageInfo {
+                value: 0.0,
+                unit: usage.unit.clone(),
+                unit_plural: usage.unit_plural.clone(),
+            });
+            entry.value += usage.value;
+        }
+        totals.into_values().collect()
+    }
+
+    pub fn total_elapsed_time_ms(&self) -> Option<u64> {
+        if let (Some(first), Some(last)) = (self.requests.first(), self.requests.last()) {
+            Some(last.stream_end_timestamp_ms - first.request_start_timestamp_ms)
+        } else {
+            None
+        }
     }
 }
 

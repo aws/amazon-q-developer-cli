@@ -622,8 +622,18 @@ impl ResponseParser {
                         ChatResponseStream::ToolUseEvent { input, .. } => {
                             self.received_response_size += input.as_ref().map(String::len).unwrap_or_default();
                         },
+                        ChatResponseStream::MeteringEvent { usage, unit, unit_plural } => {
+                            info!("GenerateAssistanceResponse - MeteringEvent");
+                            if let (Some(value), Some(unit), Some(unit_plural)) = (usage, unit, unit_plural) {
+                                let _ = self.event_tx.send(Ok(ResponseEvent::MeteringUsage { 
+                                    value: *value, 
+                                    unit: unit.clone(), 
+                                    unit_plural: unit_plural.clone() 
+                                })).await;
+                            }
+                        },
                         _ => {
-                            warn!(?r, "received unexpected event from the response stream");
+                                warn!(?r, "received unexpected event from the response stream");
                         },
                     }
                 }
@@ -691,6 +701,8 @@ pub enum ResponseEvent {
         /// Metadata for the request stream.
         request_metadata: RequestMetadata,
     },
+    /// Metering usage consumed for this request
+    MeteringUsage { value: f64, unit: String, unit_plural: String },
 }
 
 /// Metadata about the sent request and associated response stream.

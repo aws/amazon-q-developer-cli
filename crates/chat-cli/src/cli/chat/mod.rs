@@ -8,12 +8,14 @@ use spinners::{
 use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
+
 pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
 mod input_source;
 mod message;
+mod turn_summary;
 mod parse;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
@@ -823,6 +825,11 @@ impl ChatSession {
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
             ChatState::PromptUser { skip_printing_tools } => {
+                // Show turn complete when we're back to prompting and no tools pending
+                if self.tool_uses.is_empty() {
+                    turn_summary::display_turn_usage_summary(&mut self.stderr, &self.conversation.user_turn_metadata)?;
+                }
+                
                 match (self.interactive, self.tool_uses.is_empty()) {
                     (false, true) => {
                         self.inner = Some(ChatState::Exit);
@@ -2806,6 +2813,9 @@ impl ChatSession {
                     trace!("Consumed: {:?}", msg_event);
 
                     match msg_event {
+                        parser::ResponseEvent::MeteringUsage { value, unit, unit_plural } => {
+                            self.conversation.user_turn_metadata.add_usage(value, unit.clone(), unit_plural.clone());
+                        },
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
                             // printed while we are receiving tool use events.
