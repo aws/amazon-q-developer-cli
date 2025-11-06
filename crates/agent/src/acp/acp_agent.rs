@@ -14,58 +14,21 @@ use std::sync::Arc;
 use agent::agent_loop::types::ToolUseBlock;
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
-use agent::protocol::{
-    AgentEvent,
-    AgentStopReason,
-    ContentChunk,
-    SendPromptArgs,
-    UpdateEvent,
-};
-use agent::rts::{
-    RtsModel,
-    RtsModelState,
-};
+use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
+use agent::rts::{RtsModel, RtsModelState};
+use agent::tools::BuiltInToolName;
 use agent::types::AgentSnapshot;
-use agent::{
-    Agent,
-    AgentHandle,
-};
+use agent::{Agent, AgentHandle};
 use eyre::Result;
 use sacp::{
-    AgentCapabilities,
-    CancelNotification,
-    ContentBlock,
-    ContentChunk as SacpContentChunk,
-    Implementation,
-    InitializeRequest,
-    InitializeResponse,
-    JrConnection,
-    JrRequestCx,
-    NewSessionRequest,
-    NewSessionResponse,
-    PermissionOption,
-    PermissionOptionId,
-    PermissionOptionKind,
-    PromptRequest,
-    PromptResponse,
-    RequestPermissionRequest,
-    SessionId,
-    SessionNotification,
-    SessionUpdate,
-    StopReason,
-    TextContent,
-    ToolCall,
-    ToolCallId,
-    ToolCallStatus,
-    ToolCallUpdate,
-    ToolCallUpdateFields,
-    ToolKind,
-    V1,
+    AgentCapabilities, CancelNotification, ContentBlock, ContentChunk as SacpContentChunk, Diff, Implementation,
+    InitializeRequest, InitializeResponse, JrConnection, JrRequestCx, NewSessionRequest, NewSessionResponse,
+    PermissionOption, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
+    RequestPermissionRequest, SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall,
+    ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, V1,
 };
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt,
-    TokioAsyncWriteCompatExt,
-};
+use std::str::FromStr;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
 /// ACP Session that processes requests using Amazon Q agent
@@ -115,14 +78,7 @@ impl AcpSession {
                 match agent.recv().await {
                     Ok(event) => match event {
                         AgentEvent::Update(update_event) => {
-                            // Forward updates to ACP client via notifications
-                            if let Some(session_update) = convert_update_event(update_event) {
-                                request_cx.send_notification(SessionNotification {
-                                    session_id: session_id.clone(),
-                                    update: session_update,
-                                    meta: None,
-                                })?;
-                            }
+                            handle_update_event(update_event, session_id.clone(), &request_cx)?;
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, context } => {
                             info!(
@@ -184,9 +140,13 @@ impl AcpSession {
     }
 }
 
-/// Convert agent UpdateEvent to ACP SessionUpdate
-fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
-    match update_event {
+/// Handle agent update event and forward to ACP client
+fn handle_update_event(
+    update_event: UpdateEvent,
+    session_id: SessionId,
+    request_cx: &JrRequestCx<PromptResponse>,
+) -> Result<(), sacp::Error> {
+    let session_update = match update_event {
         UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
             Some(SessionUpdate::AgentMessageChunk(SacpContentChunk {
                 content: ContentBlock::Text(TextContent {
@@ -198,20 +158,82 @@ fn convert_update_event(update_event: UpdateEvent) -> Option<SessionUpdate> {
             }))
         },
         UpdateEvent::ToolCall(tool_call) => {
-            let sacp_tool_call = ToolCall {
+            let acp_tool_call = ToolCall {
                 id: ToolCallId(tool_call.id.into()),
                 title: tool_call.tool_use_block.name.clone(),
-                kind: ToolKind::default(),
-                status: ToolCallStatus::Pending,
-                content: vec![],
-                locations: vec![],
+                kind: get_tool_kind(&tool_call.tool_use_block.name),
+                status: ToolCallStatus::InProgress,
+                content: get_tool_content(&tool_call.tool_use_block.name, &tool_call.tool_use_block.input),
+                locations: vec![], // TODO: We need line number for fs_write
                 raw_input: Some(tool_call.tool_use_block.input.clone()),
                 raw_output: None,
                 meta: None,
             };
-            Some(SessionUpdate::ToolCall(sacp_tool_call))
+            Some(SessionUpdate::ToolCall(acp_tool_call))
         },
-        _ => None, // Skip other events
+        _ => None,
+    };
+
+    if let Some(update) = session_update {
+        request_cx.send_notification(SessionNotification {
+            session_id,
+            update,
+            meta: None,
+        })?;
+    }
+    Ok(())
+}
+
+/// Get ToolKind for a tool name
+fn get_tool_kind(tool_name: &str) -> ToolKind {
+    if let Ok(builtin_tool) = BuiltInToolName::from_str(tool_name) {
+        match builtin_tool {
+            BuiltInToolName::FsRead => ToolKind::Read,
+            BuiltInToolName::FsWrite => ToolKind::Edit,
+            BuiltInToolName::ExecuteCmd => ToolKind::Execute,
+            BuiltInToolName::ImageRead => ToolKind::Read,
+            BuiltInToolName::Ls => ToolKind::Read,
+        }
+    } else {
+        ToolKind::Other
+    }
+}
+
+/// Get content for tool calls based on tool type
+fn get_tool_content(tool_name: &str, input: &serde_json::Value) -> Vec<ToolCallContent> {
+    if let Ok(builtin_tool) = BuiltInToolName::from_str(tool_name) {
+        match builtin_tool {
+            BuiltInToolName::FsWrite => {
+                // for fs_write we need to populate "Diff" content
+                let path = input["path"].as_str().unwrap();
+                let command = input["command"].as_str().unwrap();
+
+                let (old_text, new_text) = match command {
+                    "create" => {
+                        let content = input["content"].as_str().unwrap().to_string();
+                        (None, content)
+                    },
+                    "strReplace" => {
+                        let old_str = input["oldStr"].as_str().unwrap().to_string();
+                        let new_str = input["newStr"].as_str().unwrap().to_string();
+                        (Some(old_str), new_str)
+                    },
+                    _ => return vec![],
+                };
+
+                vec![ToolCallContent::Diff {
+                    diff: Diff {
+                        path: path.into(),
+                        old_text,
+                        new_text,
+                        meta: None,
+                    },
+                }]
+            },
+            _ => vec![],
+        }
+    } else {
+        vec![]
     }
 }
 
