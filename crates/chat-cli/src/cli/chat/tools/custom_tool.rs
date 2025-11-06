@@ -149,7 +149,7 @@ impl CustomTool {
     pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
         queue!(
             output,
-            style::Print("Running "),
+            style::Print("Running tool "),
             StyledText::brand_fg(),
             style::Print(&self.name),
             StyledText::reset(),
