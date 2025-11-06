@@ -52,7 +52,7 @@ pub fn validate_placeholders(content: &str) -> Result<Vec<u8>, ArgumentError> {
             // Parse position number
             let position: u8 = position_str
                 .parse()
-                .map_err(|_| ArgumentError::InvalidPlaceholder(full_match.to_string()))?;
+                .map_err(|_err| ArgumentError::InvalidPlaceholder(full_match.to_string()))?;
 
             // Validate position is in range 1-10
             if position == 0 || position > MAX_ARGUMENT_POSITION {
