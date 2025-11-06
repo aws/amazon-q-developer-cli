@@ -367,9 +367,12 @@ impl Agent {
             loop {
                 tokio::select! {
                     evt = self.mcp_manager_handle.recv() => {
-                        let Some(evt) = evt else {
-                            error!("mcp manager handle channel closed");
-                            break;
+                        let evt = match evt {
+                            Ok(evt) => evt,
+                            Err(e) => {
+                                error!(?e, "mcp manager handle channel closed");
+                                break;
+                            }
                         };
 
                         if matches!(evt, McpServerActorEvent::Initialized{ .. } | McpServerActorEvent::InitializeError { .. }) {
@@ -462,10 +465,13 @@ impl Agent {
                 },
 
                 evt = self.mcp_manager_handle.recv() => {
-                    if let Some(evt) = evt {
-                        self.handle_mcp_server_actor_events(evt).await;
-                    } else {
-                        error!("mcp manager handle closed");
+                    match evt {
+                        Ok(evt) => {
+                            self.handle_mcp_server_actor_events(evt).await;
+                        },
+                        Err(e) => {
+                            error!(?e, "mcp manager handle closed");
+                        }
                     }
                 },
             }
