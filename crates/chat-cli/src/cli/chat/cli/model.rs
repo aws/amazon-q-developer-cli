@@ -116,7 +116,11 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
                             StyledText::secondary("-- experimental")
                         )
                     } else {
-                        format!("{display_name} {} | {desc}", StyledText::current_item("(current)"))
+                        format!(
+                            "{display_name} {} | {}",
+                            StyledText::current_item("(current)"),
+                            StyledText::secondary(desc)
+                        )
                     }
                 } else {
                     format!("{display_name} {}", StyledText::current_item("(current)"))
@@ -125,7 +129,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
                 if desc.to_lowercase().contains("experimental") {
                     format!("{display_name} {}", StyledText::secondary("-- experimental"))
                 } else {
-                    format!("{display_name} | {desc}")
+                    format!("{display_name} | {}", StyledText::secondary(desc))
                 }
             } else {
                 display_name.to_string()
@@ -135,9 +139,13 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt(format!(
-            "Press ({}) to navigate · Enter({}) to select model",
+            "{}({}) {} · {}({}) {}",
+            StyledText::secondary("Press "),
             StyledText::current_item("↑↓"),
-            StyledText::current_item("⏎")
+            StyledText::secondary("to navigate"),
+            StyledText::secondary("Enter"),
+            StyledText::current_item("⏎"),
+            StyledText::secondary("to select model")
         ))
         .items(&labels)
         .default(0)
