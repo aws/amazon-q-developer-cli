@@ -26,7 +26,6 @@ use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
 use compact::CompactArgs;
-use context::ContextSubcommand;
 use editor::EditorArgs;
 use experiment::ExperimentArgs;
 use hooks::HooksArgs;
@@ -44,6 +43,7 @@ use todos::TodoSubcommand;
 use tools::ToolsArgs;
 
 use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
+use crate::cli::chat::cli::context::ContextArgs;
 use crate::cli::chat::cli::subscribe::SubscribeArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
@@ -72,9 +72,8 @@ pub enum SlashCommand {
     Agent(AgentSubcommand),
     #[command(hide = true)]
     Profile,
-    /// Manage context files for the chat session
-    #[command(subcommand)]
-    Context(ContextSubcommand),
+    /// Manage context files and view context window usage
+    Context(ContextArgs),
     /// (Beta) Manage knowledge base for persistent context storage. Requires "q settings
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
@@ -99,7 +98,7 @@ pub enum SlashCommand {
     Prompts(PromptsArgs),
     /// View context hooks
     Hooks(HooksArgs),
-    /// Show current session's context window usage
+    /// Show billing and credits information
     Usage(UsageArgs),
     /// See mcp server loaded
     Mcp(McpArgs),
@@ -237,7 +236,7 @@ impl SlashCommand {
     pub fn subcommand_name(&self) -> Option<&'static str> {
         match self {
             SlashCommand::Agent(sub) => Some(sub.name()),
-            SlashCommand::Context(sub) => Some(sub.name()),
+            SlashCommand::Context(args) => args.subcommand_name(),
             SlashCommand::Knowledge(sub) => Some(sub.name()),
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),

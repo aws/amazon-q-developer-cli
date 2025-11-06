@@ -3532,8 +3532,8 @@ impl ChatSession {
 
         // Check if context usage indicator is enabled
         let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
-            use crate::cli::chat::cli::usage::usage_data_provider::get_total_usage_percentage;
-            get_total_usage_percentage(self, os).await.ok()
+            use crate::cli::chat::cli::context::context_data_provider::get_total_context_usage_percentage;
+            get_total_context_usage_percentage(self, os).await.ok()
         } else {
             None
         };
