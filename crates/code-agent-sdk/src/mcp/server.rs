@@ -444,7 +444,7 @@ impl CodeIntelligenceServer {
         let mut client_guard = self.client.lock().await;
         let client = client_guard.as_mut().unwrap();
 
-        let symbols = client.find_symbols(request).await.map_err(|e| {
+        let symbols = client.find_symbols(request.clone()).await.map_err(|e| {
             ErrorData::new(
                 ErrorCode::INTERNAL_ERROR,
                 format!("Find symbols failed: {}", e),
@@ -462,7 +462,17 @@ impl CodeIntelligenceServer {
                 "end_row": s.end_row,
                 "end_column": s.end_column,
                 "detail": s.detail
-            })).collect::<Vec<_>>()
+            })).collect::<Vec<_>>(),
+            "search_context": {
+                "symbol_name": request.symbol_name,
+                "total_found": symbols.len(),
+                "limit_applied": request.limit,
+                "scope": if request.file_path.is_some() { 
+                    format!("file: {}", request.file_path.as_ref().unwrap().display()) 
+                } else { 
+                    "workspace".to_string() 
+                }
+            }
         });
 
         Ok(CallToolResult::success(vec![Content::text(

@@ -9,7 +9,6 @@ pub mod file_watcher;
 pub mod services;
 pub mod workspace_manager;
 
-use crate::config::ConfigManager;
 use crate::sdk::client::CodeIntelligence;
 use std::path::PathBuf;
 pub use workspace_manager::WorkspaceManager;
@@ -88,13 +87,13 @@ impl CodeIntelligenceBuilder {
                 .map_err(|e| format!("Failed to detect workspace: {}", e))?;
 
             for language in workspace_info.detected_languages {
-                if let Ok(config) = ConfigManager::get_config_by_language(&language) {
+                if let Ok(config) = client.workspace_manager.config_manager.get_config_by_language(&language) {
                     client.add_language_server(config);
                 }
             }
         } else {
             for language in self.languages {
-                let config = ConfigManager::get_config_by_language(&language)?;
+                let config = client.workspace_manager.config_manager.get_config_by_language(&language)?;
                 client.add_language_server(config);
             }
         }

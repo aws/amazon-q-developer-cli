@@ -50,7 +50,7 @@ pub struct CodeIntelligence {
     symbol_service: Box<dyn SymbolService>,
     coding_service: Box<dyn CodingService>,
     workspace_service: Box<dyn WorkspaceService>,
-    workspace_manager: WorkspaceManager,
+    pub workspace_manager: WorkspaceManager,
 }
 
 impl std::fmt::Debug for CodeIntelligence {

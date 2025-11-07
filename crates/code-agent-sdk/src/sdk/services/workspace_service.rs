@@ -1,4 +1,3 @@
-use crate::config::ConfigManager;
 use crate::sdk::workspace_manager::WorkspaceManager;
 use anyhow::Result;
 use lsp_types::*;
@@ -50,6 +49,14 @@ impl WorkspaceService for LspWorkspaceService {
             return Ok(()); // File already opened, no need to wait
         }
 
+        // Determine language ID from file extension using ConfigManager
+        let language_id = if let Some(ext) = file_path.extension().and_then(|ext| ext.to_str()) {
+            workspace_manager.config_manager.get_language_for_extension(ext)
+                .unwrap_or_else(|| "plaintext".to_string())
+        } else {
+            "plaintext".to_string()
+        };
+
         let client = workspace_manager
             .get_client_for_file(file_path)
             .await?
@@ -57,14 +64,6 @@ impl WorkspaceService for LspWorkspaceService {
 
         let uri =
             Url::from_file_path(file_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
-
-        // Determine language ID from file extension using ConfigManager
-        let language_id = if let Some(ext) = file_path.extension().and_then(|ext| ext.to_str()) {
-            ConfigManager::get_language_for_extension(ext)
-                .unwrap_or_else(|| "plaintext".to_string())
-        } else {
-            "plaintext".to_string()
-        };
 
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {

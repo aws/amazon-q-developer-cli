@@ -170,8 +170,8 @@ impl LspSymbolService {
         }
 
         // Apply limit
-        if request.limit.is_some() {
-            all_symbols.truncate(request.limit.unwrap() as usize);
+        if let Some(limit) = request.limit {
+            all_symbols.truncate(limit as usize);
         }
         Ok(all_symbols)
     }

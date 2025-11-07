@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LanguageConfig {
     pub name: String,
     pub command: String,
@@ -15,13 +15,33 @@ pub struct LanguageConfig {
     pub initialization_options: Option<Value>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LanguagesConfig {
-    pub project_patterns: Vec<String>,
     pub languages: HashMap<String, LanguageConfig>,
 }
 
 impl LanguagesConfig {
+    /// Get or create configuration in config root folder
+    pub fn get_or_create(config_root: &std::path::Path) -> Result<Self> {
+        let config_path = config_root.join("languages.json");
+
+        // Create config directory if it doesn't exist
+        if !config_root.exists() {
+            std::fs::create_dir_all(config_root)?;
+        }
+
+        // If config file exists, load it, otherwise create default
+        if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path)?;
+            Ok(serde_json::from_str(&content)?)
+        } else {
+            let default_config = Self::default_config();
+            let config_json = serde_json::to_string_pretty(&default_config)?;
+            std::fs::write(&config_path, config_json)?;
+            Ok(default_config)
+        }
+    }
+
     /// Load configuration from JSON file
     pub fn load() -> Result<Self> {
         let config_path = std::path::Path::new("config/languages.json");
@@ -97,13 +117,6 @@ impl LanguagesConfig {
     /// Default embedded configuration
     pub fn default_config() -> Self {
         let json = r#"{
-            "project_patterns": [
-                "Cargo.toml",
-                "package.json",
-                "tsconfig.json",
-                "pyproject.toml",
-                "setup.py"
-            ],
             "languages": {
                 "typescript": {
                     "name": "typescript-language-server",

@@ -1,4 +1,5 @@
 use crate::config::ConfigManager;
+use crate::config::json_config::LanguagesConfig;
 use crate::lsp::LspRegistry;
 use crate::model::types::{LspInfo, WorkspaceInfo};
 use crate::model::FsEvent;
@@ -21,6 +22,7 @@ pub struct FileState {
 #[derive(Debug)]
 pub struct WorkspaceManager {
     workspace_root: PathBuf,
+    pub config_manager: ConfigManager,
     registry: LspRegistry,
     initialized: bool,
     opened_files: HashMap<PathBuf, FileState>, // Track version and open state
@@ -34,18 +36,26 @@ pub struct WorkspaceManager {
 impl WorkspaceManager {
     /// Create new workspace manager with auto-detected workspace root
     pub fn new(workspace_root: PathBuf) -> Self {
+        // Create config manager first (using workspace_root as base for .code-agent folder)
+        let config_root = workspace_root.join(".code-agent");
+        let config_manager = ConfigManager::new(config_root);
+        
+        // Get config for workspace detection
+        let config = config_manager.get_config().unwrap_or_else(|_| LanguagesConfig::default_config());
+        
+        // Now resolve actual workspace root using the config
+        let resolved_root = Self::detect_workspace_root(&workspace_root, &config).unwrap_or(workspace_root);
+        
         let mut registry = LspRegistry::new();
 
-        // Register all supported language servers
-        for config in ConfigManager::all_configs() {
+        // Register all supported language servers using config manager
+        for config in config_manager.all_configs() {
             registry.register_config(config);
         }
 
-        // Resolve actual workspace root
-        let resolved_root = Self::detect_workspace_root(&workspace_root).unwrap_or(workspace_root);
-
         Self {
             workspace_root: resolved_root,
+            config_manager,
             registry,
             initialized: false,
             opened_files: HashMap::new(),
@@ -56,7 +66,7 @@ impl WorkspaceManager {
     }
 
     /// Detect workspace root by walking up to find project markers
-    fn detect_workspace_root(file_path: &Path) -> Option<PathBuf> {
+    fn detect_workspace_root(file_path: &Path, config: &LanguagesConfig) -> Option<PathBuf> {
         let current_dir;
         let start_dir = if file_path.is_file() {
             file_path.parent()?
@@ -71,8 +81,8 @@ impl WorkspaceManager {
 
         // Detect language from file extension and use specific patterns
         if let Some(extension) = file_path.extension().and_then(|ext| ext.to_str()) {
-            if let Some(language) = ConfigManager::get_language_for_extension(extension) {
-                let language_patterns = ConfigManager::get_project_patterns_for_language(&language);
+            if let Some(language) = config.get_language_for_extension(extension) {
+                let language_patterns = config.get_project_patterns_for_language(&language);
 
                 loop {
                     for pattern in &language_patterns {
@@ -191,7 +201,7 @@ impl WorkspaceManager {
         language: &str,
     ) -> Result<Option<&mut crate::lsp::LspClient>> {
         // Use ConfigManager to get server name for language
-        let server_name = ConfigManager::get_server_name_for_language(language)
+        let server_name = self.config_manager.get_server_name_for_language(language)
             .unwrap_or_else(|| language.to_string());
 
         self.get_client_by_name(&server_name).await
@@ -216,7 +226,7 @@ impl WorkspaceManager {
 
         // Map extensions to languages using ConfigManager
         for ext in &file_extensions {
-            if let Some(language) = ConfigManager::get_language_for_extension(ext) {
+            if let Some(language) = self.config_manager.get_language_for_extension(ext) {
                 detected_languages.push(language);
             }
         }
@@ -225,7 +235,7 @@ impl WorkspaceManager {
         detected_languages.dedup();
 
         // Check available LSPs
-        let available_lsps = Self::check_available_lsps();
+        let available_lsps = self.check_available_lsps();
 
         let info = WorkspaceInfo {
             root_path: self.workspace_root.clone(),
@@ -267,11 +277,11 @@ impl WorkspaceManager {
     }
 
     /// Check which LSPs are available in the system
-    pub fn check_available_lsps() -> Vec<LspInfo> {
+    pub fn check_available_lsps(&self) -> Vec<LspInfo> {
         let mut lsps = Vec::new();
 
         // Get all supported configurations from ConfigManager
-        let configs = ConfigManager::all_configs();
+        let configs = self.config_manager.all_configs();
 
         for config in configs {
             let is_available = std::process::Command::new(&config.command)
@@ -283,7 +293,7 @@ impl WorkspaceManager {
             let languages: Vec<String> = config
                 .file_extensions
                 .iter()
-                .filter_map(|ext| ConfigManager::get_language_for_extension(ext))
+                .filter_map(|ext| self.config_manager.get_language_for_extension(ext))
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
@@ -365,7 +375,7 @@ impl WorkspaceManager {
         // Get detected languages and their patterns
         let detected_languages = self.get_detected_languages()?;
         for language in &detected_languages {
-            if let Ok(lang_config) = ConfigManager::get_config_by_language(language) {
+            if let Ok(lang_config) = self.config_manager.get_config_by_language(language) {
                 // Add include patterns from file extensions
                 for ext in &lang_config.file_extensions {
                     include_patterns.push(format!("**/*.{}", ext));
@@ -421,7 +431,8 @@ mod tests {
         let temp_dir = create_temp_workspace(&["Cargo.toml", "src/main.rs"]);
         let rust_file = temp_dir.path().join("src/main.rs");
         
-        let workspace_root = WorkspaceManager::detect_workspace_root(&rust_file);
+        let config = LanguagesConfig::default_config();
+        let workspace_root = WorkspaceManager::detect_workspace_root(&rust_file, &config);
         assert!(workspace_root.is_some());
         assert_eq!(workspace_root.unwrap(), temp_dir.path());
     }
@@ -431,7 +442,8 @@ mod tests {
         let temp_dir = create_temp_workspace(&["package.json", "src/index.ts"]);
         let ts_file = temp_dir.path().join("src/index.ts");
         
-        let workspace_root = WorkspaceManager::detect_workspace_root(&ts_file);
+        let config = LanguagesConfig::default_config();
+        let workspace_root = WorkspaceManager::detect_workspace_root(&ts_file, &config);
         assert!(workspace_root.is_some());
         assert_eq!(workspace_root.unwrap(), temp_dir.path());
     }
@@ -442,7 +454,8 @@ mod tests {
         let random_file = temp_dir.path().join("random.txt");
         fs::write(&random_file, "").unwrap();
         
-        let workspace_root = WorkspaceManager::detect_workspace_root(&random_file);
+        let config = LanguagesConfig::default_config();
+        let workspace_root = WorkspaceManager::detect_workspace_root(&random_file, &config);
         assert!(workspace_root.is_none());
     }
 
@@ -467,7 +480,8 @@ mod tests {
         let temp_dir = create_temp_workspace(&["random.txt"]);
         let file_path = temp_dir.path().join("random.txt");
         
-        let root = WorkspaceManager::detect_workspace_root(&file_path);
+        let config = LanguagesConfig::default_config();
+        let root = WorkspaceManager::detect_workspace_root(&file_path, &config);
         assert!(root.is_none());
     }
 
@@ -476,7 +490,8 @@ mod tests {
         let temp_dir = create_temp_workspace(&["Cargo.toml", "src/main.rs"]);
         let file_path = temp_dir.path().join("src/main.rs");
         
-        let root = WorkspaceManager::detect_workspace_root(&file_path);
+        let config = LanguagesConfig::default_config();
+        let root = WorkspaceManager::detect_workspace_root(&file_path, &config);
         assert_eq!(root, Some(temp_dir.path().to_path_buf()));
     }
 
@@ -512,7 +527,9 @@ mod tests {
 
     #[test]
     fn test_check_available_lsps_returns_list() {
-        let lsps = WorkspaceManager::check_available_lsps();
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let lsps = workspace_manager.check_available_lsps();
         
         assert!(!lsps.is_empty());
         // Should contain at least the configured LSPs
@@ -523,7 +540,9 @@ mod tests {
 
     #[test]
     fn test_check_available_lsps_has_correct_structure() {
-        let lsps = WorkspaceManager::check_available_lsps();
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let lsps = workspace_manager.check_available_lsps();
         
         for lsp in lsps {
             assert!(!lsp.name.is_empty());

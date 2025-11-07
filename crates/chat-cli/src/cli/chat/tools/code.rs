@@ -309,11 +309,18 @@ impl Code {
                     
                     match client.goto_definition(request).await {
                         Ok(Some(definition)) => {
-                            // Always show location with context in single line
+                            // Show location with context (max 3 lines, then show count of remaining)
                             let context = if let Some(source) = &definition.source_line {
-                                let trimmed = source.trim();
-                                if !trimmed.is_empty() {
-                                    format!(": {}", trimmed)
+                                let lines: Vec<&str> = source.lines().collect();
+                                if !lines.is_empty() {
+                                    let display_lines: Vec<String> = lines.iter().take(3).map(|line| line.trim().to_string()).collect();
+                                    let remaining = lines.len().saturating_sub(3);
+                                    
+                                    let mut context_str = format!(": {}", display_lines.join(" | "));
+                                    if remaining > 0 {
+                                        context_str.push_str(&format!(" ... ({} more lines)", remaining));
+                                    }
+                                    context_str
                                 } else {
                                     String::new()
                                 }
