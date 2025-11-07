@@ -67,6 +67,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
             BuiltInTool::ExecuteCmd(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::Introspect(_) => Ok(PermissionEvalResult::Allow),
             BuiltInTool::SpawnSubagent => Ok(PermissionEvalResult::Allow),
+            BuiltInTool::Summary(_) => Ok(PermissionEvalResult::Allow),
         },
         ToolKind::Mcp(_) => Ok(if is_allowed {
             PermissionEvalResult::Allow

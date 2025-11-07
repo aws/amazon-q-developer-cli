@@ -1504,6 +1504,7 @@ impl Agent {
                 BuiltInTool::Mkdir(_) => Ok(()),
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
+                BuiltInTool::Summary(_) => Ok(()),
                 BuiltInTool::SpawnSubagent => Ok(()),
                 BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
             },
@@ -1612,6 +1613,10 @@ impl Agent {
                 BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+                BuiltInTool::Summary(t) => {
+                    let result_tx = self.agent_event_tx.clone();
+                    Box::pin(async move { t.execute(result_tx).await })
+                },
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();
