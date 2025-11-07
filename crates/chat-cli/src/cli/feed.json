@@ -12,7 +12,7 @@
     },
     {
       "type": "release",
-      "date": "2025-11-06",
+      "date": "2025-11-07",
       "version": "1.19.4",
       "title": "Version 1.19.4",
       "changes": [
@@ -26,7 +26,7 @@
         },
         {
           "type": "changed",
-          "description": "Block potentially dangerous commands from executing with the configured `execute_bash.allowedCommands` - [#3335](https://github.com/aws/amazon-q-developer-cli/pull/3335)"
+          "description": "Block potentially dangerous commands from executing with the configured `execute_bash.allowedCommands` - [#3313](https://github.com/aws/amazon-q-developer-cli/pull/3313)"
         },
         {
           "type": "fixed",
