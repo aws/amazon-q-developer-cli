@@ -171,8 +171,6 @@ pub mod ui_text {
     }
 }
 
-
-
 /// Context-related text constants
 pub mod context_text {
     use super::PRODUCT_NAME;

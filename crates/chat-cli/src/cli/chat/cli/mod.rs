@@ -44,7 +44,6 @@ use tools::ToolsArgs;
 
 use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::context::ContextArgs;
-
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
 use crate::cli::chat::{

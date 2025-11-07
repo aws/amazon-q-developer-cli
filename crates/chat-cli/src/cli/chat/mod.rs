@@ -3853,7 +3853,6 @@ async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus
     }
 }
 
-
 /// Checks if an input may be referencing a file and should not be handled as a typical slash
 /// command. If true, then return [Option::Some<ChatState>], otherwise [Option::None].
 fn does_input_reference_file(input: &str) -> Option<ChatState> {
@@ -4343,8 +4342,6 @@ mod tests {
             assert_eq!(processed, expected.trim().to_string(), "Failed for input: {input}");
         }
     }
-
-
 
     // Integration test for PreToolUse hook functionality.
     //
