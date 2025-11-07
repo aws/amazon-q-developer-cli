@@ -31,6 +31,9 @@ impl acp::Client for AcpClient {
             acp::SessionUpdate::ToolCall(tool_call) => {
                 println!("🔧 Tool Call: {:#?}", tool_call);
             },
+            acp::SessionUpdate::ToolCallUpdate(tool_call_update) => {
+                println!("✅ Tool Call Update: {:#?}", tool_call_update);
+            },
             _ => {
                 // Handle other session update types if needed
             },

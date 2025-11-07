@@ -73,6 +73,7 @@ use protocol::{
     SendApprovalResultArgs,
     SendPromptArgs,
     ToolCall,
+    ToolCallResult,
     UpdateEvent,
 };
 use serde::{
@@ -1172,7 +1173,28 @@ impl Agent {
 
         debug_assert!(executing_tools.get_tool(&evt.id).is_some());
         if let Some(tool) = executing_tools.get_tool_mut(&evt.id) {
-            tool.result = Some(evt.result);
+            tool.result = Some(evt.result.clone());
+
+            // Emit ToolCallFinished event for the completed tool
+            let tool_call = ToolCall {
+                id: tool.tool_use_block.tool_use_id.clone(),
+                tool: tool.tool.clone(),
+                tool_use_block: tool.tool_use_block.clone(),
+            };
+
+            let result = match &evt.result {
+                ToolExecutorResult::Completed { result: Ok(output), .. } => {
+                    ToolCallResult::Success(output.clone())
+                }
+                ToolExecutorResult::Completed { result: Err(error), .. } => {
+                    ToolCallResult::Error(error.clone())
+                }
+                ToolExecutorResult::Cancelled { .. } => {
+                    ToolCallResult::Cancelled
+                }
+            };
+
+            self.agent_event_buf.push(AgentEvent::Update(UpdateEvent::ToolCallFinished { tool_call, result }));
         }
 
         if !executing_tools.all_tools_finished() {

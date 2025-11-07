@@ -9,26 +9,68 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::process::ExitCode;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use agent::agent_loop::types::ToolUseBlock;
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
-use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, UpdateEvent};
-use agent::rts::{RtsModel, RtsModelState};
+use agent::protocol::{
+    AgentEvent,
+    AgentStopReason,
+    ContentChunk,
+    SendPromptArgs,
+    ToolCallResult,
+    UpdateEvent,
+};
+use agent::rts::{
+    RtsModel,
+    RtsModelState,
+};
 use agent::tools::BuiltInToolName;
 use agent::types::AgentSnapshot;
-use agent::{Agent, AgentHandle};
+use agent::{
+    Agent,
+    AgentHandle,
+};
 use eyre::Result;
 use sacp::{
-    AgentCapabilities, CancelNotification, ContentBlock, ContentChunk as SacpContentChunk, Diff, Implementation,
-    InitializeRequest, InitializeResponse, JrConnection, JrRequestCx, NewSessionRequest, NewSessionResponse,
-    PermissionOption, PermissionOptionId, PermissionOptionKind, PromptRequest, PromptResponse,
-    RequestPermissionRequest, SessionId, SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall,
-    ToolCallContent, ToolCallId, ToolCallStatus, ToolCallUpdate, ToolCallUpdateFields, ToolKind, V1,
+    AgentCapabilities,
+    CancelNotification,
+    ContentBlock,
+    ContentChunk as SacpContentChunk,
+    Diff,
+    Implementation,
+    InitializeRequest,
+    InitializeResponse,
+    JrConnection,
+    JrRequestCx,
+    NewSessionRequest,
+    NewSessionResponse,
+    PermissionOption,
+    PermissionOptionId,
+    PermissionOptionKind,
+    PromptRequest,
+    PromptResponse,
+    RequestPermissionRequest,
+    SessionId,
+    SessionNotification,
+    SessionUpdate,
+    StopReason,
+    TextContent,
+    ToolCall,
+    ToolCallContent,
+    ToolCallId,
+    ToolCallStatus,
+    ToolCallUpdate,
+    ToolCallUpdateFields,
+    ToolKind,
+    V1,
 };
-use std::str::FromStr;
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
+use tokio_util::compat::{
+    TokioAsyncReadCompatExt,
+    TokioAsyncWriteCompatExt,
+};
 use tracing::info;
 
 /// ACP Session that processes requests using Amazon Q agent
@@ -170,6 +212,25 @@ fn handle_update_event(
                 meta: None,
             };
             Some(SessionUpdate::ToolCall(acp_tool_call))
+        },
+        UpdateEvent::ToolCallFinished { tool_call, result } => {
+            let (status, raw_output) = match result {
+                ToolCallResult::Success(output) => (ToolCallStatus::Completed, serde_json::to_value(output).ok()),
+                ToolCallResult::Error(_) => (ToolCallStatus::Failed, None),
+                ToolCallResult::Cancelled => (ToolCallStatus::Failed, None),
+            };
+            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate {
+                id: ToolCallId(tool_call.id.into()),
+                fields: ToolCallUpdateFields {
+                    status: Some(status),
+                    title: Some(tool_call.tool_use_block.name.clone()),
+                    kind: Some(get_tool_kind(&tool_call.tool_use_block.name)),
+                    raw_input: Some(tool_call.tool_use_block.input.clone()),
+                    raw_output,
+                    ..Default::default()
+                },
+                meta: None,
+            }))
         },
         _ => None,
     };
