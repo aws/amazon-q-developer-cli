@@ -171,26 +171,6 @@ pub mod ui_text {
     }
 }
 
-/// Subscription-related text constants
-pub mod subscription_text {
-    use super::PRODUCT_NAME;
-
-    /// Message for IDC users about subscription management
-    pub fn idc_subscription_message() -> String {
-        format!("Your {PRODUCT_NAME} Pro subscription is managed through IAM Identity Center.")
-    }
-
-    /// Message when user doesn't have an active subscription
-    pub fn no_subscription_message() -> String {
-        format!("You don't seem to have a {PRODUCT_NAME} Pro subscription.")
-    }
-
-    /// Message when user already has an active subscription
-    pub fn already_subscribed_message() -> String {
-        format!("Your Builder ID already has a {PRODUCT_NAME} Pro subscription.")
-    }
-}
-
 /// Context-related text constants
 pub mod context_text {
     use super::PRODUCT_NAME;

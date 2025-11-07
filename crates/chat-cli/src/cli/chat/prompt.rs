@@ -144,7 +144,6 @@ pub const COMMANDS: &[&str] = &[
     "/save",
     "/load",
     "/paste",
-    "/subscribe",
 ];
 
 /// Generate dynamic command list including experiment-based commands when enabled
