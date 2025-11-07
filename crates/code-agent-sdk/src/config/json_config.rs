@@ -143,6 +143,17 @@ impl LanguagesConfig {
                             "buildScripts": {
                                 "enable": true
                             }
+                        },
+                        "diagnostics": {
+                            "enable": true,
+                            "enableExperimental": true
+                        },
+                        "workspace": {
+                            "symbol": {
+                                "search": {
+                                    "scope": "workspace"
+                                }
+                            }
                         }
                     }
                 },

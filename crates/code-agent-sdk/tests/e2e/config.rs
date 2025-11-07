@@ -169,9 +169,3 @@ impl TestProject {
         self.path.join(&self.config.main_file)
     }
 }
-
-impl Drop for TestProject {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
-    }
-}

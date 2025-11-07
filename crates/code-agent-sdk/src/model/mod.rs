@@ -10,7 +10,7 @@ pub mod types;
 pub use entities::{DefinitionInfo, ReferenceInfo, SymbolInfo};
 pub use types::{
     FindReferencesByLocationRequest, FindReferencesByNameRequest, FindSymbolsRequest,
-    FormatCodeRequest, GetDocumentSymbolsRequest, GetSymbolsRequest, GotoDefinitionRequest,
+    FormatCodeRequest, GetDocumentDiagnosticsRequest, GetDocumentSymbolsRequest, GetSymbolsRequest, GotoDefinitionRequest,
     LanguageServerConfig, LspInfo, OpenFileRequest, RenameSymbolRequest, WorkspaceInfo,
 };
 

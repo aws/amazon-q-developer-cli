@@ -1,4 +1,5 @@
 use crate::lsp::protocol::*;
+use crate::model::entities::DiagnosticEvent;
 use crate::types::LanguageServerConfig;
 use anyhow::Result;
 use lsp_types::*;
@@ -7,8 +8,9 @@ use std::collections::HashMap;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::io::BufReader;
+use tokio::io::AsyncBufReadExt;
 use tokio::process::Command;
-use tokio::sync::{oneshot, Mutex};
+use tokio::sync::{oneshot, Mutex, broadcast};
 use tracing::{debug, error};
 use url::Url;
 
@@ -20,11 +22,14 @@ type ResponseCallback = Box<dyn FnOnce(Result<Value>) + Send>;
 /// - Symbol finding and navigation
 /// - Code formatting and refactoring
 /// - Document lifecycle management
+/// - Diagnostic notifications (push model)
 pub struct LspClient {
     stdin: Arc<Mutex<tokio::process::ChildStdin>>,
     pending_requests: Arc<Mutex<HashMap<u64, ResponseCallback>>>,
+    diagnostic_sender: broadcast::Sender<DiagnosticEvent>,
     next_id: Arc<Mutex<u64>>,
     config: LanguageServerConfig,
+    init_result: Arc<Mutex<Option<InitializeResult>>>,
 }
 
 impl LspClient {
@@ -52,13 +57,34 @@ impl LspClient {
             .stdout
             .take()
             .ok_or_else(|| anyhow::anyhow!("No stdout"))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("No stderr"))?;
+
+        // Create broadcast channel for diagnostics (capacity of 100 events)
+        let (diagnostic_sender, _) = broadcast::channel(100);
 
         let client = Self {
             stdin: Arc::new(Mutex::new(stdin)),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
+            diagnostic_sender,
             next_id: Arc::new(Mutex::new(1)),
-            config,
+            config: config.clone(),
+            init_result: Arc::new(Mutex::new(None)),
         };
+
+        // Start stderr monitoring
+        let server_name = config.name.clone();
+        tokio::spawn(async move {
+            let mut reader = BufReader::new(stderr);
+            let mut line = String::new();
+            while let Ok(n) = reader.read_line(&mut line).await {
+                if n == 0 { break; }
+                tracing::error!("LSP {} stderr: {}", server_name, line.trim());
+                line.clear();
+            }
+        });
 
         client.start_message_handler(stdout).await;
         Ok(client)
@@ -72,13 +98,17 @@ impl LspClient {
     /// # Returns
     /// * `Result<InitializeResult>` - Server capabilities or initialization error
     pub async fn initialize(&self, root_uri: Url) -> Result<InitializeResult> {
+        tracing::debug!("Initializing LSP client for workspace: {}", root_uri);
+        
         let (tx, rx) = oneshot::channel();
 
         let init_params = crate::lsp::LspConfig::build_initialize_params(
-            root_uri,
+            root_uri.clone(),
             self.config.initialization_options.clone(),
         );
 
+        tracing::debug!("Sending initialize request to LSP server: {}", self.config.name);
+        
         self.send_request("initialize", json!(init_params), move |result| {
             let _ = tx.send(result);
         })
@@ -87,8 +117,27 @@ impl LspClient {
         let result = rx.await??;
         let init_result: InitializeResult = serde_json::from_value(result)?;
 
+        // Store the initialization result
+        *self.init_result.lock().await = Some(init_result.clone());
+
+        tracing::debug!("Sending initialized notification to LSP server: {}", self.config.name);
         self.send_notification("initialized", json!({})).await?;
+        
+        tracing::debug!("LSP client initialization completed for: {}", self.config.name);
         Ok(init_result)
+    }
+
+    /// Subscribe to diagnostic notifications from the language server
+    ///
+    /// # Returns
+    /// * `broadcast::Receiver<DiagnosticEvent>` - Receiver for diagnostic events
+    pub fn subscribe_diagnostics(&self) -> broadcast::Receiver<DiagnosticEvent> {
+        self.diagnostic_sender.subscribe()
+    }
+
+    /// Get the server capabilities from initialization
+    pub async fn get_server_capabilities(&self) -> Option<ServerCapabilities> {
+        self.init_result.lock().await.as_ref().map(|result| result.capabilities.clone())
     }
 
     /// Navigate to symbol definition
@@ -221,6 +270,21 @@ impl LspClient {
             .await
     }
 
+    /// Request diagnostics for a document (pull model)
+    ///
+    /// # Arguments
+    /// * `params` - Document diagnostic parameters
+    ///
+    /// # Returns
+    /// * `Result<Option<DocumentDiagnosticReport>>` - Diagnostic report or None
+    pub async fn document_diagnostic(
+        &self,
+        params: DocumentDiagnosticParams,
+    ) -> Result<Option<DocumentDiagnosticReport>> {
+        self.send_lsp_request("textDocument/diagnostic", params)
+            .await
+    }
+
     /// Generic LSP request handler with automatic response parsing
     async fn send_lsp_request<T, R>(&self, method: &str, params: T) -> Result<Option<R>>
     where
@@ -254,11 +318,12 @@ impl LspClient {
     /// Start background task to handle LSP messages from server
     async fn start_message_handler(&self, stdout: tokio::process::ChildStdout) {
         let pending_requests = self.pending_requests.clone();
+        let diagnostic_sender = self.diagnostic_sender.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
 
             while let Ok(content) = read_lsp_message(&mut reader).await {
-                if let Err(e) = Self::process_message(&content, &pending_requests).await {
+                if let Err(e) = Self::process_message(&content, &pending_requests, &diagnostic_sender).await {
                     error!("Failed to process LSP message: {}", e);
                 }
             }
@@ -270,11 +335,51 @@ impl LspClient {
     async fn process_message(
         content: &str,
         pending_requests: &Arc<Mutex<HashMap<u64, ResponseCallback>>>,
+        diagnostic_sender: &broadcast::Sender<DiagnosticEvent>,
     ) -> Result<()> {
         let message = parse_lsp_message(content)?;
+        
+        // Debug: Log all incoming messages
+        debug!("LSP message received: method={}, has_id={}", message.method, message.id.is_some());
 
+        // Handle notifications (no ID)
+        if message.id.is_none() {
+            match message.method.as_str() {
+                "textDocument/publishDiagnostics" => {
+                    debug!("Processing publishDiagnostics notification");
+                    if let Some(params) = message.params {
+                        match serde_json::from_value::<PublishDiagnosticsParams>(params) {
+                            Ok(diagnostic_params) => {
+                                let event = DiagnosticEvent {
+                                    uri: diagnostic_params.uri.to_string(),
+                                    diagnostics: diagnostic_params.diagnostics,
+                                };
+                                
+                                debug!("Sending diagnostic event: uri={}, count={}", event.uri, event.diagnostics.len());
+                                
+                                // Send to broadcast channel (ignore if no receivers)
+                                match diagnostic_sender.send(event) {
+                                    Ok(_) => debug!("Diagnostic event sent successfully"),
+                                    Err(e) => error!("Failed to send diagnostic event: {}", e),
+                                }
+                            }
+                            Err(e) => {
+                                error!("Failed to parse publishDiagnostics params: {}", e);
+                            }
+                        }
+                    }
+                }
+                _ => {
+                    // Other notifications - just log for now
+                    debug!("Received LSP notification: {}", message.method);
+                }
+            }
+            return Ok(());
+        }
+
+        // Handle responses (with ID)
         let Some(id) = message.id.and_then(|id| id.as_u64()) else {
-            return Ok(()); // Notification or invalid ID
+            return Ok(()); // Invalid ID
         };
 
         let Some(callback) = pending_requests.lock().await.remove(&id) else {

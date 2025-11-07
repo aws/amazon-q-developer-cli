@@ -42,7 +42,11 @@ async fn test_rust_user_stories() -> Result<()> {
     e2e::test_goto_definition(&project).await?;
     println!("✅ US-004 passed");
 
-    println!("\nRust E2E Results: 3 core tests passed");
+    println!("Testing US-008: Pull Diagnostics");
+    e2e::test_pull_diagnostics(&project).await?;
+    println!("✅ US-008 passed");
+
+    println!("\nRust E2E Results: 4 core tests passed");
     
     Ok(())
 }

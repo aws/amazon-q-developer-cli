@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand};
 use code_agent_sdk::{
     CodeIntelligence, FindReferencesByLocationRequest, FindReferencesByNameRequest,
-    FindSymbolsRequest, GetDocumentSymbolsRequest, GotoDefinitionRequest,
+    FindSymbolsRequest, GetDocumentSymbolsRequest, GetDocumentDiagnosticsRequest, GotoDefinitionRequest,
     RenameSymbolRequest, FormatCodeRequest, OpenFileRequest,
 };
 use code_agent_sdk::model::types::ApiSymbolKind;
@@ -87,6 +87,19 @@ enum Commands {
     /// Get all symbols from a document/file
     GetDocumentSymbols {
         /// Path to the file
+        file: PathBuf,
+    },
+    /// Get diagnostics for a document (pull model)
+    GetDiagnostics {
+        /// Path to the file
+        file: PathBuf,
+        /// Optional identifier for the diagnostic request
+        #[arg(long)]
+        identifier: Option<String>,
+    },
+    /// Inspect server capabilities
+    InspectCapabilities {
+        /// Path to a file to determine which server to inspect
         file: PathBuf,
     },
 }
@@ -367,6 +380,100 @@ async fn main() -> anyhow::Result<()> {
                         println!("    {}", source);
                     }
                 }
+            }
+        }
+
+        Commands::GetDiagnostics { file, identifier } => {
+            // Open the file first
+            let content = std::fs::read_to_string(&file)?;
+            code_intel.open_file(OpenFileRequest {
+                file_path: file.clone(),
+                content,
+            }).await?;
+
+            // Wait for language server to analyze the file
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+            let diagnostics = code_intel
+                .get_document_diagnostics(GetDocumentDiagnosticsRequest {
+                    file_path: file.clone(),
+                    identifier,
+                    previous_result_id: None,
+                })
+                .await?;
+
+            if diagnostics.is_empty() {
+                println!("✅ No diagnostics found in {}", file.display());
+            } else {
+                println!("🔍 Diagnostics in {}:", file.display());
+                for diagnostic in diagnostics {
+                    let severity = match diagnostic.severity {
+                        Some(lsp_types::DiagnosticSeverity::ERROR) => "❌ Error",
+                        Some(lsp_types::DiagnosticSeverity::WARNING) => "⚠️  Warning",
+                        Some(lsp_types::DiagnosticSeverity::INFORMATION) => "ℹ️  Info",
+                        Some(lsp_types::DiagnosticSeverity::HINT) => "💡 Hint",
+                        Some(_) => "🔍 Diagnostic", // Catch-all for unknown severity levels
+                        None => "🔍 Diagnostic",
+                    };
+                    
+                    println!(
+                        "  {} at {}:{} - {}",
+                        severity,
+                        diagnostic.range.start.line + 1, // Convert to 1-based
+                        diagnostic.range.start.character + 1, // Convert to 1-based
+                        diagnostic.message
+                    );
+                    
+                    if let Some(source) = &diagnostic.source {
+                        println!("    Source: {}", source);
+                    }
+                    
+                    if let Some(code) = &diagnostic.code {
+                        match code {
+                            lsp_types::NumberOrString::Number(n) => println!("    Code: {}", n),
+                            lsp_types::NumberOrString::String(s) => println!("    Code: {}", s),
+                        }
+                    }
+                }
+            }
+        }
+
+        Commands::InspectCapabilities { file } => {
+            let workspace_root = std::env::current_dir()?;
+            let mut workspace_manager = code_intel.workspace_manager;
+            
+            let client = workspace_manager.get_client_for_file(&file).await?
+                .ok_or_else(|| anyhow::anyhow!("No LSP client available for file: {:?}", file))?;
+            
+            println!("🔍 Inspecting server capabilities for: {}", file.display());
+            
+            if let Some(capabilities) = client.get_server_capabilities().await {
+                println!("📋 Server Capabilities:");
+                
+                // Check diagnostic capabilities
+                match &capabilities.diagnostic_provider {
+                    Some(lsp_types::DiagnosticServerCapabilities::Options(opts)) => {
+                        println!("  ✅ Diagnostic Provider: Supported");
+                        println!("    - Inter-file dependencies: {:?}", opts.inter_file_dependencies);
+                        println!("    - Workspace diagnostics: {:?}", opts.workspace_diagnostics);
+                        if let Some(id) = &opts.identifier {
+                            println!("    - Identifier: {}", id);
+                        }
+                    }
+                    Some(lsp_types::DiagnosticServerCapabilities::RegistrationOptions(_)) => {
+                        println!("  ✅ Diagnostic Provider: Registration Options");
+                    }
+                    None => {
+                        println!("  ❌ Diagnostic Provider: Not supported");
+                    }
+                }
+                
+                // Check other relevant capabilities
+                println!("  📄 Text Document Sync: {:?}", capabilities.text_document_sync);
+                println!("  🔍 Definition Provider: {:?}", capabilities.definition_provider.is_some());
+                println!("  📚 References Provider: {:?}", capabilities.references_provider.is_some());
+            } else {
+                println!("❌ No server capabilities available");
             }
         }
     }

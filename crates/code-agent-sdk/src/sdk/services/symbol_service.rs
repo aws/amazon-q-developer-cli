@@ -58,6 +58,12 @@ pub trait SymbolService: Send + Sync {
         request: FindReferencesByNameRequest,
     ) -> Result<Vec<ReferenceInfo>>;
 
+    /// Get diagnostics for a document using pull model
+    async fn get_document_diagnostics(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: GetDocumentDiagnosticsRequest,
+    ) -> Result<Vec<Diagnostic>>;
 }
 
 /// LSP-based implementation of SymbolService
@@ -474,6 +480,21 @@ impl SymbolService for LspSymbolService {
         }
     }
 
+    async fn get_document_diagnostics(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: GetDocumentDiagnosticsRequest,
+    ) -> Result<Vec<Diagnostic>> {
+        // Ensure initialized (which now automatically subscribes to diagnostics)
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let file_path = canonicalize_path(&request.file_path)?;
+        
+        // Use new push-based approach through workspace manager
+        workspace_manager.get_diagnostics_for_file(&file_path).await
+    }
 }
 
 #[cfg(test)]
@@ -626,6 +647,6 @@ mod tests {
     fn test_new_symbol_service() {
         let service = create_test_service();
         // Just verify it constructs successfully
-        assert!(std::ptr::addr_of!(service.workspace_service) as *const _ != std::ptr::null());
+        assert_ne!(std::ptr::addr_of!(service.workspace_service) as *const _, std::ptr::null());
     }
 }

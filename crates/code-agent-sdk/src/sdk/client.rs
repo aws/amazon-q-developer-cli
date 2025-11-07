@@ -539,6 +539,41 @@ impl CodeIntelligence {
             .await
     }
 
+    /// Get diagnostics for a document using the pull model.
+    ///
+    /// This method requests diagnostics for a specific document, giving the client
+    /// control over when diagnostics are computed. This is useful for prioritizing
+    /// diagnostics for files currently being edited or viewed.
+    ///
+    /// # Arguments
+    /// * `request` - Document path and optional parameters for diagnostic retrieval
+    ///
+    /// # Returns
+    /// * `Result<Vec<lsp_types::Diagnostic>>` - List of diagnostics or empty if none
+    ///
+    /// # Example
+    /// ```ignore
+    /// let request = GetDocumentDiagnosticsRequest {
+    ///     file_path: PathBuf::from("src/main.rs"),
+    ///     identifier: None,
+    ///     previous_result_id: None,
+    /// };
+    /// let diagnostics = code_intel.get_document_diagnostics(request).await?;
+    /// for diagnostic in diagnostics {
+    ///     println!("{}:{} - {}", diagnostic.range.start.line, diagnostic.range.start.character, diagnostic.message);
+    /// }
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// # }
+    /// ```ignore
+    pub async fn get_document_diagnostics(
+        &mut self,
+        request: GetDocumentDiagnosticsRequest,
+    ) -> Result<Vec<lsp_types::Diagnostic>> {
+        self.symbol_service
+            .get_document_diagnostics(&mut self.workspace_manager, request)
+            .await
+    }
+
     /// **Add a language server configuration**
     ///
     /// Registers a new language server that will be used for files matching

@@ -1,6 +1,13 @@
-use lsp_types::{Location, WorkspaceSymbol};
+use lsp_types::{Location, WorkspaceSymbol, Diagnostic};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+
+/// Diagnostic event from LSP server
+#[derive(Debug, Clone)]
+pub struct DiagnosticEvent {
+    pub uri: String,
+    pub diagnostics: Vec<Diagnostic>,
+}
 
 /// Helper function to read a single source line from a file (trimmed)
 fn read_source_line(file_path: &Path, line_number: u32) -> Option<String> {

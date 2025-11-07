@@ -1,13 +1,15 @@
 use crate::config::ConfigManager;
 use crate::config::json_config::LanguagesConfig;
 use crate::lsp::LspRegistry;
+
 use crate::model::types::{LspInfo, WorkspaceInfo};
 use crate::model::FsEvent;
 use crate::sdk::file_watcher::{FileWatcher, FileWatcherConfig};
 use anyhow::Result;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use tokio::sync::mpsc;
+use std::sync::Arc;
+use tokio::sync::{mpsc, RwLock};
 use tracing::warn;
 use url::Url;
 
@@ -27,6 +29,7 @@ pub struct WorkspaceManager {
     initialized: bool,
     opened_files: HashMap<PathBuf, FileState>, // Track version and open state
     workspace_info: Option<WorkspaceInfo>,
+    diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<lsp_types::Diagnostic>>>>, // shared diagnostics map
     
     // File watching infrastructure
     _file_watcher: Option<FileWatcher>,
@@ -60,6 +63,7 @@ impl WorkspaceManager {
             initialized: false,
             opened_files: HashMap::new(),
             workspace_info: None,
+            diagnostics: Arc::new(RwLock::new(HashMap::new())),
             _file_watcher: None,
             event_processor_handle: None,
         }
@@ -127,8 +131,8 @@ impl WorkspaceManager {
                 }
             };
 
-            // Add 3-second timeout to prevent hanging on unavailable servers
-            match tokio::time::timeout(tokio::time::Duration::from_secs(3), init_future).await {
+            // Add 10-second timeout to prevent hanging on unavailable servers (increased for TypeScript)
+            match tokio::time::timeout(tokio::time::Duration::from_secs(10), init_future).await {
                 Ok(_) => {
                 }
                 Err(_) => {
@@ -142,6 +146,11 @@ impl WorkspaceManager {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
         self.initialized = true;
+        
+        // Subscribe to diagnostics from all initialized LSP clients
+        if let Err(e) = self.subscribe_to_diagnostics().await {
+            tracing::warn!("Failed to subscribe to diagnostics: {}", e);
+        }
         
         // Start file watching after LSP initialization
         if let Err(e) = self.start_file_watching() {
@@ -164,6 +173,96 @@ impl WorkspaceManager {
         self.registry
             .get_client_for_extension(extension, &self.workspace_root)
             .await
+    }
+
+    /// Subscribe to diagnostics from all initialized LSP clients and start background tasks
+    pub async fn subscribe_to_diagnostics(&mut self) -> Result<()> {
+        let detected_languages = self.get_detected_languages()?;
+        tracing::debug!("Subscribing to diagnostics for languages: {:?}", detected_languages);
+        
+        for language in detected_languages {
+            if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+                let mut receiver = client.subscribe_diagnostics();
+                let diagnostics_map = self.diagnostics.clone(); // Share the single map
+                let language_clone = language.clone(); // Clone for the async task
+                
+                tracing::debug!("Starting background diagnostic task for language: {}", language);
+                
+                // Start background task to collect diagnostics
+                tokio::spawn(async move {
+                    tracing::debug!("Background diagnostic task started for language: {}", language_clone);
+                    while let Ok(diagnostic_event) = receiver.recv().await {
+                        tracing::debug!("Background task received diagnostic event for: {}", diagnostic_event.uri);
+                        if let Ok(file_path) = url::Url::parse(&diagnostic_event.uri)
+                            .and_then(|url| url.to_file_path().map_err(|_| url::ParseError::InvalidPort)) {
+                            
+                            let mut map = diagnostics_map.write().await;
+                            map.insert(file_path.clone(), diagnostic_event.diagnostics.clone());
+                            tracing::debug!("Stored {} diagnostics for file: {:?}", diagnostic_event.diagnostics.len(), file_path);
+                        }
+                    }
+                    tracing::debug!("Background diagnostic task ended for language: {}", language_clone);
+                });
+                
+                tracing::debug!("Subscribed to diagnostics for language: {}", language);
+            } else {
+                tracing::warn!("No client available for language: {}", language);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Get stored diagnostics for a specific file
+    pub async fn get_diagnostics_for_file(&mut self, file_path: &Path) -> Result<Vec<lsp_types::Diagnostic>> {
+        tracing::debug!("Getting diagnostics for file: {:?}", file_path);
+        
+        // First, check if we need to open the file to trigger diagnostics
+        if !self.is_file_opened(file_path) {
+            tracing::debug!("File not opened yet, opening: {:?}", file_path);
+            
+            // Determine language and get client
+            let extension = file_path.extension()
+                .and_then(|ext| ext.to_str())
+                .unwrap_or("");
+                
+            let language = self.config_manager.get_language_for_extension(extension)
+                .ok_or_else(|| anyhow::anyhow!("No language server for file: {}", file_path.display()))?;
+
+            tracing::debug!("Detected language: {} for file: {:?}", language, file_path);
+
+            if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+                // Read file content and open it
+                let content = std::fs::read_to_string(file_path)?;
+                let did_open_params = lsp_types::DidOpenTextDocumentParams {
+                    text_document: lsp_types::TextDocumentItem {
+                        uri: url::Url::from_file_path(file_path).unwrap(),
+                        language_id: language,
+                        version: 1,
+                        text: content,
+                    },
+                };
+                
+                tracing::debug!("Sending didOpen for file: {:?}", file_path);
+                client.did_open(did_open_params).await?;
+                self.mark_file_opened(file_path.to_path_buf());
+                
+                tracing::debug!("Waiting 3 seconds for diagnostics to arrive...");
+                // Wait longer for diagnostics to arrive (like the test does)
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                tracing::debug!("Finished waiting for diagnostics");
+            } else {
+                tracing::warn!("No client available for language: {}", language);
+            }
+        } else {
+            tracing::debug!("File already opened: {:?}", file_path);
+        }
+        
+        // Return stored diagnostics from the shared map (read lock for better performance)
+        let map = self.diagnostics.read().await;
+        let diagnostics = map.get(file_path).cloned().unwrap_or_default();
+        tracing::debug!("Retrieved {} diagnostics for file: {:?}", diagnostics.len(), file_path);
+        Ok(diagnostics)
     }
 
     /// Get workspace root

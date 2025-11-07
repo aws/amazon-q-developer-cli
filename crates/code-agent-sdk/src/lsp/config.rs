@@ -26,6 +26,17 @@ impl LspConfig {
                     ..Default::default()
                 }),
                 text_document: Some(TextDocumentClientCapabilities {
+                    publish_diagnostics: Some(PublishDiagnosticsClientCapabilities {
+                        related_information: Some(true),
+                        version_support: Some(true),
+                        code_description_support: Some(true),
+                        data_support: Some(true),
+                        ..Default::default()
+                    }),
+                    diagnostic: Some(DiagnosticClientCapabilities {
+                       dynamic_registration: Some(true),
+                       related_document_support: Some(true),
+                    }),
                     definition: Some(GotoCapability {
                         dynamic_registration: Some(true),
                         link_support: Some(true),
@@ -50,10 +61,6 @@ impl LspConfig {
                     document_symbol: Some(DocumentSymbolClientCapabilities {
                         dynamic_registration: Some(true),
                         ..Default::default()
-                    }),
-                    diagnostic: Some(DiagnosticClientCapabilities {
-                        dynamic_registration: Some(true),
-                        related_document_support: Some(true),
                     }),
                     ..Default::default()
                 }),

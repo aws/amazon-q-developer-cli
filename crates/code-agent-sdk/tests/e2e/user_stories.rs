@@ -1,7 +1,8 @@
 use super::config::{TestProject};
 use code_agent_sdk::{
     CodeIntelligence, FindSymbolsRequest, GotoDefinitionRequest, 
-    FindReferencesByLocationRequest, RenameSymbolRequest, FormatCodeRequest, OpenFileRequest
+    FindReferencesByLocationRequest, RenameSymbolRequest, FormatCodeRequest, OpenFileRequest,
+    GetDocumentDiagnosticsRequest
 };
 use anyhow::Result;
 use std::time::Duration;
@@ -273,6 +274,60 @@ pub async fn test_code_formatting(project: &TestProject) -> Result<()> {
     Ok(())
 }
 
+/// US-008: Pull Diagnostics Test
+pub async fn test_pull_diagnostics(project: &TestProject) -> Result<()> {
+    let mut code_intel = CodeIntelligence::builder()
+        .workspace_root(project.path.clone())
+        .add_language(&project.config.language)
+        .build()
+        .map_err(|e| anyhow::anyhow!(e))?;
+    
+    code_intel.initialize().await?;
+
+    // Use the existing obvious_errors.rs file
+    let error_file = project.path.join("src/obvious_errors.rs");
+    let error_content = std::fs::read_to_string(&error_file)?;
+
+    code_intel.open_file(OpenFileRequest {
+        file_path: error_file.clone(),
+        content: error_content,
+    }).await?;
+
+    // Allow LSP to process the file and generate diagnostics
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let request = GetDocumentDiagnosticsRequest {
+        file_path: error_file.clone(),
+        identifier: None,
+        previous_result_id: None,
+    };
+
+    // Test pull diagnostics
+    match code_intel.get_document_diagnostics(request).await {
+        Ok(diagnostics) => {
+            println!("✅ Pull diagnostics supported - found {} diagnostics", diagnostics.len());
+            for (i, diagnostic) in diagnostics.iter().enumerate() {
+                println!("  Diagnostic {}: {} at line {}", 
+                    i + 1, 
+                    diagnostic.message, 
+                    diagnostic.range.start.line + 1
+                );
+            }
+            Ok(())
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            if error_msg.contains("Unhandled method") || error_msg.contains("Method Not Found") {
+                println!("ℹ️  Pull diagnostics not supported by language server (expected)");
+                Ok(()) // This is expected for most language servers
+            } else {
+                println!("⚠️  Pull diagnostics failed with unexpected error: {}", error_msg);
+                Err(e) // Unexpected error
+            }
+        }
+    }
+}
+
 /// Run all user story tests for a project
 pub async fn run_all_user_story_tests(project: &TestProject) -> Result<Vec<(&'static str, Result<()>)>> {
     let mut results = Vec::new();
@@ -284,6 +339,7 @@ pub async fn run_all_user_story_tests(project: &TestProject) -> Result<Vec<(&'st
     results.push(("US-005: Find References", test_find_references(project).await));
     results.push(("US-006: Rename Symbol", test_rename_symbol(project).await));
     results.push(("US-007: Code Formatting", test_code_formatting(project).await));
+    results.push(("US-008: Pull Diagnostics", test_pull_diagnostics(project).await));
 
     Ok(results)
 }

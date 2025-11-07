@@ -171,6 +171,20 @@ pub struct GetDocumentSymbolsRequest {
     pub file_path: PathBuf,
 }
 
+/// Request to get diagnostics for a document (pull model).
+///
+/// This request retrieves diagnostics for a specific document using the pull model,
+/// giving the client control over when diagnostics are computed.
+#[derive(Debug, Clone)]
+pub struct GetDocumentDiagnosticsRequest {
+    /// Path to the file to get diagnostics for
+    pub file_path: PathBuf,
+    /// Optional identifier provided during registration
+    pub identifier: Option<String>,
+    /// Optional result ID from a previous response for incremental updates
+    pub previous_result_id: Option<String>,
+}
+
 /// Request to open a file in the language server.
 ///
 /// This request opens a file for analysis, making it available for code intelligence operations.
