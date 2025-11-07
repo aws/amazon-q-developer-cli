@@ -101,6 +101,8 @@ pub enum Setting {
     BedrockModel,
     #[strum(message = "Context window size for Bedrock (number)")]
     BedrockContextWindow,
+    #[strum(message = "Maximum output tokens for Bedrock responses (number, max 200000)")]
+    BedrockMaxTokens,
     #[strum(message = "Enable extended thinking mode for Bedrock (boolean)")]
     BedrockThinkingEnabled,
     #[strum(message = "Temperature setting for Bedrock (0.0-1.0)")]
@@ -155,6 +157,7 @@ impl AsRef<str> for Setting {
             Self::BedrockRegion => "bedrock.region",
             Self::BedrockModel => "bedrock.model",
             Self::BedrockContextWindow => "bedrock.contextWindow",
+            Self::BedrockMaxTokens => "bedrock.maxTokens",
             Self::BedrockThinkingEnabled => "bedrock.thinkingEnabled",
             Self::BedrockTemperature => "bedrock.temperature",
             Self::BedrockSystemPromptActive => "bedrock.systemPrompt.active",
@@ -215,6 +218,7 @@ impl TryFrom<&str> for Setting {
             "bedrock.region" => Ok(Self::BedrockRegion),
             "bedrock.model" => Ok(Self::BedrockModel),
             "bedrock.contextWindow" => Ok(Self::BedrockContextWindow),
+            "bedrock.maxTokens" => Ok(Self::BedrockMaxTokens),
             "bedrock.thinkingEnabled" => Ok(Self::BedrockThinkingEnabled),
             "bedrock.temperature" => Ok(Self::BedrockTemperature),
             "bedrock.systemPrompt.active" => Ok(Self::BedrockSystemPromptActive),
@@ -265,13 +269,28 @@ impl Settings {
         self.0.get(key.as_ref())
     }
 
+    pub fn get_raw(&self, key: &str) -> Option<&Value> {
+        self.0.get(key)
+    }
+
     pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
+        self.0.insert(key.to_string(), value.into());
+        self.save_to_file().await
+    }
+
+    pub async fn set_raw(&mut self, key: &str, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
         self.0.insert(key.to_string(), value.into());
         self.save_to_file().await
     }
 
     pub async fn remove(&mut self, key: Setting) -> Result<Option<Value>, DatabaseError> {
         let key = self.0.remove(key.as_ref());
+        self.save_to_file().await?;
+        Ok(key)
+    }
+
+    pub async fn remove_raw(&mut self, key: &str) -> Result<Option<Value>, DatabaseError> {
+        let key = self.0.remove(key);
         self.save_to_file().await?;
         Ok(key)
     }

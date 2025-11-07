@@ -5,6 +5,7 @@ use crate::util::env_var::{
 };
 mod agent;
 pub mod chat;
+mod config;
 mod debug;
 mod diagnostics;
 pub mod experiment;
@@ -48,6 +49,7 @@ use tracing::{
 };
 
 use crate::cli::chat::ChatArgs;
+use crate::cli::config::ConfigArgs;
 use crate::cli::mcp::McpSubcommand;
 use crate::cli::user::{
     LoginArgs,
@@ -110,6 +112,8 @@ pub enum RootSubcommand {
     /// Customize appearance & behavior
     #[command(alias("setting"))]
     Settings(settings::SettingsArgs),
+    /// Configure Bedrock settings
+    Config(ConfigArgs),
     /// Run diagnostic tests
     #[command(alias("diagnostics"))]
     Diagnostic(diagnostics::DiagnosticArgs),
@@ -178,6 +182,7 @@ impl RootSubcommand {
             Self::Whoami(args) => args.execute(os).await,
             Self::Profile => user::profile(os).await,
             Self::Settings(settings_args) => settings_args.execute(os).await,
+            Self::Config(config_args) => config_args.execute(os).await,
             Self::Issue(args) => args.execute(os).await,
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
@@ -202,6 +207,7 @@ impl Display for RootSubcommand {
             Self::Whoami(_) => "whoami",
             Self::Profile => "profile",
             Self::Settings(_) => "settings",
+            Self::Config(_) => "config",
             Self::Diagnostic(_) => "diagnostic",
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",

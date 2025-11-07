@@ -27,6 +27,11 @@ impl BedrockApiClient {
             .and_then(|v| v.as_str())
             .unwrap_or("us-east-1");
 
+        // AWS SDK automatically resolves the correct endpoint based on region partition:
+        // - Commercial: bedrock-runtime.{region}.amazonaws.com
+        // - GovCloud: bedrock-runtime.{region}.amazonaws-us-gov.com
+        // - ISO: bedrock-runtime.{region}.c2s.ic.gov
+        // - ISO-B: bedrock-runtime.{region}.sc2s.sgov.gov
         let config = aws_config::defaults(BehaviorVersion::latest())
             .region(aws_config::Region::new(region.to_string()))
             .load()
@@ -58,29 +63,17 @@ impl BedrockApiClient {
             history,
         } = conversation;
 
+        // Use model from user_input_message if available, otherwise use the one from settings
+        let model_id = user_input_message
+            .model_id
+            .as_deref()
+            .unwrap_or(&self.model_id);
+
+        // Resolve to inference profile if available
+        let resolved_model_id = self.resolve_model_id(model_id).await?;
+
         // Build messages from history and current message
         let mut messages = Vec::new();
-
-        // Debug: Log what's in the history
-        if let Some(ref hist) = history {
-            eprintln!("=== HISTORY DEBUG ===");
-            for (i, msg) in hist.iter().enumerate() {
-                match msg {
-                    crate::api_client::model::ChatMessage::UserInputMessage(u) => {
-                        eprintln!("History[{}]: User - content_len={}, has_context={}", 
-                            i, u.content.len(), u.user_input_message_context.is_some());
-                        if let Some(ref ctx) = u.user_input_message_context {
-                            eprintln!("  - tool_results: {:?}", ctx.tool_results.as_ref().map(|r| r.len()));
-                        }
-                    }
-                    crate::api_client::model::ChatMessage::AssistantResponseMessage(a) => {
-                        eprintln!("History[{}]: Assistant - content_len={}, tool_uses={}", 
-                            i, a.content.len(), a.tool_uses.as_ref().map(|t| t.len()).unwrap_or(0));
-                    }
-                }
-            }
-            eprintln!("=== END HISTORY ===");
-        }
 
         // Add history messages
         if let Some(hist) = history {
@@ -109,23 +102,9 @@ impl BedrockApiClient {
         messages = filtered_messages;
 
         // Add current user message
-        eprintln!("=== CURRENT MESSAGE ===");
-        eprintln!("User content_len={}, has_context={}", 
-            user_input_message.content.len(), 
-            user_input_message.user_input_message_context.is_some());
-        if let Some(ref ctx) = user_input_message.user_input_message_context {
-            eprintln!("  - tool_results: {:?}", ctx.tool_results.as_ref().map(|r| r.len()));
-            eprintln!("  - tools: {:?}", ctx.tools.as_ref().map(|t| t.len()));
-        }
-        
         let converted_current = self.convert_chat_message_to_bedrock(
             crate::api_client::model::ChatMessage::UserInputMessage(user_input_message.clone())
         )?;
-        eprintln!("Converted current message to {} Bedrock messages", converted_current.len());
-        for (i, msg) in converted_current.iter().enumerate() {
-            eprintln!("  Converted[{}]: role={:?}, content_blocks={}", i, msg.role(), msg.content().len());
-        }
-        eprintln!("=== END CURRENT ===");
         
         messages.extend(converted_current);
 
@@ -152,7 +131,7 @@ impl BedrockApiClient {
         {
             let debug_data = serde_json::json!({
                 "timestamp": format!("{:?}", std::time::SystemTime::now()),
-                "model_id": &self.model_id,
+                "model_id": &resolved_model_id,
                 "message_count": messages.len(),
                 "messages": messages.iter().map(|m| {
                     serde_json::json!({
@@ -188,7 +167,7 @@ impl BedrockApiClient {
         let mut request = self
             .client
             .converse_stream()
-            .model_id(&self.model_id)
+            .model_id(&resolved_model_id)
             .set_messages(Some(messages));
 
         if let Some(tool_cfg) = tool_config {
@@ -399,26 +378,29 @@ impl BedrockApiClient {
     }
 
     fn get_max_tokens(&self) -> i32 {
+        // Max tokens for OUTPUT generation
+        // Claude models support up to 200000 output tokens
         self.database
             .settings
-            .get(Setting::BedrockContextWindow)
+            .get(Setting::BedrockMaxTokens)
             .and_then(|v| v.as_i64())
-            .map(|v| v as i32)
+            .map(|v| v.min(200000) as i32)
             .unwrap_or(4096)
     }
 
     fn get_system_prompt(&self) -> Option<String> {
-        // TODO: Implement custom system prompt loading
-        // For now, return None to use default
+        // Check if a custom system prompt is active
+        if let Some(active_name) = self.database.settings.get(Setting::BedrockSystemPromptActive)
+            .and_then(|v| v.as_str())
+        {
+            let key = format!("bedrock.systemPrompt.{}", active_name);
+            if let Some(prompt) = self.database.settings.get_raw(&key)
+                .and_then(|v| v.as_str())
+            {
+                return Some(prompt.to_string());
+            }
+        }
         None
-    }
-
-    pub fn model_id(&self) -> &str {
-        &self.model_id
-    }
-
-    pub fn client(&self) -> &BedrockClient {
-        &self.client
     }
 
     pub async fn list_foundation_models(&self) -> Result<Vec<String>> {
@@ -448,13 +430,74 @@ impl BedrockApiClient {
             .model_summaries()
             .iter()
             .filter(|m| {
-                // Filter for Claude models that support converse
-                m.model_id().contains("anthropic.claude") && 
-                m.inference_types_supported().contains(&aws_sdk_bedrock::types::InferenceType::OnDemand)
+                // Filter for text models that are ACTIVE or don't have lifecycle info
+                let is_text = m.output_modalities().contains(&aws_sdk_bedrock::types::ModelModality::Text);
+                let is_available = m.model_lifecycle()
+                    .map(|lifecycle| matches!(lifecycle.status(), aws_sdk_bedrock::types::FoundationModelLifecycleStatus::Active))
+                    .unwrap_or(true); // If no lifecycle info, assume available
+                is_text && is_available
             })
             .map(|m| m.model_id().to_string())
             .collect();
 
         Ok(models)
+    }
+
+    /// List available inference profiles
+    async fn list_inference_profiles(&self) -> Result<Vec<String>> {
+        use aws_sdk_bedrockruntime::config::Region;
+        
+        let bedrock_config = aws_config::defaults(BehaviorVersion::latest())
+            .region(Region::new(
+                self.database
+                    .settings
+                    .get(Setting::BedrockRegion)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("us-east-1")
+                    .to_string(),
+            ))
+            .load()
+            .await;
+
+        let bedrock_client = aws_sdk_bedrock::Client::new(&bedrock_config);
+
+        let response = bedrock_client
+            .list_inference_profiles()
+            .send()
+            .await?;
+
+        let profiles: Vec<String> = response
+            .inference_profile_summaries()
+            .iter()
+            .map(|p| p.inference_profile_id().to_string())
+            .collect();
+
+        Ok(profiles)
+    }
+
+    /// Resolves a model ID to its inference profile if available, otherwise returns the original ID
+    pub async fn resolve_model_id(&self, model_id: &str) -> Result<String> {
+        // If already an inference profile, return as-is
+        if model_id.starts_with("us.") {
+            return Ok(model_id.to_string());
+        }
+
+        // Get all available inference profiles
+        let inference_profiles = self.list_inference_profiles().await?;
+
+        // Try the simple approach: prepend "us." and see if it exists
+        let inference_profile_candidate = format!("us.{}", model_id);
+        if inference_profiles.contains(&inference_profile_candidate) {
+            return Ok(inference_profile_candidate);
+        }
+
+        // If not found, try to find any inference profile that matches
+        let inference_profile = inference_profiles
+            .iter()
+            .find(|p| p.contains(model_id))
+            .cloned();
+
+        // Return inference profile if found, otherwise return original
+        Ok(inference_profile.unwrap_or_else(|| model_id.to_string()))
     }
 }
