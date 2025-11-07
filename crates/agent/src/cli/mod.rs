@@ -52,6 +52,14 @@ impl CliArgs {
 
     fn setup_logging() -> Result<WorkerGuard> {
         let env_filter = EnvFilter::try_from_default_env().unwrap_or_default();
+
+        // No logging configured, return dummy guard
+        let max_level = env_filter.max_level_hint();
+        if max_level.is_none() || max_level == Some(tracing::level_filters::LevelFilter::OFF) {
+            let (_, guard) = NonBlocking::new(std::io::sink());
+            return Ok(guard);
+        }
+
         let (non_blocking, _file_guard) = NonBlocking::new(RollingFileAppender::new(Rotation::NEVER, ".", "chat.log"));
         let file_layer = tracing_subscriber::fmt::layer().with_writer(non_blocking);
         // .with_ansi(false);
