@@ -17,6 +17,15 @@ pub const GITHUB_ISSUES_URL: &str = "https://github.com/kirodotdev/Kiro/issues/n
 /// Default agent name
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 
+/// Legacy product name (Amazon Q Developer CLI)
+pub const LEGACY_PRODUCT_NAME: &str = "Amazon Q Developer CLI";
+
+/// Current product name with CLI suffix
+pub const PRODUCT_NAME_CLI: &str = "Kiro CLI";
+
+/// Migration information URL
+pub const MIGRATION_INFO_URL: &str = "kiro.dev/cli";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding

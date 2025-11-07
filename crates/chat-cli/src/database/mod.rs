@@ -298,6 +298,19 @@ impl Database {
         Ok(())
     }
 
+    /// Get welcome announcement show count from state table (for both new users and migration
+    /// message)
+    pub fn get_welcome_announcement_count(&self) -> Result<Option<i64>, DatabaseError> {
+        self.get_entry::<i64>(Table::State, "welcomeAnnouncement.showCount")
+    }
+
+    /// Set welcome announcement show count in state table (for both new users and migration
+    /// message)
+    pub fn set_welcome_announcement_count(&self, count: i64) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, "welcomeAnnouncement.showCount", count)?;
+        Ok(())
+    }
+
     /// Set the client ID used for telemetry requests.
     pub fn set_client_id(&mut self, client_id: Uuid) -> Result<usize, DatabaseError> {
         self.set_json_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())
