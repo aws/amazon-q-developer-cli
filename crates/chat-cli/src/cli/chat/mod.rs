@@ -468,6 +468,9 @@ impl ChatArgs {
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
+// Maximum number of times to show the welcome announcement (new user or migration message)
+const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
+
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
@@ -1185,7 +1188,7 @@ impl ChatSession {
         Ok(())
     }
 
-    async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<()> {
+    async fn show_changelog_announcement(&mut self, os: &mut Os) -> Result<bool> {
         let current_version = env!("CARGO_PKG_VERSION");
         let last_version = os.database.get_changelog_last_version()?;
         let show_count = os.database.get_changelog_show_count()?.unwrap_or(0);
@@ -1195,7 +1198,6 @@ impl ChatSession {
             Some(last) if last == current_version => show_count < CHANGELOG_MAX_SHOW_COUNT,
             Some(_) => true, // New version only
             None => {
-                // Don't show on first time but record the version
                 os.database.set_changelog_last_version(current_version)?;
                 false
             },
@@ -1213,9 +1215,30 @@ impl ChatSession {
                 1
             };
             os.database.set_changelog_show_count(new_count)?;
+            Ok(true)
+        } else {
+            Ok(false)
         }
+    }
 
-        Ok(())
+    async fn show_welcome_announcement(&mut self, os: &mut Os, is_new_user: bool) -> Result<bool> {
+        let show_count = os.database.get_welcome_announcement_count()?.unwrap_or(0);
+
+        let should_show = show_count < WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT;
+
+        if should_show {
+            if is_new_user {
+                // New user - show the welcome message
+                ui::render_new_user_welcome(&mut self.stderr)?;
+            } else {
+                // Existing user - show migration message
+                ui::render_migration_message(&mut self.stderr)?;
+            }
+            os.database.set_welcome_announcement_count(show_count + 1)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// Reload built-in tools to reflect experiment changes while preserving MCP tools
@@ -1319,12 +1342,14 @@ impl ChatSession {
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+
         if os
             .database
             .settings
             .get_bool(Setting::ChatGreetingEnabled)
             .unwrap_or(true)
         {
+            // Show ASCII art logo first
             let welcome_text = match self.existing_conversation {
                 true => ui_text::resume_text(),
                 false => match is_small_screen {
@@ -1334,25 +1359,52 @@ impl ChatSession {
             };
 
             execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
+        }
 
-            let rotating_tips = tips::get_rotating_tips();
-            let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
-            if is_small_screen {
-                // If the screen is small, print the tip in a single line
-                execute!(
-                    self.stderr,
-                    style::Print("💡 ".to_string()),
-                    style::Print(tip),
-                    style::Print("\n")
-                )?;
-            } else {
-                draw_box(
-                    &mut self.stderr,
-                    "Did you know?",
-                    tip,
-                    GREETING_BREAK_POINT,
-                    crate::theme::theme().ui.secondary_text,
-                )?;
+        // This determines if user is new or existing
+        let changelog_version = os.database.get_changelog_last_version()?;
+        let is_new_user = changelog_version.is_none();
+
+        // Check if we should show welcome announcement (returns true if shown)
+        let showed_welcome_announcement = self.show_welcome_announcement(os, is_new_user).await?;
+
+        // Check if we should show the changelog (returns true if shown)
+        // Skip changelog if:
+        // 1. We're showing welcome message, OR
+        // 2. User is new (to avoid setting version during welcome period)
+        let showed_changelog = if !showed_welcome_announcement && !is_new_user {
+            self.show_changelog_announcement(os).await?
+        } else {
+            false
+        };
+
+        if os
+            .database
+            .settings
+            .get_bool(Setting::ChatGreetingEnabled)
+            .unwrap_or(true)
+        {
+            // Only show rotating tips if we're not showing welcome message or changelog
+            if !showed_welcome_announcement && !showed_changelog {
+                let rotating_tips = tips::get_rotating_tips();
+                let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
+                if is_small_screen {
+                    // If the screen is small, print the tip in a single line
+                    execute!(
+                        self.stderr,
+                        style::Print("💡 ".to_string()),
+                        style::Print(tip),
+                        style::Print("\n")
+                    )?;
+                } else {
+                    draw_box(
+                        &mut self.stderr,
+                        "Did you know?",
+                        tip,
+                        GREETING_BREAK_POINT,
+                        crate::theme::theme().ui.secondary_text,
+                    )?;
+                }
             }
 
             execute!(
@@ -1371,9 +1423,6 @@ impl ChatSession {
             )?;
             execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
         }
-
-        // Check if we should show the whats-new announcement
-        self.show_changelog_announcement(os).await?;
 
         if self.all_tools_trusted() {
             queue!(
@@ -4665,6 +4714,284 @@ mod tests {
         for (input, expected) in tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {expected} for input {input}");
+        }
+    }
+
+    mod welcome_announcement_tests {
+        use super::*;
+
+        /// Helper to create a test ChatSession
+        async fn create_test_session(os: &mut Os) -> ChatSession {
+            let agents = get_test_agents(os).await;
+            let tool_manager = ToolManager::default();
+            let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+                .expect("Tools failed to load");
+
+            ChatSession::new(
+                os,
+                "test_conv_id",
+                agents,
+                None,
+                InputSource::new_mock(vec!["exit".to_string()]),
+                false,
+                || Some(80),
+                tool_manager,
+                None,
+                tool_config,
+                true,
+                false,
+                None,
+            )
+            .await
+            .unwrap()
+        }
+
+        #[tokio::test]
+        async fn test_new_user_first_time_shows_welcome() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // New user (no changelog version set)
+            assert!(os.database.get_changelog_last_version().unwrap().is_none());
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), None);
+
+            // Should show welcome announcement
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(showed, "Should show welcome announcement for new user");
+
+            // Count should be incremented
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), Some(1));
+        }
+
+        #[tokio::test]
+        async fn test_new_user_third_time_no_welcome() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // Simulate already shown twice
+            os.database.set_welcome_announcement_count(2).unwrap();
+
+            // Should NOT show welcome announcement (count >= 2)
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(!showed, "Should not show welcome announcement third time");
+
+            // Count should remain 2
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), Some(2));
+        }
+
+        #[tokio::test]
+        async fn test_existing_user_first_time_shows_migration() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // Existing user (has changelog version set)
+            os.database.set_changelog_last_version("1.0.0").unwrap();
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), None);
+
+            // Should show migration message
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(showed, "Should show migration message for existing user");
+
+            // Count should be incremented
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), Some(1));
+        }
+
+        #[tokio::test]
+        async fn test_existing_user_third_time_no_migration() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // Existing user with two shows already
+            os.database.set_changelog_last_version("1.0.0").unwrap();
+            os.database.set_welcome_announcement_count(2).unwrap();
+
+            // Should NOT show migration message (count >= 2)
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(!showed, "Should not show migration message third time");
+
+            // Count should remain 2
+            assert_eq!(os.database.get_welcome_announcement_count().unwrap(), Some(2));
+        }
+
+        #[tokio::test]
+        async fn test_changelog_shows_twice_per_version() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            let current_version = env!("CARGO_PKG_VERSION");
+            os.database.set_changelog_last_version(current_version).unwrap();
+            os.database.set_changelog_show_count(0).unwrap();
+
+            // First time - should show
+            let showed = session.show_changelog_announcement(&mut os).await.unwrap();
+            assert!(showed, "Should show changelog first time");
+            assert_eq!(os.database.get_changelog_show_count().unwrap(), Some(1));
+
+            // Second time - should show
+            let showed = session.show_changelog_announcement(&mut os).await.unwrap();
+            assert!(showed, "Should show changelog second time");
+            assert_eq!(os.database.get_changelog_show_count().unwrap(), Some(2));
+
+            // Third time - should NOT show
+            let showed = session.show_changelog_announcement(&mut os).await.unwrap();
+            assert!(!showed, "Should not show changelog third time");
+            assert_eq!(os.database.get_changelog_show_count().unwrap(), Some(2));
+        }
+
+        #[tokio::test]
+        async fn test_welcome_suppresses_changelog() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // New user, first time - welcome should show
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(showed_welcome, "Should show welcome announcement");
+
+            // In spawn(), changelog is skipped when welcome is shown
+            // Simulate the spawn() logic
+            let showed_changelog = if !showed_welcome {
+                session.show_changelog_announcement(&mut os).await.unwrap()
+            } else {
+                false
+            };
+
+            assert!(
+                !showed_changelog,
+                "Changelog should be suppressed when welcome is shown"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_migration_suppresses_changelog() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // Existing user, first time - migration should show
+            os.database.set_changelog_last_version("1.0.0").unwrap();
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(showed_welcome, "Should show migration message");
+
+            // In spawn(), changelog is skipped when migration is shown
+            let showed_changelog = if !showed_welcome {
+                session.show_changelog_announcement(&mut os).await.unwrap()
+            } else {
+                false
+            };
+
+            assert!(
+                !showed_changelog,
+                "Changelog should be suppressed when migration is shown"
+            );
+        }
+
+        #[tokio::test]
+        async fn test_changelog_shown_after_welcome_period() {
+            let mut os = Os::new().await.unwrap();
+            let mut session = create_test_session(&mut os).await;
+
+            // User has seen welcome twice already
+            os.database.set_welcome_announcement_count(2).unwrap();
+
+            // Welcome should NOT show
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = session.show_welcome_announcement(&mut os, is_new_user).await.unwrap();
+            assert!(!showed_welcome, "Should not show welcome after 2 times");
+
+            // Set up for changelog to show (new version)
+            os.database.set_changelog_last_version("0.9.0").unwrap();
+
+            // Changelog should now be able to show
+            let showed_changelog = if !showed_welcome {
+                session.show_changelog_announcement(&mut os).await.unwrap()
+            } else {
+                false
+            };
+
+            assert!(showed_changelog, "Changelog should show after welcome period ends");
+        }
+
+        #[tokio::test]
+        async fn test_tips_suppressed_when_welcome_shown() {
+            let mut os = Os::new().await.unwrap();
+
+            // New user, first time
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = {
+                let mut session = create_test_session(&mut os).await;
+                session.show_welcome_announcement(&mut os, is_new_user).await.unwrap()
+            };
+            assert!(showed_welcome, "Should show welcome");
+
+            let showed_changelog = false; // Changelog is suppressed when welcome is shown
+
+            // In spawn(), tips are only shown if both welcome and changelog are NOT shown
+            let should_show_tips = !showed_welcome && !showed_changelog;
+            assert!(!should_show_tips, "Tips should be suppressed when welcome is shown");
+        }
+
+        #[tokio::test]
+        async fn test_tips_suppressed_when_changelog_shown() {
+            let mut os = Os::new().await.unwrap();
+
+            // User past welcome period
+            os.database.set_welcome_announcement_count(2).unwrap();
+            os.database.set_changelog_last_version("0.9.0").unwrap();
+
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = {
+                let mut session = create_test_session(&mut os).await;
+                session.show_welcome_announcement(&mut os, is_new_user).await.unwrap()
+            };
+            assert!(!showed_welcome, "Should not show welcome after 2 times");
+
+            let showed_changelog = {
+                let mut session = create_test_session(&mut os).await;
+                session.show_changelog_announcement(&mut os).await.unwrap()
+            };
+            assert!(showed_changelog, "Should show changelog on version change");
+
+            // In spawn(), tips are only shown if both welcome and changelog are NOT shown
+            let should_show_tips = !showed_welcome && !showed_changelog;
+            assert!(!should_show_tips, "Tips should be suppressed when changelog is shown");
+        }
+
+        #[tokio::test]
+        async fn test_tips_shown_when_no_welcome_or_changelog() {
+            let mut os = Os::new().await.unwrap();
+
+            // User past welcome period
+            os.database.set_welcome_announcement_count(2).unwrap();
+
+            // Set current version so changelog won't show
+            let current_version = env!("CARGO_PKG_VERSION");
+            os.database.set_changelog_last_version(current_version).unwrap();
+            os.database.set_changelog_show_count(2).unwrap(); // Already shown twice
+
+            let is_new_user = os.database.get_changelog_last_version().unwrap().is_none();
+            let showed_welcome = {
+                let mut session = create_test_session(&mut os).await;
+                session.show_welcome_announcement(&mut os, is_new_user).await.unwrap()
+            };
+            assert!(!showed_welcome, "Should not show welcome");
+
+            let showed_changelog = {
+                let mut session = create_test_session(&mut os).await;
+                session.show_changelog_announcement(&mut os).await.unwrap()
+            };
+            assert!(!showed_changelog, "Should not show changelog");
+
+            // In spawn(), tips are only shown if both welcome and changelog are NOT shown
+            let should_show_tips = !showed_welcome && !showed_changelog;
+            assert!(
+                should_show_tips,
+                "Tips should be shown when neither welcome nor changelog is shown"
+            );
         }
     }
 }
