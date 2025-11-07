@@ -19,7 +19,7 @@ use crate::protocol::AgentEvent;
 
 /// A tool for conveying information from subagent to its main agent
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-/// A tool for conveying information from subagent to its main agent
+#[serde(rename_all = "camelCase")]
 pub struct Summary {
     /// Description of the task that was assigned to the subagent
     pub task_description: String,
@@ -41,9 +41,33 @@ HOW TO USE:
 - Provide the result of the task performed
 "#;
 
+const SUMMARY_TOOL_SCHEMA: &str = r#"
+{
+    "type": "object",
+    "properties": {
+        "taskDescription": {
+            "type": "string",
+            "description": "Description of the task that was assigned to the subagent"
+        },
+        "contextSummary": {
+            "type": "string",
+            "description": "Relevant context and information gathered during task execution"
+        },
+        "taskResult": {
+            "type": "string",
+            "description": "The final result or outcome of the completed task"
+        }
+    },
+    "required": [
+        "taskDescription",
+        "taskResult"
+    ]
+}
+"#;
+
 impl BuiltInToolTrait for Summary {
     fn name() -> super::BuiltInToolName {
-        BuiltInToolName::Ls
+        BuiltInToolName::Summary
     }
 
     fn description() -> std::borrow::Cow<'static, str> {
@@ -51,9 +75,7 @@ impl BuiltInToolTrait for Summary {
     }
 
     fn input_schema() -> std::borrow::Cow<'static, str> {
-        serde_json::to_string(&Self::tool_schema())
-            .expect("serializing schema should not fail")
-            .into()
+        SUMMARY_TOOL_SCHEMA.into()
     }
 }
 
@@ -74,6 +96,12 @@ impl Summary {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_summary_tool_schema() {
+        let schema = Summary::input_schema();
+        println!("{:#?}", schema);
+    }
 
     #[tokio::test]
     async fn test_summary_tool_execute() {
