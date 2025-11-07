@@ -8,6 +8,7 @@ pub mod ls;
 pub mod mcp;
 pub mod mkdir;
 pub mod rm;
+pub mod summary;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ use serde::{
     Serialize,
 };
 use strum::IntoEnumIterator;
+use summary::Summary;
 
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolUseBlock;
@@ -100,6 +102,7 @@ pub enum BuiltInToolName {
     ExecuteCmd,
     ImageRead,
     Ls,
+    Summary,
 }
 
 trait BuiltInToolTrait {
@@ -236,6 +239,7 @@ pub enum BuiltInTool {
     ImageRead(ImageRead),
     ExecuteCmd(ExecuteCmd),
     Introspect(Introspect),
+    Summary(Summary),
     /// TODO
     SpawnSubagent,
 }
@@ -258,6 +262,9 @@ impl BuiltInTool {
             BuiltInToolName::Ls => serde_json::from_value::<Ls>(args)
                 .map(Self::Ls)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Summary => serde_json::from_value::<Summary>(args)
+                .map(Self::Summary)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -268,6 +275,7 @@ impl BuiltInTool {
             BuiltInToolName::ExecuteCmd => generate_tool_spec_from_trait::<ExecuteCmd>(),
             BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
             BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
+            BuiltInToolName::Summary => generate_tool_spec_from_trait::<Summary>(),
         }
     }
 
@@ -281,6 +289,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => BuiltInToolName::Summary,
             BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
@@ -295,6 +304,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
             BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
