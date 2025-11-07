@@ -37,6 +37,12 @@ use crate::os::Os;
 
 mod rts;
 
+// TODO: use the one supplied by science (this one has been modified for testing)
+const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
+You are a subagent executing a task delegated to you by the main agent.
+After what is asked of you has concluded, call the summary tool to convey your findings to the main agent.
+"#;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonOutput {
     /// Whether or not the user turn completed successfully
@@ -102,9 +108,14 @@ impl<'a> SubAgent<'a> {
         };
 
         let mcp_manager_handle = McpManager::default().spawn();
-        let agent = agent::Agent::new(snapshot, model, mcp_manager_handle).await?.spawn();
+        let mut agent = agent::Agent::new(snapshot, model, mcp_manager_handle).await?;
+        if let Some(msg) = self.embedded_user_msg {
+            agent.set_embedded_user_msg(msg);
+        }
 
-        self.main_loop(agent, output).await
+        let agent_handle = agent.spawn();
+
+        self.main_loop(agent_handle, output).await
     }
 
     async fn main_loop(&self, mut agent: AgentHandle, output: &mut impl Write) -> Result<QueryResult> {
@@ -165,6 +176,9 @@ impl<'a> SubAgent<'a> {
                 AgentEvent::Mcp(evt) => {
                     info!(?evt, "received mcp agent event");
                 },
+                AgentEvent::SubagentSummary(summary) => {
+                    println!("Summary: {:#?}", summary);
+                },
                 _ => {},
             }
         }
@@ -203,7 +217,7 @@ async fn test_sub_agent_routine() {
     let sub_agent = SubAgent {
         query: "What notion docs do I have",
         agent_name: Some("test_test"),
-        embedded_user_msg: None,
+        embedded_user_msg: Some(SUBAGENT_EMBEDDED_USER_MSG),
         dangerously_trust_all_tools: true,
     };
 

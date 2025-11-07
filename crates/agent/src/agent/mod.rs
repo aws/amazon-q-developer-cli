@@ -127,6 +127,7 @@ use types::{
     AgentSnapshot,
     ConversationMetadata,
     ConversationState,
+    EmbeddedUserMessages,
 };
 use util::path::canonicalize_path_sys;
 use util::providers::{
@@ -222,6 +223,7 @@ pub struct Agent {
     id: AgentId,
     agent_config: AgentConfig,
 
+    embedded_user_msgs: EmbeddedUserMessages,
     conversation_state: ConversationState,
     conversation_metadata: ConversationMetadata,
     execution_state: ExecutionState,
@@ -303,6 +305,7 @@ impl Agent {
         Ok(Self {
             id: snapshot.id,
             agent_config,
+            embedded_user_msgs: Default::default(),
             conversation_state: snapshot.conversation_state,
             conversation_metadata: snapshot.conversation_metadata,
             execution_state: snapshot.execution_state,
@@ -321,6 +324,10 @@ impl Agent {
             working_directory: None,
             sys_provider: Arc::new(RealProvider),
         })
+    }
+
+    pub fn set_embedded_user_msg(&mut self, msg: &str) {
+        self.embedded_user_msgs.messages.push(msg.to_string());
     }
 
     pub fn set_sys_provider(&mut self, provider: impl SystemProvider) {
@@ -981,6 +988,7 @@ impl Agent {
             self.make_tool_spec().await,
             &self.agent_config,
             self.agent_spawn_hooks.iter().map(|(_, c)| c),
+            &self.embedded_user_msgs,
             &self.sys_provider,
         )
         .await
@@ -1720,6 +1728,7 @@ async fn format_request<T, U, P>(
     mut tool_spec: Vec<ToolSpec>,
     agent_config: &AgentConfig,
     agent_spawn_hooks: T,
+    embedded_user_msgs: &EmbeddedUserMessages,
     provider: &P,
 ) -> SendRequestArgs
 where
@@ -1734,10 +1743,20 @@ where
         messages.push_front(msg);
     }
 
+    let system_prompt = match (agent_config.system_prompt(), embedded_user_msgs.messages.is_empty()) {
+        (Some(system_prompt), false) => {
+            let embedded_user_msgs_as_str = embedded_user_msgs.to_string();
+            Some(format!("{embedded_user_msgs_as_str}\n{system_prompt}"))
+        },
+        (Some(system_prompt), true) => Some(system_prompt.to_string()),
+        (None, false) => Some(embedded_user_msgs.to_string()),
+        (_, _) => None,
+    };
+
     SendRequestArgs::new(
         messages.into(),
         if tool_spec.is_empty() { None } else { Some(tool_spec) },
-        agent_config.system_prompt().map(String::from),
+        system_prompt,
     )
 }
 
