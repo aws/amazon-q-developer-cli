@@ -49,6 +49,9 @@ pub fn render_new_user_welcome(output: &mut impl Write) -> Result<()> {
         )),
     )?;
 
+    // Add the help message
+    execute!(output, style::Print(&ui_text::popular_shortcuts()), style::Print("\n"),)?;
+
     Ok(())
 }
 

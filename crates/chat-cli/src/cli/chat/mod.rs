@@ -1407,13 +1407,31 @@ impl ChatSession {
                 }
             }
 
+            // Show model information
+            if let Some(ref model_info) = self.conversation.model_info {
+                let (models, _default_model) = get_available_models(os).await?;
+                if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
+                    let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
+                    execute!(
+                        self.stderr,
+                        style::Print("\n"),
+                        StyledText::secondary_fg(),
+                        style::Print("Model: "),
+                        StyledText::reset(),
+                        style::Print(display_name),
+                        StyledText::secondary_fg(),
+                        style::Print(" ("),
+                        StyledText::reset(),
+                        style::Print(&StyledText::command("/model")),
+                        StyledText::secondary_fg(),
+                        style::Print(" to change)\n"),
+                        StyledText::reset(),
+                    )?;
+                }
+            }
+
             execute!(
                 self.stderr,
-                style::Print("\n"),
-                style::Print(&match is_small_screen {
-                    true => ui_text::small_screen_popular_shortcuts(),
-                    false => ui_text::popular_shortcuts(),
-                }),
                 style::Print("\n"),
                 style::Print(
                     "━"
@@ -1440,20 +1458,6 @@ impl ChatSession {
         }
 
         self.stderr.flush()?;
-
-        if let Some(ref model_info) = self.conversation.model_info {
-            let (models, _default_model) = get_available_models(os).await?;
-            if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
-                let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
-                execute!(
-                    self.stderr,
-                    StyledText::brand_fg(),
-                    style::Print(format!("🤖 You are chatting with {display_name}\n")),
-                    StyledText::reset(),
-                    style::Print("\n")
-                )?;
-            }
-        }
 
         // Initialize capturing if possible
         if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) {
