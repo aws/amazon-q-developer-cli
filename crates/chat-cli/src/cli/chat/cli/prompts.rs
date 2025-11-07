@@ -719,11 +719,11 @@ impl PromptsArgs {
                     let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
 
                     if global_exists {
-                        global_prompts.push(name);
+                        global_prompts.push((name, prompts.global.path.clone()));
                     }
 
                     if local_exists {
-                        local_prompts.push(name);
+                        local_prompts.push((name, prompts.local.path.clone()));
                         // Check for overrides using has_local_override method
                         if global_exists {
                             overridden_globals.push(name);
@@ -733,19 +733,15 @@ impl PromptsArgs {
             }
 
             if !global_prompts.is_empty() {
-                let global_dir = PathResolver::new(os)
-                    .global()
-                    .prompts_dir()
-                    .map_or_else(|_| "global prompts".to_string(), |p| p.display().to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Global ({global_dir}):")),
+                    style::Print("Global:"),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
-                for name in &global_prompts {
-                    queue!(session.stderr, style::Print("- "), style::Print(name))?;
+                for (_name, path) in &global_prompts {
+                    queue!(session.stderr, style::Print(&path.to_string_lossy()))?;
                     queue!(session.stderr, style::Print("\n"))?;
                 }
             }
@@ -754,20 +750,16 @@ impl PromptsArgs {
                 if !global_prompts.is_empty() {
                     queue!(session.stderr, style::Print("\n"))?;
                 }
-                let local_dir = PathResolver::new(os)
-                    .workspace()
-                    .prompts_dir()
-                    .map_or_else(|_| "local prompts".to_string(), |p| p.display().to_string());
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Local ({local_dir}):")),
+                    style::Print("Local:"),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
-                for name in &local_prompts {
+                for (name, path) in &local_prompts {
                     let has_global_version = overridden_globals.contains(name);
-                    queue!(session.stderr, style::Print("- "), style::Print(name),)?;
+                    queue!(session.stderr, style::Print(&path.to_string_lossy()))?;
                     if has_global_version {
                         queue!(
                             session.stderr,

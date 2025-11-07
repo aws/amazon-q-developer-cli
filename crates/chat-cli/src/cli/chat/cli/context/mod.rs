@@ -153,20 +153,19 @@ impl ContextSubcommand {
                             .get_context_files_by_path(os, path.get_path_as_str())
                             .await
                         {
-                            execute!(
-                                session.stderr,
-                                StyledText::success_fg(),
-                                style::Print(format!(
-                                    "({} match{})",
-                                    context_files.len(),
-                                    if context_files.len() == 1 { "" } else { "es" }
-                                )),
-                                StyledText::reset(),
-                            )?;
+                            for (file_path, _content) in &context_files {
+                                execute!(session.stderr, style::Print(format!("    {file_path}\n")))?;
+                            }
                             profile_context_files
                                 .extend(context_files.into_iter().map(|(path, content)| (path, content, false)));
+                        } else {
+                            execute!(
+                                session.stderr,
+                                StyledText::secondary_fg(),
+                                style::Print(format!("    {} (no matches)\n", path.get_path_as_str())),
+                                StyledText::reset()
+                            )?;
                         }
-                        execute!(session.stderr, style::Print("\n"))?;
                     }
                     execute!(session.stderr, style::Print("\n"))?;
                 }
@@ -188,28 +187,23 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &session_owned_list {
-                        execute!(
-                            session.stderr,
-                            style::Print(format!("    - {} ", path.get_path_as_str()))
-                        )?;
                         if let Ok(context_files) = context_manager
                             .get_context_files_by_path(os, path.get_path_as_str())
                             .await
                         {
-                            execute!(
-                                session.stderr,
-                                StyledText::success_fg(),
-                                style::Print(format!(
-                                    "({} match{})",
-                                    context_files.len(),
-                                    if context_files.len() == 1 { "" } else { "es" }
-                                )),
-                                StyledText::reset(),
-                            )?;
+                            for (file_path, _content) in &context_files {
+                                execute!(session.stderr, style::Print(format!("    {file_path}\n")))?;
+                            }
                             profile_context_files
                                 .extend(context_files.into_iter().map(|(path, content)| (path, content, true)));
+                        } else {
+                            execute!(
+                                session.stderr,
+                                StyledText::secondary_fg(),
+                                style::Print(format!("    {} (no matches)\n", path.get_path_as_str())),
+                                StyledText::reset()
+                            )?;
                         }
-                        execute!(session.stderr, style::Print("\n"))?;
                     }
                     execute!(session.stderr, style::Print("\n"))?;
                 }
