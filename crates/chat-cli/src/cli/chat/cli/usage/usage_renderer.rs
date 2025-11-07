@@ -51,11 +51,7 @@ async fn render_available_billing(
         style::SetAttribute(style::Attribute::Bold),
         style::Print("Usage details\n"),
         style::SetAttribute(style::Attribute::Reset),
-        style::Print("To manage your account, upgrade your plan or configure overages use "),
-        style::SetForegroundColor(Color::Blue),
-        style::Print("/subscribe"),
-        style::SetForegroundColor(Color::Reset),
-        style::Print(" to open admin hub\n\n"),
+        style::Print("To manage your account, upgrade your plan or configure overages, visit the admin hub\n\n"),
     )?;
 
     // Bonus credits

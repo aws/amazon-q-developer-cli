@@ -3853,39 +3853,6 @@ async fn get_subscription_status(os: &mut Os) -> Result<ActualSubscriptionStatus
     }
 }
 
-async fn get_subscription_status_with_spinner(
-    os: &mut Os,
-    output: &mut (impl Write + Clone + Send + Sync + 'static),
-) -> Result<ActualSubscriptionStatus> {
-    return with_spinner(output, "Checking subscription status...", || async {
-        get_subscription_status(os).await
-    })
-    .await;
-}
-
-pub async fn with_spinner<T, E, F, Fut, S: std::io::Write + Clone + Send + Sync + 'static>(
-    output: &mut S,
-    spinner_text: &str,
-    f: F,
-) -> Result<T, E>
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = Result<T, E>>,
-{
-    queue!(output, cursor::Hide,).ok();
-    let spinner = Spinner::new(Spinners::Dots, spinner_text.to_owned());
-
-    let result = f().await;
-
-    drop(spinner);
-    let _ = queue!(
-        output,
-        terminal::Clear(terminal::ClearType::CurrentLine),
-        cursor::MoveToColumn(0),
-    );
-
-    result
-}
 
 /// Checks if an input may be referencing a file and should not be handled as a typical slash
 /// command. If true, then return [Option::Some<ChatState>], otherwise [Option::None].
@@ -4377,37 +4344,7 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    #[cfg(unix)]
-    async fn test_subscribe_flow() {
-        let mut os = Os::new().await.unwrap();
-        os.client.set_mock_output(serde_json::Value::Array(vec![]));
-        let agents = get_test_agents(&os).await;
 
-        let tool_manager = ToolManager::default();
-        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
-            .expect("Tools failed to load");
-        ChatSession::new(
-            &mut os,
-            "fake_conv_id",
-            agents,
-            None,
-            InputSource::new_mock(vec!["/subscribe".to_string(), "y".to_string(), "/quit".to_string()]),
-            false,
-            || Some(80),
-            tool_manager,
-            None,
-            tool_config,
-            true,
-            false,
-            None,
-        )
-        .await
-        .unwrap()
-        .spawn(&mut os)
-        .await
-        .unwrap();
-    }
 
     // Integration test for PreToolUse hook functionality.
     //

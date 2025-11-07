@@ -16,7 +16,7 @@ pub mod persist;
 pub mod profile;
 pub mod prompts;
 pub mod reply;
-pub mod subscribe;
+
 pub mod tangent;
 pub mod todos;
 pub mod tools;
@@ -44,7 +44,7 @@ use tools::ToolsArgs;
 
 use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::context::ContextArgs;
-use crate::cli::chat::cli::subscribe::SubscribeArgs;
+
 use crate::cli::chat::cli::usage::UsageArgs;
 use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
 use crate::cli::chat::{
@@ -106,8 +106,7 @@ pub enum SlashCommand {
     Model(ModelArgs),
     /// Toggle experimental features
     Experiment(ExperimentArgs),
-    /// Upgrade to a Kiro Developer Pro subscription for increased query limits
-    Subscribe(SubscribeArgs),
+
     /// (Beta) Toggle tangent mode for isolated conversations. Requires "q settings
     /// chat.enableTangentMode true"
     #[command(hide = true)]
@@ -182,7 +181,7 @@ impl SlashCommand {
             Self::Mcp(args) => args.execute(session).await,
             Self::Model(args) => args.execute(os, session).await,
             Self::Experiment(args) => args.execute(os, session).await,
-            Self::Subscribe(args) => args.execute(os, session).await,
+
             Self::Tangent(args) => args.execute(os, session).await,
             Self::Persist(subcommand) => subcommand.execute(os, session).await,
             // Self::Root(subcommand) => {
@@ -221,7 +220,7 @@ impl SlashCommand {
             Self::Mcp(_) => "mcp",
             Self::Model(_) => "model",
             Self::Experiment(_) => "experiment",
-            Self::Subscribe(_) => "subscribe",
+
             Self::Tangent(_) => "tangent",
             Self::Persist(sub) => match sub {
                 PersistSubcommand::Save { .. } => "save",
