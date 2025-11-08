@@ -2,7 +2,7 @@ use std::io::Write;
 
 use eyre::Result;
 use serde::Deserialize;
-use code_agent_sdk::SymbolInfo;
+use code_agent_sdk::{SymbolInfo, ApiDiagnosticInfo};
 use super::{InvokeOutput, OutputKind};
 use crate::cli::agent::{Agent, PermissionEvalResult};
 use crate::cli::experiment::experiment_manager::{ExperimentManager, ExperimentName};
@@ -19,6 +19,7 @@ pub enum Code {
     Format(FormatCodeParams),
     GetDocumentSymbols(GetDocumentSymbolsParams),
     LookupSymbols(LookupSymbolsParams),
+    GetDiagnostics(GetDiagnosticsParams),
     InitializeWorkspace,
 }
 
@@ -81,6 +82,15 @@ pub struct LookupSymbolsParams {
     pub symbols: Vec<String>,
     #[serde(default)]
     pub file_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetDiagnosticsParams {
+    pub file_path: String,
+    #[serde(default)]
+    pub identifier: Option<String>,
+    #[serde(default)]
+    pub previous_result_id: Option<String>,
 }
 
 fn default_tab_size() -> i32 { 4 }
@@ -154,6 +164,10 @@ impl Code {
                 }
                 Ok(())
             }
+            Code::GetDiagnostics(params) => {
+                Self::validate_file_exists(os, &params.file_path)?;
+                Ok(())
+            }
             Code::InitializeWorkspace => Ok(()),
         }
     }
@@ -205,39 +219,12 @@ impl Code {
                             if symbols.is_empty() {
                                 queue!(
                                     _stdout,
-                                    style::Print("\n🔍 No symbols found matching \""),
-                                    StyledText::warning_fg(),
-                                    style::Print(&params.symbol_name),
-                                    StyledText::reset(),
-                                    style::Print("\"\n"),
+                                    style::Print("\n⚠️ No symbols found\n"),
                                 )?;
                                 result = "No symbols found".to_string();
                             } else {
-                                let limit = params.limit.unwrap_or(10) as usize;
-                                let is_truncated = symbols.len() >= limit;
-                                
-                                queue!(
-                                    _stdout,
-                                    style::Print("\n🔍 Found "),
-                                    StyledText::success_fg(),
-                                    style::Print(&symbols.len().to_string()),
-                                    StyledText::reset(),
-                                    style::Print(" symbol(s)"),
-                                )?;
-                                
-                                if is_truncated {
-                                    queue!(
-                                        _stdout,
-                                        style::Print(" "),
-                                        StyledText::warning_fg(),
-                                        style::Print("(limited by max results)"),
-                                        StyledText::reset(),
-                                    )?;
-                                }
-                                
-                                queue!(_stdout, style::Print(":\n"))?;
+                                queue!(_stdout, style::Print("\n"))?;
                                 Self::render_symbols(&symbols, _stdout)?;
-                                
                                 result = format!("{:?}", symbols);
                             }
                         }
@@ -265,25 +252,12 @@ impl Code {
                             if references.is_empty() {
                                 queue!(
                                     _stdout,
-                                    style::Print("\n🔗 No references found for symbol at "),
-                                    StyledText::warning_fg(),
-                                    style::Print(&format!("{}:{}:{}", params.file_path, params.row, params.column)),
-                                    StyledText::reset(),
-                                    style::Print("\n"),
+                                    style::Print("\n⚠️ No references found\n"),
                                 )?;
                                 result = "No references found".to_string();
                             } else {
-                                queue!(
-                                    _stdout,
-                                    style::Print("\n🔗 Found "),
-                                    StyledText::success_fg(),
-                                    style::Print(&references.len().to_string()),
-                                    StyledText::reset(),
-                                    style::Print(" reference(s) across workspace:\n"),
-                                )?;
-                                
+                                queue!(_stdout, style::Print("\n"))?;
                                 Self::render_references(&references, _stdout)?;
-                                
                                 result = format!("{:?}", references);
                             }
                         }
@@ -507,6 +481,39 @@ impl Code {
                         }
                     }
                 }
+                Code::GetDiagnostics(params) => {
+                    let request = code_agent_sdk::model::types::GetDocumentDiagnosticsRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        identifier: params.identifier.clone(),
+                        previous_result_id: params.previous_result_id.clone(),
+                    };
+                    
+                    match client.get_document_diagnostics(request).await {
+                        Ok(diagnostics) => {
+                            if diagnostics.is_empty() {
+                                queue!(
+                                    _stdout,
+                                    style::Print("\n✅ No diagnostics found\n"),
+                                )?;
+                                result = "No diagnostics found".to_string();
+                            } else {
+                                queue!(_stdout, style::Print("\n"))?;
+                                Self::render_diagnostics(&diagnostics, _stdout)?;
+                                result = format!("{:?}", diagnostics);
+                            }
+                        }
+                        Err(e) => {
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("❌ Failed to get diagnostics: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{}\n", e)),
+                            )?;
+                            result = format!("❌ Failed to get diagnostics: {}", e);
+                        }
+                    }
+                }
                 Code::InitializeWorkspace => {
                     match client.initialize().await {
                         Ok(init_response) => {
@@ -588,6 +595,103 @@ impl Code {
             }
             
             queue!(stdout, style::Print("\n"))?;
+        }
+        Ok(())
+    }
+
+    fn render_diagnostics(diagnostics: &[ApiDiagnosticInfo], stdout: &mut impl Write) -> Result<()> {
+        use crossterm::{queue, style};
+        use crate::theme::StyledText;
+        use code_agent_sdk::ApiDiagnosticSeverity;
+        
+        for (i, diagnostic) in diagnostics.iter().enumerate() {
+            // Determine severity icon and color
+            let (severity_icon, severity_text) = match diagnostic.severity {
+                ApiDiagnosticSeverity::Error => ("❌", "Error"),
+                ApiDiagnosticSeverity::Warning => ("⚠️", "Warning"),
+                ApiDiagnosticSeverity::Information => ("ℹ️", "Info"),
+                ApiDiagnosticSeverity::Hint => ("💡", "Hint"),
+            };
+            
+            queue!(
+                stdout,
+                style::Print(&format!("  {}. {} ", i + 1, severity_icon)),
+            )?;
+            
+            // Color based on severity
+            match diagnostic.severity {
+                ApiDiagnosticSeverity::Error => {
+                    queue!(stdout, StyledText::error_fg())?;
+                }
+                ApiDiagnosticSeverity::Warning => {
+                    queue!(stdout, StyledText::warning_fg())?;
+                }
+                _ => {
+                    queue!(stdout, StyledText::info_fg())?;
+                }
+            }
+            
+            queue!(
+                stdout,
+                style::Print(severity_text),
+                StyledText::reset(),
+                style::Print(&format!(" at line {}:{}", 
+                    diagnostic.start_row,
+                    diagnostic.start_column)),
+            )?;
+            
+            // Show diagnostic source if available
+            if let Some(source) = &diagnostic.source {
+                queue!(
+                    stdout,
+                    style::Print(" ["),
+                    StyledText::info_fg(),
+                    style::Print(source),
+                    StyledText::reset(),
+                    style::Print("]"),
+                )?;
+            }
+            
+            // Show diagnostic code if available
+            if let Some(code) = &diagnostic.code {
+                queue!(
+                    stdout,
+                    style::Print(" ("),
+                    style::Print(code),
+                    style::Print(")"),
+                )?;
+            }
+            
+            queue!(stdout, style::Print("\n"))?;
+            
+            // Show the diagnostic message (indented)
+            queue!(
+                stdout,
+                style::Print("     "),
+                style::Print(&diagnostic.message),
+                style::Print("\n"),
+            )?;
+            
+            // Show related information if available
+            if !diagnostic.related_information.is_empty() {
+                queue!(
+                    stdout,
+                    style::Print("     Related:\n"),
+                )?;
+                for info in &diagnostic.related_information {
+                    queue!(
+                        stdout,
+                        style::Print("       • "),
+                        StyledText::info_fg(),
+                        style::Print(&info.file_path),
+                        StyledText::reset(),
+                        style::Print(&format!(":{}:{} - {}\n",
+                            info.start_row,
+                            info.start_column,
+                            info.message)),
+                    )?;
+                }
+            }
         }
         Ok(())
     }
@@ -733,6 +837,15 @@ impl Code {
                         StyledText::reset(),
                     )?;
                 }
+            }
+            Code::GetDiagnostics(params) => {
+                queue!(
+                    output,
+                    style::Print("🔍 Getting diagnostics for: "),
+                    StyledText::success_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                )?;
             }
             Code::InitializeWorkspace => {
                 queue!(

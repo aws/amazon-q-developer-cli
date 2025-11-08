@@ -370,6 +370,133 @@ impl ReferenceInfo {
         }
     }
 }
+
+/// Severity level of a diagnostic message.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum DiagnosticSeverity {
+    Error,
+    Warning,
+    Information,
+    Hint,
+}
+
+impl From<lsp_types::DiagnosticSeverity> for DiagnosticSeverity {
+    fn from(severity: lsp_types::DiagnosticSeverity) -> Self {
+        match severity {
+            lsp_types::DiagnosticSeverity::ERROR => DiagnosticSeverity::Error,
+            lsp_types::DiagnosticSeverity::WARNING => DiagnosticSeverity::Warning,
+            lsp_types::DiagnosticSeverity::INFORMATION => DiagnosticSeverity::Information,
+            lsp_types::DiagnosticSeverity::HINT => DiagnosticSeverity::Hint,
+            _ => DiagnosticSeverity::Information,
+        }
+    }
+}
+
+/// Related location information for a diagnostic.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticRelatedInfo {
+    /// File path relative to workspace root
+    pub file_path: String,
+    /// Starting line number (1-based)
+    pub start_row: u32,
+    /// Starting column number (1-based)
+    pub start_column: u32,
+    /// Ending line number (1-based)
+    pub end_row: u32,
+    /// Ending column number (1-based)
+    pub end_column: u32,
+    /// Message describing the related location
+    pub message: String,
+}
+
+/// Information about a diagnostic (error, warning, etc.) in a document.
+///
+/// This struct represents a diagnostic message from a language server,
+/// providing information about errors, warnings, and other issues in code.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiagnosticInfo {
+    /// The diagnostic message
+    pub message: String,
+    /// Severity level (error, warning, info, hint)
+    pub severity: DiagnosticSeverity,
+    /// Starting line number (1-based)
+    pub start_row: u32,
+    /// Starting column number (1-based)
+    pub start_column: u32,
+    /// Ending line number (1-based)
+    pub end_row: u32,
+    /// Ending column number (1-based)
+    pub end_column: u32,
+    /// Source of the diagnostic (e.g., "typescript", "rust-analyzer")
+    pub source: Option<String>,
+    /// Diagnostic code (e.g., error code)
+    pub code: Option<String>,
+    /// Related information (e.g., other locations relevant to this diagnostic)
+    pub related_information: Vec<DiagnosticRelatedInfo>,
+}
+
+impl DiagnosticInfo {
+    /// Creates a DiagnosticInfo from an LSP Diagnostic.
+    ///
+    /// # Arguments
+    /// * `diagnostic` - The LSP diagnostic
+    /// * `workspace_root` - The workspace root path for making paths relative
+    ///
+    /// # Returns
+    /// * `DiagnosticInfo` - The converted diagnostic info
+    pub fn from_lsp_diagnostic(diagnostic: &Diagnostic, workspace_root: &Path) -> Self {
+        let severity = diagnostic
+            .severity
+            .map(DiagnosticSeverity::from)
+            .unwrap_or(DiagnosticSeverity::Information);
+
+        let code = diagnostic.code.as_ref().map(|c| match c {
+            lsp_types::NumberOrString::Number(n) => n.to_string(),
+            lsp_types::NumberOrString::String(s) => s.clone(),
+        });
+
+        let related_information = diagnostic
+            .related_information
+            .as_ref()
+            .map(|info_vec| {
+                info_vec
+                    .iter()
+                    .map(|info| {
+                        let file_path = Path::new(info.location.uri.path());
+                        let relative_path = file_path
+                            .strip_prefix(workspace_root)
+                            .unwrap_or(file_path)
+                            .to_string_lossy()
+                            .to_string();
+
+                        DiagnosticRelatedInfo {
+                            file_path: relative_path,
+                            start_row: info.location.range.start.line + 1,
+                            start_column: info.location.range.start.character + 1,
+                            end_row: info.location.range.end.line + 1,
+                            end_column: info.location.range.end.character + 1,
+                            message: info.message.clone(),
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        DiagnosticInfo {
+            message: diagnostic.message.clone(),
+            severity,
+            start_row: diagnostic.range.start.line + 1,
+            start_column: diagnostic.range.start.character + 1,
+            end_row: diagnostic.range.end.line + 1,
+            end_column: diagnostic.range.end.character + 1,
+            source: diagnostic.source.clone(),
+            code,
+            related_information,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

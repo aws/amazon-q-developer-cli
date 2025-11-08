@@ -447,7 +447,7 @@
   },
   "code": {
     "name": "code",
-    "description": "Code intelligence operations using LSP servers for symbol search, references, definitions, and workspace analysis.",
+    "description": "Code intelligence operations using LSP servers for symbol search, references, definitions, diagnostics, and workspace analysis.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -461,6 +461,7 @@
             "format",
             "get_document_symbols",
             "lookup_symbols",
+            "get_diagnostics",
             "initialize_workspace"
           ],
           "description": "The code intelligence operation to perform"
@@ -471,48 +472,56 @@
         },
         "file_path": {
           "type": "string", 
-          "description": "Path to the file"
+          "description": "Path to the file (required for most operations)"
         },
         "row": {
           "type": "integer",
-          "description": "Line number (1-based)"
+          "description": "Line number (1-based, required for find_references, goto_definition, rename_symbol)"
         },
         "column": {
           "type": "integer", 
-          "description": "Column number (1-based)"
+          "description": "Column number (1-based, required for find_references, goto_definition, rename_symbol)"
         },
         "new_name": {
           "type": "string",
-          "description": "New name for symbol rename"
+          "description": "New name for symbol rename (required for rename_symbol operation)"
         },
         "symbols": {
           "type": "array",
           "items": {"type": "string"},
-          "description": "List of symbol names to lookup"
+          "description": "List of symbol names to lookup (required for lookup_symbols operation)"
         },
         "limit": {
           "type": "integer",
-          "description": "Maximum results to return"
+          "description": "Maximum results to return (optional for search_symbols)"
         },
         "exact_match": {
           "type": "boolean", 
-          "description": "Whether to use exact matching"
+          "description": "Whether to use exact matching (optional for search_symbols)"
         },
         "show_source": {
           "type": "boolean",
-          "description": "Whether to include source code"
+          "description": "Whether to include source code (optional for goto_definition)"
         },
         "dry_run": {
           "type": "boolean",
-          "description": "Preview changes without applying"
+          "description": "Preview changes without applying (optional for rename_symbol)"
         },
         "tab_size": {
           "type": "integer",
-          "description": "Tab size for formatting"
+          "description": "Tab size for formatting (optional for format operation, default: 4)"
         },
         "insert_spaces": {
           "type": "boolean",
-          "description": "Use spaces instead of tabs"
+          "description": "Use spaces instead of tabs (optional for format operation, default: true)"
+        },
+        "identifier": {
+          "type": "string",
+          "description": "Optional identifier for the diagnostic request (optional for get_diagnostics)"
+        },
+        "previous_result_id": {
+          "type": "string",
+          "description": "Optional result ID from a previous diagnostic response for incremental updates (optional for get_diagnostics)"
         },
         "max_depth": {
           "type": "integer", 
@@ -524,7 +533,7 @@
         },
         "symbol_type": {
           "type": "string",
-          "description": "Symbol type filter"
+          "description": "Symbol type filter (optional for search_symbols)"
         }
       },
       "required": ["operation"]

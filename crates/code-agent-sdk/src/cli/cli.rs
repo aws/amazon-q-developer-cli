@@ -2,7 +2,7 @@ use clap::{Parser, Subcommand};
 use code_agent_sdk::{
     CodeIntelligence, FindReferencesByLocationRequest, FindReferencesByNameRequest,
     FindSymbolsRequest, GetDocumentSymbolsRequest, GetDocumentDiagnosticsRequest, GotoDefinitionRequest,
-    RenameSymbolRequest, FormatCodeRequest, OpenFileRequest,
+    RenameSymbolRequest, FormatCodeRequest, OpenFileRequest, ApiDiagnosticSeverity,
 };
 use code_agent_sdk::model::types::ApiSymbolKind;
 use code_agent_sdk::utils::logging;
@@ -408,19 +408,17 @@ async fn main() -> anyhow::Result<()> {
                 println!("🔍 Diagnostics in {}:", file.display());
                 for diagnostic in diagnostics {
                     let severity = match diagnostic.severity {
-                        Some(lsp_types::DiagnosticSeverity::ERROR) => "❌ Error",
-                        Some(lsp_types::DiagnosticSeverity::WARNING) => "⚠️  Warning",
-                        Some(lsp_types::DiagnosticSeverity::INFORMATION) => "ℹ️  Info",
-                        Some(lsp_types::DiagnosticSeverity::HINT) => "💡 Hint",
-                        Some(_) => "🔍 Diagnostic", // Catch-all for unknown severity levels
-                        None => "🔍 Diagnostic",
+                        ApiDiagnosticSeverity::Error => "❌ Error",
+                        ApiDiagnosticSeverity::Warning => "⚠️  Warning",
+                        ApiDiagnosticSeverity::Information => "ℹ️  Info",
+                        ApiDiagnosticSeverity::Hint => "💡 Hint",
                     };
                     
                     println!(
                         "  {} at {}:{} - {}",
                         severity,
-                        diagnostic.range.start.line + 1, // Convert to 1-based
-                        diagnostic.range.start.character + 1, // Convert to 1-based
+                        diagnostic.start_row,
+                        diagnostic.start_column,
                         diagnostic.message
                     );
                     
@@ -429,10 +427,7 @@ async fn main() -> anyhow::Result<()> {
                     }
                     
                     if let Some(code) = &diagnostic.code {
-                        match code {
-                            lsp_types::NumberOrString::Number(n) => println!("    Code: {}", n),
-                            lsp_types::NumberOrString::String(s) => println!("    Code: {}", s),
-                        }
+                        println!("    Code: {}", code);
                     }
                 }
             }

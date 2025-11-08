@@ -549,7 +549,7 @@ impl CodeIntelligence {
     /// * `request` - Document path and optional parameters for diagnostic retrieval
     ///
     /// # Returns
-    /// * `Result<Vec<lsp_types::Diagnostic>>` - List of diagnostics or empty if none
+    /// * `Result<Vec<DiagnosticInfo>>` - List of diagnostics or empty if none
     ///
     /// # Example
     /// ```ignore
@@ -560,7 +560,7 @@ impl CodeIntelligence {
     /// };
     /// let diagnostics = code_intel.get_document_diagnostics(request).await?;
     /// for diagnostic in diagnostics {
-    ///     println!("{}:{} - {}", diagnostic.range.start.line, diagnostic.range.start.character, diagnostic.message);
+    ///     println!("{}:{} - {}", diagnostic.start_row, diagnostic.start_column, diagnostic.message);
     /// }
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// # }
@@ -568,10 +568,16 @@ impl CodeIntelligence {
     pub async fn get_document_diagnostics(
         &mut self,
         request: GetDocumentDiagnosticsRequest,
-    ) -> Result<Vec<lsp_types::Diagnostic>> {
-        self.symbol_service
+    ) -> Result<Vec<crate::model::entities::DiagnosticInfo>> {
+        let lsp_diagnostics = self.symbol_service
             .get_document_diagnostics(&mut self.workspace_manager, request)
-            .await
+            .await?;
+        
+        let workspace_root = self.workspace_manager.workspace_root();
+        Ok(lsp_diagnostics
+            .iter()
+            .map(|d| crate::model::entities::DiagnosticInfo::from_lsp_diagnostic(d, workspace_root))
+            .collect())
     }
 
     /// **Add a language server configuration**
