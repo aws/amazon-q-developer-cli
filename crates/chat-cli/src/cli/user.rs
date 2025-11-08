@@ -32,6 +32,7 @@ use crate::auth::builder_id::{
     BuilderIdToken,
     PollCreateToken,
     TokenType,
+    is_idc_user,
     poll_create_token,
     start_device_authorization,
 };
@@ -62,7 +63,7 @@ use crate::util::{
 
 #[derive(Args, Debug, PartialEq, Eq, Clone, Default)]
 pub struct LoginArgs {
-    /// License type (pro for Identity Center, free for Builder ID)
+    /// License type (Identity Center and Builder ID)
     #[arg(long, value_enum)]
     pub license: Option<LicenseType>,
 
@@ -75,7 +76,7 @@ pub struct LoginArgs {
     pub region: Option<String>,
 
     /// Social provider (google or github)
-    #[arg(long, value_enum)]
+    #[arg(long, value_enum, hide = true)]
     pub social: Option<SocialProvider>,
 
     /// Always use the OAuth device flow for authentication. Useful for instances where browser
@@ -137,8 +138,8 @@ impl LoginArgs {
 
             // Show menu for BuilderID or IdC only
             let login_method = match self.license {
-                Some(LicenseType::Free) => AuthMethod::BuilderId,
-                Some(LicenseType::Pro) => AuthMethod::IdentityCenter,
+                Some(LicenseType::BuilderId) => AuthMethod::BuilderId,
+                Some(LicenseType::Idc) => AuthMethod::IdentityCenter,
                 None => {
                     if self.identity_provider.is_some() && self.region.is_some() {
                         // If license is specified and --identity-provider and --region are specified,
@@ -325,17 +326,15 @@ impl WhoamiArgs {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum LicenseType {
-    /// Free license with Builder ID
-    Free,
-    /// Pro license with Identity Center
-    Pro,
+    /// License with Builder ID
+    BuilderId,
+    /// License with Identity Center
+    Idc,
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await {
-        if matches!(token.token_type(), TokenType::BuilderId) {
-            bail!("This command is only available for Pro users");
-        }
+    if !is_idc_user(&os.database).await {
+        bail!("This command is only available for IAM Identity Center users");
     }
 
     select_profile_interactive(os, false).await?;
@@ -357,8 +356,8 @@ enum AuthMethod {
 impl Display for AuthMethod {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AuthMethod::BuilderId => write!(f, "Use for Free with Builder ID"),
-            AuthMethod::IdentityCenter => write!(f, "Use with Pro license"),
+            AuthMethod::BuilderId => write!(f, "Use with Builder ID"),
+            AuthMethod::IdentityCenter => write!(f, "Use with Idc Account"),
             AuthMethod::Social(SocialProvider::Google) => write!(f, "Use with Google"),
             AuthMethod::Social(SocialProvider::Github) => write!(f, "Use with GitHub"),
         }
