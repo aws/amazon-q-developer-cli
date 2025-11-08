@@ -960,7 +960,7 @@ impl From<UserInputMessage> for amzn_codewhisperer_streaming_client::types::User
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .set_model_id(value.model_id)
-            .origin(amzn_codewhisperer_streaming_client::types::Origin::AiEditor)
+            .origin(amzn_codewhisperer_streaming_client::types::Origin::KiroCli)
             .build()
             .expect("Failed to build UserInputMessage")
     }
@@ -974,7 +974,7 @@ impl From<UserInputMessage> for amzn_qdeveloper_streaming_client::types::UserInp
             .set_user_input_message_context(value.user_input_message_context.map(Into::into))
             .set_user_intent(value.user_intent.map(Into::into))
             .set_model_id(value.model_id)
-            .origin(amzn_qdeveloper_streaming_client::types::Origin::AiEditor)
+            .origin(amzn_qdeveloper_streaming_client::types::Origin::KiroCli)
             .build()
             .expect("Failed to build UserInputMessage")
     }
