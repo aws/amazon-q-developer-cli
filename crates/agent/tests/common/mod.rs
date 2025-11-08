@@ -59,6 +59,7 @@ pub struct TestCaseBuilder {
 
 impl TestCaseBuilder {
     pub async fn new() -> Self {
+        let mut test_base = TestBase::new().await;
 Self { test_base: TestBase::new().await, test_name: Default::default(), agent_config: todo!(), files: todo!(), mock_responses: todo!(), trust_all_tools: todo!(), tool_use_approvals: todo!() }
     }
 
@@ -96,8 +97,10 @@ Self { test_base: TestBase::new().await, test_name: Default::default(), agent_co
         self
     }
 
-    pub fn with_test_perprompt_hook(mut self) -> Self {
-        
+    pub fn with_emit_output_to_file(mut self, file: &str) -> Self {
+        // redirects the output of this test case to the given temp file
+         
+        self
     }
 
     pub async fn build(self) -> Result<TestCase> {
