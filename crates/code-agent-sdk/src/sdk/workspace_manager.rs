@@ -157,6 +157,11 @@ impl WorkspaceManager {
             tracing::warn!("Failed to start file watching: {}", e);
         }
         
+        // Auto-open representative files to enable workspace symbol search out-of-the-box
+        if let Err(e) = self.auto_open_representative_files().await {
+            tracing::warn!("Failed to auto-open representative files: {}", e);
+        }
+        
         Ok(())
     }
 
@@ -504,6 +509,148 @@ impl WorkspaceManager {
         
         tracing::info!("🔍 File watching started for languages: {:?}", detected_languages);
         Ok(())
+    }
+
+    /// Automatically open representative files for each language to enable workspace symbol search
+    async fn auto_open_representative_files(&mut self) -> Result<()> {
+        let detected_languages = self.get_detected_languages()?;
+        
+        for language in detected_languages {
+            if let Some(file_path) = self.find_representative_file(&language).await? {
+                tracing::debug!("Auto-opening representative file for {}: {:?}", language, file_path);
+                
+                // Read file content
+                if let Ok(content) = std::fs::read_to_string(&file_path) {
+                    // Check if file is already opened
+                    if self.is_file_opened(&file_path) {
+                        continue;
+                    }
+
+                    // Determine language ID from file extension
+                    let language_id = if let Some(ext) = file_path.extension().and_then(|ext| ext.to_str()) {
+                        self.config_manager.get_language_for_extension(ext)
+                            .unwrap_or_else(|| "plaintext".to_string())
+                    } else {
+                        "plaintext".to_string()
+                    };
+
+                    // Get LSP client for this file
+                    if let Ok(Some(client)) = self.get_client_for_file(&file_path).await {
+                        // Create LSP parameters for opening the file
+                        let uri = url::Url::from_file_path(&file_path)
+                            .map_err(|_| anyhow::anyhow!("Invalid file path: {:?}", file_path))?;
+                        
+                        let params = lsp_types::DidOpenTextDocumentParams {
+                            text_document: lsp_types::TextDocumentItem {
+                                uri,
+                                language_id,
+                                version: 1,
+                                text: content,
+                            },
+                        };
+
+                        // Open the file in the LSP client
+                        if let Err(e) = client.did_open(params).await {
+                            tracing::warn!("Failed to auto-open file {:?} for {}: {}", file_path, language, e);
+                        } else {
+                            tracing::debug!("Successfully auto-opened file for {} workspace indexing", language);
+                            
+                            // Mark file as opened
+                            self.opened_files.insert(file_path.clone(), FileState {
+                                version: 1,
+                                is_open: true,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Find a representative file for the given language to trigger workspace indexing
+    async fn find_representative_file(&self, language: &str) -> Result<Option<PathBuf>> {
+        let extensions = self.config_manager.get_extensions_for_language(language);
+        
+        // Search for files with matching extensions in the workspace
+        for extension in extensions {
+            if let Some(file_path) = self.find_first_file_with_extension(&extension).await? {
+                return Ok(Some(file_path));
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Find the first file with the given extension in the workspace, respecting exclude patterns
+    async fn find_first_file_with_extension(&self, extension: &str) -> Result<Option<PathBuf>> {
+        use std::fs;
+        
+        // Get all exclude patterns from config
+        let exclude_patterns = self.config_manager.get_all_exclude_patterns();
+        
+        fn should_exclude_path(path: &Path, exclude_patterns: &[String]) -> bool {
+            let path_str = path.to_string_lossy();
+            
+            // Check against exclude patterns (simple glob-like matching)
+            for pattern in exclude_patterns {
+                if pattern.starts_with("**/") && pattern.ends_with("/**") {
+                    // Pattern like "**/node_modules/**"
+                    let dir_name = &pattern[3..pattern.len()-3];
+                    if path_str.contains(&format!("/{}/", dir_name)) || 
+                       path_str.ends_with(&format!("/{}", dir_name)) {
+                        return true;
+                    }
+                } else if pattern.starts_with("**/") {
+                    // Pattern like "**/dist"
+                    let suffix = &pattern[3..];
+                    if path_str.ends_with(suffix) {
+                        return true;
+                    }
+                }
+            }
+            
+            // Also exclude hidden directories
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.starts_with('.') {
+                    return true;
+                }
+            }
+            
+            false
+        }
+        
+        fn find_file_recursive(dir: &Path, extension: &str, exclude_patterns: &[String]) -> Option<PathBuf> {
+            if should_exclude_path(dir, exclude_patterns) {
+                return None;
+            }
+            
+            if let Ok(entries) = fs::read_dir(dir) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    
+                    if should_exclude_path(&path, exclude_patterns) {
+                        continue;
+                    }
+                    
+                    if path.is_file() {
+                        if let Some(file_ext) = path.extension().and_then(|e| e.to_str()) {
+                            if file_ext == extension {
+                                return Some(path);
+                            }
+                        }
+                    } else if path.is_dir() {
+                        if let Some(found) = find_file_recursive(&path, extension, exclude_patterns) {
+                            return Some(found);
+                        }
+                    }
+                }
+            }
+            None
+        }
+        
+        Ok(find_file_recursive(&self.workspace_root, extension, &exclude_patterns))
     }
 }
 
