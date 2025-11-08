@@ -129,8 +129,6 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
-    #[serde(rename = "$schema", default = "default_schema")]
-    pub schema: String,
     /// Name of the agent
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
@@ -180,7 +178,6 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
-            schema: default_schema(),
             name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
@@ -990,10 +987,6 @@ pub fn queue_permission_override_warning(
     )?)
 }
 
-fn default_schema() -> String {
-    "https://raw.githubusercontent.com/aws/amazon-q-developer-cli/refs/heads/main/schemas/agent-v1.json".into()
-}
-
 // Check if a tool reference is MCP-specific (not @builtin and starts with @)
 pub fn is_mcp_tool_ref(s: &str) -> bool {
     // @builtin is not MCP, it's a reference to all built-in tools
@@ -1277,7 +1270,6 @@ mod tests {
         allowed_tools.insert("@server3/tool_*".to_string());
 
         let agent = Agent {
-            schema: "test".to_string(),
             name: "test-agent".to_string(),
             description: None,
             prompt: None,
