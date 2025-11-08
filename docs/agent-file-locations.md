@@ -7,7 +7,7 @@ Agent configuration files can be placed in two different locations, allowing for
 Local agents are stored in the current working directory under:
 
 ```
-.amazonq/cli-agents/
+.kiro/agents/
 ```
 
 These agents are specific to the current workspace or project and are only available when running KIRO CLI from that directory or its subdirectories.
@@ -15,8 +15,8 @@ These agents are specific to the current workspace or project and are only avail
 **Example structure:**
 ```
 my-project/
-├── .amazonq/
-│       └── cli-agents/
+├── .kiro/
+│       └── agents/
 │           ├── dev-agent.json
 │           └── aws-specialist.json
 └── src/
@@ -28,16 +28,16 @@ my-project/
 Global agents are stored in your home directory under:
 
 ```
-~/.aws/amazonq/cli-agents/
+~/.kiro/agents/
 ```
 
-Note: For globally available agents, the `amazonq` directory is in the `.aws` folder. 
+Note: For globally available agents, the `agents` directory is in the `.kiro` folder. 
 
 These agents are available from any directory when using KIRO CLI.
 
 **Example structure:**
 ```
-~/.aws/amazonq/cli-agents/
+~/.kiro/agents/
 ├── general-assistant.json
 ├── code-reviewer.json
 └── documentation-writer.json
@@ -47,8 +47,8 @@ These agents are available from any directory when using KIRO CLI.
 
 When KIRO CLI looks for an agent, it follows this precedence order:
 
-1. **Local first**: Checks `.amazonq/cli-agents/` in the current working directory
-2. **Global fallback**: If not found locally, checks `~/.aws/amazonq/cli-agents/` in the home directory
+1. **Local first**: Checks `.kiro/agents/` in the current working directory
+2. **Global fallback**: If not found locally, checks `~/.kiro/agents/` in the home directory
 
 ## Naming Conflicts
 
@@ -79,8 +79,8 @@ The global agent with the same name will be ignored in favor of the local versio
 To create a local agent for your current project:
 
 ```bash
-mkdir -p .amazonq/cli-agents
-cat > .amazonq/cli-agents/project-helper.json << 'EOF'
+mkdir -p .kiro/agents
+cat > .kiro/agents/project-helper.json << 'EOF'
 {
   "description": "Helper agent for this specific project",
   "tools": ["fs_read", "fs_write", "execute_bash"],
@@ -95,8 +95,8 @@ EOF
 To create a global agent available everywhere:
 
 ```bash
-mkdir -p ~/.aws/amazonq/cli-agents
-cat > ~/.aws/amazonq/cli-agents/general-helper.json << 'EOF'
+mkdir -p ~/.kiro/agents
+cat > ~/.kiro/agents/general-helper.json << 'EOF'
 {
   "description": "General purpose assistant",
   "tools": ["*"],
@@ -107,4 +107,4 @@ EOF
 
 ## Directory Creation
 
-KIRO CLI will automatically create the global agents directory (`~/.aws/amazonq/cli-agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.amazonq/cli-agents/`) in your workspace if you want to use local agents.
+KIRO CLI will automatically create the global agents directory (`~/.kiro/agents/`) if it doesn't exist. However, you need to manually create the local agents directory (`.kiro/agents/`) in your workspace if you want to use local agents.

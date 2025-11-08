@@ -147,7 +147,7 @@ The summary is automatically added to your conversation context, so you can ask 
 - Only one task can run per agent at a time
 
 **Task Storage:**
-Task execution details are stored in `.amazonq/.subagents/` in your current directory. Files persist until the same agent runs a new task.
+Task execution details are stored in `.kiro/.subagents/` in your current directory. Files persist until the same agent runs a new task.
 
 **Settings:**
 - `chat.enableDelegate` - Enable/disable delegate feature (boolean)
@@ -162,7 +162,7 @@ Task execution details are stored in `.amazonq/.subagents/` in your current dire
 **Features:**
 - Q will automatically make TODO lists when appropriate or when asked
 - View, manage, and delete TODOs using `/todos`
-- Resume existing TODO lists stored in `.amazonq/cli-todo-lists`
+- Resume existing TODO lists stored in `.kiro/cli-todo-lists`
 
 **Usage:**
 ```
