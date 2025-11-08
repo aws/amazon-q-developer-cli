@@ -12,10 +12,84 @@ use serde::{
 };
 
 use crate::cli::feed::Feed;
-use crate::constants::ui_text;
+use crate::constants::{
+    LEGACY_PRODUCT_NAME,
+    MIGRATION_INFO_URL,
+    PRODUCT_NAME_CLI,
+    ui_text,
+};
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
+
+/// Render new user welcome message
+pub fn render_new_user_welcome(output: &mut impl Write) -> Result<()> {
+    execute!(output, style::Print("\n"))?;
+
+    // Welcome header
+    execute!(
+        output,
+        style::SetAttribute(Attribute::Bold),
+        style::Print("Jump into building with Kiro:\n\n"),
+        StyledText::reset_attributes(),
+        StyledText::reset(),
+    )?;
+
+    // Steps
+    execute!(
+        output,
+        style::Print("1. Ask a question or describe a task\n"),
+        style::Print(format!(
+            "2. Use {} to provide Kiro with persistent context\n",
+            StyledText::command("/context add")
+        )),
+        style::Print(format!(
+            "3. Connect to external tools with by using {}\n\n",
+            StyledText::command("/mcp")
+        )),
+    )?;
+
+    // Add the help message
+    execute!(output, style::Print(&ui_text::popular_shortcuts()), style::Print("\n"),)?;
+
+    Ok(())
+}
+
+/// Render migration message for existing Q Developer CLI users
+pub fn render_migration_message(output: &mut impl Write) -> Result<()> {
+    execute!(output, style::Print("\n"))?;
+    const BOX_WIDTH: usize = 80;
+    const INNER_WIDTH: usize = BOX_WIDTH - 4; // 76 chars for content (accounting for │ and padding)
+
+    let line1 = format!("{LEGACY_PRODUCT_NAME} is now the {PRODUCT_NAME_CLI}. The {PRODUCT_NAME_CLI} leverages the");
+    let line2 = format!("agentic features of {LEGACY_PRODUCT_NAME} and is fully compatible with it.");
+    let line3_prefix = "Learn more: ";
+
+    execute!(
+        output,
+        StyledText::secondary_fg(),
+        style::Print(format!("╭{}╮\n", "─".repeat(BOX_WIDTH - 2))),
+        style::Print(format!("│ {line1:<INNER_WIDTH$} │\n")),
+        style::Print(format!("│ {line2:<INNER_WIDTH$} │\n")),
+        style::Print(format!("│ {line3_prefix}")),
+        StyledText::reset(),
+        StyledText::brand_fg(),
+        style::Print(MIGRATION_INFO_URL),
+        StyledText::reset(),
+        StyledText::secondary_fg(),
+        style::Print(format!(
+            "{:>width$} │\n",
+            "",
+            width = INNER_WIDTH - line3_prefix.len() - MIGRATION_INFO_URL.len()
+        )),
+        style::Print(format!("╰{}╯\n", "─".repeat(BOX_WIDTH - 2))),
+        StyledText::reset(),
+    )?;
+
+    execute!(output, style::Print("\n"))?;
+
+    Ok(())
+}
 
 /// Render changelog content from feed.json with manual formatting
 pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
