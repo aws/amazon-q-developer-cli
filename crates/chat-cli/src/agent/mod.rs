@@ -43,6 +43,10 @@ You are a subagent executing a task delegated to you by the main agent.
 After what is asked of you has concluded, call the summary tool to convey your findings to the main agent.
 "#;
 
+const SUMMARY_FAILSAFE_MSG: &str = r#"
+You have not called the summary tool yet. Please call the summary tool now to provide your findings to the main agent before ending your task.
+"#;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonOutput {
     /// Whether or not the user turn completed successfully
@@ -71,6 +75,7 @@ pub struct SubAgent<'a> {
     pub agent_name: Option<&'a str>,
     pub embedded_user_msg: Option<&'a str>,
     pub dangerously_trust_all_tools: bool,
+    pub send_structured_message: bool,
 }
 
 impl<'a> SubAgent<'a> {
@@ -140,6 +145,7 @@ impl<'a> SubAgent<'a> {
         // Holds the final result of the user turn.
         #[allow(unused_assignments)]
         let mut user_turn_metadata = None;
+        let mut has_received_summary = false;
 
         loop {
             let Ok(evt) = agent.recv().await else {
@@ -151,11 +157,20 @@ impl<'a> SubAgent<'a> {
             match &evt {
                 AgentEvent::Update(evt) => {
                     info!(?evt, "received update event");
-                    println!("received update event {:?}", evt);
+                    println!("received update event {evt:?}");
                 },
                 AgentEvent::EndTurn(metadata) => {
-                    user_turn_metadata = Some(metadata.clone());
-                    break;
+                    if has_received_summary {
+                        user_turn_metadata = Some(metadata.clone());
+                        break;
+                    } else {
+                        agent
+                            .send_prompt(SendPromptArgs {
+                                content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
+                                should_continue_turn: None,
+                            })
+                            .await?;
+                    }
                 },
                 AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
                     bail!("agent encountered an error: {:?}", agent_error)
@@ -177,7 +192,8 @@ impl<'a> SubAgent<'a> {
                     info!(?evt, "received mcp agent event");
                 },
                 AgentEvent::SubagentSummary(summary) => {
-                    println!("Summary: {:#?}", summary);
+                    has_received_summary = true;
+                    println!("Summary: {summary:#?}");
                 },
                 _ => {},
             }
@@ -219,6 +235,7 @@ async fn test_sub_agent_routine() {
         agent_name: Some("test_test"),
         embedded_user_msg: Some(SUBAGENT_EMBEDDED_USER_MSG),
         dangerously_trust_all_tools: true,
+        send_structured_message: false,
     };
 
     let mut os = Os::new().await.expect("failed to spawn os");
