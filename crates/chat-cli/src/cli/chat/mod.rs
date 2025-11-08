@@ -226,6 +226,26 @@ fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crat
     Ok(PathResolver::new(os).global().shadow_repo_dir()?.join(conversation_id))
 }
 
+#[inline]
+fn set_terminal_title_for_cwd() {
+    if !std::io::stdout().is_terminal() {
+        eprintln!("(debug) stdout is NOT a TTY — skipping title change");
+        return;
+    }
+
+    let project = std::env::current_dir()
+        .ok()
+        .and_then(|p| p.file_name().map(|s| s.to_string_lossy().into_owned()))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "qchat".to_string());
+
+    let title_string = format!("q ({})", project);
+
+    // Then actually set it:
+    let _ = std::io::stdout().write_all(format!("\x1b]0;{}\x07", title_string).as_bytes());
+    let _ = std::io::stdout().flush();
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
     /// Resumes the previous conversation from this directory.
@@ -279,6 +299,9 @@ impl ChatArgs {
         }
 
         let mut stderr = std::io::stderr();
+
+        // Set the terminal/window title to "q (<current-folder>)"
+        set_terminal_title_for_cwd();
 
         let args: Vec<String> = std::env::args().collect();
         if args
