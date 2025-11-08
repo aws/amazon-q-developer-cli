@@ -1270,7 +1270,6 @@ mod tests {
         allowed_tools.insert("@server3/tool_*".to_string());
 
         let agent = Agent {
-            schema: "test".to_string(),
             name: "test-agent".to_string(),
             description: None,
             prompt: None,
