@@ -82,6 +82,38 @@ impl ConfigManager {
             .ok()
             .and_then(|c| c.get_server_name_for_language(language))
     }
+
+    /// Get file extensions for a language
+    pub fn get_extensions_for_language(&self, language: &str) -> Vec<String> {
+        self.get_config()
+            .ok()
+            .and_then(|c| c.get_config_by_language(language).ok())
+            .map(|config| config.file_extensions)
+            .unwrap_or_default()
+    }
+
+    /// Get exclude patterns for a language
+    pub fn get_exclude_patterns_for_language(&self, language: &str) -> Vec<String> {
+        self.get_config()
+            .ok()
+            .and_then(|c| c.get_config_by_language(language).ok())
+            .map(|config| config.exclude_patterns)
+            .unwrap_or_default()
+    }
+
+    /// Get all exclude patterns from all languages (for general file searching)
+    pub fn get_all_exclude_patterns(&self) -> Vec<String> {
+        let mut all_patterns = Vec::new();
+        if let Ok(config) = self.get_config() {
+            for lang_config in config.all_configs() {
+                all_patterns.extend(lang_config.exclude_patterns);
+            }
+        }
+        // Remove duplicates
+        all_patterns.sort();
+        all_patterns.dedup();
+        all_patterns
+    }
 }
 
 #[cfg(test)]
