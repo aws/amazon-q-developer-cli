@@ -159,23 +159,14 @@ pub mod ui_text {
         "Picking up where we left off...".to_string()
     }
 
-    /// Popular shortcuts text for large screens
+    /// Popular shortcuts text
     pub fn popular_shortcuts() -> String {
         format!(
-            "{} all commands  •  {} new lines  •  {} fuzzy search",
+            "{}Use {}{} for more information and happy coding!{}",
+            StyledText::secondary_fg(),
             StyledText::command("/help"),
-            StyledText::command("ctrl + j"),
-            StyledText::command("ctrl + s")
-        )
-    }
-
-    /// Popular shortcuts text for small screens
-    pub fn small_screen_popular_shortcuts() -> String {
-        format!(
-            "{} all commands\n{} new lines\n{} fuzzy search",
-            StyledText::command("/help"),
-            StyledText::command("ctrl + j"),
-            StyledText::command("ctrl + s")
+            StyledText::secondary_fg(),
+            StyledText::reset()
         )
     }
 }
