@@ -156,20 +156,40 @@ impl AgentSubcommand {
                 let profiles = agents.agents.values().collect::<Vec<_>>();
                 let active_profile = agents.get_active();
 
-                for (i, profile) in profiles.iter().enumerate() {
-                    if active_profile.is_some_and(|p| p == *profile) {
+                // Create list with names, paths, and active status
+                let agent_with_path: Vec<(String, String, bool)> = profiles
+                    .iter()
+                    .map(|profile| {
+                        let is_active = active_profile.is_some_and(|p| p == *profile);
+                        let path = profile
+                            .path
+                            .as_ref()
+                            .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
+                            .unwrap_or("**No path found**".to_string());
+                        (profile.name.clone(), path, is_active)
+                    })
+                    .collect();
+
+                let max_name_length = agent_with_path.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
+
+                for (i, (name, path, is_active)) in agent_with_path.iter().enumerate() {
+                    if *is_active {
                         queue!(
                             session.stderr,
                             StyledText::success_fg(),
                             style::Print("* "),
-                            style::Print(&profile.name),
+                            style::Print(&format!("{name:<max_name_length$}    {path}")),
                             StyledText::reset(),
                         )?;
                     } else {
-                        queue!(session.stderr, style::Print("  "), style::Print(&profile.name),)?;
+                        queue!(
+                            session.stderr,
+                            style::Print("  "),
+                            style::Print(&format!("{name:<max_name_length$}    {path}"))
+                        )?;
                     }
 
-                    if i < profiles.len().saturating_sub(1) {
+                    if i < agent_with_path.len().saturating_sub(1) {
                         queue!(session.stderr, style::Print("\n"))?;
                     }
                 }

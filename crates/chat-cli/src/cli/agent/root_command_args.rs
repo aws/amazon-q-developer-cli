@@ -90,24 +90,31 @@ impl AgentArgs {
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
                 let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+
+                let active_agent_name = agents.active_idx.clone();
                 let agent_with_path =
                     agents
                         .agents
                         .into_iter()
-                        .fold(Vec::<(String, String)>::new(), |mut acc, (name, agent)| {
+                        .fold(Vec::<(String, String, bool)>::new(), |mut acc, (name, agent)| {
+                            let is_active = name == active_agent_name;
                             acc.push((
                                 name,
                                 agent
                                     .path
                                     .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
                                     .unwrap_or("**No path found**".to_string()),
+                                is_active,
                             ));
                             acc
                         });
-                let max_name_length = agent_with_path.iter().map(|(name, _)| name.len()).max().unwrap_or(0);
+                let max_name_length = agent_with_path.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
                 let output_str = agent_with_path
                     .into_iter()
-                    .map(|(name, path)| format!("{name:<max_name_length$}    {path}"))
+                    .map(|(name, path, is_active)| {
+                        let prefix = if is_active { "* " } else { "  " };
+                        format!("{prefix}{name:<max_name_length$}    {path}")
+                    })
                     .collect::<Vec<_>>()
                     .join("\n");
 
