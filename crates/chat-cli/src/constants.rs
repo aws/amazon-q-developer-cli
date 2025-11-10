@@ -86,7 +86,7 @@ pub mod ui_text {
         // MCP section
         help.push('\n');
         help.push_str(&format!(
-            "💡 Did you know, You can now configure {PRODUCT_NAME} to use MCP servers. Learn how at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/qdev-mcp.html",
+            "💡 Did you know, You can now configure {PRODUCT_NAME} to use MCP servers. Learn how at https://kiro.dev/docs/cli/mcp",
         ));
 
         // Shortcuts section

@@ -10,7 +10,7 @@ body:
   attributes:
     label: "Checks"
     options:
-    - label: "I have searched [github.com/aws/amazon-q-developer-cli/issues](https://github.com/aws/amazon-q-developer-cli/issues?q=) and there are no duplicates of my issue"
+    - label: "I have searched [https://github.com/kirodotdev/Kiro/issues](https://github.com/kirodotdev/Kiro/issues?q=) and there are no duplicates of my issue"
       required: true
     - label: "I have run `q doctor` in the affected terminal session"
       required: true
