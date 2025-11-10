@@ -13,7 +13,10 @@ use crate::cli::chat::{
     ChatError,
     ChatSession,
 };
-use crate::theme::StyledText;
+use crate::theme::{
+    StyledText,
+    theme,
+};
 
 /// Calculate context percentage from token counts (private utility)
 fn calculate_context_percentage(tokens: TokenCount, context_window_size: usize) -> f32 {
@@ -128,8 +131,10 @@ pub async fn render_context_window(
     queue!(
         session.stderr,
         StyledText::brand_fg(),
-        style::Print("█ Context files: "),
+        style::Print("█ Context files "),
         StyledText::reset(),
+        style::Print(format!("~{} tokens ", context_data.context_tokens)),
+        StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
             calculate_context_percentage(context_data.context_tokens, context_data.context_window_size)
@@ -137,24 +142,31 @@ pub async fn render_context_window(
         StyledText::error_fg(),
         style::Print("█ Tools: "),
         StyledText::reset(),
+        style::Print(format!("~{} tokens ", context_data.tools_tokens)),
+        StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
             calculate_context_percentage(context_data.tools_tokens, context_data.context_window_size)
         )),
         StyledText::info_fg(),
-        style::Print("█ Kiro responses: "),
+        style::Print("█ Kiro responses "),
         StyledText::reset(),
+        style::Print(format!("~{} tokens ", context_data.assistant_tokens)),
+        StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
             calculate_context_percentage(context_data.assistant_tokens, context_data.context_window_size)
         )),
         StyledText::emphasis_fg(),
-        style::Print("█ Your prompts: "),
+        style::Print("█ Your prompts "),
         StyledText::reset(),
+        style::Print(format!("~{} tokens ", context_data.user_tokens)),
+        StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n\n",
             calculate_context_percentage(context_data.user_tokens, context_data.context_window_size)
         )),
+        StyledText::reset(),
     )?;
 
     queue!(
@@ -164,18 +176,24 @@ pub async fn render_context_window(
         StyledText::reset_attributes(),
         StyledText::secondary_fg(),
         style::Print("Run "),
-        StyledText::success_fg(),
+        StyledText::reset(),
+        style::SetForegroundColor(theme().ui.command_highlight),
         style::Print("/compact"),
+        StyledText::reset(),
         StyledText::secondary_fg(),
         style::Print(" to replace the conversation history with its summary\n"),
         style::Print("Run "),
-        StyledText::success_fg(),
+        StyledText::reset(),
+        style::SetForegroundColor(theme().ui.command_highlight),
         style::Print("/clear"),
+        StyledText::reset(),
         StyledText::secondary_fg(),
         style::Print(" to erase the entire chat history\n"),
         style::Print("Run "),
-        StyledText::success_fg(),
+        StyledText::reset(),
+        style::SetForegroundColor(theme().ui.command_highlight),
         style::Print("/context show"),
+        StyledText::reset(),
         StyledText::secondary_fg(),
         style::Print(" to see usage per context file\n\n"),
         StyledText::reset(),
