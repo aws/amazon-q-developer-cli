@@ -33,11 +33,6 @@ pub enum ConfigSubcommand {
         /// AWS region name (e.g., us-west-2)
         region: String,
     },
-    /// Set context window size
-    ContextWindow {
-        /// Context window size (e.g., 8192)
-        size: u32,
-    },
     /// Set maximum output tokens
     MaxTokens {
         /// Maximum output tokens (e.g., 4096, max 200000)
@@ -75,6 +70,8 @@ pub enum SystemPromptCommand {
         /// Name of the system prompt to enable
         name: String,
     },
+    /// Use default system prompt (deactivate custom prompts)
+    Default,
     /// Delete a system prompt
     Delete {
         /// Name of the system prompt to delete
@@ -102,11 +99,6 @@ impl ConfigArgs {
             ConfigSubcommand::Region { region } => {
                 os.database.settings.set(Setting::BedrockRegion, json!(region)).await?;
                 println!("Bedrock region set to: {}", region);
-                Ok(ExitCode::SUCCESS)
-            },
-            ConfigSubcommand::ContextWindow { size } => {
-                os.database.settings.set(Setting::BedrockContextWindow, json!(size)).await?;
-                println!("Context window set to: {}", size);
                 Ok(ExitCode::SUCCESS)
             },
             ConfigSubcommand::MaxTokens { tokens } => {
@@ -208,6 +200,11 @@ impl ConfigArgs {
                         }
                         os.database.settings.set(Setting::BedrockSystemPromptActive, json!(name)).await?;
                         println!("System prompt '{}' enabled", name);
+                        Ok(ExitCode::SUCCESS)
+                    },
+                    SystemPromptCommand::Default => {
+                        os.database.settings.remove(Setting::BedrockSystemPromptActive).await?;
+                        println!("Using default system prompt");
                         Ok(ExitCode::SUCCESS)
                     },
                     SystemPromptCommand::Delete { name } => {
