@@ -1442,15 +1442,6 @@ impl ChatSession {
                 }
             }
 
-            execute!(
-                self.stderr,
-                style::Print("\n"),
-                style::Print(
-                    "━"
-                        .repeat(if is_small_screen { 0 } else { GREETING_BREAK_POINT })
-                        .dark_grey()
-                )
-            )?;
             execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
         }
 
