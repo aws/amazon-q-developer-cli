@@ -39,7 +39,7 @@ Delete specific TODO lists or all lists at once.
 
 ## Storage
 
-TODO lists are stored locally in `.amazonq/cli-todo-lists/` directory within your current working directory. Each list is saved as a JSON file with:
+TODO lists are stored locally in `.kiro/cli-todo-lists/` directory within your current working directory. Each list is saved as a JSON file with:
 
 - Unique timestamp-based ID
 - Task descriptions and completion status  
@@ -81,14 +81,14 @@ All commands use interactive selection allowing you to:
 If commands show "No to-do lists available":
 
 1. **Check directory**: Ensure you're in the directory where lists were created
-2. **Verify storage**: Look for `.amazonq/cli-todo-lists/` directory
+2. **Verify storage**: Look for `.kiro/cli-todo-lists/` directory
 3. **Create lists**: Use chat sessions to create new TODO lists
 
 #### Lists Not Loading
 
 If lists exist but won't load:
 
-1. **Check permissions**: Ensure read access to `.amazonq/cli-todo-lists/`
+1. **Check permissions**: Ensure read access to `.kiro/cli-todo-lists/`
 2. **Verify format**: Lists should be valid JSON files
 3. **Check file integrity**: Corrupted files may prevent loading
 

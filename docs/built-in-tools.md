@@ -127,7 +127,7 @@ This tool has no configuration options.
 
 ## TODO List Tool (experimental)
 
-Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.amazonq/cli-todo-lists/`.
+Create and manage TODO lists for tracking multi-step tasks. Lists are stored locally in `.kiro/cli-todo-lists/`.
 
 This tool has no configuration options.
 
