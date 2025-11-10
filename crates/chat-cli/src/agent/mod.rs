@@ -14,8 +14,23 @@ use agent::protocol::{
     ContentChunk,
     SendApprovalResultArgs,
     SendPromptArgs,
+    UpdateEvent,
 };
+use agent::tools::summary::Summary;
 use agent::types::AgentSnapshot;
+use chat_cli_ui::conduit::{
+    ControlEnd,
+    DestinationStderr,
+    get_legacy_conduits,
+};
+use chat_cli_ui::protocol::{
+    Event as UiEvent,
+    MetaEvent,
+    TextMessageContent,
+    ToolCallEnd,
+    ToolCallStart,
+};
+use chat_cli_ui::subagent_indicator::SubagentIndicator;
 use eyre::{
     Result,
     bail,
@@ -36,6 +51,7 @@ use tracing::{
 };
 
 use crate::os::Os;
+use crate::theme::StyledText;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
@@ -63,23 +79,16 @@ struct JsonOutput {
     duration_ms: u32,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct QueryResult {
-    pub context_summary: String,
-    pub task_summary: String,
-}
-
 #[derive(Debug)]
 pub struct SubAgent<'a> {
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
     pub embedded_user_msg: Option<&'a str>,
     pub dangerously_trust_all_tools: bool,
-    pub send_structured_message: bool,
 }
 
 impl<'a> SubAgent<'a> {
-    pub async fn query(self, os: &mut Os, output: &mut impl Write) -> Result<QueryResult> {
+    pub async fn query(self, os: &mut Os, control_end: &mut ControlEnd<DestinationStderr>) -> Result<Summary> {
         let mut snapshot = AgentSnapshot::default();
 
         let model = {
@@ -120,10 +129,14 @@ impl<'a> SubAgent<'a> {
 
         let agent_handle = agent.spawn();
 
-        self.main_loop(agent_handle, output).await
+        self.main_loop(agent_handle, control_end).await
     }
 
-    async fn main_loop(&self, mut agent: AgentHandle, output: &mut impl Write) -> Result<QueryResult> {
+    async fn main_loop(
+        &self,
+        mut agent: AgentHandle,
+        control_end: &mut ControlEnd<DestinationStderr>,
+    ) -> Result<Summary> {
         // First, wait for agent initialization
         while let Ok(evt) = agent.recv().await {
             if matches!(evt, AgentEvent::Mcp(_)) {
@@ -145,7 +158,7 @@ impl<'a> SubAgent<'a> {
         // Holds the final result of the user turn.
         #[allow(unused_assignments)]
         let mut user_turn_metadata = None;
-        let mut has_received_summary = false;
+        let mut query_result = None::<Summary>;
 
         loop {
             let Ok(evt) = agent.recv().await else {
@@ -154,13 +167,37 @@ impl<'a> SubAgent<'a> {
             debug!(?evt, "received new agent event");
 
             // Check for exit conditions
-            match &evt {
+            match evt {
                 AgentEvent::Update(evt) => {
                     info!(?evt, "received update event");
-                    println!("received update event {evt:?}");
+
+                    match evt {
+                        UpdateEvent::ToolCall(tool_call) => {
+                            _ = control_end.send(UiEvent::ToolCallStart(ToolCallStart {
+                                tool_call_id: tool_call.id,
+                                tool_call_name: tool_call.tool_use_block.name,
+                                parent_message_id: None,
+                                mcp_server_name: None,
+                                is_trusted: true,
+                            }));
+                        },
+                        UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
+                            _ = control_end.send(UiEvent::ToolCallEnd(ToolCallEnd {
+                                tool_call_id: tool_call.id,
+                            }));
+                        },
+                        UpdateEvent::AgentContent(_content) => {
+                            // TODO: send actual content (for preview?)
+                            _ = control_end.send(UiEvent::TextMessageContent(TextMessageContent {
+                                message_id: Default::default(),
+                                delta: Default::default(),
+                            }));
+                        },
+                        _ => {},
+                    }
                 },
                 AgentEvent::EndTurn(metadata) => {
-                    if has_received_summary {
+                    if query_result.is_some() {
                         user_turn_metadata = Some(metadata.clone());
                         break;
                     } else {
@@ -192,8 +229,7 @@ impl<'a> SubAgent<'a> {
                     info!(?evt, "received mcp agent event");
                 },
                 AgentEvent::SubagentSummary(summary) => {
-                    has_received_summary = true;
-                    println!("Summary: {summary:#?}");
+                    query_result.replace(summary);
                 },
                 _ => {},
             }
@@ -213,10 +249,7 @@ impl<'a> SubAgent<'a> {
 
         info!(?output, "sub agent routine completed");
 
-        Ok(QueryResult {
-            context_summary: Default::default(),
-            task_summary: Default::default(),
-        })
+        query_result.ok_or(eyre::eyre!("subagent missing query result"))
     }
 }
 
@@ -226,20 +259,25 @@ pub fn temp_func() {
         .build()
         .expect("failed to build runtime");
 
-    rt.block_on(test_sub_agent_routine());
+    let summary = rt.block_on(test_sub_agent_routine());
+    println!("summary: {summary:#?}");
 }
 
-async fn test_sub_agent_routine() {
+async fn test_sub_agent_routine() -> Summary {
     let sub_agent = SubAgent {
         query: "What notion docs do I have",
         agent_name: Some("test_test"),
         embedded_user_msg: Some(SUBAGENT_EMBEDDED_USER_MSG),
         dangerously_trust_all_tools: true,
-        send_structured_message: false,
     };
 
     let mut os = Os::new().await.expect("failed to spawn os");
-    let mut output = Vec::<u8>::new();
+    let (view_end, _byte_receiver, mut control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
+    let subagent_indicator = SubagentIndicator::new("test_test", "notion doc search", view_end);
+    let _guard = subagent_indicator.run();
 
-    _ = sub_agent.query(&mut os, &mut output).await;
+    sub_agent
+        .query(&mut os, &mut control_end_stderr)
+        .await
+        .expect("failed to retrieve summary")
 }

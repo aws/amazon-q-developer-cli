@@ -731,10 +731,13 @@ impl ChatSession {
             get_legacy_conduits(should_send_structured_msg);
         let (prompt_ack_tx, prompt_ack_rx) = std::sync::mpsc::channel::<()>();
 
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout) {
+            if let Err(e) = view_end
+                .into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout)
+                .await
+            {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });

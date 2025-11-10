@@ -26,7 +26,7 @@ const CONTINUATION_LINE: &str = " ⋮ ";
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {
     #[error(transparent)]
-    Send(#[from] Box<std::sync::mpsc::SendError<Event>>),
+    Send(#[from] Box<tokio::sync::mpsc::error::SendError<Event>>),
     #[error(transparent)]
     Utf8(#[from] std::string::FromUtf8Error),
     #[error("No event set")]
@@ -44,21 +44,21 @@ pub struct ViewEnd {
     // TODO: later on we will need replace this byte array with an actual event type from ACP
     pub sender: tokio::sync::mpsc::Sender<Vec<u8>>,
     /// To receive messages from control about state changes
-    pub receiver: std::sync::mpsc::Receiver<Event>,
+    pub receiver: tokio::sync::mpsc::UnboundedReceiver<Event>,
 }
 
 impl ViewEnd {
     /// Method to facilitate in the interim
     /// It takes possible messages from the old even loop and queues write to the output provided
     /// This blocks the current thread and consumes the [ViewEnd]
-    pub fn into_legacy_mode(
-        self,
+    pub async fn into_legacy_mode(
+        mut self,
         theme_source: impl ThemeSource,
         prompt_ack: Option<std::sync::mpsc::Sender<()>>,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
-        while let Ok(event) = self.receiver.recv() {
+        while let Some(event) = self.receiver.recv().await {
             match event {
                 Event::LegacyPassThrough(content) => match content {
                     LegacyPassThroughOutput::Stderr(content) => {
@@ -204,7 +204,7 @@ pub type InputReceiver = tokio::sync::mpsc::Receiver<Vec<u8>>;
 pub struct ControlEnd<T> {
     pub current_event: Option<Event>,
     /// Used by the control to send state changes to the view
-    pub sender: std::sync::mpsc::Sender<Event>,
+    pub sender: tokio::sync::mpsc::UnboundedSender<Event>,
     /// Flag indicating whether structured events should be sent through the conduit.
     /// When true, the control end will send structured event data in addition to
     /// raw pass-through content, enabling richer communication between layers.
@@ -393,7 +393,7 @@ pub fn get_legacy_conduits(
     ControlEnd<DestinationStderr>,
     ControlEnd<DestinationStdout>,
 ) {
-    let (state_tx, state_rx) = std::sync::mpsc::channel::<Event>();
+    let (state_tx, state_rx) = tokio::sync::mpsc::unbounded_channel::<Event>();
     let (byte_tx, byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(10);
 
     (
