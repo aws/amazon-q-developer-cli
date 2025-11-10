@@ -186,10 +186,15 @@ impl GhIssue {
         result_str
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
+        queue!(
+            output,
+            style::Print("I will prepare a github issue with our conversation history"),
+        )?;
+        super::display_tool_use(tool, output)?;
         Ok(queue!(
             output,
-            style::Print("I will prepare a github issue with our conversation history.\n\n"),
+            style::Print(".\n\n"),
             StyledText::success_fg(),
             style::Print(format!("Title: {}\n", &self.title)),
             StyledText::reset(),

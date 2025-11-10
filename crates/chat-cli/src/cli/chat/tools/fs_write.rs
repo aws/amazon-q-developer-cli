@@ -300,9 +300,9 @@ impl FsWrite {
         Ok(result)
     }
 
-    pub fn queue_description(&self, os: &Os, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
-        self.print_relative_path(os, output)?;
+        self.print_relative_path(tool, os, output)?;
         match self {
             FsWrite::Create { path, .. } => {
                 let file_text = self.canonical_create_command_text();
@@ -399,7 +399,7 @@ impl FsWrite {
         Ok(())
     }
 
-    fn print_relative_path(&self, os: &Os, output: &mut impl Write) -> Result<()> {
+    fn print_relative_path(&self, tool: &super::tool::Tool, os: &Os, output: &mut impl Write) -> Result<()> {
         let cwd = os.env.current_dir()?;
         let path = match self {
             FsWrite::Create { path, .. } => path,
@@ -425,8 +425,9 @@ impl FsWrite {
             StyledText::brand_fg(),
             style::Print(&relative_path),
             StyledText::reset(),
-            style::Print("\n"),
         )?;
+        super::display_tool_use(tool, output)?;
+        queue!(output, style::Print("\n"))?;
 
         if let Some(summary) = self.get_summary() {
             queue!(

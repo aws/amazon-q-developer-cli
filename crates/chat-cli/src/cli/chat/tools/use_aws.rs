@@ -114,10 +114,12 @@ impl UseAws {
         }
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
+        queue!(output, style::Print("Running aws cli command"),)?;
+        super::display_tool_use(tool, output)?;
         queue!(
             output,
-            style::Print("Running aws cli command:\n\n"),
+            style::Print(":\n\n"),
             style::Print(format!("Service name: {}\n", self.service_name)),
             style::Print(format!("Operation name: {}\n", self.operation_name)),
         )?;

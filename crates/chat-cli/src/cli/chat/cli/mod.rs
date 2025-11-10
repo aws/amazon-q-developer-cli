@@ -59,6 +59,10 @@ use crate::os::Os;
 #[derive(Debug, PartialEq, Parser)]
 #[command(
     color = clap::ColorChoice::Always, term_width = 0, after_long_help = &ui_text::extra_help(), override_usage = "/<COMMAND>",
+    styles = clap::builder::Styles::styled()
+        .header(clap::builder::styling::Style::new().bold())
+        .usage(clap::builder::styling::Style::new().bold())
+        .literal(clap::builder::styling::Style::new()),
 )]
 pub enum SlashCommand {
     /// Quit the application

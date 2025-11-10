@@ -75,10 +75,12 @@ impl FsRead {
         Ok(())
     }
 
-    pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(&self, tool: &super::tool::Tool, os: &Os, updates: &mut impl Write) -> Result<()> {
         if self.operations.len() == 1 {
             // Single operation - display without batch prefix
-            self.operations[0].queue_description(os, updates).await
+            self.operations[0].queue_description(os, updates).await?;
+            super::display_tool_use(tool, updates)?;
+            Ok(())
         } else {
             // Multiple operations - display as batch
             queue!(
@@ -87,8 +89,10 @@ impl FsRead {
                 StyledText::brand_fg(),
                 style::Print(self.operations.len()),
                 StyledText::reset(),
-                style::Print(" operations:\n")
+                style::Print(" operations"),
             )?;
+            super::display_tool_use(tool, updates)?;
+            queue!(updates, style::Print("\n"))?;
 
             // Display purpose if available for batch operations
             let _ = display_purpose(self.summary.as_ref(), updates);
@@ -540,8 +544,8 @@ time. You tried to read {byte_count} bytes. Try executing with fewer lines speci
 
         super::queue_function_result(
             &format!(
-                "Successfully read {} bytes from {}",
-                file_contents.len(),
+                "Successfully read {} from {}",
+                StyledText::secondary(&format!("{} bytes", file_contents.len())),
                 &path.display()
             ),
             updates,
@@ -694,10 +698,16 @@ impl FsDirectory {
             StyledText::brand_fg(),
             style::Print(&self.path),
             StyledText::reset(),
-            style::Print(" "),
         )?;
+        // Depth parameter moved after the path
         let depth = self.depth.unwrap_or_default();
-        Ok(queue!(updates, style::Print(format!("with maximum depth of {depth}")))?)
+        queue!(
+            updates,
+            StyledText::secondary_fg(),
+            style::Print(format!(" (max depth: {depth})")),
+            StyledText::reset(),
+        )?;
+        Ok(())
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
@@ -786,9 +796,9 @@ impl FsDirectory {
 
         // Format the message with brand color for the path
         let formatted_message = format!(
-            "Successfully read directory {} ({} entries)",
+            "Successfully read directory {} {}",
             StyledText::brand(&path.display().to_string()),
-            file_count
+            StyledText::secondary(&format!("({file_count} entries)"))
         );
 
         super::queue_function_result(&formatted_message, updates, false, false)?;

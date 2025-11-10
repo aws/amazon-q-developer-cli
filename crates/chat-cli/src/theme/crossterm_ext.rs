@@ -128,9 +128,9 @@ impl StyledText {
         format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().status.success), text)
     }
 
-    /// Create clap-style heading text (bold and underline)
-    pub fn clap_heading(text: &str) -> String {
-        format!("\x1b[1m\x1b[4m{text}\x1b[0m")
+    /// Create title text (bold, white, no underline)
+    pub fn title(text: &str) -> String {
+        format!("\x1b[1m{text}\x1b[0m")
     }
 
     /// Create current item styled text

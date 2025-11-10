@@ -424,7 +424,7 @@ impl CheckpointDisplay {
                     checkpoint.timestamp.format("%Y-%m-%d %H:%M:%S"),
                     checkpoint.description
                 )
-                .reset(),
+                .dark_grey(),
             );
 
             // Add file stats if available
@@ -438,7 +438,7 @@ impl CheckpointDisplay {
             // Tool checkpoint: show tool name and description
             let tool_name = checkpoint.tool_name.clone().unwrap_or_else(|| "Tool".to_string());
             parts.push(format!("{tool_name}: ").magenta());
-            parts.push(checkpoint.description.clone().reset());
+            parts.push(checkpoint.description.clone().dark_grey());
         }
 
         Ok(Self {

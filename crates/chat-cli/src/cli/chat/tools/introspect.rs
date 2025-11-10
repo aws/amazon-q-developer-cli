@@ -157,12 +157,13 @@ impl Introspect {
         })
     }
 
-    pub fn queue_description(output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         use crossterm::{
             queue,
             style,
         };
         queue!(output, style::Print("Introspecting to get you the right information"))?;
+        super::display_tool_use(tool, output)?;
         Ok(())
     }
 

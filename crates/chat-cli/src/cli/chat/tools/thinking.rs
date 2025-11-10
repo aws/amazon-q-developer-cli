@@ -37,15 +37,20 @@ impl Thinking {
     }
 
     /// Queues up a description of the think tool for the user
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         // Only show a description if there's actual thought content
         if !self.thought.trim().is_empty() {
             // Show a preview of the thought that will be displayed
             queue!(
                 output,
                 StyledText::info_fg(),
-                style::Print("I'll share my reasoning process: "),
+                style::Print("I'll share my reasoning process"),
                 StyledText::reset(),
+            )?;
+            super::display_tool_use(tool, output)?;
+            queue!(
+                output,
+                style::Print(": "),
                 style::Print(&self.thought),
                 style::Print("\n")
             )?;
