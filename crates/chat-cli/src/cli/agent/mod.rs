@@ -129,6 +129,9 @@ pub enum AgentConfigError {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
 pub struct Agent {
+    #[serde(rename = "$schema", skip_serializing_if = "Option::is_none", default)]
+    #[schemars(skip)]
+    pub schema: Option<String>,
     /// Name of the agent
     pub name: String,
     /// This field is not model facing and is mostly here for users to discern between agents
@@ -178,6 +181,7 @@ pub struct Agent {
 impl Default for Agent {
     fn default() -> Self {
         Self {
+            schema: None,
             name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("Default agent".to_string()),
             prompt: Default::default(),
@@ -1270,6 +1274,7 @@ mod tests {
         allowed_tools.insert("@server3/tool_*".to_string());
 
         let agent = Agent {
+            schema: None,
             name: "test-agent".to_string(),
             description: None,
             prompt: None,
