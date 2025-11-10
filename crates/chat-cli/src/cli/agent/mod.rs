@@ -141,7 +141,7 @@ pub enum AgentConfigError {
 /// "warm".
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-#[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
+#[schemars(description = "An Agent is a declarative way of configuring a given instance of kiro-cli.")]
 pub struct Agent {
     #[serde(rename = "$schema", default = "default_schema")]
     pub schema: String,
