@@ -14,7 +14,10 @@ use serde::Deserialize;
 
 use super::super::context::ContextManager;
 use super::super::util::issue::IssueCreator;
-use super::InvokeOutput;
+use super::{
+    InvokeOutput,
+    ToolInfo,
+};
 use crate::cli::chat::token_counter::TokenCounter;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -42,6 +45,12 @@ pub struct GhIssueContext {
 const MAX_TRANSCRIPT_CHAR_LEN: usize = 3_000;
 
 impl GhIssue {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "report_issue",
+        preferred_alias: "report",
+        aliases: &["gh_issue", "report"],
+    };
+
     pub async fn invoke(&self, os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
         let Some(context) = self.context.as_ref() else {
             return Err(eyre!(

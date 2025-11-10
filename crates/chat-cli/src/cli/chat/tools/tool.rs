@@ -7,6 +7,7 @@ use chat_cli_ui::conduit::{
 };
 use eyre::Result;
 
+use super::ToolInfo;
 use super::custom_tool::CustomTool;
 use super::delegate::Delegate;
 use super::execute::ExecuteCommand;
@@ -25,49 +26,44 @@ use crate::cli::agent::{
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
 
-/// Enum representing tool types without data, used for consistent naming
-#[derive(Debug, Clone, Copy)]
-enum ToolMetadata {
-    FsRead,
-    FsWrite,
-    ExecuteCommand,
-    UseAws,
-    GhIssue,
-    Introspect,
-    Knowledge,
-    Thinking,
-    Todo,
-    Delegate,
-}
+/// Proxy for accessing tool metadata without importing all tool structs
+pub struct ToolMetadata;
 
 impl ToolMetadata {
-    const fn name(self) -> &'static str {
-        match self {
-            ToolMetadata::FsRead => "fs_read",
-            ToolMetadata::FsWrite => "fs_write",
-            ToolMetadata::ExecuteCommand => "execute_bash",
-            ToolMetadata::UseAws => "use_aws",
-            ToolMetadata::GhIssue => "gh_issue",
-            ToolMetadata::Introspect => "introspect",
-            ToolMetadata::Knowledge => "knowledge",
-            ToolMetadata::Thinking => "thinking",
-            ToolMetadata::Todo => "todo_list",
-            ToolMetadata::Delegate => "delegate",
-        }
+    /// All native tool infos for iteration
+    const ALL: &[&ToolInfo] = &[
+        Self::FS_READ,
+        Self::FS_WRITE,
+        Self::EXECUTE_COMMAND,
+        Self::USE_AWS,
+        Self::GH_ISSUE,
+        Self::INTROSPECT,
+        Self::KNOWLEDGE,
+        Self::THINKING,
+        Self::TODO,
+        Self::DELEGATE,
+    ];
+    pub const DELEGATE: &ToolInfo = &Delegate::INFO;
+    pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
+    pub const FS_READ: &ToolInfo = &FsRead::INFO;
+    pub const FS_WRITE: &ToolInfo = &FsWrite::INFO;
+    pub const GH_ISSUE: &ToolInfo = &GhIssue::INFO;
+    pub const INTROSPECT: &ToolInfo = &Introspect::INFO;
+    pub const KNOWLEDGE: &ToolInfo = &Knowledge::INFO;
+    pub const THINKING: &ToolInfo = &Thinking::INFO;
+    pub const TODO: &ToolInfo = &TodoList::INFO;
+    pub const USE_AWS: &ToolInfo = &UseAws::INFO;
+
+    /// Get ToolInfo by tool specification name
+    pub fn get_by_spec_name(spec_name: &str) -> Option<&'static ToolInfo> {
+        Self::ALL.iter().copied().find(|info| info.spec_name == spec_name)
     }
 }
 
-pub const NATIVE_TOOL_NAMES: &[&str] = &[
-    ToolMetadata::FsRead.name(),
-    ToolMetadata::FsWrite.name(),
-    ToolMetadata::ExecuteCommand.name(),
-    ToolMetadata::UseAws.name(),
-    ToolMetadata::GhIssue.name(),
-    ToolMetadata::Knowledge.name(),
-    ToolMetadata::Thinking.name(),
-    ToolMetadata::Todo.name(),
-    ToolMetadata::Delegate.name(),
-];
+/// Check if a tool name matches any native tool (by any alias)
+pub fn is_native_tool(name: &str) -> bool {
+    ToolMetadata::ALL.iter().any(|info| info.aliases.contains(&name))
+}
 
 /// Represents an executable tool use.
 #[allow(clippy::large_enum_variant)]
@@ -88,21 +84,20 @@ pub enum Tool {
 
 impl Tool {
     /// The display name of a tool
-    pub fn display_name(&self) -> String {
+    pub fn display_name(&self) -> &str {
         match self {
-            Tool::FsRead(_) => ToolMetadata::FsRead.name(),
-            Tool::FsWrite(_) => ToolMetadata::FsWrite.name(),
-            Tool::ExecuteCommand(_) => ToolMetadata::ExecuteCommand.name(),
-            Tool::UseAws(_) => ToolMetadata::UseAws.name(),
+            Tool::FsRead(_) => FsRead::INFO.preferred_alias,
+            Tool::FsWrite(_) => FsWrite::INFO.preferred_alias,
+            Tool::ExecuteCommand(_) => ExecuteCommand::INFO.preferred_alias,
+            Tool::UseAws(_) => UseAws::INFO.preferred_alias,
             Tool::Custom(custom_tool) => &custom_tool.name,
-            Tool::GhIssue(_) => ToolMetadata::GhIssue.name(),
-            Tool::Introspect(_) => ToolMetadata::Introspect.name(),
-            Tool::Knowledge(_) => ToolMetadata::Knowledge.name(),
-            Tool::Thinking(_) => "thinking (prerelease)",
-            Tool::Todo(_) => ToolMetadata::Todo.name(),
-            Tool::Delegate(_) => ToolMetadata::Delegate.name(),
+            Tool::GhIssue(_) => GhIssue::INFO.preferred_alias,
+            Tool::Introspect(_) => Introspect::INFO.preferred_alias,
+            Tool::Knowledge(_) => Knowledge::INFO.preferred_alias,
+            Tool::Thinking(_) => Thinking::INFO.preferred_alias,
+            Tool::Todo(_) => TodoList::INFO.preferred_alias,
+            Tool::Delegate(_) => Delegate::INFO.preferred_alias,
         }
-        .to_owned()
     }
 
     /// Whether or not the tool should prompt the user to accept before [Self::invoke] is called.

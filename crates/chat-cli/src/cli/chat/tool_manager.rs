@@ -83,6 +83,7 @@ use crate::cli::chat::tools::todo::TodoList;
 use crate::cli::chat::tools::use_aws::UseAws;
 use crate::cli::chat::tools::{
     Tool,
+    ToolMetadata,
     ToolOrigin,
     ToolSpec,
 };
@@ -714,24 +715,34 @@ impl ToolManager {
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
                     .filter(|(name, _)| {
-                        name == DUMMY_TOOL_NAME
-                            || is_allow_all
-                            || is_allow_native
-                            || tool_list.contains(name)
-                            || tool_list.contains(&format!("@builtin/{name}"))
+                        if name == DUMMY_TOOL_NAME || is_allow_all || is_allow_native {
+                            return true;
+                        }
+
+                        // Check if tool_list contains the tool_index.json key or @builtin/key
+                        if tool_list.contains(name) || tool_list.contains(&format!("@builtin/{name}")) {
+                            return true;
+                        }
+
+                        // For native tools, check if any alias in tool_list matches this tool
+                        if let Some(info) = ToolMetadata::get_by_spec_name(name) {
+                            return tool_list.iter().any(|t| info.aliases.contains(&t.as_str()));
+                        }
+
+                        false
                     })
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
-                tool_specs.remove("thinking");
+                tool_specs.remove(ToolMetadata::THINKING.spec_name);
             }
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
-                tool_specs.remove("knowledge");
+                tool_specs.remove(ToolMetadata::KNOWLEDGE.spec_name);
             }
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
-                tool_specs.remove("todo_list");
+                tool_specs.remove(ToolMetadata::TODO.spec_name);
             }
             if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
-                tool_specs.remove("delegate");
+                tool_specs.remove(ToolMetadata::DELEGATE.spec_name);
             }
 
             #[cfg(windows)]
@@ -740,7 +751,7 @@ impl ToolManager {
 
                 use crate::cli::chat::tools::InputSchema;
 
-                tool_specs.remove("execute_bash");
+                tool_specs.remove(ToolMetadata::EXECUTE_COMMAND.spec_name);
 
                 tool_specs.insert("execute_cmd".to_string(), ToolSpec {
                     name: "execute_cmd".to_string(),
@@ -862,24 +873,37 @@ impl ToolManager {
         };
 
         Ok(match value.name.as_str() {
-            "fs_read" => Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?),
-            "fs_write" => Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?),
-            #[cfg(windows)]
-            "execute_cmd" => {
+            name if name == ToolMetadata::FS_READ.spec_name => {
+                Tool::FsRead(serde_json::from_value::<FsRead>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::FS_WRITE.spec_name => {
+                Tool::FsWrite(serde_json::from_value::<FsWrite>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::EXECUTE_COMMAND.spec_name => {
                 Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(map_err)?)
             },
-            #[cfg(not(windows))]
-            "execute_bash" => {
-                Tool::ExecuteCommand(serde_json::from_value::<ExecuteCommand>(value.args).map_err(map_err)?)
+            name if name == ToolMetadata::USE_AWS.spec_name => {
+                Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?)
             },
-            "use_aws" => Tool::UseAws(serde_json::from_value::<UseAws>(value.args).map_err(map_err)?),
-            "report_issue" => Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?),
-            "introspect" => Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(map_err)?),
-            "thinking" => Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?),
-            "knowledge" => Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?),
-            "todo_list" => Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?),
+            name if name == ToolMetadata::GH_ISSUE.spec_name => {
+                Tool::GhIssue(serde_json::from_value::<GhIssue>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::INTROSPECT.spec_name => {
+                Tool::Introspect(serde_json::from_value::<Introspect>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::THINKING.spec_name => {
+                Tool::Thinking(serde_json::from_value::<Thinking>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::KNOWLEDGE.spec_name => {
+                Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::TODO.spec_name => {
+                Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
+            },
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
-            "delegate" => Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?),
+            name if name == ToolMetadata::DELEGATE.spec_name => {
+                Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?)
+            },
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if
                 // it is a valid tool name, we should get a hit.

@@ -20,7 +20,10 @@ use crate::cli::chat::consts::{
     AGENT_FORMAT_TOOLS_DOC_URL,
     DUMMY_TOOL_NAME,
 };
-use crate::cli::chat::tools::ToolOrigin;
+use crate::cli::chat::tools::{
+    ToolMetadata,
+    ToolOrigin,
+};
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -115,11 +118,15 @@ impl ToolsArgs {
                 .collect::<BTreeSet<_>>();
 
             let to_display = sorted_tools.iter().fold(String::new(), |mut acc, tool_name| {
-                let width = longest - tool_name.len() + 4;
+                // Get preferred alias for native tools, or use original name for MCP tools
+                let display_name =
+                    ToolMetadata::get_by_spec_name(tool_name).map_or(*tool_name, |info| info.preferred_alias);
+
+                let width = longest - display_name.len() + 4;
                 acc.push_str(
                     format!(
                         "- {}{:>width$}{}\n",
-                        tool_name,
+                        display_name,
                         "",
                         session.conversation.agents.display_label(tool_name, origin),
                         width = width

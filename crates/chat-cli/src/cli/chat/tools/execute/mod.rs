@@ -19,6 +19,7 @@ use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    ToolInfo,
     display_tool_use,
 };
 use crate::cli::chat::util::truncate_safe;
@@ -49,6 +50,13 @@ pub struct ExecuteCommand {
 }
 
 impl ExecuteCommand {
+    pub const INFO: 
+  = ToolInfo {
+        spec_name: "execute_bash",
+        preferred_alias: "shell",
+        aliases: &["execute_bash", "execute_cmd", "shell"],
+    };
+
     pub fn requires_acceptance(&self, allowed_commands: Option<&Vec<String>>, allow_read_only: bool) -> bool {
         // Always require acceptance for multi-line commands.
         if self.command.contains("\n") || self.command.contains("\r") {
@@ -181,7 +189,8 @@ impl ExecuteCommand {
             style::Print(&self.command),
             StyledText::reset(),
         )?;
-        display_tool_use(tool, output)?;
+        
+      (tool, output)?;
         queue!(output, style::Print("\n"))?;
 
         // Add the summary as purpose if available on a separate line
@@ -223,9 +232,15 @@ impl ExecuteCommand {
         }
 
         let Self { command, .. } = self;
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
-        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, tool_name, None);
-        match agent.tools_settings.get(tool_name) {
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+        match Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
+        {
             Some(settings) => {
                 let Settings {
                     allowed_commands,
@@ -464,7 +479,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_eval_perm() {
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
         let mut agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -560,7 +575,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_enabled() {
         let os = Os::new().await.unwrap();
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
 
         let agent = Agent {
             name: "test_agent".to_string(),
@@ -601,7 +616,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_allow_read_only_with_denied_commands() {
         let os = Os::new().await.unwrap();
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
 
         let agent = Agent {
             name: "test_agent".to_string(),
@@ -645,7 +660,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_denied_commands_invalid_regex() {
         let os = Os::new().await.unwrap();
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
         let agent = Agent {
             name: "test_agent".to_string(),
             tools_settings: {
@@ -673,7 +688,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_deny_by_default() {
         let os = Os::new().await.unwrap();
-        let tool_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
+        let tool_name = ExecuteCommand::INFO.preferred_alias;
 
         let agent = Agent {
             name: "test_agent".to_string(),

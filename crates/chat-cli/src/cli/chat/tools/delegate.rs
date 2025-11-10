@@ -28,6 +28,7 @@ use crate::cli::agent::Agents;
 use crate::cli::chat::tools::{
     InvokeOutput,
     OutputKind,
+    ToolInfo,
 };
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
@@ -77,6 +78,12 @@ pub enum Operation {
 }
 
 impl Delegate {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "delegate",
+        preferred_alias: "delegate",
+        aliases: &["delegate"],
+    };
+
     pub fn is_enabled(os: &Os) -> bool {
         ExperimentManager::is_enabled(os, ExperimentName::Delegate)
     }

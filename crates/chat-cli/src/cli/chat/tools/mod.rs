@@ -31,8 +31,9 @@ use serde::{
     Serialize,
 };
 pub use tool::{
-    NATIVE_TOOL_NAMES,
     Tool,
+    ToolMetadata,
+    is_native_tool,
 };
 use tracing::error;
 
@@ -51,7 +52,19 @@ use crate::theme::{
 };
 
 pub const DEFAULT_APPROVE: [&str; 0] = [];
-pub const NATIVE_TOOLS: &[&str] = NATIVE_TOOL_NAMES;
+
+#[derive(Debug, Clone)]
+pub struct ToolInfo {
+    /// The name used in the tool specification sent to the model ('name' attribute in
+    /// tool_index.json is the source)
+    pub spec_name: &'static str,
+    /// The preferred alias for agent configuration and UI display (e.g., "shell", "read")
+    pub preferred_alias: &'static str,
+    /// All valid aliases accepted in agent configuration, including the old Q CLI names and Kiro
+    /// Names (preferred alias)
+    // (e.g., ["execute_bash", "execute_cmd", "shell"])
+    pub aliases: &'static [&'static str],
+}
 
 /// A tool specification to be sent to the model as part of a conversation. Maps to
 /// [BedrockToolSpecification].
@@ -133,6 +146,7 @@ fn tool_origin() -> ToolOrigin {
 pub struct QueuedTool {
     pub id: String,
     pub name: String,
+    pub preferred_alias: String,
     pub accepted: bool,
     pub tool: Tool,
     pub tool_input: serde_json::Value,

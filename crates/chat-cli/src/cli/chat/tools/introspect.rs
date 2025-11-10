@@ -14,6 +14,7 @@ use strum::{
 use super::{
     InvokeOutput,
     OutputKind,
+    ToolInfo,
 };
 use crate::cli::chat::cli::SlashCommand;
 use crate::cli::experiment::experiment_manager::{
@@ -46,6 +47,12 @@ pub struct ToolRecommendation {
 }
 
 impl Introspect {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "introspect",
+        preferred_alias: "introspect",
+        aliases: &["introspect"],
+    };
+
     pub async fn invoke(&self, os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
         // Generate help from the actual SlashCommand definitions
         let mut cmd = SlashCommand::command();

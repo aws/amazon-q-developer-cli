@@ -33,6 +33,7 @@ use tracing::{
 
 use super::{
     InvokeOutput,
+    ToolInfo,
     format_path,
     sanitize_path_tool_arg,
     supports_truecolor,
@@ -88,6 +89,12 @@ pub enum FsWrite {
 }
 
 impl FsWrite {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "fs_write",
+        preferred_alias: "write",
+        aliases: &["fs_write", "write"],
+    };
+
     pub fn path(&self, os: &Os) -> PathBuf {
         sanitize_path_tool_arg(os, match self {
             FsWrite::Create { path, .. } => path.as_str(),
@@ -483,8 +490,15 @@ impl FsWrite {
             denied_paths: Vec<String>,
         }
 
-        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "fs_write", None);
-        match agent.tools_settings.get("fs_write") {
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+        match Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
+        {
             Some(settings) => {
                 let Settings {
                     allowed_paths,

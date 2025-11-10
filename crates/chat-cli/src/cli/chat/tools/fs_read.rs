@@ -26,6 +26,7 @@ use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    ToolInfo,
     format_path,
     sanitize_path_tool_arg,
 };
@@ -53,6 +54,14 @@ pub struct FsRead {
     // For batch operations
     pub operations: Vec<FsReadOperation>,
     pub summary: Option<String>,
+}
+
+impl FsRead {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "fs_read",
+        preferred_alias: "read",
+        aliases: &["fs_read", "read"],
+    };
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -117,10 +126,14 @@ impl FsRead {
             allow_read_only: bool,
         }
 
-        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "fs_read", None);
-        let settings = agent
-            .tools_settings
-            .get("fs_read")
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+        let settings = Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
             .cloned()
             .unwrap_or_else(|| serde_json::json!({}));
 

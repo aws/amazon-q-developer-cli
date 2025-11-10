@@ -53,7 +53,7 @@ pub use wrapper_types::{
 
 use super::chat::tools::{
     DEFAULT_APPROVE,
-    NATIVE_TOOLS,
+    ToolMetadata,
     ToolOrigin,
 };
 use crate::cli::agent::hook::{
@@ -71,6 +71,20 @@ use crate::util::{
     file_uri,
     paths,
 };
+
+/// Preferred aliases for all native tools - used for example agent config
+const EXAMPLE_AGENT_NATIVE_TOOLS: &[&str] = &[
+    ToolMetadata::FS_READ.preferred_alias,
+    ToolMetadata::FS_WRITE.preferred_alias,
+    ToolMetadata::EXECUTE_COMMAND.preferred_alias,
+    ToolMetadata::USE_AWS.preferred_alias,
+    ToolMetadata::GH_ISSUE.preferred_alias,
+    ToolMetadata::INTROSPECT.preferred_alias,
+    ToolMetadata::KNOWLEDGE.preferred_alias,
+    ToolMetadata::THINKING.preferred_alias,
+    ToolMetadata::TODO.preferred_alias,
+    ToolMetadata::DELEGATE.preferred_alias,
+];
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
@@ -267,14 +281,17 @@ impl Agent {
     }
 
     pub fn print_overridden_permissions(&self, output: &mut impl Write) -> Result<(), AgentConfigError> {
-        let execute_name = if cfg!(windows) { "execute_cmd" } else { "execute_bash" };
         for allowed_tool in &self.allowed_tools {
             if let Some(settings) = self.tools_settings.get(allowed_tool.as_str()) {
                 // currently we only have four native tools that offers tool settings
                 let overridden_settings_key = match allowed_tool.as_str() {
-                    "fs_read" | "fs_write" => Some("allowedPaths"),
-                    "use_aws" => Some("allowedServices"),
-                    name if name == execute_name => Some("allowedCommands"),
+                    name if ToolMetadata::FS_READ.aliases.contains(&name)
+                        || ToolMetadata::FS_WRITE.aliases.contains(&name) =>
+                    {
+                        Some("allowedPaths")
+                    },
+                    name if ToolMetadata::USE_AWS.aliases.contains(&name) => Some("allowedServices"),
+                    name if ToolMetadata::EXECUTE_COMMAND.aliases.contains(&name) => Some("allowedCommands"),
                     _ => None,
                 };
 
@@ -649,7 +666,7 @@ impl Agents {
                 name: "example".to_string(),
                 description: Some("This is an example agent config (and will not be loaded unless you change it to have .json extension)".to_string()),
                 tools: {
-                    NATIVE_TOOLS
+                    EXAMPLE_AGENT_NATIVE_TOOLS
                         .iter()
                         .copied()
                         .map(str::to_string)
@@ -841,6 +858,17 @@ impl Agents {
                 ToolOrigin::Native => None,
                 ToolOrigin::McpServer(_) => Some(<ToolOrigin as Borrow<str>>::borrow(origin)),
             };
+
+            // For native tools, check if any alias matches allowedTools
+            if server_name.is_none() {
+                if let Some(info) = ToolMetadata::get_by_spec_name(tool_name) {
+                    return info
+                        .aliases
+                        .iter()
+                        .any(|alias| is_tool_in_allowlist(&a.allowed_tools, alias, server_name));
+                }
+            }
+
             is_tool_in_allowlist(&a.allowed_tools, tool_name, server_name)
         });
 
@@ -855,17 +883,14 @@ impl Agents {
     // This "static" way avoids needing to construct a tool instance.
     fn default_permission_label(&self, tool_name: &str) -> String {
         let label = match tool_name {
-            "fs_read" => "trust working directory".dark_grey(),
-            "fs_write" => "not trusted".dark_grey(),
-            #[cfg(not(windows))]
-            "execute_bash" => "not trusted".dark_grey(),
-            #[cfg(windows)]
-            "execute_cmd" => "not trusted".dark_grey(),
-            "use_aws" => "trust read-only commands".dark_grey(),
-            "report_issue" => "trusted".dark_green().bold(),
-            "introspect" => "trusted".dark_green().bold(),
-            "thinking" => "trusted (prerelease)".dark_green().bold(),
-            "todo_list" => "trusted".dark_green().bold(),
+            name if ToolMetadata::FS_READ.aliases.contains(&name) => "trust working directory".dark_grey(),
+            name if ToolMetadata::FS_WRITE.aliases.contains(&name) => "not trusted".dark_grey(),
+            name if ToolMetadata::EXECUTE_COMMAND.aliases.contains(&name) => "not trusted".dark_grey(),
+            name if ToolMetadata::USE_AWS.aliases.contains(&name) => "trust read-only commands".dark_grey(),
+            name if ToolMetadata::GH_ISSUE.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::INTROSPECT.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::THINKING.aliases.contains(&name) => "trusted (prerelease)".dark_green().bold(),
+            name if ToolMetadata::TODO.aliases.contains(&name) => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };

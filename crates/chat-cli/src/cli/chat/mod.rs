@@ -140,11 +140,11 @@ use tools::delegate::{
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
-    NATIVE_TOOLS,
     OutputKind,
     QueuedTool,
     Tool,
     ToolSpec,
+    is_native_tool,
 };
 use tracing::{
     debug,
@@ -352,7 +352,7 @@ impl ChatArgs {
 
             if let Some(trust_tools) = self.trust_tools.take() {
                 for tool in &trust_tools {
-                    if !tool.starts_with("@") && !NATIVE_TOOLS.contains(&tool.as_str()) {
+                    if !tool.starts_with("@") && !is_native_tool(tool) {
                         let _ = queue!(
                             stderr,
                             StyledText::warning_fg(),
@@ -2571,7 +2571,7 @@ impl ChatSession {
                         } else {
                             match tool.tool.get_summary() {
                                 Some(summary) => summary,
-                                None => tool.tool.display_name(),
+                                None => tool.tool.display_name().to_string(),
                             }
                         };
 
@@ -3331,6 +3331,7 @@ impl ChatSession {
                             queued_tools.push(QueuedTool {
                                 id: tool_use_id.clone(),
                                 name: tool_use_name,
+                                preferred_alias: tool.display_name().to_string(),
                                 tool,
                                 accepted: false,
                                 tool_input,
@@ -3540,7 +3541,7 @@ impl ChatSession {
         if self.stderr.should_send_structured_event {
             let tool_call_start = ToolCallStart {
                 tool_call_id: tool_use.id.clone(),
-                tool_call_name: tool_use.name.clone(),
+                tool_call_name: tool_use.preferred_alias.clone(),
                 mcp_server_name: if let Tool::Custom(ref tool) = tool_use.tool {
                     Some(tool.server_name.clone())
                 } else {

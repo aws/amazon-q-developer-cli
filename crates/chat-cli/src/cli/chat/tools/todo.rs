@@ -23,7 +23,10 @@ use serde::{
     Serialize,
 };
 
-use super::InvokeOutput;
+use super::{
+    InvokeOutput,
+    ToolInfo,
+};
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
@@ -215,6 +218,12 @@ pub enum TodoList {
 }
 
 impl TodoList {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "todo_list",
+        preferred_alias: "todo",
+        aliases: &["todo_list", "todo"],
+    };
+
     /// Checks if todo lists are enabled
     pub fn is_enabled(os: &Os) -> bool {
         ExperimentManager::is_enabled(os, ExperimentName::TodoList)

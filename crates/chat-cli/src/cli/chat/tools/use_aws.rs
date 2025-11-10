@@ -22,6 +22,7 @@ use super::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    ToolInfo,
     env_vars_with_user_agent,
 };
 use crate::cli::agent::{
@@ -46,6 +47,12 @@ pub struct UseAws {
 }
 
 impl UseAws {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "use_aws",
+        preferred_alias: "aws",
+        aliases: &["use_aws", "aws"],
+    };
+
     pub fn requires_acceptance(&self) -> bool {
         !READONLY_OPS.iter().any(|op| self.operation_name.starts_with(op))
     }
@@ -189,8 +196,15 @@ impl UseAws {
         }
 
         let Self { service_name, .. } = self;
-        let is_in_allowlist = is_tool_in_allowlist(&agent.allowed_tools, "use_aws", None);
-        match agent.tools_settings.get("use_aws") {
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+        match Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
+        {
             Some(settings) => {
                 let settings = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,

@@ -10,6 +10,7 @@ use serde::Deserialize;
 use super::{
     InvokeOutput,
     OutputKind,
+    ToolInfo,
 };
 use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
@@ -31,6 +32,12 @@ pub struct Thinking {
 }
 
 impl Thinking {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "thinking",
+        preferred_alias: "thinking",
+        aliases: &["thinking"],
+    };
+
     /// Checks if the thinking feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
         ExperimentManager::is_enabled(os, ExperimentName::Thinking)

@@ -11,6 +11,7 @@ use tracing::warn;
 use super::{
     InvokeOutput,
     OutputKind,
+    ToolInfo,
 };
 use crate::cli::agent::{
     Agent,
@@ -87,6 +88,12 @@ pub struct KnowledgeCancel {
 }
 
 impl Knowledge {
+    pub const INFO: ToolInfo = ToolInfo {
+        spec_name: "knowledge",
+        preferred_alias: "knowledge",
+        aliases: &["knowledge"],
+    };
+
     /// Checks if the knowledge feature is enabled in settings
     pub fn is_enabled(os: &Os) -> bool {
         ExperimentManager::is_enabled(os, ExperimentName::Knowledge)
@@ -527,7 +534,11 @@ impl Knowledge {
         _ = self;
         _ = os;
 
-        if is_tool_in_allowlist(&agent.allowed_tools, "knowledge", None) {
+        if Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None))
+        {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask
