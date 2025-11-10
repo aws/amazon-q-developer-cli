@@ -92,7 +92,7 @@ pub fn render_migration_message(output: &mut impl Write) -> Result<()> {
 }
 
 /// Render changelog content from feed.json with manual formatting
-pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
+pub fn render_changelog_content(output: &mut impl Write, show_tip: bool) -> Result<()> {
     let feed = Feed::load();
     let recent_entries = feed.get_all_changelogs()
         .into_iter()
@@ -106,13 +106,14 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
 
     // Render recent entries
     for entry in recent_entries {
-        // Show version header
+        // Show version header - version bold, date secondary
         execute!(
             output,
-            StyledText::primary_fg(),
             style::SetAttribute(Attribute::Bold),
-            style::Print(format!("{} ({})\n", entry.version, entry.date)),
+            style::Print(&entry.version),
             StyledText::reset_attributes(),
+            StyledText::secondary_fg(),
+            style::Print(format!(" ({})\n", entry.date)),
             StyledText::reset(),
         )?;
 
@@ -142,13 +143,23 @@ pub fn render_changelog_content(output: &mut impl Write) -> Result<()> {
         execute!(output, style::Print("\n"))?; // Add spacing between versions
     }
 
-    execute!(
-        output,
-        style::Print(format!(
-            "\n{}\n\n",
-            StyledText::secondary("💡 Run `/changelog` anytime to see the latest updates and features!")
-        ))
-    )?;
+    // Only show tip if requested
+    if show_tip {
+        // Extra space before tooltip
+        execute!(
+            output,
+            style::Print("\n"),
+            StyledText::secondary_fg(),
+            style::Print("💡 Run "),
+            StyledText::reset(),
+            StyledText::brand_fg(),
+            style::Print("/changelog"),
+            StyledText::reset(),
+            StyledText::secondary_fg(),
+            style::Print(" anytime to see the latest updates and features!\n\n"),
+            StyledText::reset(),
+        )?;
+    }
     Ok(())
 }
 

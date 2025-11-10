@@ -19,6 +19,7 @@ use crate::cli::chat::tools::{
     InvokeOutput,
     MAX_TOOL_RESPONSE_SIZE,
     OutputKind,
+    display_tool_use,
 };
 use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
@@ -172,15 +173,16 @@ impl ExecuteCommand {
         })
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         queue!(output, style::Print("I will run the following command: "),)?;
         queue!(
             output,
             StyledText::brand_fg(),
             style::Print(&self.command),
             StyledText::reset(),
-            style::Print("\n"),
         )?;
+        display_tool_use(tool, output)?;
+        queue!(output, style::Print("\n"))?;
 
         // Add the summary as purpose if available on a separate line
         if let Some(ref summary) = self.summary {

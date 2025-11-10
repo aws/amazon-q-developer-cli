@@ -107,7 +107,7 @@ pub fn dialoguer_theme() -> ColorfulTheme {
         active_item_prefix: dialoguer::console::style("❯".into())
             .for_stderr()
             .color256(BRAND_COLOR_ANSI),
-        active_item_style: dialoguer::console::Style::new().color256(BRAND_COLOR_ANSI),
+        active_item_style: dialoguer::console::Style::new().color256(BRAND_COLOR_ANSI).bold(),
         ..ColorfulTheme::default()
     }
 }

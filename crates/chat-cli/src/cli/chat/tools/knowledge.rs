@@ -150,7 +150,7 @@ impl Knowledge {
         }
     }
 
-    pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(&self, tool: &super::tool::Tool, os: &Os, updates: &mut impl Write) -> Result<()> {
         match self {
             Knowledge::Add(add) => {
                 queue!(
@@ -306,6 +306,7 @@ impl Knowledge {
                 )?;
             },
         };
+        super::display_tool_use(tool, updates)?;
         Ok(())
     }
 

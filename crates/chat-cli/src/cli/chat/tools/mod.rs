@@ -265,6 +265,36 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
     Ok(())
 }
 
+/// Helper function to display tool usage information in the top right corner
+/// This should be called by each tool within their queue_description method
+///
+/// # Parameters
+/// * `tool` - The Tool enum containing all metadata (name, server info, etc.)
+/// * `updates` - The output to write to
+pub fn display_tool_use(tool: &Tool, updates: &mut impl Write) -> Result<()> {
+    // Check if this is a custom tool from an MCP server
+    if let Tool::Custom(custom_tool) = tool {
+        queue!(
+            updates,
+            StyledText::secondary_fg(),
+            style::Print(" (from mcp server: "),
+            style::Print(&custom_tool.server_name),
+            style::Print(")"),
+            StyledText::reset(),
+        )?;
+    } else {
+        queue!(
+            updates,
+            StyledText::secondary_fg(),
+            style::Print(" (using tool: "),
+            style::Print(tool.display_name()),
+            style::Print(")"),
+            StyledText::reset(),
+        )?;
+    }
+    Ok(())
+}
+
 /// Helper function to format function results with consistent styling
 ///
 /// # Parameters

@@ -1205,7 +1205,8 @@ impl ChatSession {
 
         if should_show {
             // Use the shared rendering function
-            ui::render_changelog_content(&mut self.stderr)?;
+            // Pass true to show the tip when auto-showing changelog on startup
+            ui::render_changelog_content(&mut self.stderr, true)?;
 
             // Update the database entries
             os.database.set_changelog_last_version(current_version)?;
@@ -2661,7 +2662,9 @@ impl ChatSession {
                     debug!("tool result output: {:#?}", result);
                     execute!(
                         self.stdout,
+                        StyledText::secondary_fg(),
                         style::Print(format!(" - Completed in {tool_time}s")),
+                        StyledText::reset(),
                         style::Print("\n"),
                     )?;
                     if let Some(tag) = checkpoint_tag {
@@ -3565,7 +3568,6 @@ impl ChatSession {
             .map_err(|e| ChatError::Custom(format!("failed to print tool, `{}`: {}", tool_use.name, e).into()))?;
 
         self.stdout.flush()?;
-
         Ok(())
     }
 

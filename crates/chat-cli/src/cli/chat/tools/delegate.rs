@@ -129,11 +129,23 @@ impl Delegate {
         })
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         match self.operation {
-            Operation::Launch => queue!(output, style::Print("Delegating task to agent\n"))?,
-            Operation::Status => queue!(output, style::Print("Checking agent status\n"))?,
-            Operation::List => queue!(output, style::Print("Listing available agents\n"))?,
+            Operation::Launch => {
+                queue!(output, style::Print("Delegating task to agent"))?;
+                super::display_tool_use(tool, output)?;
+                queue!(output, style::Print("\n"))?;
+            },
+            Operation::Status => {
+                queue!(output, style::Print("Checking agent status"))?;
+                super::display_tool_use(tool, output)?;
+                queue!(output, style::Print("\n"))?;
+            },
+            Operation::List => {
+                queue!(output, style::Print("Listing available agents"))?;
+                super::display_tool_use(tool, output)?;
+                queue!(output, style::Print("\n"))?;
+            },
         }
 
         Ok(())

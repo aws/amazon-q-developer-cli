@@ -146,7 +146,7 @@ impl CustomTool {
         }
     }
 
-    pub fn queue_description(&self, output: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         queue!(
             output,
             style::Print("Running tool "),
@@ -163,14 +163,17 @@ impl CustomTool {
                     .join("\n"),
                 _ => format!("{params:?}"),
             };
+            queue!(output, style::Print(" with the param"),)?;
+            super::display_tool_use(tool, output)?;
             queue!(
                 output,
-                style::Print(" with the param:\n"),
+                style::Print("\n"),
                 style::Print(params),
                 style::Print("\n"),
                 StyledText::reset(),
             )?;
         } else {
+            super::display_tool_use(tool, output)?;
             queue!(output, style::Print("\n"))?;
         }
         Ok(())

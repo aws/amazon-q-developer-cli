@@ -117,8 +117,9 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
                         )
                     } else {
                         format!(
-                            "{display_name} {} | {}",
+                            "{display_name} {} {} {}",
                             StyledText::current_item("(current)"),
+                            StyledText::secondary("|"),
                             StyledText::secondary(desc)
                         )
                     }
@@ -129,7 +130,11 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
                 if desc.to_lowercase().contains("experimental") {
                     format!("{display_name} {}", StyledText::secondary("-- experimental"))
                 } else {
-                    format!("{display_name} | {}", StyledText::secondary(desc))
+                    format!(
+                        "{display_name} {} {}",
+                        StyledText::secondary("|"),
+                        StyledText::secondary(desc)
+                    )
                 }
             } else {
                 display_name.to_string()

@@ -91,32 +91,30 @@ pub mod ui_text {
 
         // Shortcuts section
         help.push_str("\n\n");
-        help.push_str(&StyledText::clap_heading("Shortcuts:"));
+        help.push_str(&StyledText::title("Shortcuts:"));
         help.push('\n');
 
         // Multi-line prompt shortcut
         help.push_str(&format!(
             "{}        {}",
-            "^ + J",
-            StyledText::secondary("Ctrl(^) + J or Alt(⌥) + Enter(⏎) to insert new-line for multi-line prompt")
+            StyledText::current_item("Ctrl(^) + J"),
+            StyledText::secondary("to insert new-line for multi-line prompt")
         ));
         help.push('\n');
 
         // Fuzzy search shortcut
         help.push_str(&format!(
             "{}        {}",
-            "^ + s",
-            StyledText::secondary(
-                "Ctrl(^) + s for fuzzy search commands and context files, use tab to select multiple items"
-            )
+            StyledText::current_item("Ctrl(^) + S"),
+            StyledText::secondary("for fuzzy search commands and context files, use tab to select multiple items")
         ));
         help.push('\n');
 
         // Tangent mode shortcut
         help.push_str(&format!(
             "{}        {}",
-            "^ + t",
-            StyledText::secondary("Ctrl(^) + t to toggle tangent mode for isolated conversations")
+            StyledText::current_item("Ctrl(^) + T"),
+            StyledText::secondary("to toggle tangent mode for isolated conversations")
         ));
         help.push('\n');
 

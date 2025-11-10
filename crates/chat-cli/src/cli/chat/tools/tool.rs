@@ -24,7 +24,6 @@ use crate::cli::agent::{
 };
 use crate::cli::chat::line_tracker::FileLineTracker;
 use crate::os::Os;
-use crate::theme::StyledText;
 
 /// Enum representing tool types without data, used for consistent naming
 #[derive(Debug, Clone, Copy)]
@@ -153,26 +152,22 @@ impl Tool {
             Event,
             ToolCallArgs,
         };
-        use crossterm::{
-            queue,
-            style,
-        };
 
         if output.should_send_structured_event {
             let mut buf = Vec::<u8>::new();
 
             match self {
-                Tool::FsRead(fs_read) => fs_read.queue_description(os, &mut buf).await,
-                Tool::FsWrite(fs_write) => fs_write.queue_description(os, &mut buf),
-                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(&mut buf),
-                Tool::UseAws(use_aws) => use_aws.queue_description(&mut buf),
-                Tool::Custom(custom_tool) => custom_tool.queue_description(&mut buf),
-                Tool::GhIssue(gh_issue) => gh_issue.queue_description(&mut buf),
-                Tool::Introspect(_) => Introspect::queue_description(&mut buf),
-                Tool::Knowledge(knowledge) => knowledge.queue_description(os, &mut buf).await,
-                Tool::Thinking(thinking) => thinking.queue_description(&mut buf),
+                Tool::FsRead(fs_read) => fs_read.queue_description(self, os, &mut buf).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(self, os, &mut buf),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, &mut buf),
+                Tool::UseAws(use_aws) => use_aws.queue_description(self, &mut buf),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(self, &mut buf),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, &mut buf),
+                Tool::Introspect(_) => Introspect::queue_description(self, &mut buf),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, &mut buf).await,
+                Tool::Thinking(thinking) => thinking.queue_description(self, &mut buf),
                 Tool::Todo(_) => Ok(()),
-                Tool::Delegate(delegate) => delegate.queue_description(&mut buf),
+                Tool::Delegate(delegate) => delegate.queue_description(self, &mut buf),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -186,38 +181,18 @@ impl Tool {
             output.send(Event::ToolCallArgs(tool_call_args))?;
         } else {
             match self {
-                Tool::FsRead(fs_read) => fs_read.queue_description(os, output).await,
-                Tool::FsWrite(fs_write) => fs_write.queue_description(os, output),
-                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(output),
-                Tool::UseAws(use_aws) => use_aws.queue_description(output),
-                Tool::Custom(custom_tool) => custom_tool.queue_description(output),
-                Tool::GhIssue(gh_issue) => gh_issue.queue_description(output),
-                Tool::Introspect(_) => Introspect::queue_description(output),
-                Tool::Knowledge(knowledge) => knowledge.queue_description(os, output).await,
-                Tool::Thinking(thinking) => thinking.queue_description(output),
+                Tool::FsRead(fs_read) => fs_read.queue_description(self, os, output).await,
+                Tool::FsWrite(fs_write) => fs_write.queue_description(self, os, output),
+                Tool::ExecuteCommand(execute_command) => execute_command.queue_description(self, output),
+                Tool::UseAws(use_aws) => use_aws.queue_description(self, output),
+                Tool::Custom(custom_tool) => custom_tool.queue_description(self, output),
+                Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, output),
+                Tool::Introspect(_) => Introspect::queue_description(self, output),
+                Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, output).await,
+                Tool::Thinking(thinking) => thinking.queue_description(self, output),
                 Tool::Todo(_) => Ok(()),
-                Tool::Delegate(delegate) => delegate.queue_description(output),
+                Tool::Delegate(delegate) => delegate.queue_description(self, output),
             }?;
-
-            if let Tool::Custom(tool) = self {
-                queue!(
-                    output,
-                    StyledText::secondary_fg(),
-                    style::Print(" (from mcp server: "),
-                    style::Print(&tool.server_name),
-                    style::Print(")"),
-                    StyledText::reset(),
-                )?;
-            } else {
-                queue!(
-                    output,
-                    StyledText::secondary_fg(),
-                    style::Print(" (using tool: "),
-                    style::Print(self.display_name()),
-                    style::Print(")"),
-                    StyledText::reset(),
-                )?;
-            }
         };
 
         Ok(())
