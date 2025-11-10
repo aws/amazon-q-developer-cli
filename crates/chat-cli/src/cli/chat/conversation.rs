@@ -88,6 +88,9 @@ use crate::theme::StyledText;
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
 
+pub const EMBEDDED_USER_MESSAGE_START_HEADER: &str = "--- EMBEDDED USER MESSAGE BEGIN ---\n";
+pub const EMBEDDED_USER_MESSAGE_END_HEADER: &str = "--- EMBEDDED USER MESSAGE END ---\n\n";
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
     user: UserMessage,
@@ -687,6 +690,7 @@ impl ConversationState {
                     None, // tool_context
                 )
                 .await?;
+
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
 
             if let (true, Some(next_message)) = (run_perprompt_hooks, self.next_message.as_mut()) {
@@ -906,7 +910,7 @@ Return only the JSON configuration, no additional text."
         os: &Os,
         additional_context: Option<String>,
     ) -> (Option<Vec<HistoryEntry>>, Vec<(String, String)>) {
-        let mut context_content = String::new();
+        let mut context_content = retrieve_system_prompt();
         let mut dropped_context_files = Vec::new();
         if let Some((summary, _)) = &self.latest_summary {
             context_content.push_str(CONTEXT_ENTRY_START_HEADER);
@@ -1167,6 +1171,12 @@ where
         acc.push(ChatMessage::AssistantResponseMessage(assistant.clone().into()));
         acc
     })
+}
+
+fn retrieve_system_prompt() -> String {
+    const MAIN_AGENT_SYSTEM_PROMPT: &str = include_str!("system_prompts/main_agent.txt");
+
+    format!("{EMBEDDED_USER_MESSAGE_START_HEADER}{MAIN_AGENT_SYSTEM_PROMPT}\n{EMBEDDED_USER_MESSAGE_END_HEADER}")
 }
 
 /// Character count warning levels for conversation size
