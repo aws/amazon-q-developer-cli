@@ -195,8 +195,7 @@ impl McpManagerHandle {
         {
             McpManagerResponse::LaunchServer(rx) => Ok(rx),
             other => Err(McpManagerError::Custom(format!(
-                "received unexpected response: {:?}",
-                other
+                "received unexpected response: {other:?}"
             ))),
         }
     }
