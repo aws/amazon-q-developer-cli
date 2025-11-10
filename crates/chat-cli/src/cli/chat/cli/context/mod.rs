@@ -140,21 +140,23 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         StyledText::secondary_fg(),
-                        style::Print("    <none>\n\n"),
+                        style::Print("  <none>\n\n"),
                         StyledText::reset(),
                     )?;
                 } else {
                     for path in &agent_owned_list {
-                        execute!(
-                            session.stderr,
-                            style::Print(format!("    - {} ", path.get_path_as_str()))
-                        )?;
+                        execute!(session.stderr, style::Print(format!("  - {} ", path.get_path_as_str())))?;
                         if let Ok(context_files) = context_manager
                             .get_context_files_by_path(os, path.get_path_as_str())
                             .await
                         {
                             for (file_path, _content) in &context_files {
-                                execute!(session.stderr, style::Print(format!("    {file_path}\n")))?;
+                                execute!(
+                                    session.stderr,
+                                    StyledText::current_item_fg(),
+                                    style::Print(format!("{file_path}\n")),
+                                    StyledText::reset()
+                                )?;
                             }
                             profile_context_files
                                 .extend(context_files.into_iter().map(|(path, content)| (path, content, false)));
@@ -162,7 +164,7 @@ impl ContextSubcommand {
                             execute!(
                                 session.stderr,
                                 StyledText::secondary_fg(),
-                                style::Print(format!("    {} (no matches)\n", path.get_path_as_str())),
+                                style::Print("(no matches)\n"),
                                 StyledText::reset()
                             )?;
                         }
@@ -182,7 +184,7 @@ impl ContextSubcommand {
                     execute!(
                         session.stderr,
                         StyledText::secondary_fg(),
-                        style::Print("    <none>\n\n"),
+                        style::Print("  <none>\n\n"),
                         StyledText::reset(),
                     )?;
                 } else {
@@ -192,15 +194,21 @@ impl ContextSubcommand {
                             .await
                         {
                             for (file_path, _content) in &context_files {
-                                execute!(session.stderr, style::Print(format!("    {file_path}\n")))?;
+                                execute!(
+                                    session.stderr,
+                                    StyledText::current_item_fg(),
+                                    style::Print(format!("  {file_path}\n")),
+                                    StyledText::reset()
+                                )?;
                             }
                             profile_context_files
                                 .extend(context_files.into_iter().map(|(path, content)| (path, content, true)));
                         } else {
                             execute!(
                                 session.stderr,
+                                style::Print(format!("  - {} ", path.get_path_as_str())),
                                 StyledText::secondary_fg(),
-                                style::Print(format!("    {} (no matches)\n", path.get_path_as_str())),
+                                style::Print("(no matches)\n"),
                                 StyledText::reset()
                             )?;
                         }
@@ -223,7 +231,7 @@ impl ContextSubcommand {
                         .sum::<usize>();
                     execute!(
                         session.stderr,
-                        StyledText::success_fg(),
+                        StyledText::current_item_fg(),
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(
                             "{} matched file{} in use:\n",
@@ -241,7 +249,11 @@ impl ContextSubcommand {
                         let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
                         execute!(
                             session.stderr,
-                            style::Print(format!("- {filename} ")),
+                            style::Print("- "),
+                            StyledText::emphasis_fg(),
+                            style::Print(filename),
+                            StyledText::reset(),
+                            style::Print(" "),
                             StyledText::secondary_fg(),
                             style::Print(format!("({percentage:.1}% of context window)\n")),
                             StyledText::reset(),
