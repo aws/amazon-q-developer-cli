@@ -50,8 +50,7 @@ pub struct ExecuteCommand {
 }
 
 impl ExecuteCommand {
-    pub const INFO: 
-  = ToolInfo {
+    pub const INFO: ToolInfo = ToolInfo {
         spec_name: "execute_bash",
         preferred_alias: "shell",
         aliases: &["execute_bash", "execute_cmd", "shell"],
@@ -189,8 +188,7 @@ impl ExecuteCommand {
             style::Print(&self.command),
             StyledText::reset(),
         )?;
-        
-      (tool, output)?;
+        display_tool_use(tool, output)?;
         queue!(output, style::Print("\n"))?;
 
         // Add the summary as purpose if available on a separate line
