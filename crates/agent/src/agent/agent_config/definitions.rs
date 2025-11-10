@@ -91,7 +91,7 @@ impl AgentConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-#[schemars(description = "An Agent is a declarative way of configuring a given instance of q chat.")]
+#[schemars(description = "An Agent is a declarative way of configuring a given instance of kiro-cli.")]
 pub struct AgentConfigV2025_08_22 {
     #[serde(rename = "$schema", default = "default_schema")]
     pub schema: String,
