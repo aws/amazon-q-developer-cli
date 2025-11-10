@@ -64,25 +64,17 @@ pub async fn render_context_window(
     if is_overflow {
         queue!(
             session.stderr,
-            style::Print(format!(
-                "\nCurrent context window ({} of {}k tokens used)\n",
-                context_data.total_tokens,
-                context_data.context_window_size / 1000
-            )),
+            style::Print(format!("\nCurrent context window ({total_percentage:.1}% used)\n")),
             StyledText::error_fg(),
             style::Print("█".repeat(progress_bar_width)),
             StyledText::reset(),
             style::Print(" "),
-            style::Print(format!("{total_percentage:.2}%")),
+            style::Print(format!("{total_percentage:.1}%")),
         )?;
     } else {
         queue!(
             session.stderr,
-            style::Print(format!(
-                "\nCurrent context window ({} of {}k tokens used)\n",
-                context_data.total_tokens,
-                context_data.context_window_size / 1000
-            )),
+            style::Print(format!("\nCurrent context window ({total_percentage:.1}% used)\n")),
             // Context files
             StyledText::brand_fg(),
             // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
@@ -127,7 +119,7 @@ pub async fn render_context_window(
             style::Print("█".repeat(left_over_width)),
             style::Print(" "),
             StyledText::reset(),
-            style::Print(format!("{total_percentage:.2}%")),
+            style::Print(format!("{total_percentage:.1}%")),
         )?;
     }
 
@@ -139,32 +131,28 @@ pub async fn render_context_window(
         style::Print("█ Context files: "),
         StyledText::reset(),
         style::Print(format!(
-            "~{} tokens ({:.2}%)\n",
-            context_data.context_tokens,
+            "{:.1}%\n",
             calculate_context_percentage(context_data.context_tokens, context_data.context_window_size)
         )),
         StyledText::error_fg(),
-        style::Print("█ Tools:    "),
+        style::Print("█ Tools: "),
         StyledText::reset(),
         style::Print(format!(
-            " ~{} tokens ({:.2}%)\n",
-            context_data.tools_tokens,
+            "{:.1}%\n",
             calculate_context_percentage(context_data.tools_tokens, context_data.context_window_size)
         )),
         StyledText::info_fg(),
         style::Print("█ Kiro responses: "),
         StyledText::reset(),
         style::Print(format!(
-            "  ~{} tokens ({:.2}%)\n",
-            context_data.assistant_tokens,
+            "{:.1}%\n",
             calculate_context_percentage(context_data.assistant_tokens, context_data.context_window_size)
         )),
         StyledText::emphasis_fg(),
         style::Print("█ Your prompts: "),
         StyledText::reset(),
         style::Print(format!(
-            " ~{} tokens ({:.2}%)\n\n",
-            context_data.user_tokens,
+            "{:.1}%\n\n",
             calculate_context_percentage(context_data.user_tokens, context_data.context_window_size)
         )),
     )?;
@@ -189,7 +177,7 @@ pub async fn render_context_window(
         StyledText::success_fg(),
         style::Print("/context show"),
         StyledText::secondary_fg(),
-        style::Print(" to see tokens per context file\n\n"),
+        style::Print(" to see usage per context file\n\n"),
         StyledText::reset(),
     )?;
 

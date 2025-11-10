@@ -53,6 +53,14 @@ pub struct BonusCredit {
 #[derive(Debug, PartialEq, Args)]
 pub struct UsageArgs {}
 
+/// Get the current plan name
+pub async fn get_plan_name(os: &Os) -> String {
+    match usage_data_provider::get_billing_usage_data(os).await {
+        Ok(billing_data) => billing_data.plan_name,
+        Err(_) => "Unknown".to_string(),
+    }
+}
+
 impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Only show credits/billing information

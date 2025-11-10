@@ -1407,11 +1407,14 @@ impl ChatSession {
                 }
             }
 
-            // Show model information
+            // Show model and plan information
             if let Some(ref model_info) = self.conversation.model_info {
                 let (models, _default_model) = get_available_models(os).await?;
                 if let Some(model_option) = models.iter().find(|option| option.model_id == model_info.model_id) {
                     let display_name = model_option.model_name.as_deref().unwrap_or(&model_option.model_id);
+
+                    let plan_name = crate::cli::chat::cli::usage::get_plan_name(os).await;
+
                     execute!(
                         self.stderr,
                         style::Print("\n"),
@@ -1424,7 +1427,15 @@ impl ChatSession {
                         StyledText::reset(),
                         style::Print(&StyledText::command("/model")),
                         StyledText::secondary_fg(),
-                        style::Print(" to change)\n"),
+                        style::Print(" to change) | Plan: "),
+                        StyledText::reset(),
+                        style::Print(&plan_name),
+                        StyledText::secondary_fg(),
+                        style::Print(" ("),
+                        StyledText::reset(),
+                        style::Print(&StyledText::command("/usage")),
+                        StyledText::secondary_fg(),
+                        style::Print(" for more detail)\n"),
                         StyledText::reset(),
                     )?;
                 }

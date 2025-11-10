@@ -234,13 +234,16 @@ impl ContextSubcommand {
                         StyledText::reset_attributes()
                     )?;
 
+                    let context_window_size =
+                        crate::cli::chat::cli::model::context_window_tokens(session.conversation.model_info.as_ref());
                     for (filename, content, _is_temporary) in &profile_context_files {
                         let est_tokens = TokenCounter::count_tokens(content);
+                        let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
                         execute!(
                             session.stderr,
                             style::Print(format!("- {filename} ")),
                             StyledText::secondary_fg(),
-                            style::Print(format!("(~{est_tokens} tkns)\n")),
+                            style::Print(format!("({percentage:.1}% of context window)\n")),
                             StyledText::reset(),
                         )?;
                         if expand {
@@ -264,9 +267,12 @@ impl ContextSubcommand {
                         .collect::<Vec<_>>();
                     let dropped_files = drop_matched_context_files(&mut files_as_vec, context_files_max_size).ok();
 
+                    let total_percentage = (total_tokens as f32 / context_window_size as f32) * 100.0;
                     execute!(
                         session.stderr,
-                        style::Print(format!("\nTotal: ~{total_tokens} tokens\n\n"))
+                        style::Print(format!(
+                            "\nContext files total: {total_percentage:.1}% of context window\n\n"
+                        ))
                     )?;
 
                     if let Some(dropped_files) = dropped_files {
@@ -286,11 +292,12 @@ impl ContextSubcommand {
 
                             for (filename, content) in truncated_dropped_files {
                                 let est_tokens = TokenCounter::count_tokens(content);
+                                let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
                                 execute!(
                                     session.stderr,
                                     style::Print(format!("{filename} ")),
                                     StyledText::secondary_fg(),
-                                    style::Print(format!("(~{est_tokens} tkns)\n")),
+                                    style::Print(format!("({percentage:.1}% of context window)\n")),
                                     StyledText::reset(),
                                 )?;
                             }
