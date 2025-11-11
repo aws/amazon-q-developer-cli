@@ -65,7 +65,7 @@ impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // Only show credits/billing information
         let billing_data = usage_data_provider::get_billing_usage_data(os).await?;
-        usage_renderer::render_billing_info(&billing_data, session, true).await?;
+        usage_renderer::render_billing_info(&billing_data, session, os, true).await?;
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })

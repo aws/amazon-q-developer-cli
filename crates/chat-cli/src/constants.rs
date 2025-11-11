@@ -26,6 +26,12 @@ pub const PRODUCT_NAME_CLI: &str = "Kiro CLI";
 /// Migration information URL
 pub const MIGRATION_INFO_URL: &str = "kiro.dev/cli";
 
+/// Kiro main website URL
+pub const KIRO_WEBSITE_URL: &str = "kiro.dev";
+
+/// Kiro app URL for account management
+pub const KIRO_APP_URL: &str = "https://app.kiro.dev/account/usage";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding

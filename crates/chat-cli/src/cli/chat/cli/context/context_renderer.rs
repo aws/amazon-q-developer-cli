@@ -132,8 +132,6 @@ pub async fn render_context_window(
         session.stderr,
         StyledText::brand_fg(),
         style::Print("█ Context files "),
-        StyledText::reset(),
-        style::Print(format!("~{} tokens ", context_data.context_tokens)),
         StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
@@ -141,8 +139,6 @@ pub async fn render_context_window(
         )),
         StyledText::error_fg(),
         style::Print("█ Tools "),
-        StyledText::reset(),
-        style::Print(format!("~{} tokens ", context_data.tools_tokens)),
         StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
@@ -150,8 +146,6 @@ pub async fn render_context_window(
         )),
         StyledText::info_fg(),
         style::Print("█ Kiro responses "),
-        StyledText::reset(),
-        style::Print(format!("~{} tokens ", context_data.assistant_tokens)),
         StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n",
@@ -159,8 +153,6 @@ pub async fn render_context_window(
         )),
         StyledText::emphasis_fg(),
         style::Print("█ Your prompts "),
-        StyledText::reset(),
-        style::Print(format!("~{} tokens ", context_data.user_tokens)),
         StyledText::secondary_fg(),
         style::Print(format!(
             "{:.1}%\n\n",

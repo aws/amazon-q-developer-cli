@@ -29,11 +29,11 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
 
             // Get billing cycle reset date from main object
             let billing_cycle_reset = usage_limits.next_date_reset().map_or_else(
-                || "Billing cycle reset: Unknown".to_string(),
+                || "Unknown".to_string(),
                 |next_reset| {
                     let reset_secs = next_reset.secs();
                     let reset_date = DateTime::from_timestamp(reset_secs, 0).unwrap_or_else(Utc::now);
-                    format!("Billing cycle reset: {}", reset_date.format("%m/%d"))
+                    reset_date.format("%m/%d").to_string()
                 },
             );
 
@@ -78,7 +78,7 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                             let days_until_expiry = (expiry_date - now).num_days().max(0);
 
                             bonus_credits.push(super::BonusCredit {
-                                name: display_name,
+                                name: "Bonus credits".to_string(),
                                 used: bonus_used,
                                 total: bonus_total,
                                 days_until_expiry,
