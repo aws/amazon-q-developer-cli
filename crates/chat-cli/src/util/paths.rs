@@ -259,9 +259,9 @@ pub fn runtime_dir() -> Result<PathBuf> {
 pub fn logs_dir() -> Result<PathBuf> {
     cfg_if::cfg_if! {
         if #[cfg(unix)] {
-            Ok(runtime_dir()?.join("qlog"))
+            Ok(runtime_dir()?.join("kiro-log"))
         } else if #[cfg(windows)] {
-            Ok(std::env::temp_dir().join("amazon-q").join("logs"))
+            Ok(std::env::temp_dir().join("kiro-log").join("logs"))
         }
     }
 }
