@@ -99,6 +99,8 @@ pub enum Setting {
     BedrockRegion,
     #[strum(message = "Bedrock model ID to use (string)")]
     BedrockModel,
+    #[strum(message = "Context window size for Bedrock (number)")]
+    BedrockContextWindow,
     #[strum(message = "Maximum output tokens for Bedrock responses (number, max 200000)")]
     BedrockMaxTokens,
     #[strum(message = "Enable extended thinking mode for Bedrock (boolean)")]
@@ -154,6 +156,7 @@ impl AsRef<str> for Setting {
             Self::BedrockEnabled => "bedrock.enabled",
             Self::BedrockRegion => "bedrock.region",
             Self::BedrockModel => "bedrock.model",
+            Self::BedrockContextWindow => "bedrock.contextWindow",
             Self::BedrockMaxTokens => "bedrock.maxTokens",
             Self::BedrockThinkingEnabled => "bedrock.thinkingEnabled",
             Self::BedrockTemperature => "bedrock.temperature",
@@ -214,6 +217,7 @@ impl TryFrom<&str> for Setting {
             "bedrock.enabled" => Ok(Self::BedrockEnabled),
             "bedrock.region" => Ok(Self::BedrockRegion),
             "bedrock.model" => Ok(Self::BedrockModel),
+            "bedrock.contextWindow" => Ok(Self::BedrockContextWindow),
             "bedrock.maxTokens" => Ok(Self::BedrockMaxTokens),
             "bedrock.thinkingEnabled" => Ok(Self::BedrockThinkingEnabled),
             "bedrock.temperature" => Ok(Self::BedrockTemperature),
