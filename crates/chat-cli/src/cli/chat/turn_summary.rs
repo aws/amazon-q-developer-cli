@@ -57,7 +57,7 @@ pub fn display_turn_usage_summary<W: Write>(
         execute!(
             stderr,
             style::SetForegroundColor(style::Color::DarkGrey),
-            style::Print(format!("{}\n\n", parts.join(" • "))),
+            style::Print(format!(" [i] {}\n\n", parts.join(" • "))),
             style::ResetColor,
         )?;
     } else {
