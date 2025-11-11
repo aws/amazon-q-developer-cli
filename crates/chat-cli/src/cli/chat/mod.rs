@@ -914,7 +914,14 @@ impl ChatSession {
         self.send_error_telemetry(os, reason, Some(reason_desc), err.status_code())
             .await;
 
-        self.clear_spinner()?;
+        if self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
+        }
 
         let (context, report, display_err_message) = match err {
             ChatError::Auth(AuthError::NoToken) => {
@@ -1700,7 +1707,14 @@ impl ChatSession {
             }
         };
 
-        self.clear_spinner()?;
+        if self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
+        }
 
         self.conversation
             .replace_history_with_summary(summary.clone(), strategy, request_metadata);
@@ -1943,7 +1957,14 @@ impl ChatSession {
             }
         };
 
-        self.clear_spinner()?;
+        if self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
+        }
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
             Ok(config) => config,
@@ -2117,6 +2138,7 @@ impl ChatSession {
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
+        queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
 
@@ -2515,7 +2537,6 @@ impl ChatSession {
                     cursor::MoveToColumn(0),
                     cursor::Show
                 )?;
-                self.stderr.flush()?;
             }
 
             // Handle checkpoint after tool execution - store tag for later display
@@ -2787,7 +2808,7 @@ impl ChatSession {
         }
 
         execute!(self.stderr, cursor::Hide)?;
-        execute!(self.stderr, StyledText::reset_attributes())?;
+        execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
@@ -2843,7 +2864,14 @@ impl ChatSession {
         let mut tool_uses: Vec<AssistantToolUse> = Vec::new();
         let mut tool_name_being_recvd: Option<String> = None;
 
-        self.clear_spinner()?;
+        if self.spinner.is_some() {
+            drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
+        }
 
         loop {
             match rx.recv().await {
@@ -2863,6 +2891,7 @@ impl ChatSession {
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
                             // printed while we are receiving tool use events.
+                            buf.push('\n');
                             tool_name_being_recvd = Some(name);
                         },
                         parser::ResponseEvent::AssistantText(text) => {
@@ -2891,7 +2920,14 @@ impl ChatSession {
                             buf.push_str(&text);
                         },
                         parser::ResponseEvent::ToolUse(tool_use) => {
-                            self.clear_spinner()?;
+                            if self.spinner.is_some() {
+                                drop(self.spinner.take());
+                                queue!(
+                                    self.stderr,
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                    cursor::MoveToColumn(0),
+                                )?;
+                            }
                             tool_uses.push(tool_use);
                             tool_name_being_recvd = None;
                         },
@@ -3076,8 +3112,14 @@ impl ChatSession {
                 buf.push('\n');
             }
 
-            if tool_name_being_recvd.is_none() && !buf.is_empty() {
-                self.clear_spinner()?;
+            if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
+                drop(self.spinner.take());
+                queue!(
+                    self.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
             }
 
             info!("## control end: buf: {:?}", buf);
@@ -3493,21 +3535,6 @@ impl ChatSession {
                 tool_permissions: allowed_tools,
             });
         }
-    }
-
-    /// Helper to ensure spinner is properly cleared from terminal
-    fn clear_spinner(&mut self) -> Result<(), ChatError> {
-        if self.spinner.is_some() {
-            drop(self.spinner.take());
-            queue!(
-                self.stderr,
-                terminal::Clear(terminal::ClearType::CurrentLine),
-                cursor::MoveToColumn(0),
-                cursor::Show
-            )?;
-            self.stderr.flush()?;
-        }
-        Ok(())
     }
 
     async fn print_tool_description(&mut self, os: &Os, tool_index: usize, trusted: bool) -> Result<(), ChatError> {
