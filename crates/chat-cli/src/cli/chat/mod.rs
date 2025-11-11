@@ -2132,6 +2132,9 @@ impl ChatSession {
             // replace anytime we error out and print a usage statement.
             args.insert(0, "slash_command".to_owned());
 
+            // Reset turn for all slash commands (they represent a new user action)
+            self.reset_user_turn();
+
             match SlashCommand::try_parse_from(args) {
                 Ok(command) => {
                     let command_name = command.command_name().to_string();
