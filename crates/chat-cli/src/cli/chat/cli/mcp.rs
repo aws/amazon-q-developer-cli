@@ -6,6 +6,7 @@ use crossterm::{
     style,
 };
 
+use crate::cli::chat::consts::MCP_CONFIRGRATION_DOC_URL;
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
@@ -50,7 +51,27 @@ impl McpArgs {
             .collect::<Vec<_>>()
             .join("");
 
-        for (server_name, msg) in session.conversation.tool_manager.mcp_load_record.lock().await.iter() {
+        let mcp_load_record = session.conversation.tool_manager.mcp_load_record.lock().await;
+
+        // Check if there are no MCP servers at all
+        if mcp_load_record.is_empty() && still_loading.is_empty() {
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                StyledText::info_fg(),
+                style::Print("ℹ️  No MCP servers installed\n\n"),
+                StyledText::reset(),
+                style::Print("To install MCP servers, visit "),
+                style::Print(MCP_CONFIRGRATION_DOC_URL),
+                style::Print(" for more information\n\n"),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        }
+
+        for (server_name, msg) in mcp_load_record.iter() {
             let msg = msg
                 .iter()
                 .map(|record| match record {
