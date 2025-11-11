@@ -74,7 +74,7 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         .items(&experiment_labels)
         .default(0)
         .report(false)
-        .interact_on_opt(&dialoguer::console::Term::stderr())
+        .interact_on_opt(&dialoguer::console::Term::stdout())
     {
         Ok(sel) => sel,
         // Ctrl‑C -> Err(Interrupted)
