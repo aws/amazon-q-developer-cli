@@ -51,7 +51,7 @@ use crate::util::paths::PathResolver;
 
 Notes
 • Launch kiro-cli chat with a specific agent with --agent
-• Construct an agent under ~/.kiro-cli/cli-agents/ (accessible globally) or cwd/.kiro-cli/cli-agents (accessible in workspace)
+• Construct an agent under ~/.kiro/agents/ (accessible globally) or cwd/.kiro/agents (accessible in workspace)
 • See example config under global directory
 • Set default agent to assume with settings by running \"kiro-cli settings chat.defaultAgent agent_name\"
 • Each agent maintains its own set of context and customizations"
