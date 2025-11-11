@@ -132,7 +132,7 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     StyledText::emphasis_fg(),
-                    style::Print(format!("Agent ({}):\n", context_manager.current_profile)),
+                    style::Print(format!("Agent ({})\n", context_manager.current_profile)),
                     StyledText::reset_attributes(),
                 )?;
 
@@ -176,7 +176,7 @@ impl ContextSubcommand {
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
                     StyledText::emphasis_fg(),
-                    style::Print("Session (temporary):\n"),
+                    style::Print("Session (temporary)\n"),
                     StyledText::reset_attributes(),
                 )?;
 
@@ -234,7 +234,7 @@ impl ContextSubcommand {
                         StyledText::current_item_fg(),
                         style::SetAttribute(Attribute::Bold),
                         style::Print(format!(
-                            "{} matched file{} in use:\n",
+                            "{} matched file{} in use\n",
                             total,
                             if total == 1 { "" } else { "s" }
                         )),

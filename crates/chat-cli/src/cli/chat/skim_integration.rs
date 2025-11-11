@@ -77,8 +77,14 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
         .prompt(prompt.to_string())
         .reverse(true)
         .multi(multi)
+        .no_info(true)  // Hide the counter (47/0)
         .color(Some(format!(
-            "current:{BRAND_COLOR_ANSI}:bold,pointer:{BRAND_COLOR_ANSI},prompt:{SECONDARY_COLOR_ANSI},current_bg:-1"
+            "fg+:{BRAND_COLOR_ANSI}:bold,\
+             bg+:-1,\
+             pointer:{BRAND_COLOR_ANSI},\
+             prompt:{SECONDARY_COLOR_ANSI},\
+             hl:{BRAND_COLOR_ANSI},\
+             hl+:{BRAND_COLOR_ANSI}:bold"
         )))
         .build()
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
