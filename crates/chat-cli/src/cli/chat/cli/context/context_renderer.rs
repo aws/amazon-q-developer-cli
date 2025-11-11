@@ -140,7 +140,7 @@ pub async fn render_context_window(
             calculate_context_percentage(context_data.context_tokens, context_data.context_window_size)
         )),
         StyledText::error_fg(),
-        style::Print("█ Tools: "),
+        style::Print("█ Tools "),
         StyledText::reset(),
         style::Print(format!("~{} tokens ", context_data.tools_tokens)),
         StyledText::secondary_fg(),

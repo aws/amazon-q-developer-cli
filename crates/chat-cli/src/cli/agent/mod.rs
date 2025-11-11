@@ -873,7 +873,7 @@ impl Agents {
         });
 
         if tool_trusted || self.trust_all_tools {
-            format!("* {}", "trusted".dark_green().bold())
+            format!("{}", "trusted".dark_green().bold())
         } else {
             self.default_permission_label(tool_name)
         }
@@ -895,7 +895,7 @@ impl Agents {
             _ => "not trusted".dark_grey(),
         };
 
-        format!("{} {label}", "*".reset())
+        format!("{label}")
     }
 }
 

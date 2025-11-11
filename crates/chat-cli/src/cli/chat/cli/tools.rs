@@ -88,7 +88,9 @@ impl ToolsArgs {
             }),
             StyledText::reset_attributes(),
             style::Print("\n"),
+            StyledText::secondary_fg(),
             style::Print("▔".repeat(terminal_width)),
+            StyledText::reset(),
         )?;
 
         let mut origin_tools: Vec<_> = session.conversation.tools.iter().collect();
@@ -139,7 +141,7 @@ impl ToolsArgs {
             let _ = queue!(
                 session.stderr,
                 style::SetAttribute(Attribute::Bold),
-                style::Print(format!("{origin}:\n")),
+                style::Print(format!("{origin}\n")),
                 StyledText::reset_attributes(),
                 style::Print(to_display),
                 style::Print("\n")
@@ -158,7 +160,9 @@ impl ToolsArgs {
                 style::Print(" for details)"),
                 StyledText::reset_attributes(),
                 style::Print("\n"),
+                StyledText::secondary_fg(),
                 style::Print("▔".repeat(terminal_width)),
+                StyledText::reset(),
             )?;
             for client in loading {
                 queue!(session.stderr, style::Print(format!(" - {client}")), style::Print("\n"))?;
