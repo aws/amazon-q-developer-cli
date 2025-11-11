@@ -3191,7 +3191,6 @@ impl ChatSession {
                     }))?;
                 } else {
                     queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
-                    execute!(self.stdout, style::Print("\n"))?;
                 }
 
                 // Display continuation ID if available and debug mode is enabled

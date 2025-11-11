@@ -45,12 +45,12 @@ pub fn display_turn_usage_summary<W: Write>(
     for usage in totals {
         let formatted = format_number(usage.value);
         let capitalized_unit = capitalize_first(&usage.unit_plural);
-        parts.push(format!("{capitalized_unit} used: {formatted}"));
+        parts.push(format!("{capitalized_unit}: {formatted}"));
     }
 
     // Add elapsed time
     if let Some(elapsed_ms) = user_turn_metadata.total_elapsed_time_ms() {
-        parts.push(format!("Elapsed time: {}", format_elapsed_time(elapsed_ms)));
+        parts.push(format!("Time: {}", format_elapsed_time(elapsed_ms)));
     }
 
     if !parts.is_empty() {
@@ -60,6 +60,9 @@ pub fn display_turn_usage_summary<W: Write>(
             style::Print(format!("{}\n\n", parts.join(" • "))),
             style::ResetColor,
         )?;
+    } else {
+        // If no footer to display, print the newline that would normally come before it
+        execute!(stderr, style::Print("\n"))?;
     }
     Ok(())
 }
