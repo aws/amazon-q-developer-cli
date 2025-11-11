@@ -54,6 +54,7 @@ use tracing::{
 };
 
 use super::tools::custom_tool::CustomToolConfig;
+use super::tools::use_subagent::UseSubagent;
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -910,6 +911,9 @@ impl ToolManager {
             },
             name if name == ToolMetadata::TODO.spec_name => {
                 Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::USE_SUBAGENT.spec_name => {
+                Tool::UseSubagent(serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?)
             },
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name if name == ToolMetadata::WEB_SEARCH.spec_name => {

@@ -327,7 +327,7 @@ impl Agent {
         })
     }
 
-    pub fn set_embedded_user_msg(&mut self, msg: &str) {
+    pub fn push_embedded_user_msg(&mut self, msg: &str) {
         self.embedded_user_msgs.messages.push(msg.to_string());
     }
 

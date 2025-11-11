@@ -78,15 +78,15 @@ struct JsonOutput {
 }
 
 #[derive(Debug)]
-pub struct SubAgent<'a> {
+pub struct Subagent<'a> {
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
     pub embedded_user_msg: Option<&'a str>,
     pub dangerously_trust_all_tools: bool,
 }
 
-impl<'a> SubAgent<'a> {
-    pub async fn query(self, os: &mut Os, control_end: &mut ControlEnd<DestinationStderr>) -> Result<Summary> {
+impl<'a> Subagent<'a> {
+    pub async fn query(self, os: &Os, control_end: &mut ControlEnd<DestinationStderr>) -> Result<Summary> {
         let mut snapshot = AgentSnapshot::default();
 
         let model = {
@@ -121,8 +121,9 @@ impl<'a> SubAgent<'a> {
 
         let mcp_manager_handle = McpManager::default().spawn();
         let mut agent = agent::Agent::new(snapshot, model, mcp_manager_handle).await?;
+        agent.push_embedded_user_msg(SUBAGENT_EMBEDDED_USER_MSG);
         if let Some(msg) = self.embedded_user_msg {
-            agent.set_embedded_user_msg(msg);
+            agent.push_embedded_user_msg(msg);
         }
 
         let agent_handle = agent.spawn();
@@ -262,10 +263,10 @@ pub fn temp_func() {
 }
 
 async fn test_sub_agent_routine() -> Summary {
-    let sub_agent = SubAgent {
+    let subagent = Subagent {
         query: "What notion docs do I have",
         agent_name: Some("test_test"),
-        embedded_user_msg: Some(SUBAGENT_EMBEDDED_USER_MSG),
+        embedded_user_msg: None,
         dangerously_trust_all_tools: true,
     };
 
@@ -274,7 +275,7 @@ async fn test_sub_agent_routine() -> Summary {
     let subagent_indicator = SubagentIndicator::new("test_test", "notion doc search", view_end);
     let _guard = subagent_indicator.run();
 
-    sub_agent
+    subagent
         .query(&mut os, &mut control_end_stderr)
         .await
         .expect("failed to retrieve summary")

@@ -19,6 +19,7 @@ use super::knowledge::Knowledge;
 use super::thinking::Thinking;
 use super::todo::TodoList;
 use super::use_aws::UseAws;
+use super::use_subagent::UseSubagent;
 use super::web_fetch::WebFetch;
 use super::web_search::WebSearch;
 use crate::cli::agent::{
@@ -46,6 +47,7 @@ impl ToolMetadata {
         Self::TODO,
         Self::WEB_SEARCH,
         Self::WEB_FETCH,
+        Self::USE_SUBAGENT,
     ];
     pub const CODE: &ToolInfo = &Code::INFO;
     pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
@@ -57,6 +59,7 @@ impl ToolMetadata {
     pub const THINKING: &ToolInfo = &Thinking::INFO;
     pub const TODO: &ToolInfo = &TodoList::INFO;
     pub const USE_AWS: &ToolInfo = &UseAws::INFO;
+    pub const USE_SUBAGENT: &ToolInfo = &UseSubagent::INFO;
     pub const WEB_FETCH: &ToolInfo = &WebFetch::INFO;
     pub const WEB_SEARCH: &ToolInfo = &WebSearch::INFO;
 
@@ -88,6 +91,7 @@ pub enum Tool {
     Todo(TodoList),
     WebSearch(WebSearch),
     WebFetch(WebFetch),
+    UseSubagent(UseSubagent),
 }
 
 impl Tool {
@@ -107,6 +111,7 @@ impl Tool {
             Tool::Todo(_) => TodoList::INFO.preferred_alias,
             Tool::WebSearch(_) => WebSearch::INFO.preferred_alias,
             Tool::WebFetch(_) => WebFetch::INFO.preferred_alias,
+            Tool::UseSubagent(_) => UseSubagent::INFO.preferred_alias,
         }
     }
 
@@ -126,6 +131,7 @@ impl Tool {
             Tool::Code(_) => Code::eval_perm(os, agent),
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
+            Tool::UseSubagent(_use_subagent) => PermissionEvalResult::Allow,
         }
     }
 
@@ -153,6 +159,7 @@ impl Tool {
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
+            Tool::UseSubagent(use_subagent) => use_subagent.invoke(os, agents).await,
         }
     }
 
@@ -180,6 +187,7 @@ impl Tool {
                 Tool::Todo(_) => Ok(()),
                 Tool::WebSearch(web_search) => web_search.queue_description(self, &mut buf),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, &mut buf),
+                Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, &mut buf),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -206,6 +214,7 @@ impl Tool {
                 Tool::Todo(_) => Ok(()),
                 Tool::WebSearch(web_search) => web_search.queue_description(self, output),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, output),
+                Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, output),
             }?;
         };
 
@@ -228,6 +237,7 @@ impl Tool {
             Tool::Todo(todo) => todo.validate(os).await,
             Tool::WebSearch(web_search) => web_search.validate(os).await,
             Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
+            Tool::UseSubagent(_use_subagent) => Ok(()),
         }
     }
 
