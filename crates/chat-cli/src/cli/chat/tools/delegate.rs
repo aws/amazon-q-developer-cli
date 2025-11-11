@@ -36,6 +36,7 @@ use crate::cli::{
     Agent,
     DEFAULT_AGENT_NAME,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
@@ -159,8 +160,8 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
         // Show warning for default agent but no approval needed
         display_default_agent_warning()?;
     } else {
-        // Show agent info and require approval for specific agents
-        request_user_approval(agent, agents, task).await?;
+        // Show agent info and require approval for specific agents (unless auto-approved by settings)
+        request_user_approval(os, agent, agents, task).await?;
     }
 
     spawn_agent_process(os, agent, task).await?;
@@ -550,14 +551,32 @@ pub async fn validate_agent_availability(_os: &Os, _agent: &str) -> Result<()> {
     Ok(())
 }
 
-pub async fn request_user_approval(agent: &str, agents: &Agents, task: &str) -> Result<()> {
+pub async fn request_user_approval(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<()> {
+    // Check global auto-approve setting
+    if os.database.settings.get_bool(Setting::DelegateAutoApprove).unwrap_or(false) {
+        return Ok(());
+    }
+
+    // Check per-agent auto-approve list (comma-separated)
+    if let Some(list) = os.database.settings.get_string(Setting::DelegateAutoApproveAgents) {
+        let allowed: Vec<&str> = list.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+        if allowed.iter().any(|&a| a == agent) {
+            return Ok(());
+        }
+    }
+
     let config = agents
         .agents
         .get(agent)
         .ok_or(eyre::eyre!("No agent by the name {agent} found"))?
         .into();
     display_agent_info(agent, task, &config)?;
-    get_user_confirmation()?;
+
+    // Respect user explicit approval; if user declines, abort launch
+    let approved = get_user_confirmation()?;
+    if !approved {
+        return Err(eyre::eyre!("User declined to delegate to agent '{agent}'"));
+    }
 
     Ok(())
 }
