@@ -762,7 +762,7 @@ impl Agents {
                     agent.resources.push(rules_pattern.into());
                 }
 
-                agent.resources.push("file://AmazonQ.md".into());
+                agent.resources.insert(0, "file://AmazonQ.md".into());
 
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
