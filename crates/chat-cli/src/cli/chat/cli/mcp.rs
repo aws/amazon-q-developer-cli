@@ -6,13 +6,13 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::consts::MCP_CONFIGURATION_DOC_URL;
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
+use crate::constants::PRODUCT_NAME;
 use crate::theme::StyledText;
 
 /// Arguments for the MCP (Model Context Protocol) command.
@@ -52,53 +52,48 @@ impl McpArgs {
             .join("");
 
         let mcp_load_record = session.conversation.tool_manager.mcp_load_record.lock().await;
+        let has_servers = !mcp_load_record.is_empty() || !still_loading.is_empty();
 
-        // Check if there are no MCP servers at all
-        if mcp_load_record.is_empty() && still_loading.is_empty() {
+        if !has_servers {
             queue!(
                 session.stderr,
-                style::Print("\n"),
-                style::Print("No MCP servers installed\n\n"),
-                style::Print("To install MCP servers, visit "),
-                style::Print(StyledText::command(MCP_CONFIGURATION_DOC_URL)),
-                style::ResetColor,
-                style::Print(" for more information\n"),
+                style::Print("No MCP servers installed. Go to "),
+                StyledText::brand_fg(),
+                style::Print(crate::constants::KIRO_MCP_DOCS_URL),
+                StyledText::reset(),
+                style::Print(&format!(" to learn how to add servers to {PRODUCT_NAME}\n\n")),
             )?;
-            session.stderr.flush()?;
-            return Ok(ChatState::PromptUser {
-                skip_printing_tools: true,
-            });
-        }
+        } else {
+            for (server_name, msg) in mcp_load_record.iter() {
+                let msg = msg
+                    .iter()
+                    .map(|record| match record {
+                        LoadingRecord::Err(timestamp, content)
+                        | LoadingRecord::Warn(timestamp, content)
+                        | LoadingRecord::Success(timestamp, content) => format!("[{timestamp}]: {content}"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n--- tools refreshed ---\n");
 
-        for (server_name, msg) in mcp_load_record.iter() {
-            let msg = msg
-                .iter()
-                .map(|record| match record {
-                    LoadingRecord::Err(timestamp, content)
-                    | LoadingRecord::Warn(timestamp, content)
-                    | LoadingRecord::Success(timestamp, content) => format!("[{timestamp}]: {content}"),
-                })
-                .collect::<Vec<_>>()
-                .join("\n--- tools refreshed ---\n");
+                queue!(
+                    session.stderr,
+                    style::Print(server_name),
+                    style::Print("\n"),
+                    style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+                    style::Print(msg),
+                    style::Print("\n")
+                )?;
+            }
 
-            queue!(
-                session.stderr,
-                style::Print(server_name),
-                style::Print("\n"),
-                style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-                style::Print(msg),
-                style::Print("\n")
-            )?;
-        }
-
-        if !still_loading.is_empty() {
-            queue!(
-                session.stderr,
-                style::Print("Still loading:\n"),
-                style::Print(format!("{}\n", "▔".repeat(terminal_width))),
-                style::Print(still_loading),
-                style::Print("\n")
-            )?;
+            if !still_loading.is_empty() {
+                queue!(
+                    session.stderr,
+                    style::Print("Still loading:\n"),
+                    style::Print(format!("{}\n", "▔".repeat(terminal_width))),
+                    style::Print(still_loading),
+                    style::Print("\n")
+                )?;
+            }
         }
 
         session.stderr.flush()?;
