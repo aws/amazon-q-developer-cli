@@ -139,8 +139,6 @@ impl InputSource {
         true
     }
 
-    // We're keeping this method for potential future use
-    #[allow(dead_code)]
     pub fn set_buffer(&mut self, content: &str) {
         if let inner::Inner::Readline(rl) = &mut self.inner {
             // Add to history so user can access it with up arrow
