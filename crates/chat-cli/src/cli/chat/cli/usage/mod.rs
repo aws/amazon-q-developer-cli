@@ -37,6 +37,10 @@ pub struct UsageBreakdownInfo {
     pub used: f64,
     pub limit: f64,
     pub percentage: i32,
+    pub current_overages: f64,
+    pub overage_rate: f64,
+    pub overage_charges: f64,
+    pub currency: String,
 }
 
 /// Individual bonus credit information

@@ -70,7 +70,7 @@ pub struct SocialToken {
 }
 
 impl SocialToken {
-    const SECRET_KEY: &'static str = "codewhisperer:social:token";
+    const SECRET_KEY: &'static str = "kirocli:social:token";
 
     pub async fn load(database: &Database) -> Result<Option<Self>, AuthError> {
         if cfg!(test) {

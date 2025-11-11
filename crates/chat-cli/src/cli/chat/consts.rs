@@ -27,7 +27,7 @@ pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
 pub const AGENT_MIGRATION_DOC_URL: &str =
     "https://github.com/aws/amazon-q-developer-cli/blob/main/docs/legacy-profile-to-agent-migration.md";
 
-pub const MCP_CONFIRGRATION_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp";
+pub const MCP_CONFIGURATION_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp";
 
 // The environment variable name where we set additional metadata for the AWS CLI user agent.
 pub const USER_AGENT_ENV_VAR: &str = "AWS_EXECUTION_ENV";

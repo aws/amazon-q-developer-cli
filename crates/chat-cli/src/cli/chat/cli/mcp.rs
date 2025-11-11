@@ -6,7 +6,7 @@ use crossterm::{
     style,
 };
 
-use crate::cli::chat::consts::MCP_CONFIRGRATION_DOC_URL;
+use crate::cli::chat::consts::MCP_CONFIGURATION_DOC_URL;
 use crate::cli::chat::tool_manager::LoadingRecord;
 use crate::cli::chat::{
     ChatError,
@@ -58,12 +58,11 @@ impl McpArgs {
             queue!(
                 session.stderr,
                 style::Print("\n"),
-                StyledText::info_fg(),
-                style::Print("ℹ️  No MCP servers installed\n\n"),
-                StyledText::reset(),
+                style::Print("No MCP servers installed\n\n"),
                 style::Print("To install MCP servers, visit "),
-                style::Print(MCP_CONFIRGRATION_DOC_URL),
-                style::Print(" for more information\n\n"),
+                style::Print(StyledText::command(MCP_CONFIGURATION_DOC_URL)),
+                style::ResetColor,
+                style::Print(" for more information\n"),
             )?;
             session.stderr.flush()?;
             return Ok(ChatState::PromptUser {

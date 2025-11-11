@@ -113,7 +113,7 @@ pub struct DeviceRegistration {
 }
 
 impl DeviceRegistration {
-    const SECRET_KEY: &'static str = "codewhisperer:odic:device-registration";
+    const SECRET_KEY: &'static str = "kirocli:odic:device-registration";
 
     pub fn from_output(
         output: RegisterClientOutput,
@@ -298,7 +298,7 @@ pub struct BuilderIdToken {
 }
 
 impl BuilderIdToken {
-    const SECRET_KEY: &'static str = "codewhisperer:odic:token";
+    const SECRET_KEY: &'static str = "kirocli:odic:token";
 
     #[cfg(test)]
     fn test() -> Self {

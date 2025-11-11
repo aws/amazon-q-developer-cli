@@ -1,4 +1,3 @@
-use crossterm::style::Color;
 use crossterm::{
     execute,
     style,
@@ -9,10 +8,15 @@ use crate::cli::chat::{
     ChatError,
     ChatSession,
 };
-use crate::constants::{
-    KIRO_APP_URL,
-    KIRO_WEBSITE_URL,
-};
+use crate::constants::KIRO_APP_URL;
+
+fn format_billing_rate(amount: f64) -> String {
+    format!("${amount:.2}")
+}
+
+fn format_cost_with_currency(amount: f64, currency: &str) -> String {
+    format!("${amount:.2} {currency}")
+}
 use crate::theme::StyledText;
 
 /// Render billing information section
@@ -26,12 +30,21 @@ pub async fn render_billing_info(
         super::BillingDataStatus::Available => render_available_billing(billing_data, session, os).await,
         super::BillingDataStatus::FeatureNotSupported => {
             if show_unsupported_message {
+                if billing_data.plan_name != "Unknown" {
+                    execute!(
+                        session.stderr,
+                        style::Print("Plan: "),
+                        StyledText::brand_fg(),
+                        style::Print(&billing_data.plan_name),
+                        StyledText::reset(),
+                        style::Print("\n"),
+                    )?;
+                }
                 execute!(
                     session.stderr,
-                    style::Print(format!("Plan: {}\n", billing_data.plan_name)),
                     style::Print("Upgrade to Kiro for better usage insights through "),
                     StyledText::brand_fg(),
-                    style::Print(KIRO_WEBSITE_URL),
+                    style::Print(KIRO_APP_URL),
                     StyledText::reset(),
                     style::Print("\n"),
                 )?;
@@ -64,11 +77,20 @@ async fn render_available_billing(
         style::SetAttribute(style::Attribute::Bold),
         style::Print("Estimated Usage"),
         style::SetAttribute(style::Attribute::Reset),
-        style::Print(format!(
-            " | resets on {} | {}\n",
-            billing_data.billing_cycle_reset, billing_data.plan_name
-        )),
+        style::Print(format!(" | resets on {}", billing_data.billing_cycle_reset)),
     )?;
+
+    if billing_data.plan_name != "Unknown" {
+        execute!(
+            session.stderr,
+            style::Print(" | "),
+            StyledText::brand_fg(),
+            style::Print(&billing_data.plan_name),
+            StyledText::reset(),
+        )?;
+    }
+
+    execute!(session.stderr, style::Print("\n"))?;
 
     // Bonus credits
     if !billing_data.bonus_credits.is_empty() {
@@ -94,6 +116,8 @@ async fn render_available_billing(
         execute!(session.stderr, style::Print("\n"))?;
     }
 
+    let is_enterprise = is_idc_user(&os.database).await;
+
     // Display all usage breakdowns
     for breakdown in &billing_data.usage_breakdowns {
         execute!(
@@ -108,7 +132,8 @@ async fn render_available_billing(
         )?;
 
         // Progress bar
-        let bar_width = 60;
+        let window_width = session.terminal_width();
+        let bar_width = std::cmp::min(window_width, 80);
         let filled_width = (breakdown.percentage as f32 / 100.0 * bar_width as f32) as usize;
         let empty_width = bar_width - filled_width;
 
@@ -125,51 +150,77 @@ async fn render_available_billing(
             session.stderr,
             bar_color,
             style::Print("█".repeat(filled_width)),
-            style::SetForegroundColor(Color::DarkGrey),
+            StyledText::secondary_fg(),
             style::Print("█".repeat(empty_width)),
-            style::SetForegroundColor(Color::Reset),
-            style::Print(format!(" {}%\n\n", breakdown.percentage)),
+            StyledText::reset(),
+            style::Print(format!(" {}%\n", breakdown.percentage)),
         )?;
-    }
 
-    let is_enterprise = is_idc_user(&os.database).await;
-
-    // Overage information (after usage bars)
-    execute!(
-        session.stderr,
-        style::Print("Overages: "),
-        style::SetAttribute(style::Attribute::Bold),
-        style::Print(if billing_data.overages_enabled {
-            "Enabled"
-        } else {
-            "Disabled"
-        }),
-        style::SetAttribute(style::Attribute::Reset),
-    )?;
-
-    if is_enterprise {
+        // Overage information for this breakdown
         execute!(
             session.stderr,
-            style::Print(" "),
-            StyledText::secondary_fg(),
-            style::Print("(managed by your organization)"),
-            StyledText::reset(),
+            style::Print("\nOverages: "),
+            style::SetAttribute(style::Attribute::Bold),
+            style::Print(if billing_data.overages_enabled {
+                "Enabled"
+            } else {
+                "Disabled"
+            }),
+            style::SetAttribute(style::Attribute::Reset),
         )?;
-    }
 
-    execute!(session.stderr, style::Print("\n"))?;
+        // Add billing rate info if overages enabled
+        if billing_data.overages_enabled {
+            execute!(
+                session.stderr,
+                style::Print("  "),
+                StyledText::secondary_fg(),
+                style::Print(format!(
+                    "billed at {} per request",
+                    format_billing_rate(breakdown.overage_rate)
+                )),
+                StyledText::reset(),
+            )?;
+        }
+
+        if is_enterprise {
+            execute!(
+                session.stderr,
+                style::Print(" "),
+                StyledText::secondary_fg(),
+                style::Print("(managed by your organization)"),
+                StyledText::reset(),
+            )?;
+        }
+
+        execute!(session.stderr, style::Print("\n"))?;
+
+        // Add overage usage details if overages enabled
+        if billing_data.overages_enabled {
+            execute!(
+                session.stderr,
+                style::Print(format!("Credits used: {:.2}\n", breakdown.current_overages)),
+                style::Print(format!(
+                    "Est. cost: {}\n",
+                    format_cost_with_currency(breakdown.overage_charges, &breakdown.currency)
+                )),
+            )?;
+        }
+
+        execute!(session.stderr, style::Print("\n"))?;
+    }
 
     if is_enterprise {
         execute!(
             session.stderr,
             style::Print(
-                "\nSince your account is through your organization, for account management please contact your account administrator.\n"
+                "Since your account is through your organization, for account management please contact your account administrator.\n"
             ),
         )?;
     } else {
         execute!(
             session.stderr,
-            style::Print("\nTo manage your plan or configure overages navigate to "),
+            style::Print("To manage your plan or configure overages navigate to "),
             StyledText::brand_fg(),
             style::Print(KIRO_APP_URL),
             StyledText::reset(),
