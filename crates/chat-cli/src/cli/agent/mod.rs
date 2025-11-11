@@ -83,7 +83,6 @@ const EXAMPLE_AGENT_NATIVE_TOOLS: &[&str] = &[
     ToolMetadata::KNOWLEDGE.preferred_alias,
     ToolMetadata::THINKING.preferred_alias,
     ToolMetadata::TODO.preferred_alias,
-    ToolMetadata::DELEGATE.preferred_alias,
 ];
 
 #[derive(Debug, Error)]

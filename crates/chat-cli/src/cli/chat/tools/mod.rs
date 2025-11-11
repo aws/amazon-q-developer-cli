@@ -1,6 +1,5 @@
 pub mod code;
 pub mod custom_tool;
-pub mod delegate;
 pub mod execute;
 pub mod fs_read;
 pub mod fs_write;

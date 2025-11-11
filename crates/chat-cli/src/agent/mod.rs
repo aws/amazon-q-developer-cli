@@ -25,7 +25,6 @@ use chat_cli_ui::conduit::{
 };
 use chat_cli_ui::protocol::{
     Event as UiEvent,
-    MetaEvent,
     TextMessageContent,
     ToolCallEnd,
     ToolCallStart,
@@ -51,7 +50,6 @@ use tracing::{
 };
 
 use crate::os::Os;
-use crate::theme::StyledText;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"

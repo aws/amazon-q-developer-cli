@@ -72,7 +72,6 @@ use crate::cli::chat::server_messenger::{
 };
 use crate::cli::chat::tools::code::Code;
 use crate::cli::chat::tools::custom_tool::CustomTool;
-use crate::cli::chat::tools::delegate::Delegate;
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -747,9 +746,6 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::TODO.spec_name);
             }
-            if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
-                tool_specs.remove(ToolMetadata::DELEGATE.spec_name);
-            }
             if !crate::cli::chat::tools::web_search::WebSearch::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::WEB_SEARCH.spec_name);
             }
@@ -916,9 +912,6 @@ impl ToolManager {
                 Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
             },
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
-            name if name == ToolMetadata::DELEGATE.spec_name => {
-                Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?)
-            },
             name if name == ToolMetadata::WEB_SEARCH.spec_name => {
                 Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?)
             },

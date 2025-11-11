@@ -49,6 +49,7 @@ pub enum DirectoryError {
 
 pub mod workspace {
     //! Project-level paths (relative to current working directory)
+    pub const TODO_LISTS_DIR: &str = ".amazonq/cli-todo-lists";
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources

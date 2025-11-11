@@ -3,7 +3,6 @@ use crate::constants::DEFAULT_AGENT_NAME;
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]
 pub struct PromptComponents {
-    pub delegate_notifier: Option<String>,
     pub profile: Option<String>,
     pub warning: bool,
     pub tangent_mode: bool,
@@ -13,29 +12,13 @@ pub struct PromptComponents {
 
 /// Parse prompt components from a plain text prompt
 pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
-    // Expected format: "[agent] 6% λ ↯ !> " or "> " or "!> " or "[agent] ↯ > " or "6% ↯ > " etc.
-    let mut delegate_notifier = None::<String>;
     let mut profile = None;
     let mut warning = false;
     let mut tangent_mode = false;
     let mut code_intelligence = false;
     let mut usage_percentage = None;
 
-    // Check if multi-line prompt (e.g., with rich notification)
-    // Everything before the last line is treated as delegate_notifier
-    let remaining = if prompt.contains('\n') {
-        let lines: Vec<&str> = prompt.lines().collect();
-        if lines.len() > 1 {
-            // Everything except last line is the notification
-            delegate_notifier = Some(lines[..lines.len() - 1].join("\n"));
-        }
-        // Parse only the last line for prompt components
-        lines.last().unwrap_or(&"").trim()
-    } else {
-        prompt.trim()
-    };
-
-    let mut remaining = remaining;
+    let mut remaining = prompt.trim();
 
     // Check for agent pattern [agent] first
     if let Some(start) = remaining.find('[') {
@@ -80,7 +63,6 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
     // Should end with "> " for both normal and tangent mode
     if remaining.trim_end() == ">" {
         Some(PromptComponents {
-            delegate_notifier,
             profile,
             warning,
             tangent_mode,
