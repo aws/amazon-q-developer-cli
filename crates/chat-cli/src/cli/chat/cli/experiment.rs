@@ -1,3 +1,5 @@
+use std::io::Write;
+
 // ABOUTME: Implements the /experiment slash command for toggling experimental features
 // ABOUTME: Provides interactive selection interface similar to /model command
 use clap::Args;
@@ -56,24 +58,25 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         experiment_labels.push(label);
     }
 
-    // Show disclaimer before selection
-    queue!(
-        session.stderr,
-        StyledText::warning_fg(),
-        style::Print("⚠ Experimental features may be changed or removed at any time\n\n"),
-        StyledText::reset(),
-    )?;
+    session.stderr.flush()?;
+    session.stdout.flush()?;
 
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
-        .with_prompt("Select an experiment to toggle")
+        .with_prompt(format!(
+            "{}({}) {} · {}({}) {}",
+            StyledText::secondary("Press "),
+            StyledText::current_item("↑↓"),
+            StyledText::secondary("to navigate"),
+            StyledText::secondary("Enter"),
+            StyledText::current_item("⏎"),
+            StyledText::secondary("to toggle an experiment")
+        ))
         .items(&experiment_labels)
         .default(0)
+        .report(false)
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
-        Ok(sel) => {
-            let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
-            sel
-        },
+        Ok(sel) => sel,
         // Ctrl‑C -> Err(Interrupted)
         Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
             // Move to beginning of line and clear everything from warning message down
@@ -124,7 +127,12 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
                 status_text
             )),
             StyledText::reset(),
-            StyledText::reset(),
+        )?;
+
+        queue!(
+            session.stderr,
+            StyledText::warning_fg(),
+            style::Print("⚠ Experimental features may be changed or removed at any time\n\n"),
             StyledText::reset(),
         )?;
     } else {
