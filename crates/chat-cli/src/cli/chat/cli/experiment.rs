@@ -1,4 +1,5 @@
 use std::io::Write;
+
 // ABOUTME: Implements the /experiment slash command for toggling experimental features
 // ABOUTME: Provides interactive selection interface similar to /model command
 use clap::Args;
@@ -8,6 +9,7 @@ use crossterm::{
     style,
 };
 use dialoguer::Select;
+
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -74,9 +76,7 @@ async fn select_experiment(os: &mut Os, session: &mut ChatSession) -> Result<Opt
         .report(false)
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
-        Ok(sel) => {
-            sel
-        },
+        Ok(sel) => sel,
         // Ctrl‑C -> Err(Interrupted)
         Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
             // Move to beginning of line and clear everything from warning message down
