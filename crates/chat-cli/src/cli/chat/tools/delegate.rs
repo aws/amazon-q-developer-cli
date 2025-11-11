@@ -553,7 +553,12 @@ pub async fn validate_agent_availability(_os: &Os, _agent: &str) -> Result<()> {
 
 pub async fn request_user_approval(os: &Os, agent: &str, agents: &Agents, task: &str) -> Result<()> {
     // Check global auto-approve setting
-    if os.database.settings.get_bool(Setting::DelegateAutoApprove).unwrap_or(false) {
+    if os
+        .database
+        .settings
+        .get_bool(Setting::DelegateAutoApprove)
+        .unwrap_or(false)
+    {
         return Ok(());
     }
 
