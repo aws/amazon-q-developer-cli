@@ -77,6 +77,9 @@ impl EditorArgs {
                     style::Print("\n")
                 )?;
 
+                // Add to history so it's available with up arrow
+                session.input_source.set_buffer(&content);
+
                 // Process the content as user input
                 ChatState::HandleInput { input: content }
             },
