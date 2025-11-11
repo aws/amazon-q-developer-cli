@@ -1632,7 +1632,7 @@ mod tests {
             match (user, assistant) {
                 (ChatMessage::UserInputMessage(user), ChatMessage::AssistantResponseMessage(_)) => {
                     assert!(
-                        user.content.contains("test context"),
+                        user.content.contains("test context") || user.content.contains("test agents context"),
                         "expected context message to contain context file, instead found: {}",
                         user.content
                     );

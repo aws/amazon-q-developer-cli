@@ -762,6 +762,8 @@ impl Agents {
                     agent.resources.push(rules_pattern.into());
                 }
 
+                agent.resources.insert(0, "file://AmazonQ.md".into());
+
                 if mcp_enabled {
                     'load_legacy_mcp_json: {
                         if global_mcp_config.is_none() {

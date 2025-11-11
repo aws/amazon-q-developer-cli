@@ -53,12 +53,8 @@ pub mod workspace {
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources
-    pub const DEFAULT_AGENT_RESOURCES: &[&str] = &[
-        "file://AmazonQ.md",
-        "file://AGENTS.md",
-        "file://README.md",
-        "file://.kiro/steering/**/*.md",
-    ];
+    pub const DEFAULT_AGENT_RESOURCES: &[&str] =
+        &["file://AGENTS.md", "file://README.md", "file://.kiro/steering/**/*.md"];
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
