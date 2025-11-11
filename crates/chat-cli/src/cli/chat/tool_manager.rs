@@ -1443,8 +1443,16 @@ fn spawn_orchestrator_task(
                         Err(_) => vec![],
                     };
 
-                    let (tool_filter, alias_list) = {
+                    let (tool_filter, alias_list, disabled_tools_set) = {
                         let agent_lock = agent.lock().await;
+
+                        // Get disabled tools for this server
+                        let disabled_tools_set: HashSet<String> = agent_lock
+                            .mcp_servers
+                            .mcp_servers
+                            .get(&server_name)
+                            .map(|config| config.disabled_tools.iter().cloned().collect())
+                            .unwrap_or_default();
 
                         // We will assume all tools are allowed if the tool list consists of 1
                         // element and it's a *
@@ -1486,7 +1494,7 @@ fn spawn_orchestrator_task(
                             },
                         );
 
-                        (tool_filter, alias_list)
+                        (tool_filter, alias_list, disabled_tools_set)
                     };
 
                     match result {
@@ -1513,6 +1521,7 @@ fn spawn_orchestrator_task(
                                     tool_origin: ToolOrigin::Native,
                                 })
                                 .filter(|spec| tool_filter.should_include(&spec.name))
+                                .filter(|spec| !disabled_tools_set.contains(&spec.name))
                                 .collect::<Vec<_>>();
                             let mut sanitized_mapping = HashMap::<ModelToolName, ToolInfo>::new();
                             let process_result = process_tool_specs(

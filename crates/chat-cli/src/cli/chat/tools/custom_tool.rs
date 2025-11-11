@@ -90,6 +90,9 @@ pub struct CustomToolConfig {
     /// A boolean flag to denote whether or not to load this mcp server
     #[serde(default)]
     pub disabled: bool,
+    /// List of tool names from this server to disable
+    #[serde(default)]
+    pub disabled_tools: Vec<String>,
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
