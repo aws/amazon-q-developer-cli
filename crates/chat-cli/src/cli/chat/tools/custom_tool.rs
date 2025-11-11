@@ -52,6 +52,9 @@ pub struct OAuthConfig {
     /// If not specified, a random available port will be assigned by the OS
     #[serde(skip_serializing_if = "Option::is_none")]
     pub redirect_uri: Option<String>,
+    /// Scopes with which oauth is done (new location, preferred over root-level oauth_scopes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth_scopes: Option<Vec<String>>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
@@ -66,7 +69,7 @@ pub struct CustomToolConfig {
     /// HTTP headers to include when communicating with HTTP-based MCP servers
     #[serde(default)]
     pub headers: HashMap<String, String>,
-    /// Scopes with which oauth is done
+    /// Scopes with which oauth is done (deprecated: use oauth.oauthScopes instead)
     #[serde(default = "get_default_scopes")]
     pub oauth_scopes: Vec<String>,
     /// OAuth configuration for this server
@@ -90,6 +93,16 @@ pub struct CustomToolConfig {
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
+}
+
+impl CustomToolConfig {
+    /// Get the effective oauth scopes, preferring the new location inside oauth object
+    pub fn get_oauth_scopes(&self) -> Vec<String> {
+        self.oauth
+            .as_ref()
+            .and_then(|o| o.oauth_scopes.clone())
+            .unwrap_or_else(|| self.oauth_scopes.clone())
+    }
 }
 
 pub fn get_default_scopes() -> Vec<String> {
@@ -197,5 +210,47 @@ impl CustomTool {
         } else {
             PermissionEvalResult::Ask
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_oauth_scopes_backward_compat_old_format() {
+        let json = r#"{
+            "command": "test",
+            "oauthScopes": ["read", "write"]
+        }"#;
+        let config: CustomToolConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.get_oauth_scopes(), vec!["read", "write"]);
+    }
+
+    #[test]
+    fn test_oauth_scopes_backward_compat_new_format() {
+        let json = r#"{
+            "command": "test",
+            "oauth": {
+                "redirectUri": "127.0.0.1:8080",
+                "oauthScopes": ["read", "write"]
+            }
+        }"#;
+        let config: CustomToolConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.get_oauth_scopes(), vec!["read", "write"]);
+    }
+
+    #[test]
+    fn test_oauth_scopes_new_format_takes_precedence() {
+        let json = r#"{
+            "command": "test",
+            "oauthScopes": ["old1", "old2"],
+            "oauth": {
+                "redirectUri": "127.0.0.1:8080",
+                "oauthScopes": ["new1", "new2"]
+            }
+        }"#;
+        let config: CustomToolConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.get_oauth_scopes(), vec!["new1", "new2"]);
     }
 }

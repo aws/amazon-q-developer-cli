@@ -84,7 +84,7 @@
             "default": {}
           },
           "oauthScopes": {
-            "description": "Scopes with which oauth is done",
+            "description": "Scopes with which oauth is done (deprecated: use oauth.oauthScopes instead)",
             "type": "array",
             "items": {
               "type": "string"
@@ -109,6 +109,13 @@
                   "string",
                   "null"
                 ]
+              },
+              "oauthScopes": {
+                "description": "Scopes with which oauth is done (new location, preferred over root-level oauthScopes)",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
               }
             }
           },
@@ -220,6 +227,11 @@
       "default": {}
     },
     "useLegacyMcpJson": {
+      "description": "Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent\nYou can reference tools brought in by these servers as just as you would with the servers\nyou configure in the mcpServers field in this config (deprecated: use includeMcpJson instead)",
+      "type": "boolean",
+      "default": false
+    },
+    "includeMcpJson": {
       "description": "Whether or not to include the legacy ~/.aws/amazonq/mcp.json in the agent\nYou can reference tools brought in by these servers as just as you would with the servers\nyou configure in the mcpServers field in this config",
       "type": "boolean",
       "default": false

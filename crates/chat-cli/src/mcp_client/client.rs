@@ -450,11 +450,12 @@ impl McpClientService {
                 let CustomToolConfig {
                     url,
                     headers,
-                    oauth_scopes: scopes,
                     oauth,
                     timeout,
                     ..
                 } = &self.config;
+
+                let scopes = self.config.get_oauth_scopes();
 
                 // Process environment variables in headers
                 let mut processed_headers = headers.clone();
@@ -463,7 +464,7 @@ impl McpClientService {
                 }
 
                 let http_service_builder =
-                    HttpServiceBuilder::new(url, os, url, *timeout, scopes, &processed_headers, oauth, messenger);
+                    HttpServiceBuilder::new(url, os, url, *timeout, &scopes, &processed_headers, oauth, messenger);
 
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 

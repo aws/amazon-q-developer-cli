@@ -855,7 +855,7 @@ IMPORTANT: Return ONLY raw JSON with NO markdown formatting, NO code blocks, NO 
 Your task is to generate an agent configuration file for an agent named '{agent_name}' with the following description: {agent_description}\n\n\
 The configuration must conform to this JSON schema:\n{schema}\n\n\
 We have a prepopulated template: {prepopulated_content} \n\n\
-Please change the useLegacyMcpJson field to false. 
+Please change the includeMcpJson field to false. 
 Please generate the prompt field using user provided description, and fill in the MCP tools that user has selected {selected_servers}. 
 Return only the JSON configuration, no additional text."
         );

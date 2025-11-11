@@ -182,7 +182,7 @@ pub struct Agent {
     /// Whether or not to include the legacy global MCP configuration in the agent
     /// You can reference tools brought in by these servers as just as you would with the servers
     /// you configure in the mcpServers field in this config
-    #[serde(default)]
+    #[serde(default, alias = "includeMcpJson")]
     pub use_legacy_mcp_json: bool,
     /// The model ID to use for this agent. If not specified, uses the default model.
     #[serde(default)]
