@@ -85,8 +85,6 @@ impl ModelArgs {
 }
 
 pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<ChatState>, ChatError> {
-    queue!(session.stderr, style::Print("\n"))?;
-
     // Fetch available models from service
     let (models, _default_model) = get_available_models(os).await?;
 

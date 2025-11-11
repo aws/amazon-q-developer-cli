@@ -2138,7 +2138,6 @@ impl ChatSession {
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
-        queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
 
@@ -2808,7 +2807,7 @@ impl ChatSession {
         }
 
         execute!(self.stderr, cursor::Hide)?;
-        execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
+        execute!(self.stderr, StyledText::reset_attributes())?;
         if self.interactive {
             self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
