@@ -15,6 +15,7 @@ use crate::cli::feed::Feed;
 use crate::constants::{
     LEGACY_PRODUCT_NAME,
     MIGRATION_INFO_URL,
+    PRODUCT_NAME,
     PRODUCT_NAME_CLI,
     ui_text,
 };
@@ -30,7 +31,7 @@ pub fn render_new_user_welcome(output: &mut impl Write) -> Result<()> {
     execute!(
         output,
         style::SetAttribute(Attribute::Bold),
-        style::Print("Jump into building with Kiro:\n\n"),
+        style::Print(&format!("Jump into building with {PRODUCT_NAME}:\n\n")),
         StyledText::reset_attributes(),
         StyledText::reset(),
     )?;
@@ -40,8 +41,9 @@ pub fn render_new_user_welcome(output: &mut impl Write) -> Result<()> {
         output,
         style::Print("1. Ask a question or describe a task\n"),
         style::Print(format!(
-            "2. Use {} to provide Kiro with persistent context\n",
-            StyledText::command("/context add")
+            "2. Use {} <file> to provide {} with additional info\n",
+            StyledText::command("/context add"),
+            PRODUCT_NAME
         )),
         style::Print(format!(
             "3. Connect to external tools with by using {}\n\n",
