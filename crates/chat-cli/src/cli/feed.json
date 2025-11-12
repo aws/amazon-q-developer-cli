@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2025-11-12",
+      "version": "1.19.5",
+      "title": "Version 1.19.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor bug fixes"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-11-07",
       "version": "1.19.4",
       "title": "Version 1.19.4",
