@@ -41,7 +41,7 @@ pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
 pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
     "https://kiro.dev/docs/cli/custom-agents/agent-configuration-reference#tools-field";
 
-pub const AGENT_MIGRATION_DOC_URL: &str = "https://kiro.dev/docs/cli/custom-agents/configuration/";
+pub const AGENT_MIGRATION_DOC_URL: &str = "http://kiro.dev/docs/cli/custom-agents/configuration-reference/";
 
 pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
 
