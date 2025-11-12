@@ -147,7 +147,7 @@ pub async fn render_context_window(
             calculate_usage_percentage(usage_data.tools_tokens, usage_data.context_window_size)
         )),
         StyledText::info_fg(),
-        style::Print("█ Kiro responses: "),
+        style::Print("█ Q responses: "),
         StyledText::reset(),
         style::Print(format!(
             "  ~{} tokens ({:.2}%)\n",
