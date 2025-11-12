@@ -12,7 +12,6 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::constants::PRODUCT_NAME;
 use crate::theme::StyledText;
 
 /// Arguments for the MCP (Model Context Protocol) command.
@@ -57,11 +56,16 @@ impl McpArgs {
         if !has_servers {
             queue!(
                 session.stderr,
-                style::Print("No MCP servers enabled. Go to "),
+                style::Print("\n"),
+                StyledText::warning_fg(),
+                style::Print("⚠ "),
+                StyledText::reset(),
+                style::Print("No MCP servers installed\n\n"),
+                style::Print("To learn how to configure MCP servers, visit "),
                 StyledText::brand_fg(),
                 style::Print(crate::constants::KIRO_MCP_DOCS_URL),
                 StyledText::reset(),
-                style::Print(&format!(" to learn how to add servers to {PRODUCT_NAME}\n\n")),
+                style::Print("\n"),
             )?;
         } else {
             for (server_name, msg) in mcp_load_record.iter() {
