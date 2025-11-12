@@ -33,7 +33,10 @@ use crate::cli::chat::tools::custom_tool::{
     CustomToolConfig,
     default_timeout,
 };
-use crate::constants::DEFAULT_AGENT_NAME;
+use crate::constants::{
+    DEFAULT_AGENT_NAME,
+    MCP_SECURITY_DOC_URL,
+};
 use crate::os::Os;
 use crate::util::paths::PathResolver;
 
@@ -369,7 +372,7 @@ impl ImportArgs {
 
         writeln!(
             output,
-            "\nTo learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
+            "\nTo learn more about MCP safety, see {MCP_SECURITY_DOC_URL}\n\n"
         )?;
 
         dst_cfg.save_to_file(os, &config_path).await?;

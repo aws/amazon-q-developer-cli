@@ -12,8 +12,6 @@ use crossterm::{
 
 pub mod context_data_provider;
 pub mod context_renderer;
-
-use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::context::{
     ContextFilePath,
     calc_max_context_files_size,
@@ -25,10 +23,13 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::constants::context_text;
 use crate::constants::help_text::{
     context_description,
     context_long_help,
+};
+use crate::constants::{
+    AGENT_FORMAT_HOOKS_DOC_URL,
+    context_text,
 };
 use crate::os::Os;
 use crate::theme::StyledText;

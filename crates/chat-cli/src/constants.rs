@@ -32,6 +32,19 @@ pub const KIRO_APP_URL: &str = "https://app.kiro.dev/account/usage";
 /// Kiro MCP documentation URL
 pub const KIRO_MCP_DOCS_URL: &str = "https://kiro.dev/docs/cli/mcp";
 
+/// Kiro pricing documentation URL
+pub const KIRO_PRICING_URL: &str = "https://kiro.dev/pricing/";
+
+pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/custom-agents/agent-configuration-reference#hooks-field";
+
+pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/custom-agents/agent-configuration-reference#tools-field";
+
+pub const AGENT_MIGRATION_DOC_URL: &str = "https://kiro.dev/docs/cli/custom-agents/configuration/";
+
+pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding
@@ -76,12 +89,13 @@ pub mod ui_text {
 
     /// Rate limit reached message
     pub fn limit_reached_text() -> String {
+        use crate::constants::KIRO_PRICING_URL;
         format!(
             "You've used all your free requests for this month. You have two options:
 
 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> {}
 2. Wait until next month when your limit automatically resets.",
-            StyledText::info("https://aws.amazon.com/q/developer/pricing/")
+            StyledText::info(KIRO_PRICING_URL)
         )
     }
 
@@ -213,23 +227,29 @@ Notes:
 
     /// Full tools command long help text
     pub fn tools_long_help() -> String {
-        format!("By default, {} will ask for your permission to use certain tools. You can control which tools you
+        use crate::constants::AGENT_FORMAT_TOOLS_DOC_URL;
+        format!(
+            "By default, {} will ask for your permission to use certain tools. You can control which tools you
 trust so that no confirmation is required.
 
-Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field", super::PRODUCT_NAME)
+Refer to the documentation for how to configure tools with your agent: {}",
+            super::PRODUCT_NAME,
+            AGENT_FORMAT_TOOLS_DOC_URL
+        )
     }
 
     /// Full hooks command long help text
     pub fn hooks_long_help() -> String {
+        use crate::constants::AGENT_FORMAT_HOOKS_DOC_URL;
         format!("Use context hooks to specify shell commands to run. The output from these 
 commands will be appended to the prompt to {}.
 
-Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
+Refer to the documentation for how to configure hooks with your agent: {}
 
 Notes:
 • Hooks are executed in parallel
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to {}
-• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history", super::PRODUCT_NAME, super::PRODUCT_NAME)
+• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history", super::PRODUCT_NAME, AGENT_FORMAT_HOOKS_DOC_URL ,super::PRODUCT_NAME)
     }
 }
 
