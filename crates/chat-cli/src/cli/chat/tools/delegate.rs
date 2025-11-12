@@ -565,7 +565,7 @@ pub async fn request_user_approval(os: &Os, agent: &str, agents: &Agents, task: 
     // Check per-agent auto-approve list (comma-separated)
     if let Some(list) = os.database.settings.get_string(Setting::DelegateAutoApproveAgents) {
         let allowed: Vec<&str> = list.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-        if allowed.iter().any(|&a| a == agent) {
+        if allowed.contains(&agent) {
             return Ok(());
         }
     }
