@@ -79,7 +79,7 @@ impl UsageArgs {
         execute!(
             session.stderr,
             style::Print("\n"),
-            style::Print("To see context window usage, run "),
+            style::Print("Tip: to see context window usage, run "),
             StyledText::brand_fg(),
             style::Print("/context"),
             StyledText::reset(),
