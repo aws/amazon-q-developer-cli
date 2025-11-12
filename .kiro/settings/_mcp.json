@@ -1,0 +1,47 @@
+{
+  "mcpServers": {
+    "native": {
+      "command": "~/.local/share/mise/installs/node/22.14.0/bin/npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-puppeteer"
+      ],
+      "timeout": 120000
+    },
+    "meilisearch": {
+      "command": "uvx",
+      "args": [
+        "-n",
+        "meilisearch-mcp"
+      ],
+      "timeout": 120000
+    },
+    "hello": {
+      "command": "hello_hello",
+      "timeout": 120000
+    },
+    "hello_http": {
+      "type": "http",
+      "url": "https://hellohello.com",
+      "headers": {
+        "hello": "world"
+      },
+      "timeout": 120000
+    },
+    "amcp": {
+      "command": "amzn-mcp",
+      "env": {
+        "QUIP_API_TOKEN": "RFNBOU1BczlYbW4=|1776986301|GZvLXdlP3t/ORyXPD4IDCN235DhkyYei9whY3qYO6ro="
+      },
+      "timeout": 120000
+    },
+    "everything": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-everything@latest"
+      ],
+      "timeout": 120000
+    }
+  }
+}

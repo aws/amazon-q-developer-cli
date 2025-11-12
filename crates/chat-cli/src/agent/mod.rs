@@ -6,7 +6,10 @@ use std::sync::Arc;
 use agent::AgentHandle;
 use agent::agent_config::load_agents;
 use agent::agent_loop::protocol::LoopEndReason;
-use agent::mcp::McpManager;
+use agent::mcp::{
+    McpManager,
+    McpServerEvent,
+};
 use agent::protocol::{
     AgentEvent,
     AgentStopReason,
@@ -17,7 +20,10 @@ use agent::protocol::{
     UpdateEvent,
 };
 use agent::tools::summary::Summary;
-use agent::types::AgentSnapshot;
+use agent::types::{
+    AgentSettings,
+    AgentSnapshot,
+};
 use chat_cli_ui::conduit::{
     ControlEnd,
     DestinationStderr,
@@ -25,6 +31,7 @@ use chat_cli_ui::conduit::{
 };
 use chat_cli_ui::protocol::{
     Event as UiEvent,
+    McpEvent as UiMcpEvent,
     TextMessageContent,
     ToolCallEnd,
     ToolCallStart,
@@ -87,7 +94,13 @@ pub struct Subagent<'a> {
 
 impl<'a> Subagent<'a> {
     pub async fn query(self, os: &Os, control_end: &mut ControlEnd<DestinationStderr>) -> Result<Summary> {
-        let mut snapshot = AgentSnapshot::default();
+        let mut snapshot = AgentSnapshot {
+            settings: AgentSettings {
+                // one day
+                mcp_init_timeout: std::time::Duration::from_secs(86400),
+            },
+            ..Default::default()
+        };
 
         let model = {
             let rts_state: RtsModelState = snapshot
@@ -138,12 +151,25 @@ impl<'a> Subagent<'a> {
     ) -> Result<Summary> {
         // First, wait for agent initialization
         while let Ok(evt) = agent.recv().await {
-            if matches!(evt, AgentEvent::Mcp(_)) {
-                info!(?evt, "received mcp agent event");
-                // TODO: Send it through conduit
-            }
-            if matches!(evt, AgentEvent::Initialized) {
-                break;
+            match evt {
+                AgentEvent::Mcp(evt) => {
+                    let ui_mcp_event = match evt {
+                        McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
+                        McpServerEvent::InitializeError { server_name, error } => {
+                            UiMcpEvent::LoadFailure { server_name, error }
+                        },
+                        McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                            UiMcpEvent::OauthRequest { server_name, oauth_url }
+                        },
+                        McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
+                    };
+                    _ = control_end.send(UiEvent::McpEvent(ui_mcp_event));
+                },
+                // We need to wait until the agent is initialized before moving on
+                AgentEvent::Initialized => {
+                    break;
+                },
+                _ => {},
             }
         }
 
@@ -224,9 +250,6 @@ impl<'a> Subagent<'a> {
                             .await?;
                     }
                 },
-                AgentEvent::Mcp(evt) => {
-                    info!(?evt, "received mcp agent event");
-                },
                 AgentEvent::SubagentSummary(summary) => {
                     query_result.replace(summary);
                 },
@@ -270,13 +293,13 @@ async fn test_sub_agent_routine() -> Summary {
         dangerously_trust_all_tools: true,
     };
 
-    let mut os = Os::new().await.expect("failed to spawn os");
+    let os = Os::new().await.expect("failed to spawn os");
     let (view_end, _byte_receiver, mut control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
     let subagent_indicator = SubagentIndicator::new("test_test", "notion doc search", view_end);
     let _guard = subagent_indicator.run();
 
     subagent
-        .query(&mut os, &mut control_end_stderr)
+        .query(&os, &mut control_end_stderr)
         .await
         .expect("failed to retrieve summary")
 }

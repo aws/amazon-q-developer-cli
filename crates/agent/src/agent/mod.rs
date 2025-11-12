@@ -355,6 +355,57 @@ impl Agent {
                 warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
             }
 
+            let ct = CancellationToken::new();
+            let ct_clone = ct.clone();
+            let _guard = ct.drop_guard();
+            let mut mcp_manager_handle = self.mcp_manager_handle.clone();
+            let agent_event_tx = self.agent_event_tx.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = ct_clone.cancelled() => {
+                            break;
+                        },
+
+                        evt = mcp_manager_handle.recv() => {
+                            let Ok(evt) = evt else {
+                                error!("mcp manager handle channel closed");
+                                break;
+                            };
+
+                            match evt {
+                                McpServerEvent::Initializing { server_name } => {
+                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::Initializing {
+                                        server_name,
+                                    }));
+                                },
+                                McpServerEvent::Initialized { server_name, serve_duration, list_tools_duration, list_prompts_duration } => {
+                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::Initialized {
+                                        server_name,
+                                        serve_duration,
+                                        list_tools_duration,
+                                        list_prompts_duration
+                                    }));
+                                },
+                                McpServerEvent::InitializeError { server_name, error } => {
+                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::InitializeError {
+                                        server_name,
+                                        error,
+                                    }));
+                                },
+                                McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::OauthRequest {
+                                        server_name,
+                                        oauth_url,
+                                    }));
+                                },
+                            }
+                        }
+                    }
+                }
+            });
+
             let mut results = FuturesUnordered::new();
 
             for config in self
@@ -410,7 +461,7 @@ impl Agent {
                             break;
                         };
                         debug!(?name, "MCP server successfully initialized");
-                        launched_servers.push(name);
+                        launched_servers.push(name.clone());
                     },
                     name = failed_rx.recv() => {
                         let Some(name) = name else {

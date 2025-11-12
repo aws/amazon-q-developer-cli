@@ -331,6 +331,16 @@ pub struct MetaEvent {
     pub payload: Value,
 }
 
+/// Events related to MCP (Model Context Protocol) server lifecycle and operations
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum McpEvent {
+    Loading { server_name: String },
+    LoadSuccess { server_name: String },
+    LoadFailure { server_name: String, error: String },
+    OauthRequest { server_name: String, oauth_url: String },
+}
+
 // ============================================================================
 // Main Event Enum
 // ============================================================================
@@ -385,6 +395,9 @@ pub enum Event {
 
     // Draft Events - Meta Events
     MetaEvent(MetaEvent),
+
+    // Bespoke MCP Events
+    McpEvent(McpEvent),
 }
 
 impl Event {
@@ -435,6 +448,8 @@ impl Event {
 
             // Draft Events - Meta Events
             Event::MetaEvent(_) => "metaEvent",
+
+            Event::McpEvent(_) => "mcpEvent",
         }
     }
 

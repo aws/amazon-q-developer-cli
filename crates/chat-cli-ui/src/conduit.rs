@@ -182,6 +182,7 @@ impl ViewEnd {
                         theme_source.reset(),
                     )?;
                 },
+                Event::McpEvent(_mcp_event) => {},
             }
         }
 
