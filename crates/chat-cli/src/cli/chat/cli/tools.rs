@@ -16,10 +16,7 @@ use crossterm::{
 
 use crate::api_client::model::Tool as FigTool;
 use crate::cli::agent::Agent;
-use crate::cli::chat::consts::{
-    AGENT_FORMAT_TOOLS_DOC_URL,
-    DUMMY_TOOL_NAME,
-};
+use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::tools::{
     ToolMetadata,
     ToolOrigin,
@@ -30,8 +27,11 @@ use crate::cli::chat::{
     ChatState,
     trust_all_text,
 };
-use crate::constants::DEFAULT_AGENT_NAME;
 use crate::constants::help_text::tools_long_help;
+use crate::constants::{
+    AGENT_FORMAT_TOOLS_DOC_URL,
+    DEFAULT_AGENT_NAME,
+};
 use crate::theme::StyledText;
 use crate::util::consts::MCP_SERVER_TOOL_DELIMITER;
 
@@ -175,7 +175,7 @@ impl ToolsArgs {
                 style::Print(
                     "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
                 ),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
                 StyledText::reset(),
                 style::Print("\n"),

@@ -45,14 +45,16 @@ use tools::ToolsArgs;
 use crate::cli::chat::cli::checkpoint::CheckpointSubcommand;
 use crate::cli::chat::cli::context::ContextArgs;
 use crate::cli::chat::cli::usage::UsageArgs;
-use crate::cli::chat::consts::AGENT_MIGRATION_DOC_URL;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
 use crate::cli::issue;
-use crate::constants::ui_text;
+use crate::constants::{
+    AGENT_MIGRATION_DOC_URL,
+    ui_text,
+};
 use crate::os::Os;
 
 /// Use any of these commands to manage your Kiro session. All commands start with '/'.
@@ -151,7 +153,9 @@ impl SlashCommand {
                     style::Print(" /agent "),
                     StyledText::warning_fg(),
                     style::Print("instead.\nSee "),
+                    StyledText::brand_fg(),
                     style::Print(AGENT_MIGRATION_DOC_URL),
+                    StyledText::warning_fg(),
                     style::Print(" for more detail"),
                     style::Print("\n"),
                     StyledText::reset(),

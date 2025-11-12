@@ -36,13 +36,13 @@ use crate::cli::agent::hook::{
     HookTrigger,
 };
 use crate::cli::agent::is_mcp_tool_ref;
-use crate::cli::chat::consts::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::cli::chat::util::truncate_safe;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
     ChatState,
 };
+use crate::constants::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::constants::help_text::hooks_long_help;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;

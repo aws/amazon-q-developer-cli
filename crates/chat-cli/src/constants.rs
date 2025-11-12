@@ -32,6 +32,27 @@ pub const KIRO_APP_URL: &str = "https://app.kiro.dev/account/usage";
 /// Kiro MCP documentation URL
 pub const KIRO_MCP_DOCS_URL: &str = "https://kiro.dev/docs/cli/mcp";
 
+/// Kiro pricing documentation URL
+pub const KIRO_PRICING_URL: &str = "https://kiro.dev/pricing";
+
+/// Agent configuration reference — hooks section  
+pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/custom-agents/configuration-reference#hooks-field";
+
+/// Agent configuration reference — tools section  
+pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/custom-agents/configuration-reference#tools-field";
+
+/// Profile -> Agent migration guidance URL
+pub const AGENT_MIGRATION_DOC_URL: &str = "http://kiro.dev/docs/cli/custom-agents/configuration-reference/";
+
+/// MCP safety and security documentation URL
+pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
+
+/// Safety guidelines for using `/tools trust-all`
+pub const TOOLS_TRUST_ALL_SAFETY_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding
@@ -61,6 +82,7 @@ pub mod ui_text {
 
     /// Trust all tools warning text
     pub fn trust_all_warning() -> String {
+        use crate::constants::TOOLS_TRUST_ALL_SAFETY_DOC_URL;
         let mut warning = String::new();
 
         warning.push_str(&StyledText::success("All tools are now trusted ("));
@@ -69,19 +91,23 @@ pub mod ui_text {
             "). {PRODUCT_NAME} will execute tools without asking for confirmation.",
         )));
         warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
-        warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
+        warning.push_str(&format!(
+            "\n\nLearn more at {}",
+            StyledText::brand(TOOLS_TRUST_ALL_SAFETY_DOC_URL)
+        ));
 
         warning
     }
 
     /// Rate limit reached message
     pub fn limit_reached_text() -> String {
+        use crate::constants::KIRO_PRICING_URL;
         format!(
             "You've used all your free requests for this month. You have two options:
 
 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> {}
 2. Wait until next month when your limit automatically resets.",
-            StyledText::info("https://aws.amazon.com/q/developer/pricing/")
+            StyledText::brand(KIRO_PRICING_URL)
         )
     }
 
@@ -213,23 +239,29 @@ Notes:
 
     /// Full tools command long help text
     pub fn tools_long_help() -> String {
-        format!("By default, {} will ask for your permission to use certain tools. You can control which tools you
+        use crate::constants::AGENT_FORMAT_TOOLS_DOC_URL;
+        format!(
+            "By default, {} will ask for your permission to use certain tools. You can control which tools you
 trust so that no confirmation is required.
 
-Refer to the documentation for how to configure tools with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#tools-field", super::PRODUCT_NAME)
+Refer to the documentation for how to configure tools with your agent: {}",
+            super::PRODUCT_NAME,
+            AGENT_FORMAT_TOOLS_DOC_URL
+        )
     }
 
     /// Full hooks command long help text
     pub fn hooks_long_help() -> String {
+        use crate::constants::AGENT_FORMAT_HOOKS_DOC_URL;
         format!("Use context hooks to specify shell commands to run. The output from these 
 commands will be appended to the prompt to {}.
 
-Refer to the documentation for how to configure hooks with your agent: https://github.com/aws/amazon-q-developer-cli/blob/main/docs/agent-format.md#hooks-field
+Refer to the documentation for how to configure hooks with your agent: {}
 
 Notes:
 • Hooks are executed in parallel
 • 'conversation_start' hooks run on the first user prompt and are attached once to the conversation history sent to {}
-• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history", super::PRODUCT_NAME, super::PRODUCT_NAME)
+• 'per_prompt' hooks run on each user prompt and are attached to the prompt, but are not stored in conversation history", super::PRODUCT_NAME, AGENT_FORMAT_HOOKS_DOC_URL ,super::PRODUCT_NAME)
     }
 }
 

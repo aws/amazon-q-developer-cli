@@ -25,7 +25,10 @@ mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
-use crate::constants::ui_text;
+use crate::constants::{
+    MCP_SECURITY_DOC_URL,
+    ui_text,
+};
 #[cfg(unix)]
 mod skim_integration;
 mod token_counter;
@@ -342,9 +345,11 @@ impl ChatArgs {
                 if !self.no_interactive && !os.database.settings.get_bool(Setting::McpLoadedBefore).unwrap_or(false) {
                     execute!(
                         stderr,
-                        style::Print(
-                            "To learn more about MCP safety, see https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-mcp-security.html\n\n"
-                        )
+                        style::Print("To learn more about MCP safety, see "),
+                        StyledText::brand_fg(),
+                        style::Print(MCP_SECURITY_DOC_URL),
+                        StyledText::reset(),
+                        style::Print("\n\n"),
                     )?;
                 }
                 os.database.settings.set(Setting::McpLoadedBefore, true).await?;
