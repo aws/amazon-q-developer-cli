@@ -1,4 +1,3 @@
-use crate::theme::StyledText;
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
@@ -51,10 +50,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::cli::issue;
-use crate::constants::{
-    AGENT_MIGRATION_DOC_URL,
-    ui_text,
-};
+use crate::constants::ui_text;
 use crate::os::Os;
 
 /// Use any of these commands to manage your Kiro session. All commands start with '/'.
@@ -75,8 +71,6 @@ pub enum SlashCommand {
     /// Manage agents
     #[command(subcommand)]
     Agent(AgentSubcommand),
-    #[command(hide = true)]
-    Profile,
     /// Manage context files and view context window usage
     Context(ContextArgs),
     /// (Beta) Manage knowledge base for persistent context storage. Requires "q settings
@@ -140,31 +134,6 @@ impl SlashCommand {
             Self::Quit => Ok(ChatState::Exit),
             Self::Clear(args) => args.execute(session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
-            Self::Profile => {
-                use crossterm::{
-                    execute,
-                    style,
-                };
-                execute!(
-                    session.stderr,
-                    StyledText::warning_fg(),
-                    style::Print("This command has been deprecated. Use"),
-                    StyledText::brand_fg(),
-                    style::Print(" /agent "),
-                    StyledText::warning_fg(),
-                    style::Print("instead.\nSee "),
-                    StyledText::brand_fg(),
-                    style::Print(AGENT_MIGRATION_DOC_URL),
-                    StyledText::warning_fg(),
-                    style::Print(" for more detail"),
-                    style::Print("\n"),
-                    StyledText::reset(),
-                )?;
-
-                Ok(ChatState::PromptUser {
-                    skip_printing_tools: true,
-                })
-            },
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
@@ -211,7 +180,6 @@ impl SlashCommand {
             Self::Quit => "quit",
             Self::Clear(_) => "clear",
             Self::Agent(_) => "agent",
-            Self::Profile => "profile",
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
             Self::PromptEditor(_) => "editor",
