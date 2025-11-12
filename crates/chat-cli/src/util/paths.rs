@@ -17,6 +17,7 @@ use tracing::{
     warn,
 };
 
+use crate::constants::CLI_NAME;
 use crate::os::Os;
 
 #[derive(Debug, Error)]
@@ -48,8 +49,6 @@ pub enum DirectoryError {
 
 pub mod workspace {
     //! Project-level paths (relative to current working directory)
-    pub const TODO_LISTS_DIR: &str = ".amazonq/cli-todo-lists";
-    pub const SUBAGENTS_DIR: &str = ".amazonq/.subagents";
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources
@@ -74,7 +73,27 @@ impl FileSystemChecker for RealFileSystem {
 
 /// Check if a kiro subpath should use data directory instead of home directory
 fn should_use_data_dir(kiro_subpath: &str) -> bool {
-    matches!(kiro_subpath, "knowledge_bases" | "cli-checkouts")
+    matches!(kiro_subpath, "knowledge_bases" | "cli-checkouts" | ".subagents")
+}
+
+/// Get the base kiro-cli data directory in Application Support
+fn data_dir() -> Result<PathBuf> {
+    Ok(dirs::data_local_dir()
+        .ok_or(DirectoryError::NoHomeDirectory)?
+        .join(CLI_NAME))
+}
+
+/// Hash a path to create a unique directory name
+fn hash_path(path: &std::path::Path) -> String {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{
+        Hash,
+        Hasher,
+    };
+
+    let mut hasher = DefaultHasher::new();
+    path.hash(&mut hasher);
+    format!("{:x}", hasher.finish())
 }
 
 fn resolve_migrated_path_with_fs(
@@ -365,19 +384,9 @@ impl<'a> WorkspacePaths<'a> {
     }
 
     pub fn todo_lists_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(workspace::TODO_LISTS_DIR))
-    }
-
-    pub fn subagents_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(workspace::SUBAGENTS_DIR))
-    }
-
-    pub async fn ensure_subagents_dir(&self) -> Result<PathBuf> {
-        let dir = self.subagents_dir()?;
-        if !dir.exists() {
-            self.os.fs.create_dir_all(&dir).await?;
-        }
-        Ok(dir)
+        let cwd = self.os.env.current_dir()?;
+        let hash = hash_path(&cwd);
+        Ok(data_dir()?.join("todo-lists").join(hash))
     }
 }
 
@@ -421,6 +430,18 @@ impl<'a> GlobalPaths<'a> {
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
         Ok(home_dir(self.os)?.join(".kiro").join("steering"))
+    }
+
+    pub fn subagents_dir(&self) -> Result<PathBuf> {
+        resolve_global_migrated_path(self.os, ".subagents", ".subagents")
+    }
+
+    pub async fn ensure_subagents_dir(&self) -> Result<PathBuf> {
+        let dir = self.subagents_dir()?;
+        if !dir.exists() {
+            self.os.fs.create_dir_all(&dir).await?;
+        }
+        Ok(dir)
     }
 
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
