@@ -35,15 +35,23 @@ pub const KIRO_MCP_DOCS_URL: &str = "https://kiro.dev/docs/cli/mcp";
 /// Kiro pricing documentation URL
 pub const KIRO_PRICING_URL: &str = "https://kiro.dev/pricing/";
 
+/// Agent configuration reference — hooks section  
 pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
-    "https://kiro.dev/docs/cli/custom-agents/agent-configuration-reference#hooks-field";
+    "https://kiro.dev/docs/cli/custom-agents/configuration-reference#hooks-field";
 
+/// Agent configuration reference — tools section  
 pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
-    "https://kiro.dev/docs/cli/custom-agents/agent-configuration-reference#tools-field";
+    "https://kiro.dev/docs/cli/custom-agents/configuration-reference#tools-field";
 
+/// Profile -> Agent migration guidance URL
 pub const AGENT_MIGRATION_DOC_URL: &str = "http://kiro.dev/docs/cli/custom-agents/configuration-reference/";
 
+/// MCP safety and security documentation URL
 pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
+
+/// Safety guidelines for using `/tools trust-all`
+pub const TOOLS_TRUST_ALL_SAFETY_DOC_URL: &str =
+    "https://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely";
 
 /// Error message templates
 pub mod error_messages {
@@ -74,6 +82,7 @@ pub mod ui_text {
 
     /// Trust all tools warning text
     pub fn trust_all_warning() -> String {
+        use crate::constants::TOOLS_TRUST_ALL_SAFETY_DOC_URL;
         let mut warning = String::new();
 
         warning.push_str(&StyledText::success("All tools are now trusted ("));
@@ -82,7 +91,10 @@ pub mod ui_text {
             "). {PRODUCT_NAME} will execute tools without asking for confirmation.",
         )));
         warning.push_str("\nAgents can sometimes do unexpected things so understand the risks.");
-        warning.push_str("\n\nLearn more at https://docs.aws.amazon.com/amazonq/latest/qdeveloper-ug/command-line-chat-security.html#command-line-chat-trustall-safety");
+        warning.push_str(&format!(
+            "\n\nLearn more at {}",
+            StyledText::brand(TOOLS_TRUST_ALL_SAFETY_DOC_URL)
+        ));
 
         warning
     }
