@@ -175,7 +175,7 @@ impl ToolsArgs {
                 style::Print(
                     "\nNo tools are currently enabled.\n\nRefer to the documentation for how to add tools to your agent: "
                 ),
-                StyledText::success_fg(),
+                StyledText::brand_fg(),
                 style::Print(AGENT_FORMAT_TOOLS_DOC_URL),
                 StyledText::reset(),
                 style::Print("\n"),

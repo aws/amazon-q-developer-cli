@@ -33,7 +33,7 @@ pub const KIRO_APP_URL: &str = "https://app.kiro.dev/account/usage";
 pub const KIRO_MCP_DOCS_URL: &str = "https://kiro.dev/docs/cli/mcp";
 
 /// Kiro pricing documentation URL
-pub const KIRO_PRICING_URL: &str = "https://kiro.dev/pricing/";
+pub const KIRO_PRICING_URL: &str = "https://kiro.dev/pricing";
 
 /// Agent configuration reference — hooks section  
 pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
