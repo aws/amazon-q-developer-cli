@@ -353,6 +353,16 @@ impl ChatHinter {
             return None;
         }
 
+        // Check for unclosed triple backticks
+        if line.contains("```") {
+            let triple_backtick_count = line.matches("```").count();
+            if triple_backtick_count % 2 == 1 {
+                // We have an odd number of ```, meaning we're in multiline mode
+                // Show status hint (right arrow key is overridden to not complete this)
+                return Some("in multiline mode, waiting for closing backticks ```".to_string());
+            }
+        }
+
         // If line starts with a slash, try to find a command hint
         if line.starts_with('/') {
             return self
@@ -550,6 +560,34 @@ impl rustyline::ConditionalEventHandler for PasteImageHandler {
     }
 }
 
+/// Handler for right arrow key that prevents completing the multiline status hint
+struct RightArrowHandler;
+
+impl rustyline::ConditionalEventHandler for RightArrowHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        let line = ctx.line();
+
+        // Check if we're in multiline mode with unclosed backticks
+        if line.contains("```") {
+            let triple_backtick_count = line.matches("```").count();
+            if triple_backtick_count % 2 == 1 {
+                // We're in multiline mode - don't complete the hint
+                // Just move the cursor forward instead
+                return Some(Cmd::Move(rustyline::Movement::ForwardChar(1)));
+            }
+        }
+
+        // Normal case - complete the hint
+        Some(Cmd::CompleteHint)
+    }
+}
+
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
@@ -641,6 +679,12 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
         EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
+    );
+
+    // Override right arrow key to prevent completing multiline status hints
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Right, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(RightArrowHandler)),
     );
 
     Ok(rl)
