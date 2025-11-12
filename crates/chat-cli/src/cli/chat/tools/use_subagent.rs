@@ -17,6 +17,10 @@ use super::{
 };
 use crate::agent::Subagent;
 use crate::cli::agent::Agents;
+use crate::cli::experiment::experiment_manager::{
+    ExperimentManager,
+    ExperimentName,
+};
 use crate::os::Os;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -49,6 +53,11 @@ impl UseSubagent {
         preferred_alias: "subagent",
         aliases: &["use_subagent", "subagent"],
     };
+
+    /// Checks if todo lists are enabled
+    pub fn is_enabled(os: &Os) -> bool {
+        ExperimentManager::is_enabled(os, ExperimentName::UseSubagent)
+    }
 
     pub async fn invoke(&self, os: &Os, agents: &Agents) -> Result<InvokeOutput> {
         match self {
