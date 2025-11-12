@@ -2148,6 +2148,7 @@ impl ChatSession {
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
+        queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
 
@@ -2842,7 +2843,7 @@ impl ChatSession {
     async fn handle_response(
         &mut self,
         os: &mut Os,
-        state: crate::api_client::model::ConversationState,
+        state: api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
@@ -2852,6 +2853,7 @@ impl ChatSession {
         let mut buf = String::new();
         let mut offset = 0;
         let mut ended = false;
+        let mut flush_required = false;
         let terminal_width = match self.wrap {
             Some(WrapMode::Never) => None,
             Some(WrapMode::Always) => Some(self.terminal_width()),
@@ -2899,8 +2901,16 @@ impl ChatSession {
                         },
                         parser::ResponseEvent::ToolUseStart { name } => {
                             // We need to flush the buffer here, otherwise text will not be
-                            // printed while we are receiving tool use events.
-                            buf.push('\n');
+                            // printed while we are receiving tool use events. Only if buffer
+                            // is not empty, meaning that there's a tool use with interlude, we
+                            // will actually write to buffer, otherwise it would simply be used for
+                            // the parser when creating the temporary buffer.
+                            // e.g I will read file ABC:
+                            // Tool use Description printed <- This description should be in new line.
+                            if !buf.trim().is_empty() {
+                                buf.push('\n');
+                            }
+                            flush_required = true;
                             tool_name_being_recvd = Some(name);
                         },
                         parser::ResponseEvent::AssistantText(text) => {
@@ -3118,7 +3128,7 @@ impl ChatSession {
             // this is a hack since otherwise the parser might report Incomplete with useful data
             // still left in the buffer. I'm not sure how this is intended to be handled.
             if ended {
-                buf.push('\n');
+                flush_required = true;
             }
 
             if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
@@ -3137,7 +3147,16 @@ impl ChatSession {
 
             // Print the response for normal cases
             loop {
-                let input = Partial::new(&buf[offset..]);
+                // Here we try to maintain the buffer intact, but just for correct
+                // markdown rendering we add a new line to the buffer.
+                let parse_str: Cow<'_, str> = if flush_required && offset < buf.len() {
+                    let mut temp = String::from(&buf[offset..]);
+                    temp.push('\n');
+                    Cow::Owned(temp)
+                } else {
+                    Cow::Borrowed(&buf[offset..])
+                };
+                let input = Partial::new(parse_str.as_ref());
                 if self.stdout.should_send_structured_event {
                     match interpret_markdown(input, &mut temp_buf, &mut state) {
                         Ok(parsed) => {
@@ -3177,6 +3196,8 @@ impl ChatSession {
                 // Do not remove unless you are nabochay :)
                 tokio::time::sleep(Duration::from_millis(8)).await;
             }
+
+            flush_required = false;
 
             // Set spinner after showing all of the assistant text content so far.
             if tool_name_being_recvd.is_some() {
