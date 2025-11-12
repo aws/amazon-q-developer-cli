@@ -107,7 +107,7 @@ pub mod ui_text {
 
 1. Upgrade to a paid subscription for increased limits. See our Pricing page for what's included> {}
 2. Wait until next month when your limit automatically resets.",
-            StyledText::info(KIRO_PRICING_URL)
+            StyledText::brand(KIRO_PRICING_URL)
         )
     }
 
