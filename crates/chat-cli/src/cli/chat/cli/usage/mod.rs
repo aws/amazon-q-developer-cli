@@ -1,4 +1,8 @@
 use clap::Args;
+use crossterm::{
+    execute,
+    style,
+};
 
 use crate::cli::chat::{
     ChatError,
@@ -6,6 +10,7 @@ use crate::cli::chat::{
     ChatState,
 };
 use crate::os::Os;
+use crate::theme::StyledText;
 
 pub mod usage_data_provider;
 pub mod usage_renderer;
@@ -70,6 +75,16 @@ impl UsageArgs {
         // Only show credits/billing information
         let billing_data = usage_data_provider::get_billing_usage_data(os).await?;
         usage_renderer::render_billing_info(&billing_data, session, os, true).await?;
+        // Add hint about /context command
+        execute!(
+            session.stderr,
+            style::Print("\n"),
+            style::Print("Tip: to see context window usage, run "),
+            StyledText::brand_fg(),
+            style::Print("/context"),
+            StyledText::reset(),
+        )?;
+
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
