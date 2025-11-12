@@ -286,6 +286,16 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
 /// * `tool` - The Tool enum containing all metadata (name, server info, etc.)
 /// * `updates` - The output to write to
 pub fn display_tool_use(tool: &Tool, updates: &mut impl Write) -> Result<()> {
+    display_tool_use_with_args(tool, updates, None)
+}
+
+/// Helper function to display tool usage information with optional additional arguments
+///
+/// # Parameters
+/// * `tool` - The Tool enum containing all metadata (name, server info, etc.)
+/// * `updates` - The output to write to
+/// * `additional_args` - Optional additional text to display after the tool name
+pub fn display_tool_use_with_args(tool: &Tool, updates: &mut impl Write, additional_args: Option<&str>) -> Result<()> {
     // Check if this is a custom tool from an MCP server
     if let Tool::Custom(custom_tool) = tool {
         queue!(
@@ -293,18 +303,22 @@ pub fn display_tool_use(tool: &Tool, updates: &mut impl Write) -> Result<()> {
             StyledText::secondary_fg(),
             style::Print(" (from mcp server: "),
             style::Print(&custom_tool.server_name),
-            style::Print(")"),
-            StyledText::reset(),
         )?;
+        if let Some(args) = additional_args {
+            queue!(updates, style::Print(", "), style::Print(args))?;
+        }
+        queue!(updates, style::Print(")"), StyledText::reset())?;
     } else {
         queue!(
             updates,
             StyledText::secondary_fg(),
             style::Print(" (using tool: "),
             style::Print(tool.display_name()),
-            style::Print(")"),
-            StyledText::reset(),
         )?;
+        if let Some(args) = additional_args {
+            queue!(updates, style::Print(", "), style::Print(args))?;
+        }
+        queue!(updates, style::Print(")"), StyledText::reset())?;
     }
     Ok(())
 }

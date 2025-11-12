@@ -87,8 +87,7 @@ impl FsRead {
     pub async fn queue_description(&self, tool: &super::tool::Tool, os: &Os, updates: &mut impl Write) -> Result<()> {
         if self.operations.len() == 1 {
             // Single operation - display without batch prefix
-            self.operations[0].queue_description(os, updates).await?;
-            super::display_tool_use(tool, updates)?;
+            self.operations[0].queue_description(Some(tool), os, updates).await?;
             Ok(())
         } else {
             // Multiple operations - display as batch
@@ -108,7 +107,7 @@ impl FsRead {
 
             for (i, op) in self.operations.iter().enumerate() {
                 queue!(updates, style::Print(format!("\n↱ Operation {}: ", i + 1)))?;
-                op.queue_description(os, updates).await?;
+                op.queue_description(None, os, updates).await?;
             }
             Ok(())
         }
@@ -384,12 +383,17 @@ impl FsReadOperation {
         }
     }
 
-    pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(
+        &self,
+        tool: Option<&super::tool::Tool>,
+        os: &Os,
+        updates: &mut impl Write,
+    ) -> Result<()> {
         match self {
-            FsReadOperation::Line(fs_line) => fs_line.queue_description(os, updates).await,
-            FsReadOperation::Directory(fs_directory) => fs_directory.queue_description(updates),
-            FsReadOperation::Search(fs_search) => fs_search.queue_description(updates),
-            FsReadOperation::Image(fs_image) => fs_image.queue_description(updates),
+            FsReadOperation::Line(fs_line) => fs_line.queue_description(tool, os, updates).await,
+            FsReadOperation::Directory(fs_directory) => fs_directory.queue_description(tool, updates),
+            FsReadOperation::Search(fs_search) => fs_search.queue_description(tool, updates),
+            FsReadOperation::Image(fs_image) => fs_image.queue_description(tool, updates),
         }
     }
 
@@ -438,7 +442,7 @@ impl FsImage {
         })
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: Option<&super::tool::Tool>, updates: &mut impl Write) -> Result<()> {
         queue!(
             updates,
             style::Print("Reading images: "),
@@ -447,6 +451,9 @@ impl FsImage {
             style::Print("\n"),
             StyledText::reset(),
         )?;
+        if let Some(tool) = tool {
+            super::display_tool_use(tool, updates)?;
+        }
         Ok(())
     }
 }
@@ -475,7 +482,12 @@ impl FsLine {
         Ok(())
     }
 
-    pub async fn queue_description(&self, os: &Os, updates: &mut impl Write) -> Result<()> {
+    pub async fn queue_description(
+        &self,
+        tool: Option<&super::tool::Tool>,
+        os: &Os,
+        updates: &mut impl Write,
+    ) -> Result<()> {
         let path = sanitize_path_tool_arg(os, &self.path);
         let file_bytes = os.fs.read(&path).await?;
         let file_content = String::from_utf8_lossy(&file_bytes);
@@ -492,16 +504,16 @@ impl FsLine {
         let start = convert_negative_index(line_count, self.start_line()) + 1;
         let end = convert_negative_index(line_count, self.end_line()) + 1;
         match (start, end) {
-            _ if start == 1 && end == line_count => Ok(queue!(updates, style::Print("all lines".to_string()))?),
-            _ if end == line_count => Ok(queue!(
+            _ if start == 1 && end == line_count => queue!(updates, style::Print("all lines".to_string()))?,
+            _ if end == line_count => queue!(
                 updates,
                 style::Print("from line "),
                 StyledText::brand_fg(),
                 style::Print(start),
                 StyledText::reset(),
                 style::Print(" to end of file"),
-            )?),
-            _ => Ok(queue!(
+            )?,
+            _ => queue!(
                 updates,
                 style::Print("from line "),
                 StyledText::brand_fg(),
@@ -511,8 +523,12 @@ impl FsLine {
                 StyledText::brand_fg(),
                 style::Print(end),
                 StyledText::reset(),
-            )?),
+            )?,
         }
+        if let Some(tool) = tool {
+            super::display_tool_use(tool, updates)?;
+        }
+        Ok(())
     }
 
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
@@ -608,7 +624,7 @@ impl FsSearch {
         Ok(())
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: Option<&super::tool::Tool>, updates: &mut impl Write) -> Result<()> {
         queue!(
             updates,
             style::Print("Searching: "),
@@ -620,6 +636,9 @@ impl FsSearch {
             style::Print(&self.pattern.to_lowercase()),
             StyledText::reset(),
         )?;
+        if let Some(tool) = tool {
+            super::display_tool_use(tool, updates)?;
+        }
         Ok(())
     }
 
@@ -704,7 +723,7 @@ impl FsDirectory {
         Ok(())
     }
 
-    pub fn queue_description(&self, updates: &mut impl Write) -> Result<()> {
+    pub fn queue_description(&self, tool: Option<&super::tool::Tool>, updates: &mut impl Write) -> Result<()> {
         queue!(
             updates,
             style::Print("Reading directory: "),
@@ -712,14 +731,10 @@ impl FsDirectory {
             style::Print(&self.path),
             StyledText::reset(),
         )?;
-        // Depth parameter moved after the path
-        let depth = self.depth.unwrap_or_default();
-        queue!(
-            updates,
-            StyledText::secondary_fg(),
-            style::Print(format!(" (max depth: {depth})")),
-            StyledText::reset(),
-        )?;
+        if let Some(tool) = tool {
+            let depth = self.depth.unwrap_or_default();
+            super::display_tool_use_with_args(tool, updates, Some(&format!("max depth: {depth}")))?;
+        }
         Ok(())
     }
 
