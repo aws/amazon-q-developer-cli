@@ -42,10 +42,7 @@ pub const AGENT_FORMAT_HOOKS_DOC_URL: &str =
 /// Agent configuration reference — tools section  
 pub const AGENT_FORMAT_TOOLS_DOC_URL: &str =
     "https://kiro.dev/docs/cli/custom-agents/configuration-reference#tools-field";
-
-/// Profile -> Agent migration guidance URL
-pub const AGENT_MIGRATION_DOC_URL: &str = "http://kiro.dev/docs/cli/custom-agents/configuration-reference/";
-
+//
 /// MCP safety and security documentation URL
 pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/";
 
