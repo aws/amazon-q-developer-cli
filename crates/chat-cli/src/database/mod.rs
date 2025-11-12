@@ -298,6 +298,17 @@ impl Database {
         Ok(())
     }
 
+    /// Get Kiro upgrade announcement show count from state table
+    pub fn get_kiro_upgrade_show_count(&self) -> Result<Option<i64>, DatabaseError> {
+        self.get_entry::<i64>(Table::State, "kiroUpgrade.showCount")
+    }
+
+    /// Set Kiro upgrade announcement show count in state table
+    pub fn set_kiro_upgrade_show_count(&self, count: i64) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, "kiroUpgrade.showCount", count)?;
+        Ok(())
+    }
+
     /// Set the client ID used for telemetry requests.
     pub fn set_client_id(&mut self, client_id: Uuid) -> Result<usize, DatabaseError> {
         self.set_json_entry(Table::State, CLIENT_ID_KEY, client_id.to_string())

@@ -220,6 +220,14 @@ Notes:
     }
 }
 
+/// Announcement text for Kiro CLI upgrade
+pub fn kiro_upgrade_announcement() -> String {
+    format!(
+        "Amazon Q Developer CLI users can now upgrade to the Kiro CLI. Run {} to update today. The Kiro CLI leverages the agentic CLI features of Q Developer CLI, and is fully compatible with Q Developer CLI. If you have auto updates enabled, you will be updated on 11/21.",
+        StyledText::command("q update")
+    )
+}
+
 /// Tips and rotating messages
 pub mod tips {
     use super::StyledText;
