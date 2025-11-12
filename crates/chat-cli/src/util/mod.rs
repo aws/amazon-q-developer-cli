@@ -1,5 +1,6 @@
 pub mod consts;
 pub mod editor;
+pub mod env_var;
 pub mod file_uri;
 pub mod knowledge_store;
 pub mod open;

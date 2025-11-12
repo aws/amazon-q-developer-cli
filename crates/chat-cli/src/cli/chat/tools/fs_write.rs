@@ -311,11 +311,11 @@ impl FsWrite {
                 let relative_path = format_path(cwd, &path);
                 let prev = if os.fs.exists(&path) {
                     let file = os.fs.read_to_string_sync(&path)?;
-                    stylize_output_if_able(os, &path, &file)
+                    stylize_output_if_able(&path, &file)
                 } else {
                     Default::default()
                 };
-                let new = stylize_output_if_able(os, &relative_path, &file_text);
+                let new = stylize_output_if_able(&relative_path, &file_text);
                 print_diff(output, &prev, &new, 1)?;
 
                 // Display summary as purpose if available after the diff
@@ -343,8 +343,8 @@ impl FsWrite {
                 let old = [prefix, insert_line_content, suffix].join("");
                 let new = [prefix, insert_line_content, new_str, suffix].join("");
 
-                let old = stylize_output_if_able(os, &relative_path, &old);
-                let new = stylize_output_if_able(os, &relative_path, &new);
+                let old = stylize_output_if_able(&relative_path, &old);
+                let new = stylize_output_if_able(&relative_path, &new);
                 print_diff(output, &old, &new, start_line)?;
 
                 // Display summary as purpose if available after the diff
@@ -362,8 +362,8 @@ impl FsWrite {
                     Some((start_line, end_line)) => (start_line, end_line),
                     _ => (0, 0),
                 };
-                let old_str = stylize_output_if_able(os, &relative_path, old_str);
-                let new_str = stylize_output_if_able(os, &relative_path, new_str);
+                let old_str = stylize_output_if_able(&relative_path, old_str);
+                let new_str = stylize_output_if_able(&relative_path, new_str);
                 print_diff(output, &old_str, &new_str, start_line)?;
 
                 // Display summary as purpose if available after the diff
@@ -375,7 +375,7 @@ impl FsWrite {
                 let path = sanitize_path_tool_arg(os, path);
                 let relative_path = format_path(cwd, &path);
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
-                let file = stylize_output_if_able(os, &relative_path, new_str);
+                let file = stylize_output_if_able(&relative_path, new_str);
                 print_diff(output, &Default::default(), &file, start_line)?;
 
                 // Display summary as purpose if available after the diff
@@ -763,8 +763,8 @@ fn terminal_width_required_for_line_count(line_count: usize) -> usize {
     line_count.to_string().chars().count()
 }
 
-fn stylize_output_if_able(os: &Os, path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
-    if supports_truecolor(os) {
+fn stylize_output_if_able(path: impl AsRef<Path>, file_text: &str) -> StylizedFile {
+    if supports_truecolor() {
         match stylized_file(path, file_text) {
             Ok(s) => return s,
             Err(err) => {

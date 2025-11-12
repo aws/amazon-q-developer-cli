@@ -14,11 +14,6 @@ use serde_json::Map;
 use tracing::error;
 use uuid::Uuid;
 
-use crate::api_client::error::{
-    ApiClientError,
-    ConverseStreamError,
-};
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamEvent {
@@ -74,12 +69,10 @@ impl StreamError {
         self
     }
 
-    /// Helper for downcasting the error source to [ConverseStreamError].
-    ///
-    /// Just defining this here for simplicity
-    pub fn as_rts_error(&self) -> Option<&ConverseStreamError> {
+    /// Helper for downcasting a [StreamErrorSource] to a concrete type.
+    pub fn as_concrete_error<T: StreamErrorSource>(&self) -> Option<&T> {
         if let Some(source) = &self.source {
-            (*source).as_any().downcast_ref::<ConverseStreamError>()
+            (*source).as_any().downcast_ref::<T>()
         } else {
             None
         }
@@ -162,18 +155,6 @@ impl std::fmt::Display for StreamErrorKind {
 
 pub trait StreamErrorSource: std::any::Any + std::error::Error + Send + Sync {
     fn as_any(&self) -> &dyn std::any::Any;
-}
-
-impl StreamErrorSource for ConverseStreamError {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
-}
-
-impl StreamErrorSource for ApiClientError {
-    fn as_any(&self) -> &dyn std::any::Any {
-        self
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -573,7 +554,6 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-    use crate::api_client::error::ConverseStreamErrorKind;
 
     macro_rules! test_ser_deser {
         ($ty:ident, $variant:expr, $text:expr) => {
@@ -583,19 +563,6 @@ mod tests {
             assert_eq!($variant, $ty::from_str($text).unwrap());
             assert_eq!($text, $variant.to_string());
         };
-    }
-
-    #[test]
-    fn test_other_stream_err_downcasting() {
-        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
-            ConverseStreamErrorKind::ModelOverloadedError,
-            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
-                                                                     * required */
-        )));
-        assert!(
-            err.as_rts_error()
-                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
-        );
     }
 
     #[test]

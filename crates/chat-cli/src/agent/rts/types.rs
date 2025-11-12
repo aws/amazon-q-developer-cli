@@ -1,6 +1,7 @@
-use super::util::serde_value_to_document;
-use crate::agent::agent_loop::types::*;
+use agent::agent_loop::types::*;
+
 use crate::api_client::model;
+use crate::cli::chat::util::serde_value_to_document;
 
 impl From<ImageBlock> for model::ImageBlock {
     fn from(v: ImageBlock) -> Self {

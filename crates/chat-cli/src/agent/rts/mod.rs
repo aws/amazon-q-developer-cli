@@ -1,5 +1,6 @@
+#![allow(dead_code)]
+
 pub mod types;
-pub mod util;
 
 use std::pin::Pin;
 use std::sync::Arc;
@@ -8,6 +9,32 @@ use std::time::{
     Instant,
 };
 
+use agent::agent_loop::model::Model;
+use agent::agent_loop::protocol::StreamResult;
+use agent::agent_loop::types::{
+    ContentBlock,
+    ContentBlockDelta,
+    ContentBlockDeltaEvent,
+    ContentBlockStart,
+    ContentBlockStartEvent,
+    ContentBlockStopEvent,
+    Message,
+    MessageStartEvent,
+    MessageStopEvent,
+    MetadataEvent,
+    MetadataMetrics,
+    MetadataService,
+    Role,
+    StopReason,
+    StreamError,
+    StreamErrorKind,
+    StreamErrorSource,
+    StreamEvent,
+    ToolResultContentBlock,
+    ToolSpec,
+    ToolUseBlockDelta,
+    ToolUseBlockStart,
+};
 use chrono::{
     DateTime,
     Utc,
@@ -28,34 +55,8 @@ use tracing::{
     trace,
     warn,
 };
-use util::serde_value_to_document;
 use uuid::Uuid;
 
-use super::agent_loop::model::Model;
-use super::agent_loop::protocol::StreamResult;
-use super::agent_loop::types::{
-    StreamError,
-    StreamEvent,
-};
-use crate::agent::agent_loop::types::{
-    ContentBlockDelta,
-    ContentBlockDeltaEvent,
-    ContentBlockStart,
-    ContentBlockStartEvent,
-    ContentBlockStopEvent,
-    Message,
-    MessageStopEvent,
-    MetadataEvent,
-    MetadataMetrics,
-    MetadataService,
-    Role,
-    StopReason,
-    StreamErrorKind,
-    ToolSpec,
-    ToolUseBlockDelta,
-    ToolUseBlockStart,
-};
-use crate::agent_loop::types::MessageStartEvent;
 use crate::api_client::error::{
     ApiClientError,
     ConverseStreamError,
@@ -73,6 +74,7 @@ use crate::api_client::{
     ApiClient,
     model as rts,
 };
+use crate::cli::chat::util::serde_value_to_document;
 
 /// A [Model] implementation using the RTS backend.
 #[derive(Debug, Clone)]
@@ -179,7 +181,7 @@ impl RtsModel {
                     ConverseStreamErrorKind::MonthlyLimitReached => StreamErrorKind::Other(err.to_string()),
                     ConverseStreamErrorKind::ContextWindowOverflow => StreamErrorKind::ContextWindowOverflow,
                     ConverseStreamErrorKind::ModelOverloadedError => StreamErrorKind::Throttling,
-                    ConverseStreamErrorKind::Unknown => StreamErrorKind::Other(err.to_string()),
+                    ConverseStreamErrorKind::Unknown { .. } => StreamErrorKind::Other(err.to_string()),
                 };
                 let request_id = err.request_id.clone();
                 tx.send(StreamResult::Err(
@@ -277,14 +279,21 @@ impl RtsModel {
     }
 }
 
+impl StreamErrorSource for ConverseStreamError {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+impl StreamErrorSource for ApiClientError {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
 /// Annoyingly, the RTS API doesn't allow images as tool use results, so we have to extract tool
 /// results and image content separately.
 fn extract_tool_results_and_images(message: &Message) -> (Option<Vec<rts::ToolResult>>, Option<Vec<rts::ImageBlock>>) {
-    use crate::agent::agent_loop::types::{
-        ContentBlock,
-        ToolResultContentBlock,
-    };
-
     let mut images = Vec::new();
     let mut tool_results = Vec::new();
     for item in &message.content {
@@ -683,8 +692,12 @@ mod tests {
     use tokio_stream::StreamExt as _;
 
     use super::*;
-    use crate::agent::agent_loop::types::ContentBlock;
-    use crate::agent::util::is_integ_test;
+    use crate::database::Database;
+    use crate::os::{
+        Env,
+        Fs,
+    };
+    use crate::util::env_var::is_integ_test;
 
     /// Manual test to verify cancellation succeeds in a timely manner.
     #[tokio::test]
@@ -693,7 +706,13 @@ mod tests {
             return;
         }
 
-        let rts = RtsModel::new(ApiClient::new().await.unwrap(), Uuid::new_v4(), None);
+        let rts = RtsModel::new(
+            ApiClient::new(&Env::new(), &Fs::new(), &mut Database::new().await.unwrap(), None)
+                .await
+                .unwrap(),
+            Uuid::new_v4(),
+            None,
+        );
         let cancel_token = CancellationToken::new();
         let token_clone = cancel_token.clone();
         let (tx, mut rx) = mpsc::channel(8);
@@ -750,5 +769,18 @@ mod tests {
         if !was_cancelled {
             panic!("stream was never cancelled");
         }
+    }
+
+    #[test]
+    fn test_other_stream_err_downcasting() {
+        let err = StreamError::new(StreamErrorKind::Interrupted).with_source(Arc::new(ConverseStreamError::new(
+            ConverseStreamErrorKind::ModelOverloadedError,
+            None::<aws_smithy_types::error::operation::BuildError>, /* annoying type inference
+                                                                     * required */
+        )));
+        assert!(
+            err.as_concrete_error::<ConverseStreamError>()
+                .is_some_and(|r| matches!(r.kind, ConverseStreamErrorKind::ModelOverloadedError))
+        );
     }
 }

@@ -63,6 +63,11 @@ use crate::database::{
     Database,
     Secret,
 };
+use crate::os::Env;
+use crate::util::env_var::{
+    is_integ_test,
+    is_sigv4_enabled,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -318,7 +323,7 @@ impl BuilderIdToken {
     ) -> Result<Option<Self>, AuthError> {
         // Can't use #[cfg(test)] without breaking lints, and we don't want to require
         // authentication in order to run ChatSession tests. Hence, adding this here with cfg!(test)
-        if cfg!(test) {
+        if cfg!(test) && !is_integ_test() {
             return Ok(Some(Self {
                 access_token: Secret("test_access_token".to_string()),
                 expires_at: time::OffsetDateTime::now_utc() + time::Duration::minutes(60),
@@ -589,7 +594,7 @@ pub async fn poll_create_token(
 
 pub async fn is_logged_in(database: &mut Database) -> bool {
     // Check for BuilderId if not using Sigv4
-    if std::env::var("AMAZON_Q_SIGV4").is_ok_and(|v| !v.is_empty()) {
+    if is_sigv4_enabled(&Env::new()) {
         debug!("logged in using sigv4 credentials");
         return true;
     }

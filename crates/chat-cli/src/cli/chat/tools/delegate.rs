@@ -12,10 +12,7 @@ use crossterm::{
     queue,
     style,
 };
-use eyre::{
-    Result,
-    bail,
-};
+use eyre::Result;
 use schemars::JsonSchema;
 use serde::{
     Deserialize,
@@ -41,6 +38,7 @@ use crate::cli::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::env_var::get_all_env_vars;
 use crate::util::paths::PathResolver;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
@@ -108,7 +106,14 @@ impl Delegate {
             Operation::Status => match &self.agent {
                 Some(agent_name) => status_agent(os, agent_name).await?,
                 None => match status_all_agents(os).await {
-                    Ok(execution) => execution,
+                    Ok(executions) => {
+                        if executions.is_empty() {
+                            "No new completed delegate tasks".to_string()
+                        } else {
+                            let agent_names: Vec<String> = executions.iter().map(|e| e.agent.clone()).collect();
+                            format!("The following delegate tasks are ready: {}", agent_names.join(", "))
+                        }
+                    },
                     Err(msg) => msg.to_string(),
                 },
             },
@@ -165,7 +170,7 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
 
 fn format_launch_success(agent: &str, task: &str) -> String {
     format!(
-        "✓ Agent '{}' launched successfully.\nTask: {}\n\nUse 'status' operation to check progress.",
+        "✓ Agent '{}' launched successfully.\nTask: {}\n\nYou will be notified when the task completes. The notification will include a summary. If you need the full output, you can ask to read the complete delegation result using the 'status' operation.",
         agent, task
     )
 }
@@ -277,6 +282,16 @@ pub struct AgentExecution {
     pub exit_code: Option<i32>,
     #[serde(default)]
     pub output: String,
+    #[serde(default)]
+    pub user_notified: bool,
+    #[serde(default)]
+    pub summary: Option<String>,
+    #[serde(default = "default_unknown_string")]
+    pub cwd: String,
+}
+
+fn default_unknown_string() -> String {
+    "Unknown".to_string()
 }
 
 impl AgentExecution {
@@ -334,7 +349,7 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
     cmd.stdin(std::process::Stdio::null()); // No user input
-    cmd.envs(std::env::vars());
+    cmd.envs(get_all_env_vars());
 
     #[cfg(not(windows))]
     cmd.process_group(0);
@@ -351,6 +366,9 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
         pid,
         exit_code: None,
         output: String::new(),
+        user_notified: false,
+        summary: None,
+        cwd: std::env::current_dir().map_or_else(|_| "Unknown".to_string(), |p| p.to_string_lossy().to_string()),
     };
 
     save_agent_execution(os, &execution).await?;
@@ -359,6 +377,42 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     tokio::spawn(monitor_child_process(child, execution.clone(), os.clone()));
 
     Ok(execution)
+}
+
+async fn generate_summary(task: &str, output: &str) -> Result<String> {
+    // Create a prompt for summarizing the task execution
+    let summary_prompt = format!(
+        "Summarize what happened in this task execution in 2-3 sentences. Be concise and focus on key outcomes.\n\nTask: {}\n\nOutput:\n{}",
+        task, output
+    );
+
+    // Run Q chat with summary prompt in non-interactive mode
+    let mut cmd = tokio::process::Command::new("q");
+    cmd.args(["chat", "--non-interactive", &summary_prompt]);
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+    cmd.stdin(std::process::Stdio::null());
+    cmd.envs(std::env::vars());
+
+    let output = cmd.output().await?;
+
+    if output.status.success() {
+        let raw_summary = String::from_utf8_lossy(&output.stdout);
+        // Strip ANSI codes and remove leading "> " prefix
+        let clean_summary = strip_ansi_escapes::strip_str(&raw_summary)
+            .trim()
+            .trim_start_matches('>')
+            .trim()
+            .to_string();
+
+        if !clean_summary.is_empty() {
+            Ok(clean_summary)
+        } else {
+            Err(eyre::eyre!("Empty summary generated"))
+        }
+    } else {
+        Err(eyre::eyre!("Summary generation failed"))
+    }
 }
 
 async fn monitor_child_process(child: tokio::process::Child, mut execution: AgentExecution, os: Os) {
@@ -381,6 +435,19 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
                 format!("STDOUT:\n{}\n\nSTDERR:\n{}", stdout, stderr)
             };
 
+            // Generate summary with retry logic
+            let summary_result = generate_summary(&execution.task, &execution.output).await;
+            execution.summary = match summary_result {
+                Ok(summary) => Some(summary),
+                Err(_) => {
+                    // Retry once
+                    match generate_summary(&execution.task, &execution.output).await {
+                        Ok(summary) => Some(summary),
+                        Err(_) => Some("Summary unavailable - see full details in agent execution file".to_string()),
+                    }
+                },
+            };
+
             // Save to workspace subagents directory
             if let Err(e) = save_agent_execution(&os, &execution).await {
                 eprintln!("Failed to save agent execution: {}", e);
@@ -391,6 +458,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
             execution.completed_at = Some(Utc::now());
             execution.exit_code = Some(-1);
             execution.output = format!("Failed to wait for process: {}", e);
+            execution.summary = Some("Task failed to complete due to process error".to_string());
 
             // Save to workspace subagents directory
             if let Err(e) = save_agent_execution(&os, &execution).await {
@@ -402,7 +470,7 @@ async fn monitor_child_process(child: tokio::process::Child, mut execution: Agen
 
 pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
     match load_agent_execution(os, agent).await? {
-        Some((mut execution, path)) => {
+        Some((mut execution, _path)) => {
             // If status is running, check if PID is still alive
             if execution.status == AgentStatus::Running && execution.pid != 0 && !is_process_alive(execution.pid) {
                 // Process died, mark as failed
@@ -415,47 +483,47 @@ pub async fn status_agent(os: &Os, agent: &str) -> Result<String> {
                 save_agent_execution(os, &execution).await?;
             }
 
-            if execution.status == AgentStatus::Completed {
-                let _ = os.fs.remove_file(path).await;
-            }
-
             Ok(execution.format_status())
         },
         None => Ok(format!("No execution found for agent '{}'", agent)),
     }
 }
 
-pub async fn status_all_agents(os: &Os) -> Result<String> {
-    // Because we would delete completed execution that has been read, everything that remains is
-    // assumed to not be stale
+pub async fn status_all_agents(os: &Os) -> Result<Vec<AgentExecution>> {
     let mut dir_walker = os.fs.read_dir(subagents_dir(os).await?).await?;
-    let mut status = String::new();
+    let mut unnotified_executions = Vec::new();
 
     while let Ok(Some(file)) = dir_walker.next_entry().await {
-        let file_name = file.file_name();
-
         let bytes = os.fs.read(file.path()).await?;
-        let execution = serde_json::from_slice::<AgentExecution>(&bytes)?;
+        let mut execution = serde_json::from_slice::<AgentExecution>(&bytes)?;
 
-        if execution.status != AgentStatus::Running {
-            let file_name = file_name
-                .as_os_str()
-                .to_str()
-                .ok_or(eyre::eyre!("Error obtaining execution file name"))?;
+        // Check if running tasks have died (only check if running > 5 minutes to avoid overhead)
+        if execution.status == AgentStatus::Running && execution.pid != 0 {
+            let running_duration = chrono::Utc::now().signed_duration_since(execution.launched_at);
 
-            if !status.is_empty() {
-                status.push_str(", ");
+            // Only check PID if task has been running for more than 5 minutes
+            if running_duration.num_minutes() > 5 && !is_process_alive(execution.pid) {
+                // Process died, mark as failed
+                execution.status = AgentStatus::Failed;
+                execution.completed_at = Some(chrono::Utc::now());
+                execution.exit_code = Some(-1);
+                execution.output = "Process terminated unexpectedly (PID not found)".to_string();
+                execution.summary = Some("Task failed - process terminated unexpectedly".to_string());
+
+                // Save the updated status
+                if let Err(e) = save_agent_execution(os, &execution).await {
+                    eprintln!("Failed to update dead agent execution: {}", e);
+                }
             }
+        }
 
-            status.push_str(file_name);
+        // Only include completed/failed tasks that haven't been shown to user
+        if execution.status != AgentStatus::Running && !execution.user_notified {
+            unnotified_executions.push(execution);
         }
     }
 
-    if status.is_empty() {
-        bail!("No new completed delegate task".to_string())
-    } else {
-        Ok(format!("The following delegate tasks are ready: {status}"))
-    }
+    Ok(unnotified_executions)
 }
 
 #[allow(unused_variables)]

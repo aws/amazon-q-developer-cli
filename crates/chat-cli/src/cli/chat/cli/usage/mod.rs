@@ -1,7 +1,11 @@
 use clap::Args;
 
 use crate::cli::chat::token_counter::TokenCount;
-use crate::cli::chat::{ChatError, ChatSession, ChatState};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+    ChatState,
+};
 use crate::os::Os;
 
 pub mod usage_data_provider;
@@ -32,6 +36,8 @@ impl UsageArgs {
     pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         let usage_data = usage_data_provider::get_detailed_usage_data(session, os).await?;
         usage_renderer::render_context_window(&usage_data, session).await?;
-        Ok(ChatState::PromptUser { skip_printing_tools: true })
+        Ok(ChatState::PromptUser {
+            skip_printing_tools: true,
+        })
     }
 }

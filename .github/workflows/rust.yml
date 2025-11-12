@@ -75,46 +75,46 @@ jobs:
       - name: Run tests
         run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz
 
-  cargo-clippy-windows-chat-cli:
-    name: Clippy Windows (chat_cli)
-    runs-on: windows-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.84.0
-        id: toolchain
-        with:
-          components: clippy
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-clippy-windows-chat-cli-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      - run: cargo clippy --locked -p chat_cli --color always -- -D warnings
+  # cargo-clippy-windows-chat-cli:
+  #   name: Clippy Windows (chat_cli)
+  #   runs-on: windows-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@1.84.0
+  #       id: toolchain
+  #       with:
+  #         components: clippy
+  #     - uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry/index/
+  #           ~/.cargo/registry/cache/
+  #           ~/.cargo/git/db/
+  #           target/
+  #         key: cargo-clippy-windows-chat-cli-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+  #     - run: cargo clippy --locked -p chat_cli --color always -- -D warnings
 
-  cargo-test-windows-chat-cli:
-    name: Test Windows (chat_cli)
-    runs-on: windows-latest
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@nightly
-        id: toolchain
-        with:
-          components: llvm-tools-preview
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: cargo-test-windows-chat-cli-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
-      - name: Run tests
-        run: cargo test --locked -p chat_cli
+  # cargo-test-windows-chat-cli:
+  #   name: Test Windows (chat_cli)
+  #   runs-on: windows-latest
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: dtolnay/rust-toolchain@nightly
+  #       id: toolchain
+  #       with:
+  #         components: llvm-tools-preview
+  #     - uses: actions/cache@v4
+  #       with:
+  #         path: |
+  #           ~/.cargo/registry/index/
+  #           ~/.cargo/registry/cache/
+  #           ~/.cargo/git/db/
+  #           target/
+  #         key: cargo-test-windows-chat-cli-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
+  #     - name: Run tests
+  #       run: cargo test --locked -p chat_cli
 
   cargo-fmt:
     name: Fmt

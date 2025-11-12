@@ -1,8 +1,15 @@
 use crossterm::style::Attribute;
-use crossterm::{execute, queue, style};
+use crossterm::{
+    execute,
+    queue,
+    style,
+};
 
 use crate::cli::chat::token_counter::TokenCount;
-use crate::cli::chat::{ChatError, ChatSession};
+use crate::cli::chat::{
+    ChatError,
+    ChatSession,
+};
 use crate::theme::StyledText;
 
 /// Calculate usage percentage from token counts (private utility)
@@ -11,7 +18,10 @@ fn calculate_usage_percentage(tokens: TokenCount, context_window_size: usize) ->
 }
 
 /// Render context window information section
-pub async fn render_context_window(usage_data: &super::DetailedUsageData, session: &mut ChatSession) -> Result<(), ChatError> {
+pub async fn render_context_window(
+    usage_data: &super::DetailedUsageData,
+    session: &mut ChatSession,
+) -> Result<(), ChatError> {
     if !usage_data.dropped_context_files.is_empty() {
         execute!(
             session.stderr,
@@ -137,7 +147,7 @@ pub async fn render_context_window(usage_data: &super::DetailedUsageData, sessio
             calculate_usage_percentage(usage_data.tools_tokens, usage_data.context_window_size)
         )),
         StyledText::info_fg(),
-        style::Print("█ Kiro responses: "),
+        style::Print("█ Q responses: "),
         StyledText::reset(),
         style::Print(format!(
             "  ~{} tokens ({:.2}%)\n",

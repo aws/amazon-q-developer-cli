@@ -35,6 +35,7 @@ use tracing::{
 use uuid::Uuid;
 
 use crate::cli::ConversationState;
+use crate::util::env_var::is_integ_test;
 use crate::util::paths::{
     DirectoryError,
     GlobalPaths,
@@ -187,7 +188,7 @@ pub struct Database {
 
 impl Database {
     pub async fn new() -> Result<Self, DatabaseError> {
-        let path = match cfg!(test) {
+        let path = match cfg!(test) && !is_integ_test() {
             true => {
                 return Self {
                     pool: Pool::builder().build(SqliteConnectionManager::memory()).unwrap(),

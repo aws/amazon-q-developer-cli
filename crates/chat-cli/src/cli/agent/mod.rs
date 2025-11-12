@@ -563,7 +563,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, false, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -601,7 +601,7 @@ impl Agents {
             };
 
             let mut agents = Vec::<Agent>::new();
-            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, output).await;
+            let results = load_agents_from_entries(files, os, &mut global_mcp_config, mcp_enabled, true, output).await;
             for result in results {
                 match result {
                     Ok(agent) => agents.push(agent),
@@ -886,6 +886,7 @@ async fn load_agents_from_entries(
     os: &Os,
     global_mcp_config: &mut Option<McpServerConfig>,
     mcp_enabled: bool,
+    is_from_global_dir: bool,
     output: &mut impl Write,
 ) -> Vec<Result<Agent, AgentConfigError>> {
     let mut res = Vec::<Result<Agent, AgentConfigError>>::new();
@@ -897,7 +898,30 @@ async fn load_agents_from_entries(
             .and_then(OsStr::to_str)
             .is_some_and(|s| s == "json")
         {
-            res.push(Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await);
+            let agent_res = Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await;
+            if let Ok(agent) = &agent_res {
+                if res.iter().any(|res| match res {
+                    Ok(a) => a.name == agent.name,
+                    Err(_) => false,
+                }) {
+                    let _ = queue!(
+                        output,
+                        StyledText::warning_fg(),
+                        style::Print("WARNING: "),
+                        StyledText::reset(),
+                        style::Print("Duplicate agent with name "),
+                        StyledText::success_fg(),
+                        style::Print(&agent.name),
+                        StyledText::reset(),
+                        style::Print(" was found in the "),
+                        style::Print(if is_from_global_dir { "global" } else { "workspace" }),
+                        style::Print(" directory.\n"),
+                        StyledText::reset(),
+                    );
+                    continue;
+                }
+            }
+            res.push(agent_res);
         }
     }
 
@@ -996,6 +1020,7 @@ fn validate_agent_name(name: &str) -> eyre::Result<()> {
 mod tests {
     use std::fs;
 
+    use bstr::ByteSlice;
     use serde_json::json;
     use tempfile::TempDir;
 
@@ -1580,5 +1605,45 @@ mod tests {
         // Test resolve_prompt should fail gracefully
         let result = agent.resolve_prompt();
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_load_agents_from_entries_warns_duplicate() {
+        // Given two agents with the same name
+        let os = Os::new().await.unwrap();
+        let agents = [
+            Agent {
+                name: "test-agent".to_string(),
+                ..Default::default()
+            },
+            Agent {
+                name: "test-agent".to_string(),
+                ..Default::default()
+            },
+        ];
+        for (i, agent) in agents.iter().enumerate() {
+            os.fs
+                .write(format!("{}_{}.json", agent.name, i), agent.to_str_pretty().unwrap())
+                .await
+                .unwrap();
+        }
+
+        // When we load them
+        let mut output = Vec::new();
+        let results = load_agents_from_entries(
+            os.fs.read_dir(".").await.unwrap(),
+            &os,
+            &mut None,
+            false,
+            false,
+            &mut output,
+        )
+        .await;
+
+        // We should see a warning
+        assert!(output.contains_str("WARNING"));
+        assert!(output.contains_str("test-agent"));
+        assert!(output.contains_str("workspace"));
+        assert_eq!(results.len(), 1);
     }
 }

@@ -69,7 +69,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
-tokio-stream = { version = "0.1.17", features = ["io-util"] }
+tokio-stream.workspace = true
 tokio-util.workspace = true
 tracing.workspace = true
 tracing-appender = "0.2.3"

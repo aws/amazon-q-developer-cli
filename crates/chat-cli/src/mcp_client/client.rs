@@ -59,7 +59,7 @@ use crate::cli::chat::tools::custom_tool::{
     TransportType,
 };
 use crate::os::Os;
-use crate::util::paths::DirectoryError;
+use crate::util::env_var::get_all_env_vars;
 
 /// Fetches all pages of specified resources from a server
 macro_rules! paginated_fetch {
@@ -139,8 +139,6 @@ pub enum McpClientError {
     JoinError(#[from] tokio::task::JoinError),
     #[error("Client has not finished initializing")]
     NotReady,
-    #[error(transparent)]
-    Directory(#[from] DirectoryError),
     #[error(transparent)]
     OauthUtil(#[from] OauthUtilError),
     #[error(transparent)]
@@ -431,7 +429,7 @@ impl McpClientService {
                         process_env_vars(envs, &os.env);
                         cmd.envs(envs);
                     }
-                    cmd.envs(std::env::vars()).args(args);
+                    cmd.envs(get_all_env_vars()).args(args);
 
                     #[cfg(not(windows))]
                     cmd.process_group(0);

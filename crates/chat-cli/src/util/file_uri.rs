@@ -153,16 +153,24 @@ mod tests {
         // the expansion behavior using error messages
         let uri = "file://~/test.txt";
         let base = Path::new("/some/other/path");
-        
+
         // This will fail to find the file (expected), but the error should show
         // an expanded absolute path, not a path with literal ~
         let result = resolve_file_uri(uri, base);
-        
+
         match result {
             Err(FileUriError::FileNotFound { path }) => {
                 // Verify the path was expanded (should start with / not ~)
-                assert!(path.starts_with("/"), "Path should be absolute after tilde expansion, got: {:?}", path);
-                assert!(!path.to_string_lossy().contains("~"), "Path should not contain literal tilde, got: {:?}", path);
+                assert!(
+                    path.is_absolute(),
+                    "Path should be absolute after tilde expansion, got: {:?}",
+                    path
+                );
+                assert!(
+                    !path.to_string_lossy().contains("~"),
+                    "Path should not contain literal tilde, got: {:?}",
+                    path
+                );
             },
             _ => panic!("Expected FileNotFound error"),
         }
