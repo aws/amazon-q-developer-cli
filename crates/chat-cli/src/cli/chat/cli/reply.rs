@@ -92,7 +92,7 @@ impl ReplyArgs {
                     execute!(
                         session.stderr,
                         StyledText::reset_attributes(),
-                        StyledText::emphasis_fg(),
+                        StyledText::user_indicator_fg(),
                         style::Print("> "),
                         StyledText::reset_attributes(),
                         style::Print(&content),

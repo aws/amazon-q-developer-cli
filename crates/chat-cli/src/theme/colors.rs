@@ -5,6 +5,10 @@ use crossterm::style::Color;
 // ANSI color value constants
 /// Purple brand color
 pub const BRAND_PURPLE: u8 = 141;
+/// Dark purple for user indicators
+pub const DARK_PURPLE: u8 = 93;
+/// Cyan
+pub const CYAN_INDICATOR: u8 = 6;
 /// Light grey for emphasis text
 pub const LIGHT_GREY: u8 = 252;
 /// Medium-light grey for secondary text
@@ -51,6 +55,10 @@ pub struct InteractiveColors {
     pub profile_indicator: Color,
     /// Tangent mode indicator ("↯ ")
     pub tangent_indicator: Color,
+    /// User message indicator ("> ")
+    pub user_indicator: Color,
+    /// Agent/assistant message indicator ("> ")
+    pub agent_indicator: Color,
     /// Low usage indicator
     pub usage_low: Color,
     /// Medium usage indicator
@@ -86,9 +94,11 @@ impl Default for UiColors {
 impl Default for InteractiveColors {
     fn default() -> Self {
         Self {
-            prompt_symbol: Color::AnsiValue(BRIGHT_MAGENTA),
-            profile_indicator: Color::AnsiValue(BRAND_PURPLE),
+            prompt_symbol: Color::AnsiValue(DARK_PURPLE),
+            profile_indicator: Color::AnsiValue(CYAN_INDICATOR),
             tangent_indicator: Color::Yellow,
+            user_indicator: Color::AnsiValue(DARK_PURPLE),
+            agent_indicator: Color::AnsiValue(BRAND_PURPLE),
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
             usage_high: Color::Red,

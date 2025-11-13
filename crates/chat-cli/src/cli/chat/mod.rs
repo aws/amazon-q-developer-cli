@@ -2934,7 +2934,7 @@ impl ChatSession {
                                 if !response_prefix_printed && !text.trim().is_empty() {
                                     queue!(
                                         self.stdout,
-                                        StyledText::success_fg(),
+                                        StyledText::agent_indicator_fg(),
                                         style::Print("> "),
                                         StyledText::reset(),
                                     )?;

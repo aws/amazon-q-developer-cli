@@ -186,6 +186,16 @@ impl StyledText {
         SetForegroundColor(theme().ui.current_item)
     }
 
+    /// Set foreground to user indicator color
+    pub fn user_indicator_fg() -> SetForegroundColor {
+        SetForegroundColor(theme().interactive.user_indicator)
+    }
+
+    /// Set foreground to agent indicator color
+    pub fn agent_indicator_fg() -> SetForegroundColor {
+        SetForegroundColor(theme().interactive.agent_indicator)
+    }
+
     /// Reset all styling to default
     pub fn reset() -> ResetColor {
         ResetColor
