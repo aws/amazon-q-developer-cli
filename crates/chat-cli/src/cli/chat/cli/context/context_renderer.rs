@@ -54,13 +54,36 @@ pub async fn render_context_window(
     let user_width = ((context_data.user_tokens.value() as f64 / context_data.context_window_size as f64)
         * progress_bar_width as f64) as usize;
 
+    // Calculate tiny indicators for sections with tokens but 0 width
+    let context_tiny = if context_width == 0 && context_data.context_tokens.value() > 0 {
+        1
+    } else {
+        0
+    };
+    let tools_tiny = if tools_width == 0 && context_data.tools_tokens.value() > 0 {
+        1
+    } else {
+        0
+    };
+    let assistant_tiny = if assistant_width == 0 && context_data.assistant_tokens.value() > 0 {
+        1
+    } else {
+        0
+    };
+    let user_tiny = if user_width == 0 && context_data.user_tokens.value() > 0 {
+        1
+    } else {
+        0
+    };
+    let total_tiny = context_tiny + tools_tiny + assistant_tiny + user_tiny;
+
     let left_over_width = progress_bar_width
         - std::cmp::min(
-            context_width + assistant_width + user_width + tools_width,
+            context_width + assistant_width + user_width + tools_width + total_tiny,
             progress_bar_width,
         );
 
-    let is_overflow = (context_width + assistant_width + user_width + tools_width) > progress_bar_width;
+    let is_overflow = (context_width + assistant_width + user_width + tools_width + total_tiny) > progress_bar_width;
 
     let total_percentage = calculate_context_percentage(context_data.total_tokens, context_data.context_window_size);
 
@@ -82,41 +105,19 @@ pub async fn render_context_window(
             StyledText::brand_fg(),
             // add a nice visual to mimic "tiny" progress, so the overrall progress bar doesn't look too
             // empty
-            style::Print(
-                "|".repeat(if context_width == 0 && context_data.context_tokens.value() > 0 {
-                    1
-                } else {
-                    0
-                })
-            ),
+            style::Print("|".repeat(context_tiny)),
             style::Print("█".repeat(context_width)),
             // Tools
             StyledText::error_fg(),
-            style::Print(
-                "|".repeat(if tools_width == 0 && context_data.tools_tokens.value() > 0 {
-                    1
-                } else {
-                    0
-                })
-            ),
+            style::Print("|".repeat(tools_tiny)),
             style::Print("█".repeat(tools_width)),
             // Assistant responses
             StyledText::info_fg(),
-            style::Print(
-                "|".repeat(if assistant_width == 0 && context_data.assistant_tokens.value() > 0 {
-                    1
-                } else {
-                    0
-                })
-            ),
+            style::Print("|".repeat(assistant_tiny)),
             style::Print("█".repeat(assistant_width)),
             // User prompts
             StyledText::emphasis_fg(),
-            style::Print("|".repeat(if user_width == 0 && context_data.user_tokens.value() > 0 {
-                1
-            } else {
-                0
-            })),
+            style::Print("|".repeat(user_tiny)),
             style::Print("█".repeat(user_width)),
             StyledText::secondary_fg(),
             style::Print("█".repeat(left_over_width)),
