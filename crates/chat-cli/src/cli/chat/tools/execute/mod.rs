@@ -446,7 +446,7 @@ mod tests {
             ("IFS=/ malicious", true),
             (r#"/c/"+"/m/"+"/d/.exe"#, true),
             ("$^(calc.exe)", true),
-            ("curl http://trusted.com@evil.com", true)
+            ("curl http://trusted.com@evil.com", true),
         ];
         for (cmd, expected) in cmds {
             let tool = serde_json::from_value::<ExecuteCommand>(serde_json::json!({
