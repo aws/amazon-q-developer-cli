@@ -1,12 +1,10 @@
 use std::collections::HashMap;
 use std::io::Write;
 
+use agent::tools::summary::Summary;
 use chat_cli_ui::conduit::get_legacy_conduits;
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
-use eyre::{
-    Result,
-    bail,
-};
+use eyre::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -21,6 +19,7 @@ use crate::cli::experiment::experiment_manager::{
     ExperimentManager,
     ExperimentName,
 };
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
@@ -39,12 +38,12 @@ pub struct InvokeSubagent {
 /// This enables the main agent to spawn a focused subagent with its own context
 /// and capabilities to handle specific queries or tasks.
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
-#[serde(tag = "command")]
+#[serde(tag = "command", content = "content")]
 pub enum UseSubagent {
     /// Query for agents available for task delegation
     ListAgents,
     /// Invoke a subagent with the specified agent to complete a task
-    InvokeSubagent(InvokeSubagent),
+    InvokeSubagents(Vec<InvokeSubagent>),
 }
 
 impl UseSubagent {
@@ -84,17 +83,48 @@ impl UseSubagent {
                     output: super::OutputKind::Json(serialized_output),
                 })
             },
-            Self::InvokeSubagent(invoke_subagent) => {
-                let InvokeSubagent { query, agent_name, .. } = invoke_subagent;
-                let subagent: Subagent<'_> = self.try_into()?;
-                let (view_end, _byte_receiver, mut control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
-                let agent_name = agent_name.as_deref().unwrap_or("default agent");
-                let initial_query = query.as_str();
-                let subagent_indicator = SubagentIndicator::new(agent_name, initial_query, view_end);
+            Self::InvokeSubagents(invoke_subagents) => {
+                let (view_end, _byte_receiver, control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
+                let subagents = invoke_subagents
+                    .iter()
+                    .enumerate()
+                    .map(|(id, invoke_subagent)| {
+                        let mut subagent: Subagent<'_> = invoke_subagent.into();
+                        subagent.id = id as u16;
+                        subagent
+                    })
+                    .collect::<Vec<_>>();
+
+                let subagent_indicator = SubagentIndicator::new(
+                    &subagents
+                        .iter()
+                        .map(|subagent| (subagent.agent_name.unwrap_or(DEFAULT_AGENT_NAME), subagent.query))
+                        .collect::<Vec<(&str, &str)>>(),
+                    view_end,
+                );
                 let _guard = subagent_indicator.run();
 
-                let output = subagent.query(os, &mut control_end_stderr).await?;
-                let output_serialized = serde_json::to_value(output)?;
+                let (oks, bads) = futures::future::join_all(
+                    subagents
+                        .into_iter()
+                        .map(|subagent| subagent.query(os, control_end_stderr.clone())),
+                )
+                .await
+                .into_iter()
+                .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
+
+                let oks = oks.into_iter().map(|res| res.unwrap()).collect::<Vec<_>>();
+                let bads = bads
+                    .into_iter()
+                    .map(|res| res.err().unwrap().to_string())
+                    .collect::<Vec<_>>();
+                let oks = serde_json::to_value(oks)?;
+                let bads = serde_json::to_value(bads)?;
+
+                let output_serialized = serde_json::json!({
+                    "successes": oks,
+                    "failures": bads,
+                });
 
                 Ok(InvokeOutput {
                     output: super::OutputKind::Json(output_serialized),
@@ -110,24 +140,47 @@ impl UseSubagent {
     }
 }
 
-impl<'a> TryFrom<&'a UseSubagent> for Subagent<'a> {
-    type Error = eyre::Error;
-
-    fn try_from(value: &'a UseSubagent) -> std::result::Result<Self, Self::Error> {
-        if let UseSubagent::InvokeSubagent(InvokeSubagent {
+impl<'a> From<&'a InvokeSubagent> for Subagent<'a> {
+    fn from(value: &'a InvokeSubagent) -> Self {
+        let InvokeSubagent {
             query,
             agent_name,
             relevant_context,
-        }) = value
-        {
-            Ok(Subagent {
-                query: query.as_str(),
-                agent_name: agent_name.as_deref(),
-                embedded_user_msg: relevant_context.as_deref(),
-                dangerously_trust_all_tools: false,
-            })
-        } else {
-            bail!("Incorrect subagent tool call supplied")
+        } = value;
+
+        Subagent {
+            id: 0_u16,
+            query: query.as_str(),
+            agent_name: agent_name.as_deref(),
+            embedded_user_msg: relevant_context.as_deref(),
+            dangerously_trust_all_tools: false,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_deser() {
+        let input = serde_json::json!({
+            "command": "InvokeSubagents",
+            "content": [{
+                "query": "test query",
+                "agent_name": "test_agent",
+                "relevant_context": "test context"
+            }]
+        });
+
+        let result: Result<UseSubagent, _> = serde_json::from_value(input);
+        assert!(result.is_ok());
+
+        let input = serde_json::json!({
+            "command": "ListAgents",
+        });
+
+        let result: Result<UseSubagent, _> = serde_json::from_value(input);
+        assert!(result.is_ok());
     }
 }

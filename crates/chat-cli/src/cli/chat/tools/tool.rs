@@ -198,7 +198,10 @@ impl Tool {
                 },
             };
 
-            output.send(Event::ToolCallArgs(tool_call_args))?;
+            output.send(Event::ToolCallArgs {
+                agent_id: Default::default(),
+                inner: tool_call_args,
+            })?;
         } else {
             match self {
                 Tool::FsRead(fs_read) => fs_read.queue_description(self, os, output).await,

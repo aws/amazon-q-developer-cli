@@ -350,54 +350,141 @@ pub enum McpEvent {
 #[serde(tag = "type", rename_all = "camelCase")]
 pub enum Event {
     // Lifecycle Events
-    RunStarted(RunStarted),
-    RunFinished(RunFinished),
-    RunError(RunError),
-    StepStarted(StepStarted),
-    StepFinished(StepFinished),
+    RunStarted {
+        agent_id: u16,
+        inner: RunStarted,
+    },
+    RunFinished {
+        agent_id: u16,
+        inner: RunFinished,
+    },
+    RunError {
+        agent_id: u16,
+        inner: RunError,
+    },
+    StepStarted {
+        agent_id: u16,
+        inner: StepStarted,
+    },
+    StepFinished {
+        agent_id: u16,
+        inner: StepFinished,
+    },
 
     // Text Message Events
-    TextMessageStart(TextMessageStart),
-    TextMessageContent(TextMessageContent),
-    TextMessageEnd(TextMessageEnd),
-    TextMessageChunk(TextMessageChunk),
+    TextMessageStart {
+        agent_id: u16,
+        inner: TextMessageStart,
+    },
+    TextMessageContent {
+        agent_id: u16,
+        inner: TextMessageContent,
+    },
+    TextMessageEnd {
+        agent_id: u16,
+        inner: TextMessageEnd,
+    },
+    TextMessageChunk {
+        agent_id: u16,
+        inner: TextMessageChunk,
+    },
 
     // Tool Call Events
-    ToolCallStart(ToolCallStart),
-    ToolCallArgs(ToolCallArgs),
-    ToolCallEnd(ToolCallEnd),
-    ToolCallResult(ToolCallResult),
+    ToolCallStart {
+        agent_id: u16,
+        inner: ToolCallStart,
+    },
+    ToolCallArgs {
+        agent_id: u16,
+        inner: ToolCallArgs,
+    },
+    ToolCallEnd {
+        agent_id: u16,
+        inner: ToolCallEnd,
+    },
+    ToolCallResult {
+        agent_id: u16,
+        inner: ToolCallResult,
+    },
     // bespoke variant
-    ToolCallRejection(ToolCallRejection),
+    ToolCallRejection {
+        agent_id: u16,
+        inner: ToolCallRejection,
+    },
 
     // State Management Events
-    StateSnapshot(StateSnapshot),
-    StateDelta(StateDelta),
-    MessagesSnapshot(MessagesSnapshot),
+    StateSnapshot {
+        agent_id: u16,
+        inner: StateSnapshot,
+    },
+    StateDelta {
+        agent_id: u16,
+        inner: StateDelta,
+    },
+    MessagesSnapshot {
+        agent_id: u16,
+        inner: MessagesSnapshot,
+    },
 
     // Special Events
-    Raw(Raw),
-    Custom(Custom),
+    Raw {
+        agent_id: u16,
+        inner: Raw,
+    },
+    Custom {
+        agent_id: u16,
+        inner: Custom,
+    },
     // bespoke variant
     LegacyPassThrough(LegacyPassThroughOutput),
 
     // Draft Events - Activity Events
-    ActivitySnapshotEvent(ActivitySnapshotEvent),
-    ActivityDeltaEvent(ActivityDeltaEvent),
+    ActivitySnapshotEvent {
+        agent_id: u16,
+        inner: ActivitySnapshotEvent,
+    },
+    ActivityDeltaEvent {
+        agent_id: u16,
+        inner: ActivityDeltaEvent,
+    },
 
     // Draft Events - Reasoning Events
-    ReasoningStart(ReasoningStart),
-    ReasoningMessageStart(ReasoningMessageStart),
-    ReasoningMessageContent(ReasoningMessageContent),
-    ReasoningMessageEnd(ReasoningMessageEnd),
-    ReasoningMessageChunk(ReasoningMessageChunk),
-    ReasoningEnd(ReasoningEnd),
+    ReasoningStart {
+        agent_id: u16,
+        inner: ReasoningStart,
+    },
+    ReasoningMessageStart {
+        agent_id: u16,
+        inner: ReasoningMessageStart,
+    },
+    ReasoningMessageContent {
+        agent_id: u16,
+        inner: ReasoningMessageContent,
+    },
+    ReasoningMessageEnd {
+        agent_id: u16,
+        inner: ReasoningMessageEnd,
+    },
+    ReasoningMessageChunk {
+        agent_id: u16,
+        inner: ReasoningMessageChunk,
+    },
+    ReasoningEnd {
+        agent_id: u16,
+        inner: ReasoningEnd,
+    },
 
     // Draft Events - Meta Events
-    MetaEvent(MetaEvent),
+    MetaEvent {
+        agent_id: u16,
+        inner: MetaEvent,
+    },
 
     // Bespoke MCP Events
-    McpEvent(McpEvent),
+    McpEvent {
+        agent_id: u16,
+        inner: McpEvent,
+    },
 }
 
 impl Event {
@@ -405,67 +492,67 @@ impl Event {
     pub fn event_type(&self) -> &'static str {
         match self {
             // Lifecycle Events
-            Event::RunStarted(_) => "runStarted",
-            Event::RunFinished(_) => "runFinished",
-            Event::RunError(_) => "runError",
-            Event::StepStarted(_) => "stepStarted",
-            Event::StepFinished(_) => "stepFinished",
+            Event::RunStarted { .. } => "runStarted",
+            Event::RunFinished { .. } => "runFinished",
+            Event::RunError { .. } => "runError",
+            Event::StepStarted { .. } => "stepStarted",
+            Event::StepFinished { .. } => "stepFinished",
 
             // Text Message Events
-            Event::TextMessageStart(_) => "textMessageStart",
-            Event::TextMessageContent(_) => "textMessageContent",
-            Event::TextMessageEnd(_) => "textMessageEnd",
-            Event::TextMessageChunk(_) => "textMessageChunk",
+            Event::TextMessageStart { .. } => "textMessageStart",
+            Event::TextMessageContent { .. } => "textMessageContent",
+            Event::TextMessageEnd { .. } => "textMessageEnd",
+            Event::TextMessageChunk { .. } => "textMessageChunk",
 
             // Tool Call Events
-            Event::ToolCallStart(_) => "toolCallStart",
-            Event::ToolCallArgs(_) => "toolCallArgs",
-            Event::ToolCallEnd(_) => "toolCallEnd",
-            Event::ToolCallResult(_) => "toolCallResult",
-            Event::ToolCallRejection(_) => "toolCallRejection",
+            Event::ToolCallStart { .. } => "toolCallStart",
+            Event::ToolCallArgs { .. } => "toolCallArgs",
+            Event::ToolCallEnd { .. } => "toolCallEnd",
+            Event::ToolCallResult { .. } => "toolCallResult",
+            Event::ToolCallRejection { .. } => "toolCallRejection",
 
             // State Management Events
-            Event::StateSnapshot(_) => "stateSnapshot",
-            Event::StateDelta(_) => "stateDelta",
-            Event::MessagesSnapshot(_) => "messagesSnapshot",
+            Event::StateSnapshot { .. } => "stateSnapshot",
+            Event::StateDelta { .. } => "stateDelta",
+            Event::MessagesSnapshot { .. } => "messagesSnapshot",
 
             // Special Events
-            Event::Raw(_) => "raw",
-            Event::Custom(_) => "custom",
-            Event::LegacyPassThrough(_) => "legacyPassThrough",
+            Event::Raw { .. } => "raw",
+            Event::Custom { .. } => "custom",
+            Event::LegacyPassThrough { .. } => "legacyPassThrough",
 
             // Draft Events - Activity Events
-            Event::ActivitySnapshotEvent(_) => "activitySnapshotEvent",
-            Event::ActivityDeltaEvent(_) => "activityDeltaEvent",
+            Event::ActivitySnapshotEvent { .. } => "activitySnapshotEvent",
+            Event::ActivityDeltaEvent { .. } => "activityDeltaEvent",
 
             // Draft Events - Reasoning Events
-            Event::ReasoningStart(_) => "reasoningStart",
-            Event::ReasoningMessageStart(_) => "reasoningMessageStart",
-            Event::ReasoningMessageContent(_) => "reasoningMessageContent",
-            Event::ReasoningMessageEnd(_) => "reasoningMessageEnd",
-            Event::ReasoningMessageChunk(_) => "reasoningMessageChunk",
-            Event::ReasoningEnd(_) => "reasoningEnd",
+            Event::ReasoningStart { .. } => "reasoningStart",
+            Event::ReasoningMessageStart { .. } => "reasoningMessageStart",
+            Event::ReasoningMessageContent { .. } => "reasoningMessageContent",
+            Event::ReasoningMessageEnd { .. } => "reasoningMessageEnd",
+            Event::ReasoningMessageChunk { .. } => "reasoningMessageChunk",
+            Event::ReasoningEnd { .. } => "reasoningEnd",
 
             // Draft Events - Meta Events
-            Event::MetaEvent(_) => "metaEvent",
+            Event::MetaEvent { .. } => "metaEvent",
 
-            Event::McpEvent(_) => "mcpEvent",
+            Event::McpEvent { .. } => "mcpEvent",
         }
     }
 
     pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
-        matches!(self, Event::LegacyPassThrough(_))
+        matches!(self, Event::LegacyPassThrough { .. })
     }
 
     /// Check if this is a lifecycle event
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            Event::RunStarted(_)
-                | Event::RunFinished(_)
-                | Event::RunError(_)
-                | Event::StepStarted(_)
-                | Event::StepFinished(_)
+            Event::RunStarted { .. }
+                | Event::RunFinished { .. }
+                | Event::RunError { .. }
+                | Event::StepStarted { .. }
+                | Event::StepFinished { .. }
         )
     }
 
@@ -473,10 +560,10 @@ impl Event {
     pub fn is_text_message_event(&self) -> bool {
         matches!(
             self,
-            Event::TextMessageStart(_)
-                | Event::TextMessageContent(_)
-                | Event::TextMessageEnd(_)
-                | Event::TextMessageChunk(_)
+            Event::TextMessageStart { .. }
+                | Event::TextMessageContent { .. }
+                | Event::TextMessageEnd { .. }
+                | Event::TextMessageChunk { .. }
         )
     }
 
@@ -484,7 +571,10 @@ impl Event {
     pub fn is_tool_call_event(&self) -> bool {
         matches!(
             self,
-            Event::ToolCallStart(_) | Event::ToolCallArgs(_) | Event::ToolCallEnd(_) | Event::ToolCallResult(_)
+            Event::ToolCallStart { .. }
+                | Event::ToolCallArgs { .. }
+                | Event::ToolCallEnd { .. }
+                | Event::ToolCallResult { .. }
         )
     }
 
@@ -492,7 +582,7 @@ impl Event {
     pub fn is_state_management_event(&self) -> bool {
         matches!(
             self,
-            Event::StateSnapshot(_) | Event::StateDelta(_) | Event::MessagesSnapshot(_)
+            Event::StateSnapshot { .. } | Event::StateDelta { .. } | Event::MessagesSnapshot { .. }
         )
     }
 
@@ -500,15 +590,15 @@ impl Event {
     pub fn is_draft_event(&self) -> bool {
         matches!(
             self,
-            Event::ActivitySnapshotEvent(_)
-                | Event::ActivityDeltaEvent(_)
-                | Event::ReasoningStart(_)
-                | Event::ReasoningMessageStart(_)
-                | Event::ReasoningMessageContent(_)
-                | Event::ReasoningMessageEnd(_)
-                | Event::ReasoningMessageChunk(_)
-                | Event::ReasoningEnd(_)
-                | Event::MetaEvent(_)
+            Event::ActivitySnapshotEvent { .. }
+                | Event::ActivityDeltaEvent { .. }
+                | Event::ReasoningStart { .. }
+                | Event::ReasoningMessageStart { .. }
+                | Event::ReasoningMessageContent { .. }
+                | Event::ReasoningMessageEnd { .. }
+                | Event::ReasoningMessageChunk { .. }
+                | Event::ReasoningEnd { .. }
+                | Event::MetaEvent { .. }
         )
     }
 }

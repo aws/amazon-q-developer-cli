@@ -49,7 +49,6 @@ pub enum DirectoryError {
 
 pub mod workspace {
     //! Project-level paths (relative to current working directory)
-    pub const TODO_LISTS_DIR: &str = ".amazonq/cli-todo-lists";
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources
@@ -454,18 +453,6 @@ impl<'a> GlobalPaths<'a> {
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
         Ok(home_dir(self.os)?.join(".kiro").join("steering"))
-    }
-
-    pub fn subagents_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, ".subagents", ".subagents")
-    }
-
-    pub async fn ensure_subagents_dir(&self) -> Result<PathBuf> {
-        let dir = self.subagents_dir()?;
-        if !dir.exists() {
-            self.os.fs.create_dir_all(&dir).await?;
-        }
-        Ok(dir)
     }
 
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {

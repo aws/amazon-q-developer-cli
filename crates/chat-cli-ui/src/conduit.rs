@@ -70,24 +70,46 @@ impl ViewEnd {
                         stdout.flush()?;
                     },
                 },
-                Event::RunStarted(_run_started) => {},
-                Event::RunFinished(_run_finished) => {},
-                Event::RunError(_run_error) => {},
-                Event::StepStarted(_step_started) => {},
-                Event::StepFinished(_step_finished) => {},
-                Event::TextMessageStart(_text_message_start) => {
+                Event::RunStarted {
+                    inner: _run_started, ..
+                } => {},
+                Event::RunFinished {
+                    inner: _run_finished, ..
+                } => {},
+                Event::RunError { inner: _run_error, .. } => {},
+                Event::StepStarted {
+                    inner: _step_started, ..
+                } => {},
+                Event::StepFinished {
+                    inner: _step_finished, ..
+                } => {},
+                Event::TextMessageStart {
+                    inner: _text_message_start,
+                    ..
+                } => {
                     queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
                 },
-                Event::TextMessageContent(text_message_content) => {
+                Event::TextMessageContent {
+                    inner: text_message_content,
+                    ..
+                } => {
                     stdout.write_all(&text_message_content.delta)?;
                     stdout.flush()?;
                 },
-                Event::TextMessageEnd(_text_message_end) => {
+                Event::TextMessageEnd {
+                    inner: _text_message_end,
+                    ..
+                } => {
                     queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
                     execute!(stdout, style::Print("\n"))?;
                 },
-                Event::TextMessageChunk(_text_message_chunk) => {},
-                Event::ToolCallStart(tool_call_start) => {
+                Event::TextMessageChunk {
+                    inner: _text_message_chunk,
+                    ..
+                } => {},
+                Event::ToolCallStart {
+                    inner: tool_call_start, ..
+                } => {
                     let ToolCallStart {
                         tool_call_name,
                         is_trusted,
@@ -129,33 +151,73 @@ impl ViewEnd {
                         Print(TOOL_BULLET)
                     )?;
                 },
-                Event::ToolCallArgs(tool_call_args) => {
+                Event::ToolCallArgs {
+                    inner: tool_call_args, ..
+                } => {
                     if let serde_json::Value::String(content) = tool_call_args.delta {
                         execute!(stdout, style::Print(content))?;
                     } else {
                         execute!(stdout, style::Print(tool_call_args.delta))?;
                     }
                 },
-                Event::ToolCallEnd(_tool_call_end) => {
+                Event::ToolCallEnd {
+                    inner: _tool_call_end, ..
+                } => {
                     // noop for now
                 },
-                Event::ToolCallResult(_tool_call_result) => {
+                Event::ToolCallResult {
+                    inner: _tool_call_result,
+                    ..
+                } => {
                     // noop for now (currently we don't show the tool call results to users)
                 },
-                Event::StateSnapshot(_state_snapshot) => {},
-                Event::StateDelta(_state_delta) => {},
-                Event::MessagesSnapshot(_messages_snapshot) => {},
-                Event::Raw(_raw) => {},
-                Event::Custom(_custom) => {},
-                Event::ActivitySnapshotEvent(_activity_snapshot_event) => {},
-                Event::ActivityDeltaEvent(_activity_delta_event) => {},
-                Event::ReasoningStart(_reasoning_start) => {},
-                Event::ReasoningMessageStart(_reasoning_message_start) => {},
-                Event::ReasoningMessageContent(_reasoning_message_content) => {},
-                Event::ReasoningMessageEnd(_reasoning_message_end) => {},
-                Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
-                Event::ReasoningEnd(_reasoning_end) => {},
-                Event::MetaEvent(MetaEvent { meta_type, payload }) => {
+                Event::StateSnapshot {
+                    inner: _state_snapshot, ..
+                } => {},
+                Event::StateDelta {
+                    inner: _state_delta, ..
+                } => {},
+                Event::MessagesSnapshot {
+                    inner: _messages_snapshot,
+                    ..
+                } => {},
+                Event::Raw { inner: _raw, .. } => {},
+                Event::Custom { inner: _custom, .. } => {},
+                Event::ActivitySnapshotEvent {
+                    inner: _activity_snapshot_event,
+                    ..
+                } => {},
+                Event::ActivityDeltaEvent {
+                    inner: _activity_delta_event,
+                    ..
+                } => {},
+                Event::ReasoningStart {
+                    inner: _reasoning_start,
+                    ..
+                } => {},
+                Event::ReasoningMessageStart {
+                    inner: _reasoning_message_start,
+                    ..
+                } => {},
+                Event::ReasoningMessageContent {
+                    inner: _reasoning_message_content,
+                    ..
+                } => {},
+                Event::ReasoningMessageEnd {
+                    inner: _reasoning_message_end,
+                    ..
+                } => {},
+                Event::ReasoningMessageChunk {
+                    inner: _reasoning_message_chunk,
+                    ..
+                } => {},
+                Event::ReasoningEnd {
+                    inner: _reasoning_end, ..
+                } => {},
+                Event::MetaEvent {
+                    inner: MetaEvent { meta_type, payload },
+                    ..
+                } => {
                     if meta_type.as_str() == "timing" {
                         if let serde_json::Value::String(s) = payload {
                             if s.as_str() == "prompt_user" {
@@ -166,7 +228,10 @@ impl ViewEnd {
                         }
                     }
                 },
-                Event::ToolCallRejection(tool_call_rejection) => {
+                Event::ToolCallRejection {
+                    inner: tool_call_rejection,
+                    ..
+                } => {
                     let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
                     execute!(
@@ -182,7 +247,7 @@ impl ViewEnd {
                         theme_source.reset(),
                     )?;
                 },
-                Event::McpEvent(_mcp_event) => {},
+                Event::McpEvent { inner: _mcp_event, .. } => {},
             }
         }
 

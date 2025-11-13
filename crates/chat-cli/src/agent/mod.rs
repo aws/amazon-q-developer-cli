@@ -56,6 +56,7 @@ use tracing::{
     warn,
 };
 
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
@@ -86,6 +87,7 @@ struct JsonOutput {
 
 #[derive(Debug)]
 pub struct Subagent<'a> {
+    pub id: u16,
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
     pub embedded_user_msg: Option<&'a str>,
@@ -93,7 +95,7 @@ pub struct Subagent<'a> {
 }
 
 impl<'a> Subagent<'a> {
-    pub async fn query(self, os: &Os, control_end: &mut ControlEnd<DestinationStderr>) -> Result<Summary> {
+    pub async fn query(self, os: &Os, mut control_end: ControlEnd<DestinationStderr>) -> Result<Summary> {
         let mut snapshot = AgentSnapshot {
             settings: AgentSettings {
                 // one day
@@ -141,7 +143,7 @@ impl<'a> Subagent<'a> {
 
         let agent_handle = agent.spawn();
 
-        self.main_loop(agent_handle, control_end).await
+        self.main_loop(agent_handle, &mut control_end).await
     }
 
     async fn main_loop(
@@ -163,7 +165,10 @@ impl<'a> Subagent<'a> {
                         },
                         McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
                     };
-                    _ = control_end.send(UiEvent::McpEvent(ui_mcp_event));
+                    _ = control_end.send(UiEvent::McpEvent {
+                        agent_id: self.id,
+                        inner: ui_mcp_event,
+                    });
                 },
                 // We need to wait until the agent is initialized before moving on
                 AgentEvent::Initialized => {
@@ -198,25 +203,34 @@ impl<'a> Subagent<'a> {
 
                     match evt {
                         UpdateEvent::ToolCall(tool_call) => {
-                            _ = control_end.send(UiEvent::ToolCallStart(ToolCallStart {
-                                tool_call_id: tool_call.id,
-                                tool_call_name: tool_call.tool_use_block.name,
-                                parent_message_id: None,
-                                mcp_server_name: None,
-                                is_trusted: true,
-                            }));
+                            _ = control_end.send(UiEvent::ToolCallStart {
+                                agent_id: self.id,
+                                inner: ToolCallStart {
+                                    tool_call_id: tool_call.id,
+                                    tool_call_name: tool_call.tool_use_block.name,
+                                    parent_message_id: None,
+                                    mcp_server_name: None,
+                                    is_trusted: true,
+                                },
+                            });
                         },
                         UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
-                            _ = control_end.send(UiEvent::ToolCallEnd(ToolCallEnd {
-                                tool_call_id: tool_call.id,
-                            }));
+                            _ = control_end.send(UiEvent::ToolCallEnd {
+                                agent_id: self.id,
+                                inner: ToolCallEnd {
+                                    tool_call_id: tool_call.id,
+                                },
+                            });
                         },
                         UpdateEvent::AgentContent(_content) => {
                             // TODO: send actual content (for preview?)
-                            _ = control_end.send(UiEvent::TextMessageContent(TextMessageContent {
-                                message_id: Default::default(),
-                                delta: Default::default(),
-                            }));
+                            _ = control_end.send(UiEvent::TextMessageContent {
+                                agent_id: self.id,
+                                inner: TextMessageContent {
+                                    message_id: Default::default(),
+                                    delta: Default::default(),
+                                },
+                            });
                         },
                         _ => {},
                     }
@@ -281,25 +295,44 @@ pub fn temp_func() {
         .build()
         .expect("failed to build runtime");
 
-    let summary = rt.block_on(test_sub_agent_routine());
-    println!("summary: {summary:#?}");
+    let summaries = rt.block_on(test_sub_agent_routine());
+    println!("summaries: {summaries:#?}");
 }
 
-async fn test_sub_agent_routine() -> Summary {
-    let subagent = Subagent {
-        query: "What notion docs do I have",
-        agent_name: Some("test_test"),
-        embedded_user_msg: None,
-        dangerously_trust_all_tools: true,
-    };
+async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
+    let subagents = [
+        Subagent {
+            id: 0_u16,
+            query: "What notion docs do I have",
+            agent_name: Some("test_test"),
+            embedded_user_msg: None,
+            dangerously_trust_all_tools: true,
+        },
+        Subagent {
+            id: 1_u16,
+            query: "When was the latest notion doc I have created",
+            agent_name: Some("test_test"),
+            embedded_user_msg: None,
+            dangerously_trust_all_tools: true,
+        },
+    ];
 
     let os = Os::new().await.expect("failed to spawn os");
-    let (view_end, _byte_receiver, mut control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
-    let subagent_indicator = SubagentIndicator::new("test_test", "notion doc search", view_end);
-    let _guard = subagent_indicator.run();
+    let (view_end, _byte_receiver, control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
+    let subagent_indicator = SubagentIndicator::new(
+        &subagents
+            .iter()
+            .map(|subagent| (subagent.agent_name.unwrap_or(DEFAULT_AGENT_NAME), subagent.query))
+            .collect::<Vec<(&str, &str)>>(),
+        view_end,
+    );
 
-    subagent
-        .query(&os, &mut control_end_stderr)
-        .await
-        .expect("failed to retrieve summary")
+    let _guards = subagent_indicator.run();
+
+    futures::future::join_all(
+        subagents
+            .into_iter()
+            .map(|subagent| subagent.query(&os, control_end_stderr.clone())),
+    )
+    .await
 }
