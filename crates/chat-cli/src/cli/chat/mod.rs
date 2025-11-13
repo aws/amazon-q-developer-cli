@@ -309,6 +309,22 @@ impl ChatArgs {
         let conversation_id = uuid::Uuid::new_v4().to_string();
         info!(?conversation_id, "Generated new conversation id");
 
+        // Check if both .kiro and .amazonq folders exist and show warning
+        if let Ok(current_dir) = std::env::current_dir() {
+            let kiro_path = current_dir.join(".kiro");
+            let amazonq_path = current_dir.join(".amazonq");
+            
+            if kiro_path.exists() && amazonq_path.exists() {
+                execute!(
+                    stderr,
+                    StyledText::warning_fg(),
+                    style::Print("WARNING: "),
+                    StyledText::reset(),
+                    style::Print("Both .kiro and .amazonq folders found in workspace. Using .kiro configuration.\n")
+                )?;
+            }
+        }
+
         // Check MCP status once at the beginning of the session
         let mcp_enabled = match os.client.is_mcp_enabled().await {
             Ok(enabled) => enabled,
