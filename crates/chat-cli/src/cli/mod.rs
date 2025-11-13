@@ -241,7 +241,7 @@ impl Cli {
             },
             log_to_stdout: is_log_stdout_enabled() || self.verbose > 0,
             log_file_path: match subcommand {
-                RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("qchat.log")),
+                RootSubcommand::Chat { .. } => Some(logs_dir().expect("home dir must be set").join("kiro-chat.log")),
                 _ => None,
             },
             delete_old_log_file: false,

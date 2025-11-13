@@ -92,7 +92,7 @@ impl LogdumpArgs {
         zip: &mut ZipWriter<std::fs::File>,
         logs_dir: &Path,
     ) -> Result<usize, Box<dyn std::error::Error>> {
-        let qchat_log_path = logs_dir.join("qchat.log");
+        let qchat_log_path = logs_dir.join("kiro-chat.log");
         if qchat_log_path.exists() {
             return Self::add_log_file_to_zip(&qchat_log_path, zip, "logs");
         }
@@ -169,8 +169,8 @@ mod tests {
         let logs_dir = temp_dir.path().join("logs");
         fs::create_dir_all(&logs_dir).unwrap();
 
-        // Create a test qchat.log file
-        let qchat_log_path = logs_dir.join("qchat.log");
+        // Create a test kiro-chat.log file
+        let qchat_log_path = logs_dir.join("kiro-chat.log");
         fs::write(&qchat_log_path, "test log content").unwrap();
 
         let logdump = LogdumpArgs { mcp: false };
@@ -187,7 +187,7 @@ mod tests {
         let mut archive = zip::ZipArchive::new(file).unwrap();
         assert_eq!(archive.len(), 1);
 
-        let mut log_file = archive.by_name("logs/qchat.log").unwrap();
+        let mut log_file = archive.by_name("logs/kiro-chat.log").unwrap();
         let mut contents = String::new();
         std::io::Read::read_to_string(&mut log_file, &mut contents).unwrap();
         assert_eq!(contents, "test log content");
@@ -201,7 +201,7 @@ mod tests {
         fs::create_dir_all(&logs_dir).unwrap();
 
         // Create test log files
-        let qchat_log_path = logs_dir.join("qchat.log");
+        let qchat_log_path = logs_dir.join("kiro-chat.log");
         fs::write(&qchat_log_path, "qchat log content").unwrap();
         let mcp_log_path = logs_dir.join("mcp.log");
         fs::write(&mcp_log_path, "mcp log content").unwrap();
@@ -221,7 +221,7 @@ mod tests {
         assert_eq!(archive.len(), 2);
 
         {
-            let mut qchat_file = archive.by_name("logs/qchat.log").unwrap();
+            let mut qchat_file = archive.by_name("logs/kiro-chat.log").unwrap();
             let mut qchat_contents = String::new();
             std::io::Read::read_to_string(&mut qchat_file, &mut qchat_contents).unwrap();
             assert_eq!(qchat_contents, "qchat log content");
