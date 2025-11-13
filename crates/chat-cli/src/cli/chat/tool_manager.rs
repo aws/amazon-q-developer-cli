@@ -853,7 +853,7 @@ impl ToolManager {
             queue!(
                 stderr,
                 style::Print(
-                    "One or more mcp server did not load correctly. See $TMPDIR/qlog/chat.log for more details."
+                    "One or more mcp server did not load correctly. See $TMPDIR/kiro-log/kiro-chat.log for more details."
                 ),
                 style::Print("\n------\n")
             )?;
@@ -1990,7 +1990,6 @@ fn queue_failure_message(
     time: &str,
     output: &mut impl Write,
 ) -> eyre::Result<()> {
-    use crate::util::CHAT_BINARY_NAME;
     Ok(queue!(
         output,
         StyledText::error_fg(),
@@ -2006,7 +2005,7 @@ fn queue_failure_message(
         style::Print(fail_load_msg),
         style::Print("\n"),
         style::Print(format!(
-            " - run with Q_LOG_LEVEL=trace and see $TMPDIR/qlog/{CHAT_BINARY_NAME}.log for detail\n"
+            " - run with KIRO_LOG_LEVEL=trace and see $TMPDIR/kiro-log/kiro-chat.log for detail\n"
         )),
         StyledText::reset(),
     )?)
