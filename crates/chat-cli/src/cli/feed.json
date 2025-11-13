@@ -21,7 +21,8 @@
           "description": "Right arrow key being disabled - [#3439](https://github.com/aws/amazon-q-developer-cli/pull/3439)"
         }
       ]
-    }{
+    }, 
+    {
       "type": "release",
       "date": "2025-11-12",
       "version": "1.19.5",

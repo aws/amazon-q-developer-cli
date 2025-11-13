@@ -97,6 +97,30 @@ impl PasteState {
     }
 }
 
+/// Shared state to track when Enter was pressed with unclosed backticks
+#[derive(Clone, Debug)]
+pub struct MultilineHintState {
+    inner: Arc<Mutex<bool>>,
+}
+
+impl MultilineHintState {
+    pub fn new() -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(false)),
+        }
+    }
+
+    pub fn set(&self, value: bool) {
+        let mut inner = self.inner.lock().unwrap();
+        *inner = value;
+    }
+
+    pub fn get(&self) -> bool {
+        let inner = self.inner.lock().unwrap();
+        *inner
+    }
+}
+
 pub const COMMANDS: &[&str] = &[
     "/clear",
     "/help",
@@ -330,15 +354,23 @@ pub struct ChatHinter {
     history_hints_enabled: bool,
     history_path: PathBuf,
     available_commands: Vec<&'static str>,
+    /// Shared state to track when to show multiline hint
+    multiline_hint_state: MultilineHintState,
 }
 
 impl ChatHinter {
     /// Creates a new ChatHinter instance
-    pub fn new(history_hints_enabled: bool, history_path: PathBuf, available_commands: Vec<&'static str>) -> Self {
+    pub fn new(
+        history_hints_enabled: bool,
+        history_path: PathBuf,
+        available_commands: Vec<&'static str>,
+        multiline_hint_state: MultilineHintState,
+    ) -> Self {
         Self {
             history_hints_enabled,
             history_path,
             available_commands,
+            multiline_hint_state,
         }
     }
 
@@ -351,6 +383,16 @@ impl ChatHinter {
         // If line is empty, no hint
         if line.is_empty() {
             return None;
+        }
+
+        // Check if we should show the multiline hint (after Enter was pressed with unclosed backticks)
+        if self.multiline_hint_state.get() && line.contains("```") {
+            let triple_backtick_count = line.matches("```").count();
+            if triple_backtick_count % 2 == 1 {
+                // Clear the state after showing the hint once
+                self.multiline_hint_state.set(false);
+                return Some("in multiline mode, waiting for closing backticks ```".to_string());
+            }
         }
 
         // If line starts with a slash, try to find a command hint
@@ -396,7 +438,15 @@ impl RustylineHinter for ChatHinter {
 }
 
 /// Custom validator for multi-line input
-pub struct MultiLineValidator;
+pub struct MultiLineValidator {
+    multiline_hint_state: MultilineHintState,
+}
+
+impl MultiLineValidator {
+    pub fn new(multiline_hint_state: MultilineHintState) -> Self {
+        Self { multiline_hint_state }
+    }
+}
 
 impl Validator for MultiLineValidator {
     fn validate(&self, os: &mut ValidationContext<'_>) -> rustyline::Result<ValidationResult> {
@@ -408,7 +458,9 @@ impl Validator for MultiLineValidator {
             let triple_backtick_count = input.matches("```").count();
 
             // If we have an odd number of ```, we're in an incomplete code block
+            // When user presses Enter, set the state to show the hint on next render
             if triple_backtick_count % 2 == 1 {
+                self.multiline_hint_state.set(true);
                 return Ok(ValidationResult::Incomplete);
             }
         }
@@ -550,6 +602,43 @@ impl rustyline::ConditionalEventHandler for PasteImageHandler {
     }
 }
 
+/// Handler for right arrow key that prevents completing hints when in multiline mode
+///
+/// This handler intercepts the right arrow key press to prevent accidentally completing
+/// status hints (like "in multiline mode, waiting for closing backticks ```") that appear
+/// when the user presses Enter with unclosed triple backticks.
+///
+/// When unclosed backticks are detected (odd count of ```), pressing right arrow will:
+/// - Just move the cursor forward one character (normal behavior)
+/// - NOT complete/accept the hint text
+///
+/// When no unclosed backticks exist, it returns None to allow default behavior.
+struct RightArrowHandler;
+
+impl rustyline::ConditionalEventHandler for RightArrowHandler {
+    fn handle(
+        &self,
+        _evt: &rustyline::Event,
+        _n: rustyline::RepeatCount,
+        _positive: bool,
+        ctx: &rustyline::EventContext<'_>,
+    ) -> Option<Cmd> {
+        let line = ctx.line();
+
+        // Check if we're in multiline mode with unclosed backticks
+        if line.contains("```") {
+            let triple_backtick_count = line.matches("```").count();
+            if triple_backtick_count % 2 == 1 {
+                // We're in multiline mode - don't complete the hint
+                // Just move the cursor forward instead
+                return Some(Cmd::Move(rustyline::Movement::ForwardChar(1)));
+            }
+        }
+
+        None
+    }
+}
+
 pub fn rl(
     os: &Os,
     sender: PromptQuerySender,
@@ -577,10 +666,18 @@ pub fn rl(
     // Generate available commands based on enabled experiments
     let available_commands = get_available_commands(os);
 
+    // Create shared state for multiline hint
+    let multiline_hint_state = MultilineHintState::new();
+
     let h = ChatHelper {
         completer: ChatCompleter::new(sender, receiver, available_commands.clone()),
-        hinter: ChatHinter::new(history_hints_enabled, history_path, available_commands),
-        validator: MultiLineValidator,
+        hinter: ChatHinter::new(
+            history_hints_enabled,
+            history_path,
+            available_commands,
+            multiline_hint_state.clone(),
+        ),
+        validator: MultiLineValidator::new(multiline_hint_state),
     };
 
     let mut rl = Editor::with_config(config)?;
@@ -641,6 +738,12 @@ pub fn rl(
     rl.bind_sequence(
         KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
         EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
+    );
+
+    // Override right arrow key to prevent completing multiline status hints
+    rl.bind_sequence(
+        KeyEvent(KeyCode::Right, Modifiers::empty()),
+        EventHandler::Conditional(Box::new(RightArrowHandler)),
     );
 
     Ok(rl)
@@ -712,14 +815,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test basic prompt highlighting
@@ -736,14 +840,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test warning prompt highlighting
@@ -763,14 +868,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test profile prompt highlighting
@@ -790,14 +896,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test profile + warning prompt highlighting
@@ -822,14 +929,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test invalid prompt format (should return as-is)
@@ -846,14 +954,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test tangent mode prompt highlighting - ↯ yellow, > magenta
@@ -872,14 +981,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test tangent mode with warning - ↯ yellow, ! red, > magenta
@@ -903,14 +1013,15 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
+        let multiline_hint_state = MultilineHintState::new();
         let helper = ChatHelper {
             completer: ChatCompleter::new(
                 prompt_request_sender,
                 prompt_response_receiver,
                 available_commands.clone(),
             ),
-            hinter: ChatHinter::new(true, PathBuf::new(), available_commands),
-            validator: MultiLineValidator,
+            hinter: ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state.clone()),
+            validator: MultiLineValidator::new(multiline_hint_state),
         };
 
         // Test profile with tangent mode - [dev] cyan, ↯ yellow, > magenta
@@ -931,7 +1042,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(true, PathBuf::new(), available_commands);
+        let multiline_hint_state = MultilineHintState::new();
+        let hinter = ChatHinter::new(true, PathBuf::new(), available_commands, multiline_hint_state);
 
         // Test hint for a command
         let line = "/he";
@@ -964,7 +1076,8 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let available_commands = get_available_commands(&mock_os);
-        let hinter = ChatHinter::new(false, PathBuf::new(), available_commands);
+        let multiline_hint_state = MultilineHintState::new();
+        let hinter = ChatHinter::new(false, PathBuf::new(), available_commands, multiline_hint_state);
 
         // Test hint from history - should be None since history hints are disabled
         let line = "How";
