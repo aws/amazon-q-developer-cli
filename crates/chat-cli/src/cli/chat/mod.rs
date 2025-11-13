@@ -463,6 +463,9 @@ impl ChatArgs {
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
+// Maximum number of times to show the Kiro upgrade announcement
+const KIRO_UPGRADE_MAX_SHOW_COUNT: i64 = 2;
+
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
@@ -1207,6 +1210,32 @@ impl ChatSession {
         Ok(())
     }
 
+    async fn show_kiro_upgrade_announcement(&mut self, os: &mut Os) -> Result<bool> {
+        let show_count = os.database.get_kiro_upgrade_show_count()?.unwrap_or(0);
+
+        // Only show if we haven't reached the max count
+        if show_count < KIRO_UPGRADE_MAX_SHOW_COUNT {
+            let announcement_with_styling = crate::constants::kiro_upgrade_announcement();
+
+            draw_box(
+                &mut self.stderr,
+                "",
+                &announcement_with_styling,
+                GREETING_BREAK_POINT,
+                crate::theme::theme().ui.secondary_text,
+            )?;
+
+            execute!(self.stderr, style::Print("\n"))?;
+
+            // Update the show count
+            os.database.set_kiro_upgrade_show_count(show_count + 1)?;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Reload built-in tools to reflect experiment changes while preserving MCP tools
     pub async fn reload_builtin_tools(&mut self, os: &mut Os) -> Result<(), ChatError> {
         self.conversation
@@ -1308,6 +1337,11 @@ impl ChatSession {
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+
+        // Check if Kiro upgrade announcement will be shown
+        let show_count = os.database.get_kiro_upgrade_show_count()?.unwrap_or(0);
+        let kiro_announcement_will_show = show_count < KIRO_UPGRADE_MAX_SHOW_COUNT;
+
         if os
             .database
             .settings
@@ -1324,26 +1358,30 @@ impl ChatSession {
 
             execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
 
-            let rotating_tips = tips::get_rotating_tips();
-            let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
-            if is_small_screen {
-                // If the screen is small, print the tip in a single line
-                execute!(
-                    self.stderr,
-                    style::Print("💡 ".to_string()),
-                    style::Print(tip),
-                    style::Print("\n")
-                )?;
-            } else {
-                draw_box(
-                    &mut self.stderr,
-                    "Did you know?",
-                    tip,
-                    GREETING_BREAK_POINT,
-                    crate::theme::theme().ui.secondary_text,
-                )?;
+            // Only show rotating tips if Kiro announcement won't be shown
+            if !kiro_announcement_will_show {
+                let rotating_tips = tips::get_rotating_tips();
+                let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
+                if is_small_screen {
+                    // If the screen is small, print the tip in a single line
+                    execute!(
+                        self.stderr,
+                        style::Print("💡 ".to_string()),
+                        style::Print(tip),
+                        style::Print("\n")
+                    )?;
+                } else {
+                    draw_box(
+                        &mut self.stderr,
+                        "Did you know?",
+                        tip,
+                        GREETING_BREAK_POINT,
+                        crate::theme::theme().ui.secondary_text,
+                    )?;
+                }
             }
 
+            // Always show shortcuts and separator
             execute!(
                 self.stderr,
                 style::Print("\n"),
@@ -1361,8 +1399,10 @@ impl ChatSession {
             execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
         }
 
-        // Check if we should show the whats-new announcement
-        self.show_changelog_announcement(os).await?;
+        // Only show changelog if Kiro announcement won't be shown
+        if !kiro_announcement_will_show {
+            self.show_changelog_announcement(os).await?;
+        }
 
         if self.all_tools_trusted() {
             queue!(
@@ -1421,6 +1461,9 @@ impl ChatSession {
             };
             self.conversation.checkpoint_manager = checkpoint_manager;
         }
+
+        // Show Kiro upgrade announcement (limited to 2 times)
+        self.show_kiro_upgrade_announcement(os).await?;
 
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });
