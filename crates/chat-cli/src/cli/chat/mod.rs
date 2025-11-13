@@ -210,6 +210,8 @@ pub struct AgentContributionMetric {
     pub lines_suggested: Option<usize>,
     pub lines_accepted: Option<usize>,
     pub lines_rejected: Option<usize>,
+    pub lines_retained: Option<usize>,
+    pub total_lines_checked: Option<usize>,
 }
 
 /// User's final decision on tool execution after seeing preview
@@ -228,6 +230,8 @@ impl AgentContributionMetric {
             lines_suggested: None,
             lines_accepted: None,
             lines_rejected: None,
+            lines_retained: None,
+            total_lines_checked: None,
         }
     }
 
@@ -1507,12 +1511,73 @@ impl ChatSession {
             self.inner = Some(ChatState::HandleInput { input: user_input });
         }
 
-        while !matches!(self.inner, Some(ChatState::Exit)) {
-            self.next(os).await?;
-            
-            // Check for due retention metrics on each interaction
-            if let Err(e) = self.conversation.check_due_retention_metrics(os).await {
-                debug!("Failed to check retention metrics: {}", e);
+        // Set up signal handler for graceful shutdown
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigint = signal(SignalKind::interrupt()).map_err(|e| ChatError::Custom(format!("Failed to setup SIGINT handler: {}", e).into()))?;
+            let mut sigterm = signal(SignalKind::terminate()).map_err(|e| ChatError::Custom(format!("Failed to setup SIGTERM handler: {}", e).into()))?;
+
+            loop {
+                tokio::select! {
+                    // Handle normal chat operations
+                    result = async {
+                        if !matches!(self.inner, Some(ChatState::Exit)) {
+                            self.next(os).await
+                        } else {
+                            Ok(())
+                        }
+                    } => {
+                        if let Err(e) = result {
+                            return Err(e.into());
+                        }
+                        if matches!(self.inner, Some(ChatState::Exit)) {
+                            break;
+                        }
+                        
+                        // Check for due retention metrics on each interaction
+                        if let Ok(retention_results) = self.conversation.check_due_retention_metrics(os).await {
+                            // Update existing telemetry events with retention data
+                            for (tool_use_id, retained, total) in retention_results {
+                                if let Some(metric) = self.tool_use_telemetry_events.get_mut(&tool_use_id) {
+                                    metric.lines_retained = Some(retained);
+                                    metric.total_lines_checked = Some(total);
+                                    debug!("Updated retention for tool_use_id {}: {}/{} lines retained", 
+                                           tool_use_id, retained, total);
+                                }
+                            }
+                        }
+                    }
+                    // Handle SIGINT (Ctrl+C) and SIGTERM
+                    _ = sigint.recv() => {
+                        self.conversation.flush_all_retention_metrics(os, "shutdown").await.ok();
+                        break;
+                    }
+                    _ = sigterm.recv() => {
+                        self.conversation.flush_all_retention_metrics(os, "shutdown").await.ok();
+                        break;
+                    }
+                }
+            }
+        }
+
+        #[cfg(not(unix))]
+        {
+            while !matches!(self.inner, Some(ChatState::Exit)) {
+                self.next(os).await?;
+                
+                // Check for due retention metrics on each interaction
+                if let Ok(retention_results) = self.conversation.check_due_retention_metrics(os).await {
+                    // Update existing telemetry events with retention data
+                    for (tool_use_id, retained, total) in retention_results {
+                        if let Some(metric) = self.tool_use_telemetry_events.get_mut(&tool_use_id) {
+                            metric.lines_retained = Some(retained);
+                            metric.total_lines_checked = Some(total);
+                            debug!("Updated retention for tool_use_id {}: {}/{} lines retained", 
+                                   tool_use_id, retained, total);
+                        }
+                    }
+                }
             }
         }
 
@@ -2730,16 +2795,38 @@ impl ChatSession {
                                     Some(tool.name.clone()), // Already a String
                                     Some(lines_by_agent),
                                     Some(lines_by_user),
-                                    None, // lines_retained - not retention metric  
-                                    None, // total_lines - not retention metric
+                                    None,
+                                    None,
                                 )
                                 .await
                                 .ok();
 
+                            // Flush any pending retention checks before scheduling new ones (agent rewrite scenario)
+                            if let Ok(current_content) = os.fs.read_to_string(&w.path(os)).await {
+                                let flush_results = tracker.flush_pending_checks_for_agent_rewrite(&current_content);
+                                for (conv_id, tool_use_id, retained, total, source) in flush_results {
+                                    os.telemetry
+                                        .send_agent_contribution_metric_with_source(
+                                            &os.database,
+                                            conv_id,
+                                            message_id.clone(),
+                                            Some(tool_use_id),
+                                            None,
+                                            None,
+                                            None,
+                                            Some(retained),
+                                            Some(total),
+                                            Some(source),
+                                        )
+                                        .await
+                                        .ok();
+                                }
+                            }
+
                             // Schedule retention check for 15 minutes
                             let agent_lines = w.extract_agent_lines();
                             if !agent_lines.is_empty() {
-                                tracker.schedule_retention_check(agent_lines, conversation_id);
+                                tracker.schedule_retention_check(agent_lines, conversation_id, tool.id.clone());
                             }
 
                             tracker.prev_fswrite_lines = tracker.after_fswrite_lines;

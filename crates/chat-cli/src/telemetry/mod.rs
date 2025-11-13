@@ -297,7 +297,35 @@ impl TelemetryThread {
         lines_by_agent: Option<isize>,
         lines_by_user: Option<isize>,
         lines_retained: Option<usize>,
-        total_lines: Option<usize>,
+        total_lines_checked: Option<usize>,
+    ) -> Result<(), TelemetryError> {
+        self.send_agent_contribution_metric_with_source(
+            database,
+            conversation_id,
+            utterance_id,
+            tool_use_id,
+            tool_name,
+            lines_by_agent,
+            lines_by_user,
+            lines_retained,
+            total_lines_checked,
+            None,
+        ).await
+    }
+
+    #[allow(clippy::too_many_arguments)] // TODO: Should make a parameters struct.
+    pub async fn send_agent_contribution_metric_with_source(
+        &self,
+        database: &Database,
+        conversation_id: String,
+        utterance_id: Option<String>,
+        tool_use_id: Option<String>,
+        tool_name: Option<String>,
+        lines_by_agent: Option<isize>,
+        lines_by_user: Option<isize>,
+        lines_retained: Option<usize>,
+        total_lines_checked: Option<usize>,
+        source: Option<String>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::AgentContribution {
             conversation_id,
@@ -307,7 +335,8 @@ impl TelemetryThread {
             lines_by_agent,
             lines_by_user,
             lines_retained,
-            total_lines,
+            total_lines_checked,
+            source,
         });
         set_event_metadata(database, &mut telemetry_event).await;
         Ok(self.tx.send(telemetry_event)?)
@@ -652,8 +681,6 @@ impl TelemetryClient {
                 conversation_id,
                 utterance_id,
                 lines_by_agent,
-                lines_retained,
-                total_lines,
                 ..
             } => {
                 let user_context = self.user_context().unwrap();
@@ -677,8 +704,6 @@ impl TelemetryClient {
                     ?event,
                     ?user_context,
                     telemetry_enabled = self.telemetry_enabled,
-                    lines_retained = ?lines_retained,
-                    total_lines = ?total_lines,
                     "Sending cw telemetry event"
                 );
                 if let Err(err) = codewhisperer_client

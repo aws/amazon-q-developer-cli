@@ -264,7 +264,7 @@ impl FsWrite {
     pub fn extract_agent_lines(&self) -> Vec<String> {
         match self {
             FsWrite::Create { file_text, .. } => {
-                file_text.lines().map(|s| s.to_string()).collect()
+                file_text.as_ref().map(|s| s.lines().map(|l| l.to_string()).collect()).unwrap_or_default()
             },
             FsWrite::StrReplace { new_str, .. } => {
                 new_str.lines().map(|s| s.to_string()).collect()
