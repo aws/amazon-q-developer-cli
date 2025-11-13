@@ -53,8 +53,7 @@ pub mod workspace {
     pub const RULES_PATTERN: &str = "file://{}/**/*.md";
 
     // Default documentation files for agent resources
-    pub const DEFAULT_AGENT_RESOURCES: &[&str] =
-        &["file://AGENTS.md", "file://README.md", "file://.kiro/steering/**/*.md"];
+    pub const DEFAULT_AGENT_RESOURCES: &[&str] = &["file://AGENTS.md", "file://README.md"];
 }
 
 type Result<T, E = DirectoryError> = std::result::Result<T, E>;
@@ -358,7 +357,11 @@ impl<'a> WorkspacePaths<'a> {
     }
 
     pub fn rules_dir(&self) -> Result<PathBuf> {
-        resolve_local_migrated_path(self.os, "rules", "rules")
+        Ok(self.os.env.current_dir()?.join(".amazonq").join("rules"))
+    }
+
+    pub fn steering_dir(&self) -> Result<PathBuf> {
+        Ok(self.os.env.current_dir()?.join(".kiro").join("steering"))
     }
 
     pub fn todo_lists_dir(&self) -> Result<PathBuf> {
@@ -414,6 +417,10 @@ impl<'a> GlobalPaths<'a> {
 
     pub fn knowledge_bases_dir(&self) -> Result<PathBuf> {
         resolve_global_migrated_path(self.os, "knowledge_bases", "knowledge_bases")
+    }
+
+    pub fn steering_dir(&self) -> Result<PathBuf> {
+        Ok(home_dir(self.os)?.join(".kiro").join("steering"))
     }
 
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
@@ -663,5 +670,40 @@ mod migration_tests {
 
         let path = resolve_migrated_path_with_fs(&fs, kiro_base, amazonq_base, true, "cli-checkouts", "cli-checkouts");
         assert_eq!(path, Path::new("/data/kiro-cli/cli-checkouts"));
+    }
+}
+
+#[cfg(test)]
+mod path_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_workspace_rules_dir() {
+        let os = Os::new().await.unwrap();
+        let resolver = PathResolver::new(&os);
+        let rules_dir = resolver.workspace().rules_dir().unwrap();
+
+        // Should use .amazonq/rules path
+        assert!(rules_dir.to_string_lossy().ends_with(".amazonq/rules"));
+    }
+
+    #[tokio::test]
+    async fn test_workspace_steering_dir() {
+        let os = Os::new().await.unwrap();
+        let resolver = PathResolver::new(&os);
+        let steering_dir = resolver.workspace().steering_dir().unwrap();
+
+        // Should use .kiro/steering path
+        assert!(steering_dir.to_string_lossy().ends_with(".kiro/steering"));
+    }
+
+    #[tokio::test]
+    async fn test_global_steering_dir() {
+        let os = Os::new().await.unwrap();
+        let resolver = PathResolver::new(&os);
+        let steering_dir = resolver.global().steering_dir().unwrap();
+
+        // Should use ~/.kiro/steering path
+        assert!(steering_dir.to_string_lossy().contains(".kiro/steering"));
     }
 }

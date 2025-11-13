@@ -756,35 +756,40 @@ impl Agents {
             all_agents.push({
                 let mut agent = Agent::default();
 
-                // Add rules pattern using dynamic path resolution
-                if let Ok(rules_dir) = resolver.workspace().rules_dir() {
-                    let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
-                    agent.resources.push(rules_pattern.into());
+                // Add global steering (KIRO-only)
+                if let Ok(global_steering_dir) = resolver.global().steering_dir() {
+                    if global_steering_dir.exists() {
+                        let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
+                        agent.resources.push(global_steering_pattern.into());
+                    }
+                }
+
+                // Add workspace steering (KIRO-only)
+                if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
+                    if workspace_steering_dir.exists() {
+                        let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
+                        agent.resources.push(workspace_steering_pattern.into());
+                    }
+                }
+
+                // Add rules pattern only if .amazonq directory exists
+                if let Ok(current_dir) = os.env.current_dir() {
+                    let amazonq_dir = current_dir.join(".amazonq");
+                    if amazonq_dir.exists() {
+                        if let Ok(rules_dir) = resolver.workspace().rules_dir() {
+                            let rules_pattern =
+                                paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
+                            agent.resources.push(rules_pattern.into());
+                        }
+                    }
                 }
 
                 agent.resources.insert(0, "file://AmazonQ.md".into());
 
                 if mcp_enabled {
-                    'load_legacy_mcp_json: {
-                        if global_mcp_config.is_none() {
-                            let Ok(global_mcp_path) = resolver.global().mcp_config() else {
-                                tracing::error!("Error obtaining legacy mcp json path. Skipping");
-                                break 'load_legacy_mcp_json;
-                            };
-                            let legacy_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
-                                Ok(config) => config,
-                                Err(e) => {
-                                    tracing::error!("Error loading global mcp json path: {e}. Skipping");
-                                    break 'load_legacy_mcp_json;
-                                },
-                            };
-                            global_mcp_config.replace(legacy_mcp_config);
-                        }
-                    }
-
-                    if let Some(config) = &global_mcp_config {
-                        agent.mcp_servers = config.clone();
-                    }
+                    // Load merged global + workspace MCP config for default agent
+                    let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
+                    set_agent_mcp_config(&mut agent, legacy_mcp_config);
                 } else {
                     agent.mcp_servers = McpServerConfig::default();
                 }
@@ -956,6 +961,12 @@ async fn load_agents_from_entries(
     }
 
     res
+}
+
+fn set_agent_mcp_config(agent: &mut Agent, mcp_config: Option<McpServerConfig>) {
+    if let Some(config) = mcp_config {
+        agent.mcp_servers = config;
+    }
 }
 
 /// Loads legacy mcp config by combining workspace and global config.
@@ -1658,5 +1669,167 @@ mod tests {
         assert!(output.contains_str("test-agent"));
         assert!(output.contains_str("workspace"));
         assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_set_agent_mcp_config() {
+        use std::collections::HashMap;
+
+        use crate::cli::chat::tools::custom_tool::{
+            CustomToolConfig,
+            TransportType,
+        };
+
+        let mut agent = Agent::default();
+        let mut config = McpServerConfig::default();
+
+        // Add test servers
+        config
+            .mcp_servers
+            .insert("workspace_server".to_string(), CustomToolConfig {
+                r#type: TransportType::Stdio,
+                url: String::new(),
+                headers: HashMap::new(),
+                oauth_scopes: vec![],
+                oauth: None,
+                command: "echo".to_string(),
+                args: vec!["workspace".to_string()],
+                env: None,
+                timeout: 120000,
+                disabled: false,
+                disabled_tools: vec![],
+                is_from_legacy_mcp_json: false,
+            });
+        config
+            .mcp_servers
+            .insert("global_server".to_string(), CustomToolConfig {
+                r#type: TransportType::Stdio,
+                url: String::new(),
+                headers: HashMap::new(),
+                oauth_scopes: vec![],
+                oauth: None,
+                command: "echo".to_string(),
+                args: vec!["global".to_string()],
+                env: None,
+                timeout: 120000,
+                disabled: false,
+                disabled_tools: vec![],
+                is_from_legacy_mcp_json: false,
+            });
+
+        set_agent_mcp_config(&mut agent, Some(config));
+
+        // Verify both servers are set
+        assert!(agent.mcp_servers.mcp_servers.contains_key("workspace_server"));
+        assert!(agent.mcp_servers.mcp_servers.contains_key("global_server"));
+
+        let workspace_server = &agent.mcp_servers.mcp_servers["workspace_server"];
+        let global_server = &agent.mcp_servers.mcp_servers["global_server"];
+        assert_eq!(workspace_server.args, vec!["workspace".to_string()]);
+        assert_eq!(global_server.args, vec!["global".to_string()]);
+    }
+
+    #[test]
+    fn test_set_agent_mcp_config_with_none() {
+        let mut agent = Agent::default();
+        let original_servers = agent.mcp_servers.mcp_servers.clone();
+
+        set_agent_mcp_config(&mut agent, None);
+
+        // Should remain unchanged when None is passed
+        assert_eq!(agent.mcp_servers.mcp_servers, original_servers);
+    }
+
+    #[tokio::test]
+    async fn test_default_agent_steering_directories() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        let mut os = Os::new().await.unwrap();
+
+        // Set working directory to temp path
+        os.env.set_current_dir_for_test(temp_path.to_path_buf());
+
+        // Create steering directories
+        let global_steering = temp_path.join("home/.kiro/steering");
+        let workspace_steering = temp_path.join(".kiro/steering");
+        std::fs::create_dir_all(&global_steering).unwrap();
+        std::fs::create_dir_all(&workspace_steering).unwrap();
+
+        // Create test steering files
+        std::fs::write(global_steering.join("global.md"), "Global steering").unwrap();
+        std::fs::write(workspace_steering.join("workspace.md"), "Workspace steering").unwrap();
+
+        let mut output = Vec::new();
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+
+        let default_agent = agents.agents.get("kiro_default").unwrap();
+
+        // Should have steering patterns when directories exist
+        let has_steering = default_agent
+            .resources
+            .iter()
+            .any(|r| r.contains(".kiro/steering/**/*.md"));
+
+        assert!(has_steering, "Should include steering directory patterns");
+    }
+
+    #[tokio::test]
+    async fn test_default_agent_rules_conditional_loading() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        let mut os = Os::new().await.unwrap();
+
+        // Set working directory to temp path
+        os.env.set_current_dir_for_test(temp_path.to_path_buf());
+
+        // Test without .amazonq directory
+        let mut output = Vec::new();
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let default_agent = agents.agents.get("kiro_default").unwrap();
+
+        let has_rules = default_agent.resources.iter().any(|r| r.contains(".amazonq/rules"));
+        assert!(
+            !has_rules,
+            "Should not include rules when .amazonq directory doesn't exist"
+        );
+
+        // Create .amazonq directory and test again
+        std::fs::create_dir_all(temp_path.join(".amazonq")).unwrap();
+
+        let mut output = Vec::new();
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let default_agent = agents.agents.get("kiro_default").unwrap();
+
+        let has_rules = default_agent.resources.iter().any(|r| r.contains(".amazonq/rules"));
+        assert!(has_rules, "Should include rules when .amazonq directory exists");
+    }
+
+    #[tokio::test]
+    async fn test_default_agent_steering_nonexistent_directories() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let temp_path = temp_dir.path();
+
+        let mut os = Os::new().await.unwrap();
+
+        // Set working directory to temp path
+        os.env.set_current_dir_for_test(temp_path.to_path_buf());
+
+        // Don't create steering directories
+        let mut output = Vec::new();
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let default_agent = agents.agents.get("kiro_default").unwrap();
+
+        // Should not have steering patterns when directories don't exist
+        let has_steering = default_agent.resources.iter().any(|r| r.contains(".kiro/steering"));
+
+        assert!(!has_steering, "Should not include non-existent steering directories");
     }
 }
