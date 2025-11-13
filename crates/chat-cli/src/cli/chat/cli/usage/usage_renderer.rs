@@ -30,23 +30,14 @@ pub async fn render_billing_info(
         super::BillingDataStatus::Available => render_available_billing(billing_data, session, os).await,
         super::BillingDataStatus::FeatureNotSupported => {
             if show_unsupported_message {
-                if billing_data.plan_name != "Unknown" {
-                    execute!(
-                        session.stderr,
-                        style::Print("Plan: "),
-                        StyledText::brand_fg(),
-                        style::Print(&billing_data.plan_name),
-                        StyledText::reset(),
-                        style::Print("\n"),
-                    )?;
-                }
                 execute!(
                     session.stderr,
-                    style::Print("Upgrade to Kiro for better usage insights through "),
+                    style::Print("Plan: "),
                     StyledText::brand_fg(),
-                    style::Print(KIRO_APP_URL),
+                    style::Print("Q Developer Pro"),
                     StyledText::reset(),
                     style::Print("\n"),
+                    style::Print("Your plan is managed by admin\n"),
                 )?;
             }
             Ok(())
