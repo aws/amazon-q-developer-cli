@@ -37,6 +37,7 @@ If no agent is specified or found, KIRO CLI uses a built-in default agent with t
   "allowedTools": ["fs_read"],
   "resources": [
     "file://AmazonQ.md",
+    "file://AGENTS.md",
     "file://README.md", 
     "file://.amazonq/rules/**/*.md"
   ],
@@ -58,6 +59,7 @@ The built-in default agent provides:
 ### Default Resources
 The agent automatically includes these files in its context (if they exist):
 - `AmazonQ.md` - Amazon Q documentation or notes
+- `AGENTS.md` - Agent documentation and guidelines
 - `README.md` - Project readme file
 - `.amazonq/rules/**/*.md` - Any markdown files in the `.amazonq/rules/` directory and subdirectories
 
