@@ -354,7 +354,7 @@ pub async fn spawn_agent_process(os: &Os, agent: &str, task: &str) -> Result<Age
     let now = Utc::now();
 
     // Run Q chat with specific agent in background, non-interactive
-    let mut cmd = tokio::process::Command::new("q");
+    let mut cmd = tokio::process::Command::new("kiro-cli");
     cmd.args(["chat", "--non-interactive"]);
     if agent == DEFAULT_AGENT_NAME {
         cmd.arg("--trust-all-tools");
@@ -402,7 +402,7 @@ async fn generate_summary(task: &str, output: &str) -> Result<String> {
     );
 
     // Run Q chat with summary prompt in non-interactive mode
-    let mut cmd = tokio::process::Command::new("q");
+    let mut cmd = tokio::process::Command::new("kiro-cli");
     cmd.args(["chat", "--non-interactive", &summary_prompt]);
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
@@ -602,7 +602,7 @@ pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
-    Ok(PathResolver::new(os).workspace().ensure_subagents_dir().await?)
+    Ok(PathResolver::new(os).global().ensure_subagents_dir().await?)
 }
 
 #[cfg(test)]
