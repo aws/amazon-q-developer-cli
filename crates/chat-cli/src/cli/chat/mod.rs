@@ -2008,8 +2008,13 @@ impl ChatSession {
                 .filter(|name| *name != DUMMY_TOOL_NAME)
                 .cloned()
                 .collect::<Vec<_>>();
+
+            // Add command selector binding for "Ctrl+S"
             self.input_source
                 .put_skim_command_selector(os, Arc::new(context_manager.clone()), tool_names);
+
+            // Add prompt template selector binding for "@"
+            self.input_source.put_skim_prompt_selector(os);
         }
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
