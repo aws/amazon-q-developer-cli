@@ -367,8 +367,16 @@ impl<'a> WorkspacePaths<'a> {
         resolve_local_migrated_path(self.os, "cli-agents", "agents")
     }
 
+    pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
+        Ok(self.os.env.current_dir()?.join(".kiro").join("agents"))
+    }
+
     pub fn prompts_dir(&self) -> Result<PathBuf> {
         resolve_local_migrated_path(self.os, "prompts", "prompts")
+    }
+
+    pub fn prompts_dir_for_create(&self) -> Result<PathBuf> {
+        Ok(self.os.env.current_dir()?.join(".kiro").join("prompts"))
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
@@ -400,8 +408,16 @@ impl<'a> GlobalPaths<'a> {
         resolve_global_migrated_path(self.os, "cli-agents", "agents")
     }
 
+    pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
+        Ok(home_dir(self.os)?.join(".kiro").join("agents"))
+    }
+
     pub fn prompts_dir(&self) -> Result<PathBuf> {
         resolve_global_migrated_path(self.os, "prompts", "prompts")
+    }
+
+    pub fn prompts_dir_for_create(&self) -> Result<PathBuf> {
+        Ok(home_dir(self.os)?.join(".kiro").join("prompts"))
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {

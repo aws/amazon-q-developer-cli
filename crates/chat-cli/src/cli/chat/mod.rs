@@ -313,7 +313,7 @@ impl ChatArgs {
         if let Ok(current_dir) = std::env::current_dir() {
             let kiro_path = current_dir.join(".kiro");
             let amazonq_path = current_dir.join(".amazonq");
-            
+
             if kiro_path.exists() && amazonq_path.exists() {
                 execute!(
                     stderr,
@@ -4015,12 +4015,12 @@ async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_glo
     let config_dir = if is_global {
         resolver
             .global()
-            .agents_dir()
+            .agents_dir_for_create()
             .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {e}").into()))?
     } else {
         resolver
             .workspace()
-            .agents_dir()
+            .agents_dir_for_create()
             .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {e}").into()))?
     };
 
