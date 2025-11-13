@@ -2004,9 +2004,9 @@ fn queue_failure_message(
         style::Print("\n - "),
         style::Print(fail_load_msg),
         style::Print("\n"),
-        style::Print(format!(
-            " - run with KIRO_LOG_LEVEL=trace and see $TMPDIR/kiro-log/kiro-chat.log for detail\n"
-        )),
+        style::Print(
+            " - run with KIRO_LOG_LEVEL=trace and see $TMPDIR/kiro-log/kiro-chat.log for detail\n".to_string()
+        ),
         StyledText::reset(),
     )?)
 }
