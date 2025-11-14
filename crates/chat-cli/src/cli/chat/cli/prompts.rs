@@ -136,11 +136,11 @@ impl Prompts {
         let resolver = PathResolver::new(os);
         let local_dir = resolver
             .workspace()
-            .prompts_dir()
+            .prompts_dir_for_create()
             .map_err(|e| GetPromptError::General(e.into()))?;
         let global_dir = resolver
             .global()
-            .prompts_dir()
+            .prompts_dir_for_create()
             .map_err(|e| GetPromptError::General(e.into()))?;
 
         Ok(Self {
