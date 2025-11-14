@@ -9,7 +9,7 @@ pub const PRODUCT_NAME: &str = "Kiro";
 pub const CLI_NAME: &str = "kiro-cli";
 
 /// Client name for authentication purposes
-pub const CLIENT_NAME: &str = "Kiro Developer for command line";
+pub const CLIENT_NAME: &str = "Kiro CLI";
 
 /// GitHub issues URL for bug reports and feature requests
 pub const GITHUB_ISSUES_URL: &str = "https://github.com/kirodotdev/Kiro/issues/new";
