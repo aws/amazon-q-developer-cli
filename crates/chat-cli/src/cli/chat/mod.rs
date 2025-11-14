@@ -1216,17 +1216,27 @@ impl ChatSession {
         // Only show if we haven't reached the max count
         if show_count < KIRO_UPGRADE_MAX_SHOW_COUNT {
             let announcement_with_styling = crate::constants::kiro_upgrade_announcement();
+            let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
-            draw_box(
-                &mut self.stderr,
-                "",
-                &announcement_with_styling,
-                GREETING_BREAK_POINT,
-                crate::theme::theme().ui.secondary_text,
-                Some(crate::cli::chat::util::ui::TextAlign::Left),
-            )?;
+            if is_small_screen {
+                // If the screen is small, print the announcement without a box
+                execute!(
+                    self.stderr,
+                    style::Print(&announcement_with_styling),
+                    style::Print("\n")
+                )?;
+            } else {
+                draw_box(
+                    &mut self.stderr,
+                    "",
+                    &announcement_with_styling,
+                    GREETING_BREAK_POINT,
+                    crate::theme::theme().ui.secondary_text,
+                    Some(crate::cli::chat::util::ui::TextAlign::Left),
+                )?;
 
-            execute!(self.stderr, style::Print("\n"))?;
+                execute!(self.stderr, style::Print("\n"))?;
+            }
 
             // Update the show count
             os.database.set_kiro_upgrade_show_count(show_count + 1)?;
