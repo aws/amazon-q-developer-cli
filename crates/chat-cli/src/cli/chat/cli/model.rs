@@ -35,6 +35,12 @@ pub struct ModelInfo {
     /// Size of the model's context window, in tokens
     #[serde(default = "default_context_window")]
     pub context_window_tokens: usize,
+    /// Rate multiplier of the model
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_multiplier: Option<f64>,
+    /// Unit for the rate multiplier
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rate_unit: Option<String>,
 }
 
 impl ModelInfo {
@@ -48,6 +54,8 @@ impl ModelInfo {
             description: model.description.clone(),
             model_name: model.model_name().map(|s| s.to_string()),
             context_window_tokens,
+            rate_multiplier: model.rate_multiplier(),
+            rate_unit: model.rate_unit().map(|s| s.to_string()),
         }
     }
 
@@ -58,6 +66,8 @@ impl ModelInfo {
             description: None,
             model_name: None,
             context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
         }
     }
 
@@ -105,37 +115,53 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         .map(|model| {
             let display_name = model.display_name();
             let description = model.description();
-            if Some(model.model_id.as_str()) == active_model_id {
-                if let Some(desc) = description {
-                    if desc.to_lowercase().contains("experimental") {
-                        format!(
-                            "{display_name} {} {}",
-                            StyledText::current_item("(current)"),
-                            StyledText::secondary("-- experimental")
-                        )
-                    } else {
-                        format!(
-                            "{display_name} {} {} {}",
-                            StyledText::current_item("(current)"),
-                            StyledText::secondary("|"),
-                            StyledText::secondary(desc)
-                        )
-                    }
+            let is_current = Some(model.model_id.as_str()) == active_model_id;
+
+            // Format rate multiplier if available
+            let rate_info = model.rate_multiplier.map(|multiplier| {
+                let unit = model.rate_unit.as_deref().unwrap_or("credit");
+                // Format as whole number if it's a whole number, otherwise show one decimal place
+                let multiplier_str = if multiplier.fract().abs() < f64::EPSILON {
+                    format!("{multiplier:.0}x")
                 } else {
-                    format!("{display_name} {}", StyledText::current_item("(current)"))
-                }
-            } else if let Some(desc) = description {
+                    format!("{multiplier:.1}x")
+                };
+                format!(
+                    " {} {}",
+                    StyledText::secondary("|"),
+                    StyledText::secondary(&format!("{multiplier_str} {unit}"))
+                )
+            });
+
+            let current_marker = if is_current {
+                Some(format!(" {}", StyledText::current_item("(current)")))
+            } else {
+                None
+            };
+
+            if let Some(desc) = description {
                 if desc.to_lowercase().contains("experimental") {
-                    format!("{display_name} {}", StyledText::secondary("-- experimental"))
+                    format!(
+                        "{display_name}{}{} {}",
+                        current_marker.as_deref().unwrap_or(""),
+                        rate_info.as_deref().unwrap_or(""),
+                        StyledText::secondary("-- experimental")
+                    )
                 } else {
                     format!(
-                        "{display_name} {} {}",
+                        "{display_name}{}{} {} {}",
+                        current_marker.as_deref().unwrap_or(""),
+                        rate_info.as_deref().unwrap_or(""),
                         StyledText::secondary("|"),
                         StyledText::secondary(desc)
                     )
                 }
             } else {
-                display_name.to_string()
+                format!(
+                    "{display_name}{}{}",
+                    current_marker.as_deref().unwrap_or(""),
+                    rate_info.as_deref().unwrap_or("")
+                )
             }
         })
         .collect();
@@ -238,12 +264,16 @@ fn get_fallback_models() -> Vec<ModelInfo> {
             model_id: "claude-sonnet-4".to_string(),
             description: None,
             context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
         },
         ModelInfo {
             model_name: Some("claude-3.7-sonnet".to_string()),
             model_id: "claude-3.7-sonnet".to_string(),
             description: None,
             context_window_tokens: 200_000,
+            rate_multiplier: None,
+            rate_unit: None,
         },
     ]
 }
