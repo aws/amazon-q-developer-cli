@@ -18,20 +18,6 @@
           "command"
         ]
       }
-    },
-    "TransportType": {
-      "oneOf": [
-        {
-          "description": "Standard input/output transport (default)",
-          "type": "string",
-          "const": "stdio"
-        },
-        {
-          "description": "HTTP transport for web-based communication",
-          "type": "string",
-          "const": "http"
-        }
-      ]
     }
   },
   "properties": {
@@ -60,16 +46,11 @@
       "default": null
     },
     "mcpServers": {
-      "description": "Configuration for Model Context Protocol (MCP) servers",
+      "description": "Configuration for Model Context Protocol (MCP) servers. Transport type is inferred: if 'command' is present, uses stdio; if 'url' is present, uses http. Specifying both is invalid.",
       "type": "object",
       "additionalProperties": {
         "type": "object",
         "properties": {
-          "type": {
-            "description": "The type of transport the mcp server is expecting. For http transport, only url (for now) is taken into account",
-            "$ref": "#/definitions/TransportType",
-            "default": "stdio"
-          },
           "url": {
             "description": "The URL endpoint for HTTP-based MCP servers",
             "type": "string",
@@ -154,10 +135,7 @@
             "type": "boolean",
             "default": false
           }
-        },
-        "required": [
-          "command"
-        ]
+        }
       },
       "default": {}
     },

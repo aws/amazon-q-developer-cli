@@ -215,57 +215,11 @@ pub struct McpServers {
     pub mcp_servers: HashMap<String, McpServerConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-#[serde(tag = "type")]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
 pub enum McpServerConfig {
-    #[serde(rename = "stdio")]
     Local(LocalMcpServerConfig),
-    #[serde(rename = "http")]
     Remote(RemoteMcpServerConfig),
-}
-
-impl<'de> Deserialize<'de> for McpServerConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        use serde::de::Error;
-
-        // Helper enum with derived Deserialize to avoid infinite recursion
-        #[derive(Deserialize)]
-        #[serde(tag = "type")]
-        enum McpServerConfigHelper {
-            #[serde(rename = "stdio")]
-            Local(LocalMcpServerConfig),
-            #[serde(rename = "http")]
-            Remote(RemoteMcpServerConfig),
-        }
-
-        let value = serde_json::Value::deserialize(deserializer)?;
-
-        // Check if "type" field exists
-        if let Some(obj) = value.as_object() {
-            if !obj.contains_key("type") {
-                // If "type" is missing, default to "stdio" by adding it
-                let mut obj = obj.clone();
-                obj.insert("type".to_string(), serde_json::Value::String("stdio".to_string()));
-                let value_with_type = serde_json::Value::Object(obj);
-                let helper: McpServerConfigHelper =
-                    serde_json::from_value(value_with_type).map_err(D::Error::custom)?;
-                return Ok(match helper {
-                    McpServerConfigHelper::Local(config) => McpServerConfig::Local(config),
-                    McpServerConfigHelper::Remote(config) => McpServerConfig::Remote(config),
-                });
-            }
-        }
-
-        // Normal deserialization with type field present
-        let helper: McpServerConfigHelper = serde_json::from_value(value).map_err(D::Error::custom)?;
-        Ok(match helper {
-            McpServerConfigHelper::Local(config) => McpServerConfig::Local(config),
-            McpServerConfigHelper::Remote(config) => McpServerConfig::Remote(config),
-        })
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -491,7 +445,6 @@ mod tests {
     fn test_mcp_server_config_http_deser() {
         // Test HTTP server without oauth scopes
         let config = serde_json::json!({
-            "type": "http",
             "url": "https://mcp.api.coingecko.com/sse"
         });
         let result: McpServerConfig = serde_json::from_value(config).unwrap();
@@ -505,7 +458,6 @@ mod tests {
 
         // Test HTTP server with oauth scopes
         let config = serde_json::json!({
-            "type": "http",
             "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
             "oauthScopes": ["mcp", "profile", "email"]
         });
@@ -520,7 +472,6 @@ mod tests {
 
         // Test HTTP server with empty oauth scopes
         let config = serde_json::json!({
-            "type": "http",
             "url": "https://example-server.modelcontextprotocol.io/mcp",
             "oauthScopes": []
         });
@@ -537,7 +488,6 @@ mod tests {
     #[test]
     fn test_mcp_server_config_stdio_deser() {
         let config = serde_json::json!({
-            "type": "stdio",
             "command": "node",
             "args": ["server.js"]
         });
@@ -552,8 +502,7 @@ mod tests {
     }
 
     #[test]
-    fn test_mcp_server_config_defaults_to_stdio() {
-        // Test that when "type" field is missing, it defaults to "stdio" (Local variant)
+    fn test_mcp_server_config_infers_stdio_from_command() {
         let config = serde_json::json!({
             "command": "node",
             "args": ["server.js"]
@@ -564,7 +513,21 @@ mod tests {
                 assert_eq!(local.command, "node");
                 assert_eq!(local.args, vec!["server.js"]);
             },
-            McpServerConfig::Remote(_) => panic!("Expected Local variant when type field is missing"),
+            McpServerConfig::Remote(_) => panic!("Expected Local variant when command is present"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_config_infers_http_from_url() {
+        let config = serde_json::json!({
+            "url": "https://example.com/mcp"
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://example.com/mcp");
+            },
+            McpServerConfig::Local(_) => panic!("Expected Remote variant when url is present"),
         }
     }
 
@@ -572,16 +535,13 @@ mod tests {
     fn test_mcp_servers_map_deser() {
         let servers = serde_json::json!({
             "coin-gecko": {
-                "type": "http",
                 "url": "https://mcp.api.coingecko.com/sse"
             },
             "datadog": {
-                "type": "http",
                 "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
                 "oauthScopes": ["mcp", "profile", "email"]
             },
             "local-server": {
-                "type": "stdio",
                 "command": "npx",
                 "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
             }
@@ -592,5 +552,30 @@ mod tests {
         assert!(result.contains_key("coin-gecko"));
         assert!(result.contains_key("datadog"));
         assert!(result.contains_key("local-server"));
+    }
+
+    #[test]
+    fn test_mcp_server_config_with_both_command_and_url() {
+        // When both command and url are present, it should deserialize as Local (stdio)
+        // since LocalMcpServerConfig will match first with untagged enum
+        let config = serde_json::json!({
+            "command": "node",
+            "url": "https://example.com/mcp"
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Local(local) => {
+                assert_eq!(local.command, "node");
+            },
+            McpServerConfig::Remote(_) => panic!("Expected Local variant when both are present"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_config_empty_fails() {
+        // Empty config should fail to deserialize
+        let config = serde_json::json!({});
+        let result: Result<McpServerConfig, _> = serde_json::from_value(config);
+        assert!(result.is_err());
     }
 }

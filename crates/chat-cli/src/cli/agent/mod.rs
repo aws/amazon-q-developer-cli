@@ -1676,10 +1676,7 @@ mod tests {
     fn test_set_agent_mcp_config() {
         use std::collections::HashMap;
 
-        use crate::cli::chat::tools::custom_tool::{
-            CustomToolConfig,
-            TransportType,
-        };
+        use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
         let mut agent = Agent::default();
         let mut config = McpServerConfig::default();
@@ -1688,7 +1685,6 @@ mod tests {
         config
             .mcp_servers
             .insert("workspace_server".to_string(), CustomToolConfig {
-                r#type: TransportType::Stdio,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],
@@ -1704,7 +1700,6 @@ mod tests {
         config
             .mcp_servers
             .insert("global_server".to_string(), CustomToolConfig {
-                r#type: TransportType::Stdio,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],

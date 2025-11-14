@@ -60,9 +60,6 @@ pub struct OAuthConfig {
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
-    /// The transport type to use for communication with the MCP server
-    #[serde(default)]
-    pub r#type: TransportType,
     /// The URL for HTTP-based MCP server communication
     #[serde(default)]
     pub url: String,
@@ -99,6 +96,17 @@ pub struct CustomToolConfig {
 }
 
 impl CustomToolConfig {
+    /// Infer the transport type based on which fields are present
+    pub fn inferred_type(&self) -> TransportType {
+        if !self.command.is_empty() {
+            TransportType::Stdio
+        } else if !self.url.is_empty() {
+            TransportType::Http
+        } else {
+            TransportType::Stdio
+        }
+    }
+
     /// Get the effective oauth scopes, preferring the new location inside oauth object
     pub fn get_oauth_scopes(&self) -> Vec<String> {
         self.oauth
