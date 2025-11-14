@@ -1223,6 +1223,7 @@ impl ChatSession {
                 &announcement_with_styling,
                 GREETING_BREAK_POINT,
                 crate::theme::theme().ui.secondary_text,
+                Some(crate::cli::chat::util::ui::TextAlign::Left),
             )?;
 
             execute!(self.stderr, style::Print("\n"))?;
@@ -1377,9 +1378,13 @@ impl ChatSession {
                         tip,
                         GREETING_BREAK_POINT,
                         crate::theme::theme().ui.secondary_text,
+                        None,
                     )?;
                 }
             }
+
+            // Show Kiro upgrade announcement before shortcuts (limited to 2 times)
+            self.show_kiro_upgrade_announcement(os).await?;
 
             // Always show shortcuts and separator
             execute!(
@@ -1461,9 +1466,6 @@ impl ChatSession {
             };
             self.conversation.checkpoint_manager = checkpoint_manager;
         }
-
-        // Show Kiro upgrade announcement (limited to 2 times)
-        self.show_kiro_upgrade_announcement(os).await?;
 
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });

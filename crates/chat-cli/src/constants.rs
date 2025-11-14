@@ -223,9 +223,10 @@ Notes:
 /// Announcement text for Kiro CLI upgrade
 pub fn kiro_upgrade_announcement() -> String {
     format!(
-        "Q CLI users can now upgrade to the Kiro CLI. Type {} to update today. The Kiro CLI leverages the agentic features of Q CLI and can be used with your existing Q Developer subscription. If you have auto updates enabled for the Q CLI, unless you disable that setting, Q CLI will auto update to Kiro CLI on 11/24. Kiro CLI is licensed as AWS Content under your Agreement and the AWS Intellectual Property License ({}). By updating to Kiro CLI, you agree to the AWS Intellectual Property License.",
+        "Kiro CLI is the next update of the Q CLI. Your existing Q Developer CLI workflows and subscription continue to work without any changes. You can update to Kiro CLI manually with {} today, or wait for the auto-update on 11/24 to apply the change. To learn more, go to {}.\n\nKiro CLI is licensed under, and by updating to it you agree to, the AWS Intellectual Property License ({}).",
         StyledText::command("q update"),
-        StyledText::command("https://aws.amazon.com/legal/aws-ip-license-terms/")
+        StyledText::command("kiro.dev/cli/upgrade"),
+        StyledText::command("kiro.dev/license")
     )
 }
 

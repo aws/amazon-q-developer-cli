@@ -16,53 +16,70 @@ use crossterm::{
 use eyre::Result;
 use strip_ansi_escapes::strip_str;
 
+pub enum TextAlign {
+    Left,
+    Center,
+}
+
 pub fn draw_box(
     output: &mut impl Write,
     title: &str,
     content: &str,
     box_width: usize,
     border_color: Color,
+    align: Option<TextAlign>,
 ) -> Result<()> {
+    let align = align.unwrap_or(TextAlign::Center);
     let inner_width = box_width - 4; // account for │ and padding
 
     // wrap the single line into multiple lines respecting inner width
     // Manually wrap the text by splitting at word boundaries, using visible length for styled text
+    // First split by newlines to preserve explicit line breaks
     let mut wrapped_lines = Vec::new();
-    let mut line = String::new();
 
-    for word in content.split_whitespace() {
-        let test_line = if line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{} {}", line, word)
-        };
+    for paragraph in content.split('\n') {
+        if paragraph.is_empty() {
+            // Preserve empty lines
+            wrapped_lines.push(String::new());
+            continue;
+        }
 
-        let visible_len = strip_str(&test_line).len();
+        let mut line = String::new();
 
-        if visible_len <= inner_width {
-            line = test_line;
-        } else {
-            // Check if the word alone is too long
-            let word_visible_len = strip_str(word).len();
-            if word_visible_len >= inner_width {
-                // Word is too long, we need to break it (but this is rare with styled text)
-                if !line.is_empty() {
-                    wrapped_lines.push(line);
-                }
-                wrapped_lines.push(word.to_string());
-                line = String::new();
+        for word in paragraph.split_whitespace() {
+            let test_line = if line.is_empty() {
+                word.to_string()
             } else {
-                // Start a new line with this word
-                if !line.is_empty() {
-                    wrapped_lines.push(line);
+                format!("{} {}", line, word)
+            };
+
+            let visible_len = strip_str(&test_line).len();
+
+            if visible_len <= inner_width {
+                line = test_line;
+            } else {
+                // Check if the word alone is too long
+                let word_visible_len = strip_str(word).len();
+                if word_visible_len >= inner_width {
+                    // Word is too long, we need to break it (but this is rare with styled text)
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    wrapped_lines.push(word.to_string());
+                    line = String::new();
+                } else {
+                    // Start a new line with this word
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    line = word.to_string();
                 }
-                line = word.to_string();
             }
         }
-    }
 
-    if !line.is_empty() {
-        wrapped_lines.push(line);
+        if !line.is_empty() {
+            wrapped_lines.push(line);
+        }
     }
 
     let top_border = if title.is_empty() {
@@ -96,23 +113,37 @@ pub fn draw_box(
     );
     execute!(output, style::Print(top_vertical_border))?;
 
-    // Centered wrapped content
+    // Wrapped content with configurable alignment
     for line in wrapped_lines {
         let visible_line_len = strip_str(&line).len();
-        let left_pad = box_width.saturating_sub(4).saturating_sub(visible_line_len) / 2;
+
+        // Calculate padding within the inner content area (box_width - 4)
+        // This gives us the padding space available after accounting for borders and minimum padding
+        let available_padding = inner_width.saturating_sub(visible_line_len);
+
+        let (left_pad, right_pad) = match align {
+            TextAlign::Left => {
+                // Left align: 1 space on left, rest on right
+                (1, available_padding + 1)
+            },
+            TextAlign::Center => {
+                // Center align: split padding evenly
+                let left = available_padding / 2 + 1; // +1 for minimum padding
+                let right = available_padding - available_padding / 2 + 1; // +1 for minimum padding
+                (left, right)
+            },
+        };
+
+        let left_padding = " ".repeat(left_pad);
+        let right_padding = " ".repeat(right_pad);
 
         let content = format!(
-            "{} {: <pad$}{}{: <rem$} {}",
+            "{}{}{}{}{}",
             style::style("│").with(border_color),
-            "",
+            left_padding,
             line,
-            "",
+            right_padding,
             style::style("│").with(border_color),
-            pad = left_pad,
-            rem = box_width
-                .saturating_sub(4)
-                .saturating_sub(left_pad)
-                .saturating_sub(visible_line_len),
         );
         execute!(output, style::Print(format!("{}\n", content)))?;
     }
@@ -149,6 +180,7 @@ mod tests {
             short_tip,
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
+            None,
         )
         .expect("Failed to draw tip box");
 
@@ -160,6 +192,7 @@ mod tests {
             long_tip,
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
+            None,
         )
         .expect("Failed to draw tip box");
 
@@ -176,6 +209,7 @@ mod tests {
             long_tip_with_one_long_word.as_str(),
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
+            None,
         )
         .expect("Failed to draw tip box");
         // Test with a long tip with two long words that should wrap
@@ -186,6 +220,7 @@ mod tests {
             long_tip_with_two_long_words.as_str(),
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
+            None,
         )
         .expect("Failed to draw tip box");
 
