@@ -391,8 +391,8 @@ impl McpClientService {
         ),
         McpClientError,
     > {
+        let r#type = self.config.inferred_type();
         let CustomToolConfig {
-            r#type,
             url,
             command: command_as_str,
             ..

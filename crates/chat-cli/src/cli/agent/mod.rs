@@ -713,6 +713,50 @@ impl Agents {
         local_agents.append(&mut global_agents);
         let mut all_agents = local_agents;
 
+        all_agents.push({
+            let mut agent = Agent::default();
+
+            // Add global steering (KIRO-only)
+            if let Ok(global_steering_dir) = resolver.global().steering_dir() {
+                if global_steering_dir.exists() {
+                    let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
+                    agent.resources.push(global_steering_pattern.into());
+                }
+            }
+
+            // Add workspace steering (KIRO-only)
+            if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
+                if workspace_steering_dir.exists() {
+                    let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
+                    agent.resources.push(workspace_steering_pattern.into());
+                }
+            }
+
+            // Add rules pattern only if .amazonq directory exists
+            if let Ok(current_dir) = os.env.current_dir() {
+                let amazonq_dir = current_dir.join(".amazonq");
+                if amazonq_dir.exists() {
+                    if let Ok(rules_dir) = resolver.workspace().rules_dir() {
+                        let rules_pattern =
+                            paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
+                        agent.resources.push(rules_pattern.into());
+                    }
+                }
+            }
+
+            agent.resources.insert(0, "file://AmazonQ.md".into());
+
+            if mcp_enabled {
+                // Load merged global + workspace MCP config for default agent
+                let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
+                set_agent_mcp_config(&mut agent, legacy_mcp_config);
+            } else {
+                agent.mcp_servers = McpServerConfig::default();
+            }
+
+            agent
+        });
+
         // Assume agent in the following order of priority:
         // 1. The agent name specified by the start command via --agent (this is the agent_name that's
         //    passed in)
@@ -752,49 +796,6 @@ impl Agents {
                     StyledText::reset(),
                 );
             }
-
-            all_agents.push({
-                let mut agent = Agent::default();
-
-                // Add global steering (KIRO-only)
-                if let Ok(global_steering_dir) = resolver.global().steering_dir() {
-                    if global_steering_dir.exists() {
-                        let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
-                        agent.resources.push(global_steering_pattern.into());
-                    }
-                }
-
-                // Add workspace steering (KIRO-only)
-                if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
-                    if workspace_steering_dir.exists() {
-                        let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
-                        agent.resources.push(workspace_steering_pattern.into());
-                    }
-                }
-
-                // Add rules pattern only if .amazonq directory exists
-                if let Ok(current_dir) = os.env.current_dir() {
-                    let amazonq_dir = current_dir.join(".amazonq");
-                    if amazonq_dir.exists() {
-                        if let Ok(rules_dir) = resolver.workspace().rules_dir() {
-                            let rules_pattern =
-                                paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
-                            agent.resources.push(rules_pattern.into());
-                        }
-                    }
-                }
-
-                agent.resources.insert(0, "file://AmazonQ.md".into());
-
-                if mcp_enabled {
-                    // Load merged global + workspace MCP config for default agent
-                    let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
-                    set_agent_mcp_config(&mut agent, legacy_mcp_config);
-                } else {
-                    agent.mcp_servers = McpServerConfig::default();
-                }
-                agent
-            });
 
             DEFAULT_AGENT_NAME.to_string()
         };
@@ -1675,10 +1676,7 @@ mod tests {
     fn test_set_agent_mcp_config() {
         use std::collections::HashMap;
 
-        use crate::cli::chat::tools::custom_tool::{
-            CustomToolConfig,
-            TransportType,
-        };
+        use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 
         let mut agent = Agent::default();
         let mut config = McpServerConfig::default();
@@ -1687,7 +1685,6 @@ mod tests {
         config
             .mcp_servers
             .insert("workspace_server".to_string(), CustomToolConfig {
-                r#type: TransportType::Stdio,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],
@@ -1703,7 +1700,6 @@ mod tests {
         config
             .mcp_servers
             .insert("global_server".to_string(), CustomToolConfig {
-                r#type: TransportType::Stdio,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],
