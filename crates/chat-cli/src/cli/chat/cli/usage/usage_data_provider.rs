@@ -42,11 +42,6 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
             let mut bonus_credits = Vec::new();
 
             for item in usage_breakdown {
-                // Skip items without free trial info
-                if item.free_trial_info().is_none() {
-                    continue;
-                }
-
                 let resource_type = item.resource_type().map_or("Unknown", |rt| rt.as_str()).to_string();
                 let display_name = item
                     .display_name_plural()
