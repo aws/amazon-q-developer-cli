@@ -1,3 +1,0 @@
-# Enter your prompt content here
-
-Describe what this prompt should do...
