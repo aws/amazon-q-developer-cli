@@ -16,20 +16,13 @@ use crossterm::{
 use eyre::Result;
 use strip_ansi_escapes::strip_str;
 
-pub enum TextAlign {
-    Left,
-    Center,
-}
-
 pub fn draw_box(
     output: &mut impl Write,
     title: &str,
     content: &str,
     box_width: usize,
     border_color: Color,
-    align: Option<TextAlign>,
 ) -> Result<()> {
-    let align = align.unwrap_or(TextAlign::Center);
     let inner_width = box_width - 4; // account for │ and padding
 
     // wrap the single line into multiple lines respecting inner width
@@ -113,37 +106,23 @@ pub fn draw_box(
     );
     execute!(output, style::Print(top_vertical_border))?;
 
-    // Wrapped content with configurable alignment
+    // Centered wrapped content
     for line in wrapped_lines {
         let visible_line_len = strip_str(&line).len();
-
-        // Calculate padding within the inner content area (box_width - 4)
-        // This gives us the padding space available after accounting for borders and minimum padding
-        let available_padding = inner_width.saturating_sub(visible_line_len);
-
-        let (left_pad, right_pad) = match align {
-            TextAlign::Left => {
-                // Left align: 1 space on left, rest on right
-                (1, available_padding + 1)
-            },
-            TextAlign::Center => {
-                // Center align: split padding evenly
-                let left = available_padding / 2 + 1; // +1 for minimum padding
-                let right = available_padding - available_padding / 2 + 1; // +1 for minimum padding
-                (left, right)
-            },
-        };
-
-        let left_padding = " ".repeat(left_pad);
-        let right_padding = " ".repeat(right_pad);
+        let left_pad = box_width.saturating_sub(4).saturating_sub(visible_line_len) / 2;
 
         let content = format!(
-            "{}{}{}{}{}",
+            "{} {: <pad$}{}{: <rem$} {}",
             style::style("│").with(border_color),
-            left_padding,
+            "",
             line,
-            right_padding,
+            "",
             style::style("│").with(border_color),
+            pad = left_pad,
+            rem = box_width
+                .saturating_sub(4)
+                .saturating_sub(left_pad)
+                .saturating_sub(visible_line_len),
         );
         execute!(output, style::Print(format!("{}\n", content)))?;
     }
@@ -180,7 +159,6 @@ mod tests {
             short_tip,
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
-            None,
         )
         .expect("Failed to draw tip box");
 
@@ -192,7 +170,6 @@ mod tests {
             long_tip,
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
-            None,
         )
         .expect("Failed to draw tip box");
 
@@ -209,7 +186,6 @@ mod tests {
             long_tip_with_one_long_word.as_str(),
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
-            None,
         )
         .expect("Failed to draw tip box");
         // Test with a long tip with two long words that should wrap
@@ -220,7 +196,6 @@ mod tests {
             long_tip_with_two_long_words.as_str(),
             GREETING_BREAK_POINT,
             theme().ui.secondary_text,
-            None,
         )
         .expect("Failed to draw tip box");
 

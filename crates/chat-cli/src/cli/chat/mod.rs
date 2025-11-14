@@ -1232,7 +1232,6 @@ impl ChatSession {
                     &announcement_with_styling,
                     GREETING_BREAK_POINT,
                     crate::theme::theme().ui.secondary_text,
-                    Some(crate::cli::chat::util::ui::TextAlign::Left),
                 )?;
 
                 execute!(self.stderr, style::Print("\n"))?;
@@ -1388,7 +1387,6 @@ impl ChatSession {
                         tip,
                         GREETING_BREAK_POINT,
                         crate::theme::theme().ui.secondary_text,
-                        None,
                     )?;
                 }
             }
