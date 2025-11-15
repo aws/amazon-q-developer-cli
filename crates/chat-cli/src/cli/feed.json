@@ -12,13 +12,97 @@
     },
     {
       "type": "release",
-      "date": "2025-11-03",
-      "version": "1.999.0",
-      "title": "Version 1.999.0",
+      "date": "2025-11-17",
+      "version": "1.20.0",
+      "title": "Version 1.20.0",
       "changes": [
         {
+          "type": "added",
+          "description": "The Kiro CLI is here! Kiro CLI leverages the Kiro Auto agent to deliver the best results at the best price, in your terminal, and takes you from natural language, to code, to deployment. Kiro CLI supports different agent modes, MCPs, Kiro steering files, and custom agents, allowing you to mold the CLI to meet your needs."
+        }
+      ]
+    },
+        {
+      "type": "release",
+      "date": "2025-11-17",
+      "version": "1.19.7",
+      "title": "Version 1.19.7",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Kiro CLI announcement. Learn more at kiro.dev/cli-upgrade - [#3433](https://github.com/aws/amazon-q-developer-cli/pull/3433)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-13",
+      "version": "1.19.6",
+      "title": "Version 1.19.6",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Right arrow key being disabled - [#3439](https://github.com/aws/amazon-q-developer-cli/pull/3439)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-12",
+      "version": "1.19.5",
+      "title": "Version 1.19.5",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Minor bug fixes"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-11-07",
+      "version": "1.19.4",
+      "title": "Version 1.19.4",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Enhanced `delegate` tool UX and mechanics - [#3337](https://github.com/aws/amazon-q-developer-cli/pull/3337)"
+        },
+        {
+          "type": "added",
+          "description": "Warning when duplicate agents are loaded from the same directory - [#3335](https://github.com/aws/amazon-q-developer-cli/pull/3335)"
+        },
+        {
           "type": "changed",
-          "description": "Updated version for qv2 branch"
+          "description": "Block potentially dangerous commands from executing with the configured `execute_bash.allowedCommands` - [#3313](https://github.com/aws/amazon-q-developer-cli/pull/3313)"
+        },
+        {
+          "type": "fixed",
+          "description": "Expanding `~` in prompt `file:://` URIs - [#3301](https://github.com/aws/amazon-q-developer-cli/pull/3301)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-29",
+      "version": "1.19.3",
+      "title": "Version 1.19.3",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Racing condition between prompting and printing - [#3308](https://github.com/aws/amazon-q-developer-cli/pull/3308)"
+        }
+      ]
+    },
+    {
+      "type": "release",
+      "date": "2025-10-28",
+      "version": "1.19.2",
+      "title": "Version 1.19.2",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "`/model` failing to load Sonnet 4.5 - [#3288](https://github.com/aws/amazon-q-developer-cli/pull/3288)"
         }
       ]
     },
