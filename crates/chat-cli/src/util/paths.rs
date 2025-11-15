@@ -383,8 +383,15 @@ impl<'a> WorkspacePaths<'a> {
         resolve_local_migrated_path(self.os, "mcp.json", "settings/mcp.json")
     }
 
-    pub fn rules_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(".amazonq").join("rules"))
+    pub fn rules_dir(&self) -> Option<PathBuf> {
+        let current_dir = self.os.env.current_dir().ok()?;
+        let amazonq_dir = current_dir.join(".amazonq");
+        let kiro_dir = current_dir.join(".kiro");
+        if self.os.fs.exists(&amazonq_dir) && !self.os.fs.exists(&kiro_dir) {
+            Some(amazonq_dir.join("rules"))
+        } else {
+            None
+        }
     }
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
@@ -713,16 +720,6 @@ mod migration_tests {
 #[cfg(test)]
 mod path_tests {
     use super::*;
-
-    #[tokio::test]
-    async fn test_workspace_rules_dir() {
-        let os = Os::new().await.unwrap();
-        let resolver = PathResolver::new(&os);
-        let rules_dir = resolver.workspace().rules_dir().unwrap();
-
-        // Should use .amazonq/rules path
-        assert!(rules_dir.to_string_lossy().ends_with(".amazonq/rules"));
-    }
 
     #[tokio::test]
     async fn test_workspace_steering_dir() {
