@@ -732,16 +732,10 @@ impl Agents {
                 }
             }
 
-            // Add rules pattern only if .amazonq directory exists
-            if let Ok(current_dir) = os.env.current_dir() {
-                let amazonq_dir = current_dir.join(".amazonq");
-                if amazonq_dir.exists() {
-                    if let Ok(rules_dir) = resolver.workspace().rules_dir() {
-                        let rules_pattern =
-                            paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
-                        agent.resources.push(rules_pattern.into());
-                    }
-                }
+            // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
+            if let Some(rules_dir) = resolver.workspace().rules_dir() {
+                let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
+                agent.resources.push(rules_pattern.into());
             }
 
             agent.resources.insert(0, "file://AmazonQ.md".into());
@@ -1796,7 +1790,14 @@ mod tests {
         );
 
         // Create .amazonq directory and test again
-        std::fs::create_dir_all(temp_path.join(".amazonq")).unwrap();
+        os.fs.create_dir_all(temp_path.join(".amazonq")).await.unwrap();
+
+        // Ensure .kiro directory doesn't exist (rules_dir only returns Some when .amazonq exists but .kiro
+        // doesn't)
+        let kiro_path = temp_path.join(".kiro");
+        if os.fs.exists(&kiro_path) {
+            os.fs.remove_dir_all(&kiro_path).await.unwrap();
+        }
 
         let mut output = Vec::new();
         let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
