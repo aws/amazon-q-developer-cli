@@ -1216,16 +1216,26 @@ impl ChatSession {
         // Only show if we haven't reached the max count
         if show_count < KIRO_UPGRADE_MAX_SHOW_COUNT {
             let announcement_with_styling = crate::constants::kiro_upgrade_announcement();
+            let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
 
-            draw_box(
-                &mut self.stderr,
-                "",
-                &announcement_with_styling,
-                GREETING_BREAK_POINT,
-                crate::theme::theme().ui.secondary_text,
-            )?;
+            if is_small_screen {
+                // If the screen is small, print the announcement without a box
+                execute!(
+                    self.stderr,
+                    style::Print(&announcement_with_styling),
+                    style::Print("\n")
+                )?;
+            } else {
+                draw_box(
+                    &mut self.stderr,
+                    "",
+                    &announcement_with_styling,
+                    GREETING_BREAK_POINT,
+                    crate::theme::theme().ui.secondary_text,
+                )?;
 
-            execute!(self.stderr, style::Print("\n"))?;
+                execute!(self.stderr, style::Print("\n"))?;
+            }
 
             // Update the show count
             os.database.set_kiro_upgrade_show_count(show_count + 1)?;
@@ -1381,6 +1391,9 @@ impl ChatSession {
                 }
             }
 
+            // Show Kiro upgrade announcement before shortcuts (limited to 2 times)
+            self.show_kiro_upgrade_announcement(os).await?;
+
             // Always show shortcuts and separator
             execute!(
                 self.stderr,
@@ -1461,9 +1474,6 @@ impl ChatSession {
             };
             self.conversation.checkpoint_manager = checkpoint_manager;
         }
-
-        // Show Kiro upgrade announcement (limited to 2 times)
-        self.show_kiro_upgrade_announcement(os).await?;
 
         if let Some(user_input) = self.initial_input.take() {
             self.inner = Some(ChatState::HandleInput { input: user_input });

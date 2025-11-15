@@ -27,42 +27,52 @@ pub fn draw_box(
 
     // wrap the single line into multiple lines respecting inner width
     // Manually wrap the text by splitting at word boundaries, using visible length for styled text
+    // First split by newlines to preserve explicit line breaks
     let mut wrapped_lines = Vec::new();
-    let mut line = String::new();
 
-    for word in content.split_whitespace() {
-        let test_line = if line.is_empty() {
-            word.to_string()
-        } else {
-            format!("{} {}", line, word)
-        };
+    for paragraph in content.split('\n') {
+        if paragraph.is_empty() {
+            // Preserve empty lines
+            wrapped_lines.push(String::new());
+            continue;
+        }
 
-        let visible_len = strip_str(&test_line).len();
+        let mut line = String::new();
 
-        if visible_len <= inner_width {
-            line = test_line;
-        } else {
-            // Check if the word alone is too long
-            let word_visible_len = strip_str(word).len();
-            if word_visible_len >= inner_width {
-                // Word is too long, we need to break it (but this is rare with styled text)
-                if !line.is_empty() {
-                    wrapped_lines.push(line);
-                }
-                wrapped_lines.push(word.to_string());
-                line = String::new();
+        for word in paragraph.split_whitespace() {
+            let test_line = if line.is_empty() {
+                word.to_string()
             } else {
-                // Start a new line with this word
-                if !line.is_empty() {
-                    wrapped_lines.push(line);
+                format!("{} {}", line, word)
+            };
+
+            let visible_len = strip_str(&test_line).len();
+
+            if visible_len <= inner_width {
+                line = test_line;
+            } else {
+                // Check if the word alone is too long
+                let word_visible_len = strip_str(word).len();
+                if word_visible_len >= inner_width {
+                    // Word is too long, we need to break it (but this is rare with styled text)
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    wrapped_lines.push(word.to_string());
+                    line = String::new();
+                } else {
+                    // Start a new line with this word
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    line = word.to_string();
                 }
-                line = word.to_string();
             }
         }
-    }
 
-    if !line.is_empty() {
-        wrapped_lines.push(line);
+        if !line.is_empty() {
+            wrapped_lines.push(line);
+        }
     }
 
     let top_border = if title.is_empty() {
