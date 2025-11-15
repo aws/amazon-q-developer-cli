@@ -464,7 +464,7 @@ impl ChatArgs {
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
 // Maximum number of times to show the Kiro upgrade announcement
-const KIRO_UPGRADE_MAX_SHOW_COUNT: i64 = 2;
+const KIRO_UPGRADE_MAX_SHOW_COUNT: i64 = 5;
 
 const GREETING_BREAK_POINT: usize = 80;
 
