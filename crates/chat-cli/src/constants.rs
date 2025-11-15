@@ -225,7 +225,7 @@ pub fn kiro_upgrade_announcement() -> String {
     format!(
         "Kiro CLI is the next update of the Q CLI. Your existing Q Developer CLI workflows and subscription continue to work without any changes. You can update to Kiro CLI manually with {} today, or wait for the auto-update on 11/24 to apply the change. To learn more, go to {}.\n\nKiro CLI is licensed under, and by updating to it you agree to, the AWS Intellectual Property License ({}).",
         StyledText::command("q update"),
-        StyledText::command("kiro.dev/cli/upgrade"),
+        StyledText::command("kiro.dev/cli-upgrade"),
         StyledText::command("kiro.dev/license")
     )
 }

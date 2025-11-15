@@ -18,7 +18,7 @@
       "changes": [
         {
           "type": "added",
-          "description": "Update announcement - [#3433](https://github.com/aws/amazon-q-developer-cli/pull/3433)"
+          "description": "Kiro CLI announcement. Learn more at kiro.dev/cli-upgrade - [#3433](https://github.com/aws/amazon-q-developer-cli/pull/3433)"
         }
       ]
     },
