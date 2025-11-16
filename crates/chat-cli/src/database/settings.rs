@@ -50,6 +50,10 @@ pub enum Setting {
     TangentModeKey,
     #[strum(message = "Key binding for delegate command (single character)")]
     DelegateModeKey,
+    #[strum(message = "Auto-approve delegate launches (boolean)")]
+    DelegateAutoApprove,
+    #[strum(message = "Comma-separated list of agents to auto-approve (string)")]
+    DelegateAutoApproveAgents,
 
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
@@ -112,6 +116,8 @@ impl AsRef<str> for Setting {
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
             Self::DelegateModeKey => "chat.delegateModeKey",
+            Self::DelegateAutoApprove => "chat.delegateAutoApprove",
+            Self::DelegateAutoApproveAgents => "chat.delegateAutoApproveAgents",
 
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
@@ -163,6 +169,9 @@ impl TryFrom<&str> for Setting {
             "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
+            "chat.delegateModeKey" => Ok(Self::DelegateModeKey),
+            "chat.delegateAutoApprove" => Ok(Self::DelegateAutoApprove),
+            "chat.delegateAutoApproveAgents" => Ok(Self::DelegateAutoApproveAgents),
 
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),
