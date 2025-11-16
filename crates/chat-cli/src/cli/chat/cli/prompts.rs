@@ -49,6 +49,8 @@ const MAX_PROMPT_NAME_LENGTH: usize = 50;
 /// Regex for validating prompt names (alphanumeric, hyphens, underscores only)
 static PROMPT_NAME_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").unwrap());
 
+
+
 #[derive(Debug, Error)]
 pub enum GetPromptError {
     #[error("Prompt with name {0} does not exist")]
@@ -75,7 +77,7 @@ pub enum GetPromptError {
     Io(#[from] std::io::Error),
 }
 
-/// Represents a single prompt (local or global)
+/// Represents a single prompt (workspace or global)
 #[derive(Debug, Clone)]
 struct Prompt {
     name: String,
@@ -123,10 +125,10 @@ impl Prompt {
     }
 }
 
-/// Represents both local and global prompts for a given name
+/// Represents both workspace and global prompts for a given name
 #[derive(Debug)]
 struct Prompts {
-    local: Prompt,
+    workspace: Prompt,
     global: Prompt,
 }
 
@@ -134,7 +136,7 @@ impl Prompts {
     /// Create a new Prompts instance for the given name
     fn new(name: &str, os: &Os) -> Result<Self, GetPromptError> {
         let resolver = PathResolver::new(os);
-        let local_dir = resolver
+        let workspace_dir = resolver
             .workspace()
             .prompts_dir()
             .map_err(|e| GetPromptError::General(e.into()))?;
@@ -144,21 +146,21 @@ impl Prompts {
             .map_err(|e| GetPromptError::General(e.into()))?;
 
         Ok(Self {
-            local: Prompt::new(name, local_dir),
+            workspace: Prompt::new(name, workspace_dir),
             global: Prompt::new(name, global_dir),
         })
     }
 
-    /// Check if local prompt overrides a global one (both local and global exist)
-    fn has_local_override(&self) -> bool {
-        self.local.exists() && self.global.exists()
+    /// Check if workspace prompt overrides a global one (both workspace and global exist)
+    fn has_workspace_override(&self) -> bool {
+        self.workspace.exists() && self.global.exists()
     }
 
-    /// Find and load existing prompt content (local takes priority)
+    /// Find and load existing prompt content (workspace takes priority)
     fn load_existing(&self) -> Result<Option<(String, PathBuf)>, GetPromptError> {
-        if self.local.exists() {
-            let content = self.local.load_content()?;
-            Ok(Some((content, self.local.path.clone())))
+        if self.workspace.exists() {
+            let content = self.workspace.load_content()?;
+            Ok(Some((content, self.workspace.path.clone())))
         } else if self.global.exists() {
             let content = self.global.load_content()?;
             Ok(Some((content, self.global.path.clone())))
@@ -170,38 +172,37 @@ impl Prompts {
     /// Get all available prompt names from both directories
     fn get_available_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
         let resolver = PathResolver::new(os);
-        let mut prompt_names = std::collections::HashSet::new();
+        let mut all_names = std::collections::HashSet::new();
 
-        // Helper function to collect prompt names from a directory
-        let collect_from_dir =
-            |dir: PathBuf, names: &mut std::collections::HashSet<String>| -> Result<(), GetPromptError> {
-                if dir.exists() {
-                    for entry in fs::read_dir(&dir)? {
-                        let entry = entry?;
-                        let path = entry.path();
-                        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                            if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                let prompt = Prompt::new(file_stem, dir.clone());
-                                names.insert(prompt.name);
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            };
-
-        // Check global prompts
+        // Collect from global directory
         if let Ok(global_dir) = resolver.global().prompts_dir() {
-            collect_from_dir(global_dir, &mut prompt_names)?;
+            all_names.extend(collect_prompt_names(global_dir)?);
         }
 
-        // Check local prompts
-        if let Ok(local_dir) = resolver.workspace().prompts_dir() {
-            collect_from_dir(local_dir, &mut prompt_names)?;
+        // Collect from workspace directory
+        if let Ok(workspace_dir) = resolver.workspace().prompts_dir() {
+            all_names.extend(collect_prompt_names(workspace_dir)?);
         }
 
-        Ok(prompt_names.into_iter().collect())
+        Ok(all_names.into_iter().collect())
     }
+}
+
+/// Collect prompt names from a specific directory
+pub fn collect_prompt_names(dir: PathBuf) -> Result<Vec<String>, GetPromptError> {
+    let mut names = Vec::new();
+    if dir.exists() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
+                if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    names.push(file_stem.to_string());
+                }
+            }
+        }
+    }
+    Ok(names)
 }
 
 /// Validate prompt name to ensure it's safe and follows naming conventions
@@ -623,7 +624,7 @@ impl PromptsArgs {
 
         let mut longest_name = "";
 
-        // Update longest_name to include local prompts
+        // Update longest_name to include workspace prompts
         for name in &prompt_names {
             if name.contains(search_word.as_deref().unwrap_or("")) && name.len() > longest_name.len() {
                 longest_name = name;
@@ -705,26 +706,26 @@ impl PromptsArgs {
             .collect();
 
         if !filtered_names.is_empty() {
-            // Separate global and local prompts for display
+            // Separate global and workspace prompts for display
             let _global_dir = PathResolver::new(os).global().prompts_dir().ok();
-            let _local_dir = PathResolver::new(os).workspace().prompts_dir().ok();
+            let _workspace_dir = PathResolver::new(os).workspace().prompts_dir().ok();
 
             let mut global_prompts = Vec::new();
-            let mut local_prompts = Vec::new();
+            let mut workspace_prompts = Vec::new();
             let mut overridden_globals = Vec::new();
 
             for name in &filtered_names {
                 // Use the Prompts struct to check for conflicts
                 if let Ok(prompts) = Prompts::new(name, os) {
-                    let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
+                    let (workspace_exists, global_exists) = (prompts.workspace.exists(), prompts.global.exists());
 
                     if global_exists {
                         global_prompts.push(name);
                     }
 
-                    if local_exists {
-                        local_prompts.push(name);
-                        // Check for overrides using has_local_override method
+                    if workspace_exists {
+                        workspace_prompts.push(name);
+                        // Check for overrides using has_workspace_override method
                         if global_exists {
                             overridden_globals.push(name);
                         }
@@ -746,18 +747,18 @@ impl PromptsArgs {
                 }
             }
 
-            if !local_prompts.is_empty() {
+            if !workspace_prompts.is_empty() {
                 if !global_prompts.is_empty() {
                     queue!(session.stderr, style::Print("\n"))?;
                 }
                 queue!(
                     session.stderr,
                     style::SetAttribute(Attribute::Bold),
-                    style::Print(&format!("Local ({}):", crate::util::paths::workspace::PROMPTS_DIR)),
+                    style::Print(&format!("Workspace ({}):", crate::util::paths::workspace::PROMPTS_DIR)),
                     StyledText::reset_attributes(),
                     style::Print("\n"),
                 )?;
-                for name in &local_prompts {
+                for name in &workspace_prompts {
                     let has_global_version = overridden_globals.contains(name);
                     queue!(session.stderr, style::Print("- "), style::Print(name),)?;
                     if has_global_version {
@@ -867,7 +868,7 @@ pub enum PromptsSubcommand {
         /// Optional arguments for the prompt
         arguments: Option<Vec<String>>,
     },
-    /// Create a new local prompt
+    /// Create a new workspace prompt
     Create {
         /// Name of the prompt to create
         #[arg(short = 'n', long)]
@@ -875,23 +876,23 @@ pub enum PromptsSubcommand {
         /// Content of the prompt (if not provided, opens editor)
         #[arg(long)]
         content: Option<String>,
-        /// Create in global directory instead of local
+        /// Create in global directory instead of workspace
         #[arg(long)]
         global: bool,
     },
-    /// Edit an existing local prompt
+    /// Edit an existing workspace prompt
     Edit {
         /// Name of the prompt to edit
         name: String,
-        /// Edit global prompt instead of local
+        /// Edit global prompt instead of workspace
         #[arg(long)]
         global: bool,
     },
-    /// Remove an existing local prompt
+    /// Remove an existing workspace prompt
     Remove {
         /// Name of the prompt to remove
         name: String,
-        /// Remove global prompt instead of local
+        /// Remove global prompt instead of workspace
         #[arg(long)]
         global: bool,
     },
@@ -918,7 +919,7 @@ impl PromptsSubcommand {
     }
 
     async fn execute_details(name: String, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        // First try to find file-based prompt (global or local)
+        // First try to find file-based prompt (global or workspace)
         let file_prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         if let Some((content, source)) = file_prompts
             .load_existing()
@@ -1301,7 +1302,7 @@ impl PromptsSubcommand {
         name: String,
         arguments: Option<Vec<String>>,
     ) -> Result<ChatState, ChatError> {
-        // First try to find prompt (global or local)
+        // First try to find prompt (global or workspace)
         let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         if let Some((content, _)) = prompts
             .load_existing()
@@ -1333,10 +1334,10 @@ impl PromptsSubcommand {
             // Display the file-based prompt content to the user
             display_file_prompt_content(&name, &content, session)?;
 
-            // Handle local prompt
+            // Handle workspace prompt
             session.pending_prompts.clear();
 
-            // Create a PromptMessage from the local prompt content
+            // Create a PromptMessage from the workspace prompt content
             let prompt_message = PromptMessage {
                 role: PromptMessageRole::User,
                 content: PromptMessageContent::Text { text: content.clone() },
@@ -1348,7 +1349,7 @@ impl PromptsSubcommand {
             });
         }
 
-        // If not found locally, try MCP prompts
+        // If not found in workspace, try MCP prompts
         let prompts = match session
             .conversation
             .tool_manager
@@ -1473,11 +1474,11 @@ impl PromptsSubcommand {
         }
 
         // Check if prompt already exists in target location
-        let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
-        let target_exists = if global { global_exists } else { local_exists };
+        let (workspace_exists, global_exists) = (prompts.workspace.exists(), prompts.global.exists());
+        let target_exists = if global { global_exists } else { workspace_exists };
 
         if target_exists {
-            let location = if global { "global" } else { "local" };
+            let location = if global { "global" } else { "workspace" };
             queue!(
                 session.stderr,
                 style::Print("\n"),
@@ -1507,20 +1508,20 @@ impl PromptsSubcommand {
         }
 
         // Check if creating this prompt will cause or involve a conflict
-        let opposite_exists = if global { local_exists } else { global_exists };
+        let opposite_exists = if global { workspace_exists } else { global_exists };
 
-        if prompts.has_local_override() || opposite_exists {
+        if prompts.has_workspace_override() || opposite_exists {
             let (existing_scope, _creating_scope, override_message) = if !global {
                 (
                     "global",
-                    "local",
-                    "Creating this local prompt will override the global one.",
+                    "workspace",
+                    "Creating this workspace prompt will override the global one.",
                 )
             } else {
                 (
-                    "local",
+                    "workspace",
                     "global",
-                    "The local prompt will continue to override this global one.",
+                    "The workspace prompt will continue to override this global one.",
                 )
             };
 
@@ -1580,14 +1581,14 @@ impl PromptsSubcommand {
                 let target_prompt = if global {
                     &mut prompts.global
                 } else {
-                    &mut prompts.local
+                    &mut prompts.workspace
                 };
 
                 target_prompt
                     .save_content(&content)
                     .map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
-                let location = if global { "global" } else { "local" };
+                let location = if global { "global" } else { "workspace" };
                 queue!(
                     session.stderr,
                     style::Print("\n"),
@@ -1611,7 +1612,7 @@ impl PromptsSubcommand {
                 let target_prompt = if global {
                     &mut prompts.global
                 } else {
-                    &mut prompts.local
+                    &mut prompts.workspace
                 };
 
                 target_prompt
@@ -1629,7 +1630,7 @@ impl PromptsSubcommand {
                 // Try to open the editor
                 match open_editor_file(&target_prompt.path) {
                     Ok(()) => {
-                        let location = if global { "global" } else { "local" };
+                        let location = if global { "global" } else { "workspace" };
                         queue!(
                             session.stderr,
                             StyledText::success_fg(),
@@ -1693,7 +1694,7 @@ impl PromptsSubcommand {
         }
 
         let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-        let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
+        let (workspace_exists, global_exists) = (prompts.workspace.exists(), prompts.global.exists());
 
         // Find the target prompt to edit
         let target_prompt = if global {
@@ -1714,15 +1715,15 @@ impl PromptsSubcommand {
                 });
             }
             &prompts.global
-        } else if local_exists {
-            &prompts.local
+        } else if workspace_exists {
+            &prompts.workspace
         } else if global_exists {
-            // Found global prompt, but user wants to edit local
+            // Found global prompt, but user wants to edit workspace
             queue!(
                 session.stderr,
                 style::Print("\n"),
                 StyledText::warning_fg(),
-                style::Print("Local prompt "),
+                style::Print("Workspace prompt "),
                 StyledText::brand_fg(),
                 style::Print(&name),
                 StyledText::warning_fg(),
@@ -1739,7 +1740,7 @@ impl PromptsSubcommand {
                 style::Print("/prompts create "),
                 style::Print(&name),
                 StyledText::warning_fg(),
-                style::Print(" to create a local override.\n"),
+                style::Print(" to create a workspace override.\n"),
                 StyledText::reset(),
             )?;
             return Ok(ChatState::PromptUser {
@@ -1762,7 +1763,7 @@ impl PromptsSubcommand {
             });
         };
 
-        let location = if global { "global" } else { "local" };
+        let location = if global { "global" } else { "workspace" };
         queue!(
             session.stderr,
             style::Print("\n"),
@@ -1820,7 +1821,7 @@ impl PromptsSubcommand {
         global: bool,
     ) -> Result<ChatState, ChatError> {
         let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
-        let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
+        let (workspace_exists, global_exists) = (prompts.workspace.exists(), prompts.global.exists());
 
         // Find the target prompt to remove
         let target_prompt = if global {
@@ -1841,14 +1842,14 @@ impl PromptsSubcommand {
                 });
             }
             &prompts.global
-        } else if local_exists {
-            &prompts.local
+        } else if workspace_exists {
+            &prompts.workspace
         } else if global_exists {
             queue!(
                 session.stderr,
                 style::Print("\n"),
                 StyledText::warning_fg(),
-                style::Print("Local prompt "),
+                style::Print("Workspace prompt "),
                 StyledText::brand_fg(),
                 style::Print(&name),
                 StyledText::warning_fg(),
@@ -1882,7 +1883,7 @@ impl PromptsSubcommand {
             });
         };
 
-        let location = if global { "global" } else { "local" };
+        let location = if global { "global" } else { "workspace" };
 
         // Ask for confirmation
         queue!(
@@ -2070,34 +2071,34 @@ mod tests {
 
         // Create test prompts in temp directory structure
         let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
-        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
+        let workspace_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
 
         create_prompt_file(&global_dir, "global_only", "Global content");
         create_prompt_file(&global_dir, "shared", "Global shared");
-        create_prompt_file(&local_dir, "local_only", "Local content");
-        create_prompt_file(&local_dir, "shared", "Local shared");
+        create_prompt_file(&workspace_dir, "workspace_only", "Workspace content");
+        create_prompt_file(&workspace_dir, "shared", "Workspace shared");
 
         // Test that we can read the files directly
         assert_eq!(
             fs::read_to_string(global_dir.join("global_only.md")).unwrap(),
             "Global content"
         );
-        assert_eq!(fs::read_to_string(local_dir.join("shared.md")).unwrap(), "Local shared");
+        assert_eq!(fs::read_to_string(workspace_dir.join("shared.md")).unwrap(), "Workspace shared");
     }
 
     #[test]
-    fn test_local_prompts_override_global() {
+    fn test_workspace_prompts_override_global() {
         let temp_dir = TempDir::new().unwrap();
 
-        // Create global and local directories
+        // Create global and workspace directories
         let global_dir = temp_dir.path().join(crate::util::paths::global::PROMPTS_DIR);
-        let local_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
+        let workspace_dir = temp_dir.path().join(crate::util::paths::workspace::PROMPTS_DIR);
 
         // Create prompts: one with same name in both directories, one unique to each
         create_prompt_file(&global_dir, "shared", "Global version");
         create_prompt_file(&global_dir, "global_only", "Global only");
-        create_prompt_file(&local_dir, "shared", "Local version");
-        create_prompt_file(&local_dir, "local_only", "Local only");
+        create_prompt_file(&workspace_dir, "shared", "Workspace version");
+        create_prompt_file(&workspace_dir, "workspace_only", "Workspace only");
 
         // Simulate the priority logic from get_available_prompt_names()
         let mut names = Vec::new();
@@ -2114,40 +2115,40 @@ mod tests {
             }
         }
 
-        // Add local prompts (with override logic)
-        for entry in fs::read_dir(&local_dir).unwrap() {
+        // Add workspace prompts (with override logic)
+        for entry in fs::read_dir(&workspace_dir).unwrap() {
             let entry = entry.unwrap();
             let path = entry.path();
             if path.extension().and_then(|s| s.to_str()) == Some("md") {
                 if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                    let prompt = Prompt::new(file_stem, local_dir.clone());
+                    let prompt = Prompt::new(file_stem, workspace_dir.clone());
                     let name = prompt.name;
-                    // Remove duplicate if it exists (local overrides global)
+                    // Remove duplicate if it exists (workspace overrides global)
                     names.retain(|n| n != &name);
                     names.push(name);
                 }
             }
         }
 
-        // Verify: should have 3 unique prompts (shared, global_only, local_only)
+        // Verify: should have 3 unique prompts (shared, global_only, workspace_only)
         assert_eq!(names.len(), 3);
         assert!(names.contains(&"shared".to_string()));
         assert!(names.contains(&"global_only".to_string()));
-        assert!(names.contains(&"local_only".to_string()));
+        assert!(names.contains(&"workspace_only".to_string()));
 
-        // Verify only one "shared" exists (local overrode global)
+        // Verify only one "shared" exists (workspace overrode global)
         let shared_count = names.iter().filter(|&name| name == "shared").count();
         assert_eq!(shared_count, 1);
 
-        // Simulate load_prompt_by_name() priority: local first, then global
-        let shared_content = if local_dir.join("shared.md").exists() {
-            fs::read_to_string(local_dir.join("shared.md")).unwrap()
+        // Simulate load_prompt_by_name() priority: workspace first, then global
+        let shared_content = if workspace_dir.join("shared.md").exists() {
+            fs::read_to_string(workspace_dir.join("shared.md")).unwrap()
         } else {
             fs::read_to_string(global_dir.join("shared.md")).unwrap()
         };
 
-        // Verify local version was loaded
-        assert_eq!(shared_content, "Local version");
+        // Verify workspace version was loaded
+        assert_eq!(shared_content, "Workspace version");
     }
 
     #[test]

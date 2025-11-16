@@ -1,9 +1,12 @@
+use std::collections::HashSet;
 use std::io::{
     BufReader,
     Cursor,
     Write,
     stdout,
 };
+use std::sync::Arc;
+use std::time::Duration;
 
 use crossterm::execute;
 use crossterm::terminal::{
@@ -22,9 +25,12 @@ use rustyline::{
 };
 use skim::prelude::*;
 use tempfile::NamedTempFile;
+use tokio::sync::broadcast;
 
+use super::cli::prompts;
 use super::context::ContextManager;
 use crate::os::Os;
+use crate::util::paths::PathResolver;
 
 pub struct SkimCommandSelector {
     os: Os,
@@ -39,6 +45,51 @@ impl SkimCommandSelector {
             os,
             context_manager,
             tool_names,
+        }
+    }
+}
+
+pub struct SkimPromptSelector {
+    prompts_sender: broadcast::Sender<super::tool_manager::PromptQuery>,
+    prompts_receiver: broadcast::Receiver<super::tool_manager::PromptQueryResult>,
+    os: Os,
+}
+
+impl SkimPromptSelector {
+    pub fn new(
+        prompts_sender: broadcast::Sender<super::tool_manager::PromptQuery>,
+        prompts_receiver: broadcast::Receiver<super::tool_manager::PromptQueryResult>,
+        os: Os,
+    ) -> Self {
+        Self {
+            prompts_sender,
+            prompts_receiver,
+            os,
+        }
+    }
+}
+
+impl ConditionalEventHandler for SkimPromptSelector {
+    fn handle(&self, _evt: &rustyline::Event, _n: RepeatCount, _positive: bool, ctx: &EventContext<'_>) -> Option<Cmd> {
+        // Only trigger skim if the line is empty (first character is @)
+        let line = ctx.line();
+
+        if !line.is_empty() {
+            // If there's already text, just insert @ normally
+            return Some(Cmd::Insert(1, "@".to_string()));
+        }
+
+        // Launch skim prompt selector
+        match select_prompt_template(
+            self.prompts_sender.clone(),
+            self.prompts_receiver.resubscribe(),
+            &self.os,
+        ) {
+            Ok(Some(command)) => Some(Cmd::Insert(1, format!("@{}", command))),
+            _ => {
+                // If cancelled or error, do nothing
+                Some(Cmd::Noop)
+            },
         }
     }
 }
@@ -203,6 +254,106 @@ pub fn select_context_paths_with_skim(context_manager: &ContextManager) -> Resul
             Ok(Some((paths, has_global)))
         },
         _ => Ok(None), // User cancelled selection
+    }
+}
+
+/// Select a prompt template using skim
+pub fn select_prompt_template(
+    prompts_sender: broadcast::Sender<super::tool_manager::PromptQuery>,
+    mut prompts_receiver: broadcast::Receiver<super::tool_manager::PromptQueryResult>,
+    os: &Os,
+) -> Result<Option<String>> {
+    use super::tool_manager::{
+        PromptQuery,
+        PromptQueryResult,
+    };
+
+    // Send query to get MCP prompts
+    prompts_sender
+        .send(PromptQuery::List)
+        .map_err(|e| eyre!("Failed to send prompt query: {}", e))?;
+
+    // We poll on the receiver for a fixed number of attempts because we are trying to
+    // receive something managed by an async channel from a sync context.
+    let mcp_prompts = {
+        let mut attempts = 0;
+        let max_attempts = 5;
+        loop {
+            match prompts_receiver.try_recv() {
+                Ok(PromptQueryResult::List(list)) => break list,
+                Ok(_) => return Err(eyre!("Unexpected response type")),
+                Err(_e) if attempts < max_attempts - 1 => {
+                    attempts += 1;
+                    std::thread::sleep(Duration::from_millis(100));
+                },
+                Err(e) => {
+                    return Err(eyre!(
+                        "Failed to receive prompt list after {} attempts: {:?}",
+                        max_attempts,
+                        e
+                    ));
+                },
+            }
+        }
+    };
+
+    // Get prompt names from global and workspace directories
+    let resolver = PathResolver::new(os);
+    
+    let global_prompts = if let Ok(dir) = resolver.global().prompts_dir() {
+        prompts::collect_prompt_names(dir).map_err(|e| eyre!("Failed to collect global prompts: {}", e))?
+    } else {
+        Vec::new()
+    };
+    
+    let workspace_prompts = if let Ok(dir) = resolver.workspace().prompts_dir() {
+        prompts::collect_prompt_names(dir).map_err(|e| eyre!("Failed to collect workspace prompts: {}", e))?
+    } else {
+        Vec::new()
+    };
+    
+    // Combine all prompts with source labels
+    // Priority: Workspace > Global (workspace overrides global for duplicates)
+    let mut all_prompt_entries: Vec<String> = Vec::new();
+    
+    // Create set for checking duplicates
+    let workspace_set: HashSet<_> = workspace_prompts.iter().cloned().collect();
+
+    // Add MCP prompts
+    for prompt_name in mcp_prompts.keys() {
+        all_prompt_entries.push(format!("{} (MCP)", prompt_name));
+    }
+
+    // Add workspace prompts
+    for prompt_name in &workspace_prompts {
+        all_prompt_entries.push(format!("{} (Workspace)", prompt_name));
+    }
+
+    // Add global prompts (only if not already in workspace)
+    for prompt_name in &global_prompts {
+        if !workspace_set.contains(prompt_name) {
+            all_prompt_entries.push(format!("{} (Global)", prompt_name));
+        }
+    }
+
+    all_prompt_entries.sort();
+
+    if all_prompt_entries.is_empty() {
+        return Ok(None);
+    }
+
+    // Launch skim with prompt entries
+    match launch_skim_selector(&all_prompt_entries, "Select prompt template: ", false)? {
+        Some(selections) if !selections.is_empty() => {
+            // Extract the prompt name without the source label
+            let selected = &selections[0];
+            if let Some(prompt_name) = selected.split(" (").next() {
+                Ok(Some(prompt_name.to_string()))
+            } else {
+                Ok(Some(selected.clone()))
+            }
+        },
+        _ => Ok(None),
     }
 }
 
