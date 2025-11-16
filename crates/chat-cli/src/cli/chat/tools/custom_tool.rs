@@ -109,6 +109,9 @@ pub struct CustomTool {
     /// Actual tool name as recognized by its MCP server. This differs from the tool names as they
     /// are seen by the model since they are not prefixed by its MCP server name.
     pub name: String,
+    /// Display name for the tool (may be an alias). Used for UI display purposes.
+    /// If None, falls back to using `name`.
+    pub display_name: Option<String>,
     /// The name of the MCP (Model Context Protocol) server that hosts this tool.
     /// This is used to identify which server instance the tool belongs to and is
     /// prefixed to the tool name when presented to the model for disambiguation.
