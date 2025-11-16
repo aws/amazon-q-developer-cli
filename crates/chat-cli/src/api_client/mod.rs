@@ -459,6 +459,7 @@ impl ApiClient {
         self.client
             .get_usage_limits()
             .set_origin(Some(amzn_codewhisperer_client::types::Origin::KiroCli))
+            .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()))
             .send()
             .await
             .map_err(ApiClientError::GetUsageLimitsError)

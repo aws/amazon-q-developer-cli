@@ -118,15 +118,16 @@ async fn render_available_billing(
             style::SetAttribute(style::Attribute::Reset),
             style::Print(format!(
                 " ({:.2} of {:.0} covered in plan)\n",
-                breakdown.used, breakdown.limit
+                breakdown.used.clamp(0.0, breakdown.limit),
+                breakdown.limit
             )),
         )?;
 
         // Progress bar
         let window_width = session.terminal_width();
         let bar_width = std::cmp::min(window_width, 80);
-        let filled_width = (breakdown.percentage as f32 / 100.0 * bar_width as f32) as usize;
-        let empty_width = bar_width - filled_width;
+        let filled_width = ((breakdown.percentage as f32 / 100.0 * bar_width as f32) as usize).clamp(0, bar_width);
+        let empty_width = bar_width.saturating_sub(filled_width);
 
         // Determine bar color based on percentage
         let bar_color = if breakdown.percentage >= 100 {
@@ -144,7 +145,7 @@ async fn render_available_billing(
             StyledText::secondary_fg(),
             style::Print("█".repeat(empty_width)),
             StyledText::reset(),
-            style::Print(format!(" {}%\n", breakdown.percentage)),
+            style::Print(format!(" {}%\n", breakdown.percentage.clamp(0, 100))),
         )?;
 
         // Overage information for this breakdown
