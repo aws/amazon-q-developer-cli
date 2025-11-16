@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::{
     Arc,
     Mutex,
+    OnceLock,
 };
 
 use eyre::Result;
@@ -97,60 +98,69 @@ impl PasteState {
     }
 }
 
-pub const COMMANDS: &[&str] = &[
-    "/clear",
-    "/help",
-    "/editor",
-    "/reply",
-    "/issue",
-    "/quit",
-    "/tools",
-    "/tools trust",
-    "/tools untrust",
-    "/tools trust-all",
-    "/tools reset",
-    "/mcp",
-    "/model",
-    "/experiment",
-    "/agent",
-    "/agent help",
-    "/agent list",
-    "/agent create",
-    "/agent delete",
-    "/agent rename",
-    "/agent set",
-    "/agent schema",
-    "/agent generate",
-    "/prompts",
-    "/context",
-    "/context help",
-    "/context show",
-    "/context show --expand",
-    "/context add",
-    "/context rm",
-    "/context clear",
-    "/hooks",
-    "/hooks help",
-    "/hooks add",
-    "/hooks rm",
-    "/hooks enable",
-    "/hooks disable",
-    "/hooks enable-all",
-    "/hooks disable-all",
-    "/compact",
-    "/compact help",
-    "/usage",
-    "/changelog",
-    "/save",
-    "/load",
-    "/paste",
-    "/subscribe",
-];
+/// Cache for static slash commands from SlashCommand enum
+static COMMANDS_CACHE: OnceLock<Vec<String>> = OnceLock::new();
 
-/// Generate dynamic command list including experiment-based commands when enabled
+/// Returns a cached list of static slash commands from SlashCommand enum.
+/// This list is generated once at first call and never changes during runtime.
+/// Does NOT include experiment-based commands.
+fn get_static_slash_commands() -> &'static Vec<String> {
+    COMMANDS_CACHE.get_or_init(|| {
+        use clap::CommandFactory;
+
+        use super::cli::SlashCommand;
+
+        let mut commands = Vec::new();
+        let slash_command = SlashCommand::command();
+
+        for subcommand in slash_command.get_subcommands() {
+            let name = subcommand.get_name();
+
+            // Skip hidden commands
+            if subcommand.is_hide_set() {
+                continue;
+            }
+
+            // Add the main command
+            commands.push(format!("/{}", name));
+
+            // Add aliases
+            for alias in subcommand.get_all_aliases() {
+                commands.push(format!("/{}", alias));
+            }
+
+            // If this command has subcommands, add them too
+            if subcommand.has_subcommands() {
+                for nested in subcommand.get_subcommands() {
+                    if !nested.is_hide_set() {
+                        commands.push(format!("/{} {}", name, nested.get_name()));
+
+                        // Add nested aliases
+                        for alias in nested.get_all_aliases() {
+                            commands.push(format!("/{} {}", name, alias));
+                        }
+                    }
+                }
+            }
+        }
+
+        // Add /help explicitly since it's not a SlashCommand variant but is handled by clap.
+        commands.push("/help".to_string());
+        commands.sort();
+        commands
+    })
+}
+
+/// Returns the complete list of available commands including:
+/// - Static slash commands (cached from SlashCommand enum)
+/// - Experiment-based commands (dynamically evaluated based on current experiment status)
 pub fn get_available_commands(os: &Os) -> Vec<&'static str> {
-    let mut commands = COMMANDS.to_vec();
+    // Get static slash commands (cached)
+    let mut commands: Vec<&'static str> = get_static_slash_commands().iter().map(|s| s.as_str()).collect();
+
+    // Add experiment-based commands (dynamically evaluated)
     commands.extend(ExperimentManager::get_commands(os));
+
     commands.sort();
     commands
 }
@@ -159,13 +169,13 @@ pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
 pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
 
 /// Complete commands that start with a slash
-fn complete_command(commands: Vec<&'static str>, word: &str, start: usize) -> (usize, Vec<String>) {
+fn complete_command(commands: Vec<&str>, word: &str, start: usize) -> (usize, Vec<String>) {
     (
         start,
         commands
             .iter()
             .filter(|p| p.starts_with(word))
-            .map(|s| (*s).to_owned())
+            .map(|s| (*s).to_string())
             .collect(),
     )
 }
