@@ -100,7 +100,7 @@ impl TestCaseBuilder {
             model = model.with_response(response);
         }
 
-        let mut agent = Agent::new(snapshot, Arc::new(model), McpManager::new().spawn()).await?;
+        let mut agent = Agent::new(snapshot, Arc::new(model), McpManager::default().spawn()).await?;
 
         let mut test_base = TestBase::new().await;
         for file in self.files {

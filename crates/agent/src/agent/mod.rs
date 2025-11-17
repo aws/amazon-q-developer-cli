@@ -58,6 +58,7 @@ use agent_loop::{
 use chrono::Utc;
 use consts::MAX_RESOURCE_FILE_LENGTH;
 use futures::stream::FuturesUnordered;
+use mcp::McpServerEvent;
 use permissions::evaluate_tool_permission;
 use protocol::{
     AgentError,
@@ -347,7 +348,13 @@ impl Agent {
             }
 
             let mut results = FuturesUnordered::new();
-            for config in &self.cached_mcp_configs.configs {
+
+            for config in self
+                .cached_mcp_configs
+                .configs
+                .iter()
+                .filter(|config| config.is_enabled())
+            {
                 let Ok(rx) = self
                     .mcp_manager_handle
                     .launch_server(config.server_name.clone(), config.config.clone())
@@ -482,7 +489,18 @@ impl Agent {
                         }
                         self.agent_event_buf.push(evt.into());
                     }
-                }
+                },
+
+                evt = self.mcp_manager_handle.recv() => {
+                    match evt {
+                        Ok(evt) => {
+                            self.handle_mcp_events(evt).await;
+                        },
+                        Err(e) => {
+                            error!(?e, "mcp manager handle closed");
+                        }
+                    }
+                },
             }
         }
     }
@@ -1678,6 +1696,11 @@ impl Agent {
         self.send_request(args).await?;
         self.set_active_state(ActiveState::ExecutingRequest).await;
         Ok(())
+    }
+
+    async fn handle_mcp_events(&mut self, evt: McpServerEvent) {
+        let converted_evt = AgentEvent::Mcp(evt);
+        self.agent_event_buf.push(converted_evt);
     }
 }
 
