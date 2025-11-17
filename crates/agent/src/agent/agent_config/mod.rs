@@ -277,6 +277,13 @@ impl LoadedMcpServerConfig {
             source,
         }
     }
+
+    pub fn is_enabled(&self) -> bool {
+        match &self.config {
+            McpServerConfig::Local(local_mcp_server_config) => !local_mcp_server_config.disabled,
+            McpServerConfig::Remote(remote_mcp_server_config) => !remote_mcp_server_config.disabled,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

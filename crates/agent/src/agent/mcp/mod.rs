@@ -1,8 +1,116 @@
-mod actor;
+//! # MCP (Model Context Protocol) Module
+//!
+//! This module provides a manager for launching and interacting with multiple MCP servers.
+//! It implements a multi-layered architecture with asynchronous communication between components.
+//!
+//! ## Architecture Overview
+//!
+//! The module consists of the following key constructs organized in multiple layers:
+//!
+//! ### Management Layer
+//!
+//! - **[`McpManager`]**: The central manager that runs in its own async task. It maintains the
+//!   lifecycle of multiple MCP server instances and routes requests to the appropriate servers.
+//!
+//! - **[`McpManagerHandle`]**: A cloneable handle for interacting with the `McpManager` from other
+//!   parts of the application. It provides a safe, async API for launching servers, querying tool
+//!   specifications, executing tools, and receiving server events.
+//!
+//! ### Actor Layer
+//!
+//! - **[`McpServerActor`]** (in [`actor`] module): Individual server actors that manage the
+//!   lifecycle of a single MCP server process. Each actor handles initialization, tool execution,
+//!   and communication with its associated server.
+//!
+//! - **[`McpServerActorHandle`]** (in [`actor`] module): A handle for interacting with a specific
+//!   `McpServerActor`. Used internally by `McpManager` to communicate with servers.
+//!
+//! ### Service Layer
+//!
+//! - **`McpService`** (in `service` module): Implements the `rmcp::Service` trait to handle
+//!   server-to-client requests and notifications. Created during server launch and consumed by the
+//!   rmcp crate.
+//!
+//! - **`RunningMcpService`** (in `service` module): A handle to a running MCP server that wraps the
+//!   rmcp service. Provides methods for calling tools, listing tools/prompts, and handles
+//!   authentication/token refresh for remote servers.
+//!
+//! - **`rmcp::RunningService`** (from rmcp crate): The underlying service from the rmcp library
+//!   that handles the actual MCP protocol communication over stdio (for local servers) or HTTP (for
+//!   remote servers).
+//!
+//! ## Communication Patterns
+//!
+//! The module uses two primary communication patterns:
+//!
+//! ### 1. Request/Response Pattern
+//!
+//! ```text
+//! McpManagerHandle      McpManager      McpServerActor    RunningMcpService    rmcp::RunningService
+//!       |                    |                 |                  |                     |
+//!       |--[LaunchServer]--->|                 |                  |                     |
+//!       |                    |----[spawn]----->|                  |                     |
+//!       |                    |                 |--[McpService]--->|                     |
+//!       |                    |                 |                  |--[serve]----------->|
+//!       |<--[response]-------| (initializing)  |                  |                     |
+//!       |                    |                 |<--[initialized]--|                     |
+//!       |                    |                 |                  |                     |
+//!       |--[GetToolSpecs]--->|                 |                  |                     |
+//!       |                    |--[get_tools]--->|                  |                     |
+//!       |                    |                 | (returns cached) |                     |
+//!       |                    |<--[tools]-------|                  |                     |
+//!       |<--[tools]----------|                 |                  |                     |
+//!       |                    |                 |                  |                     |
+//!       |--[ExecuteTool]---->|                 |                  |                     |
+//!       |                    |--[execute]----->|                  |                     |
+//!       |                    |                 |--[call_tool]---->|                     |
+//!       |                    |                 |                  |--[call_tool]------->|
+//!       |<--[oneshot rx]-----|                 |                  |                     |
+//!       |                    |                 |                  |<--[result]----------|
+//!       |                    |                 |<--[result]-------|                     |
+//!       |<--[result via rx]------------------------[async]--------|                     |
+//! ```
+//!
+//! ### 2. Event Broadcasting Pattern
+//!
+//! ```text
+//! McpServerActor              McpManager              McpManagerHandle
+//!       |                          |                         |
+//!       |--[Initialized event]---->|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          | (moves server from      |
+//!       |                          |  initializing_servers   |
+//!       |                          |  to servers HashMap)    |
+//!       |                          |                         |
+//!       |--[OauthRequest event]--->|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          |                         |
+//!       |--[InitializeError]------>|                         |
+//!       |                          |--[forward event]------->|
+//!       |                          | (removes from           |
+//!       |                          |  initializing_servers)  |
+//! ```
+//!
+//! ## Server Lifecycle
+//!
+//! MCP servers go through the following states:
+//!
+//! 1. **Not Launched**: Server configuration exists but no actor has been spawned
+//! 2. **Initializing**: `McpServerActor` has been spawned and is stored in
+//!    `McpManager::initializing_servers`. The actor is establishing connection and fetching initial
+//!    metadata (tools, prompts)
+//! 3. **Initialized**: Server is ready and stored in `McpManager::servers`. Tools can now be
+//!    executed
+//! 4. **Error**: Initialization failed, server is removed from `initializing_servers`
+
+pub mod actor;
+pub mod oauth_util;
 mod service;
 pub mod types;
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::time::Duration;
 
 use actor::{
     McpServerActor,
@@ -10,23 +118,30 @@ use actor::{
     McpServerActorEvent,
     McpServerActorHandle,
 };
-use futures::stream::FuturesUnordered;
 use rmcp::model::CallToolResult;
 use serde::{
     Deserialize,
     Serialize,
 };
 use serde_json::Value;
-use tokio::sync::oneshot;
-use tokio_stream::StreamExt as _;
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{
+    broadcast,
+    mpsc,
+    oneshot,
+};
 use tracing::{
     debug,
     error,
+    info,
     warn,
 };
 use types::Prompt;
 
 use super::agent_loop::types::ToolSpec;
+use super::consts::DEFAULT_MCP_CREDENTIAL_PATH;
+use super::util::path::expand_path;
+use super::util::providers::RealProvider;
 use super::util::request_channel::{
     RequestReceiver,
     new_request_channel,
@@ -37,24 +152,40 @@ use crate::agent::util::request_channel::{
     respond,
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct McpManagerHandle {
     /// Sender for sending requests to the tool manager task
-    sender: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
+    request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
+    mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
+}
+
+impl Clone for McpManagerHandle {
+    fn clone(&self) -> Self {
+        Self {
+            request_tx: self.request_tx.clone(),
+            mcp_main_loop_to_handle_server_event_rx: self.mcp_main_loop_to_handle_server_event_rx.resubscribe(),
+        }
+    }
 }
 
 impl McpManagerHandle {
-    fn new(sender: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>) -> Self {
-        Self { sender }
+    fn new(
+        request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
+        mcp_main_loop_to_handle_server_event_rx: broadcast::Receiver<McpServerActorEvent>,
+    ) -> Self {
+        Self {
+            request_tx,
+            mcp_main_loop_to_handle_server_event_rx,
+        }
     }
 
     pub async fn launch_server(
-        &self,
+        &mut self,
         name: String,
         config: McpServerConfig,
     ) -> Result<oneshot::Receiver<LaunchServerResult>, McpManagerError> {
         match self
-            .sender
+            .request_tx
             .send_recv(McpManagerRequest::LaunchServer {
                 server_name: name,
                 config,
@@ -72,7 +203,7 @@ impl McpManagerHandle {
 
     pub async fn get_tool_specs(&self, server_name: String) -> Result<Vec<ToolSpec>, McpManagerError> {
         match self
-            .sender
+            .request_tx
             .send_recv(McpManagerRequest::GetToolSpecs { server_name })
             .await
             .unwrap_or(Err(McpManagerError::Channel))?
@@ -87,7 +218,7 @@ impl McpManagerHandle {
 
     pub async fn get_prompts(&self, server_name: String) -> Result<Vec<Prompt>, McpManagerError> {
         match self
-            .sender
+            .request_tx
             .send_recv(McpManagerRequest::GetPrompts { server_name })
             .await
             .unwrap_or(Err(McpManagerError::Channel))?
@@ -107,7 +238,7 @@ impl McpManagerHandle {
         args: Option<serde_json::Map<String, Value>>,
     ) -> Result<oneshot::Receiver<ExecuteToolResult>, McpManagerError> {
         match self
-            .sender
+            .request_tx
             .send_recv(McpManagerRequest::ExecuteTool {
                 server_name,
                 tool_name,
@@ -123,55 +254,66 @@ impl McpManagerHandle {
             ))),
         }
     }
+
+    pub async fn recv(&mut self) -> Result<McpServerEvent, RecvError> {
+        self.mcp_main_loop_to_handle_server_event_rx
+            .recv()
+            .await
+            .map(|evt| evt.into())
+    }
 }
 
 #[derive(Debug)]
 pub struct McpManager {
     request_tx: RequestSender<McpManagerRequest, McpManagerResponse, McpManagerError>,
     request_rx: RequestReceiver<McpManagerRequest, McpManagerResponse, McpManagerError>,
+    server_event_tx: mpsc::Sender<McpServerActorEvent>,
+    server_event_rx: mpsc::Receiver<McpServerActorEvent>,
+
+    cred_path: PathBuf,
 
     initializing_servers: HashMap<String, (McpServerActorHandle, oneshot::Sender<LaunchServerResult>)>,
     servers: HashMap<String, McpServerActorHandle>,
+    event_buf: Vec<McpServerActorEvent>,
 }
 
 impl McpManager {
-    pub fn new() -> Self {
+    pub fn new(cred_path: PathBuf) -> Self {
         let (request_tx, request_rx) = new_request_channel();
+        let (server_event_tx, server_event_rx) = mpsc::channel::<McpServerActorEvent>(100);
+
         Self {
             request_tx,
             request_rx,
+            server_event_tx,
+            server_event_rx,
+            cred_path,
             initializing_servers: HashMap::new(),
             servers: HashMap::new(),
+            event_buf: Vec::<McpServerActorEvent>::new(),
         }
     }
 
     pub fn spawn(self) -> McpManagerHandle {
         let request_tx = self.request_tx.clone();
+        let (mcp_main_loop_to_handle_server_event_tx, mcp_main_loop_to_handle_server_event_rx) =
+            broadcast::channel::<McpServerActorEvent>(100);
 
         tokio::spawn(async move {
-            self.main_loop().await;
+            self.main_loop(mcp_main_loop_to_handle_server_event_tx).await;
         });
 
-        McpManagerHandle::new(request_tx)
+        McpManagerHandle::new(request_tx, mcp_main_loop_to_handle_server_event_rx)
     }
 
-    async fn main_loop(mut self) {
+    async fn main_loop(mut self, mcp_main_loop_to_handle_server_event_tx: broadcast::Sender<McpServerActorEvent>) {
         loop {
-            let mut initializing_servers = FuturesUnordered::new();
-            for (name, (handle, _)) in &mut self.initializing_servers {
-                let name_clone = name.clone();
-                initializing_servers.push(async { (name_clone, handle.recv().await) });
-            }
-            let mut initialized_servers = FuturesUnordered::new();
-            for (name, handle) in &mut self.servers {
-                let name_clone = name.clone();
-                initialized_servers.push(async { (name_clone, handle.recv().await) });
-            }
+            self.event_buf
+                .drain(..)
+                .for_each(|evt| _ = mcp_main_loop_to_handle_server_event_tx.send(evt));
 
             tokio::select! {
                 req = self.request_rx.recv() => {
-                    std::mem::drop(initializing_servers);
-                    std::mem::drop(initialized_servers);
                     let Some(req) = req else {
                         warn!("Tool manager request channel has closed, exiting");
                         break;
@@ -179,20 +321,11 @@ impl McpManager {
                     let res = self.handle_mcp_manager_request(req.payload).await;
                     respond!(req, res);
                 },
-                res = initializing_servers.next(), if !initializing_servers.is_empty() => {
-                    std::mem::drop(initializing_servers);
-                    std::mem::drop(initialized_servers);
-                    if let Some((name, evt)) = res {
-                        self.handle_initializing_mcp_actor_event(name, evt).await;
+                res = self.server_event_rx.recv() => {
+                    if let Some(evt) = res {
+                        self.handle_mcp_actor_event(evt);
                     }
-                },
-                res = initialized_servers.next(), if !initialized_servers.is_empty() => {
-                    std::mem::drop(initializing_servers);
-                    std::mem::drop(initialized_servers);
-                    if let Some((name, evt)) = res {
-                        self.handle_mcp_actor_event(name, evt).await;
-                    }
-                },
+                }
             }
         }
     }
@@ -212,8 +345,10 @@ impl McpManager {
                 } else if self.servers.contains_key(&name) {
                     return Err(McpManagerError::ServerAlreadyLaunched { name });
                 }
+                let event_tx = self.server_event_tx.clone();
+                let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
                 let (tx, rx) = oneshot::channel();
-                let handle = McpServerActor::spawn(name.clone(), config);
+
                 self.initializing_servers.insert(name, (handle, tx));
                 Ok(McpManagerResponse::LaunchServer(rx))
             },
@@ -238,44 +373,50 @@ impl McpManager {
         }
     }
 
-    async fn handle_mcp_actor_event(&mut self, server_name: String, evt: Option<McpServerActorEvent>) {
-        debug!(?server_name, ?evt, "Received event from an MCP actor");
-        debug_assert!(self.servers.contains_key(&server_name));
-    }
+    fn handle_mcp_actor_event(&mut self, evt: McpServerActorEvent) {
+        // TODO: keep a record of all the different server events received in this layer?
+        match &evt {
+            McpServerActorEvent::Initialized {
+                server_name,
+                serve_duration: _,
+                list_tools_duration: _,
+                list_prompts_duration: _,
+            } => {
+                let Some((handle, result_tx)) = self.initializing_servers.remove(server_name) else {
+                    warn!(?server_name, ?evt, "event was not from an initializing MCP server");
+                    return;
+                };
 
-    async fn handle_initializing_mcp_actor_event(&mut self, server_name: String, evt: Option<McpServerActorEvent>) {
-        debug!(?server_name, ?evt, "Received event from initializing MCP actor");
-        debug_assert!(self.initializing_servers.contains_key(&server_name));
+                if let Err(e) = result_tx.send(Ok(())) {
+                    error!(?server_name, ?e, "failed to send server initialized message");
+                }
 
-        let Some((handle, tx)) = self.initializing_servers.remove(&server_name) else {
-            warn!(?server_name, ?evt, "event was not from an initializing MCP server");
-            return;
-        };
-
-        // Event should always exist, otherwise indicates a bug with the initialization logic.
-        let Some(evt) = evt else {
-            let _ = tx.send(Err(McpManagerError::Custom("Server channel closed".to_string())));
-            self.initializing_servers.remove(&server_name);
-            return;
-        };
-
-        // First event from an initializing server should only be either of these Initialize variants.
-        match evt {
-            McpServerActorEvent::Initialized { .. } => {
-                let _ = tx.send(Ok(()));
-                self.servers.insert(server_name, handle);
+                if self.servers.insert(server_name.clone(), handle).is_some() {
+                    warn!(?server_name, "duplicated server. old server dropped");
+                }
             },
-            McpServerActorEvent::InitializeError(msg) => {
-                let _ = tx.send(Err(McpManagerError::Custom(msg)));
-                self.initializing_servers.remove(&server_name);
+            McpServerActorEvent::InitializeError { server_name, error } => {
+                if let Some((_, result_tx)) = self.initializing_servers.remove(server_name) {
+                    if let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone()))) {
+                        error!(?server_name, ?e, "failed to send server initialized message");
+                    }
+                }
+            },
+            McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
+                info!(?server_name, ?oauth_url, "received oauth request");
             },
         }
+        self.event_buf.push(evt);
     }
 }
 
 impl Default for McpManager {
     fn default() -> Self {
-        Self::new()
+        let expanded_path =
+            expand_path(DEFAULT_MCP_CREDENTIAL_PATH, &RealProvider).expect("failed to expand default credential path");
+        let default_path = PathBuf::from(expanded_path.as_ref());
+
+        Self::new(default_path)
     }
 }
 
@@ -326,4 +467,50 @@ pub enum McpManagerError {
     Channel,
     #[error("{}", .0)]
     Custom(String),
+}
+
+/// MCP events relevant to agent operations.
+/// Provides abstraction over [McpServerActorEvent] to avoid leaking implementation details.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum McpServerEvent {
+    /// The MCP server has launched successfully
+    Initialized {
+        server_name: String,
+        /// Time taken to launch the server
+        serve_duration: Duration,
+        /// Time taken to list all tools.
+        ///
+        /// None if the server does not support tools, or there was an error fetching tools.
+        list_tools_duration: Option<Duration>,
+        /// Time taken to list all prompts
+        ///
+        /// None if the server does not support prompts, or there was an error fetching prompts.
+        list_prompts_duration: Option<Duration>,
+    },
+    /// The MCP server failed to initialize successfully
+    InitializeError { server_name: String, error: String },
+    /// An OAuth authentication request from the MCP server
+    OauthRequest { server_name: String, oauth_url: String },
+}
+
+impl From<McpServerActorEvent> for McpServerEvent {
+    fn from(value: McpServerActorEvent) -> Self {
+        match value {
+            McpServerActorEvent::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            } => Self::Initialized {
+                server_name,
+                serve_duration,
+                list_tools_duration,
+                list_prompts_duration,
+            },
+            McpServerActorEvent::InitializeError { server_name, error } => Self::InitializeError { server_name, error },
+            McpServerActorEvent::OauthRequest { server_name, oauth_url } => {
+                Self::OauthRequest { server_name, oauth_url }
+            },
+        }
+    }
 }
