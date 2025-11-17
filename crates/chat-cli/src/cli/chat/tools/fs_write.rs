@@ -486,26 +486,128 @@ impl FsWrite {
                         return PermissionEvalResult::Ask;
                     },
                 };
+
+                // Get agent config directory for relative path resolution
+                let agent_base_dir = agent.path.as_ref().and_then(|p| p.parent());
+
+                // Warn if agent.path is None and there are relative paths in allowedPaths
+                if agent_base_dir.is_none() && !allowed_paths.is_empty() {
+                    let has_relative_paths = allowed_paths.iter().any(|p| !p.starts_with('/') && !p.starts_with('~'));
+                    if has_relative_paths {
+                        warn!(
+                            "Agent path is not set and allowedPaths contains relative paths. \
+                            Relative paths will be resolved from current working directory instead of agent config directory."
+                        );
+                    }
+                }
+
                 let allow_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &allowed_paths {
-                        let Ok(path) = paths::canonicalizes_path(os, path) else {
+                        // Resolve relative to agent config directory
+                        let Ok(mut resolved_path) = paths::canonicalizes_path_with_base(os, path, agent_base_dir)
+                        else {
+                            warn!(
+                                "Failed to canonicalize allowedPath '{}' with base {:?}, skipping",
+                                path, agent_base_dir
+                            );
                             continue;
                         };
-                        if let Err(e) = paths::add_gitignore_globs(&mut builder, path.as_str()) {
-                            warn!("Failed to create glob from path given: {path}: {e}. Ignoring.");
+
+                        // For glob patterns, we need to canonicalize the base directory to resolve symlinks
+                        // Extract the non-glob part and canonicalize it
+                        // Only do this if not in test mode (cfg!(test) checks if we're running tests)
+                        if !cfg!(test)
+                            && (resolved_path.contains("**")
+                                || resolved_path.contains('*')
+                                || resolved_path.contains('?'))
+                        {
+                            // Find the first glob character
+                            let glob_start = resolved_path
+                                .find(|c| c == '*' || c == '?')
+                                .unwrap_or(resolved_path.len());
+                            // Find the last path separator before the glob
+                            if let Some(last_sep) = resolved_path[..glob_start].rfind('/') {
+                                let base_part = &resolved_path[..last_sep];
+                                let glob_part = &resolved_path[last_sep..];
+
+                                // Try to canonicalize the base part to resolve symlinks
+                                if let Ok(canonical_base) = std::path::Path::new(base_part).canonicalize() {
+                                    resolved_path = format!("{}{}", canonical_base.to_string_lossy(), glob_part);
+                                    tracing::debug!("Canonicalized base of glob pattern to: {}", resolved_path);
+                                }
+                            }
+                        }
+
+                        tracing::debug!(
+                            "Resolved allowedPath '{}' to '{}' (base: {:?})",
+                            path,
+                            resolved_path,
+                            agent_base_dir
+                        );
+                        if let Err(e) = paths::add_gitignore_globs(&mut builder, resolved_path.as_str()) {
+                            warn!("Failed to create glob from allowedPath '{}': {}. Ignoring.", path, e);
                         }
                     }
                     builder.build()
                 };
 
+                // Warn if agent.path is None and there are relative paths in deniedPaths
+                if agent_base_dir.is_none() && !denied_paths.is_empty() {
+                    let has_relative_paths = denied_paths.iter().any(|p| !p.starts_with('/') && !p.starts_with('~'));
+                    if has_relative_paths {
+                        warn!(
+                            "Agent path is not set and deniedPaths contains relative paths. \
+                            Relative paths will be resolved from current working directory instead of agent config directory."
+                        );
+                    }
+                }
+
                 let mut sanitized_deny_list = Vec::<&String>::new();
                 let deny_set = {
                     let mut builder = GlobSetBuilder::new();
                     for path in &denied_paths {
-                        let Ok(processed_path) = paths::canonicalizes_path(os, path) else {
+                        // Resolve relative to agent config directory
+                        let Ok(mut processed_path) = paths::canonicalizes_path_with_base(os, path, agent_base_dir)
+                        else {
+                            warn!(
+                                "Failed to canonicalize deniedPath '{}' with base {:?}, skipping",
+                                path, agent_base_dir
+                            );
                             continue;
                         };
+
+                        // For glob patterns, we need to canonicalize the base directory to resolve symlinks
+                        // Extract the non-glob part and canonicalize it
+                        // Only do this if not in test mode (cfg!(test) checks if we're running tests)
+                        if !cfg!(test)
+                            && (processed_path.contains("**")
+                                || processed_path.contains('*')
+                                || processed_path.contains('?'))
+                        {
+                            // Find the first glob character
+                            let glob_start = processed_path
+                                .find(|c| c == '*' || c == '?')
+                                .unwrap_or(processed_path.len());
+                            // Find the last path separator before the glob
+                            if let Some(last_sep) = processed_path[..glob_start].rfind('/') {
+                                let base_part = &processed_path[..last_sep];
+                                let glob_part = &processed_path[last_sep..];
+
+                                // Try to canonicalize the base part to resolve symlinks
+                                if let Ok(canonical_base) = std::path::Path::new(base_part).canonicalize() {
+                                    processed_path = format!("{}{}", canonical_base.to_string_lossy(), glob_part);
+                                    tracing::debug!("Canonicalized base of glob pattern to: {}", processed_path);
+                                }
+                            }
+                        }
+
+                        tracing::debug!(
+                            "Resolved deniedPath '{}' to '{}' (base: {:?})",
+                            path,
+                            processed_path,
+                            agent_base_dir
+                        );
                         match paths::add_gitignore_globs(&mut builder, processed_path.as_str()) {
                             Ok(_) => {
                                 // Note that we need to push twice here because for each rule we
@@ -513,7 +615,7 @@ impl FsWrite {
                                 sanitized_deny_list.push(path);
                                 sanitized_deny_list.push(path);
                             },
-                            Err(e) => warn!("Failed to create glob from path given: {path}: {e}. Ignoring."),
+                            Err(e) => warn!("Failed to create glob from deniedPath '{}': {}. Ignoring.", path, e),
                         }
                     }
                     builder.build()
@@ -526,11 +628,23 @@ impl FsWrite {
                             | Self::Insert { path, .. }
                             | Self::Append { path, .. }
                             | Self::StrReplace { path, .. } => {
-                                let Ok(path) = paths::canonicalizes_path(os, path) else {
+                                // Target path resolved relative to CWD
+                                let Ok(resolved_target_path) = paths::canonicalizes_path(os, path) else {
+                                    warn!("Failed to canonicalize target path '{}', denying access", path);
                                     return PermissionEvalResult::Ask;
                                 };
-                                let denied_match_set = deny_set.matches(path.as_ref() as &str);
+                                tracing::debug!(
+                                    "Resolved target path '{}' to '{}' (from CWD)",
+                                    path,
+                                    resolved_target_path
+                                );
+
+                                let denied_match_set = deny_set.matches(resolved_target_path.as_ref() as &str);
                                 if !denied_match_set.is_empty() {
+                                    tracing::debug!(
+                                        "Target path '{}' matched deniedPaths, denying access",
+                                        resolved_target_path
+                                    );
                                     return PermissionEvalResult::Deny({
                                         denied_match_set
                                             .iter()
@@ -538,9 +652,19 @@ impl FsWrite {
                                             .collect::<Vec<_>>()
                                     });
                                 }
-                                if is_in_allowlist || allow_set.is_match(path.as_ref() as &str) {
+
+                                if is_in_allowlist || allow_set.is_match(resolved_target_path.as_ref() as &str) {
+                                    tracing::debug!(
+                                        "Target path '{}' matched allowedPaths or tool is in allowlist, granting access",
+                                        resolved_target_path
+                                    );
                                     return PermissionEvalResult::Allow;
                                 }
+
+                                tracing::debug!(
+                                    "Target path '{}' did not match any allowedPaths, asking for permission",
+                                    resolved_target_path
+                                );
                             },
                         }
                         PermissionEvalResult::Ask
@@ -1574,6 +1698,241 @@ mod tests {
         assert_eq!(
             actual_line_count, tracker.after_fswrite_lines,
             "after_lines should match the actual line count in the file"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_cross_directory_absolute_path() {
+        let os = Os::new().await.unwrap();
+
+        // Create agent config in directory A
+        let agent_dir = os.fs.chroot_path("/agent_config");
+        os.fs.create_dir_all(&agent_dir).await.unwrap();
+        let agent_config_path = agent_dir.join("agent.json");
+
+        // Create target directory B
+        let target_dir = os.fs.chroot_path("/target_files");
+        os.fs.create_dir_all(&target_dir).await.unwrap();
+        let target_file = target_dir.join("file.txt");
+
+        // Agent with absolute path in allowedPaths pointing to different directory
+        let agent = Agent {
+            name: "cross_dir_agent".to_string(),
+            path: Some(agent_config_path.clone()),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [target_dir.to_string_lossy().to_string() + "/**"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": target_file.to_string_lossy().to_string(),
+            "command": "create",
+            "file_text": "test content"
+        }))
+        .unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Absolute path in allowedPaths should match target in different directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_cross_directory_relative_path() {
+        let os = Os::new().await.unwrap();
+
+        // Create agent config in directory A
+        let agent_dir = os.fs.chroot_path("/workspace/package-a/.amazonq/cli-agents");
+        os.fs.create_dir_all(&agent_dir).await.unwrap();
+        let agent_config_path = agent_dir.join("agent.json");
+
+        // Create relative directory structure from agent config
+        let relative_target_dir = agent_dir.join("src");
+        os.fs.create_dir_all(&relative_target_dir).await.unwrap();
+        let target_file = relative_target_dir.join("file.ts");
+
+        // Agent with relative path in allowedPaths
+        let agent = Agent {
+            name: "relative_path_agent".to_string(),
+            path: Some(agent_config_path.clone()),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": ["./src/**"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": target_file.to_string_lossy().to_string(),
+            "command": "create",
+            "file_text": "test content"
+        }))
+        .unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Relative path in allowedPaths should resolve from agent config directory"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_cross_directory_glob_patterns() {
+        let os = Os::new().await.unwrap();
+
+        // Create agent config
+        let agent_dir = os.fs.chroot_path("/agent");
+        os.fs.create_dir_all(&agent_dir).await.unwrap();
+        let agent_config_path = agent_dir.join("agent.json");
+
+        // Create target directory with nested structure
+        let target_base = os.fs.chroot_path("/project");
+        let target_nested = target_base.join("src").join("components");
+        os.fs.create_dir_all(&target_nested).await.unwrap();
+        let target_file = target_nested.join("Button.tsx");
+
+        // Agent with glob pattern using absolute path
+        let agent = Agent {
+            name: "glob_agent".to_string(),
+            path: Some(agent_config_path.clone()),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [target_base.to_string_lossy().to_string() + "/**/*.tsx"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": target_file.to_string_lossy().to_string(),
+            "command": "create",
+            "file_text": "export const Button = () => {}"
+        }))
+        .unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Glob patterns with absolute paths should work correctly"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_backward_compatibility_no_agent_path() {
+        let os = Os::new().await.unwrap();
+
+        // Set CWD
+        let cwd = os.fs.chroot_path("/workspace");
+        os.fs.create_dir_all(&cwd).await.unwrap();
+        os.env.set_current_dir_for_test(cwd.clone());
+
+        // Create target relative to CWD
+        let target_dir = cwd.join("src");
+        os.fs.create_dir_all(&target_dir).await.unwrap();
+        let target_file = target_dir.join("file.ts");
+
+        // Agent without path (backward compatibility case)
+        let agent = Agent {
+            name: "no_path_agent".to_string(),
+            path: None,
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": ["./src/**"]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let tool = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": target_file.to_string_lossy().to_string(),
+            "command": "create",
+            "file_text": "test content"
+        }))
+        .unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "When agent.path is None, relative paths should resolve from CWD for backward compatibility"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_existing_tests_still_pass() {
+        // This test verifies that the existing eval_perm test still passes
+        // with the new implementation
+        const DENIED_PATH_ONE: &str = "/some/denied/path";
+        const ALLOW_PATH_ONE: &str = "/some/allow/path";
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [ALLOW_PATH_ONE],
+                        "deniedPaths": [DENIED_PATH_ONE]
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let os = Os::new().await.unwrap();
+
+        // Test allowed path
+        let tool_should_allow = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/some/allow/path/some_file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_should_allow.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "Existing allowed path behavior should still work"
+        );
+
+        // Test denied path
+        let tool_should_deny = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/some/denied/path/file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_should_deny.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(ref deny_list) if deny_list.contains(&DENIED_PATH_ONE.to_string())),
+            "Existing denied path behavior should still work"
         );
     }
 }

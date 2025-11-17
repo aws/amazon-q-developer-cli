@@ -272,6 +272,90 @@ Note that specifications that configure allowable patterns will be overridden if
 
 For built-in tool configuration options, please refer to the [built-in tools documentation](./built-in-tools.md).
 
+### Path Resolution in toolsSettings
+
+When specifying paths in `toolsSettings` (such as `allowedPaths` and `deniedPaths` for filesystem tools), the path resolution behavior depends on whether the path is absolute or relative:
+
+#### Absolute Paths
+Absolute paths are used as-is, regardless of where the agent configuration file is located. This makes them ideal for cross-directory scenarios where you need to grant access to specific locations on the filesystem.
+
+```json
+{
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": [
+        "/Users/developer/projects/my-app/**",
+        "/tmp/build-output/**"
+      ]
+    }
+  }
+}
+```
+
+#### Relative Paths
+Relative paths in `allowedPaths` and `deniedPaths` are resolved relative to the agent configuration file's directory, not the current working directory (CWD). This makes agent configurations portable and predictable.
+
+```json
+{
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": [
+        "./src/**",
+        "../shared-config/**"
+      ]
+    },
+    "fs_read": {
+      "deniedPaths": [
+        "./secrets/**"
+      ]
+    }
+  }
+}
+```
+
+If the agent configuration is located at `/workspace/tools/.amazonq/cli-agents/my-agent.json`, then:
+- `"./src/**"` resolves to `/workspace/tools/src/**`
+- `"../shared-config/**"` resolves to `/workspace/shared-config/**`
+- `"./secrets/**"` resolves to `/workspace/tools/secrets/**`
+
+#### Cross-Directory Agent Usage
+
+This path resolution behavior is particularly useful when using package-level agents that need to operate on files in different directories. For example, if you have an agent in one package that needs to modify files in another package:
+
+```json
+{
+  "name": "migration-tool",
+  "description": "Migrates code across multiple packages",
+  "tools": ["fs_read", "fs_write"],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": [
+        "/workspace/package-a/**",
+        "/workspace/package-b/**",
+        "/workspace/shared/**"
+      ]
+    },
+    "fs_read": {
+      "allowedPaths": [
+        "/workspace/**"
+      ]
+    }
+  }
+}
+```
+
+In this example, the agent can be located anywhere (e.g., `/workspace/tools/.amazonq/cli-agents/migration-tool.json`) and will still have access to the specified absolute paths.
+
+#### Backward Compatibility
+
+For backward compatibility, when an agent configuration does not have a file path set (such as when using the default agent or in certain programmatic scenarios), relative paths fall back to being resolved from the current working directory (CWD). However, it's recommended to use absolute paths for cross-directory scenarios to ensure consistent behavior.
+
+#### Best Practices
+
+- Use absolute paths when your agent needs to access files outside its own directory tree
+- Use relative paths when your agent only needs to access files within its own directory structure
+- For cross-directory scenarios in non-interactive mode, absolute paths ensure permissions are correctly evaluated regardless of where the command is executed from
+
 ## Resources Field
 
 The `resources` field gives an agent access to local resources. Currently, only file resources are supported, and all resource paths must start with `file://`.

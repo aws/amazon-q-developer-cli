@@ -152,14 +152,38 @@ pub fn logs_dir() -> Result<PathBuf> {
 
 /// Canonicalizes path given by expanding the path given
 pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
+    canonicalizes_path_with_base(os, path_as_str, None)
+}
+
+/// Canonicalizes path with optional base directory for resolving relative paths
+///
+/// # Arguments
+/// * `os` - The OS context for environment and filesystem access
+/// * `path_as_str` - The path string to canonicalize
+/// * `base_dir` - Optional base directory for resolving relative paths. When Some and path is
+///   relative, the path will be resolved relative to this directory. When None or path is absolute,
+///   uses existing behavior (resolve from CWD).
+///
+/// # Returns
+/// The canonicalized absolute path as a String
+pub fn canonicalizes_path_with_base(os: &Os, path_as_str: &str, base_dir: Option<&std::path::Path>) -> Result<String> {
     let context = |input: &str| Ok(os.env.get(input).ok());
     let home_dir_fn = || os.env.home().map(|p| p.to_string_lossy().to_string());
 
     let expanded = shellexpand::full_with_context(path_as_str, home_dir_fn, context)?;
+
     let path_buf = if !expanded.starts_with("/") {
-        let current_dir = os.env.current_dir()?;
-        current_dir.join(expanded.as_ref() as &str)
+        // Path is relative
+        if let Some(base) = base_dir {
+            // Resolve relative to provided base directory
+            base.join(expanded.as_ref() as &str)
+        } else {
+            // Resolve relative to current working directory
+            let current_dir = os.env.current_dir()?;
+            current_dir.join(expanded.as_ref() as &str)
+        }
     } else {
+        // Path is absolute, use as-is
         PathBuf::from(expanded.as_ref() as &str)
     };
 
@@ -329,5 +353,165 @@ impl<'a> GlobalPaths<'a> {
             .ok_or(DirectoryError::NoHomeDirectory)?
             .join("amazon-q")
             .join("data.sqlite3"))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::os::Os;
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_absolute_path_ignores_base() {
+        let os = Os::new().await.unwrap();
+
+        // Create a test directory structure
+        let test_dir = os.env.current_dir().unwrap().join("test_base");
+        os.fs.create_dir_all(&test_dir).await.unwrap();
+
+        let absolute_path = os.env.current_dir().unwrap().join("absolute_test");
+        os.fs.create_dir_all(&absolute_path).await.unwrap();
+
+        let absolute_path_str = absolute_path.to_string_lossy().to_string();
+
+        // When base_dir is provided but path is absolute, base_dir should be ignored
+        let result = canonicalizes_path_with_base(&os, &absolute_path_str, Some(&test_dir)).unwrap();
+
+        // Result should match the absolute path, not be relative to base_dir
+        assert_eq!(result, absolute_path.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&test_dir).await.ok();
+        os.fs.remove_dir_all(&absolute_path).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_relative_path_with_base() {
+        let os = Os::new().await.unwrap();
+
+        // Create base directory and a subdirectory within it
+        let base_dir = os.env.current_dir().unwrap().join("base_test");
+        let sub_dir = base_dir.join("subdir");
+        os.fs.create_dir_all(&sub_dir).await.unwrap();
+
+        // Relative path should resolve from base_dir
+        let result = canonicalizes_path_with_base(&os, "subdir", Some(&base_dir)).unwrap();
+
+        assert_eq!(result, sub_dir.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&base_dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_relative_path_without_base() {
+        let os = Os::new().await.unwrap();
+
+        // Create a subdirectory in CWD
+        let cwd = os.env.current_dir().unwrap();
+        let sub_dir = cwd.join("cwd_subdir");
+        os.fs.create_dir_all(&sub_dir).await.unwrap();
+
+        // When base_dir is None, relative path should resolve from CWD
+        let result = canonicalizes_path_with_base(&os, "cwd_subdir", None).unwrap();
+
+        assert_eq!(result, sub_dir.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&sub_dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_tilde_expansion() {
+        let os = Os::new().await.unwrap();
+
+        // Test that tilde gets expanded correctly
+        let result = canonicalizes_path_with_base(&os, "~", None).unwrap();
+
+        // Should expand to home directory
+        let home = os.env.home().unwrap();
+        assert_eq!(result, home.to_string_lossy().to_string());
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_env_variable_expansion() {
+        let os = Os::new().await.unwrap();
+
+        // Set a test environment variable
+        unsafe {
+            os.env.set_var("TEST_PATH_VAR", "/test/env/path");
+        }
+
+        // Create the directory so canonicalization works
+        let test_path = PathBuf::from("/test/env/path");
+        os.fs.create_dir_all(&test_path).await.unwrap();
+
+        // Test environment variable expansion
+        let result = canonicalizes_path_with_base(&os, "$TEST_PATH_VAR", None).unwrap();
+
+        assert_eq!(result, test_path.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&test_path).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_relative_with_dot_slash() {
+        let os = Os::new().await.unwrap();
+
+        // Create base directory and a subdirectory within it
+        let base_dir = os.env.current_dir().unwrap().join("base_dot_test");
+        let sub_dir = base_dir.join("src");
+        os.fs.create_dir_all(&sub_dir).await.unwrap();
+
+        // Relative path with ./ prefix should resolve from base_dir
+        let result = canonicalizes_path_with_base(&os, "./src", Some(&base_dir)).unwrap();
+
+        assert_eq!(result, sub_dir.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&base_dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_backward_compatibility() {
+        let os = Os::new().await.unwrap();
+
+        // Create a test directory in CWD
+        let cwd = os.env.current_dir().unwrap();
+        let test_dir = cwd.join("compat_test");
+        os.fs.create_dir_all(&test_dir).await.unwrap();
+
+        // Test that canonicalizes_path (without base) still works as before
+        let result_old = canonicalizes_path(&os, "compat_test").unwrap();
+        let result_new = canonicalizes_path_with_base(&os, "compat_test", None).unwrap();
+
+        // Both should produce the same result
+        assert_eq!(result_old, result_new);
+        assert_eq!(result_old, test_dir.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&test_dir).await.ok();
+    }
+
+    #[tokio::test]
+    async fn test_canonicalizes_path_with_base_nonexistent_path() {
+        let os = Os::new().await.unwrap();
+
+        let base_dir = os.env.current_dir().unwrap().join("base_nonexist");
+        os.fs.create_dir_all(&base_dir).await.unwrap();
+
+        // Path that doesn't exist should still be normalized (not canonicalized)
+        let result = canonicalizes_path_with_base(&os, "nonexistent/path", Some(&base_dir)).unwrap();
+
+        // Should return normalized path even if it doesn't exist
+        let expected = base_dir.join("nonexistent/path");
+        let normalized = normalize_path(&expected);
+        assert_eq!(result, normalized.to_string_lossy().to_string());
+
+        // Cleanup
+        os.fs.remove_dir_all(&base_dir).await.ok();
     }
 }
