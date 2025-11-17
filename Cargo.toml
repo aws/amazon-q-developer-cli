@@ -43,7 +43,7 @@ clap_complete = "4.5.46"
 clap_complete_fig = "4.4.0"
 color-eyre = "0.6.5"
 color-print = "0.3.5"
-convert_case = "0.8.0"
+convert_case = "0.9.0"
 cookie = "0.18.1"
 criterion = "0.6.0"
 crossterm = { version = "0.28.1", features = ["event-stream", "events"] }
