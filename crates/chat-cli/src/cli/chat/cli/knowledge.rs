@@ -1,4 +1,8 @@
 use std::io::Write;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use clap::Subcommand;
 use crossterm::queue;
@@ -56,6 +60,12 @@ pub enum KnowledgeSubcommand {
     Cancel {
         /// Operation ID to cancel (optional - cancels most recent if not provided)
         operation_id: Option<String>,
+    },
+    /// Fix knowledge base directory names after agent file path changes
+    Fix {
+        /// Actually apply the changes (default is dry-run)
+        #[arg(long)]
+        apply: bool,
     },
 }
 
@@ -128,6 +138,7 @@ impl KnowledgeSubcommand {
             KnowledgeSubcommand::Cancel { operation_id } => {
                 Self::handle_cancel(os, session, operation_id.as_deref()).await
             },
+            KnowledgeSubcommand::Fix { apply } => Self::handle_fix(os, session, *apply).await,
         }
     }
 
@@ -526,6 +537,263 @@ impl KnowledgeSubcommand {
         }
     }
 
+    /// Handle fix operation - migrates knowledge base directories after agent file moves
+    async fn handle_fix(os: &Os, session: &mut ChatSession, apply: bool) -> OperationResult {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{
+            Hash,
+            Hasher,
+        };
+
+        let kb_root = match crate::util::paths::PathResolver::new(os).global().knowledge_bases_dir() {
+            Ok(dir) => dir,
+            Err(e) => return OperationResult::Error(format!("Failed to get knowledge bases directory: {e}")),
+        };
+
+        if !kb_root.exists() {
+            return OperationResult::Info("Knowledge base directory does not exist yet".to_string());
+        }
+
+        queue!(
+            session.stderr,
+            style::Print(format!("🔍 Scanning: {}\n\n", kb_root.display()))
+        )
+        .unwrap();
+
+        let search_paths = vec![
+            crate::util::paths::PathResolver::new(os).global().agents_dir().ok(),
+            crate::util::paths::PathResolver::new(os).workspace().agents_dir().ok(),
+        ];
+
+        let mut changes = Vec::new();
+
+        for entry in std::fs::read_dir(&kb_root).ok().into_iter().flatten().flatten() {
+            let path = entry.path();
+            if !path.is_dir()
+                || path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_none_or(|n| n.starts_with('.'))
+            {
+                continue;
+            }
+
+            let dir_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            let (agent_name, old_hash) = Self::parse_kb_directory_name(dir_name);
+
+            if old_hash.is_none() {
+                queue!(
+                    session.stderr,
+                    style::Print(format!("⏭️  Skipping '{dir_name}' (no hash)\n"))
+                )
+                .unwrap();
+                continue;
+            }
+
+            let Some(agent_file) = Self::find_agent_file(&agent_name, &search_paths) else {
+                queue!(
+                    session.stderr,
+                    StyledText::warning_fg(),
+                    style::Print(format!("⚠️  Agent not found: '{agent_name}'\n")),
+                    StyledText::reset()
+                )
+                .unwrap();
+                continue;
+            };
+
+            let mut hasher = DefaultHasher::new();
+            agent_file.hash(&mut hasher);
+            let new_id = format!("{}_{:x}", agent_name, hasher.finish());
+
+            if new_id == dir_name {
+                queue!(
+                    session.stderr,
+                    StyledText::success_fg(),
+                    style::Print(format!("✅ '{dir_name}'\n")),
+                    StyledText::reset()
+                )
+                .unwrap();
+                continue;
+            }
+
+            let new_path = kb_root.join(&new_id);
+            let action = if !new_path.exists() {
+                "rename"
+            } else if Self::is_empty_dir(&new_path) {
+                "move"
+            } else {
+                "remove"
+            };
+
+            queue!(session.stderr, style::Print(format!("📝 {dir_name} -> {new_id}\n"))).unwrap();
+            changes.push((action, path, new_path));
+        }
+
+        if changes.is_empty() {
+            queue!(session.stderr, style::Print("\n✨ No changes needed!\n")).unwrap();
+            return OperationResult::Info("".to_string());
+        }
+
+        queue!(
+            session.stderr,
+            style::Print(format!(
+                "\n{} {} operation{}\n",
+                if apply { "🚀" } else { "🔍 DRY RUN -" },
+                if apply { "Applying" } else { "Found" },
+                if changes.len() == 1 { "" } else { "s" }
+            ))
+        )
+        .unwrap();
+
+        if !apply {
+            queue!(
+                session.stderr,
+                StyledText::warning_fg(),
+                style::Print("\n⚠️  Run with --apply to make changes\n"),
+                StyledText::reset()
+            )
+            .unwrap();
+            return OperationResult::Info("".to_string());
+        }
+
+        let mut success = 0;
+        let mut errors = 0;
+
+        for (action, old, new) in changes {
+            let result = match action {
+                "rename" => std::fs::rename(&old, &new).map(|_| "Renamed"),
+                "remove" => std::fs::remove_dir_all(&old).map(|_| "Removed"),
+                "move" => Self::move_dir_contents(&old, &new).map(|_| "Moved"),
+                _ => continue,
+            };
+
+            match result {
+                Ok(msg) => {
+                    queue!(
+                        session.stderr,
+                        StyledText::success_fg(),
+                        style::Print(format!("✅ {}: {}\n", msg, old.file_name().unwrap().to_string_lossy())),
+                        StyledText::reset()
+                    )
+                    .unwrap();
+                    success += 1;
+                },
+                Err(e) => {
+                    queue!(
+                        session.stderr,
+                        StyledText::error_fg(),
+                        style::Print(format!("❌ {}: {}\n", old.file_name().unwrap().to_string_lossy(), e)),
+                        StyledText::reset()
+                    )
+                    .unwrap();
+                    errors += 1;
+                },
+            }
+        }
+
+        if errors > 0 {
+            OperationResult::Warning(format!(
+                "{} success, {} error{}",
+                success,
+                errors,
+                if errors == 1 { "" } else { "s" }
+            ))
+        } else {
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                StyledText::info_fg(),
+                style::Print("💡 Restart Kiro CLI for changes to take effect\n"),
+                StyledText::reset()
+            )
+            .unwrap();
+            OperationResult::Success(format!(
+                "Fixed {} director{}",
+                success,
+                if success == 1 { "y" } else { "ies" }
+            ))
+        }
+    }
+
+    fn is_empty_dir(path: &PathBuf) -> bool {
+        walkdir::WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .all(|e| e.path().is_dir())
+    }
+
+    fn move_dir_contents(src: &PathBuf, dst: &Path) -> std::io::Result<()> {
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            let src_path = entry.path();
+            let dst_path = dst.join(entry.file_name());
+
+            if src_path.is_dir() {
+                Self::copy_dir_recursive(&src_path, &dst_path)?;
+            } else {
+                std::fs::copy(&src_path, &dst_path)?;
+            }
+        }
+        std::fs::remove_dir_all(src)
+    }
+
+    fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> std::io::Result<()> {
+        std::fs::create_dir_all(dst)?;
+        for entry in std::fs::read_dir(src)? {
+            let entry = entry?;
+            if entry.file_type()?.is_dir() {
+                Self::copy_dir_recursive(&entry.path(), &dst.join(entry.file_name()))?;
+            } else {
+                std::fs::copy(entry.path(), dst.join(entry.file_name()))?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Parse knowledge base directory name to extract agent name and hash
+    fn parse_kb_directory_name(dir_name: &str) -> (String, Option<String>) {
+        if let Some(pos) = dir_name.rfind('_') {
+            let (name, hash_with_underscore) = dir_name.split_at(pos);
+            let hash = &hash_with_underscore[1..]; // Skip the underscore
+
+            // If there's a hash suffix (non-empty after underscore), treat it as a hash
+            // We don't validate if it's hex because we want to catch outdated/incorrect hashes too
+            if !hash.is_empty() {
+                return (name.to_string(), Some(hash.to_string()));
+            }
+        }
+        (dir_name.to_string(), None)
+    }
+
+    /// Find agent file in search paths
+    fn find_agent_file(agent_name: &str, search_paths: &[Option<PathBuf>]) -> Option<PathBuf> {
+        for search_path in search_paths.iter().flatten() {
+            if !search_path.exists() {
+                continue;
+            }
+
+            // Look for .json files matching the agent name
+            if let Ok(entries) = std::fs::read_dir(search_path) {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().and_then(|e| e.to_str()) == Some("json") {
+                        // Try to read and parse the JSON file
+                        if let Ok(content) = std::fs::read_to_string(&path) {
+                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
+                                if let Some(name) = json.get("name").and_then(|n| n.as_str()) {
+                                    if name == agent_name {
+                                        return Some(path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
     pub fn name(&self) -> &'static str {
         match self {
             KnowledgeSubcommand::Show => "show",
@@ -534,6 +802,7 @@ impl KnowledgeSubcommand {
             KnowledgeSubcommand::Update { .. } => "update",
             KnowledgeSubcommand::Clear => "clear",
             KnowledgeSubcommand::Cancel { .. } => "cancel",
+            KnowledgeSubcommand::Fix { .. } => "fix",
         }
     }
 }
