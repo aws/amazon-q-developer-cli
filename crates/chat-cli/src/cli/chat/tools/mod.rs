@@ -149,10 +149,11 @@ impl Tool {
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
+        show_details: bool,
     ) -> Result<InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
-            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout).await,
+            Tool::FsRead(fs_read) => fs_read.invoke(os, stdout, show_details).await,
             Tool::FsWrite(fs_write) => fs_write.invoke(os, stdout, line_tracker).await,
             Tool::ExecuteCommand(execute_command) => execute_command.invoke(os, stdout).await,
             Tool::UseAws(use_aws) => use_aws.invoke(os, stdout).await,
@@ -475,7 +476,12 @@ pub fn display_purpose(purpose: Option<&String>, updates: &mut impl Write) -> Re
 /// * `updates` - The output to write to
 /// * `is_error` - Whether this is an error message (changes formatting)
 /// * `use_bullet` - Whether to use a bullet point instead of a tick/exclamation
-pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool) -> Result<()> {
+pub fn queue_function_result(result: &str, updates: &mut impl Write, is_error: bool, use_bullet: bool, should_display: bool) -> Result<()> {
+    // Skip output if should_display is false
+    if !should_display {
+        return Ok(());
+    }
+    
     let lines = result.lines().collect::<Vec<_>>();
 
     // Determine symbol and color

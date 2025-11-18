@@ -91,6 +91,8 @@ pub enum Setting {
     EnabledDelegate,
     #[strum(message = "Specify UI variant to use (string)")]
     UiMode,
+    #[strum(message = "Show detailed tool execution information (boolean)")]
+    ChatToolOutputVerbose,
 }
 
 impl AsRef<str> for Setting {
@@ -133,6 +135,7 @@ impl AsRef<str> for Setting {
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
             Self::UiMode => "chat.uiMode",
+            Self::ChatToolOutputVerbose => "chat.tool_output_verbose",
         }
     }
 }
@@ -183,6 +186,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             "chat.uiMode" => Ok(Self::UiMode),
+            "chat.tool_output_verbose" => Ok(Self::ChatToolOutputVerbose),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
