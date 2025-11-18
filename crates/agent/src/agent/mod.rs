@@ -217,6 +217,18 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn cancel(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::Cancel)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 #[derive(Debug)]

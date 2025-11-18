@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::Write;
 
 use agent::tools::summary::Summary;
-use chat_cli_ui::conduit::get_legacy_conduits;
+use chat_cli_ui::conduit::get_conduit;
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
 use eyre::Result;
 use schemars::JsonSchema;
@@ -84,7 +84,7 @@ impl UseSubagent {
                 })
             },
             Self::InvokeSubagents(invoke_subagents) => {
-                let (view_end, _byte_receiver, control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
+                let (view_end, input_rx, control_end) = get_conduit();
                 let subagents = invoke_subagents
                     .iter()
                     .enumerate()
@@ -94,6 +94,8 @@ impl UseSubagent {
                         subagent
                     })
                     .collect::<Vec<_>>();
+
+                crossterm::terminal::enable_raw_mode()?;
 
                 let subagent_indicator = SubagentIndicator::new(
                     &subagents
@@ -107,11 +109,13 @@ impl UseSubagent {
                 let (oks, bads) = futures::future::join_all(
                     subagents
                         .into_iter()
-                        .map(|subagent| subagent.query(os, control_end_stderr.clone())),
+                        .map(|subagent| subagent.query(os, input_rx.resubscribe(), control_end.clone())),
                 )
                 .await
                 .into_iter()
                 .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
+
+                crossterm::terminal::disable_raw_mode()?;
 
                 let oks = oks.into_iter().map(|res| res.unwrap()).collect::<Vec<_>>();
                 let bads = bads

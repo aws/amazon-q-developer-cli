@@ -166,8 +166,8 @@ impl Tool {
     /// Queues up a tool's intention in a human readable format
     pub async fn queue_description(&self, os: &Os, output: &mut ControlEnd<DestinationStdout>) -> Result<()> {
         use chat_cli_ui::protocol::{
-            Event,
             ToolCallArgs,
+            UiEvent,
         };
 
         if output.should_send_structured_event {
@@ -198,7 +198,7 @@ impl Tool {
                 },
             };
 
-            output.send(Event::ToolCallArgs {
+            output.send(UiEvent::ToolCallArgs {
                 agent_id: Default::default(),
                 inner: tool_call_args,
             })?;

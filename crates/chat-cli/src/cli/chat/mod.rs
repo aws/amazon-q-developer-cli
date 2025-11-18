@@ -61,13 +61,13 @@ use chat_cli_ui::conduit::{
     get_legacy_conduits,
 };
 use chat_cli_ui::protocol::{
-    Event,
     MessageRole,
     TextMessageContent,
     TextMessageEnd,
     TextMessageStart,
     ToolCallRejection,
     ToolCallStart,
+    UiEvent,
 };
 use clap::{
     Args,
@@ -2097,7 +2097,7 @@ impl ChatSession {
         // Note that this works because [std::sync::mpsc] preserves order between sending and
         // receiving
         self.stderr
-            .send(Event::MetaEvent {
+            .send(UiEvent::MetaEvent {
                 agent_id: Default::default(),
                 inner: chat_cli_ui::protocol::MetaEvent {
                     meta_type: "timing".to_string(),
@@ -2454,7 +2454,7 @@ impl ChatSession {
                         name: tool.name.clone(),
                         reason: formatted_set,
                     };
-                    self.stderr.send(Event::ToolCallRejection {
+                    self.stderr.send(UiEvent::ToolCallRejection {
                         agent_id: Default::default(),
                         inner: event,
                     })?;
@@ -2917,7 +2917,7 @@ impl ChatSession {
                                         role: MessageRole::Assistant,
                                     };
 
-                                    self.stdout.send(Event::TextMessageStart {
+                                    self.stdout.send(UiEvent::TextMessageStart {
                                         agent_id: Default::default(),
                                         inner: msg_start,
                                     })?;
@@ -3166,7 +3166,7 @@ impl ChatSession {
                                 message_id: request_id.clone().unwrap_or_default(),
                                 delta: std::mem::take(&mut temp_buf),
                             };
-                            self.stdout.send(Event::TextMessageContent {
+                            self.stdout.send(UiEvent::TextMessageContent {
                                 agent_id: Default::default(),
                                 inner: text_msg_content,
                             })?;
@@ -3221,7 +3221,7 @@ impl ChatSession {
                 }
 
                 if self.stderr.should_send_structured_event {
-                    self.stderr.send(Event::TextMessageEnd {
+                    self.stderr.send(UiEvent::TextMessageEnd {
                         agent_id: Default::default(),
                         inner: TextMessageEnd {
                             message_id: request_id.clone().unwrap_or_default(),
@@ -3600,7 +3600,7 @@ impl ChatSession {
                 is_trusted: trusted,
                 parent_message_id: None,
             };
-            self.stdout.send(Event::ToolCallStart {
+            self.stdout.send(UiEvent::ToolCallStart {
                 agent_id: Default::default(),
                 inner: tool_call_start,
             })?;

@@ -9,16 +9,31 @@ use crossterm::cursor::{
     MoveTo,
     position,
 };
-use crossterm::execute;
+use crossterm::event::{
+    KeyCode,
+    KeyEventKind,
+    KeyModifiers,
+};
 use crossterm::style::Color;
 use crossterm::terminal::{
     Clear,
     ClearType,
     size,
 };
+use crossterm::{
+    execute,
+    style,
+};
+use futures::{
+    FutureExt as _,
+    StreamExt as _,
+};
 use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
-use ratatui::layout::Rect;
+use ratatui::layout::{
+    Alignment,
+    Rect,
+};
 use ratatui::style::Style;
 use ratatui::text::Line;
 use ratatui::widgets::{
@@ -27,12 +42,16 @@ use ratatui::widgets::{
     Paragraph,
 };
 use tokio_util::sync::CancellationToken;
-use tracing::error;
+use tracing::{
+    error,
+    warn,
+};
 
 use crate::conduit::ViewEnd;
 use crate::protocol::{
-    Event,
+    InputEvent,
     McpEvent,
+    UiEvent,
 };
 
 pub struct SubagentIndicatorHandle {
@@ -54,6 +73,7 @@ struct AgentInfo<'a> {
     lines: Vec<Line<'a>>,
     widget_height: u16,
     blocking_servers: HashMap<String, String>,
+    pending_tool_approval: Option<String>,
 }
 
 impl<'a> AgentInfo<'a> {
@@ -79,7 +99,7 @@ pub struct SubagentIndicator<'a> {
 }
 
 impl<'a> SubagentIndicator<'a> {
-    const MAX_WIDTH: u16 = 80;
+    const MAX_WIDTH: u16 = 78;
     const SPINNERS: [char; 8] = ['ᗢ', 'ᗣ', 'ᗤ', 'ᗥ', 'ᗦ', 'ᗧ', 'ᗨ', 'ᗩ'];
 
     pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd) -> Self {
@@ -106,6 +126,7 @@ impl<'a> SubagentIndicator<'a> {
             .iter()
             .map(|(agent_id, agent_info)| (*agent_id, agent_info.to_owned()))
             .collect::<BTreeMap<_, _>>();
+        let mut focused_agent = None::<u16>;
 
         tokio::spawn(async move {
             let (_start_col, mut start_row) =
@@ -113,14 +134,21 @@ impl<'a> SubagentIndicator<'a> {
             let (mut width, terminal_height) = size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
             width = u16::min(Self::MAX_WIDTH, width);
 
-            let stdout = stdout();
+            let mut stdout = stdout();
+            execute!(&mut stdout, style::Print("\n")).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+
             let backend = CrosstermBackend::new(stdout);
             let mut terminal = Terminal::new(backend).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
             let mut blocking_servers = HashMap::<String, String>::new();
 
+            let mut reader = crossterm::event::EventStream::new();
+
             loop {
+                let crossterm_event = reader.next().fuse();
+
                 tokio::select! {
                     _ = ct.cancelled() => {
+                        crossterm::terminal::disable_raw_mode().ok();
                         break;
                     },
 
@@ -138,7 +166,24 @@ impl<'a> SubagentIndicator<'a> {
                             }
 
                             if !agent_info.msg.is_empty() {
-                                lines.push(Line::from(agent_info.msg.clone()));
+                                let msg = &agent_info.msg;
+                                let max_text_width = (width.saturating_sub(4)) as usize; // Account for borders and padding
+
+                                let mut current_line = String::new();
+                                for word in msg.split_whitespace() {
+                                    if current_line.is_empty() {
+                                        current_line = word.to_string();
+                                    } else if current_line.len() + word.len() < max_text_width {
+                                        current_line.push(' ');
+                                        current_line.push_str(word);
+                                    } else {
+                                        lines.push(Line::from(current_line.clone()));
+                                        current_line = word.to_string();
+                                    }
+                                }
+                                if !current_line.is_empty() {
+                                    lines.push(Line::from(current_line));
+                                }
                             }
 
                             agent_info.widget_height = (lines.len() as u16).saturating_add(2).max(3);
@@ -174,8 +219,23 @@ impl<'a> SubagentIndicator<'a> {
                         terminal.draw(|f| {
                             let mut current_start_row = start_row;
 
-                            for agent_info in agents.values_mut() {
+                            for (agent_id, agent_info) in agents.iter_mut() {
                                 let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
+
+                                if focused_agent.as_ref().is_some_and(|id| id == agent_id) {
+                                    let y = current_start_row.saturating_add(1);
+                                    let arrow_area = Rect {
+                                        x: 0,
+                                        y,
+                                        width: 2,
+                                        height: agent_info.widget_height,
+                                    };
+                                    let arrow_widget = Paragraph::new("→")
+                                        .style(Style::default().fg(Color::AnsiValue(141).into()))
+                                        .alignment(Alignment::Right);
+                                    f.render_widget(arrow_widget, arrow_area);
+                                }
+
                                 let status_line = Paragraph::new(lines)
                                     // TODO: maybe take this in as a param?
                                     .style(Style::default().fg(Color::AnsiValue(141).into()))
@@ -183,7 +243,7 @@ impl<'a> SubagentIndicator<'a> {
                                 agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
 
                                 let area = Rect {
-                                    x: 0,
+                                    x: 2,
                                     y: current_start_row,
                                     width,
                                     height: agent_info.widget_height,
@@ -203,22 +263,22 @@ impl<'a> SubagentIndicator<'a> {
                         };
 
                         match evt {
-                            Event::ToolCallStart { agent_id, inner: tool_call_start } => {
+                            UiEvent::ToolCallStart { agent_id, inner: tool_call_start } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = format!("calling tool {}", tool_call_start.tool_call_name);
                                 }
                             },
-                            Event::ToolCallEnd { agent_id, inner: tool_call_end } => {
+                            UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
                                 }
                             },
-                            Event::TextMessageContent { agent_id, .. } => {
+                            UiEvent::TextMessageContent { agent_id, .. } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = "thinking...".to_string();
                                 }
                             },
-                            Event::McpEvent { agent_id, inner: mcp_event, .. } => {
+                            UiEvent::McpEvent { agent_id, inner: mcp_event, .. } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     match mcp_event {
                                         McpEvent::Loading { server_name }  => {
@@ -236,10 +296,87 @@ impl<'a> SubagentIndicator<'a> {
                                         },
                                     }
                                 }
-                            }
+                            },
+                            UiEvent::ToolCallPermissionRequest { agent_id, inner } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    agent_info.msg = format!("Tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
+                                    agent_info.pending_tool_approval.replace(inner.tool_call_id);
+                                }
+                            },
                             _ => {},
                         }
                     },
+
+                    evt = crossterm_event => {
+                        let Some(Ok(evt)) = evt else {
+                            warn!("subagent indicator failed to receive terminal event");
+                            continue;
+                        };
+
+                        match evt {
+                            crossterm::event::Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                                match key_event.code {
+                                    KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
+                                        for id in agents.keys() {
+                                            _ = self.view_end.sender.send(InputEvent::Interrupt { id: *id });
+                                        }
+                                    },
+                                    KeyCode::Char('j') | KeyCode::Down => {
+                                        let total_agents = agents.len() as u16;
+                                        let new_focus = focused_agent.unwrap_or(0).saturating_add(1) % total_agents;
+                                        focused_agent.replace(new_focus);
+                                    },
+                                    KeyCode::Char('k') | KeyCode::Up => {
+                                        let total_agents = agents.len() as u16;
+                                        let new_focus = focused_agent.unwrap_or(0).saturating_sub(1) % total_agents;
+                                        focused_agent.replace(new_focus);
+                                    },
+                                    KeyCode::Char('y') => {
+                                        let Some(focused_agent) = focused_agent else {
+                                            continue;
+                                        };
+                                        let Some(agent_info) = agents.get_mut(&focused_agent) else {
+                                            continue;
+                                        };
+                                        let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
+                                            continue;
+                                        };
+                                        if let Err(e) = self.view_end.sender.send(InputEvent::ToolApproval{
+                                            id: focused_agent,
+                                            inner: pending_tool_approval_id
+                                        }) {
+                                            error!(?e, "error sending input event");
+                                        };
+                                        agent_info.msg = "tool approval sent".to_string();
+                                    },
+                                    KeyCode::Char('n') => {
+                                        let Some(focused_agent) = focused_agent else {
+                                            continue;
+                                        };
+                                        let Some(agent_info) = agents.get_mut(&focused_agent) else {
+                                            continue;
+                                        };
+                                        let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
+                                            continue;
+                                        };
+                                        if let Err(e) = self.view_end.sender.send(InputEvent::ToolRejection {
+                                            id: focused_agent,
+                                            inner: pending_tool_approval_id
+                                        }) {
+                                            error!("error sending input event: {e:?}");
+                                        };
+                                        agent_info.msg = "tool rejection sent".to_string();
+                                    },
+                                    KeyCode::Enter => {},
+                                    KeyCode::Esc => {
+                                        focused_agent.take();
+                                    },
+                                    _ => {},
+                                }
+                            },
+                            _ => {},
+                        }
+                    }
                 }
             }
 

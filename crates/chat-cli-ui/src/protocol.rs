@@ -175,6 +175,15 @@ pub struct ToolCallRejection {
     pub reason: String,
 }
 
+/// Represents a request for permission to execute a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallPermissionRequest {
+    pub tool_call_id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+}
+
 // ============================================================================
 // State Management Events
 // ============================================================================
@@ -348,7 +357,7 @@ pub enum McpEvent {
 /// Main event enum that encompasses all event types in the Agent UI Protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum Event {
+pub enum UiEvent {
     // Lifecycle Events
     RunStarted {
         agent_id: u16,
@@ -410,6 +419,10 @@ pub enum Event {
     ToolCallRejection {
         agent_id: u16,
         inner: ToolCallRejection,
+    },
+    ToolCallPermissionRequest {
+        agent_id: u16,
+        inner: ToolCallPermissionRequest,
     },
 
     // State Management Events
@@ -487,72 +500,73 @@ pub enum Event {
     },
 }
 
-impl Event {
+impl UiEvent {
     /// Get the event type string for this event
     pub fn event_type(&self) -> &'static str {
         match self {
             // Lifecycle Events
-            Event::RunStarted { .. } => "runStarted",
-            Event::RunFinished { .. } => "runFinished",
-            Event::RunError { .. } => "runError",
-            Event::StepStarted { .. } => "stepStarted",
-            Event::StepFinished { .. } => "stepFinished",
+            UiEvent::RunStarted { .. } => "runStarted",
+            UiEvent::RunFinished { .. } => "runFinished",
+            UiEvent::RunError { .. } => "runError",
+            UiEvent::StepStarted { .. } => "stepStarted",
+            UiEvent::StepFinished { .. } => "stepFinished",
 
             // Text Message Events
-            Event::TextMessageStart { .. } => "textMessageStart",
-            Event::TextMessageContent { .. } => "textMessageContent",
-            Event::TextMessageEnd { .. } => "textMessageEnd",
-            Event::TextMessageChunk { .. } => "textMessageChunk",
+            UiEvent::TextMessageStart { .. } => "textMessageStart",
+            UiEvent::TextMessageContent { .. } => "textMessageContent",
+            UiEvent::TextMessageEnd { .. } => "textMessageEnd",
+            UiEvent::TextMessageChunk { .. } => "textMessageChunk",
 
             // Tool Call Events
-            Event::ToolCallStart { .. } => "toolCallStart",
-            Event::ToolCallArgs { .. } => "toolCallArgs",
-            Event::ToolCallEnd { .. } => "toolCallEnd",
-            Event::ToolCallResult { .. } => "toolCallResult",
-            Event::ToolCallRejection { .. } => "toolCallRejection",
+            UiEvent::ToolCallStart { .. } => "toolCallStart",
+            UiEvent::ToolCallArgs { .. } => "toolCallArgs",
+            UiEvent::ToolCallEnd { .. } => "toolCallEnd",
+            UiEvent::ToolCallResult { .. } => "toolCallResult",
+            UiEvent::ToolCallRejection { .. } => "toolCallRejection",
+            UiEvent::ToolCallPermissionRequest { .. } => "toolCallPermissionRequest",
 
             // State Management Events
-            Event::StateSnapshot { .. } => "stateSnapshot",
-            Event::StateDelta { .. } => "stateDelta",
-            Event::MessagesSnapshot { .. } => "messagesSnapshot",
+            UiEvent::StateSnapshot { .. } => "stateSnapshot",
+            UiEvent::StateDelta { .. } => "stateDelta",
+            UiEvent::MessagesSnapshot { .. } => "messagesSnapshot",
 
             // Special Events
-            Event::Raw { .. } => "raw",
-            Event::Custom { .. } => "custom",
-            Event::LegacyPassThrough { .. } => "legacyPassThrough",
+            UiEvent::Raw { .. } => "raw",
+            UiEvent::Custom { .. } => "custom",
+            UiEvent::LegacyPassThrough { .. } => "legacyPassThrough",
 
             // Draft Events - Activity Events
-            Event::ActivitySnapshotEvent { .. } => "activitySnapshotEvent",
-            Event::ActivityDeltaEvent { .. } => "activityDeltaEvent",
+            UiEvent::ActivitySnapshotEvent { .. } => "activitySnapshotEvent",
+            UiEvent::ActivityDeltaEvent { .. } => "activityDeltaEvent",
 
             // Draft Events - Reasoning Events
-            Event::ReasoningStart { .. } => "reasoningStart",
-            Event::ReasoningMessageStart { .. } => "reasoningMessageStart",
-            Event::ReasoningMessageContent { .. } => "reasoningMessageContent",
-            Event::ReasoningMessageEnd { .. } => "reasoningMessageEnd",
-            Event::ReasoningMessageChunk { .. } => "reasoningMessageChunk",
-            Event::ReasoningEnd { .. } => "reasoningEnd",
+            UiEvent::ReasoningStart { .. } => "reasoningStart",
+            UiEvent::ReasoningMessageStart { .. } => "reasoningMessageStart",
+            UiEvent::ReasoningMessageContent { .. } => "reasoningMessageContent",
+            UiEvent::ReasoningMessageEnd { .. } => "reasoningMessageEnd",
+            UiEvent::ReasoningMessageChunk { .. } => "reasoningMessageChunk",
+            UiEvent::ReasoningEnd { .. } => "reasoningEnd",
 
             // Draft Events - Meta Events
-            Event::MetaEvent { .. } => "metaEvent",
+            UiEvent::MetaEvent { .. } => "metaEvent",
 
-            Event::McpEvent { .. } => "mcpEvent",
+            UiEvent::McpEvent { .. } => "mcpEvent",
         }
     }
 
     pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
-        matches!(self, Event::LegacyPassThrough { .. })
+        matches!(self, UiEvent::LegacyPassThrough { .. })
     }
 
     /// Check if this is a lifecycle event
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            Event::RunStarted { .. }
-                | Event::RunFinished { .. }
-                | Event::RunError { .. }
-                | Event::StepStarted { .. }
-                | Event::StepFinished { .. }
+            UiEvent::RunStarted { .. }
+                | UiEvent::RunFinished { .. }
+                | UiEvent::RunError { .. }
+                | UiEvent::StepStarted { .. }
+                | UiEvent::StepFinished { .. }
         )
     }
 
@@ -560,10 +574,10 @@ impl Event {
     pub fn is_text_message_event(&self) -> bool {
         matches!(
             self,
-            Event::TextMessageStart { .. }
-                | Event::TextMessageContent { .. }
-                | Event::TextMessageEnd { .. }
-                | Event::TextMessageChunk { .. }
+            UiEvent::TextMessageStart { .. }
+                | UiEvent::TextMessageContent { .. }
+                | UiEvent::TextMessageEnd { .. }
+                | UiEvent::TextMessageChunk { .. }
         )
     }
 
@@ -571,10 +585,10 @@ impl Event {
     pub fn is_tool_call_event(&self) -> bool {
         matches!(
             self,
-            Event::ToolCallStart { .. }
-                | Event::ToolCallArgs { .. }
-                | Event::ToolCallEnd { .. }
-                | Event::ToolCallResult { .. }
+            UiEvent::ToolCallStart { .. }
+                | UiEvent::ToolCallArgs { .. }
+                | UiEvent::ToolCallEnd { .. }
+                | UiEvent::ToolCallResult { .. }
         )
     }
 
@@ -582,7 +596,7 @@ impl Event {
     pub fn is_state_management_event(&self) -> bool {
         matches!(
             self,
-            Event::StateSnapshot { .. } | Event::StateDelta { .. } | Event::MessagesSnapshot { .. }
+            UiEvent::StateSnapshot { .. } | UiEvent::StateDelta { .. } | UiEvent::MessagesSnapshot { .. }
         )
     }
 
@@ -590,15 +604,37 @@ impl Event {
     pub fn is_draft_event(&self) -> bool {
         matches!(
             self,
-            Event::ActivitySnapshotEvent { .. }
-                | Event::ActivityDeltaEvent { .. }
-                | Event::ReasoningStart { .. }
-                | Event::ReasoningMessageStart { .. }
-                | Event::ReasoningMessageContent { .. }
-                | Event::ReasoningMessageEnd { .. }
-                | Event::ReasoningMessageChunk { .. }
-                | Event::ReasoningEnd { .. }
-                | Event::MetaEvent { .. }
+            UiEvent::ActivitySnapshotEvent { .. }
+                | UiEvent::ActivityDeltaEvent { .. }
+                | UiEvent::ReasoningStart { .. }
+                | UiEvent::ReasoningMessageStart { .. }
+                | UiEvent::ReasoningMessageContent { .. }
+                | UiEvent::ReasoningMessageEnd { .. }
+                | UiEvent::ReasoningMessageChunk { .. }
+                | UiEvent::ReasoningEnd { .. }
+                | UiEvent::MetaEvent { .. }
         )
+    }
+}
+
+/// This is a stop gap until we adopt ACP
+/// This will likely be done when UI revamp is done
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum InputEvent {
+    Text { id: u16, inner: String },
+    Interrupt { id: u16 },
+    ToolApproval { id: u16, inner: String },
+    ToolRejection { id: u16, inner: String },
+}
+
+impl InputEvent {
+    pub fn get_id(&self) -> u16 {
+        match self {
+            InputEvent::Text { id, .. } => *id,
+            InputEvent::Interrupt { id } => *id,
+            InputEvent::ToolApproval { id, .. } => *id,
+            InputEvent::ToolRejection { id, .. } => *id,
+        }
     }
 }

@@ -26,15 +26,16 @@ use agent::types::{
 };
 use chat_cli_ui::conduit::{
     ControlEnd,
-    DestinationStderr,
-    get_legacy_conduits,
+    get_conduit,
 };
 use chat_cli_ui::protocol::{
-    Event as UiEvent,
+    InputEvent,
     McpEvent as UiMcpEvent,
     TextMessageContent,
     ToolCallEnd,
+    ToolCallPermissionRequest,
     ToolCallStart,
+    UiEvent,
 };
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
 use eyre::{
@@ -49,6 +50,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tokio::sync::broadcast;
 use tracing::{
     debug,
     error,
@@ -95,7 +97,12 @@ pub struct Subagent<'a> {
 }
 
 impl<'a> Subagent<'a> {
-    pub async fn query(self, os: &Os, mut control_end: ControlEnd<DestinationStderr>) -> Result<Summary> {
+    pub async fn query<D>(
+        self,
+        os: &Os,
+        input_rx: broadcast::Receiver<InputEvent>,
+        mut control_end: ControlEnd<D>,
+    ) -> Result<Summary> {
         let mut snapshot = AgentSnapshot {
             settings: AgentSettings {
                 // one day
@@ -143,13 +150,14 @@ impl<'a> Subagent<'a> {
 
         let agent_handle = agent.spawn();
 
-        self.main_loop(agent_handle, &mut control_end).await
+        self.main_loop(agent_handle, input_rx, &mut control_end).await
     }
 
-    async fn main_loop(
+    async fn main_loop<D>(
         &self,
         mut agent: AgentHandle,
-        control_end: &mut ControlEnd<DestinationStderr>,
+        mut input_rx: broadcast::Receiver<InputEvent>,
+        control_end: &mut ControlEnd<D>,
     ) -> Result<Summary> {
         // First, wait for agent initialization
         while let Ok(evt) = agent.recv().await {
@@ -191,83 +199,128 @@ impl<'a> Subagent<'a> {
         let mut query_result = None::<Summary>;
 
         loop {
-            let Ok(evt) = agent.recv().await else {
-                bail!("channel closed");
-            };
-            debug!(?evt, "received new agent event");
-
-            // Check for exit conditions
-            match evt {
-                AgentEvent::Update(evt) => {
-                    info!(?evt, "received update event");
+            tokio::select! {
+                evt = input_rx.recv() => {
+                    let Ok(evt) = evt else {
+                        bail!("input channel closed");
+                    };
+                    if self.id != evt.get_id() {
+                        continue;
+                    }
+                    debug!(?evt, "received new input event");
 
                     match evt {
-                        UpdateEvent::ToolCall(tool_call) => {
-                            _ = control_end.send(UiEvent::ToolCallStart {
-                                agent_id: self.id,
-                                inner: ToolCallStart {
-                                    tool_call_id: tool_call.id,
-                                    tool_call_name: tool_call.tool_use_block.name,
-                                    parent_message_id: None,
-                                    mcp_server_name: None,
-                                    is_trusted: true,
-                                },
-                            });
+                        InputEvent::Text { .. } => {},
+                        InputEvent::Interrupt { .. } => {
+                            agent.cancel().await?;
+                            break;
                         },
-                        UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
-                            _ = control_end.send(UiEvent::ToolCallEnd {
-                                agent_id: self.id,
-                                inner: ToolCallEnd {
-                                    tool_call_id: tool_call.id,
-                                },
-                            });
+                        InputEvent::ToolApproval { inner: id, .. } => {
+                            agent
+                                .send_tool_use_approval_result(SendApprovalResultArgs {
+                                    id,
+                                    result: ApprovalResult::Approve,
+                                })
+                                .await?;
                         },
-                        UpdateEvent::AgentContent(_content) => {
-                            // TODO: send actual content (for preview?)
-                            _ = control_end.send(UiEvent::TextMessageContent {
-                                agent_id: self.id,
-                                inner: TextMessageContent {
-                                    message_id: Default::default(),
-                                    delta: Default::default(),
+                        InputEvent::ToolRejection { inner: id, .. } => {
+                            agent
+                                .send_tool_use_approval_result(SendApprovalResultArgs {
+                                    id,
+                                    result: ApprovalResult::Deny { reason: Some("User rejected this tool. Find an alternative or report inability to proceed.".to_string()) },
+                                })
+                                .await?;
+                        },
+                    }
+                },
+
+                evt = agent.recv() => {
+                    let Ok(evt) = evt else {
+                        bail!("channel closed");
+                    };
+                    debug!(?evt, "received new agent event");
+
+                    // Check for exit conditions
+                    match evt {
+                        AgentEvent::Update(evt) => {
+                            info!(?evt, "received update event");
+
+                            match evt {
+                                UpdateEvent::ToolCall(tool_call) => {
+                                    _ = control_end.send(UiEvent::ToolCallStart {
+                                        agent_id: self.id,
+                                        inner: ToolCallStart {
+                                            tool_call_id: tool_call.id,
+                                            tool_call_name: tool_call.tool_use_block.name,
+                                            parent_message_id: None,
+                                            mcp_server_name: None,
+                                            is_trusted: true,
+                                        },
+                                    });
                                 },
-                            });
+                                UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
+                                    _ = control_end.send(UiEvent::ToolCallEnd {
+                                        agent_id: self.id,
+                                        inner: ToolCallEnd {
+                                            tool_call_id: tool_call.id,
+                                        },
+                                    });
+                                },
+                                UpdateEvent::AgentContent(_content) => {
+                                    // TODO: send actual content (for preview?)
+                                    _ = control_end.send(UiEvent::TextMessageContent {
+                                        agent_id: self.id,
+                                        inner: TextMessageContent {
+                                            message_id: Default::default(),
+                                            delta: Default::default(),
+                                        },
+                                    });
+                                },
+                                _ => {},
+                            }
+                        },
+                        AgentEvent::EndTurn(metadata) => {
+                            if query_result.is_some() {
+                                user_turn_metadata = Some(metadata.clone());
+                                break;
+                            } else {
+                                agent
+                                    .send_prompt(SendPromptArgs {
+                                        content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
+                                        should_continue_turn: None,
+                                    })
+                                    .await?;
+                            }
+                        },
+                        AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
+                            bail!("agent encountered an error: {:?}", agent_error)
+                        },
+                        AgentEvent::ApprovalRequest { id, tool_use, .. } => {
+                            if !self.dangerously_trust_all_tools {
+                                _ = control_end.send(UiEvent::ToolCallPermissionRequest {
+                                    agent_id: self.id,
+                                    inner: ToolCallPermissionRequest {
+                                        tool_call_id: tool_use.tool_use_id,
+                                        name: tool_use.name,
+                                        input: tool_use.input,
+                                    }
+                                });
+                            } else {
+                                warn!(?tool_use, "trust all is enabled, ignoring approval request");
+                                agent
+                                    .send_tool_use_approval_result(SendApprovalResultArgs {
+                                        id: id.clone(),
+                                        result: ApprovalResult::Approve,
+                                    })
+                                    .await?;
+                            }
+                        },
+                        AgentEvent::SubagentSummary(summary) => {
+                            query_result.replace(summary);
                         },
                         _ => {},
                     }
                 },
-                AgentEvent::EndTurn(metadata) => {
-                    if query_result.is_some() {
-                        user_turn_metadata = Some(metadata.clone());
-                        break;
-                    } else {
-                        agent
-                            .send_prompt(SendPromptArgs {
-                                content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
-                                should_continue_turn: None,
-                            })
-                            .await?;
-                    }
-                },
-                AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
-                    bail!("agent encountered an error: {:?}", agent_error)
-                },
-                AgentEvent::ApprovalRequest { id, tool_use, .. } => {
-                    if !self.dangerously_trust_all_tools {
-                        bail!("Tool approval is required: {:?}", tool_use);
-                    } else {
-                        warn!(?tool_use, "trust all is enabled, ignoring approval request");
-                        agent
-                            .send_tool_use_approval_result(SendApprovalResultArgs {
-                                id: id.clone(),
-                                result: ApprovalResult::Approve,
-                            })
-                            .await?;
-                    }
-                },
-                AgentEvent::SubagentSummary(summary) => {
-                    query_result.replace(summary);
-                },
-                _ => {},
             }
         }
 
@@ -295,7 +348,10 @@ pub fn temp_func() {
         .build()
         .expect("failed to build runtime");
 
+    crossterm::terminal::enable_raw_mode().ok();
     let summaries = rt.block_on(test_sub_agent_routine());
+    crossterm::terminal::disable_raw_mode().ok();
+
     println!("summaries: {summaries:#?}");
 }
 
@@ -306,19 +362,19 @@ async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
             query: "What notion docs do I have",
             agent_name: Some("test_test"),
             embedded_user_msg: None,
-            dangerously_trust_all_tools: true,
+            dangerously_trust_all_tools: false,
         },
         Subagent {
             id: 1_u16,
             query: "When was the latest notion doc I have created",
             agent_name: Some("test_test"),
             embedded_user_msg: None,
-            dangerously_trust_all_tools: true,
+            dangerously_trust_all_tools: false,
         },
     ];
 
     let os = Os::new().await.expect("failed to spawn os");
-    let (view_end, _byte_receiver, control_end_stderr, _control_end_stdout) = get_legacy_conduits(true);
+    let (view_end, input_rx, control_end) = get_conduit();
     let subagent_indicator = SubagentIndicator::new(
         &subagents
             .iter()
@@ -332,7 +388,7 @@ async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
     futures::future::join_all(
         subagents
             .into_iter()
-            .map(|subagent| subagent.query(&os, control_end_stderr.clone())),
+            .map(|subagent| subagent.query(&os, input_rx.resubscribe(), control_end.clone())),
     )
     .await
 }
