@@ -69,6 +69,16 @@ pub struct KnowledgeClear {
 pub struct KnowledgeSearch {
     pub query: String,
     pub context_id: Option<String>,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub offset: Option<usize>,
+    #[serde(default)]
+    pub snippet_length: Option<usize>,
+    #[serde(default)]
+    pub sort_by: Option<String>,
+    #[serde(default)]
+    pub file_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -283,7 +293,7 @@ impl Knowledge {
                 queue!(
                     updates,
                     style::Print("Searching knowledge base for: "),
-                    StyledText::success_fg(),
+                    StyledText::brand_fg(),
                     style::Print(&search.query),
                     StyledText::reset(),
                 )?;
@@ -292,12 +302,43 @@ impl Knowledge {
                     queue!(
                         updates,
                         style::Print(" in context: "),
-                        StyledText::success_fg(),
+                        StyledText::brand_fg(),
                         style::Print(context_id),
                         StyledText::reset(),
                     )?;
                 } else {
                     queue!(updates, style::Print(" across all contexts"),)?;
+                }
+
+                // Show applied filters and options
+                let mut options = Vec::new();
+                if let Some(limit) = search.limit {
+                    options.push(format!("limit={limit}"));
+                }
+                if let Some(offset) = search.offset {
+                    if offset > 0 {
+                        options.push(format!("offset={offset}"));
+                    }
+                }
+                if let Some(snippet_len) = search.snippet_length {
+                    options.push(format!("snippet={snippet_len}"));
+                }
+                if let Some(sort) = &search.sort_by {
+                    options.push(format!("sort={sort}"));
+                }
+                if let Some(ftype) = &search.file_type {
+                    options.push(format!("type={ftype}"));
+                }
+
+                if !options.is_empty() {
+                    queue!(
+                        updates,
+                        style::Print(" ["),
+                        StyledText::info_fg(),
+                        style::Print(options.join(", ")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
                 }
             },
             Knowledge::Show => {
@@ -433,22 +474,107 @@ impl Knowledge {
                 .await
                 .unwrap_or_else(|e| format!("Failed to clear knowledge base: {e}")),
             Knowledge::Search(search) => {
-                let results = store.search(&search.query, search.context_id.as_deref()).await;
+                let results = store
+                    .search_paginated(&search.query, search.context_id.as_deref(), search.limit, search.offset)
+                    .await;
                 match results {
-                    Ok(results) => {
-                        if results.is_empty() {
-                            format!("No matching entries found for query: \"{}\"", search.query)
-                        } else {
-                            let mut output = format!("Search results for \"{}\":\n\n", search.query);
-                            for result in results {
-                                if let Some(text) = result.text() {
-                                    output.push_str(&format!("{text}\n\n"));
+                    Ok(mut results) => {
+                        // Apply file_type filter if specified
+                        if let Some(file_type_filter) = &search.file_type {
+                            results.retain(|result| {
+                                if let Some(file_type) = result.point.payload.get("file_type").and_then(|v| v.as_str())
+                                {
+                                    file_type.to_lowercase().contains(&file_type_filter.to_lowercase())
+                                } else {
+                                    false
                                 }
-                            }
-                            output
+                            });
                         }
+
+                        // Apply sorting if specified
+                        if let Some(sort_by) = &search.sort_by {
+                            match sort_by.as_str() {
+                                "path" | "name" => {
+                                    results.sort_by(|a, b| {
+                                        let path_a = a.point.payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                        let path_b = b.point.payload.get("path").and_then(|v| v.as_str()).unwrap_or("");
+                                        path_a.cmp(path_b)
+                                    });
+                                },
+                                "relevance" => {
+                                    results.sort_by(|a, b| {
+                                        a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal)
+                                    });
+                                },
+                                _ => {},
+                            }
+                        }
+
+                        let total_count = results.len();
+
+                        // Print summary to updates
+                        let summary = if results.is_empty() {
+                            format!("No matching entries found for query '{}'", search.query)
+                        } else {
+                            format!("Found {} results for query '{}'", total_count, search.query)
+                        };
+                        super::queue_function_result(&summary, _updates, false, false)?;
+
+                        // Build detailed output for LLM
+                        let mut output = String::new();
+                        for (idx, result) in results.iter().enumerate() {
+                            let path = result
+                                .point
+                                .payload
+                                .get("path")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let chunk_index = result
+                                .point
+                                .payload
+                                .get("chunk_index")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let total_chunks = result
+                                .point
+                                .payload
+                                .get("total_chunks")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(1);
+                            let file_type = result
+                                .point
+                                .payload
+                                .get("file_type")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+
+                            output.push_str(&format!(
+                                "Result {}:\n📄 File: {}\n📊 Chunk: {}/{} | Type: {} | Score: {:.4}\n",
+                                idx + 1,
+                                path,
+                                chunk_index + 1,
+                                total_chunks,
+                                file_type,
+                                result.distance
+                            ));
+
+                            if let Some(text) = result.text() {
+                                let display_text = if let Some(max_len) = search.snippet_length {
+                                    if text.len() > max_len {
+                                        format!("{}...", &text[..max_len])
+                                    } else {
+                                        text.to_string()
+                                    }
+                                } else {
+                                    text.to_string()
+                                };
+                                output.push_str(&format!("---\n{display_text}\n---\n\n"));
+                            }
+                        }
+                        output
                     },
                     Err(e) => {
+                        super::queue_function_result(&format!("Search failed: {e}"), _updates, true, false)?;
                         format!("Search failed: {e}")
                     },
                 }

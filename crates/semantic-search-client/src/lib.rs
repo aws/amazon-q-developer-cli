@@ -45,6 +45,7 @@ pub use types::{
     OperationType,
     ProgressInfo,
     ProgressStatus,
+    SearchResponse,
     SearchResult,
     SystemStatus,
 };

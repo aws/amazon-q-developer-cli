@@ -248,7 +248,7 @@
   },
   "knowledge": {
     "name": "knowledge",
-    "description": "Store and retrieve information in knowledge base across chat sessions. Provides semantic search capabilities for files, directories, and text content.",
+    "description": "A tool for indexing and searching content across chat sessions using semantic search.\n\n## Overview\nThis tool enables persistent storage and retrieval of information using semantic search (MiniLLM) or keyword search (BM25). Content remains available across sessions for later use.\n\n## When to use\n- When users ask to query your knowledge bases or kbs\n- When you need to search previously indexed content\n- When users request to index new content (code, markdown, CSV, PDF, and other text file formats)\n- When exploring unfamiliar content to find relevant information\n- When users ask about topics that might be in indexed knowledge bases\n\n## When not to use\n- When content has not been indexed yet and user hasn't requested indexing\n- When you need real-time or external information not in the knowledge base\n\n## Notes\n- Use 'show' command to list available knowledge bases before searching\n- Search can target specific knowledge bases (context_id) or all knowledge bases\n- Use default limit values unless specifically needed; fewer results for focused search\n- Pagination available via offset parameter for large result sets\n- 'add' command indexes new content; 'update' command refreshes existing knowledge bases\n- Unless there is a clear reason to modify the search query, use the user's original wording for better semantic matching",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -264,7 +264,7 @@
             "status",
             "cancel"
           ],
-          "description": "The knowledge operation to perform:\n- 'show': List all knowledge contexts (no additional parameters required)\n- 'add': Add content to knowledge base (requires 'name' and 'value')\n- 'remove': Remove content from knowledge base (requires one of: 'name', 'context_id', or 'path')\n- 'clear': Remove all knowledge contexts.\n- 'search': Search across knowledge contexts (requires 'query', optional 'context_id')\n- 'update': Update existing context with new content (requires 'path' and one of: 'name', 'context_id')\n- 'status': Show background operation status and progress\n- 'cancel': Cancel background operations (optional 'operation_id' to cancel specific operation, or cancel all if not provided)"
+          "description": "The knowledge operation to perform:\n- 'show': List all knowledge contexts (no additional parameters required)\n- 'add': Add content to knowledge base (requires 'name' and 'value')\n- 'remove': Remove content from knowledge base (requires one of: 'name', 'context_id', or 'path')\n- 'clear': Remove all knowledge contexts.\n- 'search': Search across knowledge contexts (requires 'query', optional: 'context_id', 'limit', 'offset', 'snippet_length', 'sort_by', 'file_type')\n- 'update': Update existing context with new content (requires 'path' and one of: 'name', 'context_id')\n- 'status': Show background operation status and progress\n- 'cancel': Cancel background operations (optional 'operation_id' to cancel specific operation, or cancel all if not provided)"
         },
         "name": {
           "type": "string",
@@ -285,6 +285,27 @@
         "query": {
           "type": "string",
           "description": "The search query string. Required for 'search' operations. Performs semantic search across knowledge contexts to find relevant content."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum number of search results to return, use default value unless required more results or focused search. Optional for 'search' operations."
+        },
+        "offset": {
+          "type": "integer",
+          "description": "Number of results to skip for pagination. Optional for 'search' operations."
+        },
+        "snippet_length": {
+          "type": "integer",
+          "description": "Maximum character length for text snippets in results. Text longer than this will be truncated. Optional for 'search' operations."
+        },
+        "sort_by": {
+          "type": "string",
+          "enum": ["relevance", "path", "name"],
+          "description": "Sort order for search results. Options: 'relevance' (default, by similarity score), 'path' or 'name' (alphabetically by file path). Optional for 'search' operations."
+        },
+        "file_type": {
+          "type": "string",
+          "description": "Filter results by file type (e.g., 'Code', 'Markdown', 'Text'). Optional for 'search' operations."
         },
         "operation_id": {
           "type": "string",

@@ -79,16 +79,31 @@ impl ContextManager {
         effective_limit: usize,
         embedder: &dyn TextEmbedderTrait,
     ) -> Result<Vec<(ContextId, SearchResults)>> {
+        self.search_all_with_pagination(query_text, effective_limit, 0, embedder)
+            .await
+    }
+
+    /// Search all contexts with pagination support
+    pub async fn search_all_with_pagination(
+        &self,
+        query_text: &str,
+        limit: usize,
+        offset: usize,
+        embedder: &dyn TextEmbedderTrait,
+    ) -> Result<Vec<(ContextId, SearchResults)>> {
         let mut all_results = Vec::new();
         let contexts_metadata = self.contexts.read().await;
 
         for (context_id, context_meta) in contexts_metadata.iter() {
             if context_meta.embedding_type.is_bm25() {
-                if let Some(results) = self.search_bm25_context(context_id, query_text, effective_limit).await {
+                if let Some(results) = self
+                    .search_bm25_context_paginated(context_id, query_text, limit, offset)
+                    .await
+                {
                     all_results.push((context_id.clone(), results));
                 }
             } else if let Some(results) = self
-                .search_semantic_context(context_id, query_text, effective_limit, embedder)
+                .search_semantic_context_paginated(context_id, query_text, limit, offset, embedder)
                 .await?
             {
                 all_results.push((context_id.clone(), results));
@@ -115,29 +130,51 @@ impl ContextManager {
         effective_limit: usize,
         embedder: &dyn TextEmbedderTrait,
     ) -> Result<Option<SearchResults>> {
+        self.search_context_with_pagination(context_id, query_text, effective_limit, 0, embedder)
+            .await
+    }
+
+    /// Search in a specific context with pagination support
+    pub async fn search_context_with_pagination(
+        &self,
+        context_id: &str,
+        query_text: &str,
+        limit: usize,
+        offset: usize,
+        embedder: &dyn TextEmbedderTrait,
+    ) -> Result<Option<SearchResults>> {
         let contexts_metadata = self.contexts.read().await;
         let context_meta = contexts_metadata
             .get(context_id)
             .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))?;
 
         if context_meta.embedding_type.is_bm25() {
-            Ok(self.search_bm25_context(context_id, query_text, effective_limit).await)
+            Ok(self
+                .search_bm25_context_paginated(context_id, query_text, limit, offset)
+                .await)
         } else {
-            self.search_semantic_context(context_id, query_text, effective_limit, embedder)
+            self.search_semantic_context_paginated(context_id, query_text, limit, offset, embedder)
                 .await
         }
     }
 
-    async fn search_bm25_context(&self, context_id: &str, query_text: &str, limit: usize) -> Option<SearchResults> {
+    async fn search_bm25_context_paginated(
+        &self,
+        context_id: &str,
+        query_text: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Option<SearchResults> {
         let bm25_contexts = tokio::time::timeout(Duration::from_millis(100), self.bm25_contexts.read())
             .await
             .ok()?;
         let context_arc = bm25_contexts.get(context_id)?;
         let context = context_arc.try_lock().ok()?;
 
-        let search_results = context.search(query_text, limit);
+        let search_results = context.search(query_text, limit + offset);
         let results: Vec<SearchResult> = search_results
             .into_iter()
+            .skip(offset)
             .filter_map(|(id, score)| {
                 context.get_data_points().get(id).map(|data_point| {
                     let vector = vec![0.0; 384];
@@ -154,11 +191,12 @@ impl ContextManager {
         if results.is_empty() { None } else { Some(results) }
     }
 
-    async fn search_semantic_context(
+    async fn search_semantic_context_paginated(
         &self,
         context_id: &str,
         query_text: &str,
         limit: usize,
+        offset: usize,
         embedder: &dyn TextEmbedderTrait,
     ) -> Result<Option<SearchResults>> {
         let query_vector = embedder.embed(query_text)?;
@@ -168,8 +206,11 @@ impl ContextManager {
 
         if let Some(context_arc) = volatile_contexts.get(context_id) {
             if let Ok(context_guard) = context_arc.try_lock() {
-                match context_guard.search(&query_vector, limit) {
-                    Ok(results) => Ok(if results.is_empty() { None } else { Some(results) }),
+                match context_guard.search(&query_vector, limit + offset) {
+                    Ok(results) => {
+                        let paginated: Vec<_> = results.into_iter().skip(offset).collect();
+                        Ok(if paginated.is_empty() { None } else { Some(paginated) })
+                    },
                     Err(e) => {
                         warn!("Failed to search context {}: {}", context_id, e);
                         Ok(None)

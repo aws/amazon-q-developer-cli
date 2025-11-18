@@ -187,6 +187,19 @@ impl SearchResult {
     }
 }
 
+/// Response wrapper for search results with metadata
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchResponse {
+    /// The search results
+    pub results: SearchResults,
+
+    /// Total number of results found (before pagination)
+    pub total_count: usize,
+
+    /// Number of results returned in this response
+    pub returned_count: usize,
+}
+
 /// File type for processing
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FileType {

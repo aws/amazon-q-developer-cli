@@ -407,6 +407,16 @@ impl AsyncSemanticSearchClient {
         query_text: &str,
         result_limit: Option<usize>,
     ) -> Result<Vec<(ContextId, SearchResults)>> {
+        self.search_all_paginated(query_text, result_limit, None).await
+    }
+
+    /// Search all contexts with pagination
+    pub async fn search_all_paginated(
+        &self,
+        query_text: &str,
+        result_limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<(ContextId, SearchResults)>> {
         if query_text.is_empty() {
             return Err(SemanticSearchError::InvalidArgument(
                 "Query text cannot be empty".to_string(),
@@ -414,8 +424,9 @@ impl AsyncSemanticSearchClient {
         }
 
         let effective_limit = result_limit.unwrap_or(self.config.default_results);
+        let effective_offset = offset.unwrap_or(0);
         self.context_manager
-            .search_all(query_text, effective_limit, &*self.embedder)
+            .search_all_with_pagination(query_text, effective_limit, effective_offset, &*self.embedder)
             .await
     }
 
@@ -437,6 +448,18 @@ impl AsyncSemanticSearchClient {
         query_text: &str,
         result_limit: Option<usize>,
     ) -> Result<SearchResults> {
+        self.search_context_paginated(context_id, query_text, result_limit, None)
+            .await
+    }
+
+    /// Search in a specific context with pagination
+    pub async fn search_context_paginated(
+        &self,
+        context_id: &str,
+        query_text: &str,
+        result_limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<SearchResults> {
         if context_id.is_empty() {
             return Err(SemanticSearchError::InvalidArgument(
                 "Context ID cannot be empty".to_string(),
@@ -450,9 +473,16 @@ impl AsyncSemanticSearchClient {
         }
 
         let effective_limit = result_limit.unwrap_or(self.config.default_results);
+        let effective_offset = offset.unwrap_or(0);
 
         self.context_manager
-            .search_context(context_id, query_text, effective_limit, &*self.embedder)
+            .search_context_with_pagination(
+                context_id,
+                query_text,
+                effective_limit,
+                effective_offset,
+                &*self.embedder,
+            )
             .await?
             .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))
     }

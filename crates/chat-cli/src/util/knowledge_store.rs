@@ -371,13 +371,19 @@ impl KnowledgeStore {
         Ok(self.agent_client.get_contexts().await)
     }
 
-    /// Search - delegates to async client
-    pub async fn search(&self, query: &str, context_id: Option<&str>) -> Result<Vec<SearchResult>, KnowledgeError> {
+    /// Search with pagination support
+    pub async fn search_paginated(
+        &self,
+        query: &str,
+        context_id: Option<&str>,
+        limit: Option<usize>,
+        offset: Option<usize>,
+    ) -> Result<Vec<SearchResult>, KnowledgeError> {
         if let Some(context_id) = context_id {
             // Search specific context
             let results = self
                 .agent_client
-                .search_context(context_id, query, None)
+                .search_context_paginated(context_id, query, limit, offset)
                 .await
                 .map_err(|e| KnowledgeError::SearchError(e.to_string()))?;
             Ok(results)
@@ -387,7 +393,7 @@ impl KnowledgeStore {
 
             let agent_results = self
                 .agent_client
-                .search_all(query, None)
+                .search_all_paginated(query, limit, offset)
                 .await
                 .map_err(|e| KnowledgeError::SearchError(e.to_string()))?;
 
