@@ -342,9 +342,9 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        PathResolver::new(os).workspace().agents_dir()?
+        PathResolver::new(os).workspace().agents_dir_for_create()?
     } else {
-        PathResolver::new(os).global().agents_dir()?
+        PathResolver::new(os).global().agents_dir_for_create()?
     };
 
     if let Some((name, _)) = agents.agents.iter().find(|(agent_name, agent)| {
