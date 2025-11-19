@@ -1001,6 +1001,13 @@ Return only the JSON configuration, no additional text."
             }
         }
 
+        // Add active TODO list if available
+        if let Ok(Some(todo)) = crate::cli::chat::tools::todo::get_active_todo(os).await {
+            context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+            context_content.push_str(&crate::cli::chat::tools::todo::format_todo_as_context(&todo));
+            context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+        }
+
         // Add context files if available
         if let Some(context_manager) = self.context_manager.as_mut() {
             match context_manager.collect_context_files_with_limit(os).await {

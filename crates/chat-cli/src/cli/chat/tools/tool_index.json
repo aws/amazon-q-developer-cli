@@ -339,7 +339,18 @@
           "description": "Required parameter of `create` command containing the list of DISTINCT tasks to be added to the TODO list.",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "task_description": {
+                "type": "string",
+                "description": "The main task description"
+              },
+              "details": {
+                "type": "string",
+                "description": "Optional detailed information about the task"
+              }
+            },
+            "required": ["task_description"]
           }
         },
         "todo_list_description": {
@@ -376,7 +387,18 @@
           "description": "Required parameter of `add` command containing a list of new tasks to be added to the to-do list.",
           "type": "array",
           "items": {
-            "type": "string"
+            "type": "object",
+            "properties": {
+              "task_description": {
+                "type": "string",
+                "description": "The main task description"
+              },
+              "details": {
+                "type": "string",
+                "description": "Optional detailed information about the task"
+              }
+            },
+            "required": ["task_description"]
           }
         },
         "insert_indices": {

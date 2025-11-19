@@ -38,6 +38,15 @@ use crate::theme::StyledText;
 pub struct Task {
     pub task_description: String,
     pub completed: bool,
+    #[serde(default)]
+    pub details: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TaskInput {
+    pub task_description: String,
+    #[serde(default)]
+    pub details: Option<String>,
 }
 
 /// Contains all state to be serialized and deserialized into a todo list
@@ -85,7 +94,7 @@ impl TodoListState {
     pub fn display_list(&self, output: &mut impl Write) -> Result<()> {
         queue!(output, style::Print("TODO:\n".yellow()))?;
         for (index, task) in self.tasks.iter().enumerate() {
-            queue_next_without_newline(output, task.task_description.clone(), task.completed)?;
+            queue_next_without_newline(output, task, task.completed)?;
             if index < self.tasks.len() - 1 {
                 queue!(output, style::Print("\n"))?;
             }
@@ -96,7 +105,7 @@ impl TodoListState {
 
 /// Displays a single empty or marked off to-do list task depending on
 /// the completion status
-fn queue_next_without_newline(output: &mut impl Write, task: String, completed: bool) -> Result<()> {
+fn queue_next_without_newline(output: &mut impl Write, task: &Task, completed: bool) -> Result<()> {
     if completed {
         queue!(
             output,
@@ -104,12 +113,27 @@ fn queue_next_without_newline(output: &mut impl Write, task: String, completed: 
             style::Print("[x] "),
             style::SetAttribute(style::Attribute::Italic),
             StyledText::secondary_fg(),
-            style::Print(task),
+            style::Print(&task.task_description),
             style::SetAttribute(style::Attribute::NoItalic),
         )?;
     } else {
-        queue!(output, StyledText::reset(), style::Print(format!("[ ] {task}")),)?;
+        queue!(
+            output,
+            StyledText::reset(),
+            style::Print(format!("[ ] {}", task.task_description)),
+        )?;
     }
+
+    if let Some(details) = &task.details {
+        queue!(
+            output,
+            style::Print("\n  - "),
+            StyledText::secondary_fg(),
+            style::Print(details),
+            StyledText::reset(),
+        )?;
+    }
+
     Ok(())
 }
 
@@ -160,6 +184,91 @@ pub async fn get_all_todos(os: &Os) -> Result<(Vec<TodoListState>, Vec<Report>)>
     Ok((todos, errors))
 }
 
+/// Retrieves the most recently modified incomplete TODO list for the current workspace
+pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
+    if !TodoList::is_enabled(os) {
+        return Ok(None);
+    }
+
+    let (todos, _) = get_all_todos(os).await?;
+
+    let mut incomplete_with_mtime: Vec<_> = Vec::new();
+
+    for todo in todos {
+        if todo.tasks.iter().any(|t| !t.completed) {
+            let path = id_to_path(os, &todo.id)?;
+            if let Ok(metadata) = os.fs.symlink_metadata(&path).await {
+                if let Ok(modified) = metadata.modified() {
+                    incomplete_with_mtime.push((todo, modified));
+                }
+            }
+        }
+    }
+
+    if incomplete_with_mtime.is_empty() {
+        return Ok(None);
+    }
+
+    incomplete_with_mtime.sort_by(|a, b| b.1.cmp(&a.1));
+
+    Ok(Some(incomplete_with_mtime.into_iter().next().unwrap().0))
+}
+
+/// Formats a TODO list as a context entry string
+pub fn format_todo_as_context(todo: &TodoListState) -> String {
+    let mut context = String::new();
+
+    let completed_count = todo.tasks.iter().filter(|t| t.completed).count();
+    let total_count = todo.tasks.len();
+
+    context.push_str("Active TODO List for current workspace:\n\n");
+    context.push_str(&format!("Description: {}\n", todo.description));
+    context.push_str(&format!("Progress: {completed_count}/{total_count} tasks completed\n"));
+    context.push_str(&format!("ID: {}\n\n", todo.id));
+
+    context.push_str("Tasks:\n");
+    let mut found_next = false;
+    for (idx, task) in todo.tasks.iter().enumerate() {
+        let checkbox = if task.completed { "[✓]" } else { "[ ]" };
+        let next_marker = if !task.completed && !found_next {
+            found_next = true;
+            " (NEXT)"
+        } else {
+            ""
+        };
+
+        context.push_str(&format!(
+            "{} {}. {}{}\n",
+            checkbox, idx, task.task_description, next_marker
+        ));
+
+        if let Some(details) = &task.details {
+            if !details.is_empty() {
+                context.push_str(&format!("    Details: {details}\n"));
+            }
+        }
+    }
+
+    // Add recent context (last 3 entries)
+    if !todo.context.is_empty() {
+        context.push_str("\nRecent Context:\n");
+        let recent_context = todo.context.iter().rev().take(3).rev();
+        for ctx in recent_context {
+            context.push_str(&format!("- {ctx}\n"));
+        }
+    }
+
+    // Add modified files
+    if !todo.modified_files.is_empty() {
+        context.push_str("\nModified Files:\n");
+        for file in &todo.modified_files {
+            context.push_str(&format!("- {file}\n"));
+        }
+    }
+
+    context
+}
+
 /// Deletes a todo list
 pub async fn delete_todo(os: &Os, id: &str) -> Result<()> {
     os.fs.remove_file(id_to_path(os, id)?).await?;
@@ -180,7 +289,7 @@ pub fn get_todo_list_dir(os: &Os) -> Result<PathBuf> {
 pub enum TodoList {
     // Creates a todo list
     Create {
-        tasks: Vec<String>,
+        tasks: Vec<TaskInput>,
         todo_list_description: String,
     },
 
@@ -200,7 +309,7 @@ pub enum TodoList {
 
     // Inserts new tasks into the current todo list
     Add {
-        new_tasks: Vec<String>,
+        new_tasks: Vec<TaskInput>,
         insert_indices: Vec<usize>,
         new_description: Option<String>,
         current_id: String,
@@ -257,10 +366,11 @@ impl TodoList {
             } => {
                 let new_id = generate_new_todo_id();
                 let mut todo_tasks = Vec::new();
-                for task_description in tasks {
+                for task_input in tasks {
                     todo_tasks.push(Task {
-                        task_description: task_description.clone(),
+                        task_description: task_input.task_description.clone(),
                         completed: false,
+                        details: task_input.details.clone(),
                     });
                 }
 
@@ -326,10 +436,11 @@ impl TodoList {
                 current_id: id,
             } => {
                 let mut state = TodoListState::load(os, id).await?;
-                for (i, task_description) in insert_indices.iter().zip(new_tasks.iter()) {
+                for (i, task_input) in insert_indices.iter().zip(new_tasks.iter()) {
                     let new_task = Task {
-                        task_description: task_description.clone(),
+                        task_description: task_input.task_description.clone(),
                         completed: false,
+                        details: task_input.details.clone(),
                     };
                     state.tasks.insert(*i, new_task);
                 }
@@ -403,7 +514,7 @@ impl TodoList {
             } => {
                 if tasks.is_empty() {
                     bail!("No tasks were provided");
-                } else if tasks.iter().any(|task| task.trim().is_empty()) {
+                } else if tasks.iter().any(|task| task.task_description.trim().is_empty()) {
                     bail!("Tasks cannot be empty");
                 } else if task_description.is_empty() {
                     bail!("No task description was provided");
@@ -434,7 +545,7 @@ impl TodoList {
                 current_id: id,
             } => {
                 let state = TodoListState::load(os, id).await?;
-                if new_tasks.iter().any(|task| task.trim().is_empty()) {
+                if new_tasks.iter().any(|task| task.task_description.trim().is_empty()) {
                     bail!("New tasks cannot be empty");
                 } else if has_duplicates(insert_indices) {
                     bail!("Insertion indices must be unique")
