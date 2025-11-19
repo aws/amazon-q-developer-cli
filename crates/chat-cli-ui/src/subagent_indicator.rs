@@ -35,7 +35,10 @@ use ratatui::layout::{
     Rect,
 };
 use ratatui::style::Style;
-use ratatui::text::Line;
+use ratatui::text::{
+    Line,
+    Span,
+};
 use ratatui::widgets::{
     Block,
     Borders,
@@ -148,7 +151,6 @@ impl<'a> SubagentIndicator<'a> {
 
                 tokio::select! {
                     _ = ct.cancelled() => {
-                        crossterm::terminal::disable_raw_mode().ok();
                         break;
                     },
 
@@ -219,10 +221,24 @@ impl<'a> SubagentIndicator<'a> {
                         terminal.draw(|f| {
                             let mut current_start_row = start_row;
 
+                            let tool_tip = Line::from(vec![
+                                Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("j/↓", Style::default().fg(Color::AnsiValue(141).into())),
+                                Span::styled(" down ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
+                                Span::styled(" up ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
+                                Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
+                                Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
+                            ]);
+                            let area = Rect { x: 2, y: current_start_row, width, height: 1 };
+                            current_start_row = current_start_row.saturating_add(1);
+                            f.render_widget(tool_tip, area);
+
                             for (agent_id, agent_info) in agents.iter_mut() {
                                 let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
-
-                                if focused_agent.as_ref().is_some_and(|id| id == agent_id) {
+                                let normal_color = if focused_agent.as_ref().is_some_and(|id| id == agent_id) {
                                     let y = current_start_row.saturating_add(1);
                                     let arrow_area = Rect {
                                         x: 0,
@@ -231,16 +247,36 @@ impl<'a> SubagentIndicator<'a> {
                                         height: agent_info.widget_height,
                                     };
                                     let arrow_widget = Paragraph::new("→")
-                                        .style(Style::default().fg(Color::AnsiValue(141).into()))
+                                        .style(Style::default().fg(Color::AnsiValue(120).into()))
                                         .alignment(Alignment::Right);
                                     f.render_widget(arrow_widget, arrow_area);
-                                }
+                                    120
+                                } else {
+                                    141
+                                };
+
+                                let spinner = if agent_info.pending_tool_approval.is_some() {
+                                    '!'
+                                } else {
+                                    agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
+                                    Self::SPINNERS[agent_info.spinner_idx]
+                                };
+
+                                let spinner_color = if agent_info.pending_tool_approval.is_some() {
+                                    ratatui::prelude::Color::Red
+                                } else {
+                                    Color::AnsiValue(normal_color).into()
+                                };
+
+                                let title = Line::from(vec![
+                                    Span::raw(" "),
+                                    Span::styled(spinner.to_string(), Style::default().fg(spinner_color)),
+                                    Span::raw(format!(" {}: {}... ", agent_info.agent_name, agent_info.initial_query)),
+                                ]);
 
                                 let status_line = Paragraph::new(lines)
-                                    // TODO: maybe take this in as a param?
-                                    .style(Style::default().fg(Color::AnsiValue(141).into()))
-                                    .block(Block::default().borders(Borders::ALL).title(format!(" {} {}: {}... ", Self::SPINNERS[agent_info.spinner_idx], agent_info.agent_name, agent_info.initial_query)));
-                                agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
+                                    .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
+                                    .block(Block::default().borders(Borders::ALL).title(title));
 
                                 let area = Rect {
                                     x: 2,
@@ -248,9 +284,7 @@ impl<'a> SubagentIndicator<'a> {
                                     width,
                                     height: agent_info.widget_height,
                                 };
-
                                 f.render_widget(status_line, area);
-
                                 current_start_row = current_start_row.saturating_add(agent_info.widget_height);
                             }
                         }).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
