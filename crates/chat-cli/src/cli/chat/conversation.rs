@@ -917,6 +917,21 @@ Return only the JSON configuration, no additional text."
             context_content.push_str(CONTEXT_ENTRY_END_HEADER);
         }
 
+        // Add available knowledge bases if knowledge feature is enabled
+        use crate::cli::experiment::experiment_manager::{
+            ExperimentManager,
+            ExperimentName,
+        };
+        if ExperimentManager::is_enabled(os, ExperimentName::Knowledge) {
+            if let Some(kb_context) =
+                crate::util::knowledge_store::get_available_knowledge_bases(os, self.agents.get_active()).await
+            {
+                context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+                context_content.push_str(&kb_context);
+                context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+            }
+        }
+
         // Add context files if available
         if let Some(context_manager) = self.context_manager.as_mut() {
             match context_manager.collect_context_files_with_limit(os).await {
