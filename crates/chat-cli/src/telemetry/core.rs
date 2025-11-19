@@ -291,16 +291,27 @@ impl Event {
             EventType::TangentModeSession {
                 conversation_id,
                 result,
-                args: TangentModeSessionArgs { duration_seconds },
+                args:
+                    TangentModeSessionArgs {
+                        duration_seconds,
+                        is_forget,
+                        entries_removed,
+                    },
             } => Some(
                 CodewhispererterminalChatSlashCommandExecuted {
                     create_time: self.created_time,
-                    value: Some(duration_seconds as f64),
+                    value: Some(if is_forget {
+                        entries_removed.unwrap_or(0) as f64
+                    } else {
+                        duration_seconds as f64
+                    }),
                     credential_start_url: self.credential_start_url.map(Into::into),
                     sso_region: self.sso_region.map(Into::into),
                     amazonq_conversation_id: Some(conversation_id.into()),
                     codewhispererterminal_chat_slash_command: Some("tangent".to_string().into()),
-                    codewhispererterminal_chat_slash_subcommand: Some("exit".to_string().into()),
+                    codewhispererterminal_chat_slash_subcommand: Some(
+                        if is_forget { "forget" } else { "exit" }.to_string().into(),
+                    ),
                     result: Some(result.to_string().into()),
                     reason: None,
                     codewhispererterminal_in_cloudshell: None,
@@ -581,6 +592,12 @@ pub struct ChatAddedMessageParams {
 pub struct TangentModeSessionArgs {
     /// Duration of tangent mode session in seconds
     pub duration_seconds: i64,
+    /// Whether this is a forget command (true) or tangent mode session (false)
+    #[serde(default)]
+    pub is_forget: bool,
+    /// Number of conversation entries removed (only for forget command)
+    #[serde(default)]
+    pub entries_removed: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]

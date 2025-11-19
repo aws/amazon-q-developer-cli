@@ -43,6 +43,7 @@ use super::message::{
     AssistantMessage,
     ToolUseResult,
     UserMessage,
+    UserMessageContent,
 };
 use super::parser::RequestMetadata;
 use super::token_counter::{
@@ -87,6 +88,15 @@ use crate::theme::StyledText;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+
+/// Result of attempting to forget conversation entries
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForgetResult {
+    /// Successfully removed N user messages
+    Success(usize),
+    /// No entries available to remove
+    NoEntries,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -394,6 +404,65 @@ impl ConversationState {
                 self.history.push_back(entry);
             }
         }
+    }
+
+    /// Remove the last N user messages from history
+    /// A "message" is one user prompt and all subsequent tool use entries until the next prompt
+    /// Returns the result of the operation
+    pub fn forget_last_entries(&mut self, message_count: usize) -> ForgetResult {
+        if message_count == 0 {
+            return ForgetResult::NoEntries;
+        }
+
+        // Scan backwards to find N user prompts (actual user messages, not tool results)
+        let mut prompts_found = 0;
+        let mut entries_to_remove = 0;
+
+        for entry in self.history.iter().rev() {
+            entries_to_remove += 1;
+
+            // Check if this is an actual user prompt (not tool results)
+            if matches!(entry.user.content, UserMessageContent::Prompt { .. }) {
+                prompts_found += 1;
+                if prompts_found == message_count {
+                    break;
+                }
+            }
+        }
+
+        if prompts_found == 0 {
+            return ForgetResult::NoEntries;
+        }
+
+        // Remove the entries
+        for _ in 0..entries_to_remove {
+            self.history.pop_back();
+        }
+        self.valid_history_range = (0, self.history.len());
+
+        // Add marker to transcript
+        self.append_transcript(format!(
+            "[Forgot last {} {}]",
+            prompts_found,
+            if prompts_found == 1 { "message" } else { "messages" }
+        ));
+
+        ForgetResult::Success(prompts_found)
+    }
+
+    /// Get user prompts from history (most recent first)
+    pub fn get_user_prompts(&self) -> Vec<String> {
+        self.history
+            .iter()
+            .rev()
+            .filter_map(|entry| {
+                if let UserMessageContent::Prompt { prompt } = &entry.user.content {
+                    Some(prompt.clone())
+                } else {
+                    None
+                }
+            })
+            .collect()
     }
 
     /// Appends a collection prompts into history and returns the last message in the collection.
@@ -1387,7 +1456,10 @@ fn default_true() -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use super::super::message::AssistantToolUse;
+    use super::super::message::{
+        AssistantToolUse,
+        UserEnvContext,
+    };
     use super::*;
     use crate::api_client::model::{
         AssistantResponseMessage,
@@ -1864,5 +1936,145 @@ mod tests {
         // Test: Call exit_tangent_mode_with_tail when not in tangent mode (should do nothing)
         conversation.exit_tangent_mode_with_tail();
         assert_eq!(conversation.history.len(), main_history_len);
+    }
+
+    #[tokio::test]
+    async fn test_forget_last_entries() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add 3 conversation entries
+        for i in 1..=3 {
+            conversation.set_next_user_message(format!("question {}", i)).await;
+            conversation.push_assistant_message(
+                &mut os,
+                AssistantMessage::new_response(None, format!("response {}", i)),
+                None,
+            );
+        }
+
+        assert_eq!(conversation.history.len(), 3);
+        let initial_transcript_len = conversation.transcript.len();
+
+        // Remove last 2 entries
+        let result = conversation.forget_last_entries(2);
+        assert_eq!(result, ForgetResult::Success(2));
+        assert_eq!(conversation.history.len(), 1);
+
+        // Verify transcript has marker added (not removed)
+        assert_eq!(conversation.transcript.len(), initial_transcript_len + 1);
+        assert!(
+            conversation
+                .transcript
+                .back()
+                .unwrap()
+                .contains("[Forgot last 2 messages]")
+        );
+
+        // Verify the remaining entry is the first one
+        if let Some(entry) = conversation.history.front() {
+            assert_eq!(entry.assistant.content(), "response 1");
+        }
+
+        // Try to remove more than available
+        let result = conversation.forget_last_entries(5);
+        assert_eq!(result, ForgetResult::Success(1)); // Only 1 was available
+        assert_eq!(conversation.history.len(), 0);
+        assert!(
+            conversation
+                .transcript
+                .back()
+                .unwrap()
+                .contains("[Forgot last 1 message]")
+        );
+
+        // Try to remove from empty history
+        let result = conversation.forget_last_entries(1);
+        assert_eq!(result, ForgetResult::NoEntries);
+        assert_eq!(conversation.history.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_forget_with_tool_use_chains() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+        )
+        .await;
+
+        // Add message 1 (simple prompt)
+        conversation.set_next_user_message("question 1".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "response 1".to_string()),
+            None,
+        );
+
+        // Add message 2 with tool use (creates multiple history entries)
+        conversation.set_next_user_message("question 2".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "response 2".to_string()),
+            None,
+        );
+        // Simulate tool use result entry
+        conversation.history.push_back(HistoryEntry {
+            user: UserMessage {
+                content: UserMessageContent::ToolUseResults {
+                    tool_use_results: vec![],
+                },
+                additional_context: String::new(),
+                env_context: UserEnvContext::generate_new(),
+                timestamp: None,
+                images: None,
+            },
+            assistant: AssistantMessage::new_response(None, "tool result".to_string()),
+            request_metadata: None,
+        });
+
+        // Add message 3 (simple prompt)
+        conversation.set_next_user_message("question 3".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(None, "response 3".to_string()),
+            None,
+        );
+
+        // Should have 4 history entries: msg1, msg2, tool_result, msg3
+        assert_eq!(conversation.history.len(), 4);
+
+        // Forget last 1 message (should remove msg3 only - 1 entry)
+        let result = conversation.forget_last_entries(1);
+        assert_eq!(result, ForgetResult::Success(1));
+        assert_eq!(conversation.history.len(), 3);
+
+        // Forget last 1 message (should remove msg2 + tool_result - 2 entries)
+        let result = conversation.forget_last_entries(1);
+        assert_eq!(result, ForgetResult::Success(1));
+        assert_eq!(conversation.history.len(), 1);
+
+        // Verify only msg1 remains
+        if let Some(entry) = conversation.history.front() {
+            assert_eq!(entry.assistant.content(), "response 1");
+        }
     }
 }
