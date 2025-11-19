@@ -10,7 +10,10 @@ use strum::{
     EnumString,
 };
 
-use super::definitions::metrics::CodewhispererterminalRecordUserTurnCompletion;
+use super::definitions::metrics::{
+    CodewhispererterminalRecordUserTurnCompletion,
+    KirocliSubagentInvocation,
+};
 use super::definitions::types::CodewhispererterminalChatConversationType;
 use crate::telemetry::definitions::IntoMetricDatum;
 use crate::telemetry::definitions::metrics::{
@@ -538,6 +541,21 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::SubagentInvocation {
+                parent_conversation_id,
+                token_count,
+                tool_call_count,
+            } => Some(
+                KirocliSubagentInvocation {
+                    amazonq_conversation_id: Some(parent_conversation_id.into()),
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    token_count: token_count.map(Into::into),
+                    tool_call_count: tool_call_count.map(Into::into),
+                }
+                .into_metric_datum(),
+            ),
         }
     }
 }
@@ -741,6 +759,11 @@ pub enum EventType {
         context_file_length: Option<usize>,
     },
     DailyHeartbeat {},
+    SubagentInvocation {
+        parent_conversation_id: String,
+        token_count: Option<i64>,
+        tool_call_count: Option<i64>,
+    },
 }
 
 #[derive(Debug)]

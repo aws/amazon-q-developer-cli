@@ -43,7 +43,10 @@ pub enum UseSubagent {
     /// Query for agents available for task delegation
     ListAgents,
     /// Invoke a subagent with the specified agent to complete a task
-    InvokeSubagents(Vec<InvokeSubagent>),
+    InvokeSubagents {
+        subagents: Vec<InvokeSubagent>,
+        convo_id: Option<String>,
+    },
 }
 
 impl UseSubagent {
@@ -83,9 +86,9 @@ impl UseSubagent {
                     output: super::OutputKind::Json(serialized_output),
                 })
             },
-            Self::InvokeSubagents(invoke_subagents) => {
+            Self::InvokeSubagents { subagents, convo_id } => {
                 let (view_end, input_rx, control_end) = get_conduit();
-                let subagents = invoke_subagents
+                let subagents = subagents
                     .iter()
                     .enumerate()
                     .map(|(id, invoke_subagent)| {
@@ -106,14 +109,14 @@ impl UseSubagent {
                 );
                 let _guard = subagent_indicator.run();
 
-                let (oks, bads) = futures::future::join_all(
-                    subagents
-                        .into_iter()
-                        .map(|subagent| subagent.query(os, input_rx.resubscribe(), control_end.clone())),
-                )
-                .await
-                .into_iter()
-                .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
+                let parent_conv_id = convo_id.as_deref().unwrap_or_default();
+                let (oks, bads) =
+                    futures::future::join_all(subagents.into_iter().map(|subagent| {
+                        subagent.query(os, input_rx.resubscribe(), control_end.clone(), parent_conv_id)
+                    }))
+                    .await
+                    .into_iter()
+                    .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
 
                 crossterm::terminal::disable_raw_mode()?;
 
@@ -170,11 +173,14 @@ mod tests {
     fn test_deser() {
         let input = serde_json::json!({
             "command": "InvokeSubagents",
-            "content": [{
-                "query": "test query",
-                "agent_name": "test_agent",
-                "relevant_context": "test context"
-            }]
+            "content": {
+                "subagents": [{
+                    "query": "test query",
+                    "agent_name": "test_agent",
+                    "relevant_context": "test context"
+                }],
+                "convo_id": "test_convo_id"
+            }
         });
 
         let result: Result<UseSubagent, _> = serde_json::from_value(input);

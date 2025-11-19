@@ -60,6 +60,7 @@ use tracing::{
 
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
+use crate::telemetry::TelemetryThread;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
@@ -93,6 +94,7 @@ pub struct Subagent<'a> {
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
     pub embedded_user_msg: Option<&'a str>,
+    // TODO: inherit this from the main session?
     pub dangerously_trust_all_tools: bool,
 }
 
@@ -102,6 +104,7 @@ impl<'a> Subagent<'a> {
         os: &Os,
         input_rx: broadcast::Receiver<InputEvent>,
         mut control_end: ControlEnd<D>,
+        parent_conversation_id: &str,
     ) -> Result<Summary> {
         let mut snapshot = AgentSnapshot {
             settings: AgentSettings {
@@ -149,8 +152,16 @@ impl<'a> Subagent<'a> {
         }
 
         let agent_handle = agent.spawn();
+        let telemetry_thread = &os.telemetry;
 
-        self.main_loop(agent_handle, input_rx, &mut control_end).await
+        self.main_loop(
+            agent_handle,
+            input_rx,
+            &mut control_end,
+            telemetry_thread,
+            parent_conversation_id,
+        )
+        .await
     }
 
     async fn main_loop<D>(
@@ -158,31 +169,52 @@ impl<'a> Subagent<'a> {
         mut agent: AgentHandle,
         mut input_rx: broadcast::Receiver<InputEvent>,
         control_end: &mut ControlEnd<D>,
+        telemetry_thread: &TelemetryThread,
+        parent_conversation_id: &str,
     ) -> Result<Summary> {
         // First, wait for agent initialization
-        while let Ok(evt) = agent.recv().await {
-            match evt {
-                AgentEvent::Mcp(evt) => {
-                    let ui_mcp_event = match evt {
-                        McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
-                        McpServerEvent::InitializeError { server_name, error } => {
-                            UiMcpEvent::LoadFailure { server_name, error }
-                        },
-                        McpServerEvent::OauthRequest { server_name, oauth_url } => {
-                            UiMcpEvent::OauthRequest { server_name, oauth_url }
-                        },
-                        McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
+        loop {
+            tokio::select! {
+                // While we wait we would still need to handle user input
+                evt = input_rx.recv() => {
+                    let Ok(evt) = evt else {
+                        bail!("input channel closed");
                     };
-                    _ = control_end.send(UiEvent::McpEvent {
-                        agent_id: self.id,
-                        inner: ui_mcp_event,
-                    });
+
+                    if let InputEvent::Interrupt { id: _ } = evt {
+                        bail!("user interrupted");
+                    }
                 },
-                // We need to wait until the agent is initialized before moving on
-                AgentEvent::Initialized => {
-                    break;
+
+                evt = agent.recv() => {
+                    let Ok(evt) = evt else {
+                        bail!("agent loop channel closed");
+                    };
+
+                    match evt {
+                        AgentEvent::Mcp(evt) => {
+                            let ui_mcp_event = match evt {
+                                McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
+                                McpServerEvent::InitializeError { server_name, error } => {
+                                    UiMcpEvent::LoadFailure { server_name, error }
+                                },
+                                McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                                    UiMcpEvent::OauthRequest { server_name, oauth_url }
+                                },
+                                McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
+                            };
+                            _ = control_end.send(UiEvent::McpEvent {
+                                agent_id: self.id,
+                                inner: ui_mcp_event,
+                            });
+                        },
+                        // We need to wait until the agent is initialized before moving on
+                        AgentEvent::Initialized => {
+                            break;
+                        },
+                        _ => {},
+                    }
                 },
-                _ => {},
             }
         }
 
@@ -326,7 +358,11 @@ impl<'a> Subagent<'a> {
 
         let md = user_turn_metadata.expect("user turn metadata should exist");
         let is_error = md.end_reason != LoopEndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
+        let token_count = Some(md.token_count as i64);
+        let tool_call_count = Some(md.number_of_cycles as i64);
         let result = md.result.and_then(|r| r.ok().map(|m| m.text()));
+
+        _ = telemetry_thread.send_subagent_invocation(parent_conversation_id.to_string(), token_count, tool_call_count);
 
         let output = JsonOutput {
             result,
@@ -348,9 +384,7 @@ pub fn temp_func() {
         .build()
         .expect("failed to build runtime");
 
-    crossterm::terminal::enable_raw_mode().ok();
     let summaries = rt.block_on(test_sub_agent_routine());
-    crossterm::terminal::disable_raw_mode().ok();
 
     println!("summaries: {summaries:#?}");
 }
@@ -374,6 +408,7 @@ async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
     ];
 
     let os = Os::new().await.expect("failed to spawn os");
+    let stub_id = "";
     let (view_end, input_rx, control_end) = get_conduit();
     let subagent_indicator = SubagentIndicator::new(
         &subagents
@@ -388,7 +423,7 @@ async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
     futures::future::join_all(
         subagents
             .into_iter()
-            .map(|subagent| subagent.query(&os, input_rx.resubscribe(), control_end.clone())),
+            .map(|subagent| subagent.query(&os, input_rx.resubscribe(), control_end.clone(), stub_id)),
     )
     .await
 }

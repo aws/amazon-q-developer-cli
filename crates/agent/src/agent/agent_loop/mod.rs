@@ -368,6 +368,20 @@ impl AgentLoop {
                 }
             }),
             end_timestamp: Utc::now(),
+            token_count: self.stream_states.iter().fold(0_u64, |mut acc, state| {
+                if let Some(md) = state.metadata.as_ref() {
+                    if let Some(md_usage) = md.usage.as_ref() {
+                        if let Some(token_count) = md_usage.input_tokens.as_ref() {
+                            acc = acc.saturating_add(*token_count);
+                        }
+                        if let Some(token_count) = md_usage.output_tokens.as_ref() {
+                            acc = acc.saturating_add(*token_count);
+                        }
+                    }
+                }
+
+                acc
+            }),
         }
     }
 }

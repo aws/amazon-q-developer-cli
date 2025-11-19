@@ -102,7 +102,8 @@ pub struct SubagentIndicator<'a> {
 }
 
 impl<'a> SubagentIndicator<'a> {
-    const MAX_WIDTH: u16 = 78;
+    const ARROW_WIDGET_WIDTH: u16 = 2;
+    const MAX_CONTENT_WIDGET_WIDTH: u16 = 78;
     const SPINNERS: [char; 8] = ['ᗢ', 'ᗣ', 'ᗤ', 'ᗥ', 'ᗦ', 'ᗧ', 'ᗨ', 'ᗩ'];
 
     pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd) -> Self {
@@ -131,18 +132,38 @@ impl<'a> SubagentIndicator<'a> {
             .collect::<BTreeMap<_, _>>();
         let mut focused_agent = None::<u16>;
 
+        struct RawModeGuard;
+
+        impl RawModeGuard {
+            pub fn new() -> Self {
+                crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+                Self
+            }
+        }
+
+        impl Drop for RawModeGuard {
+            fn drop(&mut self) {
+                crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+            }
+        }
+
         tokio::spawn(async move {
+            let _raw_mode_guard = RawModeGuard::new();
+
             let (_start_col, mut start_row) =
                 position().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-            let (mut width, terminal_height) = size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-            width = u16::min(Self::MAX_WIDTH, width);
+            let (terminal_width, terminal_height) =
+                size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+            let content_widget_width = u16::min(
+                Self::MAX_CONTENT_WIDGET_WIDTH,
+                terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
+            );
 
             let mut stdout = stdout();
             execute!(&mut stdout, style::Print("\n")).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
 
             let backend = CrosstermBackend::new(stdout);
             let mut terminal = Terminal::new(backend).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-            let mut blocking_servers = HashMap::<String, String>::new();
 
             let mut reader = crossterm::event::EventStream::new();
 
@@ -155,7 +176,7 @@ impl<'a> SubagentIndicator<'a> {
                     },
 
                     _ = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
-                        let mut stacked_height = 0_u16;
+                        let mut stacked_height = 1_u16;
 
                         for agent_info in agents.values_mut() {
                             let lines = &mut agent_info.lines;
@@ -169,7 +190,7 @@ impl<'a> SubagentIndicator<'a> {
 
                             if !agent_info.msg.is_empty() {
                                 let msg = &agent_info.msg;
-                                let max_text_width = (width.saturating_sub(4)) as usize; // Account for borders and padding
+                                let max_text_width = (content_widget_width.saturating_sub(4)) as usize; // Account for borders and padding
 
                                 let mut current_line = String::new();
                                 for word in msg.split_whitespace() {
@@ -232,7 +253,7 @@ impl<'a> SubagentIndicator<'a> {
                                 Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
                                 Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
                             ]);
-                            let area = Rect { x: 2, y: current_start_row, width, height: 1 };
+                            let area = Rect { x: 2, y: current_start_row, width: content_widget_width, height: 1 };
                             current_start_row = current_start_row.saturating_add(1);
                             f.render_widget(tool_tip, area);
 
@@ -243,7 +264,7 @@ impl<'a> SubagentIndicator<'a> {
                                     let arrow_area = Rect {
                                         x: 0,
                                         y,
-                                        width: 2,
+                                        width: Self::ARROW_WIDGET_WIDTH,
                                         height: agent_info.widget_height,
                                     };
                                     let arrow_widget = Paragraph::new("→")
@@ -279,9 +300,9 @@ impl<'a> SubagentIndicator<'a> {
                                     .block(Block::default().borders(Borders::ALL).title(title));
 
                                 let area = Rect {
-                                    x: 2,
+                                    x: Self::ARROW_WIDGET_WIDTH,
                                     y: current_start_row,
-                                    width,
+                                    width: content_widget_width,
                                     height: agent_info.widget_height,
                                 };
                                 f.render_widget(status_line, area);
@@ -319,14 +340,14 @@ impl<'a> SubagentIndicator<'a> {
                                             agent_info.msg = format!("loading mcp server {server_name}");
                                         },
                                         McpEvent::LoadSuccess { server_name } => {
-                                            blocking_servers.remove(&server_name);
+                                            agent_info.blocking_servers.remove(&server_name);
                                             agent_info.msg = format!("{server_name} loaded");
                                         },
                                         McpEvent::LoadFailure { server_name, error } => {
                                             agent_info.msg = format!("{server_name} has failed to load with the error {error}");
                                         },
                                         McpEvent::OauthRequest { server_name, oauth_url } => {
-                                            blocking_servers.insert(server_name, oauth_url);
+                                            agent_info.blocking_servers.insert(server_name, oauth_url);
                                         },
                                     }
                                 }

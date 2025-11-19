@@ -542,28 +542,37 @@
           "description": "The commands to run. Allowed options are `ListAgents` to query available agents, or `InvokeSubagents` to invoke one or more subagents"
         },
         "content": {
-          "description": "Required for `InvokeSubagents` command. Array of subagent invocations to execute in parallel. Each invocation specifies a query, optional agent name, and optional context.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "properties": {
-              "query": {
-                "type": "string",
-                "description": "The query or task to be handled by the subagent"
-              },
-              "agent_name": {
-                "type": "string",
-                "description": "Optional name of the specific agent to use. If not provided, uses the default agent"
-              },
-              "relevant_context": {
-                "type": "string",
-                "description": "Optional additional context that should be provided to the subagent to help it understand the task better"
+          "description": "Required for `InvokeSubagents` command. Contains subagents array and optional conversation ID.",
+          "type": "object",
+          "properties": {
+            "subagents": {
+              "type": "array",
+              "description": "Array of subagent invocations to execute in parallel. Each invocation specifies a query, optional agent name, and optional context.",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "The query or task to be handled by the subagent"
+                  },
+                  "agent_name": {
+                    "type": "string",
+                    "description": "Optional name of the specific agent to use. If not provided, uses the default agent"
+                  },
+                  "relevant_context": {
+                    "type": "string",
+                    "description": "Optional additional context that should be provided to the subagent to help it understand the task better"
+                  }
+                },
+                "required": [
+                  "query"
+                ]
               }
-            },
-            "required": [
-              "query"
-            ]
-          }
+            }
+          },
+          "required": [
+            "subagents"
+          ]
         }
       },
       "required": [

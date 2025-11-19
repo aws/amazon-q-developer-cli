@@ -303,6 +303,16 @@
       "name": "codewhispererterminal_linesByUser",
       "type": "int",
       "description": "The number of lines of code contributed by user"
+    },
+    {
+      "name": "tokenCount",
+      "type": "int",
+      "description": "The number of tokens used associated with a datum"
+    },
+    {
+      "name": "toolCallCount",
+      "type": "int",
+      "description": "The number of tool calls associated with a datum"
     }
   ],
   "metrics": [
@@ -565,6 +575,16 @@
       "unit": "None",
       "metadata": [
         { "type": "source", "required": false }
+      ]
+    },
+    {
+      "name": "kirocli_subagentInvocation",
+      "description": "Datum for a single subagent invocation",
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "amazonqConversationId" },
+        { "type": "tokenCount", "required": false },
+        { "type": "toolCallCount", "required": false }
       ]
     }
   ]

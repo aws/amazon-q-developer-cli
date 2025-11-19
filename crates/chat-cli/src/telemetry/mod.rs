@@ -486,6 +486,21 @@ impl TelemetryThread {
 
         Ok(self.tx.send(telemetry_event)?)
     }
+
+    pub fn send_subagent_invocation(
+        &self,
+        parent_conversation_id: String,
+        token_count: Option<i64>,
+        tool_call_count: Option<i64>,
+    ) -> Result<(), TelemetryError> {
+        let telemetry_event = Event::new(EventType::SubagentInvocation {
+            parent_conversation_id,
+            token_count,
+            tool_call_count,
+        });
+
+        Ok(self.tx.send(telemetry_event)?)
+    }
 }
 
 async fn set_event_metadata(database: &Database, event: &mut Event) {

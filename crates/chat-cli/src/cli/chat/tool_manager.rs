@@ -916,7 +916,11 @@ impl ToolManager {
                 Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
             },
             name if name == ToolMetadata::USE_SUBAGENT.spec_name => {
-                Tool::UseSubagent(serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?)
+                let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?;
+                if let UseSubagent::InvokeSubagents { convo_id, .. } = &mut use_subagent {
+                    convo_id.replace(self.conversation_id.clone());
+                }
+                Tool::UseSubagent(use_subagent)
             },
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name if name == ToolMetadata::WEB_SEARCH.spec_name => {
