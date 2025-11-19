@@ -6,7 +6,9 @@ use crossterm::execute;
 use crossterm::style::{
     self,
 };
+use dialoguer::Select;
 
+use crate::cli::chat::conversation::ForgetResult;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -20,6 +22,9 @@ use crate::constants::CLI_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
 
+/// Threshold for warning users about large forget operations
+const LARGE_FORGET_THRESHOLD: usize = 5;
+
 #[derive(Debug, PartialEq, Args)]
 pub struct TangentArgs {
     #[command(subcommand)]
@@ -30,6 +35,11 @@ pub struct TangentArgs {
 pub enum TangentSubcommand {
     /// Exit tangent mode and keep the last conversation entry (user question + assistant response)
     Tail,
+    /// Remove the last N conversation entries from history
+    Forget {
+        /// Number of conversation entries to remove (optional - will prompt if not provided)
+        count: Option<usize>,
+    },
 }
 
 impl TangentArgs {
@@ -40,7 +50,11 @@ impl TangentArgs {
                 &os.database,
                 session.conversation.conversation_id().to_string(),
                 crate::telemetry::TelemetryResult::Succeeded,
-                crate::telemetry::core::TangentModeSessionArgs { duration_seconds },
+                crate::telemetry::core::TangentModeSessionArgs {
+                    duration_seconds,
+                    is_forget: false,
+                    entries_removed: None,
+                },
             )
             .await
         {
@@ -99,6 +113,142 @@ impl TangentArgs {
                         style::Print("You need to be in tangent mode to use tail.\n"),
                         StyledText::reset(),
                     )?;
+                }
+            },
+            Some(TangentSubcommand::Forget { count }) => {
+                // If no count provided, show interactive selection
+                let count = if let Some(c) = count {
+                    c
+                } else {
+                    // Get user prompts (most recent first)
+                    let prompts = session.conversation.get_user_prompts();
+
+                    if prompts.is_empty() {
+                        execute!(
+                            session.stderr,
+                            StyledText::error_fg(),
+                            style::Print("No messages to remove.\n"),
+                            StyledText::reset(),
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: true,
+                        });
+                    }
+
+                    // Skip the first (most recent) message, show up to 8 older messages
+                    let messages_to_show: Vec<String> = prompts
+                        .iter()
+                        .skip(1)  // Skip the most recent
+                        .take(8)  // Limit to 8
+                        .enumerate()
+                        .map(|(idx, prompt)| {
+                            let words: Vec<&str> = prompt.split_whitespace().take(10).collect();
+                            let preview = words.join(" ");
+                            let suffix = if prompt.split_whitespace().count() > 10 { "..." } else { "" };
+                            let forget_count = idx + 1;
+                            format!(
+                                "{}{} (forget {} {} after this)",
+                                preview,
+                                suffix,
+                                forget_count,
+                                if forget_count == 1 { "message" } else { "messages" }
+                            )
+                        })
+                        .collect();
+
+                    // Add "Clear all messages" option
+                    let mut options = messages_to_show;
+                    options.push(format!(
+                        "Clear all messages (forget {} {})",
+                        prompts.len(),
+                        if prompts.len() == 1 { "message" } else { "messages" }
+                    ));
+
+                    match Select::with_theme(&crate::util::dialoguer_theme())
+                        .with_prompt("Select the message to revert back to (newer messages will be forgotten)")
+                        .items(&options)
+                        .default(0)
+                        .interact_on_opt(&dialoguer::console::Term::stdout())
+                    {
+                        Ok(Some(idx)) => {
+                            // If last option selected (Clear all), forget all messages
+                            if idx == options.len() - 1 {
+                                prompts.len()
+                            } else {
+                                idx + 1 // Otherwise forget idx+1 messages
+                            }
+                        },
+                        Ok(None) | Err(_) => {
+                            return Ok(ChatState::PromptUser {
+                                skip_printing_tools: true,
+                            });
+                        },
+                    }
+                };
+
+                // Early return for zero count
+                if count == 0 {
+                    execute!(
+                        session.stderr,
+                        StyledText::error_fg(),
+                        style::Print("Cannot forget 0 messages.\n"),
+                        StyledText::reset(),
+                    )?;
+                    return Ok(ChatState::PromptUser {
+                        skip_printing_tools: true,
+                    });
+                }
+
+                // Warn for large counts
+                if count > LARGE_FORGET_THRESHOLD {
+                    execute!(
+                        session.stderr,
+                        StyledText::warning_fg(),
+                        style::Print(&format!("Warning: Removing {count} messages. This cannot be undone.\n")),
+                        StyledText::reset(),
+                    )?;
+                }
+
+                let result = session.conversation.forget_last_entries(count);
+                match result {
+                    ForgetResult::Success(messages_removed) => {
+                        // Send telemetry for forget command
+                        if let Err(err) = os
+                            .telemetry
+                            .send_tangent_mode_session(
+                                &os.database,
+                                session.conversation.conversation_id().to_string(),
+                                crate::telemetry::TelemetryResult::Succeeded,
+                                crate::telemetry::core::TangentModeSessionArgs {
+                                    duration_seconds: 0,
+                                    is_forget: true,
+                                    entries_removed: Some(messages_removed as i64),
+                                },
+                            )
+                            .await
+                        {
+                            tracing::warn!(?err, "Failed to send tangent forget telemetry");
+                        }
+
+                        execute!(
+                            session.stderr,
+                            StyledText::secondary_fg(),
+                            style::Print(&format!(
+                                "Seems like you went on a tangent! Forgetting the last {} {}.\n",
+                                messages_removed,
+                                if messages_removed == 1 { "message" } else { "messages" }
+                            )),
+                            StyledText::reset(),
+                        )?;
+                    },
+                    ForgetResult::NoEntries => {
+                        execute!(
+                            session.stderr,
+                            StyledText::error_fg(),
+                            style::Print("No messages to remove.\n"),
+                            StyledText::reset(),
+                        )?;
+                    },
                 }
             },
             None => {

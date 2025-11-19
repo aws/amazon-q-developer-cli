@@ -39,6 +39,26 @@ Use `/tangent tail` to preserve the last conversation entry (question + answer):
 Restored conversation from checkpoint (↯) with last conversation entry preserved.
 ```
 
+### Forget Last Conversations
+Use `/tangent forget N` to remove the last N messages from your current conversation:
+```
+> /tangent forget 2
+Seems like you went on a tangent! Forgetting the last 2 messages.
+```
+
+Or use `/tangent forget` without a count to interactively select which message to revert back to:
+```
+> /tangent forget
+? Select the message to revert back to (newer messages will be forgotten)
+  How do I optimize this query... (forget 1 message after this)
+  What about using indexes... (forget 2 messages after this)
+  Clear all messages (forget 5 messages)
+```
+
+A "message" is one user prompt and all the assistant responses (including any tool use chains) until the next user prompt. This is useful when you realize your last few questions went in the wrong direction and want to backtrack.
+
+**Note:** The count is based on your messages, not the total conversation entries. If your question triggered tool use, the entire chain is removed as one message.
+
 ## Usage Examples
 
 ### Example 1: Exploring Alternatives
@@ -121,6 +141,27 @@ Restored conversation from checkpoint (↯) with last conversation entry preserv
 > Here's my error: TypeError: unsupported operand type(s)...
 
 # The preserved entry (question + answer about debugging techniques) is now part of main conversation
+```
+
+### Example 5: Backtracking from Wrong Direction
+```
+> Help me optimize this database query
+
+Let me help you with that. What database are you using?
+
+> PostgreSQL. Here's my query: SELECT * FROM users WHERE...
+
+I see several optimization opportunities...
+
+> Actually, let me try a different approach with indexing
+
+Here's how to add indexes...
+
+> /tangent forget 2
+Seems like you went on a tangent! Forgetting the last 2 messages.
+
+# Now back to the point where you shared the query, can start fresh with a better approach
+> I think the real issue is the query design itself. Can we restructure it?
 ```
 
 ## Configuration
