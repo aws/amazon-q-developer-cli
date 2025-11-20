@@ -75,7 +75,7 @@ struct AgentInfo<'a> {
     spinner_idx: usize,
     lines: Vec<Line<'a>>,
     widget_height: u16,
-    blocking_servers: HashMap<String, String>,
+    blocking_servers: BTreeMap<String, String>,
     pending_tool_approval: Option<String>,
 }
 
@@ -183,8 +183,8 @@ impl<'a> SubagentIndicator<'a> {
 
                             if !agent_info.blocking_servers.is_empty() {
                                 lines.push(Line::from(format!("Waiting on {} server(s)", agent_info.blocking_servers.len())));
-                                for (server_name, url) in &agent_info.blocking_servers {
-                                    lines.push(Line::from(format!("- Auth required for {server_name}: {url}")));
+                                for server_name in agent_info.blocking_servers.keys() {
+                                    lines.push(Line::from(format!("- Auth required for {server_name}. ↵ to copy URL")));
                                 }
                             }
 
@@ -236,7 +236,8 @@ impl<'a> SubagentIndicator<'a> {
                             // You need to create a new terminal after this otherwise you risk
                             // clipping your rendering since the Frame<'_> passed in the FnOnce of
                             // draw could be out of date
-                            terminal = Terminal::new(backend).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>).expect("failed to create new terminal");
+                            terminal = Terminal::new(backend)
+                                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>).expect("failed to create new terminal");
                         }
 
                         terminal.draw(|f| {
@@ -422,7 +423,27 @@ impl<'a> SubagentIndicator<'a> {
                                         };
                                         agent_info.msg = "tool rejection sent".to_string();
                                     },
-                                    KeyCode::Enter => {},
+                                    KeyCode::Enter => {
+                                        let Some(focused_agent) = focused_agent else {
+                                            continue;
+                                        };
+                                        let Some(agent_info) = agents.get_mut(&focused_agent) else {
+                                            continue;
+                                        };
+                                        let next_url = agent_info.blocking_servers.values().next();
+                                        if let Some(url) = next_url {
+                                            match arboard::Clipboard::new() {
+                                                Ok(mut clipboard) => {
+                                                    if let Err(e) = clipboard.set_text(url) {
+                                                        error!(?e, "failed to copy url to clipboard");
+                                                    }
+                                                },
+                                                Err(e) => {
+                                                    error!(?e, "failed to copy url to clipboard");
+                                                }
+                                            }
+                                        }
+                                    },
                                     KeyCode::Esc => {
                                         focused_agent.take();
                                     },

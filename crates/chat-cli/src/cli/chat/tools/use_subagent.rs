@@ -98,8 +98,6 @@ impl UseSubagent {
                     })
                     .collect::<Vec<_>>();
 
-                crossterm::terminal::enable_raw_mode()?;
-
                 let subagent_indicator = SubagentIndicator::new(
                     &subagents
                         .iter()
@@ -117,8 +115,6 @@ impl UseSubagent {
                     .await
                     .into_iter()
                     .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
-
-                crossterm::terminal::disable_raw_mode()?;
 
                 let oks = oks.into_iter().map(|res| res.unwrap()).collect::<Vec<_>>();
                 let bads = bads
