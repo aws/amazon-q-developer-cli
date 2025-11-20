@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use agent::AgentHandle;
 use agent::agent_config::load_agents;
-use agent::agent_loop::protocol::LoopEndReason;
+use agent::agent_loop::protocol::UserTurnMetadata;
 use agent::mcp::{
     McpManager,
     McpServerEvent,
@@ -31,13 +31,17 @@ use chat_cli_ui::conduit::{
 use chat_cli_ui::protocol::{
     InputEvent,
     McpEvent as UiMcpEvent,
+    MetaEvent,
     TextMessageContent,
     ToolCallEnd,
     ToolCallPermissionRequest,
     ToolCallStart,
     UiEvent,
 };
-use chat_cli_ui::subagent_indicator::SubagentIndicator;
+use chat_cli_ui::subagent_indicator::{
+    SubagentExecutionSummary,
+    SubagentIndicator,
+};
 use eyre::{
     Result,
     bail,
@@ -226,8 +230,7 @@ impl<'a> Subagent<'a> {
             .await?;
 
         // Holds the final result of the user turn.
-        #[allow(unused_assignments)]
-        let mut user_turn_metadata = None;
+        let mut user_turn_metadata = Vec::<UserTurnMetadata>::new();
         let mut query_result = None::<Summary>;
 
         loop {
@@ -313,7 +316,7 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::EndTurn(metadata) => {
                             if query_result.is_some() {
-                                user_turn_metadata = Some(metadata.clone());
+                                user_turn_metadata.push(metadata.clone());
                                 break;
                             } else {
                                 agent
@@ -356,23 +359,37 @@ impl<'a> Subagent<'a> {
             }
         }
 
-        let md = user_turn_metadata.expect("user turn metadata should exist");
-        let is_error = md.end_reason != LoopEndReason::UserTurnEnd || md.result.as_ref().is_none_or(|v| v.is_err());
+        let md = user_turn_metadata
+            .iter()
+            .fold(SubagentExecutionSummary::default(), |mut acc, md| {
+                let tool_call_count = acc.tool_call_count.get_or_insert(0);
+                *tool_call_count = tool_call_count.saturating_add(md.number_of_cycles);
+
+                acc.token_count = acc.token_count.saturating_add(md.token_count);
+
+                if let Some(turn_duration) = md.turn_duration.as_ref() {
+                    let duration = acc.duration.get_or_insert(std::time::Duration::from_secs(0));
+                    *duration = duration.saturating_add(*turn_duration);
+                }
+
+                acc
+            });
         let token_count = Some(md.token_count as i64);
-        let tool_call_count = Some(md.number_of_cycles as i64);
-        let result = md.result.and_then(|r| r.ok().map(|m| m.text()));
+        let tool_call_count = md.tool_call_count.map(|count| count as i64);
 
         _ = telemetry_thread.send_subagent_invocation(parent_conversation_id.to_string(), token_count, tool_call_count);
 
-        let output = JsonOutput {
-            result,
-            is_error,
-            number_of_requests: md.total_request_count,
-            number_of_cycles: md.number_of_cycles,
-            duration_ms: md.turn_duration.map(|d| d.as_millis() as u32).unwrap_or_default(),
-        };
-
-        info!(?output, "sub agent routine completed");
+        // TODO: do we want to set a special variant for this so we don't have to marshall and
+        // unmarshall?
+        if let Ok(payload) = serde_json::to_value(md) {
+            _ = control_end.send(UiEvent::MetaEvent {
+                agent_id: self.id,
+                inner: MetaEvent {
+                    meta_type: "EndTurn".to_string(),
+                    payload,
+                },
+            });
+        }
 
         query_result.ok_or(eyre::eyre!("subagent missing query result"))
     }
@@ -418,12 +435,16 @@ async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
         view_end,
     );
 
-    let _guards = subagent_indicator.run();
+    let mut indicator_handle = subagent_indicator.run();
 
-    futures::future::join_all(
+    let res = futures::future::join_all(
         subagents
             .into_iter()
             .map(|subagent| subagent.query(&os, input_rx.resubscribe(), control_end.clone(), stub_id)),
     )
-    .await
+    .await;
+
+    _ = indicator_handle.wait_for_clean_screen().await;
+
+    res
 }

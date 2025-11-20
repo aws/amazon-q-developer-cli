@@ -4,7 +4,10 @@ use std::io::Write;
 use agent::tools::summary::Summary;
 use chat_cli_ui::conduit::get_conduit;
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
-use eyre::Result;
+use eyre::{
+    Result,
+    bail,
+};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -61,10 +64,10 @@ impl UseSubagent {
         ExperimentManager::is_enabled(os, ExperimentName::UseSubagent)
     }
 
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<()> {
         if let UseSubagent::InvokeSubagents { subagents, .. } = self {
             if subagents.len() > 4 {
-                return Err("You can only spawn 4 or fewer subagents at a time".to_string());
+                bail!("You can only spawn 4 or fewer subagents at a time");
             }
         }
 
@@ -115,7 +118,7 @@ impl UseSubagent {
                         .collect::<Vec<(&str, &str)>>(),
                     view_end,
                 );
-                let _guard = subagent_indicator.run();
+                let mut indicator_handle = subagent_indicator.run();
 
                 let parent_conv_id = convo_id.as_deref().unwrap_or_default();
                 let (oks, bads) =
@@ -125,6 +128,8 @@ impl UseSubagent {
                     .await
                     .into_iter()
                     .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
+
+                _ = indicator_handle.wait_for_clean_screen().await;
 
                 let oks = oks.into_iter().map(|res| res.unwrap()).collect::<Vec<_>>();
                 let bads = bads

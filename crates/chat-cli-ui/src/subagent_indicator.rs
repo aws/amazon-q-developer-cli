@@ -15,15 +15,12 @@ use crossterm::event::{
     KeyModifiers,
 };
 use crossterm::style::Color;
-use crossterm::terminal::{
-    Clear,
-    ClearType,
-    size,
-};
+use crossterm::terminal::size;
 use crossterm::{
     execute,
     style,
 };
+use eyre::bail;
 use futures::{
     FutureExt as _,
     StreamExt as _,
@@ -44,6 +41,11 @@ use ratatui::widgets::{
     Borders,
     Paragraph,
 };
+use serde::{
+    Deserialize,
+    Serialize,
+};
+use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
@@ -58,13 +60,35 @@ use crate::protocol::{
 };
 
 pub struct SubagentIndicatorHandle {
-    guard: CancellationToken,
+    end_turn_rx: mpsc::Receiver<()>,
+    guard: Option<CancellationToken>,
+}
+
+impl SubagentIndicatorHandle {
+    pub async fn wait_for_clean_screen(&mut self) -> eyre::Result<Option<()>> {
+        match self.guard.take() {
+            Some(ct) => {
+                ct.cancel();
+                Ok(self.end_turn_rx.recv().await)
+            },
+            None => bail!("display task has already been cancelled"),
+        }
+    }
 }
 
 impl Drop for SubagentIndicatorHandle {
     fn drop(&mut self) {
-        self.guard.cancel();
+        if let Some(ct) = self.guard.take() {
+            ct.cancel();
+        }
     }
+}
+
+#[derive(Default, Debug, Serialize, Deserialize)]
+pub struct SubagentExecutionSummary {
+    pub token_count: u64,
+    pub duration: Option<std::time::Duration>,
+    pub tool_call_count: Option<u32>,
 }
 
 #[derive(Default)]
@@ -77,6 +101,7 @@ struct AgentInfo<'a> {
     widget_height: u16,
     blocking_servers: BTreeMap<String, String>,
     pending_tool_approval: Option<String>,
+    execution_summary: Option<SubagentExecutionSummary>,
 }
 
 impl<'a> AgentInfo<'a> {
@@ -117,7 +142,7 @@ impl<'a> SubagentIndicator<'a> {
             agents.insert(idx as u16, AgentInfo {
                 agent_name,
                 initial_query,
-                msg: "Staring up...".to_string(),
+                msg: "Starting up...".to_string(),
                 ..Default::default()
             });
         }
@@ -133,6 +158,7 @@ impl<'a> SubagentIndicator<'a> {
             .iter()
             .map(|(agent_id, agent_info)| (*agent_id, agent_info.to_owned()))
             .collect::<BTreeMap<_, _>>();
+        let (end_turn_tx, end_turn_rx) = mpsc::channel::<()>(1);
         let mut focused_agent = None::<u16>;
 
         struct RawModeGuard;
@@ -161,6 +187,8 @@ impl<'a> SubagentIndicator<'a> {
                 Self::MAX_CONTENT_WIDGET_WIDTH,
                 terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
             );
+            #[allow(unused_assignments)]
+            let mut stacked_height = 2_u16;
 
             let mut stdout = stdout();
             execute!(&mut stdout, style::Print("\n")).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
@@ -174,12 +202,78 @@ impl<'a> SubagentIndicator<'a> {
                 let crossterm_event = reader.next().fuse();
 
                 tokio::select! {
+                    evt = self.view_end.receiver.recv() => {
+                        let Some(evt) = evt else {
+                            error!(?evt, "error receiving evt from control end");
+                            break;
+                        };
+
+                        match evt {
+                            UiEvent::ToolCallStart { agent_id, inner: tool_call_start } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    let tool_name = tool_call_start.tool_call_name;
+                                    agent_info.msg = if tool_name.as_str() == "summary" {
+                                        "summarizing...".to_string()
+                                    } else {
+                                        format!("calling tool {tool_name}")
+                                    }
+                                }
+                            },
+                            UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
+                                }
+                            },
+                            UiEvent::TextMessageContent { agent_id, .. } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    agent_info.msg = "thinking...".to_string();
+                                }
+                            },
+                            UiEvent::McpEvent { agent_id, inner: mcp_event, .. } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    match mcp_event {
+                                        McpEvent::Loading { server_name }  => {
+                                            agent_info.msg = format!("loading mcp server {server_name}");
+                                        },
+                                        McpEvent::LoadSuccess { server_name } => {
+                                            agent_info.blocking_servers.remove(&server_name);
+                                            agent_info.msg = format!("{server_name} loaded");
+                                        },
+                                        McpEvent::LoadFailure { server_name, error } => {
+                                            agent_info.msg = format!("{server_name} has failed to load with the error {error}");
+                                        },
+                                        McpEvent::OauthRequest { server_name, oauth_url } => {
+                                            agent_info.blocking_servers.insert(server_name, oauth_url);
+                                        },
+                                    }
+                                }
+                            },
+                            UiEvent::ToolCallPermissionRequest { agent_id, inner } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    agent_info.msg = format!("Tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
+                                    agent_info.pending_tool_approval.replace(inner.tool_call_id);
+                                }
+                            },
+                            UiEvent::MetaEvent { agent_id, inner: meta_event } => {
+                                if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                    if meta_event.meta_type.as_str() == "EndTurn" {
+                                        if let Ok(exec_summary) = serde_json::from_value::<SubagentExecutionSummary>(meta_event.payload) {
+                                            agent_info.execution_summary.replace(exec_summary);
+                                        }
+                                        agent_info.msg = "Waiting for others...".to_string();
+                                    }
+                                }
+                            }
+                            _ => {},
+                        }
+                    },
+
                     _ = ct.cancelled() => {
                         break;
                     },
 
                     _ = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
-                        let mut stacked_height = 2_u16;
+                        stacked_height = 2_u16;
 
                         for agent_info in agents.values_mut() {
                             let lines = &mut agent_info.lines;
@@ -208,6 +302,28 @@ impl<'a> SubagentIndicator<'a> {
 
                             agent_info.widget_height = (lines.len() as u16).saturating_add(2).max(3);
                             stacked_height = stacked_height.saturating_add(agent_info.widget_height);
+                        }
+
+                        if stacked_height > terminal_height {
+                            terminal.draw(|f| {
+                                let message = Line::from(vec![
+                                    Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
+                                    Span::styled(
+                                        "Terminal too small to display agents. Please resize.",
+                                        Style::default().fg(Color::AnsiValue(141).into())
+                                    ),
+                                ]);
+
+                                let area = Rect {
+                                    x: Self::ARROW_WIDGET_WIDTH,
+                                    y: start_row,
+                                    width: content_widget_width,
+                                    height: 1,
+                                };
+
+                                f.render_widget(message, area);
+                            }).ok();
+                            continue;
                         }
 
                         let desired_end = start_row.saturating_add(stacked_height);
@@ -325,62 +441,6 @@ impl<'a> SubagentIndicator<'a> {
                         }).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
                     },
 
-                    evt = self.view_end.receiver.recv() => {
-                        let Some(evt) = evt else {
-                            error!(?evt, "error receiving evt from control end");
-                            break;
-                        };
-
-                        match evt {
-                            UiEvent::ToolCallStart { agent_id, inner: tool_call_start } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    let tool_name = tool_call_start.tool_call_name;
-                                    agent_info.msg = if tool_name.as_str() == "summary" {
-                                        "summarizing...".to_string()
-                                    } else {
-                                        format!("calling tool {tool_name}")
-                                    }
-                                }
-                            },
-                            UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
-                                }
-                            },
-                            UiEvent::TextMessageContent { agent_id, .. } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = "thinking...".to_string();
-                                }
-                            },
-                            UiEvent::McpEvent { agent_id, inner: mcp_event, .. } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    match mcp_event {
-                                        McpEvent::Loading { server_name }  => {
-                                            agent_info.msg = format!("loading mcp server {server_name}");
-                                        },
-                                        McpEvent::LoadSuccess { server_name } => {
-                                            agent_info.blocking_servers.remove(&server_name);
-                                            agent_info.msg = format!("{server_name} loaded");
-                                        },
-                                        McpEvent::LoadFailure { server_name, error } => {
-                                            agent_info.msg = format!("{server_name} has failed to load with the error {error}");
-                                        },
-                                        McpEvent::OauthRequest { server_name, oauth_url } => {
-                                            agent_info.blocking_servers.insert(server_name, oauth_url);
-                                        },
-                                    }
-                                }
-                            },
-                            UiEvent::ToolCallPermissionRequest { agent_id, inner } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("Tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
-                                    agent_info.pending_tool_approval.replace(inner.tool_call_id);
-                                }
-                            },
-                            _ => {},
-                        }
-                    },
-
                     evt = crossterm_event => {
                         let Some(Ok(evt)) = evt else {
                             warn!("subagent indicator failed to receive terminal event");
@@ -474,19 +534,118 @@ impl<'a> SubagentIndicator<'a> {
                 }
             }
 
+            // Get current terminal size to check if we have enough space
+            let (_, current_terminal_height) = size().unwrap_or((terminal_width, terminal_height));
+
+            // First pass: calculate required height
+            let mut summary_stacked_height = 0_u16;
+            for agent_info in agents.values() {
+                let mut line_count = 0_usize;
+
+                if let Some(summary) = &agent_info.execution_summary {
+                    line_count += 1; // "Execution Summary" line
+                    if summary.duration.is_some() {
+                        line_count += 1; // Duration line
+                    }
+                    if summary.tool_call_count.is_some() {
+                        line_count += 1; // Tool calls line
+                    }
+                }
+
+                let widget_height = (line_count as u16).saturating_add(2).max(3);
+                summary_stacked_height = summary_stacked_height.saturating_add(widget_height);
+            }
+
+            // Check if we have enough space
+            if summary_stacked_height > current_terminal_height {
+                terminal
+                    .draw(|f| {
+                        let message = Line::from(vec![
+                            Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
+                            Span::styled(
+                                "Terminal too small to display summary. Please resize.",
+                                Style::default().fg(Color::AnsiValue(141).into()),
+                            ),
+                        ]);
+
+                        let area = Rect {
+                            x: Self::ARROW_WIDGET_WIDTH,
+                            y: start_row,
+                            width: content_widget_width,
+                            height: 1,
+                        };
+
+                        f.render_widget(message, area);
+                    })
+                    .ok();
+                stacked_height = 1;
+            } else {
+                terminal
+                    .draw(|f| {
+                        let mut current_start_row = start_row;
+
+                        for agent_info in agents.values() {
+                            let mut lines = Vec::new();
+
+                            if let Some(summary) = &agent_info.execution_summary {
+                                lines.push(Line::from(vec![
+                                    Span::styled("↳ ", Style::default()),
+                                    Span::styled(
+                                        "Execution Summary",
+                                        Style::default().fg(Color::AnsiValue(141).into()),
+                                    ),
+                                ]));
+                                // TODO: investigate why this is showing a count of 0
+                                // lines.push(Line::from(format!("  Token count: {}", summary.token_count)));
+                                if let Some(duration) = summary.duration {
+                                    lines.push(Line::from(format!("  - Duration: {:.2}s", duration.as_secs_f64())));
+                                }
+                                if let Some(tool_calls) = summary.tool_call_count {
+                                    lines.push(Line::from(format!("  - Tool calls: {tool_calls}")));
+                                }
+                            }
+
+                            let title = Line::from(vec![
+                                Span::styled("✓", Style::default().fg(Color::Green.into())),
+                                Span::raw(format!(" {}: {}... ", agent_info.agent_name, agent_info.initial_query)),
+                            ]);
+
+                            let widget_height = (lines.len() as u16).saturating_add(2).max(3);
+
+                            let status_line = Paragraph::new(lines)
+                                .style(Style::default().fg(Color::AnsiValue(141).into()))
+                                .block(Block::default().borders(Borders::NONE).title(title));
+
+                            let area = Rect {
+                                x: Self::ARROW_WIDGET_WIDTH,
+                                y: current_start_row,
+                                width: content_widget_width,
+                                height: widget_height,
+                            };
+                            f.render_widget(status_line, area);
+                            current_start_row = current_start_row.saturating_add(widget_height);
+                        }
+                    })
+                    .ok();
+                stacked_height = summary_stacked_height;
+            }
+
             // Clear the widget area before exiting
             execute!(
                 terminal.backend_mut(),
                 MoveTo(0, start_row),
-                Clear(ClearType::FromCursorDown)
+                MoveTo(0, start_row.saturating_add(stacked_height))
             )
             .ok();
+
+            _ = end_turn_tx.send(()).await;
 
             Ok::<(), Box<dyn std::error::Error + Send>>(())
         });
 
         SubagentIndicatorHandle {
-            guard: cancellation_token,
+            end_turn_rx,
+            guard: Some(cancellation_token),
         }
     }
 }
