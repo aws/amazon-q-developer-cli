@@ -61,6 +61,16 @@ impl UseSubagent {
         ExperimentManager::is_enabled(os, ExperimentName::UseSubagent)
     }
 
+    pub fn validate(&self) -> Result<(), String> {
+        if let UseSubagent::InvokeSubagents { subagents, .. } = self {
+            if subagents.len() > 4 {
+                return Err("You can only spawn 4 or fewer subagents at a time".to_string());
+            }
+        }
+
+        Ok(())
+    }
+
     pub async fn invoke(&self, os: &Os, agents: &Agents) -> Result<InvokeOutput> {
         match self {
             Self::ListAgents => {

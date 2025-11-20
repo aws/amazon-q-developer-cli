@@ -241,6 +241,7 @@ impl Tool {
             Tool::WebSearch(web_search) => web_search.validate(os).await,
             Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
             Tool::UseSubagent(_use_subagent) => Ok(()),
+            Tool::UseSubagent(use_subagent) => use_subagent.validate(),
         }
     }
 

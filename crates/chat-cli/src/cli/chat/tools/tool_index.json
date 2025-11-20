@@ -529,7 +529,7 @@
   },
   "use_subagent": {
     "name": "use_subagent",
-    "description": "A tool that allows the LLM to delegate tasks to any number of specialized subagents. This enables the main agent to spawn multiple focused subagents with their own context and capabilities to handle specific queries or tasks in parallel.",
+    "description": "A tool that allows the LLM to delegate tasks to any number of specialized subagents. This enables the main agent to spawn up to 4 focused subagents at a time with their own context and capabilities to handle specific queries or tasks in parallel.",
     "input_schema": {
       "type": "object",
       "properties": {

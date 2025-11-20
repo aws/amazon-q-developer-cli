@@ -104,12 +104,14 @@ pub struct SubagentIndicator<'a> {
 impl<'a> SubagentIndicator<'a> {
     const ARROW_WIDGET_WIDTH: u16 = 2;
     const MAX_CONTENT_WIDGET_WIDTH: u16 = 78;
+    const MAX_SUBAGENT_LEN: usize = 4;
     const SPINNERS: [char; 8] = ['ᗢ', 'ᗣ', 'ᗤ', 'ᗥ', 'ᗦ', 'ᗧ', 'ᗨ', 'ᗩ'];
 
     pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd) -> Self {
         let mut agents = HashMap::<u16, AgentInfo<'_>>::new();
+        let end_idx = usize::min(inputs.len(), Self::MAX_SUBAGENT_LEN);
 
-        for (idx, (agent_name, initial_query)) in inputs.iter().enumerate() {
+        for (idx, (agent_name, initial_query)) in inputs[0..end_idx].iter().enumerate() {
             let agent_name = Cow::Borrowed(*agent_name);
             let initial_query = Cow::Borrowed(*initial_query);
             agents.insert(idx as u16, AgentInfo {
