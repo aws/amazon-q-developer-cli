@@ -157,11 +157,16 @@ impl AddArgs {
             },
             None => {
                 let resolver = PathResolver::new(os);
-                let legacy_mcp_config_path = match self.scope {
-                    Some(Scope::Workspace) => resolver.workspace().mcp_config()?,
+                let scope = self.scope.unwrap_or(Scope::Workspace);
+                let legacy_mcp_config_path = match scope {
+                    Scope::Workspace => resolver.workspace().mcp_config()?,
                     _ => resolver.global().mcp_config()?,
                 };
                 if !legacy_mcp_config_path.exists() {
+                    // Ensure parent directory exists
+                    if let Some(parent) = legacy_mcp_config_path.parent() {
+                        os.fs.create_dir_all(parent).await?;
+                    }
                     // Create an empty config file that won't fail to deserialize.
                     os.fs.write(&legacy_mcp_config_path, "{ \"mcpServers\": {} }").await?;
                 }
@@ -169,8 +174,9 @@ impl AddArgs {
 
                 if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
                     bail!(
-                        "\nMCP server '{}' already exists in global config (path {}). Use --force to overwrite.",
+                        "\nMCP server '{}' already exists in {} config (path {}). Use --force to overwrite.",
                         self.name,
+                        scope,
                         &legacy_mcp_config_path.display(),
                     );
                 }
@@ -188,8 +194,9 @@ impl AddArgs {
                 mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
                 writeln!(
                     output,
-                    "✓ Added MCP server '{}' to global config in {}\n",
+                    "✓ Added MCP server '{}' to {} config in {}\n",
                     self.name,
+                    scope,
                     legacy_mcp_config_path.display()
                 )?;
             },
@@ -255,8 +262,9 @@ impl RemoveArgs {
             },
             None => {
                 let resolver = PathResolver::new(os);
-                let legacy_mcp_config_path = match self.scope {
-                    Some(Scope::Workspace) => resolver.workspace().mcp_config()?,
+                let scope = self.scope.unwrap_or(Scope::Workspace);
+                let legacy_mcp_config_path = match scope {
+                    Scope::Workspace => resolver.workspace().mcp_config()?,
                     _ => resolver.global().mcp_config()?,
                 };
                 let mut config = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
@@ -266,16 +274,18 @@ impl RemoveArgs {
                         config.save_to_file(os, &legacy_mcp_config_path).await?;
                         writeln!(
                             output,
-                            "\n✓ Removed MCP server '{}' from global config (path {})\n",
+                            "\n✓ Removed MCP server '{}' from {} config (path {})\n",
                             self.name,
+                            scope,
                             &legacy_mcp_config_path.display(),
                         )?;
                     },
                     None => {
                         writeln!(
                             output,
-                            "\nNo MCP server named '{}' found in global config (path {})\n",
+                            "\nNo MCP server named '{}' found in {} config (path {})\n",
                             self.name,
+                            scope,
                             &legacy_mcp_config_path.display(),
                         )?;
                     },
