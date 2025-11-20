@@ -332,7 +332,12 @@ impl<'a> SubagentIndicator<'a> {
                         match evt {
                             UiEvent::ToolCallStart { agent_id, inner: tool_call_start } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("calling tool {}", tool_call_start.tool_call_name);
+                                    let tool_name = tool_call_start.tool_call_name;
+                                    agent_info.msg = if tool_name.as_str() == "summary" {
+                                        "summarizing...".to_string()
+                                    } else {
+                                        format!("calling tool {tool_name}")
+                                    }
                                 }
                             },
                             UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
