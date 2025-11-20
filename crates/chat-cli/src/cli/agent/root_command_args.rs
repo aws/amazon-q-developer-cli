@@ -22,6 +22,7 @@ use super::{
     McpServerConfig,
     legacy,
 };
+use crate::constants::DEFAULT_AGENT_NAME;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -98,14 +99,17 @@ impl AgentArgs {
                         .into_iter()
                         .fold(Vec::<(String, String, bool)>::new(), |mut acc, (name, agent)| {
                             let is_active = name == active_agent_name;
-                            acc.push((
-                                name,
-                                agent
-                                    .path
-                                    .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
-                                    .unwrap_or("**No path found**".to_string()),
-                                is_active,
-                            ));
+                            let path = agent
+                                .path
+                                .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
+                                .unwrap_or_else(|| {
+                                    if name == DEFAULT_AGENT_NAME {
+                                        StyledText::secondary("(Built-in)")
+                                    } else {
+                                        "**No path found**".to_string()
+                                    }
+                                });
+                            acc.push((name, path, is_active));
                             acc
                         });
                 let max_name_length = agent_with_path.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
