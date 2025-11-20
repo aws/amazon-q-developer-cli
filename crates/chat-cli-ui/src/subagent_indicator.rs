@@ -115,6 +115,7 @@ impl<'a> SubagentIndicator<'a> {
             agents.insert(idx as u16, AgentInfo {
                 agent_name,
                 initial_query,
+                msg: "Staring up...".to_string(),
                 ..Default::default()
             });
         }
@@ -176,37 +177,31 @@ impl<'a> SubagentIndicator<'a> {
                     },
 
                     _ = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
-                        let mut stacked_height = 1_u16;
+                        let mut stacked_height = 2_u16;
 
                         for agent_info in agents.values_mut() {
                             let lines = &mut agent_info.lines;
 
                             if !agent_info.blocking_servers.is_empty() {
-                                lines.push(Line::from(format!("Waiting on {} server(s)", agent_info.blocking_servers.len())));
+                                lines.push(Line::from(format!("↳ Waiting on {} server(s)", agent_info.blocking_servers.len())));
                                 for server_name in agent_info.blocking_servers.keys() {
-                                    lines.push(Line::from(format!("- Auth required for {server_name}. ↵ to copy URL")));
+                                    lines.push(Line::from(format!("  - Auth required for {server_name}. ↵ to copy URL")));
                                 }
-                            }
-
-                            if !agent_info.msg.is_empty() {
+                            } else if !agent_info.msg.is_empty() {
                                 let msg = &agent_info.msg;
-                                let max_text_width = (content_widget_width.saturating_sub(4)) as usize; // Account for borders and padding
+                                let max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
 
-                                let mut current_line = String::new();
-                                for word in msg.split_whitespace() {
-                                    if current_line.is_empty() {
-                                        current_line = word.to_string();
-                                    } else if current_line.len() + word.len() < max_text_width {
-                                        current_line.push(' ');
-                                        current_line.push_str(word);
-                                    } else {
-                                        lines.push(Line::from(current_line.clone()));
-                                        current_line = word.to_string();
-                                    }
-                                }
-                                if !current_line.is_empty() {
-                                    lines.push(Line::from(current_line));
-                                }
+                                *lines = wrap_text(msg, max_text_width)
+                                    .into_iter()
+                                    .enumerate()
+                                    .map(|(idx, text)| {
+                                        let prefix = if idx == 0 { "↳ " } else { "  " };
+                                        Line::from(vec![
+                                            Span::styled(prefix, Style::default()),
+                                            Span::raw(text.to_string()),
+                                        ])
+                                    })
+                                    .collect::<Vec<_>>();
                             }
 
                             agent_info.widget_height = (lines.len() as u16).saturating_add(2).max(3);
@@ -243,21 +238,6 @@ impl<'a> SubagentIndicator<'a> {
                         terminal.draw(|f| {
                             let mut current_start_row = start_row;
 
-                            let tool_tip = Line::from(vec![
-                                Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
-                                Span::styled("j/↓", Style::default().fg(Color::AnsiValue(141).into())),
-                                Span::styled(" down ", Style::default().fg(Color::Grey.into())),
-                                Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
-                                Span::styled(" up ", Style::default().fg(Color::Grey.into())),
-                                Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
-                                Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
-                                Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
-                                Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
-                            ]);
-                            let area = Rect { x: 2, y: current_start_row, width: content_widget_width, height: 1 };
-                            current_start_row = current_start_row.saturating_add(1);
-                            f.render_widget(tool_tip, area);
-
                             for (agent_id, agent_info) in agents.iter_mut() {
                                 let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
                                 let normal_color = if focused_agent.as_ref().is_some_and(|id| id == agent_id) {
@@ -270,35 +250,37 @@ impl<'a> SubagentIndicator<'a> {
                                     };
                                     let arrow_widget = Paragraph::new("→")
                                         .style(Style::default().fg(Color::AnsiValue(120).into()))
-                                        .alignment(Alignment::Right);
+                                        .alignment(Alignment::Left);
                                     f.render_widget(arrow_widget, arrow_area);
                                     120
                                 } else {
                                     141
                                 };
 
-                                let spinner = if agent_info.pending_tool_approval.is_some() {
+                                let requires_attention = agent_info.pending_tool_approval.is_some()
+                                    || !agent_info.blocking_servers.is_empty();
+
+                                let spinner = if requires_attention {
                                     '!'
                                 } else {
                                     agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
                                     Self::SPINNERS[agent_info.spinner_idx]
                                 };
 
-                                let spinner_color = if agent_info.pending_tool_approval.is_some() {
+                                let spinner_color = if requires_attention {
                                     ratatui::prelude::Color::Red
                                 } else {
                                     Color::AnsiValue(normal_color).into()
                                 };
 
                                 let title = Line::from(vec![
-                                    Span::raw(" "),
                                     Span::styled(spinner.to_string(), Style::default().fg(spinner_color)),
                                     Span::raw(format!(" {}: {}... ", agent_info.agent_name, agent_info.initial_query)),
                                 ]);
 
                                 let status_line = Paragraph::new(lines)
                                     .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
-                                    .block(Block::default().borders(Borders::ALL).title(title));
+                                    .block(Block::default().borders(Borders::NONE).title(title));
 
                                 let area = Rect {
                                     x: Self::ARROW_WIDGET_WIDTH,
@@ -309,6 +291,35 @@ impl<'a> SubagentIndicator<'a> {
                                 f.render_widget(status_line, area);
                                 current_start_row = current_start_row.saturating_add(agent_info.widget_height);
                             }
+
+                            let tool_tip = if agents.len() > 1 {
+                                Line::from(vec![
+                                    Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("j/↓", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" down ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" up ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
+                                ])
+                            } else {
+                                Line::from(vec![
+                                    Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
+                                ])
+                            };
+                            let area = Rect {
+                                x: 2,
+                                y: current_start_row,
+                                width: content_widget_width,
+                                height: 1
+                            };
+                            f.render_widget(tool_tip, area);
                         }).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
                     },
 
@@ -471,4 +482,33 @@ impl<'a> SubagentIndicator<'a> {
             guard: cancellation_token,
         }
     }
+}
+
+#[inline]
+fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
+    let mut res = Vec::<&str>::new();
+    let mut start = 0_usize;
+    let mut last_space = 0_usize;
+    let max_width = max_text_width as usize;
+
+    for (idx, ch) in input.char_indices() {
+        if ch.is_whitespace() {
+            last_space = idx;
+        }
+
+        let current_len = idx - start;
+        if current_len >= max_width && last_space > start {
+            // Wrap at last space
+            res.push(&input[start..last_space]);
+            start = last_space + 1;
+            last_space = start;
+        }
+    }
+
+    // Push the remaining text
+    if start < input.len() {
+        res.push(&input[start..]);
+    }
+
+    res
 }
