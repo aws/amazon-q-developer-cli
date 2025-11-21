@@ -35,9 +35,10 @@ use tracing::{
 use uuid::Uuid;
 
 use crate::cli::ConversationState;
-use crate::util::directories::{
+use crate::util::env_var::is_integ_test;
+use crate::util::paths::{
     DirectoryError,
-    database_path,
+    GlobalPaths,
 };
 
 macro_rules! migrations {
@@ -187,7 +188,7 @@ pub struct Database {
 
 impl Database {
     pub async fn new() -> Result<Self, DatabaseError> {
-        let path = match cfg!(test) {
+        let path = match cfg!(test) && !is_integ_test() {
             true => {
                 return Self {
                     pool: Pool::builder().build(SqliteConnectionManager::memory()).unwrap(),
@@ -195,7 +196,7 @@ impl Database {
                 }
                 .migrate();
             },
-            false => database_path()?,
+            false => GlobalPaths::database_path_static()?,
         };
 
         // make the parent dir if it doesnt exist
@@ -294,6 +295,17 @@ impl Database {
     /// Set changelog show count in state table
     pub fn set_changelog_show_count(&self, count: i64) -> Result<(), DatabaseError> {
         self.set_entry(Table::State, "changelog.showCount", count)?;
+        Ok(())
+    }
+
+    /// Get Kiro upgrade announcement show count from state table
+    pub fn get_kiro_upgrade_show_count(&self) -> Result<Option<i64>, DatabaseError> {
+        self.get_entry::<i64>(Table::State, "kiroUpgrade.showCount")
+    }
+
+    /// Set Kiro upgrade announcement show count in state table
+    pub fn set_kiro_upgrade_show_count(&self, count: i64) -> Result<(), DatabaseError> {
+        self.set_entry(Table::State, "kiroUpgrade.showCount", count)?;
         Ok(())
     }
 
@@ -561,7 +573,7 @@ mod tests {
         vec![
             std::io::Error::new(std::io::ErrorKind::InvalidData, "oops").into(),
             serde_json::from_str::<()>("oops").unwrap_err().into(),
-            crate::util::directories::DirectoryError::NoHomeDirectory.into(),
+            crate::util::paths::DirectoryError::NoHomeDirectory.into(),
             rusqlite::Error::SqliteSingleThreadedMode.into(),
             // r2d2::Error
             DbOpenError("oops".into()).into(),

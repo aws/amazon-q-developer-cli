@@ -14,6 +14,7 @@ use tokio::io::{
 };
 
 use super::DatabaseError;
+use crate::util::paths::GlobalPaths;
 
 #[derive(Clone, Copy, Debug, strum::EnumIter, strum::EnumMessage)]
 pub enum Setting {
@@ -196,7 +197,7 @@ impl Settings {
             return Ok(Self::default());
         }
 
-        let path = crate::util::directories::settings_path()?;
+        let path = GlobalPaths::settings_path_static()?;
 
         // If the folder doesn't exist, create it.
         if let Some(parent) = path.parent() {
@@ -260,7 +261,7 @@ impl Settings {
             return Ok(());
         }
 
-        let path = crate::util::directories::settings_path()?;
+        let path = GlobalPaths::settings_path_static()?;
 
         // If the folder doesn't exist, create it.
         if let Some(parent) = path.parent() {

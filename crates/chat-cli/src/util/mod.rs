@@ -1,9 +1,10 @@
 pub mod consts;
-pub mod directories;
 pub mod editor;
+pub mod env_var;
 pub mod file_uri;
 pub mod knowledge_store;
 pub mod open;
+pub mod paths;
 pub mod pattern_matching;
 pub mod spinner;
 pub mod system_info;
@@ -37,7 +38,7 @@ pub enum UtilError {
     #[error("io operation error")]
     IoError(#[from] std::io::Error),
     #[error(transparent)]
-    Directory(#[from] directories::DirectoryError),
+    Directory(#[from] paths::DirectoryError),
     #[error(transparent)]
     StrUtf8Error(#[from] std::str::Utf8Error),
     #[error(transparent)]

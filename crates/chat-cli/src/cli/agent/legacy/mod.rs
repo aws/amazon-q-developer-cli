@@ -19,7 +19,7 @@ use crate::cli::agent::hook::Hook;
 use crate::cli::agent::legacy::context::LegacyContextConfig;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::directories;
+use crate::util::paths::PathResolver;
 
 /// Performs the migration from legacy profile configuration to agent configuration if it hasn't
 /// already been done.
@@ -32,7 +32,8 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
         return Ok(None);
     }
 
-    let legacy_global_context_path = directories::chat_global_context_path(os)?;
+    let resolver = PathResolver::new(os);
+    let legacy_global_context_path = resolver.global().global_context()?;
     let legacy_global_context: Option<LegacyContextConfig> = 'global: {
         let Ok(content) = os.fs.read(&legacy_global_context_path).await else {
             break 'global None;
@@ -40,7 +41,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
         serde_json::from_slice::<LegacyContextConfig>(&content).ok()
     };
 
-    let legacy_profile_path = directories::chat_profiles_dir(os)?;
+    let legacy_profile_path = resolver.global().profiles_dir()?;
     let mut legacy_profiles: HashMap<String, LegacyContextConfig> = 'profiles: {
         let mut profiles = HashMap::<String, LegacyContextConfig>::new();
         let Ok(mut read_dir) = os.fs.read_dir(&legacy_profile_path).await else {
@@ -78,7 +79,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
     };
 
     let mcp_servers = {
-        let config_path = directories::chat_legacy_global_mcp_config(os)?;
+        let config_path = resolver.global().mcp_config()?;
         if os.fs.exists(&config_path) {
             match McpServerConfig::load_from_file(os, config_path).await {
                 Ok(mut config) => {
@@ -145,7 +146,12 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
         new_agents.push(Agent {
             name: LEGACY_GLOBAL_AGENT_NAME.to_string(),
             description: Some(DEFAULT_DESC.to_string()),
-            path: Some(directories::chat_global_agent_path(os)?.join(format!("{LEGACY_GLOBAL_AGENT_NAME}.json"))),
+            path: Some(
+                resolver
+                    .global()
+                    .agents_dir()?
+                    .join(format!("{LEGACY_GLOBAL_AGENT_NAME}.json")),
+            ),
             resources: context.paths.iter().map(|p| format!("file://{p}").into()).collect(),
             hooks: HashMap::from([
                 (
@@ -168,7 +174,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
         });
     }
 
-    let global_agent_path = directories::chat_global_agent_path(os)?;
+    let global_agent_path = resolver.global().ensure_agents_dir().await?;
 
     // Migration of profile context
     for (profile_name, context) in legacy_profiles.drain() {
@@ -203,10 +209,6 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
             mcp_servers: mcp_servers.clone().unwrap_or_default(),
             ..Default::default()
         });
-    }
-
-    if !os.fs.exists(&global_agent_path) {
-        os.fs.create_dir_all(&global_agent_path).await?;
     }
 
     for agent in &mut new_agents {

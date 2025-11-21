@@ -66,6 +66,21 @@
       "description": "The oauth authentication flow executed by the user, e.g. device code or PKCE"
     },
     {
+      "name": "codewhispererterminal_authMethod",
+      "type": "string",
+      "description": "The authentication method used, e.g. BuilderId or IdentityCenter"
+    },
+    {
+      "name": "codewhispererterminal_errorType",
+      "type": "string",
+      "description": "The type of authentication error, e.g. TokenRefresh or NewLogin"
+    },
+    {
+      "name": "codewhispererterminal_errorCode",
+      "type": "string",
+      "description": "The specific error code from the authentication service"
+    },
+    {
       "name": "result",
       "type": "string",
       "description": "Whether or not the operation succeeded"
@@ -367,6 +382,19 @@
       "metadata": [
         { "type": "credentialStartUrl" },
         { "type": "codewhispererterminal_inCloudshell" }
+      ]
+    },
+    {
+      "name": "codewhispererterminal_authFailed",
+      "description": "Emitted when authentication fails",
+      "passive": false,
+      "metadata": [
+        { "type": "credentialStartUrl" },
+        { "type": "codewhispererterminal_inCloudshell" },
+        { "type": "codewhispererterminal_authMethod" },
+        { "type": "oauthFlow" },
+        { "type": "codewhispererterminal_errorType" },
+        { "type": "codewhispererterminal_errorCode", "required": false }
       ]
     },
     {

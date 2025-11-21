@@ -1,0 +1,69 @@
+// tool use for 'fs write hello.py'
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"I'll create a simple"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" Python hello world script, save it,"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" list it, and then read it back."},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_first","name":"fsWrite"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"comma"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"nd\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":": \"cre"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"ate\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":", \"path\": \""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"hello.py\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":", \"content\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":": \"print"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"(\\\"Hell"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"o,"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":" World"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"!\\\")\"}"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStop":{"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"toolUse"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-29T17:26:16.190846Z","requestEndTime":"2025-10-29T17:26:20.590402Z","timeToFirstChunk":{"secs":2,"nanos":908752792},"timeBetweenChunks":[{"secs":0,"nanos":220917},{"secs":0,"nanos":75084},{"secs":0,"nanos":156727209},{"secs":0,"nanos":110848583},{"secs":0,"nanos":511759334},{"secs":0,"nanos":530358042},{"secs":0,"nanos":447167},{"secs":0,"nanos":327875},{"secs":0,"nanos":308416},{"secs":0,"nanos":115016250},{"secs":0,"nanos":148292},{"secs":0,"nanos":139958},{"secs":0,"nanos":115667},{"secs":0,"nanos":1833959},{"secs":0,"nanos":54966541},{"secs":0,"nanos":2174584},{"secs":0,"nanos":212334},{"secs":0,"nanos":2667208},{"secs":0,"nanos":141208},{"secs":0,"nanos":1583}],"responseStreamLen":168},"usage":null,"service":{"requestId":"929affcc-70d3-494e-901e-ea8e762e9775","statusCode":null}}}
+
+// tool use for 'ls .'
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_second","name":"ls"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"path\": "}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\"."}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"\"}"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStop":{"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"toolUse"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-29T17:26:20.610411Z","requestEndTime":"2025-10-29T17:26:23.069210Z","timeToFirstChunk":{"secs":2,"nanos":234976167},"timeBetweenChunks":[{"secs":0,"nanos":219500},{"secs":0,"nanos":139000},{"secs":0,"nanos":218251583},{"secs":0,"nanos":176583},{"secs":0,"nanos":193292},{"secs":0,"nanos":4247625},{"secs":0,"nanos":97208},{"secs":0,"nanos":1542}],"responseStreamLen":13},"usage":null,"service":{"requestId":"91cc1703-e6e3-47fd-b019-90f92cf6a58b","statusCode":null}}}
+
+// tool use for 'fs read hello.py'
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_third","name":"fsRead"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"ops\""}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":": [{\"pa"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"th\":\"hello.p"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"y\"}]}"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStop":{"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"toolUse"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-29T17:26:23.095271Z","requestEndTime":"2025-10-29T17:26:25.543149Z","timeToFirstChunk":{"secs":1,"nanos":995114958},"timeBetweenChunks":[{"secs":0,"nanos":100416},{"secs":0,"nanos":116292},{"secs":0,"nanos":396542167},{"secs":0,"nanos":148500},{"secs":0,"nanos":527500},{"secs":0,"nanos":1552333},{"secs":0,"nanos":52810834},{"secs":0,"nanos":177917},{"secs":0,"nanos":2459}],"responseStreamLen":30},"usage":null,"service":{"requestId":"793ecd78-cd7c-4f14-975f-8bb6246ed39d","statusCode":null}}}
+
+// end turn
+{"result":"ok","messageStart":{"role":"assistant"}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"Perfect! I've successfully"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":":\n\n1. **Create"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"d** a Python"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" hello world script with"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" `print(\"Hello, Worl"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"d!\")` and save"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"d it as `hello."},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"py`\n2."},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" **Listed** the current"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" directory contents using"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" `ls`,"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" which shows `hello.py` with"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" 22"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" bytes"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"\n3. **Read**"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" the script back"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" using `fsRead`,"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" confirming it contains the expecte"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"d hello world code\n\nThe script is ready"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" to run with `"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":"python hello.py`"},"contentBlockIndex":null}}
+{"result":"ok","contentBlockDelta":{"delta":{"text":" if needed."},"contentBlockIndex":null}}
+{"result":"ok","messageStop":{"stopReason":"endTurn"}}
+{"result":"ok","metadata":{"metrics":{"requestStartTime":"2025-10-29T17:26:25.571173Z","requestEndTime":"2025-10-29T17:26:28.945068Z","timeToFirstChunk":{"secs":1,"nanos":720356416},"timeBetweenChunks":[{"secs":0,"nanos":81584},{"secs":0,"nanos":35375},{"secs":0,"nanos":65242833},{"secs":0,"nanos":93482333},{"secs":0,"nanos":39979709},{"secs":0,"nanos":82046125},{"secs":0,"nanos":120687833},{"secs":0,"nanos":44033750},{"secs":0,"nanos":36562958},{"secs":0,"nanos":85161166},{"secs":0,"nanos":39868125},{"secs":0,"nanos":42799834},{"secs":0,"nanos":83082625},{"secs":0,"nanos":81096125},{"secs":0,"nanos":41541208},{"secs":0,"nanos":70639917},{"secs":0,"nanos":105767000},{"secs":0,"nanos":110113875},{"secs":0,"nanos":268961291},{"secs":0,"nanos":202748250},{"secs":0,"nanos":9944291},{"secs":0,"nanos":2728875},{"secs":0,"nanos":6321125},{"secs":0,"nanos":17841916},{"secs":0,"nanos":2167}],"responseStreamLen":381},"usage":null,"service":{"requestId":"be7b4dd5-7ba3-47ed-9f45-1666ea59dd4b","statusCode":null}}}

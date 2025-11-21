@@ -15,6 +15,7 @@ use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
     Event,
     LegacyPassThroughOutput,
+    MetaEvent,
     ToolCallRejection,
     ToolCallStart,
 };
@@ -53,6 +54,7 @@ impl ViewEnd {
     pub fn into_legacy_mode(
         self,
         theme_source: impl ThemeSource,
+        prompt_ack: Option<std::sync::mpsc::Sender<()>>,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
@@ -153,7 +155,17 @@ impl ViewEnd {
                 Event::ReasoningMessageEnd(_reasoning_message_end) => {},
                 Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
                 Event::ReasoningEnd(_reasoning_end) => {},
-                Event::MetaEvent(_meta_event) => {},
+                Event::MetaEvent(MetaEvent { meta_type, payload }) => {
+                    if meta_type.as_str() == "timing" {
+                        if let serde_json::Value::String(s) = payload {
+                            if s.as_str() == "prompt_user" {
+                                if let Some(prompt_ack) = prompt_ack.as_ref() {
+                                    _ = prompt_ack.send(());
+                                }
+                            }
+                        }
+                    }
+                },
                 Event::ToolCallRejection(tool_call_rejection) => {
                     let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
@@ -298,7 +310,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
             if byte == &10 || byte == &13 {
                 if self.current_event.is_none() {
                     self.current_event
-                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                             Default::default(),
                         )));
                 }
@@ -323,7 +335,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
         if start < end {
             if self.current_event.is_none() {
                 self.current_event
-                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                         Default::default(),
                     )));
             }

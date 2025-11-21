@@ -1,6 +1,8 @@
 use std::path::Path;
 use std::process::Command;
 
+use crate::util::env_var::get_editor;
+
 /// Launch the user's preferred editor with the given file path.
 ///
 /// This function properly parses the EDITOR environment variable to handle
@@ -13,7 +15,7 @@ use std::process::Command;
 /// * `Ok(())` if the editor was launched successfully and exited with success
 /// * `Err` if the editor failed to launch or exited with an error
 pub fn launch_editor(file_path: &Path) -> eyre::Result<()> {
-    let editor_cmd = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let editor_cmd = get_editor();
 
     // Parse the editor command to handle arguments
     let mut parts = shlex::split(&editor_cmd).ok_or_else(|| eyre::eyre!("Failed to parse EDITOR command"))?;

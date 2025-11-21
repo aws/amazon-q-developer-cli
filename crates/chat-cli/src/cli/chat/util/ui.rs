@@ -26,46 +26,71 @@ pub fn draw_box(
     let inner_width = box_width - 4; // account for │ and padding
 
     // wrap the single line into multiple lines respecting inner width
-    // Manually wrap the text by splitting at word boundaries
+    // Manually wrap the text by splitting at word boundaries, using visible length for styled text
+    // First split by newlines to preserve explicit line breaks
     let mut wrapped_lines = Vec::new();
-    let mut line = String::new();
 
-    for word in content.split_whitespace() {
-        if line.len() + word.len() < inner_width {
-            if !line.is_empty() {
-                line.push(' ');
-            }
-            line.push_str(word);
-        } else {
-            // Here we need to account for words that are too long as well
-            if word.len() >= inner_width {
-                let mut start = 0_usize;
-                for (i, _) in word.chars().enumerate() {
-                    if i - start >= inner_width {
-                        wrapped_lines.push(word[start..i].to_string());
-                        start = i;
-                    }
-                }
-                wrapped_lines.push(word[start..].to_string());
-                line = String::new();
+    for paragraph in content.split('\n') {
+        if paragraph.is_empty() {
+            // Preserve empty lines
+            wrapped_lines.push(String::new());
+            continue;
+        }
+
+        let mut line = String::new();
+
+        for word in paragraph.split_whitespace() {
+            let test_line = if line.is_empty() {
+                word.to_string()
             } else {
-                wrapped_lines.push(line);
-                line = word.to_string();
+                format!("{} {}", line, word)
+            };
+
+            let visible_len = strip_str(&test_line).len();
+
+            if visible_len <= inner_width {
+                line = test_line;
+            } else {
+                // Check if the word alone is too long
+                let word_visible_len = strip_str(word).len();
+                if word_visible_len >= inner_width {
+                    // Word is too long, we need to break it (but this is rare with styled text)
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    wrapped_lines.push(word.to_string());
+                    line = String::new();
+                } else {
+                    // Start a new line with this word
+                    if !line.is_empty() {
+                        wrapped_lines.push(line);
+                    }
+                    line = word.to_string();
+                }
             }
+        }
+
+        if !line.is_empty() {
+            wrapped_lines.push(line);
         }
     }
 
-    if !line.is_empty() {
-        wrapped_lines.push(line);
-    }
-
-    let side_len = (box_width.saturating_sub(title.len())) / 2;
-    let top_border = format!(
-        "{} {} {}",
-        style::style(format!("╭{}", "─".repeat(side_len - 2))).with(border_color),
-        title,
-        style::style(format!("{}╮", "─".repeat(box_width - side_len - title.len() - 2))).with(border_color)
-    );
+    let top_border = if title.is_empty() {
+        // Closed box with no title
+        format!(
+            "{}",
+            style::style(format!("╭{}╮", "─".repeat(box_width - 2))).with(border_color)
+        )
+    } else {
+        // Box with title
+        let side_len = (box_width.saturating_sub(title.len())) / 2;
+        format!(
+            "{} {} {}",
+            style::style(format!("╭{}", "─".repeat(side_len - 2))).with(border_color),
+            title,
+            style::style(format!("{}╮", "─".repeat(box_width - side_len - title.len() - 2))).with(border_color)
+        )
+    };
 
     execute!(
         output,

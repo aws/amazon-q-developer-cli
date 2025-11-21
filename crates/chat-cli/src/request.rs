@@ -21,7 +21,7 @@ pub enum RequestError {
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
-    Dir(#[from] crate::util::directories::DirectoryError),
+    Dir(#[from] crate::util::paths::DirectoryError),
     #[error(transparent)]
     Settings(#[from] crate::database::DatabaseError),
     #[error(transparent)]

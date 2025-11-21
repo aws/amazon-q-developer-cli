@@ -67,7 +67,55 @@ pub mod env_var {
         Q_BUNDLE_METADATA_PATH = "Q_BUNDLE_METADATA_PATH",
 
         /// Identifier for the client application or service using the chat-cli
-        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION"
+        Q_CLI_CLIENT_APPLICATION = "Q_CLI_CLIENT_APPLICATION",
+
+        /// Flag for running integration tests
+        CLI_IS_INTEG_TEST = "Q_CLI_IS_INTEG_TEST",
+
+        /// Enable logging to stdout
+        Q_LOG_STDOUT = "Q_LOG_STDOUT",
+
+        /// Disable telemetry collection
+        Q_DISABLE_TELEMETRY = "Q_DISABLE_TELEMETRY",
+
+        /// Mock chat response for testing
+        Q_MOCK_CHAT_RESPONSE = "Q_MOCK_CHAT_RESPONSE",
+
+        /// Disable truecolor terminal support
+        Q_DISABLE_TRUECOLOR = "Q_DISABLE_TRUECOLOR",
+
+        /// Fake remote environment for testing
+        Q_FAKE_IS_REMOTE = "Q_FAKE_IS_REMOTE",
+
+        /// Codespaces environment indicator
+        Q_CODESPACES = "Q_CODESPACES",
+
+        /// CI environment indicator
+        Q_CI = "Q_CI",
+
+        /// Telemetry client ID
+        Q_TELEMETRY_CLIENT_ID = "Q_TELEMETRY_CLIENT_ID",
+
+        /// Amazon Q SigV4 authentication
+        AMAZON_Q_SIGV4 = "AMAZON_Q_SIGV4",
+
+        /// Amazon Q chat shell
+        AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
+
+        /// Editor environment variable
+        EDITOR = "EDITOR",
+
+        /// Terminal type
+        TERM = "TERM",
+
+        /// AWS region
+        AWS_REGION = "AWS_REGION",
+
+        /// GitHub Codespaces environment
+        CODESPACES = "CODESPACES",
+
+        /// CI environment
+        CI = "CI"
     }
 }
 

@@ -1,0 +1,98 @@
+[package]
+name = "agent"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+publish.workspace = true
+version.workspace = true
+license.workspace = true
+
+[dependencies]
+amzn-codewhisperer-client.workspace = true
+amzn-codewhisperer-streaming-client.workspace = true
+amzn-consolas-client.workspace = true
+amzn-qdeveloper-streaming-client.workspace = true
+anstream.workspace = true
+async-trait.workspace = true
+aws-config.workspace = true
+aws-credential-types.workspace = true
+aws-runtime.workspace = true
+aws-sdk-cognitoidentity.workspace = true
+aws-sdk-ssooidc.workspace = true
+aws-smithy-async.workspace = true
+aws-smithy-runtime-api.workspace = true
+aws-smithy-types.workspace = true
+aws-types.workspace = true
+base64.workspace = true
+bstr.workspace = true
+bytes.workspace = true
+cfg-if.workspace = true
+chrono.workspace = true
+clap = { workspace = true, features = ["derive"] }
+color-eyre = "0.6.5"
+color-print.workspace = true
+crossterm.workspace = true
+dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
+dirs.workspace = true
+eyre.workspace = true
+fd-lock = "4.0.4"
+futures.workspace = true
+glob.workspace = true
+globset.workspace = true
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
+hyper-util.workspace = true
+libc.workspace = true
+percent-encoding.workspace = true
+pin-project-lite = "0.2.16"
+r2d2.workspace = true
+r2d2_sqlite.workspace = true
+rand.workspace = true
+regex.workspace = true
+reqwest.workspace = true
+rmcp = { version = "0.8.0", features = ["client", "transport-async-rw", "transport-child-process", "transport-io"] }
+rusqlite.workspace = true
+rustls.workspace = true
+rustls-native-certs.workspace = true
+schemars = "1.0.4"
+semver.workspace = true
+serde.workspace = true
+serde_bytes = "0.11.19"
+serde_json.workspace = true
+sha2.workspace = true
+shellexpand.workspace = true
+strum.workspace = true
+syntect = "5.2.0"
+sysinfo.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tokio-stream.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+tracing-appender = "0.2.3"
+tracing-subscriber.workspace = true
+url.workspace = true
+uuid.workspace = true
+webpki-roots.workspace = true
+whoami.workspace = true
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2.workspace = true
+objc2-app-kit.workspace = true
+objc2-foundation.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+criterion.workspace = true
+insta.workspace = true
+mockito.workspace = true
+paste.workspace = true
+predicates.workspace = true
+tracing-test.workspace = true
+
+[lints]
+workspace = true
+

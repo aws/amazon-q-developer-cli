@@ -1,10 +1,17 @@
+use std::path::PathBuf;
+
+use spinners::{
+    Spinner,
+    Spinners,
+};
+
+use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
-mod custom_spinner;
 mod input_source;
 mod message;
 mod parse;
@@ -83,7 +90,6 @@ use crossterm::{
     style,
     terminal,
 };
-use custom_spinner::Spinners;
 use eyre::{
     Report,
     Result,
@@ -122,7 +128,11 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
-use tools::delegate::status_all_agents;
+use tools::delegate::{
+    AgentExecution,
+    save_agent_execution,
+    status_all_agents,
+};
 use tools::gh_issue::GhIssueContext;
 use tools::{
     NATIVE_TOOLS,
@@ -196,10 +206,9 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
-use crate::util::directories::get_shadow_repo_dir;
+use crate::util::paths::PathResolver;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
-    directories,
     ui,
 };
 
@@ -211,6 +220,10 @@ pub enum WrapMode {
     Never,
     /// Auto-detect based on output target (default)
     Auto,
+}
+
+fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crate::util::paths::DirectoryError> {
+    Ok(PathResolver::new(os).global().shadow_repo_dir()?.join(conversation_id))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
@@ -450,6 +463,9 @@ impl ChatArgs {
 // Maximum number of times to show the changelog announcement per version
 const CHANGELOG_MAX_SHOW_COUNT: i64 = 2;
 
+// Maximum number of times to show the Kiro upgrade announcement
+const KIRO_UPGRADE_MAX_SHOW_COUNT: i64 = 5;
+
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
@@ -457,12 +473,71 @@ fn trust_all_text() -> String {
     ui_text::trust_all_warning()
 }
 
+fn format_rich_notification(executions: &[AgentExecution]) -> String {
+    let count = executions.len();
+    let header = if count == 1 {
+        "1 Background Task Completed".to_string()
+    } else {
+        format!("{} Background Tasks Completed", count)
+    };
+
+    // Plain text notification - will be colored by highlight_prompt
+    let mut notification = format!("{}\n\n", header);
+
+    for (i, execution) in executions.iter().enumerate() {
+        let status_icon = match execution.status {
+            tools::delegate::AgentStatus::Completed => "✓ SUCCESS",
+            tools::delegate::AgentStatus::Failed => "✗ FAILED",
+            tools::delegate::AgentStatus::Running => "⏳ RUNNING", // shouldn't happen but just in case
+        };
+
+        let time_ago = if let Some(completed_at) = execution.completed_at {
+            let duration = chrono::Utc::now().signed_duration_since(completed_at);
+            if duration.num_minutes() < 1 {
+                "Completed just now".to_string()
+            } else if duration.num_minutes() < 60 {
+                format!("Completed {} min ago", duration.num_minutes())
+            } else if duration.num_hours() < 24 {
+                format!("Completed {} hr ago", duration.num_hours())
+            } else {
+                format!("Completed {} days ago", duration.num_days())
+            }
+        } else {
+            "unknown".to_string()
+        };
+
+        // Shorten CWD path - replace home directory with ~
+        let shortened_cwd = if let Ok(home) = std::env::var("HOME") {
+            execution.cwd.replace(&home, "~")
+        } else {
+            execution.cwd.clone()
+        };
+
+        let summary = execution.summary.as_deref().unwrap_or("No summary available");
+
+        notification.push_str(&format!(
+            "[{}] {} · {} · {} · {}\n\nTask: {}\n\n{}\n\n",
+            i + 1,
+            execution.agent,
+            shortened_cwd,
+            status_icon,
+            time_ago,
+            execution.task,
+            summary
+        ));
+    }
+
+    // Add footer with instructions
+    notification.push_str("To read the full details of any task, ask the delegate tool.\n");
+
+    notification
+}
+
 const TOOL_BULLET: &str = " ● ";
 const CONTINUATION_LINE: &str = " ⋮ ";
 const PURPOSE_ARROW: &str = " ↳ ";
 const SUCCESS_TICK: &str = " ✓ ";
 const ERROR_EXCLAMATION: &str = " ❗ ";
-const DELEGATE_NOTIFIER: &str = "[BACKGROUND TASK READY]";
 
 /// Enum used to denote the origin of a tool use event
 enum ToolUseStatus {
@@ -576,7 +651,7 @@ pub struct ChatSession {
     input_source: InputSource,
     /// Width of the terminal, required for [ParseState].
     terminal_width_provider: fn() -> Option<usize>,
-    spinner: Option<Spinners>,
+    spinner: Option<Spinner>,
     /// [ConversationState].
     conversation: ConversationState,
     /// Tool uses requested by the model that are actively being handled.
@@ -602,6 +677,9 @@ pub struct ChatSession {
     inner: Option<ChatState>,
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
+    prompt_ack_rx: std::sync::mpsc::Receiver<()>,
+    /// Additional context to be added to the next user message (e.g., delegate task summaries)
+    pending_additional_context: Option<String>,
 }
 
 impl ChatSession {
@@ -627,11 +705,12 @@ impl ChatSession {
         let should_send_structured_msg = should_send_structured_message(os);
         let (view_end, _byte_receiver, mut control_end_stderr, control_end_stdout) =
             get_legacy_conduits(should_send_structured_msg);
+        let (prompt_ack_tx, prompt_ack_rx) = std::sync::mpsc::channel::<()>();
 
         tokio::task::spawn_blocking(move || {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, stderr, stdout) {
+            if let Err(e) = view_end.into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout) {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });
@@ -736,6 +815,8 @@ impl ChatSession {
             inner: Some(ChatState::default()),
             ctrlc_rx,
             wrap,
+            prompt_ack_rx,
+            pending_additional_context: None,
         })
     }
 
@@ -829,6 +910,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         let (context, report, display_err_message) = match err {
@@ -899,10 +985,10 @@ impl ChatSession {
                 )?;
                 ("Unable to compact the conversation history", eyre!(err), true)
             },
-            ChatError::SendMessage(err) => match err.source {
+            ChatError::SendMessage(err) => match &err.source.kind {
                 // Errors from attempting to send too large of a conversation history. In
                 // this case, attempt to automatically compact the history for the user.
-                ApiClientError::ContextWindowOverflow { .. } => {
+                ConverseStreamErrorKind::ContextWindowOverflow => {
                     if os
                         .database
                         .settings
@@ -945,10 +1031,7 @@ impl ChatSession {
                         return Ok(());
                     }
                 },
-                ApiClientError::QuotaBreach {
-                    message: _,
-                    status_code: _,
-                } => {
+                ConverseStreamErrorKind::Throttling => {
                     let err = "Request quota exceeded. Please wait a moment and try again.".to_string();
                     self.conversation.append_transcript(err.clone());
                     execute!(
@@ -963,7 +1046,7 @@ impl ChatSession {
                     )?;
                     (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
-                ApiClientError::ModelOverloadedError { request_id, .. } => {
+                ConverseStreamErrorKind::ModelOverloadedError => {
                     if self.interactive {
                         execute!(
                             self.stderr,
@@ -976,7 +1059,7 @@ impl ChatSession {
                             StyledText::reset(),
                         )?;
 
-                        if let Some(id) = request_id {
+                        if let Some(id) = err.source.request_id {
                             self.conversation
                                 .append_transcript(format!("Model unavailable (Request ID: {})", id));
                         }
@@ -991,7 +1074,7 @@ impl ChatSession {
                     let err = format!(
                         "The model you've selected is temporarily unavailable. {}{}\n\n",
                         model_instruction,
-                        match request_id {
+                        match err.source.request_id {
                             Some(id) => format!("\n    Request ID: {}", id),
                             None => "".to_owned(),
                         }
@@ -1008,7 +1091,7 @@ impl ChatSession {
                     )?;
                     (error_messages::TROUBLE_RESPONDING, eyre!(err), false)
                 },
-                ApiClientError::MonthlyLimitReached { .. } => {
+                ConverseStreamErrorKind::MonthlyLimitReached => {
                     let subscription_status = get_subscription_status(os).await;
                     if subscription_status.is_err() {
                         execute!(
@@ -1127,6 +1210,42 @@ impl ChatSession {
         Ok(())
     }
 
+    async fn show_kiro_upgrade_announcement(&mut self, os: &mut Os) -> Result<bool> {
+        let show_count = os.database.get_kiro_upgrade_show_count()?.unwrap_or(0);
+
+        // Only show if we haven't reached the max count
+        if show_count < KIRO_UPGRADE_MAX_SHOW_COUNT {
+            let announcement_with_styling = crate::constants::kiro_upgrade_announcement();
+            let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+
+            if is_small_screen {
+                // If the screen is small, print the announcement without a box
+                execute!(
+                    self.stderr,
+                    style::Print(&announcement_with_styling),
+                    style::Print("\n")
+                )?;
+            } else {
+                draw_box(
+                    &mut self.stderr,
+                    "",
+                    &announcement_with_styling,
+                    GREETING_BREAK_POINT,
+                    crate::theme::theme().ui.secondary_text,
+                )?;
+
+                execute!(self.stderr, style::Print("\n"))?;
+            }
+
+            // Update the show count
+            os.database.set_kiro_upgrade_show_count(show_count + 1)?;
+
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+
     /// Reload built-in tools to reflect experiment changes while preserving MCP tools
     pub async fn reload_builtin_tools(&mut self, os: &mut Os) -> Result<(), ChatError> {
         self.conversation
@@ -1138,6 +1257,10 @@ impl ChatSession {
 
 impl Drop for ChatSession {
     fn drop(&mut self) {
+        if let Some(spinner) = &mut self.spinner {
+            spinner.stop();
+        }
+
         execute!(
             self.stderr,
             cursor::MoveToColumn(0),
@@ -1224,6 +1347,11 @@ impl ChatSession {
 
     async fn spawn(&mut self, os: &mut Os) -> Result<()> {
         let is_small_screen = self.terminal_width() < GREETING_BREAK_POINT;
+
+        // Check if Kiro upgrade announcement will be shown
+        let show_count = os.database.get_kiro_upgrade_show_count()?.unwrap_or(0);
+        let kiro_announcement_will_show = show_count < KIRO_UPGRADE_MAX_SHOW_COUNT;
+
         if os
             .database
             .settings
@@ -1240,26 +1368,33 @@ impl ChatSession {
 
             execute!(self.stderr, style::Print(&welcome_text), style::Print("\n\n"),)?;
 
-            let rotating_tips = tips::get_rotating_tips();
-            let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
-            if is_small_screen {
-                // If the screen is small, print the tip in a single line
-                execute!(
-                    self.stderr,
-                    style::Print("💡 ".to_string()),
-                    style::Print(tip),
-                    style::Print("\n")
-                )?;
-            } else {
-                draw_box(
-                    &mut self.stderr,
-                    "Did you know?",
-                    tip,
-                    GREETING_BREAK_POINT,
-                    crate::theme::theme().ui.secondary_text,
-                )?;
+            // Only show rotating tips if Kiro announcement won't be shown
+            if !kiro_announcement_will_show {
+                let rotating_tips = tips::get_rotating_tips();
+                let tip = &rotating_tips[usize::try_from(rand::random::<u32>()).unwrap_or(0) % rotating_tips.len()];
+                if is_small_screen {
+                    // If the screen is small, print the tip in a single line
+                    execute!(
+                        self.stderr,
+                        style::Print("💡 ".to_string()),
+                        style::Print(tip),
+                        style::Print("\n")
+                    )?;
+                } else {
+                    draw_box(
+                        &mut self.stderr,
+                        "Did you know?",
+                        tip,
+                        GREETING_BREAK_POINT,
+                        crate::theme::theme().ui.secondary_text,
+                    )?;
+                }
             }
 
+            // Show Kiro upgrade announcement before shortcuts (limited to 2 times)
+            self.show_kiro_upgrade_announcement(os).await?;
+
+            // Always show shortcuts and separator
             execute!(
                 self.stderr,
                 style::Print("\n"),
@@ -1277,8 +1412,10 @@ impl ChatSession {
             execute!(self.stderr, style::Print("\n"), StyledText::reset())?;
         }
 
-        // Check if we should show the whats-new announcement
-        self.show_changelog_announcement(os).await?;
+        // Only show changelog if Kiro announcement won't be shown
+        if !kiro_announcement_will_show {
+            self.show_changelog_announcement(os).await?;
+        }
 
         if self.all_tools_trusted() {
             queue!(
@@ -1435,7 +1572,7 @@ impl ChatSession {
             .await?;
 
         if self.interactive {
-            self.spinner = Some(Spinners::new("Creating summary...".to_string()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Creating summary...".to_string()));
         }
 
         let mut response = match self
@@ -1451,6 +1588,12 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
+                    execute!(
+                        self.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0),
+                        StyledText::reset_attributes()
+                    )?;
                 }
 
                 // If the request fails due to context window overflow, then we'll see if it's
@@ -1458,7 +1601,7 @@ impl ChatSession {
                 let history_len = self.conversation.history().len();
                 match err {
                     ChatError::SendMessage(err)
-                        if matches!(err.source, ApiClientError::ContextWindowOverflow { .. }) =>
+                        if matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow) =>
                     {
                         error!(?strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to
@@ -1548,6 +1691,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         self.conversation
@@ -1718,10 +1866,10 @@ impl ChatSession {
 
         if self.interactive {
             execute!(self.stderr, cursor::Hide, style::Print("\n"))?;
-            self.spinner = Some(Spinners::new(format!(
-                "Generating agent config for '{}'...",
-                agent_name
-            )));
+            self.spinner = Some(Spinner::new(
+                Spinners::Dots,
+                format!("Generating agent config for '{}'...", agent_name),
+            ));
         }
 
         let mut response = match self
@@ -1737,6 +1885,12 @@ impl ChatSession {
             Err(err) => {
                 if self.interactive {
                     self.spinner.take();
+                    execute!(
+                        self.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0),
+                        StyledText::reset_attributes()
+                    )?;
                 }
                 return Err(err);
             },
@@ -1783,6 +1937,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
         // Parse and validate the initial generated config
         let initial_agent_config = match serde_json::from_str::<Agent>(&agent_config_json) {
@@ -1908,6 +2067,25 @@ impl ChatSession {
 
         execute!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
         let prompt = self.generate_tool_trust_prompt(os).await;
+
+        // Here we are signaling to the ui layer that the event loop wants to prompt user
+        // This is necessitated by the fact that what is actually writing to stderr or stdout is
+        // not on the same thread as what is prompting the user (in an ideal world they would be).
+        // As a bandaid fix (to hold us until we move to the new event loop where everything is in
+        // their rightful place), we are first signaling to the ui layer we are about to prompt
+        // users, and we are going to wait until the ui layer acknowledges.
+        // Note that this works because [std::sync::mpsc] preserves order between sending and
+        // receiving
+        self.stderr
+            .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }))
+            .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+        if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+            error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+        }
+
         let user_input = match self.read_user_input(&prompt, false) {
             Some(input) => input,
             None => return Ok(ChatState::Exit),
@@ -2158,7 +2336,11 @@ impl ChatSession {
                 };
                 self.conversation.abandon_tool_use(&self.tool_uses, user_input);
             } else {
-                self.conversation.set_next_user_message(user_input).await;
+                // Add additional context if available (e.g., delegate summaries)
+                let context = self.pending_additional_context.take().unwrap_or_default();
+                self.conversation
+                    .set_next_user_message_with_context(user_input, context)
+                    .await;
             }
 
             self.reset_user_turn();
@@ -2174,7 +2356,7 @@ impl ChatSession {
             queue!(self.stderr, cursor::Hide)?;
 
             if self.interactive {
-                self.spinner = Some(Spinners::new("Thinking...".to_owned()));
+                self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
             }
 
             Ok(ChatState::HandleResponseStream(conv_state))
@@ -2326,6 +2508,12 @@ impl ChatSession {
 
             if let Some(spinner) = self.spinner.take() {
                 drop(spinner);
+                queue!(
+                    self.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
             }
 
             // Handle checkpoint after tool execution - store tag for later display
@@ -2601,7 +2789,7 @@ impl ChatSession {
         execute!(self.stderr, cursor::Hide)?;
         execute!(self.stderr, style::Print("\n"), StyledText::reset_attributes())?;
         if self.interactive {
-            self.spinner = Some(Spinners::new("Thinking...".to_string()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
         }
 
         self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, false)
@@ -2657,6 +2845,11 @@ impl ChatSession {
 
         if self.spinner.is_some() {
             drop(self.spinner.take());
+            queue!(
+                self.stderr,
+                terminal::Clear(terminal::ClearType::CurrentLine),
+                cursor::MoveToColumn(0),
+            )?;
         }
 
         loop {
@@ -2699,6 +2892,11 @@ impl ChatSession {
                         parser::ResponseEvent::ToolUse(tool_use) => {
                             if self.spinner.is_some() {
                                 drop(self.spinner.take());
+                                queue!(
+                                    self.stderr,
+                                    terminal::Clear(terminal::ClearType::CurrentLine),
+                                    cursor::MoveToColumn(0),
+                                )?;
                             }
                             tool_uses.push(tool_use);
                             tool_name_being_recvd = None;
@@ -2748,7 +2946,7 @@ impl ChatSession {
                             );
 
                             execute!(self.stderr, cursor::Hide)?;
-                            self.spinner = Some(Spinners::new("Dividing up the work...".to_string()));
+                            self.spinner = Some(Spinner::new(Spinners::Dots, "Dividing up the work...".to_string()));
 
                             // For stream timeouts, we'll tell the model to try and split its response into
                             // smaller chunks.
@@ -2887,6 +3085,12 @@ impl ChatSession {
 
             if tool_name_being_recvd.is_none() && !buf.is_empty() && self.spinner.is_some() {
                 drop(self.spinner.take());
+                queue!(
+                    self.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0),
+                    cursor::Show
+                )?;
             }
 
             info!("## control end: buf: {:?}", buf);
@@ -2940,7 +3144,7 @@ impl ChatSession {
             if tool_name_being_recvd.is_some() {
                 queue!(self.stderr, cursor::Hide)?;
                 if self.interactive {
-                    self.spinner = Some(Spinners::new("Thinking...".to_string()));
+                    self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_string()));
                 }
             }
 
@@ -3263,7 +3467,7 @@ impl ChatSession {
         }
 
         if self.interactive {
-            self.spinner = Some(Spinners::new("Thinking...".to_owned()));
+            self.spinner = Some(Spinner::new(Spinners::Dots, "Thinking...".to_owned()));
         }
 
         Ok(ChatState::HandleResponseStream(
@@ -3394,7 +3598,7 @@ impl ChatSession {
 
         // Check if context usage indicator is enabled
         let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
-            use crate::cli::chat::cli::usage::get_total_usage_percentage;
+            use crate::cli::chat::cli::usage::usage_data_provider::get_total_usage_percentage;
             get_total_usage_percentage(self, os).await.ok()
         } else {
             None
@@ -3403,8 +3607,24 @@ impl ChatSession {
         let mut generated_prompt =
             prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
 
-        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) && status_all_agents(os).await.is_ok() {
-            generated_prompt = format!("{DELEGATE_NOTIFIER}\n{generated_prompt}");
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+            if let Ok(mut executions) = status_all_agents(os).await {
+                if !executions.is_empty() {
+                    let rich_notification = format_rich_notification(&executions);
+                    generated_prompt = format!("{}\n{}", rich_notification, generated_prompt);
+
+                    // Use the notification text as context for the model (it's already plain text)
+                    self.pending_additional_context = Some(rich_notification.clone());
+
+                    // Mark all shown tasks as user_notified
+                    for execution in &mut executions {
+                        execution.user_notified = true;
+                        if let Err(e) = save_agent_execution(os, execution).await {
+                            eprintln!("Failed to mark agent execution as notified: {}", e);
+                        }
+                    }
+                }
+            }
         }
 
         generated_prompt
@@ -3708,7 +3928,7 @@ where
     Fut: std::future::Future<Output = Result<T, E>>,
 {
     queue!(output, cursor::Hide,).ok();
-    let spinner = Spinners::new(spinner_text.to_owned());
+    let spinner = Spinner::new(Spinners::Dots, spinner_text.to_owned());
 
     let result = f().await;
 
@@ -3743,11 +3963,16 @@ fn does_input_reference_file(input: &str) -> Option<ChatState> {
 
 // Helper method to save the agent config to file
 async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
+    let resolver = PathResolver::new(os);
     let config_dir = if is_global {
-        directories::chat_global_agent_path(os)
+        resolver
+            .global()
+            .agents_dir()
             .map_err(|e| ChatError::Custom(format!("Could not find global agent directory: {}", e).into()))?
     } else {
-        directories::chat_local_agent_dir(os)
+        resolver
+            .workspace()
+            .agents_dir()
             .map_err(|e| ChatError::Custom(format!("Could not find local agent directory: {}", e).into()))?
     };
 
