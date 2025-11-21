@@ -12,7 +12,7 @@
 [package]
 edition = "2021"
 name = "amzn-codewhisperer-client"
-version = "0.1.12082"
+version = "0.1.12706"
 authors = ["Grant Gurvis <grangurv@amazon.com>"]
 build = false
 exclude = [
@@ -29,12 +29,13 @@ autobenches = false
 description = "Rust client bindings for the Amazon CodeWhisperer Service (codewhisperer.smithy)"
 readme = false
 
+[package.metadata.smithy]
+codegen-version = "1015c8fd5a1fb84d27a6228a6c9703eab31a2ec7"
+protocol = "aws.protocols#awsJson1_0"
+
 [package.metadata.docs.rs]
 all-features = true
 targets = ["x86_64-unknown-linux-gnu"]
-
-[package.metadata.smithy]
-codegen-version = "bf61672f530d9d291fbcdc7a8e983f2e18842d1d"
 
 [features]
 behavior-version-latest = []
@@ -57,29 +58,29 @@ name = "amzn_codewhisperer_client"
 path = "src/lib.rs"
 
 [dependencies.aws-credential-types]
-version = "1.2.6"
+version = "1.2.8"
 
 [dependencies.aws-runtime]
-version = "1.5.10"
+version = "1.5.13"
 
 [dependencies.aws-smithy-async]
-version = "1.2.5"
+version = "1.2.6"
 
 [dependencies.aws-smithy-http]
-version = "0.62.3"
+version = "0.62.5"
 
 [dependencies.aws-smithy-json]
-version = "0.61.5"
+version = "0.61.7"
 
 [dependencies.aws-smithy-runtime]
-version = "1.9.2"
+version = "1.9.4"
 features = [
     "client",
     "http-auth",
 ]
 
 [dependencies.aws-smithy-runtime-api]
-version = "1.9.0"
+version = "1.9.2"
 features = [
     "client",
     "http-02x",
@@ -87,10 +88,10 @@ features = [
 ]
 
 [dependencies.aws-smithy-types]
-version = "1.3.2"
+version = "1.3.4"
 
 [dependencies.aws-types]
-version = "1.3.8"
+version = "1.3.10"
 
 [dependencies.bytes]
 version = "1.4.0"
@@ -105,5 +106,5 @@ version = "0.2.9"
 version = "0.1"
 
 [dev-dependencies.aws-credential-types]
-version = "1.2.6"
+version = "1.2.8"
 features = ["test-util"]

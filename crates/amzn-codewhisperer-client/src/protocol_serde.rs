@@ -160,6 +160,8 @@ pub(crate) mod shape_list_available_models_input;
 
 pub(crate) mod shape_list_available_profiles_input;
 
+pub(crate) mod shape_list_available_subscriptions_input;
+
 pub(crate) mod shape_list_code_analysis_findings_input;
 
 pub(crate) mod shape_list_events_input;

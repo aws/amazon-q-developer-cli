@@ -2,7 +2,16 @@
 #[allow(missing_docs)] // documentation missing in model
 #[non_exhaustive]
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
-pub struct ListAvailableSubscriptionsInput {}
+pub struct ListAvailableSubscriptionsInput {
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
+}
+impl ListAvailableSubscriptionsInput {
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
+    }
+}
 impl ListAvailableSubscriptionsInput {
     /// Creates a new builder-style object to manufacture
     /// [`ListAvailableSubscriptionsInput`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput).
@@ -16,8 +25,27 @@ impl ListAvailableSubscriptionsInput {
 /// [`ListAvailableSubscriptionsInput`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput).
 #[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
 #[non_exhaustive]
-pub struct ListAvailableSubscriptionsInputBuilder {}
+pub struct ListAvailableSubscriptionsInputBuilder {
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
+}
 impl ListAvailableSubscriptionsInputBuilder {
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
+    }
+
     /// Consumes the builder and constructs a
     /// [`ListAvailableSubscriptionsInput`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput).
     pub fn build(
@@ -26,6 +54,10 @@ impl ListAvailableSubscriptionsInputBuilder {
         crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput,
         ::aws_smithy_types::error::operation::BuildError,
     > {
-        ::std::result::Result::Ok(crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput {})
+        ::std::result::Result::Ok(
+            crate::operation::list_available_subscriptions::ListAvailableSubscriptionsInput {
+                profile_arn: self.profile_arn,
+            },
+        )
     }
 }

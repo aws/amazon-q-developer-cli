@@ -23,6 +23,8 @@ pub struct CreateProfileInput {
     pub resource_policy: ::std::option::Option<crate::types::ResourcePolicy>,
     #[allow(missing_docs)] // documentation missing in model
     pub opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub profile_type: ::std::option::Option<crate::types::ProfileType>,
 }
 impl CreateProfileInput {
     #[allow(missing_docs)] // documentation missing in model
@@ -80,6 +82,11 @@ impl CreateProfileInput {
     pub fn opt_in_features(&self) -> ::std::option::Option<&crate::types::OptInFeatures> {
         self.opt_in_features.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_type(&self) -> ::std::option::Option<&crate::types::ProfileType> {
+        self.profile_type.as_ref()
+    }
 }
 impl CreateProfileInput {
     /// Creates a new builder-style object to manufacture
@@ -103,6 +110,7 @@ pub struct CreateProfileInputBuilder {
     pub(crate) tags: ::std::option::Option<::std::vec::Vec<crate::types::Tag>>,
     pub(crate) resource_policy: ::std::option::Option<crate::types::ResourcePolicy>,
     pub(crate) opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
+    pub(crate) profile_type: ::std::option::Option<crate::types::ProfileType>,
 }
 impl CreateProfileInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -296,6 +304,23 @@ impl CreateProfileInputBuilder {
         &self.opt_in_features
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_type(mut self, input: crate::types::ProfileType) -> Self {
+        self.profile_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_type(mut self, input: ::std::option::Option<crate::types::ProfileType>) -> Self {
+        self.profile_type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_type(&self) -> &::std::option::Option<crate::types::ProfileType> {
+        &self.profile_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`CreateProfileInput`](crate::operation::create_profile::CreateProfileInput).
     pub fn build(
@@ -315,6 +340,7 @@ impl CreateProfileInputBuilder {
             tags: self.tags,
             resource_policy: self.resource_policy,
             opt_in_features: self.opt_in_features,
+            profile_type: self.profile_type,
         })
     }
 }

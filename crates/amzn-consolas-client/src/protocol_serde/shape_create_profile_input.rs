@@ -63,5 +63,8 @@ pub fn ser_create_profile_input_input(
         crate::protocol_serde::shape_opt_in_features::ser_opt_in_features(&mut object_19, var_18)?;
         object_19.finish();
     }
+    if let Some(var_20) = &input.profile_type {
+        object.key("profileType").string(var_20.as_str());
+    }
     Ok(())
 }

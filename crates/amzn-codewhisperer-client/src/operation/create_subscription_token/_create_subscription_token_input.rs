@@ -6,6 +6,8 @@ pub struct CreateSubscriptionTokenInput {
     #[allow(missing_docs)] // documentation missing in model
     pub client_token: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
+    pub profile_arn: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
     pub status_only: ::std::option::Option<bool>,
     #[allow(missing_docs)] // documentation missing in model
     pub provider: ::std::option::Option<crate::types::SubscriptionProvider>,
@@ -20,6 +22,11 @@ impl CreateSubscriptionTokenInput {
     #[allow(missing_docs)] // documentation missing in model
     pub fn client_token(&self) -> ::std::option::Option<&str> {
         self.client_token.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(&self) -> ::std::option::Option<&str> {
+        self.profile_arn.as_deref()
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -61,6 +68,7 @@ impl CreateSubscriptionTokenInput {
 #[non_exhaustive]
 pub struct CreateSubscriptionTokenInputBuilder {
     pub(crate) client_token: ::std::option::Option<::std::string::String>,
+    pub(crate) profile_arn: ::std::option::Option<::std::string::String>,
     pub(crate) status_only: ::std::option::Option<bool>,
     pub(crate) provider: ::std::option::Option<crate::types::SubscriptionProvider>,
     pub(crate) subscription_type: ::std::option::Option<crate::types::SubscriptionType>,
@@ -83,6 +91,23 @@ impl CreateSubscriptionTokenInputBuilder {
     #[allow(missing_docs)] // documentation missing in model
     pub fn get_client_token(&self) -> &::std::option::Option<::std::string::String> {
         &self.client_token
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_arn(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
+        self.profile_arn = ::std::option::Option::Some(input.into());
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_arn(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+        self.profile_arn = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_arn(&self) -> &::std::option::Option<::std::string::String> {
+        &self.profile_arn
     }
 
     #[allow(missing_docs)] // documentation missing in model
@@ -181,6 +206,7 @@ impl CreateSubscriptionTokenInputBuilder {
         ::std::result::Result::Ok(
             crate::operation::create_subscription_token::CreateSubscriptionTokenInput {
                 client_token: self.client_token,
+                profile_arn: self.profile_arn,
                 status_only: self.status_only,
                 provider: self.provider,
                 subscription_type: self.subscription_type,

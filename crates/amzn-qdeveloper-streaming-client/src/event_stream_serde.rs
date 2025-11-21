@@ -319,6 +319,19 @@ impl ::aws_smithy_eventstream::frame::UnmarshallMessage for ChatResponseStreamUn
                         crate::types::ChatResponseStream::MeteringEvent(parsed),
                     ))
                 },
+                "contextUsageEvent" => {
+                    let parsed = crate::protocol_serde::shape_context_usage_event::de_context_usage_event_payload(
+                        &message.payload()[..],
+                    )
+                    .map_err(|err| {
+                        ::aws_smithy_eventstream::error::Error::unmarshalling(format!(
+                            "failed to unmarshall ContextUsageEvent: {err}"
+                        ))
+                    })?;
+                    Ok(::aws_smithy_eventstream::frame::UnmarshalledMessage::Event(
+                        crate::types::ChatResponseStream::ContextUsageEvent(parsed),
+                    ))
+                },
                 "citationEvent" => {
                     let parsed =
                         crate::protocol_serde::shape_citation_event::de_citation_event_payload(&message.payload()[..])

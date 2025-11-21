@@ -126,4 +126,6 @@ mod generate_assistant_response;
 
 mod generate_task_assist_plan;
 
+mod invoke_mcp;
+
 mod send_message;

@@ -119,5 +119,8 @@ pub fn ser_user_trigger_decision_event(
     if let Some(var_13) = &input.suggestion_type {
         object.key("suggestionType").string(var_13.as_str());
     }
+    if let Some(var_14) = &input.user_decision_reason {
+        object.key("userDecisionReason").string(var_14.as_str());
+    }
     Ok(())
 }

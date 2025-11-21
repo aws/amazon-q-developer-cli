@@ -9,6 +9,8 @@ pub struct ExternalIdentityDetails {
     pub client_id: ::std::option::Option<::std::string::String>,
     #[allow(missing_docs)] // documentation missing in model
     pub scim_endpoint: ::std::option::Option<::std::string::String>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub subscription_start_type: ::std::option::Option<crate::types::SubscriptionStartType>,
 }
 impl ExternalIdentityDetails {
     #[allow(missing_docs)] // documentation missing in model
@@ -24,6 +26,11 @@ impl ExternalIdentityDetails {
     #[allow(missing_docs)] // documentation missing in model
     pub fn scim_endpoint(&self) -> ::std::option::Option<&str> {
         self.scim_endpoint.as_deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn subscription_start_type(&self) -> ::std::option::Option<&crate::types::SubscriptionStartType> {
+        self.subscription_start_type.as_ref()
     }
 }
 impl ExternalIdentityDetails {
@@ -41,6 +48,7 @@ pub struct ExternalIdentityDetailsBuilder {
     pub(crate) issuer_url: ::std::option::Option<::std::string::String>,
     pub(crate) client_id: ::std::option::Option<::std::string::String>,
     pub(crate) scim_endpoint: ::std::option::Option<::std::string::String>,
+    pub(crate) subscription_start_type: ::std::option::Option<crate::types::SubscriptionStartType>,
 }
 impl ExternalIdentityDetailsBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -94,6 +102,26 @@ impl ExternalIdentityDetailsBuilder {
         &self.scim_endpoint
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn subscription_start_type(mut self, input: crate::types::SubscriptionStartType) -> Self {
+        self.subscription_start_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_subscription_start_type(
+        mut self,
+        input: ::std::option::Option<crate::types::SubscriptionStartType>,
+    ) -> Self {
+        self.subscription_start_type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_subscription_start_type(&self) -> &::std::option::Option<crate::types::SubscriptionStartType> {
+        &self.subscription_start_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`ExternalIdentityDetails`](crate::types::ExternalIdentityDetails).
     pub fn build(self) -> crate::types::ExternalIdentityDetails {
@@ -101,6 +129,7 @@ impl ExternalIdentityDetailsBuilder {
             issuer_url: self.issuer_url,
             client_id: self.client_id,
             scim_endpoint: self.scim_endpoint,
+            subscription_start_type: self.subscription_start_type,
         }
     }
 }

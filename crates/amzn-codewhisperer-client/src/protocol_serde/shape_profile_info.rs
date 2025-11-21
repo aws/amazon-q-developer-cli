@@ -62,6 +62,11 @@ where
                                 crate::protocol_serde::shape_opt_in_features::de_opt_in_features(tokens)?,
                             );
                         },
+                        "referenceTrackerConfiguration" => {
+                            builder = builder.set_reference_tracker_configuration(
+                                crate::protocol_serde::shape_reference_tracker_configuration::de_reference_tracker_configuration(tokens)?,
+                            );
+                        },
                         _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                     },
                     other => {

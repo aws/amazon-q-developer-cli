@@ -14,6 +14,7 @@ pub use crate::types::_code_description::CodeDescriptionBuilder;
 pub use crate::types::_code_event::CodeEventBuilder;
 pub use crate::types::_code_reference_event::CodeReferenceEventBuilder;
 pub use crate::types::_console_state::ConsoleStateBuilder;
+pub use crate::types::_context_usage_event::ContextUsageEventBuilder;
 pub use crate::types::_conversation_state::ConversationStateBuilder;
 pub use crate::types::_diagnostic_location::DiagnosticLocationBuilder;
 pub use crate::types::_diagnostic_related_information::DiagnosticRelatedInformationBuilder;

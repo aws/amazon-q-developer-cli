@@ -43,6 +43,7 @@ pub use crate::types::_s3_reference::S3Reference;
 pub use crate::types::_span::Span;
 pub use crate::types::_sso_identity_details::SsoIdentityDetails;
 pub use crate::types::_sso_identity_source::SsoIdentitySource;
+pub use crate::types::_subscription_start_type::SubscriptionStartType;
 pub use crate::types::_supplemental_context::SupplementalContext;
 pub use crate::types::_supplemental_context_metadata::SupplementalContextMetadata;
 pub use crate::types::_supplemental_context_type::SupplementalContextType;
@@ -140,6 +141,8 @@ mod _span;
 mod _sso_identity_details;
 
 mod _sso_identity_source;
+
+mod _subscription_start_type;
 
 mod _supplemental_context;
 

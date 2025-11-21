@@ -28,6 +28,7 @@ pub use crate::types::_console_state::ConsoleState;
 pub use crate::types::_content_checksum_type::ContentChecksumType;
 pub use crate::types::_content_type::ContentType;
 pub use crate::types::_context_truncation_scheme::ContextTruncationScheme;
+pub use crate::types::_context_usage_event::ContextUsageEvent;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_cursor_state::CursorState;
 pub use crate::types::_diagnostic::Diagnostic;
@@ -59,6 +60,8 @@ pub use crate::types::_interaction_components_event::InteractionComponentsEvent;
 pub use crate::types::_internal_server_exception_reason::InternalServerExceptionReason;
 pub use crate::types::_invalid_state_event::InvalidStateEvent;
 pub use crate::types::_invalid_state_reason::InvalidStateReason;
+pub use crate::types::_json_rpc_error::JsonRpcError;
+pub use crate::types::_mcp_method::McpMethod;
 pub use crate::types::_message_metadata_event::MessageMetadataEvent;
 pub use crate::types::_metadata_event::MetadataEvent;
 pub use crate::types::_metering_event::MeteringEvent;
@@ -183,6 +186,8 @@ mod _content_type;
 
 mod _context_truncation_scheme;
 
+mod _context_usage_event;
+
 mod _conversation_state;
 
 mod _cursor_state;
@@ -244,6 +249,10 @@ mod _internal_server_exception_reason;
 mod _invalid_state_event;
 
 mod _invalid_state_reason;
+
+mod _json_rpc_error;
+
+mod _mcp_method;
 
 mod _message_metadata_event;
 

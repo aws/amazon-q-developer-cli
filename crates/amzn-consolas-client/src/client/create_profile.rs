@@ -15,6 +15,7 @@ impl super::Client {
     ///   - [`tags(Tag)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::tags) / [`set_tags(Option<Vec::<Tag>>)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::set_tags):<br>required: **false**<br>(undocumented)<br>
     ///   - [`resource_policy(ResourcePolicy)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::resource_policy) / [`set_resource_policy(Option<ResourcePolicy>)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::set_resource_policy):<br>required: **false**<br>(undocumented)<br>
     ///   - [`opt_in_features(OptInFeatures)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::opt_in_features) / [`set_opt_in_features(Option<OptInFeatures>)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::set_opt_in_features):<br>required: **false**<br>(undocumented)<br>
+    ///   - [`profile_type(ProfileType)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::profile_type) / [`set_profile_type(Option<ProfileType>)`](crate::operation::create_profile::builders::CreateProfileFluentBuilder::set_profile_type):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`CreateProfileOutput`](crate::operation::create_profile::CreateProfileOutput) with
     ///   field(s):
