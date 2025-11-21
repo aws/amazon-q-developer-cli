@@ -256,6 +256,7 @@ impl<'a> SubagentIndicator<'a> {
                 Self::MAX_CONTENT_WIDGET_WIDTH,
                 terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
             );
+            let max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
             #[allow(unused_assignments)]
             let mut stacked_height = 2_u16;
 
@@ -354,7 +355,6 @@ impl<'a> SubagentIndicator<'a> {
                                 }
                             } else if !agent_info.msg.is_empty() {
                                 let msg = &agent_info.msg;
-                                let max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
 
                                 *lines = wrap_text(msg, max_text_width)
                                     .into_iter()
@@ -600,22 +600,29 @@ impl<'a> SubagentIndicator<'a> {
             }
 
             let (_, current_terminal_height) = size().unwrap_or((terminal_width, terminal_height));
-
             let mut summary_stacked_height = 0_u16;
-            for agent_info in agents.values() {
-                let mut line_count = 0_usize;
 
-                if let Some(summary) = &agent_info.execution_summary {
-                    line_count += 1; // "Execution Summary" line
-                    if summary.duration.is_some() {
-                        line_count += 1; // Duration line
-                    }
-                    if summary.tool_call_count.is_some() {
-                        line_count += 1; // Tool calls line
-                    }
-                }
+            for agent_info in agents.values_mut() {
+                let (tool_calls, duration) = agent_info.execution_summary.as_ref().map_or((0_u32, 0_f64), |summary| {
+                    let tool_calls = summary.tool_call_count.unwrap_or_default();
+                    let duration = summary.duration.unwrap_or_default();
+                    (tool_calls, duration.as_secs_f64())
+                });
+                let summary_msg = format!("done ({tool_calls} tool uses · {duration:.2}s)");
 
-                let widget_height = (line_count as u16).saturating_add(2).max(3);
+                agent_info.lines = wrap_text(summary_msg.as_str(), max_text_width)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(idx, text)| {
+                        let prefix = if idx == 0 { "↳ " } else { "  " };
+                        Line::from(vec![
+                            Span::styled(prefix, Style::default()),
+                            Span::raw(text.to_string()),
+                        ])
+                    })
+                    .collect::<Vec<_>>();
+
+                let widget_height = (agent_info.lines.len() as u16).saturating_add(2).max(3);
                 summary_stacked_height = summary_stacked_height.saturating_add(widget_height);
             }
 
@@ -647,29 +654,8 @@ impl<'a> SubagentIndicator<'a> {
                     .draw(|f| {
                         let mut current_start_row = start_row;
 
-                        for agent_info in agents.values() {
-                            let mut lines = Vec::new();
-
-                            if let Some(summary) = &agent_info.execution_summary {
-                                let duration = summary
-                                    .duration
-                                    .as_ref()
-                                    .unwrap_or(&std::time::Duration::from_secs(0_u64))
-                                    .as_secs_f64();
-                                let tool_calls = summary.tool_call_count.as_ref().unwrap_or(&0_u32);
-
-                                lines.push(Line::from(vec![
-                                    Span::styled("↳ ", Style::default()),
-                                    Span::styled(
-                                        format!("done ({tool_calls} tool uses · {duration:.2}s)"),
-                                        Style::default(),
-                                    ),
-                                ]));
-                                // TODO: investigate why this is showing a count of 0
-                                // lines.push(Line::from(format!("  Token count: {}",
-                                // summary.token_count)));
-                            }
-
+                        for agent_info in agents.values_mut() {
+                            let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
                             let title = title! {
                                 status: SubagentStatus::Completed,
                                 agent_name: agent_info.agent_name.clone(),
@@ -689,6 +675,7 @@ impl<'a> SubagentIndicator<'a> {
                                 width: content_widget_width,
                                 height: widget_height,
                             };
+
                             f.render_widget(status_line, area);
                             current_start_row = current_start_row.saturating_add(widget_height);
                         }
