@@ -103,7 +103,7 @@ pub enum AgentConfigError {
 }
 
 /// An [Agent] is a declarative way of configuring a given instance of q chat. Currently, it is
-/// impacting q chat in via influenicng [ContextManager] and [ToolManager].
+/// impacting q chat via influencing [ContextManager] and [ToolManager].
 /// Changes made to [ContextManager] and [ToolManager] do not persist across sessions.
 ///
 /// To increase the usability of the agent config, (both from the perspective of CLI and the users
