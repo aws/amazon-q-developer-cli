@@ -59,6 +59,71 @@ use crate::protocol::{
     UiEvent,
 };
 
+#[inline]
+fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
+    let mut res = Vec::<&str>::new();
+    let mut start = 0_usize;
+    let mut last_space = 0_usize;
+    let max_width = max_text_width as usize;
+
+    for (idx, ch) in input.char_indices() {
+        if ch.is_whitespace() {
+            last_space = idx;
+        }
+
+        let current_len = idx - start;
+        if current_len >= max_width && last_space > start {
+            // Wrap at last space
+            res.push(&input[start..last_space]);
+            start = last_space + 1;
+            last_space = start;
+        }
+    }
+
+    // Push the remaining text
+    if start < input.len() {
+        res.push(&input[start..]);
+    }
+
+    res
+}
+
+enum SubagentStatus {
+    Completed,
+    Running(&'static str),
+    Attention,
+}
+
+const AGENT_BG_COLOR: u8 = 0;
+
+macro_rules! title {
+    {
+        status: $status:expr,
+        agent_name: $agent_name:expr,
+        fg_color: $agent_fg:expr,
+        init_query: $init_query:expr
+    } => {
+        match $status {
+            SubagentStatus::Completed => Line::from(vec![
+                Span::styled("✓ ", Style::default().fg(Color::Green.into())),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::raw(format!(": {}... ", $init_query)),
+            ]),
+            SubagentStatus::Running(symbol) => Line::from(vec![
+                Span::raw(symbol),
+                Span::raw(" "),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::raw(format!(": {}... ", $init_query)),
+            ]),
+            SubagentStatus::Attention => Line::from(vec![
+                Span::styled("! ", Style::default().fg(Color::Red.into())),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::raw(format!(": {}... ", $init_query)),
+            ]),
+        }
+    };
+}
+
 pub struct SubagentIndicatorHandle {
     end_turn_rx: mpsc::Receiver<()>,
     guard: Option<CancellationToken>,
@@ -102,6 +167,7 @@ struct AgentInfo<'a> {
     blocking_servers: BTreeMap<String, String>,
     pending_tool_approval: Option<String>,
     execution_summary: Option<SubagentExecutionSummary>,
+    color: u8,
 }
 
 impl<'a> AgentInfo<'a> {
@@ -116,6 +182,7 @@ impl<'a> AgentInfo<'a> {
             msg,
             widget_height: self.widget_height,
             blocking_servers: self.blocking_servers.clone(),
+            color: self.color,
             ..Default::default()
         }
     }
@@ -128,9 +195,10 @@ pub struct SubagentIndicator<'a> {
 
 impl<'a> SubagentIndicator<'a> {
     const ARROW_WIDGET_WIDTH: u16 = 2;
+    const COLORS: [u8; 4] = [33, 81, 117, 213];
     const MAX_CONTENT_WIDGET_WIDTH: u16 = 78;
     const MAX_SUBAGENT_LEN: usize = 4;
-    const SPINNERS: [char; 8] = ['ᗢ', 'ᗣ', 'ᗤ', 'ᗥ', 'ᗦ', 'ᗧ', 'ᗨ', 'ᗩ'];
+    const SPINNERS: [&'static str; 8] = ["ᗢ", "ᗣ", "ᗤ", "ᗥ", "ᗦ", "ᗧ", "ᗨ", "ᗩ"];
 
     pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd) -> Self {
         let mut agents = HashMap::<u16, AgentInfo<'_>>::new();
@@ -142,7 +210,8 @@ impl<'a> SubagentIndicator<'a> {
             agents.insert(idx as u16, AgentInfo {
                 agent_name,
                 initial_query,
-                msg: "Starting up...".to_string(),
+                msg: "starting up...".to_string(),
+                color: Self::COLORS[idx],
                 ..Default::default()
             });
         }
@@ -250,7 +319,7 @@ impl<'a> SubagentIndicator<'a> {
                             },
                             UiEvent::ToolCallPermissionRequest { agent_id, inner } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("Tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
+                                    agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
                                     agent_info.pending_tool_approval.replace(inner.tool_call_id);
                                 }
                             },
@@ -260,7 +329,7 @@ impl<'a> SubagentIndicator<'a> {
                                         if let Ok(exec_summary) = serde_json::from_value::<SubagentExecutionSummary>(meta_event.payload) {
                                             agent_info.execution_summary.replace(exec_summary);
                                         }
-                                        agent_info.msg = "Waiting for others...".to_string();
+                                        agent_info.msg = "waiting for others...".to_string();
                                     }
                                 }
                             }
@@ -279,9 +348,9 @@ impl<'a> SubagentIndicator<'a> {
                             let lines = &mut agent_info.lines;
 
                             if !agent_info.blocking_servers.is_empty() {
-                                lines.push(Line::from(format!("↳ Waiting on {} server(s)", agent_info.blocking_servers.len())));
+                                lines.push(Line::from(format!("↳ waiting on {} server(s)", agent_info.blocking_servers.len())));
                                 for server_name in agent_info.blocking_servers.keys() {
-                                    lines.push(Line::from(format!("  - Auth required for {server_name}. ↵ to copy URL")));
+                                    lines.push(Line::from(format!("  - auth required for {server_name}. ↵ to copy URL")));
                                 }
                             } else if !agent_info.msg.is_empty() {
                                 let msg = &agent_info.msg;
@@ -378,23 +447,19 @@ impl<'a> SubagentIndicator<'a> {
                                 let requires_attention = agent_info.pending_tool_approval.is_some()
                                     || !agent_info.blocking_servers.is_empty();
 
-                                let spinner = if requires_attention {
-                                    '!'
+                                let status = if requires_attention {
+                                    SubagentStatus::Attention
                                 } else {
                                     agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
-                                    Self::SPINNERS[agent_info.spinner_idx]
+                                    SubagentStatus::Running(Self::SPINNERS[agent_info.spinner_idx])
                                 };
 
-                                let spinner_color = if requires_attention {
-                                    ratatui::prelude::Color::Red
-                                } else {
-                                    Color::AnsiValue(normal_color).into()
+                                let title = title! {
+                                    status: status,
+                                    agent_name: agent_info.agent_name.clone(),
+                                    fg_color: agent_info.color,
+                                    init_query: agent_info.initial_query
                                 };
-
-                                let title = Line::from(vec![
-                                    Span::styled(spinner.to_string(), Style::default().fg(spinner_color)),
-                                    Span::raw(format!(" {}: {}... ", agent_info.agent_name, agent_info.initial_query)),
-                                ]);
 
                                 let status_line = Paragraph::new(lines)
                                     .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
@@ -534,10 +599,8 @@ impl<'a> SubagentIndicator<'a> {
                 }
             }
 
-            // Get current terminal size to check if we have enough space
             let (_, current_terminal_height) = size().unwrap_or((terminal_width, terminal_height));
 
-            // First pass: calculate required height
             let mut summary_stacked_height = 0_u16;
             for agent_info in agents.values() {
                 let mut line_count = 0_usize;
@@ -588,27 +651,31 @@ impl<'a> SubagentIndicator<'a> {
                             let mut lines = Vec::new();
 
                             if let Some(summary) = &agent_info.execution_summary {
+                                let duration = summary
+                                    .duration
+                                    .as_ref()
+                                    .unwrap_or(&std::time::Duration::from_secs(0_u64))
+                                    .as_secs_f64();
+                                let tool_calls = summary.tool_call_count.as_ref().unwrap_or(&0_u32);
+
                                 lines.push(Line::from(vec![
                                     Span::styled("↳ ", Style::default()),
                                     Span::styled(
-                                        "Execution Summary",
-                                        Style::default().fg(Color::AnsiValue(141).into()),
+                                        format!("done ({tool_calls} tool uses · {duration:.2}s)"),
+                                        Style::default(),
                                     ),
                                 ]));
                                 // TODO: investigate why this is showing a count of 0
-                                // lines.push(Line::from(format!("  Token count: {}", summary.token_count)));
-                                if let Some(duration) = summary.duration {
-                                    lines.push(Line::from(format!("  - Duration: {:.2}s", duration.as_secs_f64())));
-                                }
-                                if let Some(tool_calls) = summary.tool_call_count {
-                                    lines.push(Line::from(format!("  - Tool calls: {tool_calls}")));
-                                }
+                                // lines.push(Line::from(format!("  Token count: {}",
+                                // summary.token_count)));
                             }
 
-                            let title = Line::from(vec![
-                                Span::styled("✓", Style::default().fg(Color::Green.into())),
-                                Span::raw(format!(" {}: {}... ", agent_info.agent_name, agent_info.initial_query)),
-                            ]);
+                            let title = title! {
+                                status: SubagentStatus::Completed,
+                                agent_name: agent_info.agent_name.clone(),
+                                fg_color: agent_info.color,
+                                init_query: agent_info.initial_query
+                            };
 
                             let widget_height = (lines.len() as u16).saturating_add(2).max(3);
 
@@ -648,33 +715,4 @@ impl<'a> SubagentIndicator<'a> {
             guard: Some(cancellation_token),
         }
     }
-}
-
-#[inline]
-fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
-    let mut res = Vec::<&str>::new();
-    let mut start = 0_usize;
-    let mut last_space = 0_usize;
-    let max_width = max_text_width as usize;
-
-    for (idx, ch) in input.char_indices() {
-        if ch.is_whitespace() {
-            last_space = idx;
-        }
-
-        let current_len = idx - start;
-        if current_len >= max_width && last_space > start {
-            // Wrap at last space
-            res.push(&input[start..last_space]);
-            start = last_space + 1;
-            last_space = start;
-        }
-    }
-
-    // Push the remaining text
-    if start < input.len() {
-        res.push(&input[start..]);
-    }
-
-    res
 }
