@@ -5,72 +5,29 @@
 //! cargo run -p agent -- acp
 //! ```
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::process::ExitCode;
-use std::rc::Rc;
 use std::str::FromStr;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use agent::agent_loop::types::ToolUseBlock;
 use agent::api_client::ApiClient;
 use agent::mcp::McpManager;
-use agent::protocol::{
-    AgentEvent,
-    AgentStopReason,
-    ContentChunk,
-    SendPromptArgs,
-    ToolCallResult,
-    UpdateEvent,
-};
-use agent::rts::{
-    RtsModel,
-    RtsModelState,
-};
+use agent::protocol::{AgentEvent, AgentStopReason, ContentChunk, SendPromptArgs, ToolCallResult, UpdateEvent};
+use agent::rts::{RtsModel, RtsModelState};
 use agent::tools::BuiltInToolName;
 use agent::types::AgentSnapshot;
-use agent::{
-    Agent,
-    AgentHandle,
-};
+use agent::{Agent, AgentHandle};
 use eyre::Result;
-use sacp::{
-    AgentCapabilities,
-    CancelNotification,
-    ContentBlock,
-    ContentChunk as SacpContentChunk,
-    Diff,
-    Implementation,
-    InitializeRequest,
-    InitializeResponse,
-    JrConnection,
-    JrRequestCx,
-    NewSessionRequest,
-    NewSessionResponse,
-    PermissionOption,
-    PermissionOptionId,
-    PermissionOptionKind,
-    PromptRequest,
-    PromptResponse,
-    RequestPermissionRequest,
-    SessionId,
-    SessionNotification,
-    SessionUpdate,
-    StopReason,
-    TextContent,
-    ToolCall,
-    ToolCallContent,
-    ToolCallId,
-    ToolCallStatus,
-    ToolCallUpdate,
-    ToolCallUpdateFields,
-    ToolKind,
-    V1,
+use sacp::schema::{
+    AgentCapabilities, CancelNotification, ContentBlock, ContentChunk as SacpContentChunk, Diff, Implementation,
+    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PermissionOption, PermissionOptionId,
+    PermissionOptionKind, PromptRequest, PromptResponse, RequestPermissionOutcome, RequestPermissionRequest, SessionId,
+    SessionNotification, SessionUpdate, StopReason, TextContent, ToolCall, ToolCallContent, ToolCallId, ToolCallStatus,
+    ToolCallUpdate, ToolCallUpdateFields, ToolKind, V1,
 };
-use tokio_util::compat::{
-    TokioAsyncReadCompatExt,
-    TokioAsyncWriteCompatExt,
-};
+use sacp::{JrHandlerChain, JrRequestCx};
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use tracing::info;
 
 /// ACP Session that processes requests using Amazon Q agent
@@ -115,7 +72,7 @@ impl AcpSession {
 
         // We want to avoid blocking the main event loop because it needs to do other work!
         // so spawn a new task and wait for end of turn
-        let _ = request_cx.clone().spawn(async move {
+        let _ = request_cx.connection_cx().spawn(async move {
             loop {
                 match agent.recv().await {
                     Ok(event) => match event {
@@ -236,7 +193,7 @@ fn handle_update_event(
     };
 
     if let Some(update) = session_update {
-        request_cx.send_notification(SessionNotification {
+        request_cx.connection_cx().send_notification(SessionNotification {
             session_id,
             update,
             meta: None,
@@ -336,19 +293,20 @@ fn handle_approval_request(
     };
 
     request_cx
+        .connection_cx()
         .send_request(permission_request)
         .await_when_result_received(|result| async move {
             info!("Permission request result: {:?}", result);
             let approval_result = match result {
                 Ok(response) => match &response.outcome {
-                    sacp::RequestPermissionOutcome::Selected { option_id } => {
+                    RequestPermissionOutcome::Selected { option_id } => {
                         if option_id.0.as_ref() == "allow" {
                             agent::protocol::ApprovalResult::Approve
                         } else {
                             agent::protocol::ApprovalResult::Deny { reason: None }
                         }
                     },
-                    sacp::RequestPermissionOutcome::Cancelled => agent::protocol::ApprovalResult::Deny {
+                    RequestPermissionOutcome::Cancelled => agent::protocol::ApprovalResult::Deny {
                         reason: Some("Cancelled".to_string()),
                     },
                 },
@@ -373,13 +331,14 @@ pub async fn execute() -> Result<ExitCode> {
     let incoming = tokio::io::stdin().compat();
 
     // Create session manager
-    let sessions = Rc::new(RefCell::new(HashMap::new()));
+    let sessions = Arc::new(Mutex::new(HashMap::new()));
 
     let local_set = tokio::task::LocalSet::new();
     local_set
         .run_until(async move {
             // Create SACP connection with handlers
-            let connection = JrConnection::new(outgoing, incoming)
+            JrHandlerChain::new()
+                .name("amazon-q-agent")
                 // Handle initialize request
                 .on_receive_request({
                     async move |_request: InitializeRequest, request_cx| {
@@ -398,12 +357,12 @@ pub async fn execute() -> Result<ExitCode> {
                 })
                 // Handle new_session request
                 .on_receive_request({
-                    let sessions = Rc::clone(&sessions);
+                    let sessions = Arc::clone(&sessions);
                     async move |_request: NewSessionRequest, request_cx| {
                         let session_id = SessionId(uuid::Uuid::new_v4().to_string().into());
-                        let session = Rc::new(AcpSession::new().await.map_err(|_| sacp::Error::internal_error())?);
+                        let session = Arc::new(AcpSession::new().await.map_err(|_| sacp::Error::internal_error())?);
 
-                        sessions.borrow_mut().insert(session_id.clone(), session);
+                        sessions.lock().expect("not poisoned").insert(session_id.clone(), session);
 
                         request_cx.respond(NewSessionResponse {
                             session_id,
@@ -414,9 +373,9 @@ pub async fn execute() -> Result<ExitCode> {
                 })
                 // Handle prompt request
                 .on_receive_request({
-                    let sessions = Rc::clone(&sessions);
+                    let sessions = Arc::clone(&sessions);
                     async move |request: PromptRequest, request_cx| {
-                        let session = sessions.borrow().get(&request.session_id).cloned();
+                        let session = sessions.lock().expect("not poisoned").get(&request.session_id).cloned();
 
                         match session {
                             Some(session) => session.handle_prompt_request(request, request_cx).await,
@@ -430,11 +389,9 @@ pub async fn execute() -> Result<ExitCode> {
                         // TODO: Implement cancellation if needed
                         Ok(())
                     }
-                });
-
-            // Run the connection
-            connection
-                .serve()
+                })
+                // Run the connection
+                .serve(sacp::ByteStreams::new(outgoing, incoming))
                 .await
                 .map_err(|e| eyre::eyre!("Connection error: {}", e))
         })

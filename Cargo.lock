@@ -6455,9 +6455,9 @@ checksum = "28d3b2b1366ec20994f1fd18c3c594f05c5dd4bc44d8bb0c1c632c8d6829481f"
 
 [[package]]
 name = "sacp"
-version = "0.1.1"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c65796fbe83e5f154c3db148b384c9305b64e9b23b5b2eaff761e0dd127e3556"
+checksum = "bf399dcd5f5c38c3c0c0c70ecc5dbda22a92a029e733061eb707d518bf987b88"
 dependencies = [
  "agent-client-protocol-schema",
  "anyhow",
@@ -6466,7 +6466,7 @@ dependencies = [
  "jsonrpcmsg",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.17",
  "tracing",
  "uuid",
 ]
