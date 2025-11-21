@@ -71,6 +71,18 @@ pub(crate) fn service_unavailable_exception_correct_errors(
     builder
 }
 
+pub(crate) fn json_rpc_error_correct_errors(
+    mut builder: crate::types::builders::JsonRpcErrorBuilder,
+) -> crate::types::builders::JsonRpcErrorBuilder {
+    if builder.code.is_none() {
+        builder.code = Some(Default::default())
+    }
+    if builder.message.is_none() {
+        builder.message = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn assistant_response_event_correct_errors(
     mut builder: crate::types::builders::AssistantResponseEventBuilder,
 ) -> crate::types::builders::AssistantResponseEventBuilder {

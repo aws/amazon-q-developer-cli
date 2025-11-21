@@ -43,6 +43,8 @@ pub struct UserTriggerDecisionEvent {
     pub streak_length: i32,
     #[allow(missing_docs)] // documentation missing in model
     pub suggestion_type: ::std::option::Option<crate::types::SuggestionType>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub user_decision_reason: ::std::option::Option<crate::types::UserDecisionReason>,
 }
 impl UserTriggerDecisionEvent {
     #[allow(missing_docs)] // documentation missing in model
@@ -152,6 +154,11 @@ impl UserTriggerDecisionEvent {
     pub fn suggestion_type(&self) -> ::std::option::Option<&crate::types::SuggestionType> {
         self.suggestion_type.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn user_decision_reason(&self) -> ::std::option::Option<&crate::types::UserDecisionReason> {
+        self.user_decision_reason.as_ref()
+    }
 }
 impl UserTriggerDecisionEvent {
     /// Creates a new builder-style object to manufacture
@@ -185,6 +192,7 @@ pub struct UserTriggerDecisionEventBuilder {
     pub(crate) deleted_character_count: ::std::option::Option<i32>,
     pub(crate) streak_length: ::std::option::Option<i32>,
     pub(crate) suggestion_type: ::std::option::Option<crate::types::SuggestionType>,
+    pub(crate) user_decision_reason: ::std::option::Option<crate::types::UserDecisionReason>,
 }
 impl UserTriggerDecisionEventBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -554,6 +562,23 @@ impl UserTriggerDecisionEventBuilder {
         &self.suggestion_type
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn user_decision_reason(mut self, input: crate::types::UserDecisionReason) -> Self {
+        self.user_decision_reason = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_user_decision_reason(mut self, input: ::std::option::Option<crate::types::UserDecisionReason>) -> Self {
+        self.user_decision_reason = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_user_decision_reason(&self) -> &::std::option::Option<crate::types::UserDecisionReason> {
+        &self.user_decision_reason
+    }
+
     /// Consumes the builder and constructs a
     /// [`UserTriggerDecisionEvent`](crate::types::UserTriggerDecisionEvent). This method will
     /// fail if any of the following fields are not set:
@@ -624,6 +649,7 @@ impl UserTriggerDecisionEventBuilder {
             deleted_character_count: self.deleted_character_count.unwrap_or_default(),
             streak_length: self.streak_length.unwrap_or_default(),
             suggestion_type: self.suggestion_type,
+            user_decision_reason: self.user_decision_reason,
         })
     }
 }

@@ -83,6 +83,8 @@ pub(crate) mod shape_code_event;
 
 pub(crate) mod shape_code_reference_event;
 
+pub(crate) mod shape_context_usage_event;
+
 pub(crate) mod shape_followup_prompt_event;
 
 pub(crate) mod shape_intents_event;

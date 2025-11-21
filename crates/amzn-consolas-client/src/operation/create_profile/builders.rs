@@ -305,4 +305,21 @@ impl CreateProfileFluentBuilder {
     pub fn get_opt_in_features(&self) -> &::std::option::Option<crate::types::OptInFeatures> {
         self.inner.get_opt_in_features()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn profile_type(mut self, input: crate::types::ProfileType) -> Self {
+        self.inner = self.inner.profile_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_profile_type(mut self, input: ::std::option::Option<crate::types::ProfileType>) -> Self {
+        self.inner = self.inner.set_profile_type(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_profile_type(&self) -> &::std::option::Option<crate::types::ProfileType> {
+        self.inner.get_profile_type()
+    }
 }

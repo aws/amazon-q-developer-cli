@@ -34,6 +34,8 @@ pub(crate) mod shape_generate_assistant_response;
 
 pub(crate) mod shape_generate_task_assist_plan;
 
+pub(crate) mod shape_invoke_mcp;
+
 pub(crate) mod shape_send_message;
 
 pub(crate) fn or_empty_doc(data: &[u8]) -> &[u8] {
@@ -59,6 +61,8 @@ pub(crate) mod shape_generate_task_assist_plan_input;
 pub(crate) mod shape_generate_task_assist_plan_output;
 
 pub(crate) mod shape_internal_server_error;
+
+pub(crate) mod shape_invoke_mcp_input;
 
 pub(crate) mod shape_resource_not_found_exception;
 
@@ -87,6 +91,8 @@ pub(crate) mod shape_conversation_state;
 
 pub(crate) mod shape_export_context;
 
+pub(crate) mod shape_json_rpc_error;
+
 pub(crate) mod shape_workspace_state;
 
 pub(crate) mod shape_assistant_response_event;
@@ -102,6 +108,8 @@ pub(crate) mod shape_citation_event;
 pub(crate) mod shape_code_event;
 
 pub(crate) mod shape_code_reference_event;
+
+pub(crate) mod shape_context_usage_event;
 
 pub(crate) mod shape_followup_prompt_event;
 

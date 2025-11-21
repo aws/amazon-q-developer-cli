@@ -148,6 +148,7 @@ pub use crate::types::_subscription_name::SubscriptionName;
 pub use crate::types::_subscription_plan::SubscriptionPlan;
 pub use crate::types::_subscription_plan_description::SubscriptionPlanDescription;
 pub use crate::types::_subscription_provider::SubscriptionProvider;
+pub use crate::types::_subscription_start_type::SubscriptionStartType;
 pub use crate::types::_subscription_status::SubscriptionStatus;
 pub use crate::types::_subscription_type::SubscriptionType;
 pub use crate::types::_suggested_fix::SuggestedFix;
@@ -213,6 +214,7 @@ pub use crate::types::_usage_limit_list::UsageLimitList;
 pub use crate::types::_usage_limit_type::UsageLimitType;
 pub use crate::types::_usage_limit_update_request_status::UsageLimitUpdateRequestStatus;
 pub use crate::types::_user_context::UserContext;
+pub use crate::types::_user_decision_reason::UserDecisionReason;
 pub use crate::types::_user_info::UserInfo;
 pub use crate::types::_user_input_message::UserInputMessage;
 pub use crate::types::_user_input_message_context::UserInputMessageContext;
@@ -525,6 +527,8 @@ mod _subscription_plan_description;
 
 mod _subscription_provider;
 
+mod _subscription_start_type;
+
 mod _subscription_status;
 
 mod _subscription_type;
@@ -654,6 +658,8 @@ mod _usage_limit_type;
 mod _usage_limit_update_request_status;
 
 mod _user_context;
+
+mod _user_decision_reason;
 
 mod _user_info;
 

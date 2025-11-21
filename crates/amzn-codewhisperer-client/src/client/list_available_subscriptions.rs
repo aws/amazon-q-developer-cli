@@ -4,9 +4,8 @@ impl super::Client {
     /// [`ListAvailableSubscriptions`](crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsFluentBuilder)
     /// operation.
     ///
-    /// - The fluent builder takes no input, just
-    ///   [`send`](crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsFluentBuilder::send)
-    ///   it.
+    /// - The fluent builder is configurable:
+    ///   - [`profile_arn(impl Into<String>)`](crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsFluentBuilder::profile_arn) / [`set_profile_arn(Option<String>)`](crate::operation::list_available_subscriptions::builders::ListAvailableSubscriptionsFluentBuilder::set_profile_arn):<br>required: **false**<br>(undocumented)<br>
     /// - On success, responds with
     ///   [`ListAvailableSubscriptionsOutput`](crate::operation::list_available_subscriptions::ListAvailableSubscriptionsOutput)
     ///   with field(s):

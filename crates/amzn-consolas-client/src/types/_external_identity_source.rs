@@ -7,6 +7,8 @@ pub struct ExternalIdentitySource {
     pub issuer_url: ::std::string::String,
     #[allow(missing_docs)] // documentation missing in model
     pub client_id: ::std::string::String,
+    #[allow(missing_docs)] // documentation missing in model
+    pub subscription_start_type: ::std::option::Option<crate::types::SubscriptionStartType>,
 }
 impl ExternalIdentitySource {
     #[allow(missing_docs)] // documentation missing in model
@@ -19,6 +21,11 @@ impl ExternalIdentitySource {
     pub fn client_id(&self) -> &str {
         use std::ops::Deref;
         self.client_id.deref()
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn subscription_start_type(&self) -> ::std::option::Option<&crate::types::SubscriptionStartType> {
+        self.subscription_start_type.as_ref()
     }
 }
 impl ExternalIdentitySource {
@@ -35,6 +42,7 @@ impl ExternalIdentitySource {
 pub struct ExternalIdentitySourceBuilder {
     pub(crate) issuer_url: ::std::option::Option<::std::string::String>,
     pub(crate) client_id: ::std::option::Option<::std::string::String>,
+    pub(crate) subscription_start_type: ::std::option::Option<crate::types::SubscriptionStartType>,
 }
 impl ExternalIdentitySourceBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -73,6 +81,26 @@ impl ExternalIdentitySourceBuilder {
         &self.client_id
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn subscription_start_type(mut self, input: crate::types::SubscriptionStartType) -> Self {
+        self.subscription_start_type = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_subscription_start_type(
+        mut self,
+        input: ::std::option::Option<crate::types::SubscriptionStartType>,
+    ) -> Self {
+        self.subscription_start_type = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_subscription_start_type(&self) -> &::std::option::Option<crate::types::SubscriptionStartType> {
+        &self.subscription_start_type
+    }
+
     /// Consumes the builder and constructs a
     /// [`ExternalIdentitySource`](crate::types::ExternalIdentitySource). This method will fail
     /// if any of the following fields are not set:
@@ -95,6 +123,7 @@ impl ExternalIdentitySourceBuilder {
                     "client_id was not specified but it is required when building ExternalIdentitySource",
                 )
             })?,
+            subscription_start_type: self.subscription_start_type,
         })
     }
 }

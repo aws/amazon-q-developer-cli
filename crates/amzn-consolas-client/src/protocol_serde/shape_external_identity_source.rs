@@ -9,5 +9,8 @@ pub fn ser_external_identity_source(
     {
         object.key("clientId").string(input.client_id.as_str());
     }
+    if let Some(var_1) = &input.subscription_start_type {
+        object.key("subscriptionStartType").string(var_1.as_str());
+    }
     Ok(())
 }

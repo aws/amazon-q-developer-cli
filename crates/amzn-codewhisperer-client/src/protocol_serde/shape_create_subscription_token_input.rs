@@ -6,20 +6,23 @@ pub fn ser_create_subscription_token_input_input(
     if let Some(var_1) = &input.client_token {
         object.key("clientToken").string(var_1.as_str());
     }
-    if let Some(var_2) = &input.status_only {
-        object.key("statusOnly").boolean(*var_2);
+    if let Some(var_2) = &input.profile_arn {
+        object.key("profileArn").string(var_2.as_str());
     }
-    if let Some(var_3) = &input.provider {
-        object.key("provider").string(var_3.as_str());
+    if let Some(var_3) = &input.status_only {
+        object.key("statusOnly").boolean(*var_3);
     }
-    if let Some(var_4) = &input.subscription_type {
-        object.key("subscriptionType").string(var_4.as_str());
+    if let Some(var_4) = &input.provider {
+        object.key("provider").string(var_4.as_str());
     }
-    if let Some(var_5) = &input.success_url {
-        object.key("successUrl").string(var_5.as_str());
+    if let Some(var_5) = &input.subscription_type {
+        object.key("subscriptionType").string(var_5.as_str());
     }
-    if let Some(var_6) = &input.cancel_url {
-        object.key("cancelUrl").string(var_6.as_str());
+    if let Some(var_6) = &input.success_url {
+        object.key("successUrl").string(var_6.as_str());
+    }
+    if let Some(var_7) = &input.cancel_url {
+        object.key("cancelUrl").string(var_7.as_str());
     }
     Ok(())
 }

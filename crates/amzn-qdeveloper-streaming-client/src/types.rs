@@ -25,6 +25,7 @@ pub use crate::types::_command_input::CommandInput;
 pub use crate::types::_conflict_exception_reason::ConflictExceptionReason;
 pub use crate::types::_console_state::ConsoleState;
 pub use crate::types::_content_type::ContentType;
+pub use crate::types::_context_usage_event::ContextUsageEvent;
 pub use crate::types::_conversation_state::ConversationState;
 pub use crate::types::_cursor_state::CursorState;
 pub use crate::types::_diagnostic::Diagnostic;
@@ -168,6 +169,8 @@ mod _conflict_exception_reason;
 mod _console_state;
 
 mod _content_type;
+
+mod _context_usage_event;
 
 mod _conversation_state;
 

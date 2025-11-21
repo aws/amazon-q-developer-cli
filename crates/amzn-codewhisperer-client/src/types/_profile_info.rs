@@ -15,6 +15,8 @@ pub struct ProfileInfo {
     pub profile_type: ::std::option::Option<crate::types::ProfileType>,
     #[allow(missing_docs)] // documentation missing in model
     pub opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
+    #[allow(missing_docs)] // documentation missing in model
+    pub reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
 }
 impl ProfileInfo {
     #[allow(missing_docs)] // documentation missing in model
@@ -47,6 +49,13 @@ impl ProfileInfo {
     pub fn opt_in_features(&self) -> ::std::option::Option<&crate::types::OptInFeatures> {
         self.opt_in_features.as_ref()
     }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn reference_tracker_configuration(
+        &self,
+    ) -> ::std::option::Option<&crate::types::ReferenceTrackerConfiguration> {
+        self.reference_tracker_configuration.as_ref()
+    }
 }
 impl ProfileInfo {
     /// Creates a new builder-style object to manufacture
@@ -66,6 +75,7 @@ pub struct ProfileInfoBuilder {
     pub(crate) status: ::std::option::Option<crate::types::ProfileStatus>,
     pub(crate) profile_type: ::std::option::Option<crate::types::ProfileType>,
     pub(crate) opt_in_features: ::std::option::Option<crate::types::OptInFeatures>,
+    pub(crate) reference_tracker_configuration: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
 }
 impl ProfileInfoBuilder {
     #[allow(missing_docs)] // documentation missing in model
@@ -171,6 +181,28 @@ impl ProfileInfoBuilder {
         &self.opt_in_features
     }
 
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn reference_tracker_configuration(mut self, input: crate::types::ReferenceTrackerConfiguration) -> Self {
+        self.reference_tracker_configuration = ::std::option::Option::Some(input);
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn set_reference_tracker_configuration(
+        mut self,
+        input: ::std::option::Option<crate::types::ReferenceTrackerConfiguration>,
+    ) -> Self {
+        self.reference_tracker_configuration = input;
+        self
+    }
+
+    #[allow(missing_docs)] // documentation missing in model
+    pub fn get_reference_tracker_configuration(
+        &self,
+    ) -> &::std::option::Option<crate::types::ReferenceTrackerConfiguration> {
+        &self.reference_tracker_configuration
+    }
+
     /// Consumes the builder and constructs a [`ProfileInfo`](crate::types::ProfileInfo).
     /// This method will fail if any of the following fields are not set:
     /// - [`arn`](crate::types::builders::ProfileInfoBuilder::arn)
@@ -189,6 +221,7 @@ impl ProfileInfoBuilder {
             status: self.status,
             profile_type: self.profile_type,
             opt_in_features: self.opt_in_features,
+            reference_tracker_configuration: self.reference_tracker_configuration,
         })
     }
 }

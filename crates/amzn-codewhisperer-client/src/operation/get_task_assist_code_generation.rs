@@ -204,6 +204,7 @@ impl ::aws_smithy_runtime_api::client::ser_de::SerializeRequest for GetTaskAssis
             .cloned()
             .unwrap_or_default();
         let mut request_builder = {
+            #[allow(clippy::uninlined_format_args)]
             fn uri_base(
                 _input: &crate::operation::get_task_assist_code_generation::GetTaskAssistCodeGenerationInput,
                 output: &mut ::std::string::String,

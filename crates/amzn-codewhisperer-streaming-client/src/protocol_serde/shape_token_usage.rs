@@ -55,6 +55,12 @@ where
                                         .transpose()?,
                                 );
                             },
+                            "contextUsagePercentage" => {
+                                builder = builder.set_context_usage_percentage(
+                                    ::aws_smithy_json::deserialize::token::expect_number_or_null(tokens.next())?
+                                        .map(|v| v.to_f32_lossy()),
+                                );
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

@@ -612,6 +612,17 @@ pub(crate) fn profile_correct_errors(
     builder
 }
 
+pub(crate) fn reference_tracker_configuration_correct_errors(
+    mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
+) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
+    if builder.recommendations_with_references.is_none() {
+        builder.recommendations_with_references = "no value was set"
+            .parse::<crate::types::RecommendationsWithReferencesPreference>()
+            .ok()
+    }
+    builder
+}
+
 pub(crate) fn subscription_plan_correct_errors(
     mut builder: crate::types::builders::SubscriptionPlanBuilder,
 ) -> crate::types::builders::SubscriptionPlanBuilder {
@@ -698,17 +709,6 @@ pub(crate) fn prompt_logging_correct_errors(
     }
     if builder.toggle.is_none() {
         builder.toggle = "no value was set".parse::<crate::types::OptInFeatureToggle>().ok()
-    }
-    builder
-}
-
-pub(crate) fn reference_tracker_configuration_correct_errors(
-    mut builder: crate::types::builders::ReferenceTrackerConfigurationBuilder,
-) -> crate::types::builders::ReferenceTrackerConfigurationBuilder {
-    if builder.recommendations_with_references.is_none() {
-        builder.recommendations_with_references = "no value was set"
-            .parse::<crate::types::RecommendationsWithReferencesPreference>()
-            .ok()
     }
     builder
 }
