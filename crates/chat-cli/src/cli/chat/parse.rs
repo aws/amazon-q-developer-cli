@@ -296,7 +296,7 @@ fn code<'a, 'b>(
         let out = code.replace("&amp;", "&").replace("&gt;", ">").replace("&lt;", "<");
 
         queue_newline_or_advance(&mut o, state, out.width())?;
-        queue(&mut o, StyledText::brand_fg())?;
+        queue(&mut o, StyledText::success_fg())?;
         queue(&mut o, style::Print(out))?;
         queue(&mut o, StyledText::reset())
     }
@@ -572,7 +572,7 @@ fn codeblock_begin<'a, 'b>(
             queue(&mut o, style::Print(format!("{language}\n").bold()))?;
         }
 
-        queue(&mut o, StyledText::brand_fg())?;
+        queue(&mut o, StyledText::success_fg())?;
 
         Ok(())
     }
@@ -709,12 +709,12 @@ mod tests {
         style::SetAttribute(Attribute::Bold),
         style::Print("java\n"),
         StyledText::reset_attributes(),
-        StyledText::brand_fg(),
+        StyledText::success_fg(),
         style::Print("hello world!"),
         StyledText::reset(),
     ]);
     validate!(code_1, "`print`", [
-        StyledText::brand_fg(),
+        StyledText::success_fg(),
         style::Print("print"),
         StyledText::reset(),
     ]);

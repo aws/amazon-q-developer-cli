@@ -97,7 +97,7 @@ impl Default for InteractiveColors {
             prompt_symbol: Color::AnsiValue(DARK_PURPLE),
             profile_indicator: Color::AnsiValue(CYAN_INDICATOR),
             tangent_indicator: Color::Yellow,
-            user_indicator: Color::AnsiValue(DARK_PURPLE),
+            user_indicator: Color::AnsiValue(BRAND_PURPLE),
             agent_indicator: Color::AnsiValue(BRAND_PURPLE),
             usage_low: Color::Green,
             usage_medium: Color::Yellow,
