@@ -395,34 +395,51 @@ impl<'a> Subagent<'a> {
     }
 }
 
-pub fn temp_func() {
+/// Tests the subagent widget in isolation without requiring a full chat session.
+///
+/// This function creates a standalone runtime and executes multiple subagent queries
+/// concurrently to demonstrate and test the subagent widget functionality. It's primarily
+/// used for development and testing purposes.
+///
+/// # Arguments
+///
+/// * `queries` - A vector of tuples containing (agent_name, query_text) pairs. Each tuple
+///   represents a subagent that will be spawned with the specified agent configuration and query.
+///
+/// # Example
+///
+/// ```no_run
+/// let queries = vec![
+///     ("agent1".to_string(), "What is the weather?".to_string()),
+///     ("agent2".to_string(), "Calculate 2+2".to_string()),
+/// ];
+/// subagent_widget_demo(queries);
+/// ```
+#[allow(dead_code)]
+pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
         .expect("failed to build runtime");
 
-    let summaries = rt.block_on(test_sub_agent_routine());
+    let summaries = rt.block_on(test_sub_agent_routine(queries));
 
     println!("summaries: {summaries:#?}");
 }
 
-async fn test_sub_agent_routine() -> Vec<Result<Summary>> {
-    let subagents = [
-        Subagent {
-            id: 0_u16,
-            query: "What notion docs do I have",
-            agent_name: Some("test_test"),
+#[allow(dead_code)]
+async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Summary>> {
+    let subagents = queries
+        .iter()
+        .enumerate()
+        .map(|(id, (agent_name, query))| Subagent {
+            id: id as u16,
+            query: query.as_str(),
+            agent_name: Some(agent_name.as_str()),
             embedded_user_msg: None,
             dangerously_trust_all_tools: false,
-        },
-        Subagent {
-            id: 1_u16,
-            query: "When was the latest notion doc I have created",
-            agent_name: Some("test_test"),
-            embedded_user_msg: None,
-            dangerously_trust_all_tools: false,
-        },
-    ];
+        })
+        .collect::<Vec<_>>();
 
     let os = Os::new().await.expect("failed to spawn os");
     let stub_id = "";

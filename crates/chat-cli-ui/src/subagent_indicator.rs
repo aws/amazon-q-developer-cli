@@ -250,13 +250,12 @@ impl<'a> SubagentIndicator<'a> {
 
             let (_start_col, mut start_row) =
                 position().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-            let (terminal_width, terminal_height) =
-                size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-            let content_widget_width = u16::min(
-                Self::MAX_CONTENT_WIDGET_WIDTH,
-                terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
-            );
-            let max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
+
+            let mut terminal_width: u16;
+            let mut terminal_height: u16;
+            let mut content_widget_width: u16;
+            let mut max_text_width: u16;
+
             #[allow(unused_assignments)]
             let mut stacked_height = 2_u16;
 
@@ -270,6 +269,14 @@ impl<'a> SubagentIndicator<'a> {
 
             loop {
                 let crossterm_event = reader.next().fuse();
+
+                (terminal_width, terminal_height) =
+                    size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+                content_widget_width = u16::min(
+                    Self::MAX_CONTENT_WIDGET_WIDTH,
+                    terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
+                );
+                max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
 
                 tokio::select! {
                     evt = self.view_end.receiver.recv() => {

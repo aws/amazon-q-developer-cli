@@ -1821,11 +1821,11 @@ where
 
     let system_prompt = match (agent_config.system_prompt(), embedded_user_msgs.messages.is_empty()) {
         (Some(system_prompt), false) => {
-            let embedded_user_msgs_as_str = embedded_user_msgs.to_string();
+            let embedded_user_msgs_as_str = embedded_user_msgs.to_paragraph();
             Some(format!("{embedded_user_msgs_as_str}\n{system_prompt}"))
         },
         (Some(system_prompt), true) => Some(system_prompt.to_string()),
-        (None, false) => Some(embedded_user_msgs.to_string()),
+        (None, false) => Some(embedded_user_msgs.to_paragraph()),
         (_, _) => None,
     };
 

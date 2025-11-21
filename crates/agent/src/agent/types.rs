@@ -170,7 +170,7 @@ impl EmbeddedUserMessages {
     const END_HEADER: &str = "--- EMBEDDED USER MESSAGE SEGMENT END ---\n\n";
     const START_HEADER: &str = "--- EMBEDDED USER MESSAGE SEGMENT BEGIN ---\n";
 
-    pub fn to_string(&self) -> String {
+    pub fn to_paragraph(&self) -> String {
         self.into_iter().fold(String::new(), |mut acc, msg| {
             acc.push_str(&msg);
             acc

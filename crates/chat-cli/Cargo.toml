@@ -9,8 +9,8 @@ license.workspace = true
 default-run = "chat_cli"
 
 [[bin]]
-name = "temp_bin"
-path = "src/bin/temp_bin.rs"
+name = "subagent_widget"
+path = "src/bin/subagent_widget_standalone.rs"
 
 [lints]
 workspace = true
