@@ -12,6 +12,30 @@
     },
     {
       "type": "release",
+      "date": "2025-11-24",
+      "version": "1.20.1",
+      "title": "Version 1.20.1",
+      "changes": [
+        {
+          "type": "fixed",
+          "description": "Kiro-default agent showed no path found"
+        },
+        {
+          "type": "fixed",
+          "description": "Agent created in legacy folder"
+        },
+        {
+          "type": "fixed",
+          "description": "Add mcp with workspace scope sometimes failed"
+        },
+        {
+          "type": "fixed",
+          "description": "Inline code block color update"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-11-17",
       "version": "1.20.0",
       "title": "Version 1.20.0",
