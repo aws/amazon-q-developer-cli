@@ -248,19 +248,18 @@ impl<'a> SubagentIndicator<'a> {
         tokio::spawn(async move {
             let _raw_mode_guard = RawModeGuard::new();
 
-            let (_start_col, mut start_row) =
-                position().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
-
             let mut terminal_width: u16;
             let mut terminal_height: u16;
             let mut content_widget_width: u16;
             let mut max_text_width: u16;
-
             #[allow(unused_assignments)]
             let mut stacked_height = 2_u16;
 
             let mut stdout = stdout();
             execute!(&mut stdout, style::Print("\n")).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+
+            let (_start_col, mut start_row) =
+                position().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
 
             let backend = CrosstermBackend::new(stdout);
             let mut terminal = Terminal::new(backend).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
