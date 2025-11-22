@@ -5,6 +5,7 @@ mod aws_common;
 mod cli;
 mod constants;
 mod database;
+mod feature_flags;
 mod logging;
 mod mcp_client;
 mod os;

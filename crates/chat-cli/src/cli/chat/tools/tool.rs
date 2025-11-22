@@ -19,6 +19,8 @@ use super::knowledge::Knowledge;
 use super::thinking::Thinking;
 use super::todo::TodoList;
 use super::use_aws::UseAws;
+use super::web_fetch::WebFetch;
+use super::web_search::WebSearch;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -42,6 +44,8 @@ impl ToolMetadata {
         Self::THINKING,
         Self::TODO,
         Self::DELEGATE,
+        Self::WEB_SEARCH,
+        Self::WEB_FETCH,
     ];
     pub const DELEGATE: &ToolInfo = &Delegate::INFO;
     pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
@@ -53,6 +57,8 @@ impl ToolMetadata {
     pub const THINKING: &ToolInfo = &Thinking::INFO;
     pub const TODO: &ToolInfo = &TodoList::INFO;
     pub const USE_AWS: &ToolInfo = &UseAws::INFO;
+    pub const WEB_FETCH: &ToolInfo = &WebFetch::INFO;
+    pub const WEB_SEARCH: &ToolInfo = &WebSearch::INFO;
 
     /// Get ToolInfo by tool specification name
     pub fn get_by_spec_name(spec_name: &str) -> Option<&'static ToolInfo> {
@@ -80,6 +86,8 @@ pub enum Tool {
     Thinking(Thinking),
     Todo(TodoList),
     Delegate(Delegate),
+    WebSearch(WebSearch),
+    WebFetch(WebFetch),
 }
 
 impl Tool {
@@ -97,6 +105,8 @@ impl Tool {
             Tool::Thinking(_) => Thinking::INFO.preferred_alias,
             Tool::Todo(_) => TodoList::INFO.preferred_alias,
             Tool::Delegate(_) => Delegate::INFO.preferred_alias,
+            Tool::WebSearch(_) => WebSearch::INFO.preferred_alias,
+            Tool::WebFetch(_) => WebFetch::INFO.preferred_alias,
         }
     }
 
@@ -114,6 +124,8 @@ impl Tool {
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
             Tool::Delegate(_) => PermissionEvalResult::Allow,
+            Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
+            Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
         }
     }
 
@@ -138,6 +150,8 @@ impl Tool {
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
+            Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
+            Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
         }
     }
 
@@ -163,6 +177,8 @@ impl Tool {
                 Tool::Thinking(thinking) => thinking.queue_description(self, &mut buf),
                 Tool::Todo(_) => Ok(()),
                 Tool::Delegate(delegate) => delegate.queue_description(self, &mut buf),
+                Tool::WebSearch(web_search) => web_search.queue_description(self, &mut buf),
+                Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, &mut buf),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -187,6 +203,8 @@ impl Tool {
                 Tool::Thinking(thinking) => thinking.queue_description(self, output),
                 Tool::Todo(_) => Ok(()),
                 Tool::Delegate(delegate) => delegate.queue_description(self, output),
+                Tool::WebSearch(web_search) => web_search.queue_description(self, output),
+                Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, output),
             }?;
         };
 
@@ -207,6 +225,8 @@ impl Tool {
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
             Tool::Delegate(_) => Ok(()),
+            Tool::WebSearch(web_search) => web_search.validate(os).await,
+            Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
         }
     }
 

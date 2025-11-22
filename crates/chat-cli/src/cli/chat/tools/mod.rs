@@ -10,6 +10,8 @@ pub mod thinking;
 pub mod todo;
 pub mod tool;
 pub mod use_aws;
+pub mod web_fetch;
+pub mod web_search;
 
 use std::borrow::{
     Borrow,

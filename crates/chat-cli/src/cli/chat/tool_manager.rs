@@ -81,6 +81,8 @@ use crate::cli::chat::tools::knowledge::Knowledge;
 use crate::cli::chat::tools::thinking::Thinking;
 use crate::cli::chat::tools::todo::TodoList;
 use crate::cli::chat::tools::use_aws::UseAws;
+use crate::cli::chat::tools::web_fetch::WebFetch;
+use crate::cli::chat::tools::web_search::WebSearch;
 use crate::cli::chat::tools::{
     Tool,
     ToolMetadata,
@@ -744,6 +746,12 @@ impl ToolManager {
             if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::DELEGATE.spec_name);
             }
+            if !crate::cli::chat::tools::web_search::WebSearch::is_enabled(os) {
+                tool_specs.remove(ToolMetadata::WEB_SEARCH.spec_name);
+            }
+            if !crate::cli::chat::tools::web_fetch::WebFetch::is_enabled(os) {
+                tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
+            }
 
             #[cfg(windows)]
             {
@@ -903,6 +911,12 @@ impl ToolManager {
             // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name if name == ToolMetadata::DELEGATE.spec_name => {
                 Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::WEB_SEARCH.spec_name => {
+                Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::WEB_FETCH.spec_name => {
+                Tool::WebFetch(serde_json::from_value::<WebFetch>(value.args).map_err(map_err)?)
             },
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if

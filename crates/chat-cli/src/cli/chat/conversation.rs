@@ -1963,10 +1963,10 @@ mod tests {
 
         // Add 3 conversation entries
         for i in 1..=3 {
-            conversation.set_next_user_message(format!("question {}", i)).await;
+            conversation.set_next_user_message(format!("question {i}")).await;
             conversation.push_assistant_message(
                 &mut os,
-                AssistantMessage::new_response(None, format!("response {}", i)),
+                AssistantMessage::new_response(None, format!("response {i}")),
                 None,
             );
         }
