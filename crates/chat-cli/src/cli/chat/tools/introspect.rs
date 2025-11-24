@@ -76,6 +76,13 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/tangent-mode.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/tangent-mode.md"));
 
+        // Only include web-search docs if feature is enabled for the user's region
+        let endpoint = crate::api_client::Endpoint::configured_value(&os.database);
+        if crate::feature_flags::FeatureFlags::is_web_search_enabled_for_region(endpoint.region().as_ref()) {
+            documentation.push_str("\n\n--- docs/web-search.md ---\n");
+            documentation.push_str(include_str!("../../../../../../docs/web-search.md"));
+        }
+
         documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
 
