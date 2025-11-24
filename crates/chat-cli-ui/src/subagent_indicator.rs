@@ -266,6 +266,9 @@ impl<'a> SubagentIndicator<'a> {
 
             let mut reader = crossterm::event::EventStream::new();
 
+            let render_interval = tokio::time::Duration::from_millis(250);
+            let mut sleep_until = tokio::time::Instant::now() + render_interval;
+
             loop {
                 let crossterm_event = reader.next().fuse();
 
@@ -348,7 +351,9 @@ impl<'a> SubagentIndicator<'a> {
                         break;
                     },
 
-                    _ = tokio::time::sleep(std::time::Duration::from_millis(250)) => {
+                    _ = tokio::time::sleep_until(sleep_until) => {
+                        sleep_until += render_interval;
+
                         stacked_height = 2_u16;
 
                         for agent_info in agents.values_mut() {
