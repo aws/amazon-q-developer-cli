@@ -12,6 +12,7 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod auto_save;
 mod input_source;
 mod message;
 mod parse;
@@ -680,6 +681,7 @@ pub struct ChatSession {
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
     /// Additional context to be added to the next user message (e.g., delegate task summaries)
     pending_additional_context: Option<String>,
+    auto_save_manager: auto_save::AutoSaveManager,
 }
 
 impl ChatSession {
@@ -817,6 +819,7 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
+            auto_save_manager: auto_save::AutoSaveManager::new(),
         })
     }
 
@@ -1174,6 +1177,11 @@ impl ChatSession {
         self.pending_tool_index = None;
         self.tool_turn_start_time = None;
         self.reset_user_turn();
+
+        // Auto-save conversation if enabled
+        if let Err(e) = self.auto_save_manager.auto_save_if_enabled(os, &self.conversation).await {
+            warn!("Auto-save error: {}", e);
+        }
 
         self.inner = Some(ChatState::PromptUser {
             skip_printing_tools: false,
@@ -3258,6 +3266,11 @@ impl ChatSession {
                         None,
                     )
                     .await;
+            }
+
+            // Auto-save conversation if enabled
+            if let Err(e) = self.auto_save_manager.auto_save_if_enabled(os, &self.conversation).await {
+                warn!("Auto-save error: {}", e);
             }
 
             Ok(ChatState::PromptUser {
