@@ -493,7 +493,8 @@
         { "type": "codewhispererterminal_linesByAgent" },
         { "type": "codewhispererterminal_linesByUser" },
         { "type": "codewhispererterminal_linesRetained", "required": false },
-        { "type": "codewhispererterminal_totalLinesChecked", "required": false }
+        { "type": "codewhispererterminal_totalLinesChecked", "required": false },
+        { "type": "codewhispererterminal_model", "required": false }
       ]
     },
     {

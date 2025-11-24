@@ -965,6 +965,7 @@ Return only the JSON configuration, no additional text.",
     pub async fn check_due_retention_metrics(&mut self, os: &Os) -> Result<Vec<(String, usize, usize)>, ChatError> {
         let mut all_results = Vec::new();
         let message_id = self.message_id().map(|s| s.to_string());
+        let model_id = self.model_info.as_ref().map(|m| m.model_id.clone());
         
         for (path, tracker) in &mut self.file_line_tracker {
             match os.fs.read_to_string(path).await {
@@ -988,6 +989,7 @@ Return only the JSON configuration, no additional text.",
                                 Some(retained),
                                 Some(total),
                                 Some(source),
+                                model_id.clone(),
                             )
                             .await
                             .ok();
@@ -1012,6 +1014,7 @@ Return only the JSON configuration, no additional text.",
                                 Some(0), // retained = 0 since file doesn't exist
                                 Some(check.lines.len()),
                                 Some("file_not_found".to_string()),
+                                model_id.clone(),
                             )
                             .await
                             .ok();
@@ -1026,6 +1029,7 @@ Return only the JSON configuration, no additional text.",
 
     pub async fn flush_all_retention_metrics(&mut self, os: &Os, source: &str) -> Result<(), ChatError> {
         let message_id = self.message_id().map(|s| s.to_string());
+        let model_id = self.model_info.as_ref().map(|m| m.model_id.clone());
         
         for (path, tracker) in &mut self.file_line_tracker {
             match os.fs.read_to_string(path).await {
@@ -1048,6 +1052,7 @@ Return only the JSON configuration, no additional text.",
                                 Some(retained),
                                 Some(total),
                                 Some(source),
+                                model_id.clone(),
                             )
                             .await
                             .ok();
@@ -1070,6 +1075,7 @@ Return only the JSON configuration, no additional text.",
                                 Some(0), // retained = 0 since file doesn't exist
                                 Some(check.lines.len()),
                                 Some("file_not_found".to_string()),
+                                model_id.clone(),
                             )
                             .await
                             .ok();

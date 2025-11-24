@@ -298,6 +298,7 @@ impl TelemetryThread {
         lines_by_user: Option<isize>,
         lines_retained: Option<usize>,
         total_lines_checked: Option<usize>,
+        model: Option<String>,
     ) -> Result<(), TelemetryError> {
         self.send_agent_contribution_metric_with_source(
             database,
@@ -310,6 +311,7 @@ impl TelemetryThread {
             lines_retained,
             total_lines_checked,
             None,
+            model,
         ).await
     }
 
@@ -326,6 +328,7 @@ impl TelemetryThread {
         lines_retained: Option<usize>,
         total_lines_checked: Option<usize>,
         source: Option<String>,
+        model: Option<String>,
     ) -> Result<(), TelemetryError> {
         let mut telemetry_event = Event::new(EventType::AgentContribution {
             conversation_id,
@@ -337,6 +340,7 @@ impl TelemetryThread {
             lines_retained,
             total_lines_checked,
             source,
+            model,
         });
         set_event_metadata(database, &mut telemetry_event).await;
         Ok(self.tx.send(telemetry_event)?)

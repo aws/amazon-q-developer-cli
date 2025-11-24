@@ -2,6 +2,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Contains metadata for tracking user and agent contribution metrics for a given file for
@@ -72,10 +73,11 @@ impl FileLineTracker {
 
     pub fn flush_pending_checks_for_agent_rewrite(&mut self, file_content: &str) -> Vec<(String, String, usize, usize, String)> {
         let mut results = Vec::new();
+        let file_lines: HashSet<&str> = file_content.lines().collect();
         
         for check in self.pending_retention_checks.drain(..) {
             let retained = check.lines.iter()
-                .filter(|line| file_content.contains(*line))
+                .filter(|line| file_lines.contains(line.as_str()))
                 .count();
             
             results.push((
@@ -98,11 +100,12 @@ impl FileLineTracker {
         
         let mut results = Vec::new();
         let mut remaining_checks = Vec::new();
+        let file_lines: HashSet<&str> = file_content.lines().collect();
         
         for check in self.pending_retention_checks.drain(..) {
             if now >= check.scheduled_time {
                 let retained = check.lines.iter()
-                    .filter(|line| file_content.contains(*line))
+                    .filter(|line| file_lines.contains(line.as_str()))
                     .count();
                 
                 results.push((
@@ -123,10 +126,11 @@ impl FileLineTracker {
 
     pub fn flush_all_retention_checks(&mut self, file_content: &str, source: &str) -> Vec<(String, String, usize, usize, String)> {
         let mut results = Vec::new();
+        let file_lines: HashSet<&str> = file_content.lines().collect();
         
         for check in self.pending_retention_checks.drain(..) {
             let retained = check.lines.iter()
-                .filter(|line| file_content.contains(*line))
+                .filter(|line| file_lines.contains(line.as_str()))
                 .count();
             
             results.push((

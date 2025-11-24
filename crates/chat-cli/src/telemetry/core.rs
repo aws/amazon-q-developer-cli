@@ -372,6 +372,7 @@ impl Event {
                 lines_retained,
                 total_lines_checked,
                 source: _,
+                model,
             } => Some(
                 CodewhispererterminalAgentContribution {
                     create_time: self.created_time,
@@ -385,6 +386,7 @@ impl Event {
                     codewhispererterminal_lines_by_user: lines_by_user.map(|count| count as i64).map(Into::into),
                     codewhispererterminal_lines_retained: lines_retained.map(|count| count as i64).map(Into::into),
                     codewhispererterminal_total_lines_checked: total_lines_checked.map(|count| count as i64).map(Into::into),
+                    codewhispererterminal_model: model.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -694,6 +696,7 @@ pub enum EventType {
         lines_retained: Option<usize>,
         total_lines_checked: Option<usize>,
         source: Option<String>,
+        model: Option<String>,
     },
     McpServerInit {
         conversation_id: String,

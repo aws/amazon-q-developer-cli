@@ -1537,14 +1537,22 @@ impl ChatSession {
                         
                         // Check for due retention metrics on each interaction
                         if let Ok(retention_results) = self.conversation.check_due_retention_metrics(os).await {
-                            // Update existing telemetry events with retention data
+                            let mut metrics_to_emit = Vec::new();
+                            
                             for (tool_use_id, retained, total) in retention_results {
-                                if let Some(metric) = self.tool_use_telemetry_events.get_mut(&tool_use_id) {
-                                    metric.lines_retained = Some(retained);
-                                    metric.total_lines_checked = Some(total);
-                                    debug!("Updated retention for tool_use_id {}: {}/{} lines retained", 
+                                if let Some(metric) = self.tool_use_telemetry_events.remove(&tool_use_id) {
+                                    let mut updated_metric = metric;
+                                    updated_metric.lines_retained = Some(retained);
+                                    updated_metric.total_lines_checked = Some(total);
+                                    debug!("Emitting retention for tool_use_id {}: {}/{} lines retained", 
                                            tool_use_id, retained, total);
+                                    metrics_to_emit.push(updated_metric);
                                 }
+                            }
+                            
+                            for mut metric in metrics_to_emit {
+                                metric.base.user_input_id = self.conversation.message_id().map(|v| v.to_string());
+                                os.telemetry.send_tool_use_suggested(&os.database, metric.base).await.ok();
                             }
                         }
                     }
@@ -1568,14 +1576,22 @@ impl ChatSession {
                 
                 // Check for due retention metrics on each interaction
                 if let Ok(retention_results) = self.conversation.check_due_retention_metrics(os).await {
-                    // Update existing telemetry events with retention data
+                    let mut metrics_to_emit = Vec::new();
+                    
                     for (tool_use_id, retained, total) in retention_results {
-                        if let Some(metric) = self.tool_use_telemetry_events.get_mut(&tool_use_id) {
-                            metric.lines_retained = Some(retained);
-                            metric.total_lines_checked = Some(total);
-                            debug!("Updated retention for tool_use_id {}: {}/{} lines retained", 
+                        if let Some(metric) = self.tool_use_telemetry_events.remove(&tool_use_id) {
+                            let mut updated_metric = metric;
+                            updated_metric.lines_retained = Some(retained);
+                            updated_metric.total_lines_checked = Some(total);
+                            debug!("Emitting retention for tool_use_id {}: {}/{} lines retained", 
                                    tool_use_id, retained, total);
+                            metrics_to_emit.push(updated_metric);
                         }
+                    }
+                    
+                    for mut metric in metrics_to_emit {
+                        metric.base.user_input_id = self.conversation.message_id().map(|v| v.to_string());
+                        os.telemetry.send_tool_use_suggested(&os.database, metric.base).await.ok();
                     }
                 }
             }
@@ -2782,6 +2798,7 @@ impl ChatSession {
                         let sanitized_path_str = w.path(os).to_string_lossy().to_string();
                         let conversation_id = self.conversation.conversation_id().to_string();
                         let message_id = self.conversation.message_id().map(|s| s.to_string());
+                        let model_id = self.conversation.model_info.as_ref().map(|m| m.model_id.clone());
                         if let Some(tracker) = self.conversation.file_line_tracker.get_mut(&sanitized_path_str) {
                             let lines_by_agent = tracker.lines_by_agent();
                             let lines_by_user = tracker.lines_by_user();
@@ -2790,13 +2807,14 @@ impl ChatSession {
                                 .send_agent_contribution_metric(
                                     &os.database,
                                     conversation_id.clone(),
-                                    message_id,
+                                    message_id.clone(),
                                     Some(tool.id.clone()),   // Already a String
                                     Some(tool.name.clone()), // Already a String
                                     Some(lines_by_agent),
                                     Some(lines_by_user),
                                     None,
                                     None,
+                                    model_id.clone(),
                                 )
                                 .await
                                 .ok();
@@ -2804,6 +2822,7 @@ impl ChatSession {
                             // Flush any pending retention checks before scheduling new ones (agent rewrite scenario)
                             if let Ok(current_content) = os.fs.read_to_string(&w.path(os)).await {
                                 let flush_results = tracker.flush_pending_checks_for_agent_rewrite(&current_content);
+                                let model_id = self.conversation.model_info.as_ref().map(|m| m.model_id.clone());
                                 for (conv_id, tool_use_id, retained, total, source) in flush_results {
                                     os.telemetry
                                         .send_agent_contribution_metric_with_source(
@@ -2817,6 +2836,7 @@ impl ChatSession {
                                             Some(retained),
                                             Some(total),
                                             Some(source),
+                                            model_id.clone(),
                                         )
                                         .await
                                         .ok();
