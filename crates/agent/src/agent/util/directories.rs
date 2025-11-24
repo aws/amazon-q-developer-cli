@@ -17,6 +17,20 @@ const DATA_DIR_NAME: &str = "amazon-q";
 
 type Result<T, E = UtilError> = std::result::Result<T, E>;
 
+enum Subpath<'a> {
+    Same(&'a str),
+    Diff {
+        q_cli_variant: &'a str,
+        kiro_cli_variant: &'a str,
+    },
+}
+
+impl<'a> From<&'a str> for Subpath<'a> {
+    fn from(s: &'a str) -> Self {
+        Subpath::Same(s)
+    }
+}
+
 pub fn home_dir() -> Result<PathBuf, UtilError> {
     dirs::home_dir().ok_or(UtilError::MissingHomeDir)
 }
@@ -56,10 +70,10 @@ pub fn settings_schema_path(base: impl AsRef<Path>) -> PathBuf {
     base.as_ref().join("settings_schema.json")
 }
 
-fn resolve_migrated_path(is_global: bool, subpath: &str) -> Result<PathBuf> {
+fn resolve_migrated_path(is_global: bool, subpath: Subpath<'_>) -> Result<PathBuf> {
     let (kiro_base, amazonq_base) = if is_global {
         let home = home_dir()?;
-        (home.join(".aws/kiro"), home.join(".aws/amazonq"))
+        (home.join(".kiro"), home.join(".aws/amazonq"))
     } else {
         let cwd = env::current_dir().context("unable to get the current directory")?;
         (cwd.join(".kiro"), cwd.join(".amazonq"))
@@ -70,36 +84,56 @@ fn resolve_migrated_path(is_global: bool, subpath: &str) -> Result<PathBuf> {
     match (kiro_base.exists(), amazonq_base.exists()) {
         (true, false) => {
             warn!("Using .kiro {} configuration", scope);
-            Ok(kiro_base.join(subpath))
+            match subpath {
+                Subpath::Same(path) => Ok(kiro_base.join(path)),
+                Subpath::Diff { kiro_cli_variant, .. } => Ok(kiro_base.join(kiro_cli_variant)),
+            }
         },
         (false, true) => {
             warn!("Migration notice: Using .amazonq {} configs", scope);
-            Ok(amazonq_base.join(subpath))
+            match subpath {
+                Subpath::Same(path) => Ok(amazonq_base.join(path)),
+                Subpath::Diff { q_cli_variant, .. } => Ok(amazonq_base.join(q_cli_variant)),
+            }
         },
         (true, true) => {
             warn!("Both .amazonq and .kiro {} configs exist, using .amazonq", scope);
-            Ok(amazonq_base.join(subpath))
+            match subpath {
+                Subpath::Same(path) => Ok(amazonq_base.join(path)),
+                Subpath::Diff { q_cli_variant, .. } => Ok(amazonq_base.join(q_cli_variant)),
+            }
         },
-        (false, false) => Ok(kiro_base.join(subpath)), // Default to kiro
+        (false, false) => match subpath {
+            Subpath::Same(path) => Ok(kiro_base.join(path)),
+            Subpath::Diff { kiro_cli_variant, .. } => Ok(kiro_base.join(kiro_cli_variant)),
+        }, // Default to kiro
     }
 }
 
 /// Path to the directory containing local agent configs.
 pub fn local_agents_path() -> Result<PathBuf> {
-    resolve_migrated_path(false, "cli-agents")
+    let subpath = Subpath::Diff {
+        q_cli_variant: "cli-agents",
+        kiro_cli_variant: "agents",
+    };
+    resolve_migrated_path(false, subpath)
 }
 
 /// Path to the directory containing global agent configs.
 pub fn global_agents_path() -> Result<PathBuf> {
-    resolve_migrated_path(true, "cli-agents")
+    let subpath = Subpath::Diff {
+        q_cli_variant: "cli-agents",
+        kiro_cli_variant: "agents",
+    };
+    resolve_migrated_path(true, subpath)
 }
 
 /// Legacy workspace MCP server config path
 pub fn legacy_workspace_mcp_config_path() -> Result<PathBuf> {
-    resolve_migrated_path(false, "mcp.json")
+    resolve_migrated_path(false, "mcp.json".into())
 }
 
 /// Legacy global MCP server config path
 pub fn legacy_global_mcp_config_path() -> Result<PathBuf> {
-    resolve_migrated_path(true, "mcp.json")
+    resolve_migrated_path(true, "mcp.json".into())
 }
