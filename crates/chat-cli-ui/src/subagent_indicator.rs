@@ -3,7 +3,10 @@ use std::collections::{
     BTreeMap,
     HashMap,
 };
-use std::io::stdout;
+use std::io::{
+    Write,
+    stdout,
+};
 
 use crossterm::cursor::{
     MoveTo,
@@ -122,6 +125,35 @@ macro_rules! title {
             ]),
         }
     };
+}
+
+macro_rules! make_extra_rows {
+    {
+        terminal_height: $terminal_height:expr,
+        start_row: $start_row:expr,
+        extra_rows_needed: $extra_rows_needed:expr,
+        terminal: $terminal:expr
+    } => {
+        // Actually scroll the terminal by printing newlines to stdout
+        // We need to do this outside of ratatui's control
+        let mut stdout = std::io::stdout();
+
+        // Move cursor to bottom and print newlines to trigger scroll
+        execute!(stdout, MoveTo(0, $terminal_height.saturating_sub(1)))?;
+        for _ in 0..$extra_rows_needed {
+            writeln!(stdout)?;
+        }
+        stdout.flush()?;
+
+        // Adjust start_row after scrolling
+        $start_row = $start_row.saturating_sub($extra_rows_needed);
+
+        let backend = CrosstermBackend::new(stdout);
+        // You need to create a new terminal after this otherwise you risk
+        // clipping your rendering since the Frame<'_> passed in the FnOnce of
+        // draw could be out of date
+        $terminal = Terminal::new(backend)?
+    }
 }
 
 pub struct SubagentIndicatorHandle {
@@ -256,13 +288,12 @@ impl<'a> SubagentIndicator<'a> {
             let mut stacked_height = 2_u16;
 
             let mut stdout = stdout();
-            execute!(&mut stdout, style::Print("\n")).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+            execute!(&mut stdout, style::Print("\n"))?;
 
-            let (_start_col, mut start_row) =
-                position().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+            let (_start_col, mut start_row) = position()?;
 
             let backend = CrosstermBackend::new(stdout);
-            let mut terminal = Terminal::new(backend).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+            let mut terminal = Terminal::new(backend)?;
 
             let mut reader = crossterm::event::EventStream::new();
 
@@ -272,8 +303,7 @@ impl<'a> SubagentIndicator<'a> {
             loop {
                 let crossterm_event = reader.next().fuse();
 
-                (terminal_width, terminal_height) =
-                    size().map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+                (terminal_width, terminal_height) = size()?;
                 content_widget_width = u16::min(
                     Self::MAX_CONTENT_WIDGET_WIDTH,
                     terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
@@ -410,27 +440,12 @@ impl<'a> SubagentIndicator<'a> {
                         let extra_rows_needed = desired_end.saturating_sub(terminal_height);
 
                         if extra_rows_needed > 0 {
-                            // Actually scroll the terminal by printing newlines to stdout
-                            // We need to do this outside of ratatui's control
-                            let mut stdout = std::io::stdout();
-                            use std::io::Write;
-
-                            // Move cursor to bottom and print newlines to trigger scroll
-                            execute!(stdout, MoveTo(0, terminal_height.saturating_sub(1))).ok();
-                            for _ in 0..extra_rows_needed {
-                                writeln!(stdout).ok();
-                            }
-                            stdout.flush().ok();
-
-                            // Adjust start_row after scrolling
-                            start_row = start_row.saturating_sub(extra_rows_needed);
-
-                            let backend = CrosstermBackend::new(stdout);
-                            // You need to create a new terminal after this otherwise you risk
-                            // clipping your rendering since the Frame<'_> passed in the FnOnce of
-                            // draw could be out of date
-                            terminal = Terminal::new(backend)
-                                .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>).expect("failed to create new terminal");
+                            make_extra_rows! {
+                                terminal_height: terminal_height,
+                                start_row: start_row,
+                                extra_rows_needed: extra_rows_needed,
+                                terminal: terminal
+                            };
                         }
 
                         terminal.draw(|f| {
@@ -514,7 +529,7 @@ impl<'a> SubagentIndicator<'a> {
                                 height: 1
                             };
                             f.render_widget(tool_tip, area);
-                        }).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send>)?;
+                        })?;
                     },
 
                     evt = crossterm_event => {
@@ -661,6 +676,18 @@ impl<'a> SubagentIndicator<'a> {
                     .ok();
                 stacked_height = 1;
             } else {
+                let extra_rows_needed = start_row
+                    .saturating_add(summary_stacked_height)
+                    .saturating_sub(current_terminal_height);
+                if extra_rows_needed > 0 {
+                    make_extra_rows! {
+                        terminal_height: terminal_height,
+                        start_row: start_row,
+                        extra_rows_needed: extra_rows_needed,
+                        terminal: terminal
+                    };
+                }
+
                 terminal
                     .draw(|f| {
                         let mut current_start_row = start_row;
@@ -705,7 +732,7 @@ impl<'a> SubagentIndicator<'a> {
 
             _ = end_turn_tx.send(()).await;
 
-            Ok::<(), Box<dyn std::error::Error + Send>>(())
+            Ok::<(), eyre::Report>(())
         });
 
         SubagentIndicatorHandle {
