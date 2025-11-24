@@ -301,15 +301,24 @@ impl<'a> Subagent<'a> {
                                         },
                                     });
                                 },
-                                UpdateEvent::AgentContent(_content) => {
-                                    // TODO: send actual content (for preview?)
-                                    _ = control_end.send(UiEvent::TextMessageContent {
-                                        agent_id: self.id,
-                                        inner: TextMessageContent {
-                                            message_id: Default::default(),
-                                            delta: Default::default(),
-                                        },
-                                    });
+                                UpdateEvent::AgentContent(content) => {
+                                    if let ContentChunk::Text(text) = content {
+                                        _ = control_end.send(UiEvent::TextMessageContent {
+                                            agent_id: self.id,
+                                            inner: TextMessageContent {
+                                                message_id: Default::default(),
+                                                delta: text.into_bytes(),
+                                            },
+                                        });
+                                    } else {
+                                        _ = control_end.send(UiEvent::TextMessageContent {
+                                            agent_id: self.id,
+                                            inner: TextMessageContent {
+                                                message_id: Default::default(),
+                                                delta: Default::default(),
+                                            },
+                                        });
+                                    }
                                 },
                                 _ => {},
                             }

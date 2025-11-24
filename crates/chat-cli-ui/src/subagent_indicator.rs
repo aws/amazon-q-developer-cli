@@ -59,6 +59,7 @@ use crate::conduit::ViewEnd;
 use crate::protocol::{
     InputEvent,
     McpEvent,
+    TextMessageContent,
     UiEvent,
 };
 
@@ -74,8 +75,10 @@ fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
             last_space = idx;
         }
 
+        let is_cur_ch_newline = matches!(ch, '\n' | '\r');
+
         let current_len = idx - start;
-        if current_len >= max_width && last_space > start {
+        if current_len >= max_width && last_space > start || is_cur_ch_newline {
             // Wrap at last space
             res.push(&input[start..last_space]);
             start = last_space + 1;
@@ -137,6 +140,10 @@ macro_rules! make_extra_rows {
         // Actually scroll the terminal by printing newlines to stdout
         // We need to do this outside of ratatui's control
         let mut stdout = std::io::stdout();
+
+        $terminal.draw(|f| {
+            f.render_widget(ratatui::widgets::Clear, f.area());
+        })?;
 
         // Move cursor to bottom and print newlines to trigger scroll
         execute!(stdout, MoveTo(0, $terminal_height.saturating_sub(1)))?;
@@ -200,6 +207,11 @@ struct AgentInfo<'a> {
     pending_tool_approval: Option<String>,
     execution_summary: Option<SubagentExecutionSummary>,
     color: u8,
+    is_previewing_convo: bool,
+    convo: Vec<String>,
+    max_height: u16,
+    view_offset: u16,
+    is_done: bool,
 }
 
 impl<'a> AgentInfo<'a> {
@@ -215,8 +227,65 @@ impl<'a> AgentInfo<'a> {
             widget_height: self.widget_height,
             blocking_servers: self.blocking_servers.clone(),
             color: self.color,
+            max_height: 10_u16,
             ..Default::default()
         }
+    }
+
+    // TODO: hash and cache so we don't end up doing this every call?
+    fn prep_lines_for_display(&mut self, max_text_width: u16) {
+        let lines = &mut self.lines;
+
+        if self.is_previewing_convo && !self.convo.is_empty() {
+            *lines = self
+                .convo
+                .iter()
+                .enumerate()
+                .fold(Vec::<Line<'_>>::new(), |mut acc, (msg_number, msg)| {
+                    if msg_number > 0 {
+                        acc.push(Line::from(""));
+                    }
+
+                    for (idx, text) in wrap_text(msg, max_text_width).iter().enumerate() {
+                        let prefix = if idx == 0 { ">  " } else { "   " };
+                        acc.push(Line::from(vec![
+                            Span::styled(prefix, Style::default()),
+                            Span::raw((*text).to_string()),
+                        ]));
+                    }
+
+                    acc
+                });
+        } else if !self.blocking_servers.is_empty() {
+            lines.push(Line::from(format!(
+                "↳ waiting on {} server(s)",
+                self.blocking_servers.len()
+            )));
+            for server_name in self.blocking_servers.keys() {
+                lines.push(Line::from(format!(
+                    "  - auth required for {server_name}. ↵ to copy URL"
+                )));
+            }
+        } else if !self.msg.is_empty() {
+            let msg = &self.msg;
+
+            *lines = wrap_text(msg, max_text_width)
+                .into_iter()
+                .enumerate()
+                .map(|(idx, text)| {
+                    let prefix = if idx == 0 { "↳ " } else { "  " };
+                    Line::from(vec![
+                        Span::styled(prefix, Style::default()),
+                        Span::raw(text.to_string()),
+                    ])
+                })
+                .collect::<Vec<_>>();
+        }
+
+        self.widget_height = (lines.len() as u16).saturating_add(2).clamp(3, self.max_height);
+        self.view_offset = (lines.len() as u16)
+            .saturating_sub(self.widget_height)
+            .saturating_add(2);
     }
 }
 
@@ -310,8 +379,16 @@ impl<'a> SubagentIndicator<'a> {
                 );
                 max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
 
+                let is_something_previewing = agents.values().any(|info| info.is_previewing_convo);
+
                 tokio::select! {
-                    evt = self.view_end.receiver.recv() => {
+                    evt = async {
+                        if self.view_end.receiver.is_closed() {
+                            std::future::pending().await
+                        } else {
+                            self.view_end.receiver.recv().await
+                        }
+                    } => {
                         let Some(evt) = evt else {
                             error!(?evt, "error receiving evt from control end");
                             break;
@@ -322,10 +399,19 @@ impl<'a> SubagentIndicator<'a> {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     let tool_name = tool_call_start.tool_call_name;
                                     agent_info.msg = if tool_name.as_str() == "summary" {
+                                        agent_info.convo.push("Task has concluded".to_string());
+                                        agent_info.is_done = true;
                                         "summarizing...".to_string()
                                     } else {
-                                        format!("calling tool {tool_name}")
-                                    }
+                                        let msg = format!("calling tool {tool_name}");
+                                        agent_info.convo.push(msg.clone());
+                                        msg
+                                    };
+
+                                    // here we are also using this as a signal to delimit the
+                                    // assistant message (though in the future this might be
+                                    // insufficient)
+                                    agent_info.convo.push(String::new());
                                 }
                             },
                             UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
@@ -333,9 +419,18 @@ impl<'a> SubagentIndicator<'a> {
                                     agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
                                 }
                             },
-                            UiEvent::TextMessageContent { agent_id, .. } => {
+                            UiEvent::TextMessageContent { agent_id, inner } => {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = "thinking...".to_string();
+
+                                    let TextMessageContent { delta, .. } = inner;
+                                    if let Ok(content) = String::from_utf8(delta) {
+                                        if let Some(current_msg) = agent_info.convo.last_mut() {
+                                            current_msg.push_str(&content);
+                                        } else {
+                                            agent_info.convo.push(content);
+                                        }
+                                    }
                                 }
                             },
                             UiEvent::McpEvent { agent_id, inner: mcp_event, .. } => {
@@ -377,7 +472,13 @@ impl<'a> SubagentIndicator<'a> {
                         }
                     },
 
-                    _ = ct.cancelled() => {
+                    _ = async {
+                        if is_something_previewing {
+                            std::future::pending::<()>().await;
+                        } else {
+                            ct.cancelled().await;
+                        }
+                    } => {
                         break;
                     },
 
@@ -387,30 +488,7 @@ impl<'a> SubagentIndicator<'a> {
                         stacked_height = 2_u16;
 
                         for agent_info in agents.values_mut() {
-                            let lines = &mut agent_info.lines;
-
-                            if !agent_info.blocking_servers.is_empty() {
-                                lines.push(Line::from(format!("↳ waiting on {} server(s)", agent_info.blocking_servers.len())));
-                                for server_name in agent_info.blocking_servers.keys() {
-                                    lines.push(Line::from(format!("  - auth required for {server_name}. ↵ to copy URL")));
-                                }
-                            } else if !agent_info.msg.is_empty() {
-                                let msg = &agent_info.msg;
-
-                                *lines = wrap_text(msg, max_text_width)
-                                    .into_iter()
-                                    .enumerate()
-                                    .map(|(idx, text)| {
-                                        let prefix = if idx == 0 { "↳ " } else { "  " };
-                                        Line::from(vec![
-                                            Span::styled(prefix, Style::default()),
-                                            Span::raw(text.to_string()),
-                                        ])
-                                    })
-                                    .collect::<Vec<_>>();
-                            }
-
-                            agent_info.widget_height = (lines.len() as u16).saturating_add(2).max(3);
+                            agent_info.prep_lines_for_display(max_text_width);
                             stacked_height = stacked_height.saturating_add(agent_info.widget_height);
                         }
 
@@ -432,7 +510,7 @@ impl<'a> SubagentIndicator<'a> {
                                 };
 
                                 f.render_widget(message, area);
-                            }).ok();
+                            })?;
                             continue;
                         }
 
@@ -473,7 +551,9 @@ impl<'a> SubagentIndicator<'a> {
                                 let requires_attention = agent_info.pending_tool_approval.is_some()
                                     || !agent_info.blocking_servers.is_empty();
 
-                                let status = if requires_attention {
+                                let status = if agent_info.is_done {
+                                    SubagentStatus::Completed
+                                } else if requires_attention {
                                     SubagentStatus::Attention
                                 } else {
                                     agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
@@ -487,9 +567,16 @@ impl<'a> SubagentIndicator<'a> {
                                     init_query: agent_info.initial_query
                                 };
 
-                                let status_line = Paragraph::new(lines)
-                                    .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
-                                    .block(Block::default().borders(Borders::NONE).title(title));
+                                let status_line = if agent_info.is_previewing_convo {
+                                    Paragraph::new(lines)
+                                        .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
+                                        .block(Block::default().borders(Borders::ALL).title(title))
+                                        .scroll((agent_info.view_offset, 0))
+                                } else {
+                                    Paragraph::new(lines)
+                                        .style(Style::default().fg(Color::AnsiValue(normal_color).into()))
+                                        .block(Block::default().borders(Borders::NONE).title(title))
+                                };
 
                                 let area = Rect {
                                     x: Self::ARROW_WIDGET_WIDTH,
@@ -508,6 +595,8 @@ impl<'a> SubagentIndicator<'a> {
                                     Span::styled(" down ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
                                     Span::styled(" up ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("o", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
                                     Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
@@ -516,6 +605,8 @@ impl<'a> SubagentIndicator<'a> {
                             } else {
                                 Line::from(vec![
                                     Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("o", Style::default().fg(Color::AnsiValue(141).into())),
+                                    Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
                                     Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
@@ -542,9 +633,21 @@ impl<'a> SubagentIndicator<'a> {
                             crossterm::event::Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                                 match key_event.code {
                                     KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                        for id in agents.keys() {
+                                        for (id, agent_info) in agents.iter_mut() {
                                             _ = self.view_end.sender.send(InputEvent::Interrupt { id: *id });
+                                            if is_something_previewing {
+                                                agent_info.is_previewing_convo = false;
+                                            }
                                         }
+                                    },
+                                    KeyCode::Char('o') => {
+                                        let Some(focused_agent) = focused_agent else {
+                                            continue;
+                                        };
+                                        let Some(agent_info) = agents.get_mut(&focused_agent) else {
+                                            continue;
+                                        };
+                                        agent_info.is_previewing_convo = !agent_info.is_previewing_convo;
                                     },
                                     KeyCode::Char('j') | KeyCode::Down => {
                                         let total_agents = agents.len() as u16;
@@ -654,26 +757,24 @@ impl<'a> SubagentIndicator<'a> {
 
             // Check if we have enough space
             if summary_stacked_height > current_terminal_height {
-                terminal
-                    .draw(|f| {
-                        let message = Line::from(vec![
-                            Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
-                            Span::styled(
-                                "Terminal too small to display summary. Please resize.",
-                                Style::default().fg(Color::AnsiValue(141).into()),
-                            ),
-                        ]);
+                terminal.draw(|f| {
+                    let message = Line::from(vec![
+                        Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
+                        Span::styled(
+                            "Terminal too small to display summary. Please resize.",
+                            Style::default().fg(Color::AnsiValue(141).into()),
+                        ),
+                    ]);
 
-                        let area = Rect {
-                            x: Self::ARROW_WIDGET_WIDTH,
-                            y: start_row,
-                            width: content_widget_width,
-                            height: 1,
-                        };
+                    let area = Rect {
+                        x: Self::ARROW_WIDGET_WIDTH,
+                        y: start_row,
+                        width: content_widget_width,
+                        height: 1,
+                    };
 
-                        f.render_widget(message, area);
-                    })
-                    .ok();
+                    f.render_widget(message, area);
+                })?;
                 stacked_height = 1;
             } else {
                 let extra_rows_needed = start_row
@@ -688,37 +789,35 @@ impl<'a> SubagentIndicator<'a> {
                     };
                 }
 
-                terminal
-                    .draw(|f| {
-                        let mut current_start_row = start_row;
+                terminal.draw(|f| {
+                    let mut current_start_row = start_row;
 
-                        for agent_info in agents.values_mut() {
-                            let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
-                            let title = title! {
-                                status: SubagentStatus::Completed,
-                                agent_name: agent_info.agent_name.clone(),
-                                fg_color: agent_info.color,
-                                init_query: agent_info.initial_query
-                            };
+                    for agent_info in agents.values_mut() {
+                        let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
+                        let title = title! {
+                            status: SubagentStatus::Completed,
+                            agent_name: agent_info.agent_name.clone(),
+                            fg_color: agent_info.color,
+                            init_query: agent_info.initial_query
+                        };
 
-                            let widget_height = (lines.len() as u16).saturating_add(2).max(3);
+                        let widget_height = (lines.len() as u16).saturating_add(2).max(3);
 
-                            let status_line = Paragraph::new(lines)
-                                .style(Style::default().fg(Color::AnsiValue(141).into()))
-                                .block(Block::default().borders(Borders::NONE).title(title));
+                        let status_line = Paragraph::new(lines)
+                            .style(Style::default().fg(Color::AnsiValue(141).into()))
+                            .block(Block::default().borders(Borders::NONE).title(title));
 
-                            let area = Rect {
-                                x: Self::ARROW_WIDGET_WIDTH,
-                                y: current_start_row,
-                                width: content_widget_width,
-                                height: widget_height,
-                            };
+                        let area = Rect {
+                            x: Self::ARROW_WIDGET_WIDTH,
+                            y: current_start_row,
+                            width: content_widget_width,
+                            height: widget_height,
+                        };
 
-                            f.render_widget(status_line, area);
-                            current_start_row = current_start_row.saturating_add(widget_height);
-                        }
-                    })
-                    .ok();
+                        f.render_widget(status_line, area);
+                        current_start_row = current_start_row.saturating_add(widget_height);
+                    }
+                })?;
                 stacked_height = summary_stacked_height;
             }
 
