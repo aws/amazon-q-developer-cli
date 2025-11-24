@@ -78,6 +78,7 @@ r2d2_sqlite.workspace = true
 rand.workspace = true
 regex.workspace = true
 reqwest.workspace = true
+html2text = "0.12"
 ring.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
