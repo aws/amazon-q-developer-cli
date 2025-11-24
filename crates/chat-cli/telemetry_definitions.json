@@ -303,6 +303,16 @@
       "name": "codewhispererterminal_linesByUser",
       "type": "int",
       "description": "The number of lines of code contributed by user"
+    },
+    {
+      "name": "codewhispererterminal_linesRetained",
+      "type": "int",
+      "description": "The number of lines retained after retention check"
+    },
+    {
+      "name": "codewhispererterminal_totalLinesChecked",
+      "type": "int",
+      "description": "The total number of lines checked during retention check"
     }
   ],
   "metrics": [
@@ -481,7 +491,10 @@
         { "type": "codewhispererterminal_toolUseId" },
         { "type": "codewhispererterminal_toolName" },
         { "type": "codewhispererterminal_linesByAgent" },
-        { "type": "codewhispererterminal_linesByUser" }
+        { "type": "codewhispererterminal_linesByUser" },
+        { "type": "codewhispererterminal_linesRetained", "required": false },
+        { "type": "codewhispererterminal_totalLinesChecked", "required": false },
+        { "type": "codewhispererterminal_model", "required": false }
       ]
     },
     {
