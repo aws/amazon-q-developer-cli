@@ -386,33 +386,7 @@ impl Agent {
                                 break;
                             };
 
-                            match evt {
-                                McpServerEvent::Initializing { server_name } => {
-                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::Initializing {
-                                        server_name,
-                                    }));
-                                },
-                                McpServerEvent::Initialized { server_name, serve_duration, list_tools_duration, list_prompts_duration } => {
-                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::Initialized {
-                                        server_name,
-                                        serve_duration,
-                                        list_tools_duration,
-                                        list_prompts_duration
-                                    }));
-                                },
-                                McpServerEvent::InitializeError { server_name, error } => {
-                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::InitializeError {
-                                        server_name,
-                                        error,
-                                    }));
-                                },
-                                McpServerEvent::OauthRequest { server_name, oauth_url } => {
-                                    _ = agent_event_tx.send(AgentEvent::Mcp(McpServerEvent::OauthRequest {
-                                        server_name,
-                                        oauth_url,
-                                    }));
-                                },
-                            }
+                            _ = agent_event_tx.send(AgentEvent::Mcp(evt));
                         }
                     }
                 }
