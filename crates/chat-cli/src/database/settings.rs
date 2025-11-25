@@ -28,6 +28,8 @@ pub enum Setting {
     EnabledThinking,
     #[strum(message = "Enable knowledge base functionality (boolean)")]
     EnabledKnowledge,
+    #[strum(message = "Enable code intelligence with LSP integration (boolean)")]
+    EnabledCodeIntelligence,
     #[strum(message = "Default file patterns to include in knowledge base (array)")]
     KnowledgeDefaultIncludePatterns,
     #[strum(message = "Default file patterns to exclude from knowledge base (array)")]
@@ -132,6 +134,7 @@ impl AsRef<str> for Setting {
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
             Self::EnabledDelegate => "chat.enableDelegate",
+            Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
             Self::UiMode => "chat.uiMode",
         }
     }
@@ -182,6 +185,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
+            "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
             "chat.uiMode" => Ok(Self::UiMode),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }

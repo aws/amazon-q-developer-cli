@@ -8,6 +8,7 @@ use chat_cli_ui::conduit::{
 use eyre::Result;
 
 use super::ToolInfo;
+use super::code::Code;
 use super::custom_tool::CustomTool;
 use super::delegate::Delegate;
 use super::execute::ExecuteCommand;
@@ -41,12 +42,14 @@ impl ToolMetadata {
         Self::GH_ISSUE,
         Self::INTROSPECT,
         Self::KNOWLEDGE,
+        Self::CODE,
         Self::THINKING,
         Self::TODO,
         Self::DELEGATE,
         Self::WEB_SEARCH,
         Self::WEB_FETCH,
     ];
+    pub const CODE: &ToolInfo = &Code::INFO;
     pub const DELEGATE: &ToolInfo = &Delegate::INFO;
     pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
     pub const FS_READ: &ToolInfo = &FsRead::INFO;
@@ -83,6 +86,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Introspect(Introspect),
     Knowledge(Knowledge),
+    Code(Code),
     Thinking(Thinking),
     Todo(TodoList),
     Delegate(Delegate),
@@ -102,6 +106,7 @@ impl Tool {
             Tool::GhIssue(_) => GhIssue::INFO.preferred_alias,
             Tool::Introspect(_) => Introspect::INFO.preferred_alias,
             Tool::Knowledge(_) => Knowledge::INFO.preferred_alias,
+            Tool::Code(_) => Code::INFO.preferred_alias,
             Tool::Thinking(_) => Thinking::INFO.preferred_alias,
             Tool::Todo(_) => TodoList::INFO.preferred_alias,
             Tool::Delegate(_) => Delegate::INFO.preferred_alias,
@@ -123,6 +128,7 @@ impl Tool {
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
+            Tool::Code(_) => Code::eval_perm(os, agent),
             Tool::Delegate(_) => PermissionEvalResult::Allow,
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
@@ -136,6 +142,7 @@ impl Tool {
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
+        code_intelligence_client: &mut Option<code_agent_sdk::CodeIntelligence>,
     ) -> Result<super::InvokeOutput> {
         let active_agent = agents.get_active();
         match self {
@@ -147,6 +154,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.invoke(os, stdout).await,
             Tool::Introspect(introspect) => introspect.invoke(os, stdout).await,
             Tool::Knowledge(knowledge) => knowledge.invoke(os, stdout, active_agent).await,
+            Tool::Code(code) => code.invoke(os, stdout, code_intelligence_client).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
             Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
@@ -174,6 +182,7 @@ impl Tool {
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, &mut buf),
                 Tool::Introspect(_) => Introspect::queue_description(self, &mut buf),
                 Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, &mut buf).await,
+                Tool::Code(code) => code.queue_description(self, &mut buf),
                 Tool::Thinking(thinking) => thinking.queue_description(self, &mut buf),
                 Tool::Todo(_) => Ok(()),
                 Tool::Delegate(delegate) => delegate.queue_description(self, &mut buf),
@@ -200,6 +209,7 @@ impl Tool {
                 Tool::GhIssue(gh_issue) => gh_issue.queue_description(self, output),
                 Tool::Introspect(_) => Introspect::queue_description(self, output),
                 Tool::Knowledge(knowledge) => knowledge.queue_description(self, os, output).await,
+                Tool::Code(code) => code.queue_description(self, output),
                 Tool::Thinking(thinking) => thinking.queue_description(self, output),
                 Tool::Todo(_) => Ok(()),
                 Tool::Delegate(delegate) => delegate.queue_description(self, output),
@@ -222,6 +232,7 @@ impl Tool {
             Tool::GhIssue(gh_issue) => gh_issue.validate(os).await,
             Tool::Introspect(introspect) => introspect.validate(os).await,
             Tool::Knowledge(knowledge) => knowledge.validate(os).await,
+            Tool::Code(code) => code.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
             Tool::Delegate(_) => Ok(()),

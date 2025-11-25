@@ -1,6 +1,7 @@
 pub mod changelog;
 pub mod checkpoint;
 pub mod clear;
+pub mod code;
 pub mod compact;
 pub mod context;
 pub mod editor;
@@ -24,6 +25,7 @@ pub mod usage;
 use changelog::ChangelogArgs;
 use clap::Parser;
 use clear::ClearArgs;
+use code::CodeSubcommand;
 use compact::CompactArgs;
 use editor::EditorArgs;
 use experiment::ExperimentArgs;
@@ -77,6 +79,9 @@ pub enum SlashCommand {
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
+    /// (Beta) Code intelligence - Feature not available
+    #[command(subcommand, hide = true)]
+    Code(CodeSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
     PromptEditor(EditorArgs),
@@ -136,6 +141,7 @@ impl SlashCommand {
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
+            Self::Code(subcommand) => subcommand.execute(os, session).await,
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
@@ -182,6 +188,7 @@ impl SlashCommand {
             Self::Agent(_) => "agent",
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
+            Self::Code(_) => "code",
             Self::PromptEditor(_) => "editor",
             Self::Reply(_) => "reply",
             Self::Compact(_) => "compact",
@@ -212,6 +219,7 @@ impl SlashCommand {
             SlashCommand::Agent(sub) => Some(sub.name()),
             SlashCommand::Context(args) => args.subcommand_name(),
             SlashCommand::Knowledge(sub) => Some(sub.name()),
+            SlashCommand::Code(sub) => Some(sub.name()),
             SlashCommand::Tools(arg) => arg.subcommand_name(),
             SlashCommand::Prompts(arg) => arg.subcommand_name(),
             _ => None,

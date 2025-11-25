@@ -317,6 +317,92 @@
       ]
     }
   },
+  "code": {
+    "name": "code",
+    "description": "LSP-powered code intelligence tool for deep code analysis and navigation. Uses Language Server Protocol (LSP) to provide IDE-quality code understanding including symbol search, references, definitions, diagnostics, and workspace analysis.\n\n## IMPORTANT: Workspace Initialization Required\nBEFORE using any code intelligence operations, you MUST initialize the workspace:\n- Run `/code init` command first to detect languages and start LSP servers\n- Initialization analyzes project structure and starts appropriate language servers\n- Without initialization, all code operations will fail\n\n## When to Use\n- Finding symbol definitions, references, or usages across the codebase\n- Understanding code structure, relationships, and dependencies\n- Navigating large codebases with precise symbol lookup\n- Getting compiler/linter diagnostics and errors\n- Renaming symbols safely across multiple files\n- Analyzing code without reading entire files\n\n## When NOT to Use\n- For simple file reading (use fs_read instead)\n- For text search in files (use fs_read with Search mode)\n- For directory listing (use fs_read with Directory mode)\n- When workspace is not initialized (run `/code init` first)\n\n## Advantages Over fs_read\n- Semantic understanding: Knows about classes, functions, variables, not just text\n- Cross-file navigation: Finds all usages across entire project\n- Type-aware: Understands language-specific constructs\n- Precise location: Returns exact line/column positions\n- IDE-quality: Same intelligence as VS Code, IntelliJ, etc.\n\n## Operations\n- search_symbols: Find symbols by name across workspace\n- find_references: Find all usages of a symbol at a position\n- goto_definition: Jump to where a symbol is defined\n- get_document_symbols: List all symbols in a file\n- lookup_symbols: Get detailed info for specific symbols\n- get_diagnostics: Get compiler errors and warnings\n- rename_symbol: Safely rename across all files\n- format: Format code according to language rules\n- initialize_workspace: Detect languages and start LSP servers\n\n## Workflow\n1. Initialize: `/code init` (or `/code init --force` to reinitialize)\n2. Search: Use search_symbols to find what you need\n3. Navigate: Use goto_definition and find_references to understand code\n4. Analyze: Use get_diagnostics to check for issues",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "operation": {
+          "type": "string",
+          "enum": [
+            "search_symbols",
+            "find_references", 
+            "goto_definition",
+            "rename_symbol",
+            "format",
+            "get_document_symbols",
+            "lookup_symbols",
+            "get_diagnostics",
+            "initialize_workspace"
+          ],
+          "description": "The code intelligence operation to perform"
+        },
+        "symbol_name": {
+          "type": "string",
+          "description": "Name of symbol to search for (required for search_symbols operation)"
+        },
+        "file_path": {
+          "type": "string", 
+          "description": "Absolute path to a specific source code file (NOT a directory). Example: '/path/to/project/src/main.rs' (required for most operations)"
+        },
+        "row": {
+          "type": "integer",
+          "description": "Line number (1-based, required for find_references, goto_definition, rename_symbol)"
+        },
+        "column": {
+          "type": "integer", 
+          "description": "Column number (1-based, required for find_references, goto_definition, rename_symbol)"
+        },
+        "new_name": {
+          "type": "string",
+          "description": "New name for symbol rename (required for rename_symbol operation)"
+        },
+        "symbols": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "List of symbol names to lookup (required for lookup_symbols operation)"
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum results to return (optional for search_symbols)"
+        },
+        "exact_match": {
+          "type": "boolean", 
+          "description": "Whether to use exact matching (optional for search_symbols)"
+        },
+        "show_source": {
+          "type": "boolean",
+          "description": "Whether to include source code (optional for goto_definition)"
+        },
+        "dry_run": {
+          "type": "boolean",
+          "description": "Preview changes without applying (optional for rename_symbol)"
+        },
+        "tab_size": {
+          "type": "integer",
+          "description": "Tab size for formatting (optional for format operation, default: 4)"
+        },
+        "insert_spaces": {
+          "type": "boolean",
+          "description": "Use spaces instead of tabs (optional for format operation, default: true)"
+        },
+        "identifier": {
+          "type": "string",
+          "description": "Optional identifier for the diagnostic request (optional for get_diagnostics)"
+        },
+        "previous_result_id": {
+          "type": "string",
+          "description": "Optional result ID from a previous diagnostic response for incremental updates (optional for get_diagnostics)"
+        },
+        "symbol_type": {
+          "type": "string",
+          "description": "Symbol type filter (optional for search_symbols)"
+        }
+      },
+      "required": ["operation"]
+    }
+  },
   "todo_list": {
     "name": "todo_list",
     "description": "A tool for creating a TODO list and keeping track of tasks. This tool should be requested EVERY time the user gives you a task that will take multiple steps. A TODO list should be made BEFORE executing any steps. Steps should be marked off AS YOU COMPLETE THEM. DO NOT display your own tasks or todo list AT ANY POINT; this is done for you. Complete the tasks in the same order that you provide them. If the user tells you to skip a step, DO NOT mark it as completed.",

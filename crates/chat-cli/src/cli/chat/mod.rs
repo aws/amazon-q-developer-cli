@@ -738,6 +738,23 @@ impl ChatSession {
             }
         });
 
+        // Initialize code intelligence client if feature is enabled
+        let code_intelligence_client = if crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
+            match code_agent_sdk::CodeIntelligence::builder()
+                .workspace_root(std::env::current_dir().unwrap_or_default())
+                .auto_detect_languages()
+                .build()
+            {
+                Ok(client) => Some(client),
+                Err(e) => {
+                    eprintln!("Warning: Failed to create code intelligence client: {e}");
+                    None
+                },
+            }
+        } else {
+            None
+        };
+
         let conversation = match resume_conversation {
             true => {
                 let previous_conversation = std::env::current_dir()
@@ -768,6 +785,7 @@ impl ChatSession {
                         }
                         cs.agents = agents;
                         cs.mcp_enabled = mcp_enabled;
+                        cs.code_intelligence_client = code_intelligence_client.clone();
                         cs.update_state(true).await;
                         cs.enforce_tool_use_history_invariants();
                         cs
@@ -781,6 +799,7 @@ impl ChatSession {
                             model_id,
                             os,
                             mcp_enabled,
+                            code_intelligence_client.clone(),
                         )
                         .await
                     },
@@ -795,6 +814,7 @@ impl ChatSession {
                     model_id,
                     os,
                     mcp_enabled,
+                    code_intelligence_client,
                 )
                 .await
             },
@@ -2557,6 +2577,7 @@ impl ChatSession {
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
+                    &mut self.conversation.code_intelligence_client,
                 )
                 .await;
 

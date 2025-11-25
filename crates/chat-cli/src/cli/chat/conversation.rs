@@ -252,6 +252,9 @@ pub struct ConversationState {
     /// Metadata about the ongoing user turn operation
     #[serde(default)]
     pub user_turn_metadata: UserTurnMetadata,
+    /// Code intelligence client for LSP-based code operations
+    #[serde(skip)]
+    pub code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,6 +273,7 @@ struct ConversationCheckpoint {
 }
 
 impl ConversationState {
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         conversation_id: &str,
         agents: Agents,
@@ -278,6 +282,7 @@ impl ConversationState {
         current_model_id: Option<String>,
         os: &Os,
         mcp_enabled: bool,
+        code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -316,6 +321,7 @@ impl ConversationState {
             mcp_enabled,
             tangent_state: None,
             user_turn_metadata: UserTurnMetadata::new(),
+            code_intelligence_client,
         }
     }
 
@@ -1572,6 +1578,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
 
@@ -1605,6 +1612,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1641,6 +1649,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
         conversation.set_next_user_message("start".to_string()).await;
@@ -1699,6 +1708,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
 
@@ -1746,6 +1756,7 @@ mod tests {
             None,
             &os,
             false, // mcp_enabled
+            None,  // code_intelligence_client
         )
         .await;
 
@@ -1819,6 +1830,7 @@ mod tests {
             None,
             &os,
             false, // mcp_enabled
+            None,  // code_intelligence_client
         )
         .await;
 
@@ -1855,6 +1867,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
 
@@ -1908,6 +1921,7 @@ mod tests {
             None,
             &os,
             false,
+            None, // code_intelligence_client
         )
         .await;
 
@@ -1950,6 +1964,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 
@@ -2017,6 +2032,7 @@ mod tests {
             None,
             &os,
             false,
+            None,
         )
         .await;
 

@@ -1,0 +1,37 @@
+[package]
+name = "code-agent-sdk"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde_json.workspace = true
+serde.workspace = true
+lsp-types = "0.95.0"
+url.workspace = true
+anyhow = "1.0"
+thiserror.workspace = true
+uuid.workspace = true
+futures.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender = "0.2"
+clap.workspace = true
+rmcp = { workspace = true, features = ["server", "macros", "transport-io"] }
+notify.workspace = true
+ignore.workspace = true
+globset.workspace = true
+which.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tracing-subscriber.workspace = true
+
+[[bin]]
+name = "code-agent-cli"
+path = "src/cli/cli.rs"
+
+[[bin]]
+name = "code-agent-mcp"
+path = "src/bin/mcp_server.rs"

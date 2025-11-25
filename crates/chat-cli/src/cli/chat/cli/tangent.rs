@@ -344,6 +344,7 @@ mod tests {
             None,
             &os,
             false, // mcp_enabled
+            None,  // code_intelligence_client
         )
         .await;
 

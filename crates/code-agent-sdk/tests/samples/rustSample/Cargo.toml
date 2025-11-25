@@ -1,0 +1,11 @@
+[package]
+name = "sample"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+# Empty workspace table to exclude from parent workspace
+
+[[bin]]
+name = "obvious_errors"
+path = "src/obvious_errors.rs"
