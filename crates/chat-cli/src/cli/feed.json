@@ -12,6 +12,34 @@
     },
     {
       "type": "release",
+      "date": "2025-11-25",
+      "version": "1.20.2",
+      "title": "Version 1.20.2",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Todo list improvements with task details and sticky active todos"
+        },
+        {
+          "type": "added",
+          "description": "/tangent forget command to remove recent messages from conversation context history"
+        },
+        {
+          "type": "added",
+          "description": "Knowledge base improvements with file metadata, limit controls, file type filters, and sort options"
+        },
+        {
+          "type": "fixed",
+          "description": "Migration now preserves shell file formatting and prevents configuration corruption"
+        },
+        {
+          "type": "added",
+          "description": "Kiro CLI automatically migrates some of your configurations from .amazonq to .kiro. Read the details at kiro.dev/cli-upgrade"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-11-24",
       "version": "1.20.1",
       "title": "Version 1.20.1",
