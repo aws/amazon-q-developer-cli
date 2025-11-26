@@ -68,7 +68,7 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                     currency,
                 });
 
-                // Check for bonus credits in this item
+                // Check for welcome bonus (free trial)
                 if let Some(free_trial_info) = item.free_trial_info() {
                     if free_trial_info.free_trial_status().map(|s| s.as_str()) == Some("ACTIVE") {
                         let bonus_used = free_trial_info.current_usage_with_precision().unwrap_or(0.0);
@@ -81,13 +81,33 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                             let days_until_expiry = (expiry_date - now).num_days().max(0);
 
                             bonus_credits.push(super::BonusCredit {
-                                name: "Bonus credits".to_string(),
+                                name: "Welcome bonus".to_string(),
                                 used: bonus_used,
                                 total: bonus_total,
                                 days_until_expiry,
                             });
                         }
                     }
+                }
+
+                // Check for additional bonuses (only ACTIVE and EXHAUSTED)
+                for bonus in item.bonuses() {
+                    use amzn_codewhisperer_client::types::BonusStatus;
+                    if !matches!(bonus.status(), BonusStatus::Active | BonusStatus::Exhausted) {
+                        continue;
+                    }
+
+                    let expiry_secs = bonus.expires_at().secs();
+                    let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(Utc::now);
+                    let now = Utc::now();
+                    let days_until_expiry = (expiry_date - now).num_days().max(0);
+
+                    bonus_credits.push(super::BonusCredit {
+                        name: bonus.display_name().to_string(),
+                        used: bonus.current_usage(),
+                        total: bonus.usage_limit(),
+                        days_until_expiry,
+                    });
                 }
             }
 

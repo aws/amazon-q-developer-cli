@@ -85,26 +85,46 @@ async fn render_available_billing(
 
     // Bonus credits
     if !billing_data.bonus_credits.is_empty() {
-        for bonus in &billing_data.bonus_credits {
+        if billing_data.bonus_credits.len() > 1 {
             execute!(
                 session.stderr,
                 style::Print("\n"),
                 style::SetAttribute(style::Attribute::Bold),
-                style::Print(format!("🎁 {}:", bonus.name)),
+                style::Print("🎁 Bonus Credits:"),
                 style::SetAttribute(style::Attribute::Reset),
-                style::Print(" "),
-                style::SetAttribute(style::Attribute::Bold),
-                style::Print(format!("{:.2}/{:.0}", bonus.used, bonus.total)),
-                style::SetAttribute(style::Attribute::Reset),
-                style::Print(" credits used, expires in "),
-                style::SetAttribute(style::Attribute::Bold),
-                style::Print(format!("{}", bonus.days_until_expiry)),
-                style::SetAttribute(style::Attribute::Reset),
-                style::Print(" days\n"),
+                style::Print("\n"),
             )?;
+            for bonus in &billing_data.bonus_credits {
+                execute!(
+                    session.stderr,
+                    style::Print(format!(
+                        "   {} - {:.2}/{:.0} used ({} days left)\n",
+                        bonus.name, bonus.used, bonus.total, bonus.days_until_expiry
+                    )),
+                )?;
+            }
+            execute!(session.stderr, style::Print("\n"))?;
+        } else {
+            for bonus in &billing_data.bonus_credits {
+                execute!(
+                    session.stderr,
+                    style::Print("\n"),
+                    style::SetAttribute(style::Attribute::Bold),
+                    style::Print("🎁 Bonus credits:"),
+                    style::SetAttribute(style::Attribute::Reset),
+                    style::Print(" "),
+                    style::SetAttribute(style::Attribute::Bold),
+                    style::Print(format!("{:.2}/{:.0}", bonus.used, bonus.total)),
+                    style::SetAttribute(style::Attribute::Reset),
+                    style::Print(" credits used, expires in "),
+                    style::SetAttribute(style::Attribute::Bold),
+                    style::Print(format!("{}", bonus.days_until_expiry)),
+                    style::SetAttribute(style::Attribute::Reset),
+                    style::Print(" days\n"),
+                )?;
+            }
+            execute!(session.stderr, style::Print("\n"))?;
         }
-
-        execute!(session.stderr, style::Print("\n"))?;
     }
 
     let is_enterprise = is_idc_user(&os.database).await;
