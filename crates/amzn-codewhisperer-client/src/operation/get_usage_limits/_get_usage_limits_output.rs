@@ -10,6 +10,7 @@ pub struct GetUsageLimitsOutput {
     /// Number of days remaining until the usage metrics reset
     pub days_until_reset: ::std::option::Option<i32>,
     /// Usage breakdown by SKU type
+    #[deprecated]
     pub usage_breakdown: ::std::option::Option<crate::types::UsageBreakdown>,
     /// List of usage by resource type
     pub usage_breakdown_list: ::std::option::Option<::std::vec::Vec<crate::types::UsageBreakdown>>,
@@ -40,6 +41,7 @@ impl GetUsageLimitsOutput {
     }
 
     /// Usage breakdown by SKU type
+    #[deprecated]
     pub fn usage_breakdown(&self) -> ::std::option::Option<&crate::types::UsageBreakdown> {
         self.usage_breakdown.as_ref()
     }
@@ -152,18 +154,21 @@ impl GetUsageLimitsOutputBuilder {
     }
 
     /// Usage breakdown by SKU type
+    #[deprecated]
     pub fn usage_breakdown(mut self, input: crate::types::UsageBreakdown) -> Self {
         self.usage_breakdown = ::std::option::Option::Some(input);
         self
     }
 
     /// Usage breakdown by SKU type
+    #[deprecated]
     pub fn set_usage_breakdown(mut self, input: ::std::option::Option<crate::types::UsageBreakdown>) -> Self {
         self.usage_breakdown = input;
         self
     }
 
     /// Usage breakdown by SKU type
+    #[deprecated]
     pub fn get_usage_breakdown(&self) -> &::std::option::Option<crate::types::UsageBreakdown> {
         &self.usage_breakdown
     }

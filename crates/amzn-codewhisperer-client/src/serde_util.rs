@@ -653,6 +653,33 @@ pub(crate) fn usage_limit_list_correct_errors(
     builder
 }
 
+pub(crate) fn bonus_correct_errors(
+    mut builder: crate::types::builders::BonusBuilder,
+) -> crate::types::builders::BonusBuilder {
+    if builder.bonus_code.is_none() {
+        builder.bonus_code = Some(Default::default())
+    }
+    if builder.display_name.is_none() {
+        builder.display_name = Some(Default::default())
+    }
+    if builder.description.is_none() {
+        builder.description = Some(Default::default())
+    }
+    if builder.status.is_none() {
+        builder.status = "no value was set".parse::<crate::types::BonusStatus>().ok()
+    }
+    if builder.expires_at.is_none() {
+        builder.expires_at = Some(::aws_smithy_types::DateTime::from_fractional_secs(0, 0_f64))
+    }
+    if builder.current_usage.is_none() {
+        builder.current_usage = Some(Default::default())
+    }
+    if builder.usage_limit.is_none() {
+        builder.usage_limit = Some(Default::default())
+    }
+    builder
+}
+
 pub(crate) fn by_user_analytics_correct_errors(
     mut builder: crate::types::builders::ByUserAnalyticsBuilder,
 ) -> crate::types::builders::ByUserAnalyticsBuilder {

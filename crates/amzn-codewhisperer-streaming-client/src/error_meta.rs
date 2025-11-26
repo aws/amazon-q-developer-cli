@@ -258,6 +258,12 @@ where
 impl From<crate::operation::invoke_mcp::InvokeMCPError> for Error {
     fn from(err: crate::operation::invoke_mcp::InvokeMCPError) -> Self {
         match err {
+            crate::operation::invoke_mcp::InvokeMCPError::AccessDeniedError(inner) => Error::AccessDeniedError(inner),
+            crate::operation::invoke_mcp::InvokeMCPError::InternalServerError(inner) => {
+                Error::InternalServerError(inner)
+            },
+            crate::operation::invoke_mcp::InvokeMCPError::ThrottlingError(inner) => Error::ThrottlingError(inner),
+            crate::operation::invoke_mcp::InvokeMCPError::ValidationError(inner) => Error::ValidationError(inner),
             crate::operation::invoke_mcp::InvokeMCPError::Unhandled(inner) => Error::Unhandled(inner),
         }
     }

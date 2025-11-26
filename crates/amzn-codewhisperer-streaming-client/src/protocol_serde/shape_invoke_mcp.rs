@@ -11,7 +11,79 @@ pub fn de_invoke_mcp_http_error(
             .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
     generic_builder = ::aws_types::request_id::apply_request_id(generic_builder, _response_headers);
     let generic = generic_builder.build();
-    Err(crate::operation::invoke_mcp::InvokeMCPError::generic(generic))
+    let error_code = match generic.code() {
+        Some(code) => code,
+        None => return Err(crate::operation::invoke_mcp::InvokeMCPError::unhandled(generic)),
+    };
+
+    let _error_message = generic.message().map(|msg| msg.to_owned());
+    Err(match error_code {
+        "AccessDeniedError" => crate::operation::invoke_mcp::InvokeMCPError::AccessDeniedError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::AccessDeniedErrorBuilder::default();
+                output = crate::protocol_serde::shape_access_denied_error::de_access_denied_error_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::access_denied_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?
+            };
+            tmp
+        }),
+        "InternalServerError" => crate::operation::invoke_mcp::InvokeMCPError::InternalServerError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::InternalServerErrorBuilder::default();
+                output = crate::protocol_serde::shape_internal_server_error::de_internal_server_error_json_err(
+                    _response_body,
+                    output,
+                )
+                .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::internal_server_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?
+            };
+            tmp
+        }),
+        "ThrottlingError" => crate::operation::invoke_mcp::InvokeMCPError::ThrottlingError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ThrottlingErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_throttling_error::de_throttling_error_json_err(_response_body, output)
+                        .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::throttling_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?
+            };
+            tmp
+        }),
+        "ValidationError" => crate::operation::invoke_mcp::InvokeMCPError::ValidationError({
+            #[allow(unused_mut)]
+            let mut tmp = {
+                #[allow(unused_mut)]
+                let mut output = crate::types::error::builders::ValidationErrorBuilder::default();
+                output =
+                    crate::protocol_serde::shape_validation_error::de_validation_error_json_err(_response_body, output)
+                        .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?;
+                let output = output.meta(generic);
+                crate::serde_util::validation_error_correct_errors(output)
+                    .build()
+                    .map_err(crate::operation::invoke_mcp::InvokeMCPError::unhandled)?
+            };
+            tmp
+        }),
+        _ => crate::operation::invoke_mcp::InvokeMCPError::generic(generic),
+    })
 }
 
 #[allow(clippy::unnecessary_wraps)]
@@ -64,11 +136,7 @@ pub(crate) fn de_invoke_mcp(
                     );
                 },
                 "id" => {
-                    builder = builder.set_id(
-                        ::aws_smithy_json::deserialize::token::expect_string_or_null(tokens.next())?
-                            .map(|s| s.to_unescaped().map(|u| u.into_owned()))
-                            .transpose()?,
-                    );
+                    builder = builder.set_id(Some(::aws_smithy_json::deserialize::token::expect_document(tokens)?));
                 },
                 "result" => {
                     builder = builder.set_result(Some(::aws_smithy_json::deserialize::token::expect_document(tokens)?));

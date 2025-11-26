@@ -7,7 +7,7 @@ pub fn ser_invoke_mcp_input_input(
         object.key("jsonrpc").string(var_1.as_str());
     }
     if let Some(var_2) = &input.id {
-        object.key("id").string(var_2.as_str());
+        object.key("id").document(var_2);
     }
     if let Some(var_3) = &input.method {
         object.key("method").string(var_3.as_str());

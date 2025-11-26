@@ -132,6 +132,10 @@ where
                                     crate::protocol_serde::shape_free_trial_info::de_free_trial_info(tokens)?,
                                 );
                             },
+                            "bonuses" => {
+                                builder = builder
+                                    .set_bonuses(crate::protocol_serde::shape_bonus_list::de_bonus_list(tokens)?);
+                            },
                             _ => ::aws_smithy_json::deserialize::token::skip_value(tokens)?,
                         }
                     },

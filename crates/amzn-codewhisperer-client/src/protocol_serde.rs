@@ -292,6 +292,8 @@ pub(crate) mod shape_workspace_metadata;
 
 pub(crate) mod shape_workspace_state;
 
+pub(crate) mod shape_bonus_list;
+
 pub(crate) mod shape_chat_add_message_event;
 
 pub(crate) mod shape_chat_interact_with_message_event;
@@ -405,6 +407,8 @@ pub(crate) mod shape_application_properties_list;
 pub(crate) mod shape_assistant_response_message;
 
 pub(crate) mod shape_attributes_map;
+
+pub(crate) mod shape_bonus;
 
 pub(crate) mod shape_by_user_analytics;
 

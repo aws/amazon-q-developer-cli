@@ -7,6 +7,8 @@ pub use crate::types::_app_studio_state::AppStudioState;
 pub use crate::types::_application_properties::ApplicationProperties;
 pub use crate::types::_artifact_type::ArtifactType;
 pub use crate::types::_assistant_response_message::AssistantResponseMessage;
+pub use crate::types::_bonus::Bonus;
+pub use crate::types::_bonus_status::BonusStatus;
 pub use crate::types::_by_user_analytics::ByUserAnalytics;
 pub use crate::types::_cache_point::CachePoint;
 pub use crate::types::_cache_point_type::CachePointType;
@@ -244,6 +246,10 @@ mod _application_properties;
 mod _artifact_type;
 
 mod _assistant_response_message;
+
+mod _bonus;
+
+mod _bonus_status;
 
 mod _by_user_analytics;
 

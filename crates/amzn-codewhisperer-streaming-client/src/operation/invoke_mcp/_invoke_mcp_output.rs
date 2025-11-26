@@ -2,12 +2,12 @@
 
 /// JSON-RPC 2.0 response structure for MCP operations
 #[non_exhaustive]
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq)]
 pub struct InvokeMcpOutput {
     /// JSON-RPC protocol version
     pub jsonrpc: ::std::option::Option<::std::string::String>,
-    /// Request identifier for response correlation
-    pub id: ::std::option::Option<::std::string::String>,
+    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    pub id: ::std::option::Option<::aws_smithy_types::Document>,
     /// Success result (mutually exclusive with error)
     pub result: ::std::option::Option<::aws_smithy_types::Document>,
     /// Error information (mutually exclusive with result)
@@ -20,9 +20,9 @@ impl InvokeMcpOutput {
         self.jsonrpc.as_deref()
     }
 
-    /// Request identifier for response correlation
-    pub fn id(&self) -> ::std::option::Option<&str> {
-        self.id.as_deref()
+    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    pub fn id(&self) -> ::std::option::Option<&::aws_smithy_types::Document> {
+        self.id.as_ref()
     }
 
     /// Success result (mutually exclusive with error)
@@ -33,6 +33,17 @@ impl InvokeMcpOutput {
     /// Error information (mutually exclusive with result)
     pub fn error(&self) -> ::std::option::Option<&crate::types::JsonRpcError> {
         self.error.as_ref()
+    }
+}
+impl ::std::fmt::Debug for InvokeMcpOutput {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("InvokeMcpOutput");
+        formatter.field("jsonrpc", &self.jsonrpc);
+        formatter.field("id", &self.id);
+        formatter.field("result", &"*** Sensitive Data Redacted ***");
+        formatter.field("error", &self.error);
+        formatter.field("_request_id", &self._request_id);
+        formatter.finish()
     }
 }
 impl ::aws_types::request_id::RequestId for InvokeMcpOutput {
@@ -49,11 +60,11 @@ impl InvokeMcpOutput {
 }
 
 /// A builder for [`InvokeMcpOutput`](crate::operation::invoke_mcp::InvokeMcpOutput).
-#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default, ::std::fmt::Debug)]
+#[derive(::std::clone::Clone, ::std::cmp::PartialEq, ::std::default::Default)]
 #[non_exhaustive]
 pub struct InvokeMcpOutputBuilder {
     pub(crate) jsonrpc: ::std::option::Option<::std::string::String>,
-    pub(crate) id: ::std::option::Option<::std::string::String>,
+    pub(crate) id: ::std::option::Option<::aws_smithy_types::Document>,
     pub(crate) result: ::std::option::Option<::aws_smithy_types::Document>,
     pub(crate) error: ::std::option::Option<crate::types::JsonRpcError>,
     _request_id: Option<String>,
@@ -76,20 +87,20 @@ impl InvokeMcpOutputBuilder {
         &self.jsonrpc
     }
 
-    /// Request identifier for response correlation
-    pub fn id(mut self, input: impl ::std::convert::Into<::std::string::String>) -> Self {
-        self.id = ::std::option::Option::Some(input.into());
+    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    pub fn id(mut self, input: ::aws_smithy_types::Document) -> Self {
+        self.id = ::std::option::Option::Some(input);
         self
     }
 
-    /// Request identifier for response correlation
-    pub fn set_id(mut self, input: ::std::option::Option<::std::string::String>) -> Self {
+    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    pub fn set_id(mut self, input: ::std::option::Option<::aws_smithy_types::Document>) -> Self {
         self.id = input;
         self
     }
 
-    /// Request identifier for response correlation
-    pub fn get_id(&self) -> &::std::option::Option<::std::string::String> {
+    /// Request identifier for response correlation (string, number, or null per JSON-RPC 2.0)
+    pub fn get_id(&self) -> &::std::option::Option<::aws_smithy_types::Document> {
         &self.id
     }
 
@@ -147,5 +158,16 @@ impl InvokeMcpOutputBuilder {
             error: self.error,
             _request_id: self._request_id,
         }
+    }
+}
+impl ::std::fmt::Debug for InvokeMcpOutputBuilder {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        let mut formatter = f.debug_struct("InvokeMcpOutputBuilder");
+        formatter.field("jsonrpc", &self.jsonrpc);
+        formatter.field("id", &self.id);
+        formatter.field("result", &"*** Sensitive Data Redacted ***");
+        formatter.field("error", &self.error);
+        formatter.field("_request_id", &self._request_id);
+        formatter.finish()
     }
 }

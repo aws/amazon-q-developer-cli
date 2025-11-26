@@ -38,6 +38,8 @@ pub struct UsageBreakdown {
     pub overage_cap_with_precision: ::std::option::Option<f64>,
     /// User's free trial info
     pub free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
+    /// Redeemed bonuses
+    pub bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
 }
 impl UsageBreakdown {
     /// The resource or dimension being billed, e.g. VIBE or SPEC
@@ -125,6 +127,14 @@ impl UsageBreakdown {
     pub fn free_trial_info(&self) -> ::std::option::Option<&crate::types::FreeTrialInfo> {
         self.free_trial_info.as_ref()
     }
+
+    /// Redeemed bonuses
+    ///
+    /// If no value was sent for this field, a default will be set. If you want to determine if no
+    /// value was sent, use `.bonuses.is_none()`.
+    pub fn bonuses(&self) -> &[crate::types::Bonus] {
+        self.bonuses.as_deref().unwrap_or_default()
+    }
 }
 impl UsageBreakdown {
     /// Creates a new builder-style object to manufacture
@@ -155,6 +165,7 @@ pub struct UsageBreakdownBuilder {
     pub(crate) overage_cap: ::std::option::Option<i32>,
     pub(crate) overage_cap_with_precision: ::std::option::Option<f64>,
     pub(crate) free_trial_info: ::std::option::Option<crate::types::FreeTrialInfo>,
+    pub(crate) bonuses: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>,
 }
 impl UsageBreakdownBuilder {
     /// The resource or dimension being billed, e.g. VIBE or SPEC
@@ -454,6 +465,29 @@ impl UsageBreakdownBuilder {
         &self.free_trial_info
     }
 
+    /// Appends an item to `bonuses`.
+    ///
+    /// To override the contents of this collection use [`set_bonuses`](Self::set_bonuses).
+    ///
+    /// Redeemed bonuses
+    pub fn bonuses(mut self, input: crate::types::Bonus) -> Self {
+        let mut v = self.bonuses.unwrap_or_default();
+        v.push(input);
+        self.bonuses = ::std::option::Option::Some(v);
+        self
+    }
+
+    /// Redeemed bonuses
+    pub fn set_bonuses(mut self, input: ::std::option::Option<::std::vec::Vec<crate::types::Bonus>>) -> Self {
+        self.bonuses = input;
+        self
+    }
+
+    /// Redeemed bonuses
+    pub fn get_bonuses(&self) -> &::std::option::Option<::std::vec::Vec<crate::types::Bonus>> {
+        &self.bonuses
+    }
+
     /// Consumes the builder and constructs a [`UsageBreakdown`](crate::types::UsageBreakdown).
     /// This method will fail if any of the following fields are not set:
     /// - [`current_usage`](crate::types::builders::UsageBreakdownBuilder::current_usage)
@@ -507,6 +541,7 @@ impl UsageBreakdownBuilder {
             overage_cap: self.overage_cap,
             overage_cap_with_precision: self.overage_cap_with_precision,
             free_trial_info: self.free_trial_info,
+            bonuses: self.bonuses,
         })
     }
 }

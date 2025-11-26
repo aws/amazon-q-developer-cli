@@ -156,7 +156,7 @@ impl WebSearch {
         let response = client
             .invoke_mcp()
             .jsonrpc("2.0")
-            .id("1")
+            .id("1".into())
             .method(amzn_codewhisperer_streaming_client::types::McpMethod::ToolsCall)
             .params(params)
             .send()

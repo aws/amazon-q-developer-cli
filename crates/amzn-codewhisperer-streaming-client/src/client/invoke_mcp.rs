@@ -8,15 +8,18 @@ impl super::Client {
     ///     Into<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::jsonrpc)
     ///     / [`set_jsonrpc(Option<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_jsonrpc):
     ///     <br>required: **false**<br>JSON-RPC protocol version<br>
-    ///   - [`id(impl Into<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::id) / [`set_id(Option<String>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_id):<br>required: **false**<br>Request identifier for response correlation<br>
+    ///   - [`id(Document)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::id) /
+    ///     [`set_id(Option<Document>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_id):
+    ///     <br>required: **false**<br>Request identifier for response correlation (string, number,
+    ///     or null per JSON-RPC 2.0)<br>
     ///   - [`method(McpMethod)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::method) / [`set_method(Option<McpMethod>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_method):<br>required: **true**<br>MCP method name<br>
     ///   - [`params(Document)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::params) / [`set_params(Option<Document>)`](crate::operation::invoke_mcp::builders::InvokeMCPFluentBuilder::set_params):<br>required: **false**<br>Method-specific parameters<br>
     /// - On success, responds with
     ///   [`InvokeMcpOutput`](crate::operation::invoke_mcp::InvokeMcpOutput) with field(s):
     ///   - [`jsonrpc(Option<String>)`](crate::operation::invoke_mcp::InvokeMcpOutput::jsonrpc):
     ///     JSON-RPC protocol version
-    ///   - [`id(Option<String>)`](crate::operation::invoke_mcp::InvokeMcpOutput::id): Request
-    ///     identifier for response correlation
+    ///   - [`id(Option<Document>)`](crate::operation::invoke_mcp::InvokeMcpOutput::id): Request
+    ///     identifier for response correlation (string, number, or null per JSON-RPC 2.0)
     ///   - [`result(Option<Document>)`](crate::operation::invoke_mcp::InvokeMcpOutput::result):
     ///     Success result (mutually exclusive with error)
     ///   - [`error(Option<JsonRpcError>)`](crate::operation::invoke_mcp::InvokeMcpOutput::error):

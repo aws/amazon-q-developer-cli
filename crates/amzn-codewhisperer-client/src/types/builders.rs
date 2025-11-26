@@ -3,6 +3,7 @@ pub use crate::types::_additional_content_entry::AdditionalContentEntryBuilder;
 pub use crate::types::_app_studio_state::AppStudioStateBuilder;
 pub use crate::types::_application_properties::ApplicationPropertiesBuilder;
 pub use crate::types::_assistant_response_message::AssistantResponseMessageBuilder;
+pub use crate::types::_bonus::BonusBuilder;
 pub use crate::types::_by_user_analytics::ByUserAnalyticsBuilder;
 pub use crate::types::_cache_point::CachePointBuilder;
 pub use crate::types::_change_log_options::ChangeLogOptionsBuilder;
