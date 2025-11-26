@@ -5,7 +5,7 @@ impl FeatureFlags {
     /// Code intelligence - LSP-based code analysis and navigation
     pub const CODE_INTELLIGENCE_ENABLED: bool = false;
     /// Regions where web_search is disabled
-    pub const WEB_SEARCH_BLOCKED_REGIONS: &'static [&'static str] = &["eu-central-1"];
+    pub const WEB_SEARCH_BLOCKED_REGIONS: &'static [&'static str] = &[];
     /// Web search and fetch tools - global toggle
     pub const WEB_SEARCH_ENABLED: bool = true;
 

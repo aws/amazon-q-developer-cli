@@ -19,6 +19,10 @@
         {
           "type": "added",
           "description": "Web Search and Web Fetch tools for accessing current information from the web"
+        },
+        {
+          "type": "added",
+          "description": "Kiro CLI automatically migrates some of your configurations from .amazonq to .kiro. Read the details at kiro.dev/cli-upgrade"
         }
       ]
     },
