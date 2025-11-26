@@ -57,7 +57,26 @@ impl WebSearch {
     }
 
     pub async fn invoke(&self, _os: &Os, updates: impl Write) -> Result<InvokeOutput> {
-        let search_results = self.call_invoke_mcp().await?;
+        // Catch any panics and convert to Result
+        let search_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| async { self.call_invoke_mcp().await }));
+
+        let search_results = match search_result {
+            Ok(future) => future.await?,
+            Err(panic_err) => {
+                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic occurred".to_string()
+                };
+                return Err(eyre::eyre!(
+                    "Tool execution panicked: {}. Please try rephrasing your search query or use a different approach.",
+                    panic_msg
+                ));
+            },
+        };
 
         let result_count = search_results
             .get("results")

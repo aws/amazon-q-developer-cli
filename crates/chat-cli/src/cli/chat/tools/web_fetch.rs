@@ -81,7 +81,27 @@ impl WebFetch {
     }
 
     pub async fn invoke(&self, _os: &Os, updates: impl Write) -> Result<InvokeOutput> {
-        let content = self.fetch_url_content().await?;
+        // Catch any panics and convert to Result
+        let fetch_result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| async {
+            self.fetch_url_content().await
+        }));
+
+        let content = match fetch_result {
+            Ok(future) => future.await?,
+            Err(panic_err) => {
+                let panic_msg = if let Some(s) = panic_err.downcast_ref::<&str>() {
+                    (*s).to_string()
+                } else if let Some(s) = panic_err.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic occurred".to_string()
+                };
+                return Err(eyre::eyre!(
+                    "Tool execution panicked: {}. Please try a different mode (e.g., 'selective' or 'full' instead of 'truncated') or a different URL.",
+                    panic_msg
+                ));
+            },
+        };
 
         let content_size = content.len();
         let mode_desc = match self.mode {
@@ -177,7 +197,7 @@ impl WebFetch {
 
         match self.mode {
             FetchMode::Full => Ok(cleaned),
-            FetchMode::Truncated => Ok(Self::truncate_content(&cleaned, MAX_TRUNCATE_CHARS)),
+            FetchMode::Truncated => Self::truncate_content(&cleaned, MAX_TRUNCATE_CHARS),
             FetchMode::Selective => Ok(self.extract_snippets(&cleaned)),
         }
     }
@@ -187,15 +207,15 @@ impl WebFetch {
         html2text::from_read(html.as_bytes(), usize::MAX)
     }
 
-    fn truncate_content(text: &str, max_chars: usize) -> String {
-        if text.len() > max_chars {
-            format!(
-                "{}[Content truncated - showing first {} characters]",
-                &text[..max_chars],
-                max_chars
-            )
+    fn truncate_content(text: &str, max_chars: usize) -> Result<String> {
+        let char_count = text.chars().count();
+        if char_count > max_chars {
+            let truncated: String = text.chars().take(max_chars).collect();
+            Ok(format!(
+                "{truncated}[Content truncated - showing first {max_chars} characters]"
+            ))
         } else {
-            text.to_string()
+            Ok(text.to_string())
         }
     }
 
