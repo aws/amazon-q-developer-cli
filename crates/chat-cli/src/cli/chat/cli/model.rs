@@ -140,22 +140,13 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             };
 
             if let Some(desc) = description {
-                if desc.to_lowercase().contains("experimental") {
-                    format!(
-                        "{display_name}{}{} {}",
-                        current_marker.as_deref().unwrap_or(""),
-                        rate_info.as_deref().unwrap_or(""),
-                        StyledText::secondary("-- experimental")
-                    )
-                } else {
-                    format!(
-                        "{display_name}{}{} {} {}",
-                        current_marker.as_deref().unwrap_or(""),
-                        rate_info.as_deref().unwrap_or(""),
-                        StyledText::secondary("|"),
-                        StyledText::secondary(desc)
-                    )
-                }
+                format!(
+                    "{display_name}{}{} {} {}",
+                    current_marker.as_deref().unwrap_or(""),
+                    rate_info.as_deref().unwrap_or(""),
+                    StyledText::secondary("|"),
+                    StyledText::secondary(desc)
+                )
             } else {
                 format!(
                     "{display_name}{}{}",
