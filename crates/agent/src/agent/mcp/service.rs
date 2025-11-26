@@ -110,7 +110,7 @@ impl McpService {
                     #[cfg(not(windows))]
                     cmd.process_group(0);
                 });
-                let (process, stderr) = TokioChildProcess::builder(cmd).stderr(Stdio::piped()).spawn().unwrap();
+                let (process, stderr) = TokioChildProcess::builder(cmd).stderr(Stdio::piped()).spawn()?;
                 let server_name = self.server_name.clone();
 
                 let start_time = Instant::now();
