@@ -366,8 +366,10 @@ impl<'a> SubagentIndicator<'a> {
 
             let mut reader = crossterm::event::EventStream::new();
 
-            let render_interval = tokio::time::Duration::from_millis(250);
+            // 30 fps
+            let render_interval = tokio::time::Duration::from_millis(1000 / 30);
             let mut sleep_until = tokio::time::Instant::now() + render_interval;
+            let mut time_spinner_last_rotated = std::time::Instant::now();
 
             loop {
                 let crossterm_event = reader.next().fuse();
@@ -456,6 +458,7 @@ impl<'a> SubagentIndicator<'a> {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
                                     agent_info.pending_tool_approval.replace(inner.tool_call_id);
+                                    agent_info.convo.push(agent_info.msg.clone());
                                 }
                             },
                             UiEvent::MetaEvent { agent_id, inner: meta_event } => {
@@ -529,6 +532,13 @@ impl<'a> SubagentIndicator<'a> {
                         terminal.draw(|f| {
                             let mut current_start_row = start_row;
 
+                            let should_rotate_spinner = if time_spinner_last_rotated.elapsed().as_millis() >= 250 {
+                                time_spinner_last_rotated = std::time::Instant::now();
+                                true
+                            } else {
+                                false
+                            };
+
                             for (agent_id, agent_info) in agents.iter_mut() {
                                 let lines = agent_info.lines.drain(0..).collect::<Vec<_>>();
                                 let normal_color = if focused_agent.as_ref().is_some_and(|id| id == agent_id) {
@@ -556,7 +566,9 @@ impl<'a> SubagentIndicator<'a> {
                                 } else if requires_attention {
                                     SubagentStatus::Attention
                                 } else {
-                                    agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
+                                    if should_rotate_spinner {
+                                        agent_info.spinner_idx = (agent_info.spinner_idx + 1) % Self::SPINNERS.len();
+                                    }
                                     SubagentStatus::Running(Self::SPINNERS[agent_info.spinner_idx])
                                 };
 
