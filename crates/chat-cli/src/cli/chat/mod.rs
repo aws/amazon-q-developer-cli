@@ -2815,6 +2815,16 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
+        // Check if we should proactively compact at 98% token usage
+        if self.conversation.should_compact_proactively(98) {
+            warn!("Token usage at 98% threshold, triggering proactive compaction");
+            return Ok(ChatState::CompactHistory {
+                prompt: None,
+                show_summary: false,
+                strategy: CompactStrategy::default(),
+            });
+        }
+
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);

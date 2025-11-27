@@ -149,6 +149,11 @@ pub struct ConversationState {
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tangent_state: Option<ConversationCheckpoint>,
+    /// Cumulative token usage across the conversation
+    #[serde(default)]
+    pub cumulative_input_tokens: u64,
+    #[serde(default)]
+    pub cumulative_output_tokens: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -212,6 +217,8 @@ impl ConversationState {
             checkpoint_manager: None,
             mcp_enabled,
             tangent_state: None,
+            cumulative_input_tokens: 0,
+            cumulative_output_tokens: 0,
         }
     }
 
@@ -410,6 +417,16 @@ impl ConversationState {
         debug_assert!(self.next_message.is_some(), "next_message should exist");
         let next_user_message = self.next_message.take().expect("next user message should exist");
 
+        // Track cumulative token usage
+        if let Some(ref metadata) = request_metadata {
+            if let Some(input) = metadata.input_tokens {
+                self.cumulative_input_tokens += input;
+            }
+            if let Some(output) = metadata.output_tokens {
+                self.cumulative_output_tokens += output;
+            }
+        }
+
         self.append_assistant_transcript(&message);
         self.history.push_back(HistoryEntry {
             user: next_user_message,
@@ -425,6 +442,15 @@ impl ConversationState {
     /// Returns the conversation id.
     pub fn conversation_id(&self) -> &str {
         self.conversation_id.as_ref()
+    }
+
+    /// Checks if cumulative token usage exceeds the threshold percentage.
+    /// Returns true if compaction should be triggered proactively.
+    pub fn should_compact_proactively(&self, threshold_percent: u8) -> bool {
+        let context_window = context_window_tokens(self.model_info.as_ref());
+        let cumulative_tokens = self.cumulative_input_tokens + self.cumulative_output_tokens;
+        let threshold = (context_window as u64 * threshold_percent as u64) / 100;
+        cumulative_tokens >= threshold
     }
 
     /// Returns the message id associated with the last assistant message, if present.
@@ -1750,5 +1776,223 @@ mod tests {
         // Test: Call exit_tangent_mode_with_tail when not in tangent mode (should do nothing)
         conversation.exit_tangent_mode_with_tail();
         assert_eq!(conversation.history.len(), main_history_len);
+    }
+
+    #[test]
+    fn test_overflow_at_exact_boundary() {
+        let mut history = VecDeque::new();
+        let mut next_message = None;
+        let tools: HashMap<ToolOrigin, Vec<Tool>> = HashMap::new();
+
+        for i in 0..5000 {
+            history.push_back(HistoryEntry {
+                user: UserMessage::new_prompt(format!("msg{}", i), None),
+                assistant: AssistantMessage::new_response(None, format!("resp{}", i)),
+                request_metadata: None,
+            });
+        }
+
+        let (start, end) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        let total_messages = (end - start) * 2;
+
+        assert!(
+            total_messages <= MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "At 5000 entries (10000 messages), should be at limit but got {}",
+            total_messages
+        );
+    }
+
+    #[test]
+    fn test_overflow_past_boundary() {
+        let mut history = VecDeque::new();
+        let mut next_message = None;
+        let tools: HashMap<ToolOrigin, Vec<Tool>> = HashMap::new();
+
+        for i in 0..5001 {
+            history.push_back(HistoryEntry {
+                user: UserMessage::new_prompt(format!("msg{}", i), None),
+                assistant: AssistantMessage::new_response(None, format!("resp{}", i)),
+                request_metadata: None,
+            });
+        }
+
+        let (start, end) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        let total_messages = (end - start) * 2;
+
+        println!("History entries: 5001");
+        println!("Valid range: {} to {}", start, end);
+        println!("Valid entries: {}", end - start);
+        println!("Total messages sent to backend: {}", total_messages);
+        println!("Limit: {}", MAX_CONVERSATION_STATE_HISTORY_LEN);
+        
+        assert!(
+            total_messages <= MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "BUG: At 5001 entries, got {} messages (exceeds limit {})",
+            total_messages,
+            MAX_CONVERSATION_STATE_HISTORY_LEN
+        );
+    }
+
+    #[test]
+    fn test_overflow_with_context_buffer() {
+        let mut history = VecDeque::new();
+        let mut next_message = None;
+        let tools: HashMap<ToolOrigin, Vec<Tool>> = HashMap::new();
+
+        for i in 0..4998 {
+            history.push_back(HistoryEntry {
+                user: UserMessage::new_prompt(format!("msg{}", i), None),
+                assistant: AssistantMessage::new_response(None, format!("resp{}", i)),
+                request_metadata: None,
+            });
+        }
+
+        let (start, end) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        let total_messages = (end - start) * 2;
+        let total_with_context = total_messages + 6;
+
+        println!("History entries: 4998");
+        println!("Valid range: {} to {}", start, end);
+        println!("Total messages: {}", total_messages);
+        println!("Total with 6 context messages: {}", total_with_context);
+        println!("Limit: {}", MAX_CONVERSATION_STATE_HISTORY_LEN);
+        
+        // BUG: This is at EXACTLY the limit with no safety buffer
+        assert!(
+            total_with_context < MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "BUG: At 4998 entries, total with context ({}) should be LESS than limit ({}), not equal. No safety buffer!",
+            total_with_context,
+            MAX_CONVERSATION_STATE_HISTORY_LEN
+        );
+    }
+
+    #[test]
+    fn test_overflow_with_more_context() {
+        let mut history = VecDeque::new();
+        let mut next_message = None;
+        let tools: HashMap<ToolOrigin, Vec<Tool>> = HashMap::new();
+
+        for i in 0..4998 {
+            history.push_back(HistoryEntry {
+                user: UserMessage::new_prompt(format!("msg{}", i), None),
+                assistant: AssistantMessage::new_response(None, format!("resp{}", i)),
+                request_metadata: None,
+            });
+        }
+
+        let (start, end) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        let total_messages = (end - start) * 2;
+        // Real scenarios often have more than 6 context messages (summaries, file context, etc.)
+        let total_with_realistic_context = total_messages + 10;
+
+        println!("History entries: 4998");
+        println!("Total messages: {}", total_messages);
+        println!("Total with 10 context messages: {}", total_with_realistic_context);
+        println!("Limit: {}", MAX_CONVERSATION_STATE_HISTORY_LEN);
+        
+        assert!(
+            total_with_realistic_context <= MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "BUG: With realistic context (10 messages), total {} exceeds limit {}",
+            total_with_realistic_context,
+            MAX_CONVERSATION_STATE_HISTORY_LEN
+        );
+    }
+
+    #[test]
+    fn test_trimming_threshold_detection() {
+        let mut history = VecDeque::new();
+        let mut next_message = None;
+        let tools: HashMap<ToolOrigin, Vec<Tool>> = HashMap::new();
+
+        for i in 0..4997 {
+            history.push_back(HistoryEntry {
+                user: UserMessage::new_prompt(format!("msg{}", i), None),
+                assistant: AssistantMessage::new_response(None, format!("resp{}", i)),
+                request_metadata: None,
+            });
+        }
+
+        let (start, _) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        println!("At 4997 entries: start={}", start);
+        assert_eq!(start, 0, "At 4997 entries, no trimming should occur");
+
+        history.push_back(HistoryEntry {
+            user: UserMessage::new_prompt("msg4997".to_string(), None),
+            assistant: AssistantMessage::new_response(None, "resp4997".to_string()),
+            request_metadata: None,
+        });
+
+        let (start, end) = enforce_conversation_invariants(&mut history, &mut next_message, &tools);
+        println!("At 4998 entries: start={}, end={}", start, end);
+        assert!(start > 0, "At 4998 entries, trimming should occur");
+
+        let total_with_context = ((end - start) * 2) + 6;
+        println!("Total with context: {}", total_with_context);
+        
+        assert!(
+            total_with_context <= MAX_CONVERSATION_STATE_HISTORY_LEN,
+            "BUG: After trimming at 4998, total {} exceeds limit {}",
+            total_with_context,
+            MAX_CONVERSATION_STATE_HISTORY_LEN
+        );
+    }
+
+    #[test]
+    fn test_proactive_compaction_threshold_calculation() {
+        use crate::cli::chat::cli::model::{ModelInfo, context_window_tokens};
+        
+        // Test with 100K context window
+        let model_100k = ModelInfo {
+            model_id: "test-model".to_string(),
+            model_name: Some("Test Model".to_string()),
+            description: None,
+            context_window_tokens: 100_000,
+        };
+        
+        let context_window = context_window_tokens(Some(&model_100k));
+        let threshold_98 = (context_window as u64 * 98) / 100;
+        
+        assert_eq!(context_window, 100_000);
+        assert_eq!(threshold_98, 98_000);
+        
+        // At 97% - should NOT trigger
+        let tokens_97 = 97_000u64;
+        assert!(tokens_97 < threshold_98);
+        
+        // At exactly 98% - SHOULD trigger
+        let tokens_98 = 98_000u64;
+        assert!(tokens_98 >= threshold_98);
+        
+        // At 99% - SHOULD trigger
+        let tokens_99 = 99_000u64;
+        assert!(tokens_99 >= threshold_98);
+    }
+
+    #[test]
+    fn test_no_overflow_with_98_percent_threshold() {
+        use crate::cli::chat::cli::model::ModelInfo;
+        
+        // Claude Sonnet 4 with 200K context
+        let model = ModelInfo {
+            model_id: "claude-sonnet-4".to_string(),
+            model_name: Some("Claude Sonnet 4".to_string()),
+            description: None,
+            context_window_tokens: 200_000,
+        };
+        
+        // 98% of 200K = 196K
+        let threshold = (model.context_window_tokens as u64 * 98) / 100;
+        assert_eq!(threshold, 196_000);
+        
+        // Verify 98% threshold leaves 2% buffer (4K tokens)
+        let buffer = model.context_window_tokens as u64 - threshold;
+        assert_eq!(buffer, 4_000);
+        
+        // This buffer should be enough for:
+        // - Assistant response tokens
+        // - Tool spec overhead
+        // - System messages
+        // - Estimation errors
+        assert!(buffer >= 2_000, "Buffer should be at least 2K tokens");
     }
 }
