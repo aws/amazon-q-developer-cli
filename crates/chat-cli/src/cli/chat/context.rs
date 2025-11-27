@@ -250,12 +250,13 @@ impl ContextManager {
         os: &crate::os::Os,
         prompt: Option<&str>,
         tool_context: Option<crate::cli::chat::cli::hooks::ToolContext>,
+        ctrlc_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut hooks = self.hooks.clone();
         hooks.retain(|t, _| *t == trigger);
         let cwd = os.env.current_dir()?.to_string_lossy().to_string();
         self.hook_executor
-            .run_hooks(hooks, output, &cwd, prompt, tool_context)
+            .run_hooks(hooks, output, &cwd, prompt, tool_context, ctrlc_rx)
             .await
     }
 }

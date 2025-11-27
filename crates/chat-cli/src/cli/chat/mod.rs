@@ -22,6 +22,8 @@ mod parser;
 mod prompt;
 mod prompt_parser;
 pub mod server_messenger;
+#[cfg(test)]
+mod test_blocking;
 use crate::cli::chat::checkpoint::CHECKPOINT_MESSAGE_MAX_LENGTH;
 use crate::constants::ui_text;
 #[cfg(unix)]
@@ -783,6 +785,7 @@ impl ChatSession {
             loop {
                 match ctrl_c().await {
                     Ok(_) => {
+                        warn!("🔴 CTRL+C SIGNAL RECEIVED - broadcasting to {} subscribers", ctrlc_tx.receiver_count());
                         let _ = ctrlc_tx
                             .send(())
                             .map_err(|err| error!(?err, "failed to send ctrlc to broadcast channel"));
@@ -827,6 +830,7 @@ impl ChatSession {
         let mut ctrl_c_stream = self.ctrlc_rx.resubscribe();
         let result = match self.inner.take().expect("state must always be Some") {
             ChatState::PromptUser { skip_printing_tools } => {
+                warn!("🟡 Entering PromptUser state");
                 match (self.interactive, self.tool_uses.is_empty()) {
                     (false, true) => {
                         self.inner = Some(ChatState::Exit);
@@ -843,7 +847,10 @@ impl ChatSession {
             ChatState::HandleInput { input } => {
                 tokio::select! {
                     res = self.handle_input(os, input) => res,
-                    Ok(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: Some(self.tool_uses.clone()) })
+                    Ok(_) = ctrl_c_stream.recv() => {
+                        warn!("🔴 CTRL+C caught in HandleInput state");
+                        Err(ChatError::Interrupted { tool_uses: Some(self.tool_uses.clone()) })
+                    }
                 }
             },
             ChatState::CompactHistory {
@@ -858,7 +865,10 @@ impl ChatSession {
                 let tool_uses_clone = self.tool_uses.clone();
                 tokio::select! {
                     res = self.tool_use_execute(os) => res,
-                    Ok(_) = ctrl_c_stream.recv() => Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
+                    Ok(_) = ctrl_c_stream.recv() => {
+                        warn!("🔴 CTRL+C caught in ExecuteTools state");
+                        Err(ChatError::Interrupted { tool_uses: Some(tool_uses_clone) })
+                    }
                 }
             },
             ChatState::ValidateTools { tool_uses } => {
@@ -874,6 +884,7 @@ impl ChatSession {
                 tokio::select! {
                     res = self.handle_response(os, conversation_state, request_metadata_clone) => res,
                     Ok(_) = ctrl_c_stream.recv() => {
+                        warn!("🔴 CTRL+C caught in HandleResponseStream state");
                         debug!(?request_metadata, "ctrlc received");
                         // Wait for handle_response to finish handling the ctrlc.
                         tokio::time::sleep(Duration::from_millis(5)).await;
@@ -949,7 +960,7 @@ impl ChatSession {
                             .abandon_tool_use(tool_uses, "The user interrupted the tool execution.".to_string());
                         let _ = self
                             .conversation
-                            .as_sendable_conversation_state(os, &mut self.stderr, false)
+                            .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                             .await?;
                         self.conversation.push_assistant_message(
                             os,
@@ -1767,7 +1778,7 @@ impl ChatSession {
         if should_retry {
             Ok(ChatState::HandleResponseStream(
                 self.conversation
-                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                     .await?,
             ))
         } else {
@@ -2112,13 +2123,13 @@ impl ChatSession {
             }
         }
 
-        self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
+        self.conversation.append_user_transcript(&user_input);
         let input = user_input.trim();
 
         // handle image path
@@ -2347,7 +2358,7 @@ impl ChatSession {
 
             let conv_state = self
                 .conversation
-                .as_sendable_conversation_state(os, &mut self.stderr, true)
+                .as_sendable_conversation_state(os, &mut self.stderr, true, self.ctrlc_rx.resubscribe())
                 .await?;
             self.send_tool_use_telemetry(os).await;
 
@@ -2767,6 +2778,7 @@ impl ChatSession {
                             os,
                             None,
                             Some(tool_context),
+                            self.ctrlc_rx.resubscribe(),
                         )
                         .await;
                 }
@@ -2797,7 +2809,7 @@ impl ChatSession {
         self.send_tool_use_telemetry(os).await;
         return Ok(ChatState::HandleResponseStream(
             self.conversation
-                .as_sendable_conversation_state(os, &mut self.stderr, false)
+                .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                 .await?,
         ));
     }
@@ -2815,6 +2827,16 @@ impl ChatSession {
         state: crate::api_client::model::ConversationState,
         request_metadata_lock: Arc<Mutex<Option<RequestMetadata>>>,
     ) -> Result<ChatState, ChatError> {
+        // Check if we should proactively compact at 98% token usage
+        if self.conversation.should_compact_proactively(98) {
+            warn!("Token usage at 98% threshold, triggering proactive compaction");
+            return Ok(ChatState::CompactHistory {
+                prompt: None,
+                show_summary: false,
+                strategy: CompactStrategy::default(),
+            });
+        }
+
         let mut rx = self.send_message(os, state, request_metadata_lock, None).await?;
 
         let request_id = rx.request_id().map(String::from);
@@ -2964,7 +2986,7 @@ impl ChatSession {
                             self.send_tool_use_telemetry(os).await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                                     .await?,
                             ));
                         },
@@ -3001,7 +3023,7 @@ impl ChatSession {
                             self.send_tool_use_telemetry(os).await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                                     .await?,
                             ));
                         },
@@ -3051,7 +3073,7 @@ impl ChatSession {
                             self.send_tool_use_telemetry(os).await;
                             return Ok(ChatState::HandleResponseStream(
                                 self.conversation
-                                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                                     .await?,
                             ));
                         },
@@ -3256,6 +3278,7 @@ impl ChatSession {
                         os,
                         None,
                         None,
+                        self.ctrlc_rx.resubscribe(),
                     )
                     .await;
             }
@@ -3366,7 +3389,7 @@ impl ChatSession {
 
             return Ok(ChatState::HandleResponseStream(
                 self.conversation
-                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                     .await?,
             ));
         }
@@ -3393,6 +3416,7 @@ impl ChatSession {
                         os,
                         None, // prompt
                         Some(tool_context),
+                        self.ctrlc_rx.resubscribe(),
                     )
                     .await?;
 
@@ -3437,7 +3461,7 @@ impl ChatSession {
             self.conversation.add_tool_results(tool_results);
             return Ok(ChatState::HandleResponseStream(
                 self.conversation
-                    .as_sendable_conversation_state(os, &mut self.stderr, false)
+                    .as_sendable_conversation_state(os, &mut self.stderr, false, self.ctrlc_rx.resubscribe())
                     .await?,
             ));
         }
@@ -3472,7 +3496,7 @@ impl ChatSession {
 
         Ok(ChatState::HandleResponseStream(
             self.conversation
-                .as_sendable_conversation_state(os, &mut self.stderr, true)
+                .as_sendable_conversation_state(os, &mut self.stderr, true, self.ctrlc_rx.resubscribe())
                 .await?,
         ))
     }
@@ -3561,16 +3585,20 @@ impl ChatSession {
 
     /// Helper function to read user input with a prompt and Ctrl+C handling
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
+        warn!("🟢 Entering read_user_input, about to call rustyline");
         let mut ctrl_c = false;
         loop {
+            warn!("🟢 Calling input_source.read_line()...");
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
+                    warn!("🟢 Got input: {:?}", line);
                     if line.trim().is_empty() {
                         continue; // Reprompt if the input is empty
                     }
                     return Some(line);
                 },
                 (Ok(None), false) => {
+                    warn!("🟢 Got None (Ctrl+C or Ctrl+D), ctrl_c={}", ctrl_c);
                     if exit_on_single_ctrl_c {
                         return None;
                     }
@@ -3584,8 +3612,14 @@ impl ChatSession {
                     .unwrap_or_default();
                     ctrl_c = true;
                 },
-                (Ok(None), true) => return None, // Exit if Ctrl+C was pressed twice
-                (Err(_), _) => return None,
+                (Ok(None), true) => {
+                    warn!("🟢 Got None again, exiting");
+                    return None;
+                },
+                (Err(e), _) => {
+                    warn!("🟢 Got error: {:?}", e);
+                    return None;
+                },
             }
         }
     }
@@ -4695,5 +4729,53 @@ mod tests {
             let actual = does_input_reference_file(input).is_some();
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
+    }
+
+    #[tokio::test]
+    async fn test_transcript_appended_before_sanitization() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            ["Response"],
+        ]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        // Input with a hidden unicode character that should be sanitized
+        let input_with_hidden_char = format!("test{}", '\u{200B}'); // Zero-width space
+
+        let mut session = ChatSession::new(
+            &mut os,
+            "test_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![
+                input_with_hidden_char.clone(),
+                "exit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        session.spawn(&mut os).await.unwrap();
+
+        // Check transcript - the hidden character should NOT be in the transcript
+        // because sanitization should happen BEFORE appending to transcript
+        let transcript = &session.conversation.transcript;
+        let user_msg = transcript.iter().find(|msg| msg.starts_with("> test")).unwrap();
+        
+        // This will FAIL with current code because transcript is appended before sanitization
+        assert!(!user_msg.contains('\u{200B}'), 
+            "Transcript should not contain hidden unicode characters. Current behavior: transcript is appended BEFORE sanitization");
     }
 }

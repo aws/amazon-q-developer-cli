@@ -569,6 +569,9 @@ pub enum ChatResponseStream {
         conversation_id: Option<String>,
         utterance_id: Option<String>,
     },
+    MetadataEvent {
+        usage: Option<MetadataUsage>,
+    },
     SupplementaryWebLinksEvent(()),
     ToolUseEvent {
         tool_use_id: String,
@@ -579,6 +582,12 @@ pub enum ChatResponseStream {
 
     #[non_exhaustive]
     Unknown,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MetadataUsage {
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
 }
 
 impl ChatResponseStream {
@@ -596,6 +605,7 @@ impl ChatResponseStream {
             ChatResponseStream::IntentsEvent(_) => 0,
             ChatResponseStream::InvalidStateEvent { .. } => 0,
             ChatResponseStream::MessageMetadataEvent { .. } => 0,
+            ChatResponseStream::MetadataEvent { .. } => 0,
             ChatResponseStream::SupplementaryWebLinksEvent(_) => 0,
             ChatResponseStream::ToolUseEvent { input, .. } => input.as_ref().map(|s| s.len()).unwrap_or_default(),
             ChatResponseStream::Unknown => 0,
@@ -641,6 +651,14 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
             ) => ChatResponseStream::MessageMetadataEvent {
                 conversation_id,
                 utterance_id,
+            },
+            amzn_codewhisperer_streaming_client::types::ChatResponseStream::MetadataEvent(metadata) => {
+                ChatResponseStream::MetadataEvent {
+                    usage: metadata.token_usage.map(|u| MetadataUsage {
+                        input_tokens: Some(u.uncached_input_tokens as u64),
+                        output_tokens: Some(u.output_tokens as u64),
+                    }),
+                }
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_codewhisperer_streaming_client::types::ToolUseEvent {
@@ -697,6 +715,14 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
             ) => ChatResponseStream::MessageMetadataEvent {
                 conversation_id,
                 utterance_id,
+            },
+            amzn_qdeveloper_streaming_client::types::ChatResponseStream::MetadataEvent(metadata) => {
+                ChatResponseStream::MetadataEvent {
+                    usage: metadata.token_usage.map(|u| MetadataUsage {
+                        input_tokens: Some(u.uncached_input_tokens as u64),
+                        output_tokens: Some(u.output_tokens as u64),
+                    }),
+                }
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::ToolUseEvent(
                 amzn_qdeveloper_streaming_client::types::ToolUseEvent {

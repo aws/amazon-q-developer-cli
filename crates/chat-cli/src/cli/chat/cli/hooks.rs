@@ -18,6 +18,7 @@ use crossterm::{
     queue,
     terminal,
 };
+use tracing::warn;
 use eyre::{
     Result,
     eyre,
@@ -123,6 +124,7 @@ impl HookExecutor {
         cwd: &str,
         prompt: Option<&str>,
         tool_context: Option<ToolContext>,
+        mut ctrlc_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<Vec<((HookTrigger, Hook), HookOutput)>, ChatError> {
         let mut cached = vec![];
         let mut futures = FuturesUnordered::new();
@@ -163,7 +165,10 @@ impl HookExecutor {
         // Process results as they complete
         let mut results = vec![];
         let start_time = Instant::now();
-        while let Some((hook, result, duration)) = futures.next().await {
+        
+        tokio::select! {
+            res = async {
+                while let Some((hook, result, duration)) = futures.next().await {
             // If output is enabled, handle that first
             if let Some(spinner) = spinner.as_mut() {
                 spinner.stop();
@@ -238,6 +243,13 @@ impl HookExecutor {
                 )?;
             } else {
                 spinner = Some(Spinner::new(Spinners::Dots, spinner_text(complete, total)));
+            }
+        }
+                Ok::<(), std::io::Error>(())
+            } => { res?; },
+            Ok(_) = ctrlc_rx.recv() => {
+                warn!("🔴 CTRL+C caught in run_hooks, cancelling hook execution");
+                return Err(ChatError::Interrupted { tool_uses: None });
             }
         }
         drop(futures);

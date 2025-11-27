@@ -320,6 +320,9 @@ struct ResponseParser {
     received_response_size: usize,
     time_to_first_chunk: Option<Duration>,
     time_between_chunks: Vec<Duration>,
+    /// Token usage from MetadataEvent
+    input_tokens: Option<u64>,
+    output_tokens: Option<u64>,
 }
 
 impl ResponseParser {
@@ -353,6 +356,8 @@ impl ResponseParser {
             received_response_size: 0,
             time_to_first_chunk: None,
             time_between_chunks: Vec::new(),
+            input_tokens: None,
+            output_tokens: None,
             request_metadata,
             cancel_token,
         }
@@ -612,6 +617,12 @@ impl ResponseParser {
                         ChatResponseStream::ToolUseEvent { input, .. } => {
                             self.received_response_size += input.as_ref().map(String::len).unwrap_or_default();
                         },
+                        ChatResponseStream::MetadataEvent { usage } => {
+                            if let Some(u) = usage {
+                                self.input_tokens = u.input_tokens;
+                                self.output_tokens = u.output_tokens;
+                            }
+                        },
                         _ => {
                             warn!(?r, "received unexpected event from the response stream");
                         },
@@ -659,6 +670,8 @@ impl ResponseParser {
                 .map(|t| (t.id.clone(), t.name.clone()))
                 .collect::<_>(),
             model_id: self.model_id.clone(),
+            input_tokens: self.input_tokens,
+            output_tokens: self.output_tokens,
         }
     }
 }
@@ -710,6 +723,9 @@ pub struct RequestMetadata {
     pub model_id: Option<String>,
     /// Meta tags for the request.
     pub message_meta_tags: Vec<MessageMetaTag>,
+    /// Token usage for this request (input + output tokens)
+    pub input_tokens: Option<u64>,
+    pub output_tokens: Option<u64>,
 }
 
 fn system_time_to_unix_ms(time: SystemTime) -> u64 {
