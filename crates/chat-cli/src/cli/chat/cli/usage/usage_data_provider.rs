@@ -18,7 +18,7 @@ pub(super) async fn get_detailed_usage_data(
 
     let state = session
         .conversation
-        .backend_conversation_state(os, true, &mut std::io::stderr())
+        .backend_conversation_state(os, true, &mut std::io::stderr(), tokio::sync::broadcast::channel(1).1)
         .await?;
 
     let data = state.calculate_conversation_size();

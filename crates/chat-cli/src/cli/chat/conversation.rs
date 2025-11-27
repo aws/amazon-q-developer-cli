@@ -536,13 +536,14 @@ impl ConversationState {
         os: &Os,
         stderr: &mut impl Write,
         run_perprompt_hooks: bool,
+        ctrlc_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<FigConversationState, ChatError> {
         debug_assert!(self.next_message.is_some());
         self.enforce_conversation_invariants();
         self.history.drain(self.valid_history_range.1..);
         self.history.drain(..self.valid_history_range.0);
 
-        let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr).await?;
+        let context = self.backend_conversation_state(os, run_perprompt_hooks, stderr, ctrlc_rx).await?;
         if !context.dropped_context_files.is_empty() {
             execute!(
                 stderr,
@@ -598,6 +599,7 @@ impl ConversationState {
         os: &Os,
         run_perprompt_hooks: bool,
         output: &mut impl Write,
+        ctrlc_rx: tokio::sync::broadcast::Receiver<()>,
     ) -> Result<BackendConversationState<'_>, ChatError> {
         self.update_state(false).await;
         self.enforce_conversation_invariants();
@@ -613,6 +615,7 @@ impl ConversationState {
                     os,
                     user_prompt,
                     None, // tool_context
+                    ctrlc_rx.resubscribe(),
                 )
                 .await?;
             agent_spawn_context = format_hook_context(&agent_spawn, HookTrigger::AgentSpawn);
@@ -625,6 +628,7 @@ impl ConversationState {
                         os,
                         next_message.prompt(),
                         None, // tool_context
+                        ctrlc_rx.resubscribe(),
                     )
                     .await?;
                 if let Some(ctx) = format_hook_context(&per_prompt, HookTrigger::UserPromptSubmit) {
@@ -717,7 +721,7 @@ impl ConversationState {
             summary_content.push_str(CONTEXT_ENTRY_END_HEADER);
         }
 
-        let conv_state = self.backend_conversation_state(os, false, &mut vec![]).await?;
+        let conv_state = self.backend_conversation_state(os, false, &mut vec![], tokio::sync::broadcast::channel(1).1).await?;
         let mut summary_message = Some(UserMessage::new_prompt(summary_content.clone(), None));
 
         // Create the history according to the passed compact strategy.
@@ -898,7 +902,7 @@ Return only the JSON configuration, no additional text.",
     /// Calculate the total character count in the conversation
     pub async fn calculate_char_count(&mut self, os: &Os) -> Result<CharCount, ChatError> {
         Ok(self
-            .backend_conversation_state(os, false, &mut vec![])
+            .backend_conversation_state(os, false, &mut vec![], tokio::sync::broadcast::channel(1).1)
             .await?
             .char_count())
     }
