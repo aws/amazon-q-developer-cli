@@ -4706,4 +4706,52 @@ mod tests {
             assert_eq!(actual, *expected, "expected {} for input {}", expected, input);
         }
     }
+
+    #[tokio::test]
+    async fn test_transcript_appended_before_sanitization() {
+        let mut os = Os::new().await.unwrap();
+        os.client.set_mock_output(serde_json::json!([
+            ["Response"],
+        ]));
+
+        let agents = get_test_agents(&os).await;
+        let tool_manager = ToolManager::default();
+        let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
+            .expect("Tools failed to load");
+
+        // Input with a hidden unicode character that should be sanitized
+        let input_with_hidden_char = format!("test{}", '\u{200B}'); // Zero-width space
+
+        let mut session = ChatSession::new(
+            &mut os,
+            "test_conv_id",
+            agents,
+            None,
+            InputSource::new_mock(vec![
+                input_with_hidden_char.clone(),
+                "exit".to_string(),
+            ]),
+            false,
+            || Some(80),
+            tool_manager,
+            None,
+            tool_config,
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        session.spawn(&mut os).await.unwrap();
+
+        // Check transcript - the hidden character should NOT be in the transcript
+        // because sanitization should happen BEFORE appending to transcript
+        let transcript = &session.conversation.transcript;
+        let user_msg = transcript.iter().find(|msg| msg.starts_with("> test")).unwrap();
+        
+        // This will FAIL with current code because transcript is appended before sanitization
+        assert!(!user_msg.contains('\u{200B}'), 
+            "Transcript should not contain hidden unicode characters. Current behavior: transcript is appended BEFORE sanitization");
+    }
 }
