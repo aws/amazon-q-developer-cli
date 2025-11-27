@@ -2112,13 +2112,13 @@ impl ChatSession {
             }
         }
 
-        self.conversation.append_user_transcript(&user_input);
         Ok(ChatState::HandleInput { input: user_input })
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
+        self.conversation.append_user_transcript(&user_input);
         let input = user_input.trim();
 
         // handle image path
