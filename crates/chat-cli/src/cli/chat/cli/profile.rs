@@ -473,10 +473,15 @@ impl AgentSubcommand {
                         .collect::<Vec<_>>();
 
                     let name = {
+                        let default_idx = labels
+                            .iter()
+                            .position(|&name| name == session.conversation.agents.active_idx)
+                            .unwrap_or(0);
+
                         let idx = match Select::with_theme(&crate::util::dialoguer_theme())
                             .with_prompt("Choose one of the following agents")
                             .items(&labels)
-                            .default(1)
+                            .default(default_idx)
                             .interact_on_opt(&dialoguer::console::Term::stdout())
                         {
                             Ok(sel) => {

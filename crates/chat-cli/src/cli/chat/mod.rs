@@ -2064,6 +2064,16 @@ impl ChatSession {
             return Err(err);
         }
 
+        // Add the newly generated agent to the agents HashMap so it's immediately available for swapping
+        // Only insert if: (1) it's a local agent, or (2) it's global and no local agent with same name
+        // exists
+        if !is_global || !self.conversation.agents.agents.contains_key(agent_name) {
+            self.conversation
+                .agents
+                .agents
+                .insert(agent_name.to_string(), final_agent_config);
+        }
+
         execute!(
             self.stderr,
             StyledText::success_fg(),
