@@ -174,7 +174,7 @@ pub async fn get_available_models(os: &Os) -> Result<(Vec<ModelInfo>, ModelInfo)
     let endpoint = Endpoint::configured_value(&os.database);
     let region = endpoint.region().as_ref();
 
-    match os.client.get_available_models(region).await {
+    match os.client.as_ref().unwrap().get_available_models(region).await {
         Ok(api_res) => {
             let models: Vec<ModelInfo> = api_res.models.iter().map(ModelInfo::from_api_model).collect();
             let default_model = ModelInfo::from_api_model(&api_res.default_model);
