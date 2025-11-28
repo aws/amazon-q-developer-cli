@@ -33,6 +33,7 @@ use unicode_width::UnicodeWidthStr;
 
 use crate::cli::chat::cli::editor::open_editor_file;
 use crate::cli::chat::tool_manager::PromptBundle;
+use crate::cli::chat::util::truncate_safe_with_width;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -245,13 +246,19 @@ fn format_description(description: Option<&String>) -> String {
 /// Truncates a description string to the specified maximum length.
 ///
 /// If truncation is needed, adds "..." ellipsis and trims trailing whitespace
-/// to ensure clean formatting.
+/// to ensure clean formatting. Takes into account the display width of characters,
+/// where CJK characters are counted as 2 units wide.
 fn truncate_description(text: &str, max_length: usize) -> String {
-    if text.len() <= max_length {
+    let text_width = UnicodeWidthStr::width(text);
+    if text_width <= max_length {
         text.to_string()
     } else {
-        let truncated = &text[..max_length.saturating_sub(3)];
-        format!("{}...", truncated.trim_end())
+        let ellipsis = "...";
+        let ellipsis_width = UnicodeWidthStr::width(ellipsis);
+        let target_width = max_length.saturating_sub(ellipsis_width);
+
+        let truncated = truncate_safe_with_width(text, target_width);
+        format!("{}{}", truncated, ellipsis)
     }
 }
 
@@ -2228,10 +2235,8 @@ mod tests {
         let long =
             "This is a very long description that should be truncated because it exceeds the maximum length limit";
         let result = truncate_description(long, 40);
-        assert!(result.len() <= 40);
+        assert!(UnicodeWidthStr::width(result.as_str()) <= 40);
         assert!(result.ends_with("..."));
-        // Length may be less than 40 due to trim_end() removing trailing spaces
-        assert!(result.len() >= 37); // At least max_length - 3 chars
 
         // Test exact length
         let exact = "A".repeat(40);
@@ -2240,7 +2245,7 @@ mod tests {
         // Test very short max length
         let result = truncate_description("Hello world", 5);
         assert_eq!(result, "He...");
-        assert_eq!(result.len(), 5);
+        assert_eq!(UnicodeWidthStr::width(result.as_str()), 5);
 
         // Test space trimming before ellipsis
         let with_space = "Prompt to explain available tools and how";
@@ -2248,6 +2253,17 @@ mod tests {
         assert!(!result.contains(" ..."));
         assert!(result.ends_with("..."));
         assert_eq!(result, "Prompt to explain available tools and...");
+
+        // Test Korean text (CJK characters)
+        let korean_text = "사용자가 작성한 글의 어색한 표현이나 오타를 수정하고 싶을 때";
+        let result_korean = truncate_description(korean_text, 10);
+        assert!(result_korean.ends_with("..."));
+        assert!(UnicodeWidthStr::width(result_korean.as_str()) <= 10);
+
+        // Test mixed ASCII and Korean
+        let mixed_text = "Hello 안녕하세요 World";
+        let result_mixed = truncate_description(mixed_text, 15);
+        assert!(UnicodeWidthStr::width(result_mixed.as_str()) <= 15);
     }
 
     #[test]
