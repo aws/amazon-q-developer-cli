@@ -132,7 +132,7 @@ windows = { version = "0.61.1", features = ["Foundation", "Win32_System_ProcessS
 winnow = "=0.6.2"
 winreg = "0.55.0"
 schemars = "1.0.4"
-jsonschema = "0.30.0"
+jsonschema = "0.37.4"
 zip = "2.2.0"
 rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 chat-cli-ui = { path = "crates/chat-cli-ui" }
