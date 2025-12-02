@@ -1,6 +1,7 @@
 pub mod acp;
 pub mod rts;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use agent::AgentHandle;
@@ -65,6 +66,7 @@ use tracing::{
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::telemetry::TelemetryThread;
+use crate::util::paths::PathResolver;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
@@ -100,6 +102,10 @@ pub struct Subagent<'a> {
     pub embedded_user_msg: Option<&'a str>,
     // TODO: inherit this from the main session?
     pub dangerously_trust_all_tools: bool,
+    pub local_agent_path: &'a PathBuf,
+    pub global_agent_path: &'a PathBuf,
+    pub local_mcp_path: &'a PathBuf,
+    pub global_mcp_path: &'a PathBuf,
 }
 
 impl<'a> Subagent<'a> {
@@ -140,7 +146,7 @@ impl<'a> Subagent<'a> {
         };
 
         if let Some(name) = self.agent_name {
-            let (configs, _) = load_agents().await?;
+            let (configs, _) = load_agents(self.local_agent_path, self.global_agent_path).await?;
             if let Some(cfg) = configs.into_iter().find(|c| c.name() == name) {
                 snapshot.agent_config = cfg.config().clone();
             } else {
@@ -149,7 +155,14 @@ impl<'a> Subagent<'a> {
         };
 
         let mcp_manager_handle = McpManager::default().spawn();
-        let mut agent = agent::Agent::new(snapshot, model, mcp_manager_handle).await?;
+        let mut agent = agent::Agent::new(
+            snapshot,
+            Some(self.local_mcp_path),
+            Some(self.global_mcp_path),
+            model,
+            mcp_manager_handle,
+        )
+        .await?;
         agent.push_embedded_user_msg(SUBAGENT_EMBEDDED_USER_MSG);
         if let Some(msg) = self.embedded_user_msg {
             agent.push_embedded_user_msg(msg);
@@ -414,16 +427,6 @@ impl<'a> Subagent<'a> {
 ///
 /// * `queries` - A vector of tuples containing (agent_name, query_text) pairs. Each tuple
 ///   represents a subagent that will be spawned with the specified agent configuration and query.
-///
-/// # Example
-///
-/// ```no_run
-/// let queries = vec![
-///     ("agent1".to_string(), "What is the weather?".to_string()),
-///     ("agent2".to_string(), "Calculate 2+2".to_string()),
-/// ];
-/// subagent_widget_demo(queries);
-/// ```
 #[allow(dead_code)]
 pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -438,6 +441,12 @@ pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
 
 #[allow(dead_code)]
 async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Summary>> {
+    let os = Os::new().await.expect("failed to spawn os");
+    let resolver = PathResolver::new(&os);
+    let local_agent_path = resolver.workspace().agents_dir().expect("failed to retrieve path");
+    let global_agent_path = resolver.global().agents_dir().expect("failed to retrieve path");
+    let local_mcp_path = resolver.workspace().mcp_config().expect("failed to retrieve path");
+    let global_mcp_path = resolver.global().mcp_config().expect("failed to retrieve path");
     let subagents = queries
         .iter()
         .enumerate()
@@ -447,10 +456,13 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
             agent_name: Some(agent_name.as_str()),
             embedded_user_msg: None,
             dangerously_trust_all_tools: false,
+            local_agent_path: &local_agent_path,
+            global_agent_path: &global_agent_path,
+            local_mcp_path: &local_mcp_path,
+            global_mcp_path: &global_mcp_path,
         })
         .collect::<Vec<_>>();
 
-    let os = Os::new().await.expect("failed to spawn os");
     let stub_id = "";
     let (view_end, input_rx, control_end) = get_conduit();
     let subagent_indicator = SubagentIndicator::new(

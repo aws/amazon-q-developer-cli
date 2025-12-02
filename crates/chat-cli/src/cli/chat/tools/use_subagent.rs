@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::io::Write;
+use std::path::PathBuf;
 
 use agent::tools::summary::Summary;
 use chat_cli_ui::conduit::get_conduit;
@@ -24,6 +25,7 @@ use crate::cli::experiment::experiment_manager::{
 };
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
+use crate::util::paths::PathResolver;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct InvokeSubagent {
@@ -34,6 +36,35 @@ pub struct InvokeSubagent {
     /// Optional additional context that should be provided to the subagent to help it
     /// understand the task better
     relevant_context: Option<String>,
+}
+
+impl InvokeSubagent {
+    fn as_subagent<'a>(
+        &'a self,
+        id: u16,
+        local_agent_path: &'a PathBuf,
+        global_agent_path: &'a PathBuf,
+        local_mcp_path: &'a PathBuf,
+        global_mcp_path: &'a PathBuf,
+    ) -> Subagent<'a> {
+        let InvokeSubagent {
+            query,
+            agent_name,
+            relevant_context,
+        } = self;
+
+        Subagent {
+            id,
+            query: query.as_str(),
+            agent_name: agent_name.as_deref(),
+            embedded_user_msg: relevant_context.as_deref(),
+            dangerously_trust_all_tools: false,
+            local_agent_path,
+            global_agent_path,
+            local_mcp_path,
+            global_mcp_path,
+        }
+    }
 }
 
 /// A tool that allows the LLM to delegate tasks to a specialized subagent.
@@ -101,13 +132,22 @@ impl UseSubagent {
             },
             Self::InvokeSubagents { subagents, convo_id } => {
                 let (view_end, input_rx, control_end) = get_conduit();
+                let resolver = PathResolver::new(os);
+                let local_agent_path = resolver.workspace().agents_dir()?;
+                let global_agent_path = resolver.global().agents_dir()?;
+                let local_mcp_path = resolver.workspace().mcp_config()?;
+                let global_mcp_path = resolver.global().mcp_config()?;
                 let subagents = subagents
                     .iter()
                     .enumerate()
                     .map(|(id, invoke_subagent)| {
-                        let mut subagent: Subagent<'_> = invoke_subagent.into();
-                        subagent.id = id as u16;
-                        subagent
+                        invoke_subagent.as_subagent(
+                            id as u16,
+                            &local_agent_path,
+                            &global_agent_path,
+                            &local_mcp_path,
+                            &global_mcp_path,
+                        )
                     })
                     .collect::<Vec<_>>();
 
@@ -155,24 +195,6 @@ impl UseSubagent {
         _ = self;
         super::display_tool_use(tool, output)?;
         Ok(())
-    }
-}
-
-impl<'a> From<&'a InvokeSubagent> for Subagent<'a> {
-    fn from(value: &'a InvokeSubagent) -> Self {
-        let InvokeSubagent {
-            query,
-            agent_name,
-            relevant_context,
-        } = value;
-
-        Subagent {
-            id: 0_u16,
-            query: query.as_str(),
-            agent_name: agent_name.as_deref(),
-            embedded_user_msg: relevant_context.as_deref(),
-            dangerously_trust_all_tools: false,
-        }
     }
 }
 

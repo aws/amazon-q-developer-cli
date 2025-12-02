@@ -300,10 +300,14 @@ impl Agent {
     /// # Arguments
     ///
     /// * `snapshot` - Agent state to initialize with
+    /// * `local_mcp_path` - The path to workspace level mcp.json
+    /// * `global_mcp_path` - The path to global mcp.json
     /// * `model` - The backend implementation to use
     /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
     pub async fn new(
         snapshot: AgentSnapshot,
+        local_mcp_path: Option<&PathBuf>,
+        global_mcp_path: Option<&PathBuf>,
         model: Arc<dyn Model>,
         mcp_manager_handle: McpManagerHandle,
     ) -> eyre::Result<Agent> {
@@ -312,7 +316,8 @@ impl Agent {
         let (agent_event_tx, agent_event_rx) = broadcast::channel(1024);
 
         let agent_config = snapshot.agent_config;
-        let cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(&agent_config).await;
+        let cached_mcp_configs =
+            LoadedMcpServerConfigs::from_agent_config(&agent_config, local_mcp_path, global_mcp_path).await;
         let task_executor = TaskExecutor::new();
 
         Ok(Self {
