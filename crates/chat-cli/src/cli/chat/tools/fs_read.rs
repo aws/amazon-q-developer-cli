@@ -245,7 +245,7 @@ impl FsRead {
                                 // operation
                                 if !is_in_allowlist
                                     && !allow_read_only
-                                    && !paths.iter().any(|path| allow_set.is_match(path))
+                                    && !paths.iter().all(|path| allow_set.is_match(path))
                                 {
                                     ask = true;
                                 }
@@ -1569,5 +1569,45 @@ mod tests {
         .unwrap();
         let res = outside_tool.eval_perm(&os, &agent);
         assert!(matches!(res, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_image_multiple_paths_validation() {
+        let os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(PathBuf::from("/home/user"));
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: HashMap::new(),
+            ..Default::default()
+        };
+
+        // Test: One allowed path + one disallowed path should ASK
+        let mixed_paths = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [{
+                "image_paths": [
+                    "/home/user/allowed.png",
+                    "/tmp/secret.png"
+                ],
+                "mode": "Image"
+            }]
+        }))
+        .unwrap();
+        let res = mixed_paths.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Ask));
+
+        // Test: All allowed paths should ALLOW
+        let all_allowed = serde_json::from_value::<FsRead>(serde_json::json!({
+            "operations": [{
+                "image_paths": [
+                    "/home/user/image1.png",
+                    "/home/user/image2.png"
+                ],
+                "mode": "Image"
+            }]
+        }))
+        .unwrap();
+        let res = all_allowed.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
     }
 }
