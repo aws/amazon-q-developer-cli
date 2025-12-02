@@ -565,11 +565,7 @@ impl TelemetryClient {
         }
 
         // cw telemetry is only available with bearer token auth.
-        let codewhisperer_client = if crate::util::env_var::is_sigv4_enabled(&Env::new()) {
-            None
-        } else {
-            Some(ApiClient::new(env, fs, database, None).await?)
-        };
+        let codewhisperer_client = Some(ApiClient::new(env, fs, database, None).await?);
 
         Ok(Self {
             client_id: client_id(env, database, telemetry_enabled)?,

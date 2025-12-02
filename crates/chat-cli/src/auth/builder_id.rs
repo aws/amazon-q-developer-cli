@@ -60,11 +60,7 @@ use crate::database::{
     Database,
     Secret,
 };
-use crate::os::Env;
-use crate::util::env_var::{
-    is_integ_test,
-    is_sigv4_enabled,
-};
+use crate::util::env_var::is_integ_test;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum OAuthFlow {
@@ -590,12 +586,6 @@ pub async fn poll_create_token(
 }
 
 pub async fn is_builder_id_logged_in(database: &mut Database) -> bool {
-    // Check for BuilderId if not using Sigv4
-    if is_sigv4_enabled(&Env::new()) {
-        debug!("logged in using sigv4 credentials");
-        return true;
-    }
-
     match BuilderIdToken::load(database, None).await {
         Ok(Some(_)) => true,
         Ok(None) => {

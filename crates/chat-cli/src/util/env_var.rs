@@ -91,11 +91,6 @@ pub fn get_aws_region() -> Result<String, std::env::VarError> {
     Env::new().get(AWS_REGION)
 }
 
-/// Check if SigV4 authentication is enabled
-pub fn is_sigv4_enabled(env: &Env) -> bool {
-    env.get(AMAZON_Q_SIGV4).is_ok_and(|v| !v.is_empty())
-}
-
 /// Get all environment variables
 pub fn get_all_env_vars() -> std::env::Vars {
     std::env::vars()

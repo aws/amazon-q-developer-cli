@@ -1,4 +1,3 @@
-mod credentials;
 pub mod customization;
 mod delay_interceptor;
 mod endpoints;
@@ -30,12 +29,9 @@ use amzn_codewhisperer_streaming_client::config::endpoint::{
     Params,
     ResolveEndpoint,
 };
-use amzn_qdeveloper_streaming_client::Client as QDeveloperStreamingClient;
-use amzn_qdeveloper_streaming_client::types::Origin as QDeveloperOrigin;
 use aws_config::retry::RetryConfig;
 use aws_config::timeout::TimeoutConfig;
 use aws_credential_types::Credentials;
-use aws_credential_types::provider::ProvideCredentials;
 use aws_sdk_ssooidc::error::ProvideErrorMetadata;
 use aws_types::request_id::RequestId;
 use aws_types::sdk_config::StalledStreamProtectionConfig;
@@ -54,7 +50,6 @@ use tracing::{
     error,
 };
 
-use crate::api_client::credentials::CredentialsChain;
 use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
 use crate::api_client::model::{
     ChatResponseStream,
@@ -121,29 +116,6 @@ impl amzn_codewhisperer_client::config::endpoint::ResolveEndpoint for StaticCode
     }
 }
 
-#[derive(Debug)]
-struct StaticQDeveloperEndpointResolver {
-    url: String,
-}
-
-impl StaticQDeveloperEndpointResolver {
-    fn new(url: String) -> Self {
-        Self { url }
-    }
-}
-
-impl amzn_qdeveloper_streaming_client::config::endpoint::ResolveEndpoint for StaticQDeveloperEndpointResolver {
-    fn resolve_endpoint<'a>(
-        &'a self,
-        _params: &'a amzn_qdeveloper_streaming_client::config::endpoint::Params,
-    ) -> EndpointFuture<'a> {
-        use aws_smithy_types::endpoint::Endpoint;
-        let url = self.url.clone();
-        let endpoint = Endpoint::builder().url(url).build();
-        EndpointFuture::ready(Ok(endpoint))
-    }
-}
-
 // Opt out constants
 pub const X_AMZN_CODEWHISPERER_OPT_OUT_HEADER: &str = "x-amzn-codewhisperer-optout";
 
@@ -170,7 +142,6 @@ type ModelCache = Arc<RwLock<Option<ModelListResult>>>;
 pub struct ApiClient {
     client: CodewhispererClient,
     streaming_client: Option<CodewhispererStreamingClient>,
-    sigv4_streaming_client: Option<QDeveloperStreamingClient>,
     mock_client: Option<Arc<Mutex<std::vec::IntoIter<Vec<ChatResponseStream>>>>>,
     profile: Option<AuthProfile>,
     model_cache: ModelCache,
@@ -210,7 +181,6 @@ impl ApiClient {
             let mut this = Self {
                 client,
                 streaming_client: None,
-                sigv4_streaming_client: None,
                 mock_client: None,
                 profile: None,
                 model_cache: Arc::new(RwLock::new(None)),
@@ -223,53 +193,20 @@ impl ApiClient {
             return Ok(this);
         }
 
-        // If SIGV4_AUTH_ENABLED is true, use Q developer client
-        let mut streaming_client = None;
-        let mut sigv4_streaming_client = None;
-        match crate::util::env_var::is_sigv4_enabled(env) {
-            true => {
-                let credentials_chain = CredentialsChain::new().await;
-                if let Err(err) = credentials_chain.provide_credentials().await {
-                    return Err(ApiClientError::Credentials(err));
-                };
-
-                sigv4_streaming_client = Some(QDeveloperStreamingClient::from_conf(
-                    amzn_qdeveloper_streaming_client::config::Builder::from(
-                        &aws_config::defaults(behavior_version())
-                            .region(endpoint.region.clone())
-                            .credentials_provider(credentials_chain)
-                            .timeout_config(timeout_config(database))
-                            .retry_config(retry_config())
-                            .load()
-                            .await,
-                    )
-                    .http_client(crate::aws_common::http_client::client())
-                    .interceptor(OptOutInterceptor::new(database))
-                    .interceptor(UserAgentOverrideInterceptor::new())
-                    .interceptor(DelayTrackingInterceptor::new())
-                    .app_name(app_name())
-                    .endpoint_resolver(StaticQDeveloperEndpointResolver::new(endpoint.url().to_string()))
-                    .retry_classifier(retry_classifier::QCliRetryClassifier::new())
-                    .stalled_stream_protection(stalled_stream_protection_config())
-                    .build(),
-                ));
-            },
-            false => {
-                streaming_client = Some(CodewhispererStreamingClient::from_conf(
-                    amzn_codewhisperer_streaming_client::config::Builder::from(&bearer_sdk_config)
-                        .http_client(crate::aws_common::http_client::client())
-                        .interceptor(OptOutInterceptor::new(database))
-                        .interceptor(UserAgentOverrideInterceptor::new())
-                        .interceptor(DelayTrackingInterceptor::new())
-                        .bearer_token_resolver(UnifiedBearerResolver)
-                        .app_name(app_name())
-                        .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
-                        .retry_classifier(retry_classifier::QCliRetryClassifier::new())
-                        .stalled_stream_protection(stalled_stream_protection_config())
-                        .build(),
-                ));
-            },
-        }
+        // Use CodeWhisperer streaming client with bearer token
+        let streaming_client = Some(CodewhispererStreamingClient::from_conf(
+            amzn_codewhisperer_streaming_client::config::Builder::from(&bearer_sdk_config)
+                .http_client(crate::aws_common::http_client::client())
+                .interceptor(OptOutInterceptor::new(database))
+                .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(DelayTrackingInterceptor::new())
+                .bearer_token_resolver(UnifiedBearerResolver)
+                .app_name(app_name())
+                .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
+                .retry_classifier(retry_classifier::QCliRetryClassifier::new())
+                .stalled_stream_protection(stalled_stream_protection_config())
+                .build(),
+        ));
 
         // Check if using custom endpoint
         let use_profile = !Self::is_custom_endpoint(database);
@@ -289,7 +226,6 @@ impl ApiClient {
         Ok(Self {
             client,
             streaming_client,
-            sigv4_streaming_client,
             mock_client: None,
             profile,
             model_cache: Arc::new(RwLock::new(None)),
@@ -507,48 +443,6 @@ impl ApiClient {
                 .await
             {
                 Ok(response) => Ok(SendMessageOutput::Codewhisperer(response)),
-                Err(err) => {
-                    let request_id = err
-                        .as_service_error()
-                        .and_then(|err| err.meta().request_id())
-                        .map(|s| s.to_string());
-                    let status_code = err.raw_response().map(|res| res.status().as_u16());
-
-                    let body = err
-                        .raw_response()
-                        .and_then(|resp| resp.body().bytes())
-                        .unwrap_or_default();
-                    Err(ConverseStreamError::new(
-                        classify_error_kind(status_code, body, model_id_opt.as_deref(), &err),
-                        Some(err),
-                    )
-                    .set_request_id(request_id)
-                    .set_status_code(status_code))
-                },
-            }
-        } else if let Some(client) = &self.sigv4_streaming_client {
-            let conversation_state = amzn_qdeveloper_streaming_client::types::ConversationState::builder()
-                .set_conversation_id(conversation_id)
-                .current_message(amzn_qdeveloper_streaming_client::types::ChatMessage::UserInputMessage(
-                    user_input_message.into(),
-                ))
-                .chat_trigger_type(amzn_qdeveloper_streaming_client::types::ChatTriggerType::Manual)
-                .set_history(
-                    history
-                        .map(|v| v.into_iter().map(|i| i.try_into()).collect::<Result<Vec<_>, _>>())
-                        .transpose()?,
-                )
-                .build()
-                .expect("building conversation_state should not fail");
-
-            match client
-                .send_message()
-                .conversation_state(conversation_state)
-                .set_source(Some(QDeveloperOrigin::KiroCli))
-                .send()
-                .await
-            {
-                Ok(response) => Ok(SendMessageOutput::QDeveloper(response)),
                 Err(err) => {
                     let request_id = err
                         .as_service_error()

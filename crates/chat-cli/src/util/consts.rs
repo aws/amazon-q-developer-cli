@@ -121,9 +121,6 @@ pub mod env_var {
         /// Flag for running integration tests
         CLI_IS_INTEG_TEST = "Q_CLI_IS_INTEG_TEST",
 
-        /// Amazon Q SigV4 authentication
-        AMAZON_Q_SIGV4 = "AMAZON_Q_SIGV4",
-
         /// Amazon Q chat shell
         AMAZON_Q_CHAT_SHELL = "AMAZON_Q_CHAT_SHELL",
 

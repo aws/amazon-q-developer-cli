@@ -12,7 +12,6 @@ use amzn_consolas_client::operation::generate_recommendations::GenerateRecommend
 use amzn_consolas_client::operation::list_customizations::ListCustomizationsError;
 use amzn_qdeveloper_streaming_client::operation::send_message::SendMessageError as QDeveloperSendMessageError;
 use amzn_qdeveloper_streaming_client::types::error::ChatResponseStreamError as QDeveloperChatResponseStreamError;
-use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_ssooidc::error::ProvideErrorMetadata;
 use aws_smithy_runtime_api::client::orchestrator::HttpResponse;
 pub use aws_smithy_runtime_api::client::result::SdkError;
@@ -67,10 +66,6 @@ pub enum ApiClientError {
     #[error(transparent)]
     AuthError(#[from] AuthError),
 
-    // Credential errors
-    #[error("failed to load credentials: {}", .0)]
-    Credentials(CredentialsError),
-
     #[error(transparent)]
     ListAvailableModelsError(#[from] SdkError<ListAvailableModelsError, HttpResponse>),
 
@@ -96,7 +91,6 @@ impl ApiClientError {
             Self::CreateSubscriptionToken(e) => sdk_status_code(e),
             Self::SmithyBuild(_) => None,
             Self::AuthError(_) => None,
-            Self::Credentials(_e) => None,
             Self::ListAvailableModelsError(e) => sdk_status_code(e),
             Self::DefaultModelNotFound => None,
             Self::GetProfileError(e) => sdk_status_code(e),
@@ -120,7 +114,6 @@ impl ReasonCode for ApiClientError {
             Self::CreateSubscriptionToken(e) => sdk_error_code(e),
             Self::SmithyBuild(_) => "SmithyBuildError".to_string(),
             Self::AuthError(_) => "AuthError".to_string(),
-            Self::Credentials(_) => "CredentialsError".to_string(),
             Self::ListAvailableModelsError(e) => sdk_error_code(e),
             Self::DefaultModelNotFound => "DefaultModelNotFound".to_string(),
             Self::GetProfileError(e) => sdk_error_code(e),
@@ -265,7 +258,6 @@ mod tests {
                     response(),
                 ))),
             }),
-            ApiClientError::Credentials(CredentialsError::unhandled("<unhandled>")),
             ApiClientError::GenerateCompletions(SdkError::service_error(
                 GenerateCompletionsError::unhandled("<unhandled>"),
                 response(),
