@@ -37,6 +37,7 @@ const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "bat
 // TODO: we should perhaps composite this struct with an interface that we can use to mock the
 // actual cli with. That will allow us to more thoroughly test it.
 #[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "UseAwsRaw")]
 pub struct UseAws {
     pub service_name: String,
     pub operation_name: String,
@@ -44,6 +45,39 @@ pub struct UseAws {
     pub region: String,
     pub profile_name: Option<String>,
     pub label: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct UseAwsRaw {
+    pub service_name: String,
+    pub operation_name: String,
+    pub parameters: Option<HashMap<String, serde_json::Value>>,
+    pub region: String,
+    pub profile_name: Option<String>,
+    pub label: Option<String>,
+}
+
+impl TryFrom<UseAwsRaw> for UseAws {
+    type Error = String;
+
+    fn try_from(raw: UseAwsRaw) -> Result<Self, Self::Error> {
+        // Validate service_name doesn't start with "-" to prevent command injection
+        if raw.service_name.starts_with('-') {
+            return Err(format!(
+                "Invalid service_name '{}': AWS service names cannot start with '-'",
+                raw.service_name
+            ));
+        }
+
+        Ok(UseAws {
+            service_name: raw.service_name,
+            operation_name: raw.operation_name,
+            parameters: raw.parameters,
+            region: raw.region,
+            profile_name: raw.profile_name,
+            label: raw.label,
+        })
+    }
 }
 
 impl UseAws {

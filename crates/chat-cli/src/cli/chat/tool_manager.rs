@@ -876,7 +876,7 @@ impl ToolManager {
     }
 
     pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
-        let map_err = |parse_error| ToolResult {
+        let map_err = |parse_error: serde_json::Error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
                 "Failed to validate tool parameters: {parse_error}. The model has either suggested tool parameters which are incompatible with the existing tools, or has suggested one or more tool that does not exist in the list of known tools."

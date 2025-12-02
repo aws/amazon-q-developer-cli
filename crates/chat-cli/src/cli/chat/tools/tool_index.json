@@ -171,7 +171,8 @@
       "properties": {
         "service_name": {
           "type": "string",
-          "description": "The name of the AWS service. If you want to query s3, you should use s3api if possible."
+          "pattern": "^[^-].*",
+          "description": "The name of the AWS service. If you want to query s3, you should use s3api if possible. Must not start with a dash (-)."
         },
         "operation_name": {
           "type": "string",
