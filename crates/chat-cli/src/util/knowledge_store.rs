@@ -20,6 +20,37 @@ use crate::os::Os;
 use crate::util::paths;
 use crate::util::paths::PathResolver;
 
+/// Formats knowledge bases as a concise context string
+pub fn format_knowledge_bases_as_context(contexts: &[Arc<KnowledgeContext>]) -> String {
+    let mut output = String::from("Available Knowledge Bases:\n\n");
+    for ctx in contexts {
+        output.push_str(&format!(
+            "- {} (ID: {}, Type: {:?})\n",
+            ctx.name, ctx.id, ctx.embedding_type
+        ));
+        if let Some(path) = &ctx.source_path {
+            output.push_str(&format!("  Path: {path}\n"));
+        }
+        if !ctx.description.is_empty() {
+            output.push_str(&format!("  Description: {}\n", ctx.description));
+        }
+    }
+    output
+}
+
+/// Retrieves and formats available knowledge bases for context injection
+pub async fn get_available_knowledge_bases(os: &Os, agent: Option<&crate::cli::Agent>) -> Option<String> {
+    let store = KnowledgeStore::get_async_instance(os, agent).await.ok()?;
+    let store_guard = store.lock().await;
+    let contexts = store_guard.get_all().await.ok()?;
+
+    if contexts.is_empty() {
+        return None;
+    }
+
+    Some(format_knowledge_bases_as_context(&contexts))
+}
+
 /// Generate a unique identifier for an agent based on its path and name
 fn generate_agent_unique_id(agent: &crate::cli::Agent) -> String {
     use std::collections::hash_map::DefaultHasher;
@@ -367,7 +398,7 @@ impl KnowledgeStore {
     }
 
     /// Get all contexts from agent client
-    pub async fn get_all(&self) -> Result<Vec<KnowledgeContext>, String> {
+    pub async fn get_all(&self) -> Result<Vec<Arc<KnowledgeContext>>, String> {
         Ok(self.agent_client.get_contexts().await)
     }
 

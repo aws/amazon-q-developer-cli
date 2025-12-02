@@ -37,7 +37,7 @@ const DEFAULT_BM25_SCORE: f64 = 100.0;
 #[derive(Clone)]
 /// Context manager for handling contexts
 pub struct ContextManager {
-    contexts: Arc<RwLock<HashMap<ContextId, KnowledgeContext>>>,
+    contexts: Arc<RwLock<HashMap<ContextId, Arc<KnowledgeContext>>>>,
     volatile_contexts: VolatileContexts,
     bm25_contexts: BM25Contexts,
     base_dir: PathBuf,
@@ -48,9 +48,10 @@ impl ContextManager {
     pub async fn new(base_dir: &Path) -> Result<Self> {
         let contexts_file = base_dir.join("contexts.json");
         let persistent_contexts: HashMap<ContextId, KnowledgeContext> = utils::load_json_from_file(&contexts_file)?;
+        let arc_contexts = persistent_contexts.into_iter().map(|(k, v)| (k, Arc::new(v))).collect();
 
         Ok(Self {
-            contexts: Arc::new(RwLock::new(persistent_contexts)),
+            contexts: Arc::new(RwLock::new(arc_contexts)),
             volatile_contexts: Arc::new(RwLock::new(HashMap::new())),
             bm25_contexts: Arc::new(RwLock::new(HashMap::new())),
             base_dir: base_dir.to_path_buf(),
@@ -58,7 +59,7 @@ impl ContextManager {
     }
 
     /// Get all contexts
-    pub async fn get_contexts(&self) -> Vec<KnowledgeContext> {
+    pub async fn get_contexts(&self) -> Vec<Arc<KnowledgeContext>> {
         match tokio::time::timeout(Duration::from_secs(2), self.contexts.read()).await {
             Ok(contexts_guard) => contexts_guard.values().cloned().collect(),
             Err(_) => {
@@ -396,7 +397,7 @@ impl ContextManager {
     }
 
     /// Get context by path
-    pub async fn get_context_by_path(&self, path: &str) -> Option<KnowledgeContext> {
+    pub async fn get_context_by_path(&self, path: &str) -> Option<Arc<KnowledgeContext>> {
         let contexts = self.contexts.read().await;
         let canonical_input = PathBuf::from(path).canonicalize().ok();
 
@@ -425,7 +426,7 @@ impl ContextManager {
     }
 
     /// Get context by name
-    pub async fn get_context_by_name(&self, name: &str) -> Option<KnowledgeContext> {
+    pub async fn get_context_by_name(&self, name: &str) -> Option<Arc<KnowledgeContext>> {
         let contexts = self.contexts.read().await;
         contexts.values().find(|c| c.name == name).cloned()
     }
@@ -447,7 +448,7 @@ impl ContextManager {
         let persistent_contexts: HashMap<String, KnowledgeContext> = contexts
             .iter()
             .filter(|(_, ctx)| ctx.persistent)
-            .map(|(k, v)| (k.clone(), v.clone()))
+            .map(|(k, v)| (k.clone(), (**v).clone()))
             .collect();
 
         utils::save_json_to_file(&contexts_file, &persistent_contexts)
@@ -455,7 +456,7 @@ impl ContextManager {
     }
 
     /// Get contexts reference
-    pub fn get_contexts_ref(&self) -> &Arc<RwLock<HashMap<ContextId, KnowledgeContext>>> {
+    pub fn get_contexts_ref(&self) -> &Arc<RwLock<HashMap<ContextId, Arc<KnowledgeContext>>>> {
         &self.contexts
     }
 

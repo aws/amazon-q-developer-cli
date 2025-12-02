@@ -204,7 +204,7 @@ impl KnowledgeSubcommand {
 
     fn format_knowledge_entries_with_indent(
         session: &mut ChatSession,
-        contexts: &[semantic_search_client::KnowledgeContext],
+        contexts: &[std::sync::Arc<semantic_search_client::KnowledgeContext>],
         indent: &str,
     ) -> Result<(), std::io::Error> {
         for ctx in contexts {

@@ -998,6 +998,16 @@ Return only the JSON configuration, no additional text."
             ExperimentName,
         };
 
+        if ExperimentManager::is_enabled(os, ExperimentName::Knowledge) {
+            if let Some(kb_context) =
+                crate::util::knowledge_store::get_available_knowledge_bases(os, self.agents.get_active()).await
+            {
+                context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+                context_content.push_str(&kb_context);
+                context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+            }
+        }
+
         if ExperimentManager::is_enabled(os, ExperimentName::TodoList) {
             // Add active TODO list if available
             if let Ok(Some(todo)) = crate::cli::chat::tools::todo::get_active_todo(os).await {

@@ -2,6 +2,7 @@ use std::path::{
     Path,
     PathBuf,
 };
+use std::sync::Arc;
 
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
@@ -345,7 +346,7 @@ impl AsyncSemanticSearchClient {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn get_contexts(&self) -> Vec<KnowledgeContext> {
+    pub async fn get_contexts(&self) -> Vec<Arc<KnowledgeContext>> {
         self.context_manager.get_contexts().await
     }
 
@@ -632,7 +633,7 @@ impl AsyncSemanticSearchClient {
     /// # Returns
     ///
     /// Returns `Some(KnowledgeContext)` if found, `None` otherwise.
-    pub async fn get_context_by_path(&self, path: &str) -> Option<KnowledgeContext> {
+    pub async fn get_context_by_path(&self, path: &str) -> Option<Arc<KnowledgeContext>> {
         self.context_manager.get_context_by_path(path).await
     }
 
@@ -648,7 +649,7 @@ impl AsyncSemanticSearchClient {
     /// # Returns
     ///
     /// Returns `Some(KnowledgeContext)` if found, `None` otherwise.
-    pub async fn get_context_by_name(&self, name: &str) -> Option<KnowledgeContext> {
+    pub async fn get_context_by_name(&self, name: &str) -> Option<Arc<KnowledgeContext>> {
         self.context_manager.get_context_by_name(name).await
     }
 

@@ -436,7 +436,7 @@ impl BackgroundWorker {
 
         {
             let mut contexts = self.context_manager.get_contexts_ref().write().await;
-            contexts.insert(context_id.to_string(), context);
+            contexts.insert(context_id.to_string(), Arc::new(context));
         }
 
         if persistent {
