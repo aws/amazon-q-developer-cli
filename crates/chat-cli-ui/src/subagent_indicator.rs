@@ -462,7 +462,11 @@ impl<'a> SubagentIndicator<'a> {
                                 if let Some(agent_info) = agents.get_mut(&agent_id) {
                                     agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
                                     agent_info.pending_tool_approval.replace(inner.tool_call_id);
-                                    agent_info.convo.push(agent_info.msg.clone());
+                                    if let Some(purpose) = inner.input.get("__tool_use_purpose").and_then(|v| v.as_str()) {
+                                        agent_info.convo.push(format!("{}\npurpose: {}", agent_info.msg, purpose));
+                                    } else {
+                                        agent_info.convo.push(agent_info.msg.clone());
+                                    }
                                 }
                             },
                             UiEvent::MetaEvent { agent_id, inner: meta_event } => {
