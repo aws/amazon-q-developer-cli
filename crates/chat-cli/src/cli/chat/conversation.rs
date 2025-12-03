@@ -1144,7 +1144,11 @@ Return only the JSON configuration, no additional text."
         output: &mut impl Write,
         agent_name: &str,
     ) -> Result<(), ChatError> {
-        let agent = self.agents.switch(agent_name).map_err(ChatError::AgentSwapError)?;
+        let agent = self
+            .agents
+            .switch(agent_name, os)
+            .await
+            .map_err(ChatError::AgentSwapError)?;
         self.context_manager.replace({
             ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
@@ -1702,7 +1706,7 @@ mod tests {
             agent.resources.push(AMAZONQ_FILENAME.into());
             agent.resources.push(AGENTS_FILENAME.into());
             agents.agents.insert("TestAgent".to_string(), agent);
-            agents.switch("TestAgent").expect("Agent switch failed");
+            agents.switch("TestAgent", &os).await.expect("Agent switch failed");
             agents
         };
         os.fs.write(AMAZONQ_FILENAME, "test context").await.unwrap();

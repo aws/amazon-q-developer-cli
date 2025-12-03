@@ -18,7 +18,7 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 /// Request for adding a new context to the knowledge base
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AddContextRequest {
     /// Path to the directory or file to index
     pub path: PathBuf,
@@ -34,6 +34,9 @@ pub struct AddContextRequest {
     pub exclude_patterns: Option<Vec<String>>,
     /// Optional embedding type override for this context
     pub embedding_type: Option<EmbeddingType>,
+    /// Whether this context is auto-synced from agent schema
+    #[serde(default)]
+    pub auto_sync: bool,
 }
 
 /// Parameters for indexing operations (internal use)
@@ -56,6 +59,8 @@ pub struct IndexingParams {
     pub exclude_patterns: Option<Vec<String>>,
     /// Optional embedding type override (uses client default if None)
     pub embedding_type: Option<EmbeddingType>,
+    /// Whether this context is auto-synced from agent schema
+    pub auto_sync: bool,
 }
 
 use crate::client::context::SemanticContext;
@@ -107,6 +112,10 @@ pub struct KnowledgeContext {
     /// Embedding type used for this context
     #[serde(default)]
     pub embedding_type: EmbeddingType,
+
+    /// Whether this context is auto-synced from agent schema
+    #[serde(default)]
+    pub auto_sync: bool,
 }
 
 impl KnowledgeContext {
@@ -121,6 +130,7 @@ impl KnowledgeContext {
         patterns: (Vec<String>, Vec<String>),
         item_count: usize,
         embedding_type: EmbeddingType,
+        auto_sync: bool,
     ) -> Self {
         let now = Utc::now();
         Self {
@@ -135,6 +145,7 @@ impl KnowledgeContext {
             persistent,
             item_count,
             embedding_type,
+            auto_sync,
         }
     }
 }
@@ -405,6 +416,8 @@ pub enum IndexingJob {
         exclude_patterns: Option<Vec<String>>,
         /// Embedding type
         embedding_type: Option<EmbeddingType>,
+        /// Whether this context is auto-synced from agent schema
+        auto_sync: bool,
     },
     /// Clear all contexts job
     Clear {

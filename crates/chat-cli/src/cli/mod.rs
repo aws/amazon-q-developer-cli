@@ -3,7 +3,7 @@ use crate::util::env_var::{
     get_aws_region,
     is_log_stdout_enabled,
 };
-mod agent;
+pub mod agent;
 pub mod chat;
 mod debug;
 mod diagnostics;

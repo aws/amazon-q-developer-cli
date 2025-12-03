@@ -86,6 +86,7 @@ pub struct AddOptions {
     pub include_patterns: Vec<String>,
     pub exclude_patterns: Vec<String>,
     pub embedding_type: Option<String>,
+    pub auto_sync: bool,
 }
 
 impl AddOptions {
@@ -130,6 +131,7 @@ impl AddOptions {
             include_patterns: default_include,
             exclude_patterns: default_exclude,
             embedding_type: default_embedding_type,
+            auto_sync: false,
         }
     }
 
@@ -364,6 +366,7 @@ impl KnowledgeStore {
                 },
                 None => None,
             },
+            auto_sync: options.auto_sync,
         };
 
         match self.agent_client.add_context(request).await {
@@ -550,6 +553,7 @@ impl KnowledgeStore {
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
                 embedding_type: None,
+                auto_sync: context.auto_sync,
             };
             self.add(&context.name, path_str, options).await
         } else {
@@ -589,6 +593,7 @@ impl KnowledgeStore {
             include_patterns: context.include_patterns.clone(),
             exclude_patterns: context.exclude_patterns.clone(),
             embedding_type: None,
+            auto_sync: context.auto_sync,
         };
         self.add(&context_name, path_str, options).await
     }
@@ -608,11 +613,129 @@ impl KnowledgeStore {
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
                 embedding_type: None,
+                auto_sync: context.auto_sync,
             };
             self.add(name, path_str, options).await
         } else {
             Err(format!("Context with name '{name}' not found"))
         }
+    }
+
+    /// Sync agent resources to knowledge store
+    /// - Resources from agent schema are marked as auto_sync=true
+    /// - Only auto-synced resources are removed when removed from schema
+    /// - Manual /knowledge add resources (auto_sync=false) persist across schema changes
+    pub async fn sync_agent_resources(agent: &crate::cli::Agent, os: &Os) -> Result<(), String> {
+        use crate::cli::experiment::experiment_manager::{
+            ExperimentManager,
+            ExperimentName,
+        };
+
+        // Only sync if knowledge experiment is enabled
+        if !ExperimentManager::is_enabled(os, ExperimentName::Knowledge) {
+            return Ok(());
+        }
+
+        let knowledge_store_arc = Self::get_async_instance(os, Some(agent))
+            .await
+            .map_err(|e| e.to_string())?;
+        let mut knowledge_store = knowledge_store_arc.lock().await;
+
+        // Extract indexed resources from agent config
+        let current_indexed_resources: Vec<_> = agent
+            .resources
+            .iter()
+            .filter_map(|resource| {
+                use crate::cli::agent::wrapper_types::{
+                    ComplexResource,
+                    IndexType,
+                    ResourcePath,
+                };
+                match resource {
+                    ResourcePath::Complex(ComplexResource::KnowledgeBase {
+                        source,
+                        name,
+                        description,
+                        index_type,
+                        include,
+                        exclude,
+                        auto_update,
+                    }) => {
+                        let file_path = source.trim_start_matches("file://");
+                        let resolved_path = if !file_path.starts_with('/') {
+                            std::env::current_dir().ok()?.join(file_path).display().to_string()
+                        } else {
+                            file_path.to_string()
+                        };
+
+                        Some((
+                            name.as_deref().unwrap_or("unnamed"),
+                            description
+                                .as_deref()
+                                .unwrap_or_else(|| name.as_deref().unwrap_or("unnamed")),
+                            resolved_path,
+                            include.clone(),
+                            exclude.clone(),
+                            index_type.as_ref().map(|it| match it {
+                                IndexType::Fast => "fast",
+                                IndexType::Best => "best",
+                            }),
+                            auto_update.unwrap_or(false),
+                        ))
+                    },
+                    _ => None,
+                }
+            })
+            .collect();
+
+        let existing_contexts = knowledge_store.get_all().await.unwrap_or_default();
+
+        // Remove auto-synced contexts no longer in agent schema
+        for ctx in &existing_contexts {
+            if ctx.auto_sync {
+                let still_exists = current_indexed_resources
+                    .iter()
+                    .any(|(name, _, path, _, _, _, _)| ctx.name == *name || ctx.source_path.as_deref() == Some(path));
+
+                if !still_exists {
+                    let _ = knowledge_store.remove_by_name(&ctx.name).await;
+                }
+            }
+        }
+
+        // Add or update indexed resources from agent schema
+        for (name, description, resolved_path, include, exclude, index_type, auto_update) in current_indexed_resources {
+            let already_exists = existing_contexts
+                .iter()
+                .any(|ctx| ctx.name == name || ctx.source_path.as_deref() == Some(&resolved_path));
+
+            if already_exists && auto_update {
+                // Update existing resource
+                let _ = knowledge_store.update_by_path(&resolved_path).await;
+            } else if !already_exists {
+                // Add new resource
+                let mut options = AddOptions::new();
+                options.auto_sync = true;
+
+                if let Some(include) = include {
+                    options.include_patterns = include;
+                }
+
+                if let Some(exclude) = exclude {
+                    options.exclude_patterns = exclude;
+                }
+
+                if let Some(index_type) = index_type {
+                    options.embedding_type = Some(index_type.to_string());
+                }
+
+                options.description = Some(description.to_string());
+
+                let _ = knowledge_store.add(name, &resolved_path, options).await;
+            }
+        }
+
+        Ok(())
     }
 }
 

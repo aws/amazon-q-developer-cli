@@ -80,6 +80,7 @@ impl BackgroundWorker {
                     include_patterns,
                     exclude_patterns,
                     embedding_type,
+                    auto_sync,
                 } => {
                     let params = IndexingParams {
                         path,
@@ -89,6 +90,7 @@ impl BackgroundWorker {
                         include_patterns,
                         exclude_patterns,
                         embedding_type,
+                        auto_sync,
                     };
 
                     self.process_add_directory(id, params, cancel).await;
@@ -260,6 +262,7 @@ impl BackgroundWorker {
             &params.exclude_patterns,
             file_count,
             effective_embedding_type,
+            params.auto_sync,
         )
         .await?;
 
@@ -419,6 +422,7 @@ impl BackgroundWorker {
         exclude_patterns: &Option<Vec<String>>,
         item_count: usize,
         embedding_type: crate::embedding::EmbeddingType,
+        auto_sync: bool,
     ) -> std::result::Result<(), String> {
         let context = KnowledgeContext::new(
             context_id.to_string(),
@@ -432,6 +436,7 @@ impl BackgroundWorker {
             ),
             item_count,
             embedding_type,
+            auto_sync,
         );
 
         {

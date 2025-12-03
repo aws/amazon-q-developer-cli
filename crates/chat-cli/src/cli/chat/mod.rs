@@ -770,7 +770,7 @@ impl ChatSession {
                         input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                         cs.tool_manager = tool_manager;
                         if let Some(profile) = cs.current_profile() {
-                            if agents.switch(profile).is_err() {
+                            if agents.switch(profile, os).await.is_err() {
                                 execute!(
                                     &mut control_end_stderr,
                                     StyledText::error_fg(),
@@ -780,7 +780,7 @@ impl ChatSession {
                                         ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
                                     ))
                                 )?;
-                                let _ = agents.switch(DEFAULT_AGENT_NAME);
+                                let _ = agents.switch(DEFAULT_AGENT_NAME, os).await;
                             }
                         }
                         cs.agents = agents;
@@ -4101,7 +4101,7 @@ mod tests {
                 .expect("Failed to write test agent to file");
         }
         agents.agents.insert("TestAgent".to_string(), agent);
-        agents.switch("TestAgent").expect("Failed to switch agent");
+        agents.switch("TestAgent", os).await.expect("Failed to switch agent");
         agents
     }
 
@@ -4559,7 +4559,7 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("TestAgent".to_string(), agent);
-        agents.switch("TestAgent").expect("Failed to switch agent");
+        agents.switch("TestAgent", &os).await.expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))
@@ -4693,7 +4693,10 @@ mod tests {
             ..Default::default()
         };
         agents.agents.insert("SecurityAgent".to_string(), agent);
-        agents.switch("SecurityAgent").expect("Failed to switch agent");
+        agents
+            .switch("SecurityAgent", &os)
+            .await
+            .expect("Failed to switch agent");
 
         let tool_manager = ToolManager::default();
         let tool_config = serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))

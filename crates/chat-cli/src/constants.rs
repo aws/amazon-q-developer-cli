@@ -357,6 +357,14 @@ pub mod tips {
                 StyledText::command(CLI_NAME),
                 StyledText::command("settings chat.enableCheckpoint true")
             ),
+            format!(
+                "Build persistent knowledge bases with {}! Add docs, code, or any files for semantic search across sessions",
+                StyledText::command("/knowledge add")
+            ),
+            format!(
+                "Define {} resources in your agent config to auto-sync knowledge bases when you switch agents",
+                StyledText::command("indexed")
+            ),
         ]
     }
 }

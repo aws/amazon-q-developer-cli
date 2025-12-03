@@ -90,34 +90,83 @@ pub fn tool_settings_schema(generator: &mut SchemaGenerator) -> Schema {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
-pub struct ResourcePath(
-    // You can extend this list via "|". e.g. r"^(file://|database://)"
-    #[schemars(regex(pattern = r"^(file://)"))]
-    String,
-);
+#[serde(rename_all = "kebab-case")]
+pub enum IndexType {
+    Fast,
+    Best,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum ComplexResource {
+    #[serde(rename_all = "camelCase")]
+    KnowledgeBase {
+        #[schemars(regex(pattern = r"^(file://)"))]
+        source: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        index_type: Option<IndexType>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        include: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        exclude: Option<Vec<String>>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        auto_update: Option<bool>,
+    },
+}
+
+impl ComplexResource {
+    pub fn source(&self) -> &str {
+        match self {
+            ComplexResource::KnowledgeBase { source, .. } => source,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
+#[serde(untagged)]
+pub enum ResourcePath {
+    FilePath(
+        #[schemars(regex(pattern = r"^(file://)"))]
+        String,
+    ),
+    Complex(ComplexResource),
+}
+
+impl ResourcePath {
+    pub fn source(&self) -> &str {
+        match self {
+            ResourcePath::FilePath(s) => s,
+            ResourcePath::Complex(res) => res.source(),
+        }
+    }
+}
 
 impl Deref for ResourcePath {
-    type Target = String;
+    type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.source()
     }
 }
 
 impl Borrow<str> for ResourcePath {
     fn borrow(&self) -> &str {
-        self.0.as_str()
+        self.source()
     }
 }
 
 impl From<&str> for ResourcePath {
     fn from(value: &str) -> Self {
-        Self(value.to_string())
+        Self::FilePath(value.to_string())
     }
 }
 
 impl From<String> for ResourcePath {
     fn from(value: String) -> Self {
-        Self(value)
+        Self::FilePath(value)
     }
 }

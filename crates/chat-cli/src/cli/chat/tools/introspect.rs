@@ -92,6 +92,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/hooks.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/hooks.md"));
 
+        documentation.push_str("\n\n--- docs/knowledge-management.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/knowledge-management.md"));
+
         documentation.push_str("\n\n--- changelog (from feed.json) ---\n");
         // Include recent changelog entries from feed.json
         let feed = crate::cli::feed::Feed::load();

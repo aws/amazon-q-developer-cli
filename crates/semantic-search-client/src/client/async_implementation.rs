@@ -311,6 +311,7 @@ impl AsyncSemanticSearchClient {
             include_patterns: request.include_patterns.clone(),
             exclude_patterns: request.exclude_patterns.clone(),
             embedding_type: request.embedding_type,
+            auto_sync: request.auto_sync,
         };
 
         self.job_tx

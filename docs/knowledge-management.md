@@ -85,7 +85,7 @@ If you don't specify `--index-type`, the system uses your configured default:
 q settings knowledge.indexType Fast   # or Best
 
 # This will use your default setting
-/knowledge add "my-project" /path/to/project
+/knowledge add -n "my-project" -p /path/to/project
 ```
 
 **Default Pattern Behavior**
@@ -103,18 +103,18 @@ q settings knowledge.defaultIncludePatterns '["**/*.rs", "**/*.py"]'
 q settings knowledge.defaultExcludePatterns '["target/**", "__pycache__/**"]'
 
 # This will use the default patterns
-/knowledge add "my-project" /path/to/project
+/knowledge add -n "my-project" -p /path/to/project
 
 # This will override defaults with explicit patterns
-/knowledge add "docs-only" /path/to/project --include "**/*.md"
+/knowledge add -n "docs-only" -p /path/to/project --include "**/*.md"
 ```
 
 **New: Pattern Filtering**
 
 You can now control which files are indexed using include and exclude patterns:
 
-`/knowledge add "rust-code" /path/to/project --include "*.rs" --exclude "target/**"`
-`/knowledge add "docs" /path/to/project --include "**/*.md" --include "**/*.txt" --exclude "node_modules/**"`
+`/knowledge add -n "rust-code" -p /path/to/project --include "*.rs" --exclude "target/**"`
+`/knowledge add -n "docs" -p /path/to/project --include "**/*.md" --include "**/*.txt" --exclude "node_modules/**"`
 
 Pattern examples:
 - `*.rs` - All Rust files in all directories recursively (equivalent to `**/*.rs`)
@@ -219,13 +219,13 @@ When you switch between agents, your knowledge commands will automatically work 
 
 ```bash
 # Working with default agent
-/knowledge add /path/to/docs
+/knowledge add -n "project-docs" -p /path/to/docs
 
 # Switch to custom agent
 q chat --agent my-custom-agent
 
 # This creates a separate knowledge base for my-custom-agent
-/knowledge add /path/to/agent/docs
+/knowledge add -n "agent-docs" -p /path/to/agent/docs
 
 # Switch back to default
 q chat
@@ -233,6 +233,204 @@ q chat
 # Only sees the original project-docs, not agent-specific-docs
 /knowledge show
 ```
+
+### Auto-Sync with Agent Resources
+
+Knowledge bases can be managed in two ways:
+
+1. **Manual Management** (via `/knowledge add`): Persistent across all agent schema changes
+2. **Agent Schema Resources** (via agent config): Auto-synced with agent configuration
+
+#### How Auto-Sync Works
+
+When you define knowledge base resources in your agent configuration, they are automatically managed:
+
+```json
+{
+  "resources": [
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs",
+      "name": "Documentation",
+      "indexType": "best"
+    }
+  ]
+}
+```
+
+**Auto-Sync Behavior:**
+- ✅ **Automatically added** when you start or switch to the agent
+- ✅ **Automatically removed** when you remove them from the agent config
+- ✅ **Automatically updated** when you modify the resource configuration
+- ✅ **Agent-specific** - only affects the current agent's knowledge base
+
+#### Agent Resource Schema
+
+| Field | Required | Type | Description |
+|-------|----------|------|-------------|
+| `type` | Yes | string | Must be `"knowledgeBase"` |
+| `source` | Yes | string | Path to the resource (must start with `file://`) |
+| `name` | No | string | Display name for the resource |
+| `description` | No | string | Human-readable description |
+| `indexType` | No | string | Embedding quality: `"fast"` or `"best"` (default: `"best"`) |
+| `include` | No | array of strings | Glob patterns for files to include (e.g., `["**/*.md", "**/*.py"]`) |
+| `exclude` | No | array of strings | Glob patterns for files to exclude (e.g., `["**/node_modules/**", "**/target/**"]`) |
+| `autoUpdate` | No | boolean | Auto-update the knowledge base on agent load/switch (default: `false`) |
+
+#### Examples
+
+**Basic knowledge base:**
+```json
+{
+  "type": "knowledgeBase",
+  "source": "file://./docs",
+  "name": "Documentation"
+}
+```
+
+**With file filters:**
+```json
+{
+  "type": "knowledgeBase",
+  "source": "file://./src",
+  "name": "Source Code",
+  "include": ["**/*.rs", "**/*.toml"],
+  "exclude": ["**/target/**"]
+}
+```
+
+**With auto-update:**
+```json
+{
+  "type": "knowledgeBase",
+  "source": "file://./docs",
+  "name": "API Docs",
+  "indexType": "best",
+  "autoUpdate": true
+}
+```
+
+**Complete example:**
+```json
+{
+  "resources": [
+    "file://README.md",
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs",
+      "name": "Documentation",
+      "description": "Project documentation and guides",
+      "indexType": "best",
+      "include": ["**/*.md"],
+      "exclude": ["**/draft/**"],
+      "autoUpdate": true
+    }
+  ]
+}
+```
+
+#### Persistence Guarantee
+
+Knowledge bases added via `/knowledge add` are persistent within the agent's scope:
+
+```bash
+# Add a knowledge base manually to current agent
+/knowledge add -n "my-docs" -p /path/to/docs
+
+# This knowledge base persists for this agent even if:
+# - You modify the agent's resources field
+# - You remove all resources from the agent config
+# - You restart the CLI
+# - You switch to another agent and back
+```
+
+**Agent schema resources are auto-managed:**
+
+```json
+// Add this to your agent config
+{
+  "resources": [
+    {
+      "type": "knowledgeBase",
+      "source": "file://./project",
+      "name": "Project Files"
+    }
+  ]
+}
+
+// This resource is automatically:
+// - Indexed when the agent loads
+// - Removed if you delete it from the config
+// - Updated if you change the configuration
+```
+
+#### Identifying Auto-Synced Resources
+
+You can identify which knowledge bases are auto-synced by checking the `auto_sync` field:
+
+```bash
+/knowledge show
+```
+
+Output:
+```json
+{
+  "context-id-1": {
+    "name": "Documentation",
+    "auto_sync": true,    // ← Auto-synced from agent schema
+    ...
+  },
+  "context-id-2": {
+    "name": "my-docs",
+    "auto_sync": false,   // ← Manually added, persists independently
+    ...
+  }
+}
+```
+
+#### Best Practices
+
+- **Use agent resources** for project-specific knowledge that should be automatically synced with the agent
+- **Use `/knowledge add`** for manual knowledge base management without modifying agent config files
+- **Mix both approaches** for maximum flexibility - agent-managed resources + manually added knowledge bases
+
+#### Auto-Update Feature
+
+The `autoUpdate` field controls whether a knowledge base is automatically re-indexed when you load or switch to an agent:
+
+**With `autoUpdate: true`:**
+```json
+{
+  "resources": [
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs",
+      "name": "Documentation",
+      "autoUpdate": true
+    }
+  ]
+}
+```
+- Knowledge base is re-indexed every time you start or switch to this agent
+- Ensures the knowledge base always reflects the latest file changes
+- Useful for actively changing documentation or code
+
+**With `autoUpdate: false` (default):**
+```json
+{
+  "resources": [
+    {
+      "type": "knowledgeBase",
+      "source": "file://./docs",
+      "name": "Documentation"
+    }
+  ]
+}
+```
+- Knowledge base is indexed once when first added
+- Not automatically updated on agent load/switch
+- Use `/knowledge update` to manually refresh when needed
+- Better for stable documentation or large codebases
 
 ## How It Works
 

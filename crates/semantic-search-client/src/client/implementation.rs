@@ -540,6 +540,7 @@ impl SemanticSearchClient {
             (vec![], vec![]),
             item_count,
             self.config.embedding_type,
+            false, // Not auto-synced by default
         );
 
         // Store the context
@@ -696,6 +697,7 @@ impl SemanticSearchClient {
                     (vec![], vec![]),
                     0,
                     self.config.embedding_type, // Use client default
+                    false,                      // Volatile contexts are not auto-synced
                 );
                 contexts.push(context);
             }
@@ -877,6 +879,7 @@ impl SemanticSearchClient {
             (vec![], vec![]),
             context_guard.get_data_points().len(),
             self.config.embedding_type, // Use client default
+            false,                      // Not auto-synced by default
         );
 
         // Store the context metadata

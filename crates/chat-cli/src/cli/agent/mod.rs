@@ -2,7 +2,7 @@ pub mod hook;
 mod legacy;
 mod mcp_config;
 mod root_command_args;
-mod wrapper_types;
+pub mod wrapper_types;
 
 use std::borrow::Borrow;
 use std::collections::{
@@ -490,11 +490,18 @@ impl Agents {
         self.agents.get_mut(&self.active_idx)
     }
 
-    pub fn switch(&mut self, name: &str) -> eyre::Result<&Agent> {
+    pub async fn switch(&mut self, name: &str, os: &Os) -> eyre::Result<&Agent> {
         if !self.agents.contains_key(name) {
             eyre::bail!("No agent with name {name} found");
         }
         self.active_idx = name.to_string();
+
+        // Sync resources for the newly active agent
+        if let Some(agent) = self.agents.get(name) {
+            use crate::util::knowledge_store::KnowledgeStore;
+            let _ = KnowledgeStore::sync_agent_resources(agent, os).await;
+        }
+
         self.agents
             .get(name)
             .ok_or(eyre::eyre!("No agent with name {name} found"))
@@ -841,6 +848,21 @@ impl Agents {
         }
 
         load_metadata.launched_agent = active_idx.clone();
+
+        // Sync resources for the active agent
+        if let Some(agent) = agents.get(&active_idx) {
+            use crate::util::knowledge_store::KnowledgeStore;
+            if let Err(e) = KnowledgeStore::sync_agent_resources(&agent.clone(), os).await {
+                let _ = execute!(
+                    output,
+                    StyledText::warning_fg(),
+                    style::Print("Failed to sync resources for active agent: "),
+                    StyledText::reset(),
+                    style::Print(format!("{e}\n")),
+                );
+            }
+        }
+
         (
             Self {
                 agents,
@@ -1129,8 +1151,9 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_switch() {
+    #[tokio::test]
+    async fn test_switch() {
+        let os = Os::new().await.unwrap();
         let mut collection = Agents::default();
 
         let default_agent = Agent::default();
@@ -1145,12 +1168,12 @@ mod tests {
         collection.active_idx = "default".to_string();
 
         // Test successful switch
-        let result = collection.switch("dev");
+        let result = collection.switch("dev", &os).await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().name, "dev");
 
         // Test switch to non-existent agent
-        let result = collection.switch("nonexistent");
+        let result = collection.switch("nonexistent", &os).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().to_string(), "No agent with name nonexistent found");
     }
@@ -1828,5 +1851,56 @@ mod tests {
         let has_steering = default_agent.resources.iter().any(|r| r.contains(".kiro/steering"));
 
         assert!(!has_steering, "Should not include non-existent steering directories");
+    }
+
+    #[test]
+    fn test_resource_path_serialization() {
+        use crate::cli::agent::wrapper_types::{
+            ComplexResource,
+            IndexType,
+            ResourcePath,
+        };
+
+        // Test simple file path
+        let simple = ResourcePath::FilePath("file://README.md".to_string());
+        let json = serde_json::to_value(&simple).unwrap();
+        assert_eq!(json, json!("file://README.md"));
+
+        // Test complex knowledge base with type field
+        let complex = ResourcePath::Complex(ComplexResource::KnowledgeBase {
+            source: "file://./docs".to_string(),
+            name: Some("Documentation".to_string()),
+            description: Some("Project docs".to_string()),
+            index_type: Some(IndexType::Best),
+            include: Some(vec!["**/*.md".to_string()]),
+            exclude: None,
+            auto_update: Some(true),
+        });
+        let json = serde_json::to_value(&complex).unwrap();
+
+        // Verify type field is present
+        assert_eq!(json["type"], "knowledgeBase");
+        assert_eq!(json["source"], "file://./docs");
+        assert_eq!(json["name"], "Documentation");
+        assert_eq!(json["indexType"], "best");
+        assert_eq!(json["autoUpdate"], true);
+
+        // Test deserialization
+        let agent_json = json!({
+            "name": "test",
+            "resources": [
+                "file://README.md",
+                {
+                    "type": "knowledgeBase",
+                    "source": "file://./docs",
+                    "name": "Docs",
+                    "indexType": "fast"
+                }
+            ]
+        });
+        let agent: Agent = serde_json::from_value(agent_json).unwrap();
+        assert_eq!(agent.resources.len(), 2);
+        assert!(matches!(agent.resources[0], ResourcePath::FilePath(_)));
+        assert!(matches!(agent.resources[1], ResourcePath::Complex(_)));
     }
 }
