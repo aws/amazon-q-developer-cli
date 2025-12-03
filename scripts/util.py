@@ -34,7 +34,12 @@ def isLinux() -> bool:
 
 @cache
 def isMusl() -> bool:
-    return os.environ.get("AMAZON_Q_BUILD_MUSL") is not None
+    return bool(os.environ.get("AMAZON_Q_BUILD_MUSL"))
+
+
+@cache
+def isCrossCompiling() -> bool:
+    return bool(os.environ.get("AMAZON_Q_BUILD_TARGET_TRIPLE"))
 
 
 @cache
