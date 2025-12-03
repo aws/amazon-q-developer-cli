@@ -1,7 +1,4 @@
-use schemars::{
-    JsonSchema,
-    schema_for,
-};
+use schemars::JsonSchema;
 use serde::{
     Deserialize,
     Serialize,
@@ -80,11 +77,6 @@ impl BuiltInToolTrait for Summary {
 }
 
 impl Summary {
-    pub fn tool_schema() -> serde_json::Value {
-        let schema = schema_for!(Self);
-        serde_json::to_value(schema).expect("creating tool schema should not fail")
-    }
-
     pub async fn execute(&self, result_tx: broadcast::Sender<AgentEvent>) -> ToolExecutionResult {
         result_tx
             .send(self.into())
@@ -100,7 +92,7 @@ mod tests {
     #[test]
     fn test_summary_tool_schema() {
         let schema = Summary::input_schema();
-        println!("{:#?}", schema);
+        println!("{schema:#?}");
     }
 
     #[tokio::test]

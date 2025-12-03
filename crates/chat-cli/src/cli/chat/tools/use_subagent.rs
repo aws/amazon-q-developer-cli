@@ -90,7 +90,6 @@ impl UseSubagent {
         aliases: &["use_subagent", "subagent"],
     };
 
-    /// Checks if todo lists are enabled
     pub fn is_enabled(os: &Os) -> bool {
         ExperimentManager::is_enabled(os, ExperimentName::UseSubagent)
     }
