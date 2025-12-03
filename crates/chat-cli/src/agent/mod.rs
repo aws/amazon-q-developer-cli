@@ -409,7 +409,10 @@ impl<'a> Subagent<'a> {
                 let tool_call_count = acc.tool_call_count.get_or_insert(0);
                 *tool_call_count = tool_call_count.saturating_add(md.number_of_cycles);
 
-                acc.token_count = acc.token_count.saturating_add(md.token_count);
+                acc.token_count = acc
+                    .token_count
+                    .saturating_add(md.input_token_count)
+                    .saturating_add(md.output_token_count);
 
                 if let Some(turn_duration) = md.turn_duration.as_ref() {
                     let duration = acc.duration.get_or_insert(std::time::Duration::from_secs(0));

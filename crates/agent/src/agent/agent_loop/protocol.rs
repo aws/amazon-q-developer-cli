@@ -233,8 +233,10 @@ pub struct UserTurnMetadata {
     /// Why the user turn ended
     pub end_reason: LoopEndReason,
     pub end_timestamp: DateTime<Utc>,
-    /// Token count associated with the turn
-    pub token_count: u64,
+    /// Input token count associated with the turn
+    pub input_token_count: u64,
+    /// Output token count associated with the turn
+    pub output_token_count: u64,
 }
 
 /// The reason why a user turn ended

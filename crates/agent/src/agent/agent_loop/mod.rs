@@ -346,6 +346,24 @@ impl AgentLoop {
             message_ids.push(s.message_id.clone());
         }
 
+        let (input_token_count, output_token_count) =
+            self.stream_states
+                .iter()
+                .fold((0_u64, 0_u64), |(mut input, mut output), state| {
+                    if let Some(md) = state.metadata.as_ref() {
+                        if let Some(md_usage) = md.usage.as_ref() {
+                            if let Some(token_count) = md_usage.input_tokens.as_ref() {
+                                input = input.saturating_add(*token_count);
+                            }
+                            if let Some(token_count) = md_usage.output_tokens.as_ref() {
+                                output = output.saturating_add(*token_count);
+                            }
+                        }
+                    }
+
+                    (input, output)
+                });
+
         UserTurnMetadata {
             loop_id: self.id.clone(),
             result: self.stream_states.last().map(|s| s.make_result()),
@@ -368,20 +386,8 @@ impl AgentLoop {
                 }
             }),
             end_timestamp: Utc::now(),
-            token_count: self.stream_states.iter().fold(0_u64, |mut acc, state| {
-                if let Some(md) = state.metadata.as_ref() {
-                    if let Some(md_usage) = md.usage.as_ref() {
-                        if let Some(token_count) = md_usage.input_tokens.as_ref() {
-                            acc = acc.saturating_add(*token_count);
-                        }
-                        if let Some(token_count) = md_usage.output_tokens.as_ref() {
-                            acc = acc.saturating_add(*token_count);
-                        }
-                    }
-                }
-
-                acc
-            }),
+            input_token_count,
+            output_token_count,
         }
     }
 }
