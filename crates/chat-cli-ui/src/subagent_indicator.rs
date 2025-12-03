@@ -329,7 +329,11 @@ impl<'a> SubagentIndicator<'a> {
             .map(|(agent_id, agent_info)| (*agent_id, agent_info.to_owned()))
             .collect::<BTreeMap<_, _>>();
         let (end_turn_tx, end_turn_rx) = mpsc::channel::<()>(1);
-        let mut focused_agent = None::<u16>;
+        let mut focused_agent = if !self.agents.is_empty() {
+            Some(0_u16)
+        } else {
+            None::<u16>
+        };
 
         struct RawModeGuard;
 
