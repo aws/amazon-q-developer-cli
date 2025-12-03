@@ -225,7 +225,6 @@ impl<'a> Subagent<'a> {
                                     McpServerEvent::OauthRequest { server_name, oauth_url } => {
                                         UiMcpEvent::OauthRequest { server_name, oauth_url }
                                     },
-                                    McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
                                 }
                             };
                             _ = control_end.send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {

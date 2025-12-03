@@ -469,8 +469,6 @@ pub enum McpManagerError {
 /// Provides abstraction over [McpServerActorEvent] to avoid leaking implementation details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerEvent {
-    /// The MCP server is currently initializing
-    Initializing { server_name: String },
     /// The MCP server has launched successfully
     Initialized {
         server_name: String,

@@ -88,6 +88,28 @@ impl AgentConfig {
             AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
         }
     }
+
+    pub fn append_to_system_prompt(&mut self, incoming: &str) {
+        match self {
+            AgentConfig::V2025_08_22(a) => {
+                if let Some(prompt) = a.system_prompt.as_mut() {
+                    prompt.push_str("\n\n");
+                    prompt.push_str(incoming);
+                }
+            },
+        }
+    }
+
+    pub fn prepend_to_system_prompt(&mut self, incoming: &str) {
+        match self {
+            AgentConfig::V2025_08_22(a) => {
+                if let Some(prompt) = a.system_prompt.as_mut() {
+                    let mut new_prompt = format!("{incoming}\n\n{prompt}");
+                    std::mem::swap(prompt, &mut new_prompt);
+                }
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
