@@ -16,6 +16,7 @@ use agent::protocol::{
     AgentStopReason,
     ApprovalResult,
     ContentChunk,
+    InitializeUpdateEvent,
     SendApprovalResultArgs,
     SendPromptArgs,
     UpdateEvent,
@@ -209,16 +210,18 @@ impl<'a> Subagent<'a> {
                     };
 
                     match evt {
-                        AgentEvent::Mcp(evt) => {
-                            let ui_mcp_event = match evt {
-                                McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
-                                McpServerEvent::InitializeError { server_name, error } => {
-                                    UiMcpEvent::LoadFailure { server_name, error }
-                                },
-                                McpServerEvent::OauthRequest { server_name, oauth_url } => {
-                                    UiMcpEvent::OauthRequest { server_name, oauth_url }
-                                },
-                                McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
+                        AgentEvent::InitializeUpdate(initialize_update_evt) => {
+                            let ui_mcp_event = match initialize_update_evt {
+                                InitializeUpdateEvent::Mcp(evt) => match evt {
+                                    McpServerEvent::Initialized { server_name, .. } => UiMcpEvent::LoadSuccess { server_name },
+                                    McpServerEvent::InitializeError { server_name, error } => {
+                                        UiMcpEvent::LoadFailure { server_name, error }
+                                    },
+                                    McpServerEvent::OauthRequest { server_name, oauth_url } => {
+                                        UiMcpEvent::OauthRequest { server_name, oauth_url }
+                                    },
+                                    McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
+                                }
                             };
                             _ = control_end.send(UiEvent::McpEvent {
                                 agent_id: self.id,

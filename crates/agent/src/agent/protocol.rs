@@ -37,9 +37,12 @@ use super::types::AgentSnapshot;
 #[serde(tag = "kind", content = "content")]
 #[serde(rename_all = "camelCase")]
 pub enum AgentEvent {
-    /// Agent has finished initialization, and is ready to receive requests.
+    /// Update events to be surfaced prior to an agent being fully initialized
     ///
-    /// This is the first event that the agent will emit.
+    /// This is the first event(s) the agent will emit.
+    InitializeUpdate(InitializeUpdateEvent),
+
+    /// Agent has finished initialization, and is ready to receive requests.
     Initialized,
 
     /// Real-time updates about the session.
@@ -128,6 +131,11 @@ pub enum UpdateEvent {
         /// The tool execution result
         result: ToolCallResult,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InitializeUpdateEvent {
+    Mcp(McpServerEvent),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

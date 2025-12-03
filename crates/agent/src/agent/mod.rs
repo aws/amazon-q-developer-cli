@@ -68,6 +68,7 @@ use protocol::{
     AgentStopReason,
     ApprovalResult,
     ContentChunk,
+    InitializeUpdateEvent,
     InternalEvent,
     PermissionEvalResult,
     SendApprovalResultArgs,
@@ -391,7 +392,7 @@ impl Agent {
                                 break;
                             };
 
-                            _ = agent_event_tx.send(AgentEvent::Mcp(evt));
+                            _ = agent_event_tx.send(AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(evt)));
                         }
                     }
                 }
