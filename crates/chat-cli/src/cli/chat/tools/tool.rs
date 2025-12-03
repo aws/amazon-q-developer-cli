@@ -166,8 +166,8 @@ impl Tool {
     /// Queues up a tool's intention in a human readable format
     pub async fn queue_description(&self, os: &Os, output: &mut ControlEnd<DestinationStdout>) -> Result<()> {
         use chat_cli_ui::protocol::{
+            SessionEvent,
             ToolCallArgs,
-            UiEvent,
         };
 
         if output.should_send_structured_event {
@@ -198,10 +198,10 @@ impl Tool {
                 },
             };
 
-            output.send(UiEvent::ToolCallArgs {
+            output.send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
                 agent_id: Default::default(),
-                inner: tool_call_args,
-            })?;
+                kind: chat_cli_ui::protocol::AgentEventKind::ToolCallArgs(tool_call_args),
+            }))?;
         } else {
             match self {
                 Tool::FsRead(fs_read) => fs_read.queue_description(self, os, output).await,

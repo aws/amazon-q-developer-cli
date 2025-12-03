@@ -57,10 +57,13 @@ use tracing::{
 
 use crate::conduit::ViewEnd;
 use crate::protocol::{
+    AgentEvent,
+    AgentEventKind,
     InputEvent,
+    InputEventKind,
     McpEvent,
+    SessionEvent,
     TextMessageContent,
-    UiEvent,
 };
 
 #[inline]
@@ -388,98 +391,102 @@ impl<'a> SubagentIndicator<'a> {
                 let is_something_previewing = agents.values().any(|info| info.is_previewing_convo);
 
                 tokio::select! {
-                    evt = async {
+                    session_evt = async {
                         if self.view_end.receiver.is_closed() {
                             std::future::pending().await
                         } else {
                             self.view_end.receiver.recv().await
                         }
                     } => {
-                        let Some(evt) = evt else {
-                            error!(?evt, "error receiving evt from control end");
+                        let Some(session_evt) = session_evt else {
+                            error!(?session_evt, "error receiving evt from control end");
                             break;
                         };
 
-                        match evt {
-                            UiEvent::ToolCallStart { agent_id, inner: tool_call_start } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    let tool_name = tool_call_start.tool_call_name;
-                                    agent_info.msg = if tool_name.as_str() == "summary" {
-                                        agent_info.convo.push("Task has concluded".to_string());
-                                        agent_info.is_done = true;
-                                        "summarizing...".to_string()
-                                    } else {
-                                        let msg = format!("calling tool {tool_name}");
-                                        agent_info.convo.push(msg.clone());
-                                        msg
-                                    };
+                        if let SessionEvent::AgentEvent(agent_evt) = session_evt {
+                            let AgentEvent { agent_id, kind } = agent_evt;
 
-                                    // here we are also using this as a signal to delimit the
-                                    // assistant message (though in the future this might be
-                                    // insufficient)
-                                    agent_info.convo.push(String::new());
-                                }
-                            },
-                            UiEvent::ToolCallEnd { agent_id, inner: tool_call_end } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
-                                }
-                            },
-                            UiEvent::TextMessageContent { agent_id, inner } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = "thinking...".to_string();
-
-                                    let TextMessageContent { delta, .. } = inner;
-                                    if let Ok(content) = String::from_utf8(delta) {
-                                        if let Some(current_msg) = agent_info.convo.last_mut() {
-                                            current_msg.push_str(&content);
+                            match kind {
+                                AgentEventKind::ToolCallStart(tool_call_start) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        let tool_name = tool_call_start.tool_call_name;
+                                        agent_info.msg = if tool_name.as_str() == "summary" {
+                                            agent_info.convo.push("Task has concluded".to_string());
+                                            agent_info.is_done = true;
+                                            "summarizing...".to_string()
                                         } else {
-                                            agent_info.convo.push(content);
+                                            let msg = format!("calling tool {tool_name}");
+                                            agent_info.convo.push(msg.clone());
+                                            msg
+                                        };
+
+                                        // here we are also using this as a signal to delimit the
+                                        // assistant message (though in the future this might be
+                                        // insufficient)
+                                        agent_info.convo.push(String::new());
+                                    }
+                                },
+                                AgentEventKind::ToolCallEnd(tool_call_end) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
+                                    }
+                                },
+                                AgentEventKind::TextMessageContent(content) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        agent_info.msg = "thinking...".to_string();
+
+                                        let TextMessageContent { delta, .. } = content;
+                                        if let Ok(content) = String::from_utf8(delta) {
+                                            if let Some(current_msg) = agent_info.convo.last_mut() {
+                                                current_msg.push_str(&content);
+                                            } else {
+                                                agent_info.convo.push(content);
+                                            }
+                                        }
+                                    }
+                                },
+                                AgentEventKind::McpEvent(mcp_evt) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        match mcp_evt {
+                                            McpEvent::Loading { server_name }  => {
+                                                agent_info.msg = format!("loading mcp server {server_name}");
+                                            },
+                                            McpEvent::LoadSuccess { server_name } => {
+                                                agent_info.blocking_servers.remove(&server_name);
+                                                agent_info.msg = format!("{server_name} loaded");
+                                            },
+                                            McpEvent::LoadFailure { server_name, error } => {
+                                                agent_info.msg = format!("{server_name} has failed to load with the error {error}");
+                                            },
+                                            McpEvent::OauthRequest { server_name, oauth_url } => {
+                                                agent_info.blocking_servers.insert(server_name, oauth_url);
+                                            },
+                                        }
+                                    }
+                                },
+                                AgentEventKind::ToolCallPermissionRequest(request) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", request.name);
+                                        agent_info.pending_tool_approval.replace(request.tool_call_id);
+                                        if let Some(purpose) = request.input.get("__tool_use_purpose").and_then(|v| v.as_str()) {
+                                            agent_info.convo.push(format!("{}\npurpose: {}", agent_info.msg, purpose));
+                                        } else {
+                                            agent_info.convo.push(agent_info.msg.clone());
+                                        }
+                                    }
+                                },
+                                AgentEventKind::MetaEvent(meta_evt) => {
+                                    if let Some(agent_info) = agents.get_mut(&agent_id) {
+                                        if meta_evt.meta_type.as_str() == "EndTurn" {
+                                            if let Ok(exec_summary) = serde_json::from_value::<SubagentExecutionSummary>(meta_evt.payload) {
+                                                agent_info.execution_summary.replace(exec_summary);
+                                            }
+                                            agent_info.msg = "waiting for others...".to_string();
                                         }
                                     }
                                 }
-                            },
-                            UiEvent::McpEvent { agent_id, inner: mcp_event, .. } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    match mcp_event {
-                                        McpEvent::Loading { server_name }  => {
-                                            agent_info.msg = format!("loading mcp server {server_name}");
-                                        },
-                                        McpEvent::LoadSuccess { server_name } => {
-                                            agent_info.blocking_servers.remove(&server_name);
-                                            agent_info.msg = format!("{server_name} loaded");
-                                        },
-                                        McpEvent::LoadFailure { server_name, error } => {
-                                            agent_info.msg = format!("{server_name} has failed to load with the error {error}");
-                                        },
-                                        McpEvent::OauthRequest { server_name, oauth_url } => {
-                                            agent_info.blocking_servers.insert(server_name, oauth_url);
-                                        },
-                                    }
-                                }
-                            },
-                            UiEvent::ToolCallPermissionRequest { agent_id, inner } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    agent_info.msg = format!("tool use {} requires approval, press 'y' to approve and 'n' to deny", inner.name);
-                                    agent_info.pending_tool_approval.replace(inner.tool_call_id);
-                                    if let Some(purpose) = inner.input.get("__tool_use_purpose").and_then(|v| v.as_str()) {
-                                        agent_info.convo.push(format!("{}\npurpose: {}", agent_info.msg, purpose));
-                                    } else {
-                                        agent_info.convo.push(agent_info.msg.clone());
-                                    }
-                                }
-                            },
-                            UiEvent::MetaEvent { agent_id, inner: meta_event } => {
-                                if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                    if meta_event.meta_type.as_str() == "EndTurn" {
-                                        if let Ok(exec_summary) = serde_json::from_value::<SubagentExecutionSummary>(meta_event.payload) {
-                                            agent_info.execution_summary.replace(exec_summary);
-                                        }
-                                        agent_info.msg = "waiting for others...".to_string();
-                                    }
-                                }
+                                _ => {},
                             }
-                            _ => {},
                         }
                     },
 
@@ -654,7 +661,10 @@ impl<'a> SubagentIndicator<'a> {
                                 match key_event.code {
                                     KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
                                         for (id, agent_info) in agents.iter_mut() {
-                                            _ = self.view_end.sender.send(InputEvent::Interrupt { id: *id });
+                                            _ = self.view_end.sender.send(InputEvent {
+                                                agent_id: Some(*id),
+                                                kind: InputEventKind::Interrupt,
+                                            });
                                             if is_something_previewing {
                                                 agent_info.is_previewing_convo = false;
                                             }
@@ -689,9 +699,9 @@ impl<'a> SubagentIndicator<'a> {
                                         let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
                                             continue;
                                         };
-                                        if let Err(e) = self.view_end.sender.send(InputEvent::ToolApproval{
-                                            id: focused_agent,
-                                            inner: pending_tool_approval_id
+                                        if let Err(e) = self.view_end.sender.send(InputEvent {
+                                            agent_id: Some(focused_agent),
+                                            kind: InputEventKind::ToolApproval(pending_tool_approval_id)
                                         }) {
                                             error!(?e, "error sending input event");
                                         };
@@ -707,9 +717,9 @@ impl<'a> SubagentIndicator<'a> {
                                         let Some(pending_tool_approval_id) = agent_info.pending_tool_approval.take() else {
                                             continue;
                                         };
-                                        if let Err(e) = self.view_end.sender.send(InputEvent::ToolRejection {
-                                            id: focused_agent,
-                                            inner: pending_tool_approval_id
+                                        if let Err(e) = self.view_end.sender.send(InputEvent {
+                                            agent_id: Some(focused_agent),
+                                            kind: InputEventKind::ToolRejection(pending_tool_approval_id)
                                         }) {
                                             error!("error sending input event: {e:?}");
                                         };

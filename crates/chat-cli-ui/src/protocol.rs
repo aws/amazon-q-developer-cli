@@ -350,6 +350,66 @@ pub enum McpEvent {
     OauthRequest { server_name: String, oauth_url: String },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEvent {
+    pub agent_id: u16,
+    pub kind: AgentEventKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentEventKind {
+    // Lifecycle Events
+    RunStarted(RunStarted),
+    RunFinished(RunFinished),
+    RunError(RunError),
+    StepStarted(StepStarted),
+    StepFinished(StepFinished),
+
+    // Text Message Events
+    TextMessageStart(TextMessageStart),
+    TextMessageContent(TextMessageContent),
+    TextMessageEnd(TextMessageEnd),
+    TextMessageChunk(TextMessageChunk),
+
+    // Tool Call Events
+    ToolCallStart(ToolCallStart),
+    ToolCallArgs(ToolCallArgs),
+    ToolCallEnd(ToolCallEnd),
+    ToolCallResult(ToolCallResult),
+    // bespoke variant
+    ToolCallRejection(ToolCallRejection),
+    ToolCallPermissionRequest(ToolCallPermissionRequest),
+
+    // State Management Events
+    StateSnapshot(StateSnapshot),
+    StateDelta(StateDelta),
+    MessagesSnapshot(MessagesSnapshot),
+
+    // Special Events
+    Raw(Raw),
+    Custom(Custom),
+
+    // Draft Events - Activity Events
+    ActivitySnapshotEvent(ActivitySnapshotEvent),
+    ActivityDeltaEvent(ActivityDeltaEvent),
+
+    // Draft Events - Reasoning Events
+    ReasoningStart(ReasoningStart),
+    ReasoningMessageStart(ReasoningMessageStart),
+    ReasoningMessageContent(ReasoningMessageContent),
+    ReasoningMessageEnd(ReasoningMessageEnd),
+    ReasoningMessageChunk(ReasoningMessageChunk),
+    ReasoningEnd(ReasoningEnd),
+
+    // Draft Events - Meta Events
+    MetaEvent(MetaEvent),
+
+    // Bespoke MCP Events
+    McpEvent(McpEvent),
+}
+
 // ============================================================================
 // Main Event Enum
 // ============================================================================
@@ -357,216 +417,83 @@ pub enum McpEvent {
 /// Main event enum that encompasses all event types in the Agent UI Protocol
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum UiEvent {
-    // Lifecycle Events
-    RunStarted {
-        agent_id: u16,
-        inner: RunStarted,
-    },
-    RunFinished {
-        agent_id: u16,
-        inner: RunFinished,
-    },
-    RunError {
-        agent_id: u16,
-        inner: RunError,
-    },
-    StepStarted {
-        agent_id: u16,
-        inner: StepStarted,
-    },
-    StepFinished {
-        agent_id: u16,
-        inner: StepFinished,
-    },
-
-    // Text Message Events
-    TextMessageStart {
-        agent_id: u16,
-        inner: TextMessageStart,
-    },
-    TextMessageContent {
-        agent_id: u16,
-        inner: TextMessageContent,
-    },
-    TextMessageEnd {
-        agent_id: u16,
-        inner: TextMessageEnd,
-    },
-    TextMessageChunk {
-        agent_id: u16,
-        inner: TextMessageChunk,
-    },
-
-    // Tool Call Events
-    ToolCallStart {
-        agent_id: u16,
-        inner: ToolCallStart,
-    },
-    ToolCallArgs {
-        agent_id: u16,
-        inner: ToolCallArgs,
-    },
-    ToolCallEnd {
-        agent_id: u16,
-        inner: ToolCallEnd,
-    },
-    ToolCallResult {
-        agent_id: u16,
-        inner: ToolCallResult,
-    },
-    // bespoke variant
-    ToolCallRejection {
-        agent_id: u16,
-        inner: ToolCallRejection,
-    },
-    ToolCallPermissionRequest {
-        agent_id: u16,
-        inner: ToolCallPermissionRequest,
-    },
-
-    // State Management Events
-    StateSnapshot {
-        agent_id: u16,
-        inner: StateSnapshot,
-    },
-    StateDelta {
-        agent_id: u16,
-        inner: StateDelta,
-    },
-    MessagesSnapshot {
-        agent_id: u16,
-        inner: MessagesSnapshot,
-    },
-
-    // Special Events
-    Raw {
-        agent_id: u16,
-        inner: Raw,
-    },
-    Custom {
-        agent_id: u16,
-        inner: Custom,
-    },
-    // bespoke variant
+pub enum SessionEvent {
+    AgentEvent(AgentEvent),
     LegacyPassThrough(LegacyPassThroughOutput),
-
-    // Draft Events - Activity Events
-    ActivitySnapshotEvent {
-        agent_id: u16,
-        inner: ActivitySnapshotEvent,
-    },
-    ActivityDeltaEvent {
-        agent_id: u16,
-        inner: ActivityDeltaEvent,
-    },
-
-    // Draft Events - Reasoning Events
-    ReasoningStart {
-        agent_id: u16,
-        inner: ReasoningStart,
-    },
-    ReasoningMessageStart {
-        agent_id: u16,
-        inner: ReasoningMessageStart,
-    },
-    ReasoningMessageContent {
-        agent_id: u16,
-        inner: ReasoningMessageContent,
-    },
-    ReasoningMessageEnd {
-        agent_id: u16,
-        inner: ReasoningMessageEnd,
-    },
-    ReasoningMessageChunk {
-        agent_id: u16,
-        inner: ReasoningMessageChunk,
-    },
-    ReasoningEnd {
-        agent_id: u16,
-        inner: ReasoningEnd,
-    },
-
-    // Draft Events - Meta Events
-    MetaEvent {
-        agent_id: u16,
-        inner: MetaEvent,
-    },
-
-    // Bespoke MCP Events
-    McpEvent {
-        agent_id: u16,
-        inner: McpEvent,
-    },
 }
 
-impl UiEvent {
+impl SessionEvent {
     /// Get the event type string for this event
     pub fn event_type(&self) -> &'static str {
         match self {
-            // Lifecycle Events
-            UiEvent::RunStarted { .. } => "runStarted",
-            UiEvent::RunFinished { .. } => "runFinished",
-            UiEvent::RunError { .. } => "runError",
-            UiEvent::StepStarted { .. } => "stepStarted",
-            UiEvent::StepFinished { .. } => "stepFinished",
+            SessionEvent::AgentEvent(agent_evt) => match agent_evt.kind {
+                // Lifecycle Events
+                AgentEventKind::RunStarted(_) => "runStarted",
+                AgentEventKind::RunFinished(_) => "runFinished",
+                AgentEventKind::RunError(_) => "runError",
+                AgentEventKind::StepStarted(_) => "stepStarted",
+                AgentEventKind::StepFinished(_) => "stepFinished",
 
-            // Text Message Events
-            UiEvent::TextMessageStart { .. } => "textMessageStart",
-            UiEvent::TextMessageContent { .. } => "textMessageContent",
-            UiEvent::TextMessageEnd { .. } => "textMessageEnd",
-            UiEvent::TextMessageChunk { .. } => "textMessageChunk",
+                // Text Message Events
+                AgentEventKind::TextMessageStart(_) => "textMessageStart",
+                AgentEventKind::TextMessageContent(_) => "textMessageContent",
+                AgentEventKind::TextMessageEnd(_) => "textMessageEnd",
+                AgentEventKind::TextMessageChunk(_) => "textMessageChunk",
 
-            // Tool Call Events
-            UiEvent::ToolCallStart { .. } => "toolCallStart",
-            UiEvent::ToolCallArgs { .. } => "toolCallArgs",
-            UiEvent::ToolCallEnd { .. } => "toolCallEnd",
-            UiEvent::ToolCallResult { .. } => "toolCallResult",
-            UiEvent::ToolCallRejection { .. } => "toolCallRejection",
-            UiEvent::ToolCallPermissionRequest { .. } => "toolCallPermissionRequest",
+                // Tool Call Events
+                AgentEventKind::ToolCallStart(_) => "toolCallStart",
+                AgentEventKind::ToolCallArgs(_) => "toolCallArgs",
+                AgentEventKind::ToolCallEnd(_) => "toolCallEnd",
+                AgentEventKind::ToolCallResult(_) => "toolCallResult",
+                AgentEventKind::ToolCallRejection(_) => "toolCallRejection",
+                AgentEventKind::ToolCallPermissionRequest(_) => "toolCallPermissionRequest",
 
-            // State Management Events
-            UiEvent::StateSnapshot { .. } => "stateSnapshot",
-            UiEvent::StateDelta { .. } => "stateDelta",
-            UiEvent::MessagesSnapshot { .. } => "messagesSnapshot",
+                // State Management Events
+                AgentEventKind::StateSnapshot(_) => "stateSnapshot",
+                AgentEventKind::StateDelta(_) => "stateDelta",
+                AgentEventKind::MessagesSnapshot(_) => "messagesSnapshot",
 
-            // Special Events
-            UiEvent::Raw { .. } => "raw",
-            UiEvent::Custom { .. } => "custom",
-            UiEvent::LegacyPassThrough { .. } => "legacyPassThrough",
+                // Special Events
+                AgentEventKind::Raw(_) => "raw",
+                AgentEventKind::Custom(_) => "custom",
 
-            // Draft Events - Activity Events
-            UiEvent::ActivitySnapshotEvent { .. } => "activitySnapshotEvent",
-            UiEvent::ActivityDeltaEvent { .. } => "activityDeltaEvent",
+                // Draft Events - Activity Events
+                AgentEventKind::ActivitySnapshotEvent(_) => "activitySnapshotEvent",
+                AgentEventKind::ActivityDeltaEvent(_) => "activityDeltaEvent",
 
-            // Draft Events - Reasoning Events
-            UiEvent::ReasoningStart { .. } => "reasoningStart",
-            UiEvent::ReasoningMessageStart { .. } => "reasoningMessageStart",
-            UiEvent::ReasoningMessageContent { .. } => "reasoningMessageContent",
-            UiEvent::ReasoningMessageEnd { .. } => "reasoningMessageEnd",
-            UiEvent::ReasoningMessageChunk { .. } => "reasoningMessageChunk",
-            UiEvent::ReasoningEnd { .. } => "reasoningEnd",
+                // Draft Events - Reasoning Events
+                AgentEventKind::ReasoningStart(_) => "reasoningStart",
+                AgentEventKind::ReasoningMessageStart(_) => "reasoningMessageStart",
+                AgentEventKind::ReasoningMessageContent(_) => "reasoningMessageContent",
+                AgentEventKind::ReasoningMessageEnd(_) => "reasoningMessageEnd",
+                AgentEventKind::ReasoningMessageChunk(_) => "reasoningMessageChunk",
+                AgentEventKind::ReasoningEnd(_) => "reasoningEnd",
 
-            // Draft Events - Meta Events
-            UiEvent::MetaEvent { .. } => "metaEvent",
+                // Draft Events - Meta Events
+                AgentEventKind::MetaEvent(_) => "metaEvent",
 
-            UiEvent::McpEvent { .. } => "mcpEvent",
+                AgentEventKind::McpEvent(_) => "mcpEvent",
+            },
+            SessionEvent::LegacyPassThrough(_) => "legacyPassThrough",
         }
     }
 
     pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
-        matches!(self, UiEvent::LegacyPassThrough { .. })
+        matches!(self, SessionEvent::LegacyPassThrough { .. })
     }
 
     /// Check if this is a lifecycle event
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            UiEvent::RunStarted { .. }
-                | UiEvent::RunFinished { .. }
-                | UiEvent::RunError { .. }
-                | UiEvent::StepStarted { .. }
-                | UiEvent::StepFinished { .. }
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::RunStarted(_)
+                    | AgentEventKind::RunFinished(_)
+                    | AgentEventKind::RunError(_)
+                    | AgentEventKind::StepStarted(_)
+                    | AgentEventKind::StepFinished(_),
+                ..
+            })
         )
     }
 
@@ -574,10 +501,13 @@ impl UiEvent {
     pub fn is_text_message_event(&self) -> bool {
         matches!(
             self,
-            UiEvent::TextMessageStart { .. }
-                | UiEvent::TextMessageContent { .. }
-                | UiEvent::TextMessageEnd { .. }
-                | UiEvent::TextMessageChunk { .. }
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::TextMessageStart(_)
+                    | AgentEventKind::TextMessageContent(_)
+                    | AgentEventKind::TextMessageEnd(_)
+                    | AgentEventKind::TextMessageChunk(_),
+                ..
+            })
         )
     }
 
@@ -585,10 +515,13 @@ impl UiEvent {
     pub fn is_tool_call_event(&self) -> bool {
         matches!(
             self,
-            UiEvent::ToolCallStart { .. }
-                | UiEvent::ToolCallArgs { .. }
-                | UiEvent::ToolCallEnd { .. }
-                | UiEvent::ToolCallResult { .. }
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::ToolCallStart(_)
+                    | AgentEventKind::ToolCallArgs(_)
+                    | AgentEventKind::ToolCallEnd(_)
+                    | AgentEventKind::ToolCallResult(_),
+                ..
+            })
         )
     }
 
@@ -596,7 +529,12 @@ impl UiEvent {
     pub fn is_state_management_event(&self) -> bool {
         matches!(
             self,
-            UiEvent::StateSnapshot { .. } | UiEvent::StateDelta { .. } | UiEvent::MessagesSnapshot { .. }
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::StateSnapshot(_)
+                    | AgentEventKind::StateDelta(_)
+                    | AgentEventKind::MessagesSnapshot(_),
+                ..
+            })
         )
     }
 
@@ -604,15 +542,18 @@ impl UiEvent {
     pub fn is_draft_event(&self) -> bool {
         matches!(
             self,
-            UiEvent::ActivitySnapshotEvent { .. }
-                | UiEvent::ActivityDeltaEvent { .. }
-                | UiEvent::ReasoningStart { .. }
-                | UiEvent::ReasoningMessageStart { .. }
-                | UiEvent::ReasoningMessageContent { .. }
-                | UiEvent::ReasoningMessageEnd { .. }
-                | UiEvent::ReasoningMessageChunk { .. }
-                | UiEvent::ReasoningEnd { .. }
-                | UiEvent::MetaEvent { .. }
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::ActivitySnapshotEvent(_)
+                    | AgentEventKind::ActivityDeltaEvent(_)
+                    | AgentEventKind::ReasoningStart(_)
+                    | AgentEventKind::ReasoningMessageStart(_)
+                    | AgentEventKind::ReasoningMessageContent(_)
+                    | AgentEventKind::ReasoningMessageEnd(_)
+                    | AgentEventKind::ReasoningMessageChunk(_)
+                    | AgentEventKind::ReasoningEnd(_)
+                    | AgentEventKind::MetaEvent(_),
+                ..
+            })
         )
     }
 }
@@ -621,20 +562,18 @@ impl UiEvent {
 /// This will likely be done when UI revamp is done
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "camelCase")]
-pub enum InputEvent {
-    Text { id: u16, inner: String },
-    Interrupt { id: u16 },
-    ToolApproval { id: u16, inner: String },
-    ToolRejection { id: u16, inner: String },
+pub struct InputEvent {
+    pub agent_id: Option<u16>,
+    pub kind: InputEventKind,
 }
 
-impl InputEvent {
-    pub fn get_id(&self) -> u16 {
-        match self {
-            InputEvent::Text { id, .. } => *id,
-            InputEvent::Interrupt { id } => *id,
-            InputEvent::ToolApproval { id, .. } => *id,
-            InputEvent::ToolRejection { id, .. } => *id,
-        }
-    }
+/// This is a stop gap until we adopt ACP
+/// This will likely be done when UI revamp is done
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum InputEventKind {
+    Text(String),
+    Interrupt,
+    ToolApproval(String),
+    ToolRejection(String),
 }

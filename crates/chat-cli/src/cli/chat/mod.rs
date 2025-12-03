@@ -62,12 +62,12 @@ use chat_cli_ui::conduit::{
 };
 use chat_cli_ui::protocol::{
     MessageRole,
+    SessionEvent,
     TextMessageContent,
     TextMessageEnd,
     TextMessageStart,
     ToolCallRejection,
     ToolCallStart,
-    UiEvent,
 };
 use clap::{
     Args,
@@ -2096,14 +2096,15 @@ impl ChatSession {
         // users, and we are going to wait until the ui layer acknowledges.
         // Note that this works because [std::sync::mpsc] preserves order between sending and
         // receiving
+        let signal_event = SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+            agent_id: Default::default(),
+            kind: chat_cli_ui::protocol::AgentEventKind::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                meta_type: "timing".to_string(),
+                payload: serde_json::Value::String("prompt_user".to_string()),
+            }),
+        });
         self.stderr
-            .send(UiEvent::MetaEvent {
-                agent_id: Default::default(),
-                inner: chat_cli_ui::protocol::MetaEvent {
-                    meta_type: "timing".to_string(),
-                    payload: serde_json::Value::String("prompt_user".to_string()),
-                },
-            })
+            .send(signal_event)
             .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
         if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
             error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
@@ -2454,10 +2455,11 @@ impl ChatSession {
                         name: tool.name.clone(),
                         reason: formatted_set,
                     };
-                    self.stderr.send(UiEvent::ToolCallRejection {
-                        agent_id: Default::default(),
-                        inner: event,
-                    })?;
+                    self.stderr
+                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                            agent_id: Default::default(),
+                            kind: chat_cli_ui::protocol::AgentEventKind::ToolCallRejection(event),
+                        }))?;
                 }
 
                 return Ok(ChatState::HandleInput {
@@ -2917,10 +2919,11 @@ impl ChatSession {
                                         role: MessageRole::Assistant,
                                     };
 
-                                    self.stdout.send(UiEvent::TextMessageStart {
-                                        agent_id: Default::default(),
-                                        inner: msg_start,
-                                    })?;
+                                    self.stdout
+                                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                                            agent_id: Default::default(),
+                                            kind: chat_cli_ui::protocol::AgentEventKind::TextMessageStart(msg_start),
+                                        }))?;
                                     response_prefix_printed = true;
                                 }
                             } else {
@@ -3166,10 +3169,11 @@ impl ChatSession {
                                 message_id: request_id.clone().unwrap_or_default(),
                                 delta: std::mem::take(&mut temp_buf),
                             };
-                            self.stdout.send(UiEvent::TextMessageContent {
-                                agent_id: Default::default(),
-                                inner: text_msg_content,
-                            })?;
+                            self.stdout
+                                .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                                    agent_id: Default::default(),
+                                    kind: chat_cli_ui::protocol::AgentEventKind::TextMessageContent(text_msg_content),
+                                }))?;
 
                             state.newline = state.set_newline;
                             state.set_newline = false;
@@ -3221,12 +3225,13 @@ impl ChatSession {
                 }
 
                 if self.stderr.should_send_structured_event {
-                    self.stderr.send(UiEvent::TextMessageEnd {
-                        agent_id: Default::default(),
-                        inner: TextMessageEnd {
-                            message_id: request_id.clone().unwrap_or_default(),
-                        },
-                    })?;
+                    self.stderr
+                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                            agent_id: Default::default(),
+                            kind: chat_cli_ui::protocol::AgentEventKind::TextMessageEnd(TextMessageEnd {
+                                message_id: request_id.clone().unwrap_or_default(),
+                            }),
+                        }))?;
                 } else {
                     queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
                 }
@@ -3600,10 +3605,11 @@ impl ChatSession {
                 is_trusted: trusted,
                 parent_message_id: None,
             };
-            self.stdout.send(UiEvent::ToolCallStart {
-                agent_id: Default::default(),
-                inner: tool_call_start,
-            })?;
+            self.stdout
+                .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                    agent_id: Default::default(),
+                    kind: chat_cli_ui::protocol::AgentEventKind::ToolCallStart(tool_call_start),
+                }))?;
         }
 
         tool_use

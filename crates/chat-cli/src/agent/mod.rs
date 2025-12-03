@@ -31,14 +31,17 @@ use chat_cli_ui::conduit::{
     get_conduit,
 };
 use chat_cli_ui::protocol::{
+    AgentEvent as AgentEventForUi,
+    AgentEventKind,
     InputEvent,
+    InputEventKind,
     McpEvent as UiMcpEvent,
     MetaEvent,
+    SessionEvent,
     TextMessageContent,
     ToolCallEnd,
     ToolCallPermissionRequest,
     ToolCallStart,
-    UiEvent,
 };
 use chat_cli_ui::subagent_indicator::{
     SubagentExecutionSummary,
@@ -194,22 +197,24 @@ impl<'a> Subagent<'a> {
         loop {
             tokio::select! {
                 // While we wait we would still need to handle user input
-                evt = input_rx.recv() => {
-                    let Ok(evt) = evt else {
+                input_evt = input_rx.recv() => {
+                    let Ok(input_evt) = input_evt else {
                         bail!("input channel closed");
                     };
 
-                    if let InputEvent::Interrupt { id: _ } = evt {
+                    let InputEvent { agent_id: _, kind } = input_evt;
+
+                    if let InputEventKind::Interrupt = kind {
                         bail!("user interrupted");
                     }
                 },
 
-                evt = agent.recv() => {
-                    let Ok(evt) = evt else {
+                agent_evt = agent.recv() => {
+                    let Ok(agent_evt) = agent_evt else {
                         bail!("agent loop channel closed");
                     };
 
-                    match evt {
+                    match agent_evt {
                         AgentEvent::InitializeUpdate(initialize_update_evt) => {
                             let ui_mcp_event = match initialize_update_evt {
                                 InitializeUpdateEvent::Mcp(evt) => match evt {
@@ -223,10 +228,10 @@ impl<'a> Subagent<'a> {
                                     McpServerEvent::Initializing { server_name } => UiMcpEvent::Loading { server_name },
                                 }
                             };
-                            _ = control_end.send(UiEvent::McpEvent {
+                            _ = control_end.send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
                                 agent_id: self.id,
-                                inner: ui_mcp_event,
-                            });
+                                kind: AgentEventKind::McpEvent(ui_mcp_event)
+                            }));
                         },
                         // We need to wait until the agent is initialized before moving on
                         AgentEvent::Initialized => {
@@ -251,22 +256,26 @@ impl<'a> Subagent<'a> {
 
         loop {
             tokio::select! {
-                evt = input_rx.recv() => {
-                    let Ok(evt) = evt else {
+                input_evt = input_rx.recv() => {
+                    let Ok(input_evt) = input_evt else {
                         bail!("input channel closed");
                     };
-                    if self.id != evt.get_id() {
+                    debug!(?input_evt, "received new input event");
+
+                    let InputEvent { agent_id, kind } = input_evt;
+
+                    if agent_id.is_none_or(|id| self.id != id) {
                         continue;
                     }
-                    debug!(?evt, "received new input event");
 
-                    match evt {
-                        InputEvent::Text { .. } => {},
-                        InputEvent::Interrupt { .. } => {
+
+                    match kind {
+                        InputEventKind::Text(_) => {},
+                        InputEventKind::Interrupt => {
                             agent.cancel().await?;
                             break;
                         },
-                        InputEvent::ToolApproval { inner: id, .. } => {
+                        InputEventKind::ToolApproval(id) => {
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
@@ -274,7 +283,7 @@ impl<'a> Subagent<'a> {
                                 })
                                 .await?;
                         },
-                        InputEvent::ToolRejection { inner: id, .. } => {
+                        InputEventKind::ToolRejection(id) => {
                             agent
                                 .send_tool_use_approval_result(SendApprovalResultArgs {
                                     id,
@@ -298,42 +307,50 @@ impl<'a> Subagent<'a> {
 
                             match evt {
                                 UpdateEvent::ToolCall(tool_call) => {
-                                    _ = control_end.send(UiEvent::ToolCallStart {
+                                    _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                         agent_id: self.id,
-                                        inner: ToolCallStart {
-                                            tool_call_id: tool_call.id,
-                                            tool_call_name: tool_call.tool_use_block.name,
-                                            parent_message_id: None,
-                                            mcp_server_name: None,
-                                            is_trusted: true,
-                                        },
-                                    });
+                                        kind: AgentEventKind::ToolCallStart(
+                                            ToolCallStart {
+                                                tool_call_id: tool_call.id,
+                                                tool_call_name: tool_call.tool_use_block.name,
+                                                parent_message_id: None,
+                                                mcp_server_name: None,
+                                                is_trusted: true,
+                                            }
+                                        )
+                                    }));
                                 },
                                 UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
-                                    _ = control_end.send(UiEvent::ToolCallEnd {
+                                    _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                         agent_id: self.id,
-                                        inner: ToolCallEnd {
-                                            tool_call_id: tool_call.id,
-                                        },
-                                    });
+                                        kind: AgentEventKind::ToolCallEnd(
+                                            ToolCallEnd {
+                                                tool_call_id: tool_call.id,
+                                            }
+                                        )
+                                    }));
                                 },
                                 UpdateEvent::AgentContent(content) => {
                                     if let ContentChunk::Text(text) = content {
-                                        _ = control_end.send(UiEvent::TextMessageContent {
+                                        _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                             agent_id: self.id,
-                                            inner: TextMessageContent {
-                                                message_id: Default::default(),
-                                                delta: text.into_bytes(),
-                                            },
-                                        });
+                                            kind: AgentEventKind::TextMessageContent(
+                                                TextMessageContent {
+                                                    message_id: Default::default(),
+                                                    delta: text.into_bytes(),
+                                                }
+                                            )
+                                        }));
                                     } else {
-                                        _ = control_end.send(UiEvent::TextMessageContent {
+                                        _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                             agent_id: self.id,
-                                            inner: TextMessageContent {
-                                                message_id: Default::default(),
-                                                delta: Default::default(),
-                                            },
-                                        });
+                                            kind: AgentEventKind::TextMessageContent(
+                                                TextMessageContent {
+                                                    message_id: Default::default(),
+                                                    delta: Default::default(),
+                                                }
+                                            )
+                                        }));
                                     }
                                 },
                                 _ => {},
@@ -357,14 +374,16 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, .. } => {
                             if !self.dangerously_trust_all_tools {
-                                _ = control_end.send(UiEvent::ToolCallPermissionRequest {
+                                _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                     agent_id: self.id,
-                                    inner: ToolCallPermissionRequest {
-                                        tool_call_id: tool_use.tool_use_id,
-                                        name: tool_use.name,
-                                        input: tool_use.input,
-                                    }
-                                });
+                                    kind: AgentEventKind::ToolCallPermissionRequest(
+                                        ToolCallPermissionRequest {
+                                            tool_call_id: tool_use.tool_use_id,
+                                            name: tool_use.name,
+                                            input: tool_use.input,
+                                        }
+                                    )
+                                }));
                             } else {
                                 warn!(?tool_use, "trust all is enabled, ignoring approval request");
                                 agent
@@ -407,13 +426,13 @@ impl<'a> Subagent<'a> {
         // TODO: do we want to set a special variant for this so we don't have to marshall and
         // unmarshall?
         if let Ok(payload) = serde_json::to_value(md) {
-            _ = control_end.send(UiEvent::MetaEvent {
+            _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                 agent_id: self.id,
-                inner: MetaEvent {
+                kind: AgentEventKind::MetaEvent(MetaEvent {
                     meta_type: "EndTurn".to_string(),
                     payload,
-                },
-            });
+                }),
+            }));
         }
 
         query_result.ok_or(eyre::eyre!("subagent missing query result"))
