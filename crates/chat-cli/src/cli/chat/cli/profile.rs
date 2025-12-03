@@ -78,7 +78,10 @@ pub enum AgentSubcommand {
     Edit {
         /// Name of the agent to edit
         #[arg(long, short)]
-        name: String,
+        name: Option<String>,
+        /// Path to the agent config file to edit
+        #[arg(long)]
+        path: Option<String>,
     },
     /// Generate an agent configuration using AI
     Generate {},
@@ -267,10 +270,50 @@ impl AgentSubcommand {
                 )?;
             },
 
-            Self::Edit { name } => {
-                let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name)
-                    .await
-                    .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+            Self::Edit { name, path } => {
+                use std::path::PathBuf;
+
+                let mut show_both_params_warning = false;
+                let (agent_name, path_with_file_name) = match (name, path) {
+                    (Some(name), None) => {
+                        let (_agent, path) = Agent::get_agent_by_name(os, &name)
+                            .await
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                        (name, path)
+                    },
+                    (None, Some(path_arg)) => {
+                        let path = PathBuf::from(&path_arg);
+                        if !os.fs.exists(&path) {
+                            return Err(ChatError::Custom(
+                                format!("Agent config file not found at path: {}", path.display()).into(),
+                            ));
+                        }
+                        let content = os
+                            .fs
+                            .read(&path)
+                            .await
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                        let agent = serde_json::from_slice::<Agent>(&content)
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+                        (agent.name.clone(), path)
+                    },
+                    (Some(name), Some(path_arg)) => {
+                        // --name takes priority, but warn if --path points to a different agent
+                        let (_agent, path) = Agent::get_agent_by_name(os, &name)
+                            .await
+                            .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
+
+                        let file_path = PathBuf::from(&path_arg);
+                        if os.fs.exists(&file_path) && file_path != path {
+                            show_both_params_warning = true;
+                        }
+
+                        (name, path)
+                    },
+                    (None, None) => {
+                        return Err(ChatError::Custom("Must specify either --name or --path".into()));
+                    },
+                };
 
                 crate::util::editor::launch_editor(&path_with_file_name)
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -298,8 +341,10 @@ impl AgentSubcommand {
                         )?;
 
                         return Err(ChatError::Custom(
-                            format!("Post edit validation failed for agent '{name}'. Malformed config detected: {e}")
-                                .into(),
+                            format!(
+                                "Post edit validation failed for agent '{agent_name}'. Malformed config detected: {e}"
+                            )
+                            .into(),
                         ));
                     },
                 }
@@ -309,7 +354,7 @@ impl AgentSubcommand {
                     StyledText::success_fg(),
                     style::Print("Agent "),
                     StyledText::brand_fg(),
-                    style::Print(name),
+                    style::Print(&agent_name),
                     StyledText::success_fg(),
                     style::Print(" has been edited successfully"),
                     StyledText::reset(),
@@ -317,7 +362,20 @@ impl AgentSubcommand {
                     StyledText::warning_fg(),
                     style::Print("Changes take effect on next launch"),
                     StyledText::reset(),
+                    style::Print("\n"),
                 )?;
+
+                if show_both_params_warning {
+                    execute!(
+                        session.stderr,
+                        StyledText::warning_fg(),
+                        style::Print("⚠ Warning: "),
+                        StyledText::reset(),
+                        style::Print(format!(
+                            "Both --name and --path were provided. Used agent '{agent_name}' (ignored --path)\n"
+                        )),
+                    )?;
+                }
             },
 
             Self::Generate {} => {

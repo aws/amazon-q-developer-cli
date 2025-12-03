@@ -51,7 +51,10 @@ pub enum AgentSubcommands {
     Edit {
         /// Name of the agent to edit
         #[arg(long, short)]
-        name: String,
+        name: Option<String>,
+        /// Path to the agent config file to edit
+        #[arg(long)]
+        path: Option<String>,
     },
     /// Validate a config with the given path
     Validate {
@@ -150,9 +153,39 @@ impl AgentArgs {
                     path_with_file_name.display()
                 )?;
             },
-            Some(AgentSubcommands::Edit { name }) => {
+            Some(AgentSubcommands::Edit { name, path }) => {
                 let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
-                let (_agent, path_with_file_name) = Agent::get_agent_by_name(os, &name).await?;
+
+                let mut show_both_params_warning = false;
+                let (agent_name, path_with_file_name) = match (name, path) {
+                    (Some(name), None) => {
+                        let (_agent, path) = Agent::get_agent_by_name(os, &name).await?;
+                        (name, path)
+                    },
+                    (None, Some(path_arg)) => {
+                        let path = PathBuf::from(&path_arg);
+                        if !os.fs.exists(&path) {
+                            bail!("Agent config file not found at path: {}", path.display());
+                        }
+                        let content = os.fs.read(&path).await?;
+                        let agent = serde_json::from_slice::<Agent>(&content)?;
+                        (agent.name.clone(), path)
+                    },
+                    (Some(name), Some(path_arg)) => {
+                        // --name takes priority, but warn if --path points to a different agent
+                        let (_agent, path) = Agent::get_agent_by_name(os, &name).await?;
+
+                        let file_path = PathBuf::from(&path_arg);
+                        if os.fs.exists(&file_path) && file_path != path {
+                            show_both_params_warning = true;
+                        }
+
+                        (name, path)
+                    },
+                    (None, None) => {
+                        bail!("Must specify either --name or --path");
+                    },
+                };
 
                 crate::util::editor::launch_editor(&path_with_file_name)?;
 
@@ -164,7 +197,8 @@ impl AgentArgs {
                 };
                 if let Err(e) = serde_json::from_slice::<Agent>(&content) {
                     bail!(
-                        "Post edit validation failed for agent '{name}' at path: {}. Malformed config detected: {e}",
+                        "Post edit validation failed for agent '{}' at path: {}. Malformed config detected: {e}",
+                        agent_name,
                         path_with_file_name.display()
                     );
                 }
@@ -172,9 +206,22 @@ impl AgentArgs {
                 writeln!(
                     stderr,
                     "\n✏️  Edited agent {} '{}'\n",
-                    name,
+                    agent_name,
                     path_with_file_name.display()
                 )?;
+
+                if show_both_params_warning {
+                    let _ = queue!(
+                        stderr,
+                        StyledText::warning_fg(),
+                        style::Print("⚠ Warning: "),
+                        StyledText::reset(),
+                        style::Print(format!(
+                            "Both --name and --path were provided. Used agent '{agent_name}' (ignored --path)\n\n"
+                        )),
+                    );
+                    stderr.flush()?;
+                }
             },
             Some(AgentSubcommands::Validate { path }) => {
                 let mut global_mcp_config = None::<McpServerConfig>;
@@ -430,7 +477,8 @@ mod tests {
             ["agent", "edit", "--name", "existing_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
-                    name: "existing_agent".to_string(),
+                    name: Some("existing_agent".to_string()),
+                    path: None,
                 })
             })
         );
@@ -438,7 +486,34 @@ mod tests {
             ["agent", "edit", "-n", "existing_agent"],
             RootSubcommand::Agent(AgentArgs {
                 cmd: Some(AgentSubcommands::Edit {
-                    name: "existing_agent".to_string(),
+                    name: Some("existing_agent".to_string()),
+                    path: None,
+                })
+            })
+        );
+        assert_parse!(
+            ["agent", "edit", "--path", "/path/to/agent.json"],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Edit {
+                    name: None,
+                    path: Some("/path/to/agent.json".to_string()),
+                })
+            })
+        );
+        // Test that both parameters can be provided (--name takes priority)
+        assert_parse!(
+            [
+                "agent",
+                "edit",
+                "--name",
+                "existing_agent",
+                "--path",
+                "/path/to/agent.json"
+            ],
+            RootSubcommand::Agent(AgentArgs {
+                cmd: Some(AgentSubcommands::Edit {
+                    name: Some("existing_agent".to_string()),
+                    path: Some("/path/to/agent.json".to_string()),
                 })
             })
         );
