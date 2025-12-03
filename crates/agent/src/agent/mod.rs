@@ -366,16 +366,17 @@ impl Agent {
                 warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
             }
 
+            // Here we need to monitor mcp manager for events that are related to initialization
+            // and surface them. One example is oauth request.
             let ct = CancellationToken::new();
-            let ct_clone = ct.clone();
-            let _guard = ct.drop_guard();
+            let _guard = ct.clone().drop_guard();
             let mut mcp_manager_handle = self.mcp_manager_handle.clone();
             let agent_event_tx = self.agent_event_tx.clone();
 
             tokio::spawn(async move {
                 loop {
                     tokio::select! {
-                        _ = ct_clone.cancelled() => {
+                        _ = ct.cancelled() => {
                             break;
                         },
 
