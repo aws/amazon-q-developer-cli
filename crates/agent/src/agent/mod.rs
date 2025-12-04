@@ -1766,8 +1766,13 @@ impl Agent {
     }
 
     /// This prepends the embedded user msg to the system prompt field of the agent
-    pub fn push_embedded_user_msg(&mut self, msg: &str) {
+    pub fn prepend_embedded_user_msg(&mut self, msg: &str) {
         self.agent_config.prepend_to_system_prompt(msg);
+    }
+
+    /// This appends the embedded user msg to the system prompt field of the agent
+    pub fn append_embedded_user_msg(&mut self, msg: &str) {
+        self.agent_config.append_to_system_prompt(msg);
     }
 }
 

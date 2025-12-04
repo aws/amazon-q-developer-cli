@@ -57,7 +57,7 @@ impl InvokeSubagent {
             id,
             query: query.as_str(),
             agent_name: agent_name.as_deref(),
-            embedded_user_msg: relevant_context.as_deref(),
+            task_context: relevant_context.as_deref(),
             dangerously_trust_all_tools: false,
             local_agent_path,
             global_agent_path,

@@ -80,6 +80,14 @@ const SUMMARY_FAILSAFE_MSG: &str = r#"
 You have not called the summary tool yet. Please call the summary tool now to provide your findings to the main agent before ending your task.
 "#;
 
+const CONTEXT_START: &str = r#"
+=== Subagent Task Context Start ===
+"#;
+
+const CONTEXT_END: &str = r#"
+=== Subagent Task Context End ===
+"#;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonOutput {
     /// Whether or not the user turn completed successfully
@@ -101,7 +109,7 @@ pub struct Subagent<'a> {
     pub id: u16,
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
-    pub embedded_user_msg: Option<&'a str>,
+    pub task_context: Option<&'a str>,
     // TODO: inherit this from the main session?
     pub dangerously_trust_all_tools: bool,
     pub local_agent_path: &'a PathBuf,
@@ -165,9 +173,11 @@ impl<'a> Subagent<'a> {
             mcp_manager_handle,
         )
         .await?;
-        agent.push_embedded_user_msg(SUBAGENT_EMBEDDED_USER_MSG);
-        if let Some(msg) = self.embedded_user_msg {
-            agent.push_embedded_user_msg(msg);
+
+        agent.prepend_embedded_user_msg(SUBAGENT_EMBEDDED_USER_MSG);
+        if let Some(msg) = self.task_context {
+            let msg = format!("{CONTEXT_START}{msg}{CONTEXT_END}");
+            agent.append_embedded_user_msg(&msg);
         }
 
         let agent_handle = agent.spawn();
@@ -477,7 +487,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
             id: id as u16,
             query: query.as_str(),
             agent_name: Some(agent_name.as_str()),
-            embedded_user_msg: None,
+            task_context: None,
             dangerously_trust_all_tools: false,
             local_agent_path: &local_agent_path,
             global_agent_path: &global_agent_path,
