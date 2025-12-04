@@ -3831,6 +3831,7 @@ impl ChatSession {
                         .iter()
                         .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
                         .count() as i64,
+                    is_subagent: false,
                 })
                 .await
                 .ok();

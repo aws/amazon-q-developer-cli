@@ -244,6 +244,7 @@ impl Event {
                         follow_up_count,
                         user_prompt_length,
                         message_meta_tags,
+                        is_subagent,
                     },
             } => Some(
                 CodewhispererterminalRecordUserTurnCompletion {
@@ -288,6 +289,7 @@ impl Event {
                             .join(",")
                             .into(),
                     ),
+                    codewhispererterminal_is_subagent: Some(is_subagent.into()),
                 }
                 .into_metric_datum(),
             ),
@@ -543,16 +545,18 @@ impl Event {
             ),
             EventType::SubagentInvocation {
                 parent_conversation_id,
-                token_count,
-                tool_call_count,
+                subagent_name,
+                builtin_tool_uses,
+                mcp_tool_uses,
             } => Some(
                 KirocliSubagentInvocation {
                     amazonq_conversation_id: Some(parent_conversation_id.into()),
                     create_time: self.created_time,
                     value: None,
                     credential_start_url: self.credential_start_url.map(Into::into),
-                    token_count: token_count.map(Into::into),
-                    tool_call_count: tool_call_count.map(Into::into),
+                    codewhispererterminal_subagent_name: subagent_name.into(),
+                    codewhispererterminal_builtin_tool_uses: (builtin_tool_uses as i64).into(),
+                    codewhispererterminal_mcp_tool_uses: (mcp_tool_uses as i64).into(),
                 }
                 .into_metric_datum(),
             ),
@@ -632,6 +636,7 @@ pub struct RecordUserTurnCompletionArgs {
     pub user_turn_duration_seconds: i64,
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,
+    pub is_subagent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -761,8 +766,9 @@ pub enum EventType {
     DailyHeartbeat {},
     SubagentInvocation {
         parent_conversation_id: String,
-        token_count: Option<i64>,
-        tool_call_count: Option<i64>,
+        subagent_name: String,
+        builtin_tool_uses: u32,
+        mcp_tool_uses: u32,
     },
 }
 

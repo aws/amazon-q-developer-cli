@@ -343,6 +343,20 @@ impl TelemetryThread {
         Ok(self.tx.send(telemetry_event)?)
     }
 
+    pub fn send_subagent_record_user_turn_completion(
+        &self,
+        conversation_id: String,
+        result: TelemetryResult,
+        args: RecordUserTurnCompletionArgs,
+    ) -> Result<(), TelemetryError> {
+        let telemetry_event = Event::new(EventType::RecordUserTurnCompletion {
+            conversation_id,
+            result,
+            args,
+        });
+        Ok(self.tx.send(telemetry_event)?)
+    }
+
     pub async fn send_tangent_mode_session(
         &self,
         database: &Database,
@@ -490,13 +504,15 @@ impl TelemetryThread {
     pub fn send_subagent_invocation(
         &self,
         parent_conversation_id: String,
-        token_count: Option<i64>,
-        tool_call_count: Option<i64>,
+        subagent_name: String,
+        builtin_tool_uses: u32,
+        mcp_tool_uses: u32,
     ) -> Result<(), TelemetryError> {
         let telemetry_event = Event::new(EventType::SubagentInvocation {
             parent_conversation_id,
-            token_count,
-            tool_call_count,
+            subagent_name,
+            builtin_tool_uses,
+            mcp_tool_uses,
         });
 
         Ok(self.tx.send(telemetry_event)?)

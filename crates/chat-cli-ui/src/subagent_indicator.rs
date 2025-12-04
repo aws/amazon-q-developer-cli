@@ -195,7 +195,7 @@ impl Drop for SubagentIndicatorHandle {
 pub struct SubagentExecutionSummary {
     pub token_count: u64,
     pub duration: Option<std::time::Duration>,
-    pub tool_call_count: Option<u32>,
+    pub tool_call_count: u32,
 }
 
 #[derive(Default)]
@@ -763,7 +763,7 @@ impl<'a> SubagentIndicator<'a> {
 
             for agent_info in agents.values_mut() {
                 let (tool_calls, duration) = agent_info.execution_summary.as_ref().map_or((0_u32, 0_f64), |summary| {
-                    let tool_calls = summary.tool_call_count.unwrap_or_default();
+                    let tool_calls = summary.tool_call_count;
                     let duration = summary.duration.unwrap_or_default();
                     (tool_calls, duration.as_secs_f64())
                 });

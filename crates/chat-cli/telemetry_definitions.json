@@ -305,14 +305,24 @@
       "description": "The number of lines of code contributed by user"
     },
     {
-      "name": "tokenCount",
-      "type": "int",
-      "description": "The number of tokens used associated with a datum"
+      "name": "codewhispererterminal_subagentName",
+      "type": "string",
+      "description": "The name of the subagent used for subagent invocation"
     },
     {
-      "name": "toolCallCount",
+      "name": "codewhispererterminal_builtinToolUses",
       "type": "int",
-      "description": "The number of tool calls associated with a datum"
+      "description": "The number of builtin tool uses in a subagent invocation"
+    },
+    {
+      "name": "codewhispererterminal_mcpToolUses",
+      "type": "int",
+      "description": "The number of mcp tool uses in a subagent invocation"
+    },
+    {
+      "name": "codewhispererterminal_isSubagent",
+      "type": "boolean",
+      "description": "Whether an associated datum belongs to a subagent invocation"
     }
   ],
   "metrics": [
@@ -372,7 +382,8 @@
         { "type": "codewhispererterminal_assistantResponseLength" },
         { "type": "codewhispererterminal_userTurnDurationSeconds" },
         { "type": "codewhispererterminal_followUpCount" },
-        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false }
+        { "type": "codewhispererterminal_chatMessageMetaTags", "required": false },
+        { "type": "codewhispererterminal_isSubagent", "required": false }
       ]
     },
     {
@@ -583,8 +594,9 @@
       "metadata": [
         { "type": "credentialStartUrl" },
         { "type": "amazonqConversationId" },
-        { "type": "tokenCount", "required": false },
-        { "type": "toolCallCount", "required": false }
+        { "type": "codewhispererterminal_subagentName", "required": true },
+        { "type": "codewhispererterminal_builtinToolUses", "required": true },
+        { "type": "codewhispererterminal_mcpToolUses", "required": true }
       ]
     }
   ]

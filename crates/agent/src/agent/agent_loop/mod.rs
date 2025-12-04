@@ -3,6 +3,7 @@ pub mod protocol;
 pub mod types;
 
 use std::pin::Pin;
+use std::str::FromStr as _;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -51,6 +52,7 @@ use types::{
     ToolUseBlock,
 };
 
+use super::tools::BuiltInToolName;
 use crate::agent::AgentId;
 use crate::agent::util::request_channel::{
     RequestReceiver,
@@ -341,35 +343,39 @@ impl AgentLoop {
         debug_assert!(self.curr_stream.is_none());
 
         let mut message_ids = Vec::new();
+        let mut number_of_cycles = 0_u32;
+        let mut builtin_tool_uses = 0_u32;
+        let mut input_token_count = 0_u64;
+        let mut output_token_count = 0_u64;
+
         for s in &self.stream_states {
             message_ids.push(s.user_message.id.clone());
             message_ids.push(s.message_id.clone());
-        }
 
-        let (input_token_count, output_token_count) =
-            self.stream_states
-                .iter()
-                .fold((0_u64, 0_u64), |(mut input, mut output), state| {
-                    if let Some(md) = state.metadata.as_ref() {
-                        if let Some(md_usage) = md.usage.as_ref() {
-                            if let Some(token_count) = md_usage.input_tokens.as_ref() {
-                                input = input.saturating_add(*token_count);
-                            }
-                            if let Some(token_count) = md_usage.output_tokens.as_ref() {
-                                output = output.saturating_add(*token_count);
-                            }
-                        }
+            if s.has_tool_uses() {
+                number_of_cycles = number_of_cycles.saturating_add(1);
+                builtin_tool_uses = builtin_tool_uses.saturating_add(s.builtin_tool_uses());
+            }
+
+            if let Some(md) = s.metadata.as_ref() {
+                if let Some(md_usage) = md.usage.as_ref() {
+                    if let Some(token_count) = md_usage.input_tokens.as_ref() {
+                        input_token_count = input_token_count.saturating_add(*token_count);
                     }
-
-                    (input, output)
-                });
+                    if let Some(token_count) = md_usage.output_tokens.as_ref() {
+                        output_token_count = output_token_count.saturating_add(*token_count);
+                    }
+                }
+            }
+        }
 
         UserTurnMetadata {
             loop_id: self.id.clone(),
             result: self.stream_states.last().map(|s| s.make_result()),
             message_ids,
             total_request_count: self.stream_states.len() as u32,
-            number_of_cycles: self.stream_states.iter().filter(|s| s.has_tool_uses()).count() as u32,
+            number_of_cycles,
+            builtin_tool_uses,
             turn_duration: match (self.loop_start_time, self.loop_end_time) {
                 (Some(start), Some(end)) => Some(end.duration_since(start)),
                 _ => None,
@@ -590,6 +596,13 @@ impl StreamParseState {
 
     pub fn has_tool_uses(&self) -> bool {
         !self.tool_uses.is_empty()
+    }
+
+    pub fn builtin_tool_uses(&self) -> u32 {
+        self.tool_uses
+            .iter()
+            .filter(|tool_use| BuiltInToolName::from_str(tool_use.name.as_str()).is_ok())
+            .count() as u32
     }
 
     pub fn ended(&self) -> bool {

@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use agent::AgentHandle;
 use agent::agent_config::load_agents;
-use agent::agent_loop::protocol::UserTurnMetadata;
+use agent::agent_loop::protocol::{
+    LoopEndReason,
+    UserTurnMetadata,
+};
 use agent::mcp::{
     McpManager,
     McpServerEvent,
@@ -67,7 +70,11 @@ use tracing::{
 use super::rts;
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
-use crate::telemetry::TelemetryThread;
+use crate::telemetry::core::RecordUserTurnCompletionArgs;
+use crate::telemetry::{
+    TelemetryResult,
+    TelemetryThread,
+};
 use crate::util::paths::PathResolver;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
@@ -87,6 +94,71 @@ const CONTEXT_START: &str = r#"
 const CONTEXT_END: &str = r#"
 === Subagent Task Context End ===
 "#;
+
+// TODO: Generalize this and reuse this elsewhere
+struct TelemetrySink<'a> {
+    parent_conversation_id: &'a str,
+    subagent_name: &'a str,
+    builtin_tool_uses: u32,
+    mcp_tool_uses: u32,
+    record_user_turn_completion_args: Option<RecordUserTurnCompletionArgs>,
+    telemetry_result: Option<TelemetryResult>,
+    telemetry_thread: &'a TelemetryThread,
+}
+
+impl<'a> TelemetrySink<'a> {
+    fn new(parent_conversation_id: &'a str, subagent_name: &'a str, telemetry_thread: &'a TelemetryThread) -> Self {
+        Self {
+            parent_conversation_id,
+            subagent_name,
+            builtin_tool_uses: 0,
+            mcp_tool_uses: 0,
+            record_user_turn_completion_args: None,
+            telemetry_result: None,
+            telemetry_thread,
+        }
+    }
+
+    fn update_stop_reason(&mut self, stop_reason: String) {
+        let args = self
+            .record_user_turn_completion_args
+            .get_or_insert(RecordUserTurnCompletionArgs {
+                is_subagent: true,
+                ..Default::default()
+            });
+        args.reason.replace(stop_reason);
+    }
+}
+
+impl<'a> Drop for TelemetrySink<'a> {
+    fn drop(&mut self) {
+        _ = self.telemetry_thread.send_subagent_invocation(
+            self.parent_conversation_id.to_string(),
+            self.subagent_name.to_string(),
+            self.builtin_tool_uses,
+            self.mcp_tool_uses,
+        );
+
+        let args = self.record_user_turn_completion_args.take();
+        let result = self.telemetry_result.take();
+        let conversation_id = self.parent_conversation_id.to_string();
+
+        match (args, result) {
+            (Some(args), Some(result)) => {
+                _ = self
+                    .telemetry_thread
+                    .send_subagent_record_user_turn_completion(conversation_id, result, args);
+            },
+            (Some(args), None) => {
+                let result = TelemetryResult::Cancelled;
+                _ = self
+                    .telemetry_thread
+                    .send_subagent_record_user_turn_completion(conversation_id, result, args);
+            },
+            (_, _) => {},
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct JsonOutput {
@@ -200,6 +272,12 @@ impl<'a> Subagent<'a> {
         telemetry_thread: &TelemetryThread,
         parent_conversation_id: &str,
     ) -> Result<Summary> {
+        let mut telemetry_sink = TelemetrySink::new(
+            parent_conversation_id,
+            self.agent_name.unwrap_or("kiro_default"),
+            telemetry_thread,
+        );
+
         // First, wait for agent initialization
         loop {
             tokio::select! {
@@ -261,12 +339,15 @@ impl<'a> Subagent<'a> {
         let mut user_turn_metadata = Vec::<UserTurnMetadata>::new();
         let mut query_result = None::<Summary>;
         let mut has_sent_failsafe_msg = false;
+        telemetry_sink
+            .record_user_turn_completion_args
+            .replace(Default::default());
 
         loop {
             tokio::select! {
                 input_evt = input_rx.recv() => {
                     let Ok(input_evt) = input_evt else {
-                        bail!("input channel closed");
+                        break;
                     };
                     debug!(?input_evt, "received new input event");
 
@@ -304,7 +385,7 @@ impl<'a> Subagent<'a> {
 
                 evt = agent.recv() => {
                     let Ok(evt) = evt else {
-                        bail!("channel closed");
+                        break;
                     };
                     debug!(?evt, "received new agent event");
 
@@ -381,7 +462,13 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
-                            bail!("agent encountered an error: {:?}", agent_error)
+                            telemetry_sink.update_stop_reason(agent_error.to_string());
+                            query_result.replace(Summary {
+                                task_description: self.query.to_string(),
+                                context_summary: None,
+                                task_result: format!("subagent has failed due to the following error: {agent_error:?}")
+                            });
+                            break;
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, .. } => {
                             if !self.dangerously_trust_all_tools {
@@ -414,32 +501,53 @@ impl<'a> Subagent<'a> {
             }
         }
 
-        let md = user_turn_metadata
-            .iter()
-            .fold(SubagentExecutionSummary::default(), |mut acc, md| {
-                let tool_call_count = acc.tool_call_count.get_or_insert(0);
-                *tool_call_count = tool_call_count.saturating_add(md.number_of_cycles);
+        let mut summary = SubagentExecutionSummary::default();
 
-                acc.token_count = acc
-                    .token_count
-                    .saturating_add(md.input_token_count)
-                    .saturating_add(md.output_token_count);
+        // Generally there should only be one turn in the user turn metadata array.
+        // In scenarios where the model needed to be reminded to summarize the findings is when
+        // there would be more than one entry in this array, in which case we shall aggregate it.
+        for md in &user_turn_metadata {
+            let tool_call_count = &mut summary.tool_call_count;
+            let total_tool_uses = md.number_of_cycles;
 
-                if let Some(turn_duration) = md.turn_duration.as_ref() {
-                    let duration = acc.duration.get_or_insert(std::time::Duration::from_secs(0));
-                    *duration = duration.saturating_add(*turn_duration);
+            telemetry_sink.mcp_tool_uses = telemetry_sink
+                .mcp_tool_uses
+                .saturating_add(total_tool_uses)
+                .saturating_sub(md.builtin_tool_uses);
+            telemetry_sink.builtin_tool_uses = telemetry_sink.builtin_tool_uses.saturating_add(md.builtin_tool_uses);
+            *tool_call_count = tool_call_count.saturating_add(md.number_of_cycles);
+
+            summary.token_count = summary
+                .token_count
+                .saturating_add(md.input_token_count)
+                .saturating_add(md.output_token_count);
+
+            if let Some(turn_duration) = md.turn_duration.as_ref() {
+                let duration = summary.duration.get_or_insert(std::time::Duration::from_secs(0));
+                *duration = duration.saturating_add(*turn_duration);
+            }
+
+            let args = telemetry_sink
+                .record_user_turn_completion_args
+                .get_or_insert(RecordUserTurnCompletionArgs {
+                    is_subagent: true,
+                    ..Default::default()
+                });
+
+            md.message_ids.iter().for_each(|id| {
+                if let Some(id) = id {
+                    args.message_ids.push(id.clone());
                 }
-
-                acc
             });
-        let token_count = Some(md.token_count as i64);
-        let tool_call_count = md.tool_call_count.map(|count| count as i64);
 
-        _ = telemetry_thread.send_subagent_invocation(parent_conversation_id.to_string(), token_count, tool_call_count);
+            if !matches!(md.end_reason, LoopEndReason::UserTurnEnd) {
+                args.reason = Some(md.end_reason.to_string());
+            }
+        }
 
         // TODO: do we want to set a special variant for this so we don't have to marshall and
         // unmarshall?
-        if let Ok(payload) = serde_json::to_value(md) {
+        if let Ok(payload) = serde_json::to_value(summary) {
             _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                 agent_id: self.id,
                 kind: AgentEventKind::MetaEvent(MetaEvent {
