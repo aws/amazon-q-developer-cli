@@ -3,7 +3,7 @@ from os import environ
 import platform
 import shutil
 from typing import Dict, List, Optional
-from util import info, isDarwin, isLinux, isMusl, run_cmd_output, warn, Variant
+from util import info, isDarwin, isLinux, isMusl, isCrossCompiling, run_cmd_output, warn, Variant
 from datetime import datetime, timezone
 
 
@@ -38,7 +38,7 @@ def skip_fish_tests() -> bool:
 
 @cache
 def cargo_cmd_name() -> str:
-    if isMusl():
+    if isMusl() or isCrossCompiling():
         return "cross"
     else:
         return "cargo"

@@ -1,0 +1,99 @@
+name: Build Darwin (Universal Binary)
+
+on:
+  push:
+    branches:
+      - build-infra
+      - main
+      - feature/*
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel'
+        type: string
+        required: true
+        default: 'insider'
+      build_timestamp:
+        description: 'Build timestamp'
+        type: string
+        required: true
+      version:
+        description: 'Version'
+        type: string
+        required: true
+      release_type:
+        description: 'Release type'
+        type: string
+        required: true
+
+env:
+  AWS_REGION: "us-east-1"
+  STAGE_NAME: "gamma"
+  CI: 1
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-darwin:
+    name: Build Darwin Universal Binary
+    runs-on: macos-latest
+    environment: gamma
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure environment from secrets
+        run: |
+          {
+            echo "AWS_GITHUB_ACTIONS_ROLE_ARN=${{ secrets.AWS_GITHUB_ACTIONS_ROLE_ARN }}"
+            echo "AWS_ACCOUNT_ID=${{ secrets.AWS_ACCOUNT_ID }}"
+            echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Build macOS Universal Binary
+        run: |
+          python3 ./scripts/main.py build \
+            --skip-lints --skip-tests \
+            --stage-name "${{ env.STAGE_NAME }}"
+
+      - name: Upload artifacts to S3
+        run: |
+          echo "Uploading build artifacts to S3..."
+          BRANCH_NAME="${{ github.ref_name }}"
+          COMMIT_ID="${{ github.sha }}"
+          TARGET="universal-apple-darwin"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
+          
+          if [ -f "build/kiro-cli-chat.zip" ] && [ -f "build/kiro-cli-chat.zip.sha256" ]; then
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+          else
+              echo "❌ Build artifacts not found in build/ directory"
+              exit 1
+          fi
