@@ -1,7 +1,18 @@
+use std::collections::{
+    HashMap,
+    VecDeque,
+};
+use std::fmt;
+
 use clap::Args;
 
 use crate::cli::chat::consts::MAX_USER_MESSAGE_SIZE;
-use crate::cli::chat::message::UserMessageContent;
+use crate::cli::chat::conversation::HistoryEntry;
+use crate::cli::chat::message::{
+    AssistantMessage,
+    UserMessageContent,
+};
+use crate::cli::chat::tools::tool::ToolMetadata;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -97,5 +108,251 @@ impl Default for CompactStrategy {
             truncate_large_messages: Default::default(),
             max_message_length: MAX_USER_MESSAGE_SIZE,
         }
+    }
+}
+
+/// Maximum number of files to include in the factual record.
+const MAX_FILES_IN_FACTUAL_RECORD: usize = 30;
+/// Maximum number of commands to include in the factual record.
+const MAX_COMMANDS_IN_FACTUAL_RECORD: usize = 20;
+/// Maximum number of reasonings to store per file or command.
+const MAX_REASONINGS_PER_ITEM: usize = 5;
+/// Weight applied to frequency when scoring items.
+const FREQUENCY_WEIGHT: f64 = 2.0;
+/// Weight applied to recency when scoring items.
+const RECENCY_WEIGHT: f64 = 1.0;
+
+/// Stores factual information extracted from conversation history during compaction.
+///
+/// This struct contains the most important files and commands based on weighted scoring,
+/// preserving critical context that might be lost in LLM summarization.
+///
+/// # Fields
+/// - `files_modified`: Vector of (file_path, reasonings, total_count) tuples for files modified via
+///   `fs_write`
+/// - `commands_executed`: Vector of (command_text, reasonings, total_count) tuples for commands run
+///   via `execute_bash`
+/// - `total_files`: Total number of unique files in history (before truncation)
+/// - `total_commands`: Total number of unique commands in history (before truncation)
+#[derive(Debug, Default)]
+pub(crate) struct CompactionFacts {
+    files_modified: Vec<(String, Vec<String>, usize)>,
+    commands_executed: Vec<(String, Vec<String>, usize)>,
+    total_files: usize,
+    total_commands: usize,
+}
+
+impl fmt::Display for CompactionFacts {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.files_modified.is_empty() {
+            writeln!(f, "### Files Modified")?;
+            if self.total_files > self.files_modified.len() {
+                writeln!(
+                    f,
+                    "_(Showing {} of {} files by importance. Indented items show summaries for the last 5 modifications.)_",
+                    self.files_modified.len(),
+                    self.total_files
+                )?;
+            } else {
+                writeln!(f, "_(Indented items show summaries for the last 5 modifications.)_")?;
+            }
+            for (file, reasonings, total_count) in &self.files_modified {
+                if reasonings.is_empty() {
+                    writeln!(f, "* {file}")?;
+                } else if reasonings.len() == 1 {
+                    writeln!(f, "* {file} - {}", reasonings[0])?;
+                } else {
+                    if *total_count > reasonings.len() {
+                        writeln!(
+                            f,
+                            "* {file} ({} modifications, showing summaries for last {})",
+                            total_count,
+                            reasonings.len()
+                        )?;
+                    } else {
+                        writeln!(f, "* {file} ({total_count} modifications)")?;
+                    }
+                    for reasoning in reasonings {
+                        writeln!(f, "  - {reasoning}")?;
+                    }
+                }
+            }
+            writeln!(f)?;
+        }
+
+        if !self.commands_executed.is_empty() {
+            writeln!(f, "### Commands Executed")?;
+            if self.total_commands > self.commands_executed.len() {
+                writeln!(
+                    f,
+                    "_(Showing {} of {} commands by importance)_",
+                    self.commands_executed.len(),
+                    self.total_commands
+                )?;
+            }
+            for (cmd, reasonings, _total_count) in &self.commands_executed {
+                let display_cmd = if cmd.len() > 60 {
+                    let truncated: String = cmd.chars().take(57).collect();
+                    format!("{truncated}...")
+                } else {
+                    cmd.clone()
+                };
+                // Only show the most recent reasoning for commands
+                if let Some(reasoning) = reasonings.last() {
+                    writeln!(f, "* {display_cmd} - {reasoning}")?;
+                } else {
+                    writeln!(f, "* {display_cmd}")?;
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// Internal struct for scoring items during selection.
+struct ItemScore {
+    item: String,
+    reasonings: Vec<String>,
+    total_count: usize,
+    score: f64,
+}
+
+fn select_important_items(
+    history: &VecDeque<HistoryEntry>,
+    exclude_last_n: usize,
+    max_items: usize,
+    tool_filter: impl Fn(&str) -> bool,
+    extract_item: impl Fn(&serde_json::Value) -> Option<String>,
+) -> (Vec<(String, Vec<String>, usize)>, usize) {
+    // Track: (frequency, position, reasonings)
+    let mut item_data: HashMap<String, (usize, usize, Vec<String>)> = HashMap::new();
+    let end_idx = history.len().saturating_sub(exclude_last_n);
+
+    for (position, entry) in history.iter().take(end_idx).enumerate() {
+        if let AssistantMessage::ToolUse { tool_uses, .. } = &entry.assistant {
+            for tool in tool_uses {
+                if tool_filter(&tool.name) {
+                    if let Some(item) = extract_item(&tool.args) {
+                        // Extract reasoning from tool's summary parameter
+                        let reasoning = tool
+                            .args
+                            .get("summary")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("")
+                            .trim()
+                            .chars()
+                            .take(100)
+                            .collect::<String>();
+
+                        item_data
+                            .entry(item)
+                            .and_modify(|(freq, pos, reasonings)| {
+                                *freq += 1;
+                                *pos = position;
+                                // Keep only last N reasonings
+                                if !reasoning.is_empty() {
+                                    reasonings.push(reasoning.clone());
+                                    if reasonings.len() > MAX_REASONINGS_PER_ITEM {
+                                        reasonings.remove(0);
+                                    }
+                                }
+                            })
+                            .or_insert_with(|| {
+                                let reasonings = if reasoning.is_empty() {
+                                    Vec::new()
+                                } else {
+                                    vec![reasoning]
+                                };
+                                (1, position, reasonings)
+                            });
+                    }
+                }
+            }
+        }
+    }
+
+    let total_items = item_data.len();
+
+    let mut scored: Vec<ItemScore> = item_data
+        .into_iter()
+        .map(|(item, (frequency, position, reasonings))| {
+            let freq_score = frequency as f64;
+            let recency_score = position as f64 / end_idx.max(1) as f64;
+            ItemScore {
+                item,
+                reasonings,
+                total_count: frequency,
+                score: (freq_score * FREQUENCY_WEIGHT) + (recency_score * RECENCY_WEIGHT),
+            }
+        })
+        .collect();
+
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+    let selected = scored
+        .into_iter()
+        .take(max_items)
+        .map(|s| (s.item, s.reasonings, s.total_count))
+        .collect();
+
+    (selected, total_items)
+}
+
+fn select_important_files(
+    history: &VecDeque<HistoryEntry>,
+    exclude_last_n: usize,
+    max_files: usize,
+) -> (Vec<(String, Vec<String>, usize)>, usize) {
+    select_important_items(
+        history,
+        exclude_last_n,
+        max_files,
+        |name| name == ToolMetadata::FS_WRITE.spec_name,
+        |args| args.get("path").and_then(|v| v.as_str()).map(String::from),
+    )
+}
+
+fn select_important_commands(
+    history: &VecDeque<HistoryEntry>,
+    exclude_last_n: usize,
+    max_commands: usize,
+) -> (Vec<(String, Vec<String>, usize)>, usize) {
+    select_important_items(
+        history,
+        exclude_last_n,
+        max_commands,
+        |name| name == ToolMetadata::EXECUTE_COMMAND.spec_name,
+        |args| args.get("command").and_then(|v| v.as_str()).map(String::from),
+    )
+}
+
+/// Extracts the most important files and commands from conversation history.
+///
+/// Uses weighted scoring (frequency × 2.0 + recency × 1.0) to select:
+/// - Top 30 files modified via `fs_write` tool
+/// - Top 20 commands executed via `execute_bash` tool
+///
+/// For each item, stores up to 5 most recent reasoning summaries from the tool's
+/// `summary` parameter, providing context about why the file was modified or
+/// command was executed.
+///
+/// # Arguments
+/// * `history` - The conversation history to extract from
+/// * `exclude_last_n` - Number of recent messages to exclude from extraction
+///
+/// # Returns
+/// A `CompactionFacts` struct containing the selected items with their reasonings
+/// and total counts before truncation.
+pub(crate) fn extract_compaction_facts(history: &VecDeque<HistoryEntry>, exclude_last_n: usize) -> CompactionFacts {
+    let (files_modified, total_files) = select_important_files(history, exclude_last_n, MAX_FILES_IN_FACTUAL_RECORD);
+    let (commands_executed, total_commands) =
+        select_important_commands(history, exclude_last_n, MAX_COMMANDS_IN_FACTUAL_RECORD);
+
+    CompactionFacts {
+        files_modified,
+        commands_executed,
+        total_files,
+        total_commands,
     }
 }

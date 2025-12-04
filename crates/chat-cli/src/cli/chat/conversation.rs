@@ -100,10 +100,10 @@ pub enum ForgetResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
-    user: UserMessage,
-    assistant: AssistantMessage,
+    pub(crate) user: UserMessage,
+    pub(crate) assistant: AssistantMessage,
     #[serde(default)]
-    request_metadata: Option<RequestMetadata>,
+    pub(crate) request_metadata: Option<RequestMetadata>,
 }
 
 #[derive(Debug, Clone)]
@@ -906,13 +906,24 @@ impl ConversationState {
     /// [ConversationState::create_summary_request].
     pub fn replace_history_with_summary(
         &mut self,
-        summary: String,
+        llm_summary: String,
         strategy: CompactStrategy,
         request_metadata: RequestMetadata,
     ) {
+        // Extract facts before draining history
+        let facts = super::cli::compact::extract_compaction_facts(&self.history, strategy.messages_to_exclude);
+
+        // Combine LLM summary + facts
+        let facts_section = facts.to_string();
+        let enhanced_summary = if facts_section.is_empty() {
+            llm_summary
+        } else {
+            format!("{llm_summary}\n\n## FACTUAL RECORD\n\n{facts_section}")
+        };
+
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
-        self.latest_summary = Some((summary, request_metadata));
+        self.latest_summary = Some((enhanced_summary, request_metadata));
     }
 
     pub async fn create_agent_generation_request(
