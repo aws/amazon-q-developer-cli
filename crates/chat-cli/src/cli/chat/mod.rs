@@ -3362,7 +3362,14 @@ impl ChatSession {
             .set_tool_use_id(tool_use_id.clone())
             .set_tool_name(tool_use.name.clone())
             .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
-            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use).await {
+
+            let is_trust_all = self.conversation.agents.trust_all_tools;
+            match self
+                .conversation
+                .tool_manager
+                .get_tool_from_tool_use(tool_use, is_trust_all)
+                .await
+            {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);

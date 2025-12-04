@@ -875,7 +875,11 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
-    pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
+    pub async fn get_tool_from_tool_use(
+        &mut self,
+        value: AssistantToolUse,
+        is_trust_all: bool,
+    ) -> Result<Tool, ToolResult> {
         let map_err = |parse_error: serde_json::Error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
@@ -917,8 +921,13 @@ impl ToolManager {
             },
             name if name == ToolMetadata::USE_SUBAGENT.spec_name => {
                 let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?;
-                if let UseSubagent::InvokeSubagents { convo_id, .. } = &mut use_subagent {
+                if let UseSubagent::InvokeSubagents { convo_id, subagents } = &mut use_subagent {
                     convo_id.replace(self.conversation_id.clone());
+                    if is_trust_all {
+                        for subagent in subagents {
+                            subagent.dangerously_trust_all_tools = true;
+                        }
+                    }
                 }
                 Tool::UseSubagent(use_subagent)
             },

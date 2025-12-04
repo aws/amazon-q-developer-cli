@@ -110,7 +110,6 @@ pub struct Subagent<'a> {
     pub query: &'a str,
     pub agent_name: Option<&'a str>,
     pub task_context: Option<&'a str>,
-    // TODO: inherit this from the main session?
     pub dangerously_trust_all_tools: bool,
     pub local_agent_path: &'a PathBuf,
     pub global_agent_path: &'a PathBuf,

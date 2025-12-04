@@ -36,6 +36,11 @@ pub struct InvokeSubagent {
     /// Optional additional context that should be provided to the subagent to help it
     /// understand the task better
     relevant_context: Option<String>,
+    /// Whether to trust all tools without prompting for confirmation.
+    /// When set to true, the subagent will execute all tool calls without user approval.
+    /// Use with caution as this may execute potentially dangerous operations.
+    #[serde(default)]
+    pub dangerously_trust_all_tools: bool,
 }
 
 impl InvokeSubagent {
@@ -51,6 +56,7 @@ impl InvokeSubagent {
             query,
             agent_name,
             relevant_context,
+            dangerously_trust_all_tools,
         } = self;
 
         Subagent {
@@ -58,7 +64,7 @@ impl InvokeSubagent {
             query: query.as_str(),
             agent_name: agent_name.as_deref(),
             task_context: relevant_context.as_deref(),
-            dangerously_trust_all_tools: false,
+            dangerously_trust_all_tools: *dangerously_trust_all_tools,
             local_agent_path,
             global_agent_path,
             local_mcp_path,
