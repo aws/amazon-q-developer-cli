@@ -208,9 +208,9 @@ pub type InputReceiver = tokio::sync::broadcast::Receiver<InputEvent>;
 /// The control would own this.
 #[derive(Debug)]
 pub struct ControlEnd<T> {
-    pub current_event: Option<SessionEvent>,
+    current_event: Option<SessionEvent>,
     /// Used by the control to send state changes to the view
-    pub sender: tokio::sync::mpsc::UnboundedSender<SessionEvent>,
+    sender: tokio::sync::mpsc::UnboundedSender<SessionEvent>,
     /// Flag indicating whether structured events should be sent through the conduit.
     /// When true, the control end will send structured event data in addition to
     /// raw pass-through content, enabling richer communication between layers.
@@ -233,14 +233,6 @@ impl<T> Clone for ControlEnd<T> {
 }
 
 impl<T> ControlEnd<T> {
-    /// Primes the [ControlEnd] with the state passed in
-    /// This api is intended to serve as an interim solution to bridge the gap between the current
-    /// code base, which heavily relies on crossterm apis to print directly to the terminal and the
-    /// refactor where the message passing paradigm is the norm
-    pub fn prime(&mut self, event: SessionEvent) {
-        self.current_event.replace(event);
-    }
-
     /// Sends an event to the view layer through the conduit
     pub fn send(&self, event: SessionEvent) -> Result<(), ConduitError> {
         Ok(self.sender.send(event).map_err(Box::new)?)
@@ -462,7 +454,7 @@ impl InterimEvent for SessionEvent {
                     buf.extend_from_slice(content);
                 },
             },
-            _ => unreachable!(),
+            Self::AgentEvent(_) => unreachable!(),
         }
 
         Ok(())
