@@ -260,6 +260,7 @@ impl<'a> Subagent<'a> {
         // Holds the final result of the user turn.
         let mut user_turn_metadata = Vec::<UserTurnMetadata>::new();
         let mut query_result = None::<Summary>;
+        let mut has_sent_failsafe_msg = false;
 
         loop {
             tokio::select! {
@@ -367,13 +368,16 @@ impl<'a> Subagent<'a> {
                             if query_result.is_some() {
                                 user_turn_metadata.push(metadata.clone());
                                 break;
-                            } else {
+                            } else if !has_sent_failsafe_msg {
                                 agent
                                     .send_prompt(SendPromptArgs {
                                         content: vec![ContentChunk::Text(SUMMARY_FAILSAFE_MSG.to_string())],
                                         should_continue_turn: None,
                                     })
                                     .await?;
+                                has_sent_failsafe_msg = true;
+                            } else {
+                                bail!("Subagent has refused to give result. Try again");
                             }
                         },
                         AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
