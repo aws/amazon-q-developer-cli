@@ -82,12 +82,17 @@ jobs:
           BRANCH_NAME="${{ github.ref_name }}"
           COMMIT_ID="${{ github.sha }}"
           TARGET="universal-apple-darwin"
-          S3_PATH="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
           
           if [ -f "build/kiro-cli-chat.zip" ] && [ -f "build/kiro-cli-chat.zip.sha256" ]; then
-              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH}/"
-              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH}/"
-              echo "✓ Successfully uploaded macOS artifacts to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH}/"
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              
+              aws s3 cp build/kiro-cli-chat.zip "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              aws s3 cp build/kiro-cli-chat.zip.sha256 "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
           else
               echo "❌ Build artifacts not found in build/ directory"
               exit 1

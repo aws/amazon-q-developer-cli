@@ -73,8 +73,13 @@ jobs:
               RELEASE_TYPE="nightly-manual"
             fi
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            RELEASE_TYPE="nightly-scheduled"
-          elif [[ "${{ github.event_name }}" == "push" && ("${{ github.ref_name }}" == "beta" || "${{ github.ref_name }}" == "build-infra") ]]; then
+            if [[ "${{ github.ref_name }}" == "main" ]]; then
+              RELEASE_TYPE="nightly-scheduled"
+            else
+              echo "Cron releases only allowed on main branch, skipping"
+              SHOULD_PROCEED="false"
+            fi
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
             RELEASE_TYPE="insider-auto"
           else
             SHOULD_PROCEED="false"

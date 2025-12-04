@@ -102,11 +102,15 @@ jobs:
           BRANCH_NAME="${{ github.ref_name }}"
           COMMIT_ID="${{ github.sha }}"
           TARGET="${{ matrix.target }}"
-          S3_PATH="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
+          S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
           
           if [ -d "build" ] && [ "$(ls -A build)" ]; then
-              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH}/" --recursive
-              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH}/"
+              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/" --recursive
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_COMMIT}/"
+              
+              aws s3 cp build/ "s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/" --recursive
+              echo "✓ Uploaded to s3://${{ env.BUILD_OUTPUT_BUCKET }}/${S3_PATH_LATEST}/"
           else
               echo "❌ Build directory not found or empty"
               exit 1
