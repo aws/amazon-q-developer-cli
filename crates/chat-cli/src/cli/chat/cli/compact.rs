@@ -117,6 +117,12 @@ const MAX_FILES_IN_FACTUAL_RECORD: usize = 30;
 const MAX_COMMANDS_IN_FACTUAL_RECORD: usize = 20;
 /// Maximum number of reasonings to store per file or command.
 const MAX_REASONINGS_PER_ITEM: usize = 5;
+/// Maximum character length for file paths before truncation.
+const MAX_FILE_PATH_LENGTH: usize = 100;
+/// Character budget for files section (~3,500 tokens).
+const FILES_CHAR_BUDGET: usize = 14_000;
+/// Character budget for commands section (~1,500 tokens).
+const COMMANDS_CHAR_BUDGET: usize = 6_000;
 /// Weight applied to frequency when scoring items.
 const FREQUENCY_WEIGHT: f64 = 2.0;
 /// Weight applied to recency when scoring items.
@@ -218,10 +224,29 @@ struct ItemScore {
     score: f64,
 }
 
+/// Truncates a file path to maximum length, preserving start and end.
+fn truncate_path(path: &str) -> String {
+    let chars: Vec<char> = path.chars().collect();
+    if chars.len() <= MAX_FILE_PATH_LENGTH {
+        path.to_string()
+    } else {
+        // 45 + "..." (3) + 45 = 93 chars
+        let first: String = chars.iter().take(45).collect();
+        let last: String = chars.iter().skip(chars.len() - 45).collect();
+        format!("{first}...{last}")
+    }
+}
+
+/// Calculates the character size of an item for budget tracking.
+fn calculate_item_size(item: &str, reasonings: &[String]) -> usize {
+    item.len() + reasonings.iter().map(|r| r.len()).sum::<usize>() + 50
+}
+
 fn select_important_items(
     history: &VecDeque<HistoryEntry>,
     exclude_last_n: usize,
     max_items: usize,
+    char_budget: usize,
     tool_filter: impl Fn(&str) -> bool,
     extract_item: impl Fn(&serde_json::Value) -> Option<String>,
 ) -> (Vec<(String, Vec<String>, usize)>, usize) {
@@ -290,11 +315,19 @@ fn select_important_items(
 
     scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
 
-    let selected = scored
-        .into_iter()
-        .take(max_items)
-        .map(|s| (s.item, s.reasonings, s.total_count))
-        .collect();
+    let mut char_count = 0;
+    let mut selected = Vec::new();
+
+    for item in scored.into_iter().take(max_items) {
+        let item_size = calculate_item_size(&item.item, &item.reasonings);
+
+        if char_count + item_size <= char_budget {
+            char_count += item_size;
+            selected.push((item.item, item.reasonings, item.total_count));
+        } else {
+            break;
+        }
+    }
 
     (selected, total_items)
 }
@@ -308,8 +341,9 @@ fn select_important_files(
         history,
         exclude_last_n,
         max_files,
+        FILES_CHAR_BUDGET,
         |name| name == ToolMetadata::FS_WRITE.spec_name,
-        |args| args.get("path").and_then(|v| v.as_str()).map(String::from),
+        |args| args.get("path").and_then(|v| v.as_str()).map(truncate_path),
     )
 }
 
@@ -322,6 +356,7 @@ fn select_important_commands(
         history,
         exclude_last_n,
         max_commands,
+        COMMANDS_CHAR_BUDGET,
         |name| name == ToolMetadata::EXECUTE_COMMAND.spec_name,
         |args| args.get("command").and_then(|v| v.as_str()).map(String::from),
     )
