@@ -3444,6 +3444,19 @@ impl ChatSession {
         // If we have any validation errors, then return them immediately to the model.
         if !tool_results.is_empty() {
             debug!(?tool_results, "Error found in the model tools");
+
+            // Add skipped results for tools that passed validation
+            for queued in queued_tools {
+                tool_results.push(ToolUseResult {
+                    tool_use_id: queued.id,
+                    content: vec![ToolUseResultBlock::Text(format!(
+                        "Tool '{}' execution skipped due to validation failures in other tools",
+                        queued.preferred_alias
+                    ))],
+                    status: ToolResultStatus::Error,
+                });
+            }
+
             queue!(
                 self.stderr,
                 style::SetAttribute(Attribute::Bold),
@@ -4076,6 +4089,7 @@ mod tests {
 
     use super::*;
     use crate::cli::agent::Agent;
+    use crate::cli::chat::message::UserMessageContent;
 
     async fn get_test_agents(os: &Os) -> Agents {
         const AGENT_PATH: &str = "/persona/TestAgent.json";
@@ -5023,5 +5037,165 @@ mod tests {
                 "Tips should be shown when neither welcome nor changelog is shown"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn test_validate_tools_mixed_results() {
+        let mut os = Os::new().await.unwrap();
+        os.fs.write("/test.txt", "test").await.unwrap();
+
+        let agents = get_test_agents(&os).await;
+        let mut session = ChatSession::new(
+            &mut os,
+            "test_conv",
+            agents,
+            None,
+            InputSource::new_mock(vec![]),
+            false,
+            || Some(80),
+            ToolManager::default(),
+            None,
+            serde_json::from_str(include_str!("tools/tool_index.json")).unwrap(),
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let args1 = serde_json::json!({"operations": [{"mode": "Line", "path": "/test.txt"}]});
+        let args2 = serde_json::json!({"operations": [{"mode": "Line", "path": "/nonexistent"}]});
+        let tool_uses = vec![
+            AssistantToolUse {
+                id: "tool_1".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args1.clone(),
+                orig_args: args1,
+            },
+            AssistantToolUse {
+                id: "tool_2".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args2.clone(),
+                orig_args: args2,
+            },
+        ];
+
+        let result = session.validate_tools(&os, tool_uses).await;
+
+        // Should return HandleResponseStream (not ExecuteTools) when validation fails
+        assert!(matches!(result, Ok(ChatState::HandleResponseStream(_))));
+
+        // Verify next_message exists (tool results were added)
+        assert!(
+            session.conversation.next_user_message().is_some(),
+            "next_message should exist with tool results"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_validate_tools_all_pass() {
+        let mut os = Os::new().await.unwrap();
+        os.fs.write("/test1.txt", "test1").await.unwrap();
+        os.fs.write("/test2.txt", "test2").await.unwrap();
+
+        let agents = get_test_agents(&os).await;
+        let mut session = ChatSession::new(
+            &mut os,
+            "test_conv",
+            agents,
+            None,
+            InputSource::new_mock(vec![]),
+            false,
+            || Some(80),
+            ToolManager::default(),
+            None,
+            serde_json::from_str(include_str!("tools/tool_index.json")).unwrap(),
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let args1 = serde_json::json!({"operations": [{"mode": "Line", "path": "/test1.txt"}]});
+        let args2 = serde_json::json!({"operations": [{"mode": "Line", "path": "/test2.txt"}]});
+        let tool_uses = vec![
+            AssistantToolUse {
+                id: "tool_1".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args1.clone(),
+                orig_args: args1,
+            },
+            AssistantToolUse {
+                id: "tool_2".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args2.clone(),
+                orig_args: args2,
+            },
+        ];
+
+        let result = session.validate_tools(&os, tool_uses).await;
+
+        // Should proceed to ExecuteTools when all pass
+        assert!(matches!(result, Ok(ChatState::ExecuteTools)));
+        assert_eq!(session.tool_uses.len(), 2, "Both tools should be queued for execution");
+    }
+
+    #[tokio::test]
+    async fn test_validate_tools_all_fail() {
+        let mut os = Os::new().await.unwrap();
+
+        let agents = get_test_agents(&os).await;
+        let mut session = ChatSession::new(
+            &mut os,
+            "test_conv",
+            agents,
+            None,
+            InputSource::new_mock(vec![]),
+            false,
+            || Some(80),
+            ToolManager::default(),
+            None,
+            serde_json::from_str(include_str!("tools/tool_index.json")).unwrap(),
+            true,
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let args1 = serde_json::json!({"operations": [{"mode": "Line", "path": "/nonexistent1"}]});
+        let args2 = serde_json::json!({"operations": [{"mode": "Line", "path": "/nonexistent2"}]});
+        let tool_uses = vec![
+            AssistantToolUse {
+                id: "tool_1".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args1.clone(),
+                orig_args: args1,
+            },
+            AssistantToolUse {
+                id: "tool_2".to_string(),
+                name: "fs_read".to_string(),
+                orig_name: "fs_read".to_string(),
+                args: args2.clone(),
+                orig_args: args2,
+            },
+        ];
+
+        let result = session.validate_tools(&os, tool_uses).await;
+
+        // Should return HandleResponseStream with errors
+        assert!(matches!(result, Ok(ChatState::HandleResponseStream(_))));
+
+        // Verify next_message exists (tool results were added)
+        assert!(
+            session.conversation.next_user_message().is_some(),
+            "next_message should exist with tool error results"
+        );
     }
 }
