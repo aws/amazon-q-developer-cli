@@ -1,18 +1,12 @@
 name: Build Linux
 
 on:
-  push:
-    branches:
-      - build-infra
-      - main
-      - feature/*
   workflow_dispatch:
     inputs:
       channel:
         description: 'Release channel'
         type: string
-        required: false
-        default: 'insider'
+        required: true
       build_timestamp:
         description: 'Build timestamp'
         type: string
