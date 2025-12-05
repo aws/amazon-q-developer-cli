@@ -4089,7 +4089,6 @@ mod tests {
 
     use super::*;
     use crate::cli::agent::Agent;
-    use crate::cli::chat::message::UserMessageContent;
 
     async fn get_test_agents(os: &Os) -> Agents {
         const AGENT_PATH: &str = "/persona/TestAgent.json";
