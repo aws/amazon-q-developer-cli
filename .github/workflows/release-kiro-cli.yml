@@ -98,6 +98,7 @@ jobs:
       build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
       version: ${{ steps.get-version.outputs.VERSION }}
       release_type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}
+      environment: ${{ steps.determine-environment.outputs.ENVIRONMENT }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -188,10 +189,23 @@ jobs:
             echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           fi
 
+      - name: Determine Environment
+        id: determine-environment
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]]; then
+            echo 'ENVIRONMENT=["gamma","prod"]' >> $GITHUB_OUTPUT
+          else
+            echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
+          fi
+
   TriggerDarwinBuild:
     needs: UpdateVersionNumber
-    name: Trigger Darwin Universal Build
+    name: Trigger Darwin Universal Build (${{ matrix.environment }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.UpdateVersionNumber.outputs.environment) }}
     steps:
       - name: Trigger Darwin Universal Build
         uses: actions/github-script@v7
@@ -206,14 +220,18 @@ jobs:
                 "channel": "${{ env.RELEASE_QUALITY }}",
                 "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
                 "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
-                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}",
+                "environment": "${{ matrix.environment }}"
               }
             })
 
   TriggerLinuxBuild:
     needs: UpdateVersionNumber
-    name: Trigger Linux Build
+    name: Trigger Linux Build (${{ matrix.environment }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: ${{ fromJSON(needs.UpdateVersionNumber.outputs.environment) }}
     steps:
       - name: Trigger Linux Build
         uses: actions/github-script@v7
@@ -228,6 +246,7 @@ jobs:
                 "channel": "${{ env.RELEASE_QUALITY }}",
                 "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
                 "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
-                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}"
+                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}",
+                "environment": "${{ matrix.environment }}"
               }
             })

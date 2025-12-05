@@ -19,10 +19,14 @@ on:
         description: 'Release type'
         type: string
         required: true
+      environment:
+        description: 'Deployment environment'
+        type: string
+        required: true
 
 env:
   AWS_REGION: "us-east-1"
-  STAGE_NAME: "gamma"
+  STAGE_NAME: ${{ inputs.environment }}
   CI: 1
 
 permissions:
@@ -33,7 +37,7 @@ jobs:
   build-linux:
     name: Build Linux (${{ matrix.target }})
     runs-on: ${{ matrix.runner }}
-    environment: gamma
+    environment: ${{ inputs.environment }}
     strategy:
       fail-fast: true
       matrix:
