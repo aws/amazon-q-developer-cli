@@ -1,18 +1,12 @@
 name: Build Darwin (Universal Binary)
 
 on:
-  push:
-    branches:
-      - build-infra
-      - main
-      - feature/*
   workflow_dispatch:
     inputs:
       channel:
         description: 'Release channel'
         type: string
         required: true
-        default: 'insider'
       build_timestamp:
         description: 'Build timestamp'
         type: string
