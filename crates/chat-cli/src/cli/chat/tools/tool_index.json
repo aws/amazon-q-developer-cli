@@ -98,6 +98,24 @@
                 "type": "integer",
                 "description": "Depth of a recursive directory listing (optional, for Directory mode)",
                 "default": 0
+              },
+              "exclude_patterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Glob patterns to exclude from directory listing (optional, for Directory mode). If omitted, uses defaults. If empty array [] is provided, no exclusions are applied (shows everything). If patterns are provided, they completely override the defaults. Examples: '**/target/**', '*.log'",
+                "default": ["node_modules", ".git", "dist", "build", "out", ".cache", "target"]
+              },
+              "max_entries": {
+                "type": "integer",
+                "description": "Maximum number of entries to return (optional, for Directory mode). When limit is reached, results are truncated and metadata shows 'showing X of Y entries'. Use to prevent context window overflow. Default: 1000",
+                "default": 1000
+              },
+              "offset": {
+                "type": "integer",
+                "description": "Number of entries to skip for pagination (optional, for Directory mode). Use with max_entries to iterate through large directories. Entries are sorted by last modified time (most recent first). Default: 0",
+                "default": 0
               }
             },
             "required": [

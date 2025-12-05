@@ -706,10 +706,17 @@ impl FsSearch {
 pub struct FsDirectory {
     pub path: String,
     pub depth: Option<usize>,
+    pub exclude_patterns: Option<Vec<String>>,
+    pub max_entries: Option<usize>,
+    pub offset: Option<usize>,
 }
 
 impl FsDirectory {
     const DEFAULT_DEPTH: usize = 0;
+    const DEFAULT_EXCLUDE_PATTERNS: [&'static str; 7] =
+        ["node_modules", ".git", "dist", "build", "out", ".cache", "target"];
+    const DEFAULT_MAX_ENTRIES: usize = 1000;
+    const MAX_COLLECT_ENTRIES: usize = 10_000;
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
         let path = sanitize_path_tool_arg(os, &self.path);
@@ -733,7 +740,24 @@ impl FsDirectory {
         )?;
         if let Some(tool) = tool {
             let depth = self.depth.unwrap_or_default();
-            super::display_tool_use_with_args(tool, updates, Some(&format!("max depth: {depth}")))?;
+            let max_entries = self.max_entries();
+            let offset = self.offset.unwrap_or(0);
+            let mut args = format!("max depth: {depth}, max entries: {max_entries}");
+            if offset > 0 {
+                args.push_str(&format!(", offset: {offset}"));
+            }
+            match &self.exclude_patterns {
+                Some(patterns) if !patterns.is_empty() => {
+                    args.push_str(&format!(", excluding: {}", patterns.join(", ")));
+                },
+                Some(_) => {
+                    args.push_str(", excluding: none");
+                },
+                None => {
+                    args.push_str(", excluding: defaults");
+                },
+            }
+            super::display_tool_use_with_args(tool, updates, Some(&args))?;
         }
         Ok(())
     }
@@ -741,9 +765,25 @@ impl FsDirectory {
     pub async fn invoke(&self, os: &Os, updates: &mut impl Write) -> Result<InvokeOutput> {
         let path = sanitize_path_tool_arg(os, &self.path);
         let max_depth = self.depth();
-        debug!(?path, max_depth, "Reading directory at path with depth");
-        let mut result = Vec::new();
+        let max_entries = self.max_entries();
+        let offset = self.offset.unwrap_or(0);
+        let (exclude_set, invalid_patterns) = self.get_exclude_set();
+
+        debug!(
+            ?path,
+            max_depth, max_entries, offset, "Reading directory at path with depth"
+        );
+
+        struct DirEntry {
+            formatted: String,
+            timestamp: u64,
+        }
+
+        let mut entries = Vec::new();
         let mut dir_queue = VecDeque::new();
+        let mut total_found = 0usize;
+        let mut exceeded_collect_limit = false;
+
         dir_queue.push_back((path.clone(), 0));
         while let Some((path, depth)) = dir_queue.pop_front() {
             if depth > max_depth {
@@ -754,6 +794,24 @@ impl FsDirectory {
             #[cfg(windows)]
             while let Some(ent) = read_dir.next_entry().await? {
                 let md = ent.metadata().await?;
+                let is_excluded = Self::is_excluded(&ent.path(), &exclude_set);
+
+                if !is_excluded {
+                    total_found += 1;
+                }
+
+                if is_excluded {
+                    // Don't traverse into excluded directories
+                    continue;
+                }
+
+                if entries.len() >= Self::MAX_COLLECT_ENTRIES {
+                    exceeded_collect_limit = true;
+                    if md.is_dir() {
+                        dir_queue.push_back((ent.path(), depth + 1));
+                    }
+                    continue;
+                }
 
                 let modified_timestamp = md.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs();
                 let datetime = time::OffsetDateTime::from_unix_timestamp(modified_timestamp as i64).unwrap();
@@ -763,15 +821,18 @@ impl FsDirectory {
                     ))
                     .unwrap();
 
-                result.push(format!(
-                    "{} {} {} {}",
-                    format_ftype(&md),
-                    String::from_utf8_lossy(ent.file_name().as_encoded_bytes()),
-                    formatted_date,
-                    ent.path().to_string_lossy()
-                ));
+                entries.push(DirEntry {
+                    formatted: format!(
+                        "{} {} {} {}",
+                        format_ftype(&md),
+                        String::from_utf8_lossy(ent.file_name().as_encoded_bytes()),
+                        formatted_date,
+                        ent.path().to_string_lossy()
+                    ),
+                    timestamp: modified_timestamp,
+                });
 
-                if md.is_dir() && md.is_dir() {
+                if md.is_dir() {
                     dir_queue.push_back((ent.path(), depth + 1));
                 }
             }
@@ -784,6 +845,25 @@ impl FsDirectory {
                 };
 
                 let md = ent.metadata().await?;
+                let is_excluded = Self::is_excluded(&ent.path(), &exclude_set);
+
+                if !is_excluded {
+                    total_found += 1;
+                }
+
+                if is_excluded {
+                    // Don't traverse into excluded directories
+                    continue;
+                }
+
+                if entries.len() >= Self::MAX_COLLECT_ENTRIES {
+                    exceeded_collect_limit = true;
+                    if md.is_dir() {
+                        dir_queue.push_back((ent.path(), depth + 1));
+                    }
+                    continue;
+                }
+
                 let formatted_mode = format_mode(md.permissions().mode()).into_iter().collect::<String>();
 
                 let modified_timestamp = md.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs();
@@ -793,29 +873,74 @@ impl FsDirectory {
                         "[month repr:short] [day] [hour]:[minute]"
                     ))
                     .unwrap();
-
                 // Mostly copying "The Long Format" from `man ls`.
                 // TODO: query user/group database to convert uid/gid to names?
-                result.push(format!(
-                    "{}{} {} {} {} {} {} {}",
-                    format_ftype(&md),
-                    formatted_mode,
-                    md.nlink(),
-                    md.uid(),
-                    md.gid(),
-                    md.size(),
-                    formatted_date,
-                    ent.path().to_string_lossy()
-                ));
+                entries.push(DirEntry {
+                    formatted: format!(
+                        "{}{} {} {} {} {} {} {}",
+                        format_ftype(&md),
+                        formatted_mode,
+                        md.nlink(),
+                        md.uid(),
+                        md.gid(),
+                        md.size(),
+                        formatted_date,
+                        ent.path().to_string_lossy()
+                    ),
+                    timestamp: modified_timestamp,
+                });
+
                 if md.is_dir() {
                     dir_queue.push_back((ent.path(), depth + 1));
                 }
             }
         }
 
+        // Sort by timestamp descending (most recent first)
+        entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+
+        // Apply offset and limit
+        let total_collected = entries.len();
+        let result: Vec<String> = entries
+            .into_iter()
+            .skip(offset)
+            .take(max_entries)
+            .map(|e| e.formatted)
+            .collect();
+
         let file_count = result.len();
-        let result = result.join("\n");
-        let byte_count = result.len();
+        let truncated = total_found > total_collected || offset + file_count < total_collected;
+
+        // Add metadata header for LLM
+        let mut metadata = if exceeded_collect_limit {
+            format!(
+                "# Showing {file_count} entries (offset: {offset}, collected: {total_collected}+, total found: {total_found}+)\n"
+            )
+        } else if truncated {
+            format!("# Showing {file_count} entries (offset: {offset}, total: {total_collected})\n")
+        } else {
+            format!("# Total entries: {total_collected}\n")
+        };
+
+        if exceeded_collect_limit {
+            metadata.push_str(&format!(
+                "# Warning: Directory has more than {} entries. Only the first {} (sorted by last modified) were collected. Use exclude_patterns to filter out unwanted directories (e.g., 'node_modules/**', 'target/**', '.git/**').\n",
+                Self::MAX_COLLECT_ENTRIES,
+                Self::MAX_COLLECT_ENTRIES
+            ));
+        }
+
+        if !invalid_patterns.is_empty() {
+            metadata.push_str(&format!(
+                "# Warning: Invalid exclude patterns ignored: {}\n",
+                invalid_patterns.join(", ")
+            ));
+        }
+        metadata.push('\n');
+
+        let mut result_text = metadata;
+        result_text.push_str(&result.join("\n"));
+        let byte_count = result_text.len();
         if byte_count > MAX_TOOL_RESPONSE_SIZE {
             bail!(
                 "This tool only supports reading up to {MAX_TOOL_RESPONSE_SIZE} bytes at a time. You tried to read {byte_count} bytes ({file_count} files). Try executing with fewer lines specified."
@@ -823,21 +948,88 @@ impl FsDirectory {
         }
 
         // Format the message with brand color for the path
-        let formatted_message = format!(
-            "Successfully read directory {} {}",
-            StyledText::brand(&path.display().to_string()),
-            StyledText::secondary(&format!("({file_count} entries)"))
-        );
+        let formatted_message = if exceeded_collect_limit {
+            format!(
+                "Successfully read directory {} {}",
+                StyledText::brand(&path.display().to_string()),
+                StyledText::secondary(&format!(
+                    "(showing {file_count} entries, offset: {offset}, {total_found}+ total)"
+                ))
+            )
+        } else if truncated {
+            format!(
+                "Successfully read directory {} {}",
+                StyledText::brand(&path.display().to_string()),
+                StyledText::secondary(&format!(
+                    "(showing {file_count} of {total_collected} entries, offset: {offset})"
+                ))
+            )
+        } else {
+            format!(
+                "Successfully read directory {} {}",
+                StyledText::brand(&path.display().to_string()),
+                StyledText::secondary(&format!("({file_count} entries)"))
+            )
+        };
 
         super::queue_function_result(&formatted_message, updates, false, false)?;
 
         Ok(InvokeOutput {
-            output: OutputKind::Text(result),
+            output: OutputKind::Text(result_text),
         })
     }
 
     fn depth(&self) -> usize {
         self.depth.unwrap_or(Self::DEFAULT_DEPTH)
+    }
+
+    fn max_entries(&self) -> usize {
+        self.max_entries.unwrap_or(Self::DEFAULT_MAX_ENTRIES)
+    }
+
+    // Helper methods
+
+    fn get_exclude_set(&self) -> (Option<globset::GlobSet>, Vec<String>) {
+        match &self.exclude_patterns {
+            Some(patterns) if !patterns.is_empty() => Self::build_exclude_set(patterns.iter().map(|s| s.as_str())),
+            Some(_) => (None, Vec::new()), // Empty array = no exclusions
+            None => Self::build_exclude_set(Self::DEFAULT_EXCLUDE_PATTERNS.iter().copied()), // None = use defaults
+        }
+    }
+
+    fn build_exclude_set<'a>(patterns: impl Iterator<Item = &'a str>) -> (Option<globset::GlobSet>, Vec<String>) {
+        let mut invalid_patterns = Vec::new();
+        let mut builder = GlobSetBuilder::new();
+
+        for pattern in patterns {
+            match globset::Glob::new(pattern) {
+                Ok(glob) => {
+                    builder.add(glob);
+                },
+                Err(e) => {
+                    warn!("Invalid exclude pattern '{}': {}", pattern, e);
+                    invalid_patterns.push(pattern.to_string());
+                },
+            }
+        }
+
+        (builder.build().ok(), invalid_patterns)
+    }
+
+    fn is_excluded(path: &std::path::Path, exclude_set: &Option<globset::GlobSet>) -> bool {
+        if let Some(set) = exclude_set {
+            // Match against full path for patterns like **/node_modules/**
+            if set.is_match(path) {
+                return true;
+            }
+            // Also match against just the file/directory name for simple patterns like "node_modules"
+            if let Some(name) = path.file_name() {
+                if set.is_match(name) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
 
@@ -1048,7 +1240,8 @@ mod tests {
             .unwrap();
 
         if let OutputKind::Text(text) = output.output {
-            assert_eq!(text.lines().collect::<Vec<_>>().len(), 4);
+            // Output includes metadata header (2 lines) + 4 directory entries = 6 lines
+            assert_eq!(text.lines().collect::<Vec<_>>().len(), 6);
         } else {
             panic!("expected text output");
         }
@@ -1068,7 +1261,8 @@ mod tests {
 
         if let OutputKind::Text(text) = output.output {
             let lines = text.lines().collect::<Vec<_>>();
-            assert_eq!(lines.len(), 7);
+            // Output includes metadata header (2 lines) + 7 directory entries = 9 lines
+            assert_eq!(lines.len(), 9);
             assert!(
                 !lines.iter().any(|l| l.contains("cccc1")),
                 "directory at depth level 2 should not be included in output"
