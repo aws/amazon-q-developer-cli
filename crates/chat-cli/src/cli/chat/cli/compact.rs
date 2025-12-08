@@ -139,9 +139,9 @@ const RECENCY_WEIGHT: f64 = 1.0;
 ///
 /// # Fields
 /// - `files_accessed`: Vector of (file_path, reasonings, write_count, read_count) tuples for files
-///   accessed via `fs_write` or `fs_read`
+///   accessed via `write` or `read` tools
 /// - `commands_executed`: Vector of (command_text, reasonings, total_count) tuples for commands run
-///   via `execute_bash`
+///   via `shell` or `aws` tools
 /// - `total_files`: Total number of unique files in history (before truncation)
 /// - `total_commands`: Total number of unique commands in history (before truncation)
 #[derive(Debug, Default)]
@@ -442,7 +442,7 @@ fn extract_fs_read_path(args: &serde_json::Value) -> Option<String> {
 
 /// Scans history and collects file access data into a HashMap.
 ///
-/// Iterates through history entries and tracks all fs_read and fs_write operations,
+/// Iterates through history entries and tracks all read and write tool operations,
 /// accumulating counts, positions, and reasoning summaries for each unique file path.
 ///
 /// # Returns
@@ -607,7 +607,7 @@ fn select_important_files(
 
 /// Selects the most important commands from conversation history using weighted scoring.
 ///
-/// Wrapper around `select_important_items()` configured specifically for execute_bash commands.
+/// Wrapper around `select_important_items()` configured for shell and aws commands.
 ///
 /// # Scoring Formula
 /// ```text
@@ -643,16 +643,29 @@ fn select_important_commands(
         exclude_last_n,
         max_commands,
         COMMANDS_CHAR_BUDGET,
-        // Filter: only include execute_bash tools
-        |name| name == ToolMetadata::EXECUTE_COMMAND.spec_name,
-        // Extractor: get the "command" field from tool args
-        |args| args.get("command").and_then(|v| v.as_str()).map(String::from),
+        // Filter: include both execute_bash and use_aws tools
+        |name| name == ToolMetadata::EXECUTE_COMMAND.spec_name || name == ToolMetadata::USE_AWS.spec_name,
+        // Extractor: get command string based on tool type
+        |args| {
+            // For execute_bash: extract "command" field
+            if let Some(cmd) = args.get("command").and_then(|v| v.as_str()) {
+                return Some(cmd.to_string());
+            }
+            // For use_aws: construct "aws {service} {operation}"
+            if let (Some(service), Some(operation)) = (
+                args.get("service_name").and_then(|v| v.as_str()),
+                args.get("operation_name").and_then(|v| v.as_str()),
+            ) {
+                return Some(format!("aws {service} {operation}"));
+            }
+            None
+        },
     )
 }
 
 /// Extracts the most important files and commands from conversation history.
 ///
-/// Selects top 30 files (fs_read/fs_write) and top 20 commands (execute_bash)
+/// Selects top 30 files (read/write tools) and top 20 commands (shell/aws tools)
 /// using weighted scoring that prioritizes frequency and recency.
 ///
 /// See `select_important_files()` and `select_important_commands()` for detailed
