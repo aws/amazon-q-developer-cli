@@ -12,6 +12,34 @@
     },
     {
       "type": "release",
+      "date": "2025-12-08",
+      "version": "1.22.0",
+      "title": "Version 1.22.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Knowledge Index to create model awareness about existing KBs"
+        },
+        {
+          "type": "added",
+          "description": "Agent schema configuration for knowledge and auto-indexable knowledge"
+        },
+        {
+          "type": "fixed",
+          "description": "Added guardrails for fs_read to avoid context overflow"
+        },
+        {
+          "type": "added",
+          "description": "Auto-compaction with factual record extraction"
+        },
+        {
+          "type": "changed",
+          "description": "Improvements to the auto-compaction algorithm"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-11-25",
       "version": "1.21.0",
       "title": "Version 1.21.0",
