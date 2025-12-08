@@ -83,6 +83,12 @@ impl Introspect {
             documentation.push_str(include_str!("../../../../../../docs/web-search.md"));
         }
 
+        // Only include code-intelligence docs if feature is enabled
+        if crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
+            documentation.push_str("\n\n--- docs/code-intelligence.md ---\n");
+            documentation.push_str(include_str!("../../../../../../docs/code-intelligence.md"));
+        }
+
         documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
 
