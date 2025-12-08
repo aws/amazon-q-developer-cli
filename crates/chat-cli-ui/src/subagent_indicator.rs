@@ -299,6 +299,7 @@ pub struct SubagentIndicator<'a> {
 
 impl<'a> SubagentIndicator<'a> {
     const ARROW_WIDGET_WIDTH: u16 = 2;
+    const BRAND_PURPLE: u8 = 141;
     // Colors used to differentiate the headings of each running subagent.
     const COLORS: [u8; 4] = [33, 81, 117, 213];
     const MAX_CONTENT_WIDGET_WIDTH: u16 = 78;
@@ -326,7 +327,6 @@ impl<'a> SubagentIndicator<'a> {
 
     pub fn run(mut self) -> SubagentIndicatorHandle {
         let cancellation_token = CancellationToken::new();
-        let ct = cancellation_token.clone();
         let mut agents = self
             .agents
             .iter()
@@ -378,6 +378,7 @@ impl<'a> SubagentIndicator<'a> {
             let render_interval = tokio::time::Duration::from_millis(1000 / 30);
             let mut sleep_until = tokio::time::Instant::now() + render_interval;
             let mut time_spinner_last_rotated = std::time::Instant::now();
+            let mut acknowledged = false;
 
             loop {
                 let crossterm_event = reader.next().fuse();
@@ -388,8 +389,6 @@ impl<'a> SubagentIndicator<'a> {
                     terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
                 );
                 max_text_width = content_widget_width.saturating_sub(4); // Account for borders and padding
-
-                let is_something_previewing = agents.values().any(|info| info.is_previewing_convo);
 
                 tokio::select! {
                     session_evt = async {
@@ -413,7 +412,6 @@ impl<'a> SubagentIndicator<'a> {
                                         let tool_name = tool_call_start.tool_call_name;
                                         agent_info.msg = if tool_name.as_str() == "summary" {
                                             agent_info.convo.push("Task has concluded".to_string());
-                                            agent_info.is_done = true;
                                             "summarizing...".to_string()
                                         } else {
                                             let msg = format!("calling tool {tool_name}");
@@ -435,7 +433,6 @@ impl<'a> SubagentIndicator<'a> {
                                 AgentEventKind::TextMessageContent(content) => {
                                     if let Some(agent_info) = agents.get_mut(&agent_id) {
                                         agent_info.msg = "thinking...".to_string();
-
                                         let TextMessageContent { delta, .. } = content;
                                         if let Ok(content) = String::from_utf8(delta) {
                                             if let Some(current_msg) = agent_info.convo.last_mut() {
@@ -482,8 +479,9 @@ impl<'a> SubagentIndicator<'a> {
                                             if let Ok(exec_summary) = serde_json::from_value::<SubagentExecutionSummary>(meta_evt.payload) {
                                                 agent_info.execution_summary.replace(exec_summary);
                                             }
-                                            agent_info.msg = "waiting for others...".to_string();
+                                            agent_info.msg = "completed".to_string();
                                         }
+                                        agent_info.is_done = true;
                                     }
                                 }
                                 _ => {},
@@ -491,20 +489,49 @@ impl<'a> SubagentIndicator<'a> {
                         }
                     },
 
-                    _ = async {
-                        if is_something_previewing {
-                            std::future::pending::<()>().await;
-                        } else {
-                            ct.cancelled().await;
-                        }
-                    } => {
-                        break;
-                    },
-
                     _ = tokio::time::sleep_until(sleep_until) => {
                         sleep_until += render_interval;
 
-                        stacked_height = 2_u16;
+                        stacked_height = 1;
+
+                        let (tool_tip, tool_tip_height) = {
+                            let mut spans = vec![
+                                Span::styled("Controls: ", Style::default().fg(Color::White.into())),
+                            ];
+
+                            if agents.len() > 1 {
+                                spans.append(&mut vec![
+                                    Span::styled("j/↓", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                    Span::styled(" down ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("k/↑", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                    Span::styled(" up ", Style::default().fg(Color::Grey.into())),
+                                ]);
+                            }
+
+                            spans.append(&mut vec![
+                                Span::styled("o", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("^+C", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
+                                Span::styled("esc", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
+                            ]);
+
+                            let mut lines = vec![Line::from(spans)];
+
+                            if agents.values().all(|info| info.is_done) {
+                                lines.push(Line::from(vec![
+                                    Span::styled("All agents have completed. Press ", Style::default().fg(Color::White.into())),
+                                    Span::styled("↵", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                                    Span::styled(" to return control back to main chat", Style::default().fg(Color::White.into())),
+                                ]));
+                            }
+
+                            let tool_tip_height = lines.len() as u16;
+                            stacked_height = stacked_height.saturating_add(tool_tip_height);
+
+                            (Paragraph::new(lines), tool_tip_height)
+                        };
 
                         for agent_info in agents.values_mut() {
                             agent_info.prep_lines_for_display(max_text_width);
@@ -517,7 +544,7 @@ impl<'a> SubagentIndicator<'a> {
                                     Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
                                     Span::styled(
                                         "Terminal too small to display agents. Please resize.",
-                                        Style::default().fg(Color::AnsiValue(141).into())
+                                        Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())
                                     ),
                                 ]);
 
@@ -571,7 +598,7 @@ impl<'a> SubagentIndicator<'a> {
                                     f.render_widget(arrow_widget, arrow_area);
                                     120
                                 } else {
-                                    141
+                                    Self::BRAND_PURPLE
                                 };
 
                                 let requires_attention = agent_info.pending_tool_approval.is_some()
@@ -616,40 +643,25 @@ impl<'a> SubagentIndicator<'a> {
                                 current_start_row = current_start_row.saturating_add(agent_info.widget_height);
                             }
 
-                            let tool_tip = if agents.len() > 1 {
-                                Line::from(vec![
-                                    Span::styled("Controls: ", Style::default().fg(Color::White.into())),
-                                    Span::styled("j/↓", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" down ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" up ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("o", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
-                                ])
-                            } else {
-                                Line::from(vec![
-                                    Span::styled("Controls: ", Style::default().fg(Color::White.into())),
-                                    Span::styled("o", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
-                                    Span::styled("esc", Style::default().fg(Color::AnsiValue(141).into())),
-                                    Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
-                                ])
-                            };
                             let area = Rect {
                                 x: 2,
                                 y: current_start_row,
                                 width: content_widget_width,
-                                height: 1
+                                height: tool_tip_height
                             };
                             f.render_widget(tool_tip, area);
                         })?;
                     },
+
+                    _ = async {
+                        if acknowledged {
+                            std::future::ready(()).await;
+                        } else {
+                            std::future::pending::<()>().await;
+                        }
+                    } => {
+                        break;
+                    }
 
                     evt = crossterm_event => {
                         let Some(Ok(evt)) = evt else {
@@ -661,13 +673,14 @@ impl<'a> SubagentIndicator<'a> {
                             crossterm::event::Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
                                 match key_event.code {
                                     KeyCode::Char('c') if key_event.modifiers.contains(KeyModifiers::CONTROL) => {
-                                        for (id, agent_info) in agents.iter_mut() {
-                                            _ = self.view_end.sender.send(InputEvent {
-                                                agent_id: Some(*id),
-                                                kind: InputEventKind::Interrupt,
-                                            });
-                                            if is_something_previewing {
-                                                agent_info.is_previewing_convo = false;
+                                        if agents.values().all(|info| info.is_done) {
+                                            acknowledged = true;
+                                        } else {
+                                            for id in agents.keys() {
+                                                _ = self.view_end.sender.send(InputEvent {
+                                                    agent_id: Some(*id),
+                                                    kind: InputEventKind::Interrupt,
+                                                });
                                             }
                                         }
                                     },
@@ -726,6 +739,9 @@ impl<'a> SubagentIndicator<'a> {
                                         };
                                         agent_info.msg = "tool rejection sent".to_string();
                                     },
+                                    KeyCode::Enter if agents.values().all(|info| info.is_done) => {
+                                        acknowledged = true;
+                                    }
                                     KeyCode::Enter => {
                                         let Some(focused_agent) = focused_agent else {
                                             continue;
@@ -793,7 +809,7 @@ impl<'a> SubagentIndicator<'a> {
                         Span::styled("⚠ ", Style::default().fg(Color::Yellow.into())),
                         Span::styled(
                             "Terminal too small to display summary. Please resize.",
-                            Style::default().fg(Color::AnsiValue(141).into()),
+                            Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into()),
                         ),
                     ]);
 
@@ -835,7 +851,7 @@ impl<'a> SubagentIndicator<'a> {
                         let widget_height = (lines.len() as u16).saturating_add(2).max(3);
 
                         let status_line = Paragraph::new(lines)
-                            .style(Style::default().fg(Color::AnsiValue(141).into()))
+                            .style(Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into()))
                             .block(Block::default().borders(Borders::NONE).title(title));
 
                         let area = Rect {
