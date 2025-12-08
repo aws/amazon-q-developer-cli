@@ -18,11 +18,23 @@
       "changes": [
         {
           "type": "added",
-          "description": "LSP integration documentation - [#197](https://github.com/kiro-team/kiro-cli/pull/197)"
+          "description": "Knowledge Index to create model awareness about existing KBs"
+        },
+        {
+          "type": "added",
+          "description": "Agent schema configuration for knowledge and auto-indexable knowledge"
+        },
+        {
+          "type": "fixed",
+          "description": "Added guardrails for fs_read to avoid context overflow"
+        },
+        {
+          "type": "added",
+          "description": "Auto-compaction with factual record extraction"
         },
         {
           "type": "changed",
-          "description": "Improved web search performance - [#201](https://github.com/kiro-team/kiro-cli/pull/201)"
+          "description": "Improvements to the auto-compaction algorithm"
         }
       ]
     },
