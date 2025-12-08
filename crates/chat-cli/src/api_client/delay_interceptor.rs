@@ -27,6 +27,12 @@ pub struct DelayTrackingInterceptor {
     major_delay_threshold: Duration,
 }
 
+impl Default for DelayTrackingInterceptor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DelayTrackingInterceptor {
     pub fn new() -> Self {
         Self {

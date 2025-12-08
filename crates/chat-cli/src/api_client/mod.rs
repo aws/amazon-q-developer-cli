@@ -1,10 +1,10 @@
 pub mod customization;
-mod delay_interceptor;
+pub mod delay_interceptor;
 mod endpoints;
 pub mod error;
 pub mod error_utils;
 pub mod model;
-mod opt_out;
+pub mod opt_out;
 pub mod profile;
 mod retry_classifier;
 pub mod send_message_output;

@@ -15,7 +15,10 @@ use super::{
     OutputKind,
     ToolInfo,
 };
+use crate::api_client::delay_interceptor::DelayTrackingInterceptor;
+use crate::api_client::opt_out::OptOutInterceptor;
 use crate::auth::UnifiedBearerResolver;
+use crate::aws_common::UserAgentOverrideInterceptor;
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -143,6 +146,9 @@ impl WebSearch {
         let client = CodewhispererStreamingClient::from_conf(
             amzn_codewhisperer_streaming_client::config::Builder::from(&bearer_sdk_config)
                 .http_client(crate::aws_common::http_client::client())
+                .interceptor(OptOutInterceptor::new(&database))
+                .interceptor(UserAgentOverrideInterceptor::new())
+                .interceptor(DelayTrackingInterceptor::new())
                 .bearer_token_resolver(UnifiedBearerResolver)
                 .app_name(crate::aws_common::app_name())
                 .endpoint_resolver(StaticEndpointResolver::new(endpoint.url().to_string()))
