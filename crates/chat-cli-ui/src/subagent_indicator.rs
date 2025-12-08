@@ -799,17 +799,14 @@ impl<'a> SubagentIndicator<'a> {
                     (tool_calls, duration.as_secs_f64())
                 });
 
-                agent_info.lines = wrap_text(summary_msg.as_str(), max_text_width)
-                    .into_iter()
-                    .enumerate()
-                    .map(|(idx, text)| {
-                        let prefix = if idx == 0 { "↳ " } else { "  " };
-                        Line::from(vec![
-                            Span::styled(prefix, Style::default()),
-                            Span::raw(text.to_string()),
-                        ])
-                    })
-                    .collect::<Vec<_>>();
+                agent_info.lines = vec![Line::from(vec![
+                    Span::styled("↳ ", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                    Span::styled("done ", Style::default().fg(Color::White.into())),
+                    Span::styled(
+                        format!("({tool_calls} tool uses · {duration:.2}s)"),
+                        Style::default().fg(Color::Grey.into()),
+                    ),
+                ])];
 
                 let widget_height = (agent_info.lines.len() as u16).saturating_add(2).max(3);
                 summary_stacked_height = summary_stacked_height.saturating_add(widget_height);
