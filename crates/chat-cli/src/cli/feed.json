@@ -34,7 +34,7 @@
         },
         {
           "type": "changed",
-          "description": "Improvements to the auto-compaction algorithm"
+          "description": "Enhanced auto-compaction with deterministic read, write, shell and aws tool artifacts"
         }
       ]
     },
