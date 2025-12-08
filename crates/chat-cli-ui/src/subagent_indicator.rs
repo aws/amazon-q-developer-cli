@@ -618,7 +618,7 @@ impl<'a> SubagentIndicator<'a> {
 
                             let tool_tip = if agents.len() > 1 {
                                 Line::from(vec![
-                                    Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("Controls: ", Style::default().fg(Color::White.into())),
                                     Span::styled("j/↓", Style::default().fg(Color::AnsiValue(141).into())),
                                     Span::styled(" down ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("k/↑", Style::default().fg(Color::AnsiValue(141).into())),
@@ -632,7 +632,7 @@ impl<'a> SubagentIndicator<'a> {
                                 ])
                             } else {
                                 Line::from(vec![
-                                    Span::styled("Controls: ", Style::default().fg(Color::Grey.into())),
+                                    Span::styled("Controls: ", Style::default().fg(Color::White.into())),
                                     Span::styled("o", Style::default().fg(Color::AnsiValue(141).into())),
                                     Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
                                     Span::styled("^+C", Style::default().fg(Color::AnsiValue(141).into())),
