@@ -925,7 +925,8 @@ impl ToolManager {
                     convo_id.replace(self.conversation_id.clone());
                     if is_trust_all {
                         for subagent in subagents {
-                            subagent.dangerously_trust_all_tools = true;
+                            subagent.dangerously_trust_all_tools = is_trust_all;
+                            subagent.is_interactive = self.is_interactive;
                         }
                     }
                 }

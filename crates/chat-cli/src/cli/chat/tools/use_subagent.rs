@@ -41,6 +41,10 @@ pub struct InvokeSubagent {
     /// Use with caution as this may execute potentially dangerous operations.
     #[serde(default)]
     pub dangerously_trust_all_tools: bool,
+    /// Whether the subagent should run in interactive mode.
+    /// When set to true, the subagent will prompt for user input when needed.
+    #[serde(default)]
+    pub is_interactive: bool,
 }
 
 impl InvokeSubagent {
@@ -57,6 +61,7 @@ impl InvokeSubagent {
             agent_name,
             relevant_context,
             dangerously_trust_all_tools,
+            is_interactive,
         } = self;
 
         Subagent {
@@ -65,6 +70,7 @@ impl InvokeSubagent {
             agent_name: agent_name.as_deref(),
             task_context: relevant_context.as_deref(),
             dangerously_trust_all_tools: *dangerously_trust_all_tools,
+            is_interactive: *is_interactive,
             local_agent_path,
             global_agent_path,
             local_mcp_path,
@@ -142,6 +148,7 @@ impl UseSubagent {
                 let global_agent_path = resolver.global().agents_dir()?;
                 let local_mcp_path = resolver.workspace().mcp_config()?;
                 let global_mcp_path = resolver.global().mcp_config()?;
+                let is_interactive = subagents.iter().any(|agent| agent.is_interactive);
                 let subagents = subagents
                     .iter()
                     .enumerate()
@@ -162,6 +169,7 @@ impl UseSubagent {
                         .map(|subagent| (subagent.agent_name.unwrap_or(DEFAULT_AGENT_NAME), subagent.query))
                         .collect::<Vec<(&str, &str)>>(),
                     view_end,
+                    is_interactive,
                 );
                 let mut indicator_handle = subagent_indicator.run();
 

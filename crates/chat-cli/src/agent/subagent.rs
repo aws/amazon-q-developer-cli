@@ -183,6 +183,7 @@ pub struct Subagent<'a> {
     pub agent_name: Option<&'a str>,
     pub task_context: Option<&'a str>,
     pub dangerously_trust_all_tools: bool,
+    pub is_interactive: bool,
     pub local_agent_path: &'a PathBuf,
     pub global_agent_path: &'a PathBuf,
     pub local_mcp_path: &'a PathBuf,
@@ -471,25 +472,37 @@ impl<'a> Subagent<'a> {
                             break;
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, .. } => {
-                            if !self.dangerously_trust_all_tools {
-                                _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
-                                    agent_id: self.id,
-                                    kind: AgentEventKind::ToolCallPermissionRequest(
-                                        ToolCallPermissionRequest {
-                                            tool_call_id: tool_use.tool_use_id,
-                                            name: tool_use.name,
-                                            input: tool_use.input,
-                                        }
-                                    )
-                                }));
-                            } else {
-                                warn!(?tool_use, "trust all is enabled, ignoring approval request");
-                                agent
-                                    .send_tool_use_approval_result(SendApprovalResultArgs {
-                                        id: id.clone(),
-                                        result: ApprovalResult::Approve,
-                                    })
-                                    .await?;
+                            match (self.is_interactive, self.dangerously_trust_all_tools) {
+                                (_, true) => {
+                                    warn!(?tool_use, "trust all is enabled, ignoring approval request");
+                                    agent
+                                        .send_tool_use_approval_result(SendApprovalResultArgs {
+                                            id: id.clone(),
+                                            result: ApprovalResult::Approve,
+                                        })
+                                        .await?;
+                                }
+                                (true, false) => {
+                                    _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
+                                        agent_id: self.id,
+                                        kind: AgentEventKind::ToolCallPermissionRequest(
+                                            ToolCallPermissionRequest {
+                                                tool_call_id: tool_use.tool_use_id,
+                                                name: tool_use.name,
+                                                input: tool_use.input,
+                                            }
+                                        )
+                                    }));
+                                },
+                                (false, false) => {
+                                    error!("subagent cannot run in non-interactive mode with tool permission request");
+                                    query_result.replace(Summary {
+                                        task_description: self.query.to_string(),
+                                        context_summary: None,
+                                        task_result: "Subagent cannot run in non-interactive mode with tool permission request".to_string()
+                                    });
+                                    break;
+                                },
                             }
                         },
                         AgentEvent::SubagentSummary(summary) => {
@@ -591,6 +604,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
     let global_agent_path = resolver.global().agents_dir().expect("failed to retrieve path");
     let local_mcp_path = resolver.workspace().mcp_config().expect("failed to retrieve path");
     let global_mcp_path = resolver.global().mcp_config().expect("failed to retrieve path");
+    let is_interactive = true;
     let subagents = queries
         .iter()
         .enumerate()
@@ -600,6 +614,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
             agent_name: Some(agent_name.as_str()),
             task_context: None,
             dangerously_trust_all_tools: false,
+            is_interactive,
             local_agent_path: &local_agent_path,
             global_agent_path: &global_agent_path,
             local_mcp_path: &local_mcp_path,
@@ -615,6 +630,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
             .map(|subagent| (subagent.agent_name.unwrap_or(DEFAULT_AGENT_NAME), subagent.query))
             .collect::<Vec<(&str, &str)>>(),
         view_end,
+        is_interactive,
     );
 
     let mut indicator_handle = subagent_indicator.run();

@@ -295,6 +295,7 @@ impl<'a> AgentInfo<'a> {
 pub struct SubagentIndicator<'a> {
     agents: HashMap<u16, AgentInfo<'a>>,
     view_end: ViewEnd,
+    is_interactive: bool,
 }
 
 impl<'a> SubagentIndicator<'a> {
@@ -306,7 +307,7 @@ impl<'a> SubagentIndicator<'a> {
     const MAX_SUBAGENT_LEN: usize = 4;
     const SPINNERS: [&'static str; 8] = ["ᗢ", "ᗣ", "ᗤ", "ᗥ", "ᗦ", "ᗧ", "ᗨ", "ᗩ"];
 
-    pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd) -> Self {
+    pub fn new(inputs: &[(&'a str, &'a str)], view_end: ViewEnd, is_interactive: bool) -> Self {
         let mut agents = HashMap::<u16, AgentInfo<'_>>::new();
         let end_idx = usize::min(inputs.len(), Self::MAX_SUBAGENT_LEN);
 
@@ -322,11 +323,16 @@ impl<'a> SubagentIndicator<'a> {
             });
         }
 
-        Self { agents, view_end }
+        Self {
+            agents,
+            view_end,
+            is_interactive,
+        }
     }
 
     pub fn run(mut self) -> SubagentIndicatorHandle {
         let cancellation_token = CancellationToken::new();
+        let ct = cancellation_token.clone();
         let mut agents = self
             .agents
             .iter()
@@ -338,11 +344,12 @@ impl<'a> SubagentIndicator<'a> {
         } else {
             None::<u16>
         };
+        let is_interactive = self.is_interactive;
 
         struct RawModeGuard;
 
         impl RawModeGuard {
-            pub fn new() -> Self {
+            pub fn enter_raw_mode() -> Self {
                 crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
                 Self
             }
@@ -355,7 +362,7 @@ impl<'a> SubagentIndicator<'a> {
         }
 
         tokio::spawn(async move {
-            let _raw_mode_guard = RawModeGuard::new();
+            let _raw_mode_guard = RawModeGuard::enter_raw_mode();
 
             let mut terminal_width: u16;
             let mut terminal_height: u16;
@@ -654,9 +661,16 @@ impl<'a> SubagentIndicator<'a> {
                     },
 
                     _ = async {
-                        if acknowledged {
+                        if is_interactive && acknowledged {
+                            // We would want to resolve immediately if the user has acknowledged
+                            // the results and want to move forward
                             std::future::ready(()).await;
+                        } else if !is_interactive {
+                            // In non-interactive, we would want to defer the decision to end to
+                            // whether or not the control loop has finished executing
+                            ct.cancelled().await;
                         } else {
+                            // Otherwise, we are just waiting on progress to be made
                             std::future::pending::<()>().await;
                         }
                     } => {
@@ -784,7 +798,6 @@ impl<'a> SubagentIndicator<'a> {
                     let duration = summary.duration.unwrap_or_default();
                     (tool_calls, duration.as_secs_f64())
                 });
-                let summary_msg = format!("done ({tool_calls} tool uses · {duration:.2}s)");
 
                 agent_info.lines = wrap_text(summary_msg.as_str(), max_text_width)
                     .into_iter()
