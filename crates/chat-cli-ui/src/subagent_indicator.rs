@@ -253,7 +253,7 @@ impl<'a> AgentInfo<'a> {
                         let prefix = if idx == 0 { ">  " } else { "   " };
                         acc.push(Line::from(vec![
                             Span::styled(prefix, Style::default()),
-                            Span::raw((*text).to_string()),
+                            Span::styled((*text).to_string(), Style::default().fg(Color::White.into())),
                         ]));
                     }
 
@@ -278,8 +278,8 @@ impl<'a> AgentInfo<'a> {
                 .map(|(idx, text)| {
                     let prefix = if idx == 0 { "↳ " } else { "  " };
                     Line::from(vec![
-                        Span::styled(prefix, Style::default()),
-                        Span::raw(text.to_string()),
+                        Span::raw(prefix),
+                        Span::styled(text.to_string(), Style::default().fg(Color::White.into())),
                     ])
                 })
                 .collect::<Vec<_>>();
@@ -299,6 +299,7 @@ pub struct SubagentIndicator<'a> {
 
 impl<'a> SubagentIndicator<'a> {
     const ARROW_WIDGET_WIDTH: u16 = 2;
+    // Colors used to differentiate the headings of each running subagent.
     const COLORS: [u8; 4] = [33, 81, 117, 213];
     const MAX_CONTENT_WIDGET_WIDTH: u16 = 78;
     const MAX_SUBAGENT_LEN: usize = 4;
