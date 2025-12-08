@@ -12,6 +12,22 @@
     },
     {
       "type": "release",
+      "date": "2025-12-08",
+      "version": "1.22.0",
+      "title": "Version 1.22.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "LSP integration documentation - [#197](https://github.com/kiro-team/kiro-cli/pull/197)"
+        },
+        {
+          "type": "changed",
+          "description": "Improved web search performance - [#201](https://github.com/kiro-team/kiro-cli/pull/201)"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-11-25",
       "version": "1.21.0",
       "title": "Version 1.21.0",
