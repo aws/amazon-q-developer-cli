@@ -34,6 +34,11 @@ use super::consts::{
     DUMMY_TOOL_NAME,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
+
+/// Maximum bytes for excluded messages after compaction
+/// Approximately 10,000 characters worth of content
+const MAX_EXCLUDED_MESSAGES_BYTES: usize = 12_000;
+
 use super::context::{
     ContextManager,
     calc_max_context_files_size,
@@ -923,7 +928,39 @@ impl ConversationState {
 
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
+
+        // Truncate excluded messages to prevent context bloat
+        self.truncate_excluded_messages();
+
         self.latest_summary = Some((enhanced_summary, request_metadata));
+    }
+
+    /// Truncates excluded messages after compaction to prevent context bloat.
+    /// Latest pair gets 60% of budget, others get 40%.
+    /// Budget is allocated proportionally based on message sizes.
+    fn truncate_excluded_messages(&mut self) {
+        let len = self.history.len();
+        for (i, entry) in self.history.iter_mut().enumerate() {
+            // Latest pair gets 60%, others get 40%
+            let pair_limit = if i == len - 1 {
+                MAX_EXCLUDED_MESSAGES_BYTES * 6 / 10 // 7200 bytes
+            } else {
+                MAX_EXCLUDED_MESSAGES_BYTES * 4 / 10 // 4800 bytes
+            };
+
+            let user_size = entry.user.char_count().value();
+            let assistant_size = entry.assistant.char_count().value();
+            let total_size = user_size + assistant_size;
+
+            if total_size > pair_limit {
+                // Allocate proportionally based on current sizes
+                let user_budget = (pair_limit * user_size) / total_size;
+                let assistant_budget = pair_limit - user_budget;
+                entry.user.truncate_safe(user_budget);
+                entry.assistant.truncate_safe(assistant_budget);
+            }
+            // If under budget, no truncation needed
+        }
     }
 
     pub async fn create_agent_generation_request(

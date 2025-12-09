@@ -479,6 +479,17 @@ impl AssistantMessage {
             AssistantMessage::Response { .. } => None,
         }
     }
+
+    pub fn truncate_safe(&mut self, max_bytes: usize) {
+        match self {
+            AssistantMessage::Response { content, .. } => {
+                super::util::truncate_safe_in_place(content, max_bytes, "...content truncated due to length");
+            },
+            AssistantMessage::ToolUse { content, .. } => {
+                super::util::truncate_safe_in_place(content, max_bytes, "...content truncated due to length");
+            },
+        }
+    }
 }
 
 impl From<AssistantMessage> for AssistantResponseMessage {
