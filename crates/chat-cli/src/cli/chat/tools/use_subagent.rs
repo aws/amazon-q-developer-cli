@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 
-use agent::tools::summary::Summary;
 use chat_cli_ui::conduit::get_conduit;
 use chat_cli_ui::subagent_indicator::SubagentIndicator;
 use eyre::{
@@ -174,27 +173,18 @@ impl UseSubagent {
                 let mut indicator_handle = subagent_indicator.run();
 
                 let parent_conv_id = convo_id.as_deref().unwrap_or_default();
-                let (oks, bads) =
-                    futures::future::join_all(subagents.into_iter().map(|subagent| {
+                let res =
+                    futures::future::try_join_all(subagents.into_iter().map(|subagent| {
                         subagent.query(os, input_rx.resubscribe(), control_end.clone(), parent_conv_id)
                     }))
-                    .await
-                    .into_iter()
-                    .partition::<Vec<eyre::Result<Summary>>, _>(|res| res.is_ok());
+                    .await;
 
                 _ = indicator_handle.wait_for_clean_screen().await;
 
-                let oks = oks.into_iter().map(|res| res.unwrap()).collect::<Vec<_>>();
-                let bads = bads
-                    .into_iter()
-                    .map(|res| res.err().unwrap().to_string())
-                    .collect::<Vec<_>>();
-                let oks = serde_json::to_value(oks)?;
-                let bads = serde_json::to_value(bads)?;
+                let summaries = res?;
 
                 let output_serialized = serde_json::json!({
-                    "successes": oks,
-                    "failures": bads,
+                    "summaries": summaries,
                 });
 
                 Ok(InvokeOutput {
@@ -205,8 +195,50 @@ impl UseSubagent {
     }
 
     pub fn queue_description(&self, tool: &Tool, output: &mut impl Write) -> Result<()> {
-        _ = self;
-        super::display_tool_use(tool, output)?;
+        use crossterm::{
+            queue,
+            style,
+        };
+
+        use crate::theme::StyledText;
+
+        match self {
+            Self::ListAgents => {
+                queue!(output, style::Print("Querying available agents for task delegation"),)?;
+                super::display_tool_use(tool, output)?;
+            },
+            Self::InvokeSubagents { subagents, convo_id: _ } => {
+                if subagents.len() == 1 {
+                    // Single subagent - display without batch prefix
+                    let subagent = &subagents[0];
+                    queue!(
+                        output,
+                        style::Print("Invoking subagent: "),
+                        StyledText::brand_fg(),
+                        style::Print(subagent.agent_name.as_deref().unwrap_or(DEFAULT_AGENT_NAME)),
+                        StyledText::reset(),
+                        style::Print(" with query: "),
+                        StyledText::brand_fg(),
+                        style::Print(&subagent.query),
+                        StyledText::reset(),
+                    )?;
+                    super::display_tool_use(tool, output)?;
+                } else {
+                    // Multiple subagents - display as batch
+                    queue!(
+                        output,
+                        style::Print("Invoking "),
+                        StyledText::brand_fg(),
+                        style::Print(subagents.len()),
+                        StyledText::reset(),
+                        style::Print(" subagents in parallel"),
+                    )?;
+                    super::display_tool_use(tool, output)?;
+                    queue!(output, style::Print("\n"))?;
+                }
+            },
+        }
+
         Ok(())
     }
 }

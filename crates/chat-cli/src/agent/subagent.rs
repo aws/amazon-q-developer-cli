@@ -59,6 +59,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use serde_json::Number;
 use tokio::sync::broadcast;
 use tracing::{
     debug,
@@ -321,6 +322,14 @@ impl<'a> Subagent<'a> {
                         },
                         // We need to wait until the agent is initialized before moving on
                         AgentEvent::Initialized => {
+                            let meta = MetaEvent {
+                                meta_type: "Initialized".to_string(),
+                                payload: serde_json::Value::Number(Number::from(self.id)),
+                            };
+                            _ = control_end.send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                                agent_id: self.id,
+                                kind: AgentEventKind::MetaEvent(meta)
+                            }));
                             break;
                         },
                         _ => {},
@@ -597,7 +606,7 @@ pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
 }
 
 #[allow(dead_code)]
-async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Summary>> {
+async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Summary>> {
     let os = Os::new().await.expect("failed to spawn os");
     let resolver = PathResolver::new(&os);
     let local_agent_path = resolver.workspace().agents_dir().expect("failed to retrieve path");
@@ -635,7 +644,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Vec<Result<Su
 
     let mut indicator_handle = subagent_indicator.run();
 
-    let res = futures::future::join_all(
+    let res = futures::future::try_join_all(
         subagents
             .into_iter()
             .map(|subagent| subagent.query(&os, input_rx.resubscribe(), control_end.clone(), stub_id)),

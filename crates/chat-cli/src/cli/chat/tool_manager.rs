@@ -923,11 +923,9 @@ impl ToolManager {
                 let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?;
                 if let UseSubagent::InvokeSubagents { convo_id, subagents } = &mut use_subagent {
                     convo_id.replace(self.conversation_id.clone());
-                    if is_trust_all {
-                        for subagent in subagents {
-                            subagent.dangerously_trust_all_tools = is_trust_all;
-                            subagent.is_interactive = self.is_interactive;
-                        }
+                    for subagent in subagents {
+                        subagent.dangerously_trust_all_tools = is_trust_all;
+                        subagent.is_interactive = self.is_interactive;
                     }
                 }
                 Tool::UseSubagent(use_subagent)

@@ -215,6 +215,7 @@ struct AgentInfo<'a> {
     max_height: u16,
     view_offset: u16,
     is_done: bool,
+    is_initialized: bool,
 }
 
 impl<'a> AgentInfo<'a> {
@@ -386,6 +387,7 @@ impl<'a> SubagentIndicator<'a> {
             let mut sleep_until = tokio::time::Instant::now() + render_interval;
             let mut time_spinner_last_rotated = std::time::Instant::now();
             let mut acknowledged = false;
+            let mut all_initialized = false;
 
             loop {
                 let crossterm_event = reader.next().fuse();
@@ -487,8 +489,17 @@ impl<'a> SubagentIndicator<'a> {
                                                 agent_info.execution_summary.replace(exec_summary);
                                             }
                                             agent_info.msg = "completed".to_string();
+                                            agent_info.is_done = true;
+                                        } else if meta_evt.meta_type.as_str() == "Initialized" {
+                                            if let Ok(id) = serde_json::from_value::<serde_json::Number>(meta_evt.payload) {
+                                                if let Some(id) = id.as_u64().and_then(|n| u16::try_from(n).ok()) {
+                                                    if let Some(info) = agents.get_mut(&id) {
+                                                        info.is_initialized = true;
+                                                        all_initialized = agents.values().all(|info| info.is_initialized);
+                                                    }
+                                                }
+                                            }
                                         }
-                                        agent_info.is_done = true;
                                     }
                                 }
                                 _ => {},
@@ -661,13 +672,17 @@ impl<'a> SubagentIndicator<'a> {
                     },
 
                     _ = async {
-                        if is_interactive && acknowledged {
-                            // We would want to resolve immediately if the user has acknowledged
-                            // the results and want to move forward
+                        // If not every agent has been initialized, we should take cancellation as a signal to end the widget
+                        //
+                        // If all agents have been initialized and we are in interactive mode, we should instead defer to
+                        // whether or not user has signaled that they are done looking at the
+                        // widget.
+                        //
+                        // In non-interactive, we should defer to ct being cancelled as a signal to
+                        // end
+                        if acknowledged {
                             std::future::ready(()).await;
-                        } else if !is_interactive {
-                            // In non-interactive, we would want to defer the decision to end to
-                            // whether or not the control loop has finished executing
+                        } else if !is_interactive || !all_initialized {
                             ct.cancelled().await;
                         } else {
                             // Otherwise, we are just waiting on progress to be made
