@@ -22,6 +22,26 @@
       "required": []
     }
   },
+  "glob": {
+    "name": "glob",
+    "description": "Fast file pattern matching (respects .gitignore). Use instead of 'find' in bash.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern, e.g. \"**/*.rs\" or \"src/**/*.{ts,tsx}\""
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory to search. Defaults to current working directory."
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",

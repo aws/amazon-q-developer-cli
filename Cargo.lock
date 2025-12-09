@@ -1491,6 +1491,7 @@ dependencies = [
  "http-body-util",
  "hyper 1.7.0",
  "hyper-util",
+ "ignore",
  "image",
  "indicatif",
  "indoc",
