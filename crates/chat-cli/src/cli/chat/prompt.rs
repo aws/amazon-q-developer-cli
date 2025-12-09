@@ -121,14 +121,6 @@ pub const COMMANDS: &[&str] = &[
     "/agent set",
     "/agent schema",
     "/agent generate",
-    "/chat",
-    "/chat list",
-    "/chat resume",
-    "/chat rm",
-    "/chat save",
-    "/chat load",
-    "/chat save-via-script",
-    "/chat load-via-script",
     "/prompts",
     "/context",
     "/context help",
@@ -149,6 +141,8 @@ pub const COMMANDS: &[&str] = &[
     "/compact help",
     "/usage",
     "/changelog",
+    "/save",
+    "/load",
     "/paste",
 ];
 

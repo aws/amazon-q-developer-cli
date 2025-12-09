@@ -236,12 +236,9 @@ fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crat
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
 pub struct ChatArgs {
-    /// Resume the most recent conversation from this directory.
+    /// Resumes the previous conversation from this directory.
     #[arg(short, long)]
     pub resume: bool,
-    /// Interactively select a conversation to resume from this directory.
-    #[arg(long, conflicts_with = "resume")]
-    pub resume_picker: bool,
     /// Context profile to use
     #[arg(long = "agent", alias = "profile")]
     pub agent: Option<String>,
@@ -258,12 +255,6 @@ pub struct ChatArgs {
     /// Whether the command should run without expecting user input
     #[arg(long, alias = "non-interactive")]
     pub no_interactive: bool,
-    /// List all saved chat sessions for the current directory.
-    #[arg(short = 'l', long)]
-    pub list_sessions: bool,
-    /// Delete a saved chat session by ID.
-    #[arg(short = 'd', long, value_name = "SESSION_ID")]
-    pub delete_session: Option<String>,
     /// The first question to ask
     pub input: Option<String>,
     /// Control line wrapping behavior (default: auto-detect)
@@ -273,26 +264,6 @@ pub struct ChatArgs {
 
 impl ChatArgs {
     pub async fn execute(mut self, os: &mut Os) -> Result<ExitCode> {
-        // Handle --list-sessions flag
-        if self.list_sessions {
-            cli::persist::list_conversations(os, &mut std::io::stderr())?;
-            return Ok(ExitCode::SUCCESS);
-        }
-
-        // Handle --delete-session flag
-        if let Some(session_id) = &self.delete_session {
-            match os.database.delete_conversation_by_id(session_id) {
-                Ok(()) => {
-                    eprintln!("✔ Deleted chat session {session_id}");
-                    return Ok(ExitCode::SUCCESS);
-                },
-                Err(err) => {
-                    eprintln!("Error: Failed to delete chat session {session_id}: {err}");
-                    return Ok(ExitCode::FAILURE);
-                },
-            }
-        }
-
         let mut input = self.input;
 
         if self.no_interactive && input.is_none() {
@@ -493,41 +464,13 @@ impl ChatArgs {
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
 
-        // Handle interactive session selection if --resume-picker flag is used
-        let resume_session_id = if self.resume_picker {
-            // Case 3: Resume with interactive selection
-            match std::env::current_dir() {
-                Ok(cwd) => {
-                    match os.database.list_conversations_by_path(&cwd) {
-                        Ok(conversations) if !conversations.is_empty() => {
-                            let entries = cli::persist::build_session_entries(conversations);
-
-                            let tz_offset = chrono::Local::now().format("%:z").to_string();
-                            let prompt = format!("Select a chat session to resume (times in UTC{tz_offset}):");
-
-                            cli::persist::select_chat_session(&entries, &prompt)
-                                .map(|index| entries[index].session_id.clone())
-                        },
-                        _ => None, // No sessions or error, start new session
-                    }
-                },
-                Err(_) => None, // Can't get cwd, start new session
-            }
-        } else if self.resume {
-            // Case 2: Resume most recent (empty string signals this to ChatSession::new)
-            Some(String::new())
-        } else {
-            // Case 1: Brand new conversation
-            None
-        };
-
         ChatSession::new(
             os,
             &conversation_id,
             agents,
             input,
             InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
-            resume_session_id,
+            self.resume,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,
             model_id,
@@ -770,7 +713,7 @@ impl ChatSession {
         mut agents: Agents,
         mut input: Option<String>,
         input_source: InputSource,
-        resume_session_id: Option<String>,
+        resume_conversation: bool,
         terminal_width_provider: fn() -> Option<usize>,
         tool_manager: ToolManager,
         model_id: Option<String>,
@@ -812,20 +755,15 @@ impl ChatSession {
             None
         };
 
-        let conversation = match resume_session_id {
-            Some(session_id) => {
-                // Resume conversation - either by ID or most recent from current directory
-                let previous_conversation = if session_id.is_empty() {
-                    // No ID provided - get most recent from current directory
-                    std::env::current_dir()
-                        .ok()
-                        .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
-                        .flatten()
-                } else {
-                    // Specific ID provided
-                    os.database.get_conversation_by_id(&session_id).ok().flatten()
-                };
+        let conversation = match resume_conversation {
+            true => {
+                let previous_conversation = std::env::current_dir()
+                    .ok()
+                    .and_then(|cwd| os.database.get_conversation_by_path(cwd).ok())
+                    .flatten();
 
+                // Only restore conversations where there were actual messages
+                // Prevents edge case where user clears conversation then exits without chatting.
                 match previous_conversation.filter(|cs| !cs.history().is_empty()) {
                     Some(mut cs) => {
                         existing_conversation = true;
@@ -853,7 +791,6 @@ impl ChatSession {
                         cs
                     },
                     None => {
-                        // just start a new session if session is empty / not found
                         ConversationState::new(
                             conversation_id,
                             agents,
@@ -868,8 +805,7 @@ impl ChatSession {
                     },
                 }
             },
-            None => {
-                // No resume - start new conversation
+            false => {
                 ConversationState::new(
                     conversation_id,
                     agents,
@@ -878,7 +814,7 @@ impl ChatSession {
                     model_id,
                     os,
                     mcp_enabled,
-                    code_intelligence_client.clone(),
+                    code_intelligence_client,
                 )
                 .await
             },
@@ -4217,7 +4153,7 @@ mod tests {
                 "y".to_string(),
                 "exit".to_string(),
             ]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4358,7 +4294,7 @@ mod tests {
                 "n".to_string(),             // cancel
                 "exit".to_string(),
             ]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4454,7 +4390,7 @@ mod tests {
                 "y".to_string(),
                 "exit".to_string(),
             ]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4528,7 +4464,7 @@ mod tests {
                 "create a new file".to_string(),
                 "exit".to_string(),
             ]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4653,7 +4589,7 @@ mod tests {
                 "y".to_string(), // Accept tool execution
                 "exit".to_string(),
             ]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4786,7 +4722,7 @@ mod tests {
             agents,
             None,
             InputSource::new_mock(vec!["read /sensitive.txt".to_string(), "exit".to_string()]),
-            None,
+            false,
             || Some(80),
             tool_manager,
             None,
@@ -4840,7 +4776,7 @@ mod tests {
                 agents,
                 None,
                 InputSource::new_mock(vec!["exit".to_string()]),
-                None,
+                false,
                 || Some(80),
                 tool_manager,
                 None,
