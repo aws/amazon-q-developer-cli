@@ -384,6 +384,9 @@ mod test {
         assert_eq!(Cli::parse_from([CHAT_BINARY_NAME, "chat", "-vv"]), Cli {
             subcommand: Some(RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -424,6 +427,9 @@ mod test {
             ["chat", "--profile", "my-profile"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -441,6 +447,9 @@ mod test {
             ["chat", "--profile", "my-profile", "Hello"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: Some("Hello".to_string()),
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -458,6 +467,9 @@ mod test {
             ["chat", "--profile", "my-profile", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: Some("my-profile".to_string()),
                 model: None,
@@ -475,6 +487,9 @@ mod test {
             ["chat", "--no-interactive", "--resume"],
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -488,6 +503,9 @@ mod test {
             ["chat", "--non-interactive", "-r"],
             RootSubcommand::Chat(ChatArgs {
                 resume: true,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -505,6 +523,9 @@ mod test {
             ["chat", "--trust-all-tools"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -522,6 +543,9 @@ mod test {
             ["chat", "--trust-tools="],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -539,6 +563,9 @@ mod test {
             ["chat", "--trust-tools=fs_read,fs_write"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -556,6 +583,9 @@ mod test {
             ["chat", "-w", "never"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -569,6 +599,9 @@ mod test {
             ["chat", "--wrap", "always"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
@@ -582,6 +615,9 @@ mod test {
             ["chat", "--wrap", "auto"],
             RootSubcommand::Chat(ChatArgs {
                 resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
                 input: None,
                 agent: None,
                 model: None,
