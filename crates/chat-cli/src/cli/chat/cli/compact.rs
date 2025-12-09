@@ -104,7 +104,7 @@ pub struct CompactStrategy {
 impl Default for CompactStrategy {
     fn default() -> Self {
         Self {
-            messages_to_exclude: Default::default(),
+            messages_to_exclude: 2,
             truncate_large_messages: Default::default(),
             max_message_length: MAX_USER_MESSAGE_SIZE,
         }
