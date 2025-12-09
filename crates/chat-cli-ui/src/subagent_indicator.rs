@@ -103,8 +103,6 @@ enum SubagentStatus {
     Attention,
 }
 
-const AGENT_BG_COLOR: u8 = 0;
-
 macro_rules! title {
     {
         status: $status:expr,
@@ -115,18 +113,18 @@ macro_rules! title {
         match $status {
             SubagentStatus::Completed => Line::from(vec![
                 Span::styled("✓ ", Style::default().fg(Color::Green.into())),
-                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
             SubagentStatus::Running(symbol) => Line::from(vec![
                 Span::raw(symbol),
                 Span::raw(" "),
-                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
             SubagentStatus::Attention => Line::from(vec![
                 Span::styled("! ", Style::default().fg(Color::Red.into())),
-                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into()).bg(Color::AnsiValue(AGENT_BG_COLOR).into())),
+                Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
         }
@@ -375,7 +373,19 @@ impl<'a> SubagentIndicator<'a> {
             let mut stdout = stdout();
             execute!(&mut stdout, style::Print("\n"))?;
 
-            let (_start_col, mut start_row) = position()?;
+            let mut counter = 0_usize;
+            let (_start_col, mut start_row) = loop {
+                match position() {
+                    Ok((col, row)) => break (col, row),
+                    Err(e) if counter < 3 => {
+                        error!("Error getting position: {e:#?}");
+                        counter += 1;
+                    },
+                    Err(e) => {
+                        bail!("Error getting position {e:#?}");
+                    },
+                }
+            };
 
             let backend = CrosstermBackend::new(stdout);
             let mut terminal = Terminal::new(backend)?;
@@ -388,6 +398,7 @@ impl<'a> SubagentIndicator<'a> {
             let mut time_spinner_last_rotated = std::time::Instant::now();
             let mut acknowledged = false;
             let mut all_initialized = false;
+            let mut interrupted = false;
 
             loop {
                 let crossterm_event = reader.next().fuse();
@@ -682,7 +693,7 @@ impl<'a> SubagentIndicator<'a> {
                         // end
                         if acknowledged {
                             std::future::ready(()).await;
-                        } else if !is_interactive || !all_initialized {
+                        } else if !is_interactive || !all_initialized || interrupted {
                             ct.cancelled().await;
                         } else {
                             // Otherwise, we are just waiting on progress to be made
@@ -711,6 +722,7 @@ impl<'a> SubagentIndicator<'a> {
                                                     kind: InputEventKind::Interrupt,
                                                 });
                                             }
+                                            interrupted = true;
                                         }
                                     },
                                     KeyCode::Char('o') => {
