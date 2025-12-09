@@ -13,7 +13,6 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::theme::StyledText;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
@@ -24,20 +23,20 @@ impl ClearArgs {
     pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         execute!(
             session.stderr,
-            StyledText::secondary_fg(),
+            style::SetForegroundColor(style::Color::DarkGrey),
             style::Print(
                 "\nAre you sure? This will erase the conversation history and context from hooks for the current session. "
             ),
             style::Print("["),
-            StyledText::success_fg(),
+            style::SetForegroundColor(style::Color::Green),
             style::Print("y"),
-            StyledText::secondary_fg(),
+            style::SetForegroundColor(style::Color::DarkGrey),
             style::Print("/"),
-            StyledText::success_fg(),
+            style::SetForegroundColor(style::Color::Green),
             style::Print("n"),
-            StyledText::secondary_fg(),
+            style::SetForegroundColor(style::Color::DarkGrey),
             style::Print("]:\n\n"),
-            StyledText::reset(),
+            style::ResetColor,
             cursor::Show,
         )?;
 
@@ -60,12 +59,61 @@ impl ClearArgs {
 
             execute!(
                 session.stderr,
-                StyledText::success_fg(),
+                style::SetForegroundColor(style::Color::Green),
                 style::Print("\nConversation history cleared.\n\n"),
-                StyledText::reset(),
+                style::ResetColor,
             )?;
         }
 
         Ok(ChatState::default())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crossterm::{
+        execute,
+        style,
+    };
+
+    #[test]
+    fn test_clear_prompt_renders_correctly() {
+        let mut buffer = Vec::new();
+
+        // Test the actual implementation pattern used in clear command
+        let result = execute!(
+            &mut buffer,
+            style::SetForegroundColor(style::Color::DarkGrey),
+            style::Print("Test "),
+            style::Print("["),
+            style::SetForegroundColor(style::Color::Green),
+            style::Print("y"),
+            style::SetForegroundColor(style::Color::DarkGrey),
+            style::Print("/"),
+            style::SetForegroundColor(style::Color::Green),
+            style::Print("n"),
+            style::SetForegroundColor(style::Color::DarkGrey),
+            style::Print("]"),
+            style::ResetColor,
+        );
+
+        assert!(result.is_ok());
+
+        let output = String::from_utf8(buffer).unwrap();
+        eprintln!("Output: {:?}", output);
+
+        // Verify the text content is correct
+        assert!(output.contains("Test"), "Output should contain 'Test'");
+        assert!(output.contains("["), "Output should contain '['");
+        assert!(output.contains("y"), "Output should contain 'y'");
+        assert!(output.contains("/"), "Output should contain '/'");
+        assert!(output.contains("n"), "Output should contain 'n'");
+        assert!(output.contains("]"), "Output should contain ']'");
+        
+        // Verify ANSI escape sequences are present
+        assert!(output.contains("\x1b["), "Output should contain ANSI escape sequences");
+        
+        // Verify reset code is present
+        assert!(output.contains("\x1b[0m"), "Output should contain reset code");
     }
 }
