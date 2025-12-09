@@ -179,7 +179,7 @@ impl FsWrite {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileCreate {
     path: String,
-    content: String,
+    pub content: String,
 }
 
 impl FileCreate {
@@ -206,8 +206,8 @@ impl FileCreate {
 #[serde(rename_all = "camelCase")]
 pub struct StrReplace {
     path: String,
-    old_str: String,
-    new_str: String,
+    pub old_str: String,
+    pub new_str: String,
     #[serde(default)]
     replace_all: bool,
 }

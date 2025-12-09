@@ -124,6 +124,16 @@ pub enum RootSubcommand {
     /// Model Context Protocol (MCP)
     #[command(subcommand)]
     Mcp(McpSubcommand),
+    /// Start Agent Client Protocol (ACP) agent
+    #[command(hide = true)]
+    Acp,
+    /// ACP test client
+    #[command(hide = true)]
+    AcpClient {
+        /// Path to the ACP agent executable
+        #[arg(long)]
+        agent: String,
+    },
 }
 
 impl RootSubcommand {
@@ -178,6 +188,8 @@ impl RootSubcommand {
             Self::Version { changelog } => Cli::print_version(changelog),
             Self::Chat(args) => args.execute(os).await,
             Self::Mcp(args) => args.execute(os, &mut std::io::stderr()).await,
+            Self::Acp => crate::agent::acp::acp_agent::execute(os).await,
+            Self::AcpClient { agent } => crate::agent::acp::acp_client::execute(agent).await,
         }
     }
 }
@@ -202,6 +214,8 @@ impl Display for RootSubcommand {
             Self::Issue(_) => "issue",
             Self::Version { .. } => "version",
             Self::Mcp(_) => "mcp",
+            Self::Acp => "acp",
+            Self::AcpClient { .. } => "acp-client",
         };
 
         write!(f, "{name}")
