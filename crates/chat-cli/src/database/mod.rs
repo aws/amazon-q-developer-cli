@@ -72,8 +72,7 @@ const MIGRATIONS: &[Migration] = migrations![
     "004_state_table",
     "005_auth_table",
     "006_make_state_blob",
-    "007_conversations_table",
-    "008_multiple_conversations_per_path"
+    "007_conversations_table"
 ];
 
 #[derive(Debug, serde::Deserialize, serde::Serialize)]
@@ -160,7 +159,6 @@ pub enum Table {
     /// The state table contains persistent application state.
     State,
     /// The conversations tables contains user chat conversations.
-    #[allow(dead_code)]
     Conversations,
     /// The auth table contains SSO and Builder ID credentials.
     Auth,
@@ -385,111 +383,33 @@ impl Database {
     //     self.delete_entry(Table::State, LAST_USED_MODEL_ID)
     // }
 
-    /// Get the most recent chat conversation for a given path (by updated_at).
+    /// Get a chat conversation given a path to the conversation.
     pub fn get_conversation_by_path(
         &mut self,
         path: impl AsRef<Path>,
     ) -> Result<Option<ConversationState>, DatabaseError> {
+        // We would need to encode this to support non utf8 paths.
         let path = match path.as_ref().to_str() {
             Some(path) => path,
             None => return Ok(None),
         };
 
-        let conn = self.pool.get()?;
-        let mut stmt =
-            conn.prepare("SELECT value FROM conversations WHERE key = ?1 ORDER BY updated_at DESC LIMIT 1")?;
-
-        match stmt.query_row([path], |row| row.get::<_, String>(0)) {
-            Ok(value) => Ok(Some(serde_json::from_str(&value)?)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
+        self.get_json_entry(Table::Conversations, path)
     }
 
-    /// Set a chat conversation given a path. Updates updated_at to current time.
+    /// Set a chat conversation given a path to the conversation.
     pub fn set_conversation_by_path(
         &mut self,
         path: impl AsRef<Path>,
         state: &ConversationState,
     ) -> Result<usize, DatabaseError> {
+        // We would need to encode this to support non utf8 paths.
         let path = match path.as_ref().to_str() {
             Some(path) => path,
             None => return Ok(0),
         };
 
-        let conn = self.pool.get()?;
-        let value = serde_json::to_string(state)?;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-
-        Ok(conn.execute(
-            "INSERT INTO conversations (key, conversation_id, value, created_at, updated_at) 
-             VALUES (?1, ?2, ?3, ?4, ?4)
-             ON CONFLICT(key, conversation_id) 
-             DO UPDATE SET value = ?3, updated_at = ?4",
-            params![path, state.conversation_id(), value, now],
-        )?)
-    }
-
-    /// List all conversations for a given path, ordered by most recent first.
-    pub fn list_conversations_by_path(
-        &self,
-        path: impl AsRef<Path>,
-    ) -> Result<Vec<(String, ConversationState, i64, i64)>, DatabaseError> {
-        let path = match path.as_ref().to_str() {
-            Some(path) => path,
-            None => return Ok(Vec::new()),
-        };
-
-        let conn = self.pool.get()?;
-        let mut stmt = conn.prepare(
-            "SELECT conversation_id, value, created_at, updated_at 
-             FROM conversations 
-             WHERE key = ?1 
-             ORDER BY updated_at DESC",
-        )?;
-
-        let rows = stmt.query_map([path], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, i64>(2)?,
-                row.get::<_, i64>(3)?,
-            ))
-        })?;
-
-        let mut result = Vec::new();
-        for row in rows {
-            let (id, value, created, updated) = row?;
-            let state: ConversationState = serde_json::from_str(&value)?;
-            result.push((id, state, created, updated));
-        }
-
-        Ok(result)
-    }
-
-    /// Get a specific conversation by its ID.
-    pub fn get_conversation_by_id(&self, conversation_id: &str) -> Result<Option<ConversationState>, DatabaseError> {
-        let conn = self.pool.get()?;
-        let mut stmt = conn.prepare("SELECT value FROM conversations WHERE conversation_id = ?1")?;
-
-        match stmt.query_row([conversation_id], |row| row.get::<_, String>(0)) {
-            Ok(value) => Ok(Some(serde_json::from_str(&value)?)),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(err) => Err(err.into()),
-        }
-    }
-
-    /// Delete a specific conversation by its ID.
-    pub fn delete_conversation_by_id(&self, conversation_id: &str) -> Result<(), DatabaseError> {
-        self.pool
-            .get()?
-            .execute("DELETE FROM conversations WHERE conversation_id = ?1", [
-                conversation_id,
-            ])?;
-        Ok(())
+        self.set_json_entry(Table::Conversations, path, state)
     }
 
     pub async fn get_secret(&self, key: &str) -> Result<Option<Secret>, DatabaseError> {
@@ -761,49 +681,5 @@ mod tests {
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
         store.delete_secret(key).await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap(), None);
-    }
-
-    #[tokio::test]
-    async fn test_multiple_conversations_per_path() {
-        use std::path::PathBuf;
-
-        let mut db = Database::new().await.unwrap();
-        let test_path = PathBuf::from("/test/path");
-
-        // Create mock conversation JSON with different IDs
-        let conv1_json = r#"{"conversation_id":"conv-1","next_message":null,"history":[],"valid_history_range":[0,0],"transcript":[],"tools":{},"context_manager":null,"context_message_length":null,"latest_summary":null,"model_info":null,"file_line_tracker":{},"checkpoint_manager":null,"mcp_enabled":true,"user_turn_metadata":{"continuation_id":"test-1","requests":[],"usage_info":[]}}"#;
-        let conv2_json = r#"{"conversation_id":"conv-2","next_message":null,"history":[],"valid_history_range":[0,0],"transcript":[],"tools":{},"context_manager":null,"context_message_length":null,"latest_summary":null,"model_info":null,"file_line_tracker":{},"checkpoint_manager":null,"mcp_enabled":true,"user_turn_metadata":{"continuation_id":"test-2","requests":[],"usage_info":[]}}"#;
-
-        let conv1: crate::cli::ConversationState = serde_json::from_str(conv1_json).unwrap();
-        let conv2: crate::cli::ConversationState = serde_json::from_str(conv2_json).unwrap();
-
-        // Save first conversation
-        db.set_conversation_by_path(&test_path, &conv1).unwrap();
-
-        // Wait to ensure different timestamps (millisecond precision)
-        std::thread::sleep(std::time::Duration::from_millis(10));
-
-        // Save second conversation
-        db.set_conversation_by_path(&test_path, &conv2).unwrap();
-
-        // Get most recent should return conv2
-        let recent = db.get_conversation_by_path(&test_path).unwrap().unwrap();
-        assert_eq!(recent.conversation_id(), "conv-2");
-
-        // List all conversations
-        let all = db.list_conversations_by_path(&test_path).unwrap();
-        assert_eq!(all.len(), 2);
-        assert_eq!(all[0].0, "conv-2"); // Most recent first
-        assert_eq!(all[1].0, "conv-1");
-
-        // Get by ID
-        let by_id = db.get_conversation_by_id("conv-1").unwrap().unwrap();
-        assert_eq!(by_id.conversation_id(), "conv-1");
-
-        // Delete one
-        db.delete_conversation_by_id("conv-1").unwrap();
-        let all = db.list_conversations_by_path(&test_path).unwrap();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].0, "conv-2");
     }
 }
