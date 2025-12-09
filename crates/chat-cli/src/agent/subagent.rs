@@ -286,6 +286,7 @@ impl<'a> Subagent<'a> {
                 // While we wait we would still need to handle user input
                 input_evt = input_rx.recv() => {
                     let Ok(input_evt) = input_evt else {
+                        error!("input channel closed: {input_evt:#?}");
                         bail!("input channel closed");
                     };
 

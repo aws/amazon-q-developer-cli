@@ -2526,6 +2526,20 @@ impl ChatSession {
                 }
             }
 
+            let signal_event = SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                agent_id: Default::default(),
+                kind: chat_cli_ui::protocol::AgentEventKind::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                    meta_type: "timing".to_string(),
+                    payload: serde_json::Value::String("prompt_user".to_string()),
+                }),
+            });
+            self.stderr
+                .send(signal_event)
+                .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+            if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
+            }
+
             let invoke_result = tool
                 .tool
                 .invoke(

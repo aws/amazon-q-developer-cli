@@ -10,6 +10,7 @@ use eyre::{
 };
 use schemars::JsonSchema;
 use serde::Deserialize;
+use tracing::error;
 
 use super::{
     InvokeOutput,
@@ -179,7 +180,9 @@ impl UseSubagent {
                     }))
                     .await;
 
-                _ = indicator_handle.wait_for_clean_screen().await;
+                if let Err(e) = indicator_handle.wait_for_clean_screen().await {
+                    error!(?e, "failed to wait for clean screen");
+                }
 
                 let summaries = res?;
 
