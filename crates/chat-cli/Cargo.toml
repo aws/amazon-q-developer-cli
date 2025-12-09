@@ -88,6 +88,7 @@ semantic_search_client.workspace = true
 semver.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+serde_yaml = { version = "0.9", default-features = false }
 sha2.workspace = true
 shell-color.workspace = true
 shell-words.workspace = true
