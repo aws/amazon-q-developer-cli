@@ -195,7 +195,7 @@ impl Default for AgentConfigV2025_08_22 {
             hooks: Default::default(),
             model_preferences: Default::default(),
             mcp_servers: Default::default(),
-            use_legacy_mcp_json: false,
+            use_legacy_mcp_json: true,
 
             resources: vec![
                 "file://AmazonQ.md",
