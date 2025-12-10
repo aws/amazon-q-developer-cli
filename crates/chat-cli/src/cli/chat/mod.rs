@@ -128,6 +128,7 @@ use token_counter::TokenCounter;
 use tokio::signal::ctrl_c;
 use tokio::sync::{
     Mutex,
+    RwLock,
     broadcast,
 };
 use tool_manager::{
@@ -745,7 +746,7 @@ impl ChatSession {
                 .auto_detect_languages()
                 .build()
             {
-                Ok(client) => Some(client),
+                Ok(client) => Some(Arc::new(RwLock::new(client))),
                 Err(e) => {
                     eprintln!("Warning: Failed to create code intelligence client: {e}");
                     None
@@ -786,6 +787,7 @@ impl ChatSession {
                         cs.agents = agents;
                         cs.mcp_enabled = mcp_enabled;
                         cs.code_intelligence_client = code_intelligence_client.clone();
+                        cs.auto_initialize_code_intelligence().await;
                         cs.update_state(true).await;
                         cs.enforce_tool_use_history_invariants();
                         cs
@@ -2587,7 +2589,7 @@ impl ChatSession {
                     &mut self.stdout,
                     &mut self.conversation.file_line_tracker,
                     &self.conversation.agents,
-                    &mut self.conversation.code_intelligence_client,
+                    &self.conversation.code_intelligence_client,
                 )
                 .await;
 
@@ -3697,6 +3699,9 @@ impl ChatSession {
         let all_trusted = self.all_tools_trusted();
         let tangent_mode = self.conversation.is_in_tangent_mode();
 
+        let code_intelligence =
+            is_code_intelligence_active(&self.conversation.code_intelligence_client, &self.conversation.agents);
+
         // Check if context usage indicator is enabled
         let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
             use crate::cli::chat::cli::context::context_data_provider::get_total_context_usage_percentage;
@@ -3705,8 +3710,13 @@ impl ChatSession {
             None
         };
 
-        let mut generated_prompt =
-            prompt::generate_prompt(profile.as_deref(), all_trusted, tangent_mode, usage_percentage);
+        let mut generated_prompt = prompt::generate_prompt(
+            profile.as_deref(),
+            all_trusted,
+            tangent_mode,
+            code_intelligence,
+            usage_percentage,
+        );
 
         if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
             if let Ok(mut executions) = status_all_agents(os).await {
@@ -4051,6 +4061,29 @@ fn is_tool_permission_interaction(input: &str) -> bool {
 /// Check if input is any approval response (y/Y/t/T)
 fn is_approval_response(input: &str) -> bool {
     is_accept_response(input) || is_trust_response(input)
+}
+
+/// Check if code intelligence is active (initializing or initialized)
+fn is_code_intelligence_active(
+    client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
+    agents: &Agents,
+) -> bool {
+    use crate::cli::chat::tools::ToolMetadata;
+
+    // First check if code tool is in the agent's tools list
+    if !agents.has_tool(ToolMetadata::CODE.aliases) {
+        return false;
+    }
+
+    // Then check if the client is initialized
+    if let Some(client_lock) = client {
+        if let Ok(client) = client_lock.try_read() {
+            let status = client.workspace_status();
+            return status == code_agent_sdk::sdk::WorkspaceStatus::Initialized
+                || status == code_agent_sdk::sdk::WorkspaceStatus::Initializing;
+        }
+    }
+    false
 }
 
 // Helper method to save the agent config to file

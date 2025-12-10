@@ -61,12 +61,13 @@ impl WorkspaceService for LspWorkspaceService {
             "plaintext".to_string()
         };
 
-        let client = workspace_manager
-            .get_client_for_file(file_path)
-            .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+        let client = workspace_manager.get_client_for_file(file_path).await?.ok_or_else(|| {
+            crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), &language_id, None)
+        })?;
 
-        let uri = Url::from_file_path(file_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(file_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(file_path.to_path_buf(), "Cannot convert to URI")
+        })?;
 
         let params = DidOpenTextDocumentParams {
             text_document: TextDocumentItem {

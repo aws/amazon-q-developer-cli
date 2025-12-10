@@ -146,7 +146,8 @@ async fn main() -> anyhow::Result<()> {
                 symbol_name: name,
                 file_path: file,
                 symbol_type: symbol_type.and_then(|s| ApiSymbolKind::from_str(&s).ok()),
-                limit: None,        // Use default 20
+                limit: None, // Use default 20
+                language: None,
                 exact_match: false, // Enable fuzzy matching
             };
 
@@ -353,6 +354,7 @@ async fn main() -> anyhow::Result<()> {
             let symbols = code_intel
                 .get_document_symbols(GetDocumentSymbolsRequest {
                     file_path: file.clone(),
+                    top_level_only: None,
                 })
                 .await?;
 

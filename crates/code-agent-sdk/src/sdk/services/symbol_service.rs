@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{
@@ -127,6 +128,24 @@ impl LspSymbolService {
         Some(symbol_info)
     }
 
+    fn collect_all_document_symbols(
+        ds: &DocumentSymbol,
+        file_path: &Path,
+        workspace_root: &Path,
+        result: &mut Vec<SymbolInfo>,
+    ) {
+        if let Some(symbol_info) = Self::document_symbol_to_symbol_info(ds, file_path, workspace_root) {
+            result.push(symbol_info);
+        }
+
+        // Recurse into children
+        if let Some(children) = &ds.children {
+            for child in children {
+                Self::collect_all_document_symbols(child, file_path, workspace_root, result);
+            }
+        }
+    }
+
     async fn find_symbols_exact(
         &self,
         workspace_manager: &mut WorkspaceManager,
@@ -136,11 +155,42 @@ impl LspSymbolService {
         // If file_path is specified, use document symbols for that file
         if let Some(file_path) = &request.file_path {
             let symbols = self.get_document_symbols(workspace_manager, file_path, false).await?;
+
+            // Count symbol types
+            let mut type_counts: HashMap<String, usize> = HashMap::new();
+            for sym in &symbols {
+                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
+                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
+            }
+
+            tracing::info!(
+                "Found {} symbols in file {:?}: {:?}",
+                symbols.len(),
+                file_path,
+                type_counts
+            );
+            tracing::debug!(
+                "File symbols: {:?}",
+                symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+            );
+
             all_symbols.extend(symbols);
         } else {
             // Use workspace symbol search only for detected languages
             let detected_languages = workspace_manager.get_detected_languages()?;
-            for language in detected_languages {
+
+            // Filter languages if language filter is specified
+            let languages_to_query: Vec<String> = if let Some(lang_filter) = &request.language {
+                let filter_lower = lang_filter.to_lowercase();
+                detected_languages
+                    .into_iter()
+                    .filter(|l| l.to_lowercase() == filter_lower)
+                    .collect()
+            } else {
+                detected_languages
+            };
+
+            for language in languages_to_query {
                 if let Ok(Some(client)) = workspace_manager.get_client_by_language(&language).await {
                     let params = WorkspaceSymbolParams {
                         query: request.symbol_name.clone(),
@@ -153,17 +203,52 @@ impl LspSymbolService {
                             let mapped_symbols: Vec<SymbolInfo> = symbols
                                 .iter()
                                 .filter_map(|s| {
-                                    SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())
+                                    let mut sym =
+                                        SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())?;
+                                    sym.language = Some(language.clone());
+                                    Some(sym)
                                 })
                                 .collect();
+
+                            // Count symbol types for this language
+                            let mut type_counts: HashMap<String, usize> = HashMap::new();
+                            for sym in &mapped_symbols {
+                                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
+                                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
+                            }
+
+                            tracing::info!(
+                                "LSP {} returned {} symbols for query '{}': {:?}",
+                                language,
+                                mapped_symbols.len(),
+                                request.symbol_name,
+                                type_counts
+                            );
+                            tracing::debug!(
+                                "LSP {} symbols: {:?}",
+                                language,
+                                mapped_symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+                            );
+
                             all_symbols.extend(mapped_symbols);
                         },
-                        Ok(None) => {},
-                        Err(_) => {}, // Skip servers that don't support workspace/symbol
+                        Ok(None) => {
+                            tracing::debug!(
+                                "LSP {} returned no symbols for query '{}'",
+                                language,
+                                request.symbol_name
+                            );
+                        },
+                        Err(e) => {
+                            tracing::debug!("LSP {} error: {}", language, e);
+                        },
                     }
                 }
             }
         }
+
+        let before_filter_count = all_symbols.len();
+
         if !request.symbol_name.is_empty() {
             let query_lower = request.symbol_name.to_lowercase();
             if request.exact_match {
@@ -171,23 +256,48 @@ impl LspSymbolService {
             } else {
                 all_symbols.retain(|s| s.name.to_lowercase().contains(&query_lower));
             }
+            tracing::debug!(
+                "Name filter '{}' (exact={}): {} -> {} symbols",
+                request.symbol_name,
+                request.exact_match,
+                before_filter_count,
+                all_symbols.len()
+            );
         }
+
         // Filter by symbol type if specified
         if let Some(symbol_type) = &request.symbol_type {
+            let before_type_filter = all_symbols.len();
             let lsp_kind = symbol_type.to_lsp_symbol_kind();
             all_symbols.retain(|s| s.symbol_type == Some(format!("{lsp_kind:?}")));
+            tracing::debug!(
+                "Type filter '{:?}': {} -> {} symbols",
+                symbol_type,
+                before_type_filter,
+                all_symbols.len()
+            );
         }
 
         // Apply limit
+        let before_limit = all_symbols.len();
         if let Some(limit) = request.limit {
             all_symbols.truncate(limit as usize);
+            if before_limit > all_symbols.len() {
+                tracing::info!(
+                    "Limit applied: {} symbols truncated to {}",
+                    before_limit,
+                    all_symbols.len()
+                );
+            }
         }
+
+        tracing::info!("Returning {} total symbols", all_symbols.len());
         Ok(all_symbols)
     }
 }
 
 const MAX_RESULTS: u32 = 50;
-const DEFAULT_RESULTS: u32 = 20;
+const DEFAULT_RESULTS: u32 = 50;
 
 #[async_trait::async_trait]
 impl SymbolService for LspSymbolService {
@@ -219,6 +329,7 @@ impl SymbolService for LspSymbolService {
                 file_path: request.file_path.clone(),
                 symbol_type: None,
                 limit: None,
+                language: None,
                 exact_match: true,
             };
 
@@ -246,7 +357,9 @@ impl SymbolService for LspSymbolService {
             .open_file(workspace_manager, &canonical_path, content)
             .await?;
         if let Some(client) = workspace_manager.get_client_for_file(&canonical_path).await? {
-            let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+            let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+                crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+            })?;
 
             let params = DocumentSymbolParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -276,14 +389,24 @@ impl SymbolService for LspSymbolService {
                     DocumentSymbolResponse::Nested(nested_symbols) => {
                         let mut nested_result = Vec::new();
                         for ds in nested_symbols {
-                            if !top_level_only || Self::is_top_level_symbol_kind(ds.kind) {
-                                if let Some(symbol_info) = Self::document_symbol_to_symbol_info(
+                            if top_level_only {
+                                if Self::is_top_level_symbol_kind(ds.kind) {
+                                    if let Some(symbol_info) = Self::document_symbol_to_symbol_info(
+                                        &ds,
+                                        &canonical_path,
+                                        workspace_manager.workspace_root(),
+                                    ) {
+                                        nested_result.push(symbol_info);
+                                    }
+                                }
+                            } else {
+                                // Collect all symbols including nested ones
+                                Self::collect_all_document_symbols(
                                     &ds,
                                     &canonical_path,
                                     workspace_manager.workspace_root(),
-                                ) {
-                                    nested_result.push(symbol_info);
-                                }
+                                    &mut nested_result,
+                                );
                             }
                         }
                         nested_result
@@ -317,9 +440,13 @@ impl SymbolService for LspSymbolService {
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
 
-        let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
 
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -409,9 +536,13 @@ impl SymbolService for LspSymbolService {
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
 
-        let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
 
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
@@ -443,6 +574,7 @@ impl SymbolService for LspSymbolService {
             file_path: None,
             symbol_type: None,
             limit: Some(1), // Only need first match
+            language: None,
             exact_match: true,
         };
 
@@ -499,6 +631,7 @@ mod tests {
             container_name: None,
             detail: None,
             source_line: None,
+            language: None,
         }
     }
 

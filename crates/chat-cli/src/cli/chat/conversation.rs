@@ -4,6 +4,7 @@ use std::collections::{
     VecDeque,
 };
 use std::io::Write;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use chrono::Local;
@@ -22,6 +23,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tokio::sync::RwLock;
 use tracing::{
     debug,
     warn,
@@ -259,7 +261,7 @@ pub struct ConversationState {
     pub user_turn_metadata: UserTurnMetadata,
     /// Code intelligence client for LSP-based code operations
     #[serde(skip)]
-    pub code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
+    pub code_intelligence_client: Option<Arc<RwLock<code_agent_sdk::CodeIntelligence>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -287,7 +289,7 @@ impl ConversationState {
         current_model_id: Option<String>,
         os: &Os,
         mcp_enabled: bool,
-        code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
+        code_intelligence_client: Option<Arc<RwLock<code_agent_sdk::CodeIntelligence>>>,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -307,7 +309,7 @@ impl ConversationState {
             None
         };
 
-        Self {
+        let state = Self {
             conversation_id: conversation_id.to_string(),
             next_message: None,
             history: VecDeque::new(),
@@ -327,6 +329,45 @@ impl ConversationState {
             tangent_state: None,
             user_turn_metadata: UserTurnMetadata::new(),
             code_intelligence_client,
+        };
+
+        state.auto_initialize_code_intelligence().await;
+        state
+    }
+
+    /// Auto-initialize code intelligence if config exists and agent has code tool
+    pub async fn auto_initialize_code_intelligence(&self) {
+        use crate::cli::chat::tools::ToolMetadata;
+
+        // Check if code tool is in the agent's tools list
+        if !self.agents.has_tool(ToolMetadata::CODE.aliases) {
+            return;
+        }
+
+        if let Some(client) = &self.code_intelligence_client {
+            let mut guard = client.write().await;
+            if guard.should_auto_initialize() {
+                let _ = guard.initialize().await;
+            }
+        }
+    }
+
+    /// Handle code intelligence state after agent swap
+    pub async fn update_code_intelligence_for_agent(&self) {
+        use crate::cli::chat::tools::ToolMetadata;
+
+        if let Some(client) = &self.code_intelligence_client {
+            let mut guard = client.write().await;
+
+            if self.agents.has_tool(ToolMetadata::CODE.aliases) {
+                // Agent supports code tool - auto-initialize if needed
+                if guard.should_auto_initialize() {
+                    let _ = guard.initialize().await;
+                }
+            } else {
+                // Agent doesn't support code tool - reset to avoid unnecessary LSP servers
+                guard.reset_initialization().await;
+            }
         }
     }
 
@@ -1206,6 +1247,9 @@ Return only the JSON configuration, no additional text."
             .swap_agent(os, output, agent)
             .await
             .map_err(ChatError::AgentSwapError)?;
+
+        // Update code intelligence state based on new agent's capabilities
+        self.update_code_intelligence_for_agent().await;
 
         self.update_state(true).await;
 

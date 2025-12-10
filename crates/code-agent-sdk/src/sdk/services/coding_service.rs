@@ -81,10 +81,14 @@ impl CodingService for LspCodingService {
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
         tracing::trace!("Got LSP client for file");
 
-        let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
         tracing::trace!("File URI: {}", uri);
 
         let params = RenameParams {
@@ -137,13 +141,17 @@ impl CodingService for LspCodingService {
                 .get_client_for_file(&canonical_path)
                 .await?
                 .ok_or_else(|| {
-                    anyhow::anyhow!("No language server available for file: {}", canonical_path.display())
+                    crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
                 })?;
 
             let params = DocumentFormattingParams {
                 text_document: TextDocumentIdentifier {
-                    uri: Url::from_file_path(&canonical_path)
-                        .map_err(|_| anyhow::anyhow!("Invalid file path: {}", canonical_path.display()))?,
+                    uri: Url::from_file_path(&canonical_path).map_err(|_| {
+                        crate::error::CodeIntelligenceError::invalid_path(
+                            canonical_path.clone(),
+                            "Cannot convert to URI",
+                        )
+                    })?,
                 },
                 options: FormattingOptions {
                     tab_size: request.tab_size,

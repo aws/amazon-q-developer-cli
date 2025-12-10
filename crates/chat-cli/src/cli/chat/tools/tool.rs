@@ -142,7 +142,7 @@ impl Tool {
         stdout: &mut impl Write,
         line_tracker: &mut HashMap<String, FileLineTracker>,
         agents: &crate::cli::agent::Agents,
-        code_intelligence_client: &mut Option<code_agent_sdk::CodeIntelligence>,
+        code_intelligence_client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
     ) -> Result<super::InvokeOutput> {
         let active_agent = agents.get_active();
         match self {

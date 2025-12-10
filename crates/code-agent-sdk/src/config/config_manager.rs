@@ -26,6 +26,11 @@ pub struct ConfigManager {
 }
 
 impl ConfigManager {
+    /// Compute the config root path from workspace root
+    pub fn config_root_from_workspace(workspace_root: &std::path::Path) -> PathBuf {
+        workspace_root.join(".kiro").join("settings")
+    }
+
     /// Create a new ConfigManager with the specified config root
     pub fn new(config_root: PathBuf) -> Self {
         Self {
@@ -45,7 +50,7 @@ impl ConfigManager {
             .unwrap_or(true);
 
         if needs_reload {
-            let config = LanguagesConfig::get_or_create(&self.config_root)?;
+            let config = LanguagesConfig::load_if_exists(&self.config_root)?;
             *cache = Some(CachedConfig {
                 config: config.clone(),
                 loaded_at: Instant::now(),
@@ -54,6 +59,32 @@ impl ConfigManager {
         } else {
             Ok(cache.as_ref().unwrap().config.clone())
         }
+    }
+
+    /// Ensure config file exists, creating it if necessary (used during initialization)
+    pub fn ensure_config_exists(&self) -> anyhow::Result<LanguagesConfig> {
+        let config = LanguagesConfig::get_or_create(&self.config_root)?;
+
+        // Update cache
+        let mut cache = self.cached_config.lock().unwrap();
+        *cache = Some(CachedConfig {
+            config: config.clone(),
+            loaded_at: Instant::now(),
+        });
+
+        Ok(config)
+    }
+
+    /// Check if lsp.json config file exists
+    pub fn config_exists(&self) -> bool {
+        self.config_root.join("lsp.json").exists()
+    }
+
+    /// Check if lsp.json exists for a given workspace root (static helper)
+    pub fn lsp_config_exists(workspace_root: &std::path::Path) -> bool {
+        Self::config_root_from_workspace(workspace_root)
+            .join("lsp.json")
+            .exists()
     }
 
     /// Get project patterns for a specific language

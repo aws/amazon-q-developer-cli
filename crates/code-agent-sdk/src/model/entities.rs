@@ -164,6 +164,9 @@ pub struct SymbolInfo {
     pub detail: Option<String>,
     /// Source code line at the symbol location
     pub source_line: Option<String>,
+    /// Programming language (e.g., "rust", "typescript", "python")
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl SymbolInfo {
@@ -223,6 +226,7 @@ impl SymbolInfo {
                     container_name: symbol.container_name.clone(),
                     detail: None, // WorkspaceSymbol doesn't have detail field
                     source_line,
+                    language: None, // Set by caller based on LSP server
                 })
             },
             lsp_types::OneOf::Right(_) => None, // LocationLink not supported yet

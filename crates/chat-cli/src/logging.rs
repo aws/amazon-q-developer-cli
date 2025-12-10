@@ -55,6 +55,7 @@ pub struct LogGuard {
     _file_guard: Option<WorkerGuard>,
     _stdout_guard: Option<WorkerGuard>,
     _mcp_file_guard: Option<WorkerGuard>,
+    _lsp_file_guard: Option<WorkerGuard>,
 }
 
 /// Initialize our application level logging using the given LogArgs.
@@ -126,7 +127,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
     };
 
     // Set up for mcp servers layer if we are in chat
-    let (mcp_server_layer, _mcp_file_guard) = if let Some(parent) = mcp_path {
+    let (mcp_server_layer, _mcp_file_guard) = if let Some(ref parent) = mcp_path {
         let mcp_path = parent.join("mcp.log");
         if args.delete_old_log_file {
             std::fs::remove_file(&mcp_path).ok();
@@ -157,6 +158,20 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
         (None, None)
     };
 
+    // Set up LSP layer to separate LSP logs from main chat logs
+    let (lsp_layer, _lsp_file_guard) = if let Some(ref parent) = mcp_path {
+        let lsp_path = parent.join("lsp.log");
+        let file = File::options().append(true).create(true).open(&lsp_path)?;
+        let (non_blocking, guard) = tracing_appender::non_blocking(file);
+        let file_layer = fmt::layer()
+            .with_line_number(true)
+            .with_writer(non_blocking)
+            .with_filter(EnvFilter::new("code_agent_sdk=trace"));
+        (Some(file_layer), Some(guard))
+    } else {
+        (None, None)
+    };
+
     if let Some(level) = args.log_level {
         set_log_level(level)?;
     }
@@ -165,16 +180,9 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
     let subscriber = tracing_subscriber::registry()
         .with(reloadable_filter_layer)
         .with(file_layer)
-        .with(stdout_layer);
-
-    if let Some(mcp_server_layer) = mcp_server_layer {
-        subscriber.with(mcp_server_layer).init();
-        return Ok(LogGuard {
-            _file_guard,
-            _stdout_guard,
-            _mcp_file_guard,
-        });
-    }
+        .with(stdout_layer)
+        .with(mcp_server_layer)
+        .with(lsp_layer);
 
     subscriber.init();
 
@@ -182,6 +190,7 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
         _file_guard,
         _stdout_guard,
         _mcp_file_guard,
+        _lsp_file_guard,
     })
 }
 

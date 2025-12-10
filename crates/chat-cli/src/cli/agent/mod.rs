@@ -490,6 +490,17 @@ impl Agents {
         self.agents.get_mut(&self.active_idx)
     }
 
+    /// Check if the active agent has a specific tool in its tools list (supports wildcards)
+    pub fn has_tool(&self, tool_aliases: &[&str]) -> bool {
+        use crate::util::pattern_matching::matches_any_pattern;
+
+        self.get_active().is_some_and(|agent| {
+            let patterns: std::collections::HashSet<&str> = agent.tools.iter().map(|s| s.as_str()).collect();
+            // Check if any tool alias matches any pattern in the agent's tools list
+            tool_aliases.iter().any(|alias| matches_any_pattern(&patterns, alias))
+        })
+    }
+
     pub async fn switch(&mut self, name: &str, os: &Os) -> eyre::Result<&Agent> {
         if !self.agents.contains_key(name) {
             eyre::bail!("No agent with name {name} found");

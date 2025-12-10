@@ -7,13 +7,16 @@ use std::path::{
     PathBuf,
 };
 use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicUsize,
+    Ordering,
+};
 
 use anyhow::Result;
 use tokio::sync::{
     RwLock,
     mpsc,
 };
-use tracing::warn;
 use url::Url;
 
 use crate::config::ConfigManager;
@@ -29,6 +32,17 @@ use crate::sdk::file_watcher::{
     FileWatcherConfig,
 };
 
+/// Status of workspace initialization
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceStatus {
+    /// Workspace has not been initialized
+    NotInitialized,
+    /// LSP servers are being initialized
+    Initializing,
+    /// All LSP servers have completed initialization (success or failure)
+    Initialized,
+}
+
 /// Tracks file state in LSP servers
 #[derive(Debug, Clone)]
 pub struct FileState {
@@ -37,12 +51,12 @@ pub struct FileState {
 }
 
 /// Manages workspace detection and LSP client lifecycle
-#[derive(Debug)]
 pub struct WorkspaceManager {
     workspace_root: PathBuf,
     pub config_manager: ConfigManager,
     registry: LspRegistry,
-    initialized: bool,
+    status: Arc<RwLock<WorkspaceStatus>>,
+    pending_inits: Arc<AtomicUsize>,
     opened_files: HashMap<PathBuf, FileState>, // Track version and open state
     workspace_info: Option<WorkspaceInfo>,
     diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<lsp_types::Diagnostic>>>>, // shared diagnostics map
@@ -53,10 +67,26 @@ pub struct WorkspaceManager {
 }
 
 impl WorkspaceManager {
+    /// Known config file patterns to skip when finding representative files
+    const KNOWN_CONFIG_PATTERNS: &'static [&'static str] = &[
+        "config",
+        "tsconfig",
+        "jest.",
+        "vite.",
+        "webpack.",
+        "rollup.",
+        "tsup.",
+        "babel.",
+        "eslint",
+        "prettier",
+        ".eslintrc",
+        ".prettierrc",
+    ];
+
     /// Create new workspace manager with auto-detected workspace root
     pub fn new(workspace_root: PathBuf) -> Self {
-        // Create config manager first (using workspace_root as base for .kiro/code folder)
-        let config_root = workspace_root.join(".kiro").join("code");
+        // Create config manager first (using workspace_root as base for .kiro/settings folder)
+        let config_root = ConfigManager::config_root_from_workspace(&workspace_root);
         let config_manager = ConfigManager::new(config_root);
 
         // Get config for workspace detection
@@ -78,7 +108,8 @@ impl WorkspaceManager {
             workspace_root: resolved_root,
             config_manager,
             registry,
-            initialized: false,
+            status: Arc::new(RwLock::new(WorkspaceStatus::NotInitialized)),
+            pending_inits: Arc::new(AtomicUsize::new(0)),
             opened_files: HashMap::new(),
             workspace_info: None,
             diagnostics: Arc::new(RwLock::new(HashMap::new())),
@@ -173,17 +204,33 @@ impl WorkspaceManager {
             self.workspace_root.display()
         );
 
-        if self.initialized {
-            tracing::info!("✅ Workspace already initialized, skipping");
-            return Ok(());
+        // Check current status
+        let current_status = *self.status.read().await;
+        match current_status {
+            WorkspaceStatus::Initialized => {
+                tracing::info!("✅ Workspace already initialized, skipping");
+                return Ok(());
+            },
+            WorkspaceStatus::Initializing => {
+                tracing::info!("⏳ Workspace initialization already in progress");
+                return Ok(());
+            },
+            WorkspaceStatus::NotInitialized => {},
         }
+
+        // Ensure config file exists (creates lsp.json if it doesn't exist)
+        self.config_manager.ensure_config_exists()?;
+
+        // Set status to Initializing
+        *self.status.write().await = WorkspaceStatus::Initializing;
 
         // Auto-detect and register language servers if none are present
         tracing::debug!("Ensuring language servers are registered");
         self.ensure_language_servers()?;
 
-        let workspace_uri =
-            Url::from_file_path(&self.workspace_root).map_err(|_| anyhow::anyhow!("Invalid workspace path"))?;
+        let workspace_uri = Url::from_file_path(&self.workspace_root).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(self.workspace_root.clone(), "Cannot convert to URI")
+        })?;
 
         // Get detected languages to only initialize relevant LSPs
         let workspace_info = self.detect_workspace()?;
@@ -213,32 +260,177 @@ impl WorkspaceManager {
             server_names
         );
 
-        // Initialize clients for filtered servers with timeout protection
-        for server_name in server_names {
-            tracing::info!("⏳ Initializing LSP server: {}", server_name);
-            let init_future = async {
-                if let Ok(client) = self.registry.get_client(&server_name, &self.workspace_root).await {
-                    let _ = client.initialize(workspace_uri.clone()).await;
-                }
-            };
+        // If no servers to initialize, mark as initialized immediately
+        if server_names.is_empty() {
+            *self.status.write().await = WorkspaceStatus::Initialized;
+            tracing::info!("✅ Workspace initialization completed (no LSP servers needed)");
+            return Ok(());
+        }
 
-            // Add 10-second timeout to prevent hanging on unavailable servers (increased for TypeScript)
-            match tokio::time::timeout(tokio::time::Duration::from_secs(10), init_future).await {
-                Ok(_) => {
-                    tracing::info!("✅ LSP server '{}' initialized successfully", server_name);
+        // Set pending init count
+        self.pending_inits.store(server_names.len(), Ordering::SeqCst);
+
+        // Initialize clients for filtered servers - spawn background tasks
+        for server_name in server_names {
+            tracing::info!("⏳ Starting LSP server: {}", server_name);
+
+            // Create the client (this spawns the process)
+            // TODO: This manually reimplements LspClient::initialize() to enable parallel initialization
+            // in spawned tasks. The registry returns &mut LspClient which cannot be moved into spawn.
+            // Future improvement: Make LspClient cloneable or use Arc<LspClient> in registry to allow
+            // calling client.initialize() directly and eliminate this duplication.
+            match self.registry.get_client(&server_name, &self.workspace_root).await {
+                Ok(client) => {
+                    // Clone what we need for the background task
+                    let workspace_uri = workspace_uri.clone();
+                    let name = server_name.clone();
+
+                    // Get Arc references from the client for background init
+                    let status = client.status.clone();
+                    let init_result = client.init_result.clone();
+                    let init_duration = client.init_duration.clone();
+                    let init_start = client.init_start;
+                    let config = client.config.clone();
+                    let stdin = client.stdin.clone();
+                    let pending_requests = client.pending_requests.clone();
+                    let next_id = client.next_id.clone();
+                    let child = client.child.clone();
+
+                    // Clone workspace status tracking
+                    let pending_inits = self.pending_inits.clone();
+                    let workspace_status = self.status.clone();
+
+                    // Spawn background initialization with timeout
+                    tokio::spawn(async move {
+                        let init_future = async {
+                            // Set status to Initializing
+                            *status.lock().await = crate::lsp::LspStatus::Initializing;
+
+                            // Build init params
+                            let init_params = crate::lsp::LspConfig::build_initialize_params(
+                                workspace_uri.clone(),
+                                Some(&config),
+                                config.initialization_options.clone(),
+                            );
+
+                            // Send initialize request
+                            let (tx, rx) = tokio::sync::oneshot::channel();
+                            let id = {
+                                let mut next = next_id.lock().await;
+                                let current = *next;
+                                *next += 1;
+                                current
+                            };
+
+                            let request = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "id": id,
+                                "method": "initialize",
+                                "params": init_params
+                            });
+
+                            {
+                                let mut pending = pending_requests.lock().await;
+                                pending.insert(
+                                    id.to_string(),
+                                    Box::new(move |result| {
+                                        let _ = tx.send(result);
+                                    }),
+                                );
+                            }
+
+                            let content = serde_json::to_string(&request)?;
+                            let mut stdin_guard = stdin.lock().await;
+                            crate::lsp::write_lsp_message(&mut *stdin_guard, &content).await?;
+                            drop(stdin_guard);
+
+                            // Wait for initialize response OR process exit (whichever comes first)
+                            // This prevents hanging for 180s when the LSP process exits immediately
+                            let init_result_val: lsp_types::InitializeResult = tokio::select! {
+                                result = rx => {
+                                    let response = result.map_err(|_| anyhow::anyhow!("Channel closed"))??;
+                                    serde_json::from_value(response)?
+                                }
+                                exit_status = async {
+                                    if let Some(child_ref) = child.lock().await.as_mut() {
+                                        child_ref.wait().await
+                                    } else {
+                                        // Child already exited, wait forever (response path will complete)
+                                        std::future::pending().await
+                                    }
+                                } => {
+                                    let code = exit_status.ok().and_then(|s| s.code());
+                                    return Err(anyhow::anyhow!(
+                                        "LSP process exited during initialization with code: {code:?}"
+                                    ));
+                                }
+                            };
+
+                            // Store result and update status
+                            *init_result.lock().await = Some(init_result_val);
+                            *status.lock().await = crate::lsp::LspStatus::Initialized;
+                            *init_duration.lock().await = Some(init_start.elapsed());
+
+                            // Send initialized notification
+                            let notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "initialized",
+                                "params": {}
+                            });
+                            let content = serde_json::to_string(&notification)?;
+                            let mut stdin_guard = stdin.lock().await;
+                            crate::lsp::write_lsp_message(&mut *stdin_guard, &content).await?;
+
+                            // Send didChangeConfiguration to kick Pyright (fixes 1.1.407 hang)
+                            tracing::debug!("Sending workspace/didChangeConfiguration to LSP server: {}", name);
+                            let config_notification = serde_json::json!({
+                                "jsonrpc": "2.0",
+                                "method": "workspace/didChangeConfiguration",
+                                "params": {"settings": {}}
+                            });
+                            let config_content = serde_json::to_string(&config_notification)?;
+                            crate::lsp::write_lsp_message(&mut *stdin_guard, &config_content).await?;
+                            drop(stdin_guard);
+
+                            Ok::<_, anyhow::Error>(())
+                        };
+
+                        match tokio::time::timeout(tokio::time::Duration::from_secs(180), init_future).await {
+                            Ok(Ok(_)) => {
+                                tracing::info!("✅ LSP server '{}' initialized successfully", name);
+                            },
+                            Ok(Err(e)) => {
+                                tracing::error!("❌ LSP server '{}' initialization failed: {}", name, e);
+                                *status.lock().await = crate::lsp::LspStatus::Failed(e.to_string());
+                            },
+                            Err(_) => {
+                                tracing::warn!("⏰ LSP server '{}' timed out during initialization", name);
+                                *status.lock().await =
+                                    crate::lsp::LspStatus::Failed("Initialization timed out".to_string());
+                            },
+                        }
+
+                        // Decrement pending count and check if all done
+                        let remaining = pending_inits.fetch_sub(1, Ordering::SeqCst) - 1;
+                        if remaining == 0 {
+                            *workspace_status.write().await = WorkspaceStatus::Initialized;
+                            tracing::info!("✅ All LSP servers finished initialization");
+                        }
+                    });
                 },
-                Err(_) => {
-                    warn!(
-                        "⏰ Warning: LSP server '{}' timed out during initialization",
-                        server_name
-                    );
+                Err(e) => {
+                    tracing::error!("❌ Failed to start LSP server '{}': {}", server_name, e);
+                    // Decrement pending count for failed starts too
+                    let remaining = self.pending_inits.fetch_sub(1, Ordering::SeqCst) - 1;
+                    if remaining == 0 {
+                        *self.status.write().await = WorkspaceStatus::Initialized;
+                        tracing::info!("✅ All LSP servers finished initialization");
+                    }
                 },
             }
-            // Small delay between server initializations to prevent conflicts
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
-        self.initialized = true;
-        tracing::info!("✅ Workspace initialization completed");
+
+        tracing::info!("✅ Workspace initialization started (LSP servers initializing in background)");
 
         // Subscribe to diagnostics from all initialized LSP clients
         tracing::debug!("Subscribing to diagnostics");
@@ -251,7 +443,8 @@ impl WorkspaceManager {
             tracing::warn!("Failed to start file watching: {}", e);
         }
 
-        // Auto-open representative files to enable workspace symbol search out-of-the-box
+        // Auto-open representative files (will skip files whose LSPs aren't ready yet)
+        // Files will be opened on first actual use if LSPs are still initializing
         if let Err(e) = self.auto_open_representative_files().await {
             tracing::warn!("Failed to auto-open representative files: {}", e);
         }
@@ -317,51 +510,122 @@ impl WorkspaceManager {
     pub async fn get_diagnostics_for_file(&mut self, file_path: &Path) -> Result<Vec<lsp_types::Diagnostic>> {
         tracing::debug!("Getting diagnostics for file: {:?}", file_path);
 
-        // First, check if we need to open the file to trigger diagnostics
-        if !self.is_file_opened(file_path) {
-            tracing::debug!("File not opened yet, opening: {:?}", file_path);
+        // Ensure file is opened
+        let supports_pull = self.ensure_file_opened(file_path).await?;
 
-            // Determine language and get client
-            let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-
-            let language = self
-                .config_manager
-                .get_language_for_extension(extension)
-                .ok_or_else(|| anyhow::anyhow!("No language server for file: {}", file_path.display()))?;
-
-            tracing::debug!("Detected language: {} for file: {:?}", language, file_path);
-
-            if let Ok(Some(client)) = self.get_client_by_language(&language).await {
-                // Read file content and open it
-                let content = std::fs::read_to_string(file_path)?;
-                let did_open_params = lsp_types::DidOpenTextDocumentParams {
-                    text_document: lsp_types::TextDocumentItem {
-                        uri: url::Url::from_file_path(file_path).unwrap(),
-                        language_id: language,
-                        version: 1,
-                        text: content,
-                    },
-                };
-
-                tracing::debug!("Sending didOpen for file: {:?}", file_path);
-                client.did_open(did_open_params).await?;
-                self.mark_file_opened(file_path.to_path_buf());
-
-                tracing::debug!("Waiting 3 seconds for diagnostics to arrive...");
-                // Wait longer for diagnostics to arrive (like the test does)
-                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-                tracing::debug!("Finished waiting for diagnostics");
-            } else {
-                tracing::warn!("No client available for language: {}", language);
-            }
+        // Fetch diagnostics based on server capability
+        if supports_pull {
+            self.pull_diagnostics(file_path).await
         } else {
-            tracing::debug!("File already opened: {:?}", file_path);
+            self.get_cached_diagnostics(file_path).await
+        }
+    }
+
+    /// Ensure file is opened, returns whether server supports pull diagnostics
+    async fn ensure_file_opened(&mut self, file_path: &Path) -> Result<bool> {
+        if self.is_file_opened(file_path) {
+            // File already opened, check if server supports pull
+            let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+            if let Some(language) = self.config_manager.get_language_for_extension(extension) {
+                if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+                    return Ok(client.supports_pull_diagnostics());
+                }
+            }
+            return Ok(false);
         }
 
-        // Return stored diagnostics from the shared map (read lock for better performance)
+        tracing::debug!("File not opened yet, opening: {:?}", file_path);
+
+        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let language = self
+            .config_manager
+            .get_language_for_extension(extension)
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), extension, None)
+            })?;
+
+        tracing::debug!("Detected language: {} for file: {:?}", language, file_path);
+
+        if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+            let content = std::fs::read_to_string(file_path)?;
+            let did_open_params = lsp_types::DidOpenTextDocumentParams {
+                text_document: lsp_types::TextDocumentItem {
+                    uri: url::Url::from_file_path(file_path).unwrap(),
+                    language_id: language,
+                    version: 1,
+                    text: content,
+                },
+            };
+
+            tracing::debug!("Sending didOpen for file: {:?}", file_path);
+            let supports_pull = client.supports_pull_diagnostics();
+            client.did_open(did_open_params).await?;
+
+            self.mark_file_opened(file_path.to_path_buf());
+
+            // For push diagnostics, wait for them to arrive
+            if !supports_pull {
+                tracing::debug!("Waiting 3 seconds for push diagnostics...");
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            }
+
+            return Ok(supports_pull);
+        }
+
+        Ok(false)
+    }
+
+    /// Pull fresh diagnostics from server (for pull-based diagnostics)
+    async fn pull_diagnostics(&mut self, file_path: &Path) -> Result<Vec<lsp_types::Diagnostic>> {
+        tracing::debug!("Pulling fresh diagnostics for: {:?}", file_path);
+
+        let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
+        let language = self
+            .config_manager
+            .get_language_for_extension(extension)
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(file_path.to_path_buf(), extension, None)
+            })?;
+
+        if let Ok(Some(client)) = self.get_client_by_language(&language).await {
+            let uri = url::Url::from_file_path(file_path).map_err(|_| {
+                crate::error::CodeIntelligenceError::invalid_path(file_path.to_path_buf(), "Cannot convert to URI")
+            })?;
+
+            let params = lsp_types::DocumentDiagnosticParams {
+                text_document: lsp_types::TextDocumentIdentifier { uri },
+                identifier: None,
+                previous_result_id: None,
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+            };
+
+            if let Ok(Some(report)) = client.document_diagnostics(params).await {
+                let diagnostics = match report {
+                    lsp_types::DocumentDiagnosticReport::Full(full) => full.full_document_diagnostic_report.items,
+                    lsp_types::DocumentDiagnosticReport::Unchanged(_) => {
+                        // Return cached if unchanged
+                        return self.get_cached_diagnostics(file_path).await;
+                    },
+                };
+                tracing::debug!("Pulled {} diagnostics for: {:?}", diagnostics.len(), file_path);
+                return Ok(diagnostics);
+            }
+        }
+
+        // Fallback to cached
+        self.get_cached_diagnostics(file_path).await
+    }
+
+    /// Get cached diagnostics (for push-based diagnostics or fallback)
+    async fn get_cached_diagnostics(&mut self, file_path: &Path) -> Result<Vec<lsp_types::Diagnostic>> {
         let map = self.diagnostics.read().await;
         let diagnostics = map.get(file_path).cloned().unwrap_or_default();
-        tracing::debug!("Retrieved {} diagnostics for file: {:?}", diagnostics.len(), file_path);
+        tracing::debug!(
+            "Retrieved {} cached diagnostics for: {:?}",
+            diagnostics.len(),
+            file_path
+        );
         Ok(diagnostics)
     }
 
@@ -425,15 +689,20 @@ impl WorkspaceManager {
             let mut detected_languages = Vec::new();
             let mut file_extensions = HashSet::new();
 
-            // Recursively scan workspace for file extensions
-            tracing::info!("📂 Scanning directory for file extensions (max depth: 10)");
-            self.scan_directory(&self.workspace_root, &mut file_extensions, 0)?;
-            tracing::info!("✅ Found {} unique file extensions", file_extensions.len());
+            // Recursively scan workspace for file extensions using ignore crate
+            tracing::info!("📂 Scanning directory for file extensions (respecting .gitignore)");
+            self.scan_workspace_files(&mut file_extensions)?;
+            tracing::info!(
+                "✅ Found {} unique file extensions: {:?}",
+                file_extensions.len(),
+                file_extensions
+            );
 
             // Map extensions to languages using ConfigManager
             tracing::debug!("Mapping extensions to languages");
             for ext in &file_extensions {
                 if let Some(language) = self.config_manager.get_language_for_extension(ext) {
+                    tracing::debug!("Extension '{}' mapped to language '{}'", ext, language);
                     detected_languages.push(language);
                 }
             }
@@ -478,31 +747,23 @@ impl WorkspaceManager {
         Ok(info)
     }
 
-    #[allow(clippy::only_used_in_recursion)]
-    fn scan_directory(&self, dir: &Path, extensions: &mut HashSet<String>, depth: usize) -> Result<()> {
-        const MAX_DEPTH: usize = 10;
+    /// Scan workspace for file extensions using ignore crate (respects .gitignore)
+    fn scan_workspace_files(&self, extensions: &mut HashSet<String>) -> Result<()> {
+        use ignore::WalkBuilder;
 
-        if depth >= MAX_DEPTH {
-            return Ok(());
-        }
+        let walker = WalkBuilder::new(&self.workspace_root)
+            .max_depth(Some(10))
+            .hidden(false) // Include hidden files
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .build();
 
-        if let Ok(entries) = std::fs::read_dir(dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if let Ok(metadata) = entry.metadata() {
-                    if metadata.is_file() {
-                        if let Some(ext) = path.extension() {
-                            if let Some(ext_str) = ext.to_str() {
-                                extensions.insert(ext_str.to_string());
-                            }
-                        }
-                    } else if metadata.is_dir() {
-                        // Skip common directories that don't contain source code
-                        if let Some(dir_name) = path.file_name().and_then(|n| n.to_str()) {
-                            if !matches!(dir_name, "target" | "node_modules" | ".git" | "build" | "dist") {
-                                self.scan_directory(&path, extensions, depth + 1)?;
-                            }
-                        }
+        for entry in walker.filter_map(|e| e.ok()) {
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                if let Some(ext) = entry.path().extension() {
+                    if let Some(ext_str) = ext.to_str() {
+                        extensions.insert(ext_str.to_string());
                     }
                 }
             }
@@ -530,14 +791,25 @@ impl WorkspaceManager {
             // Check if this LSP is in PATH using which crate (cross-platform)
             let is_available = which::which(&config.command).is_ok();
 
-            // Check if this LSP is initialized (actually running)
-            let is_initialized = initialized_servers.contains(&config.name);
+            // Get status from registry
+            let status = self.registry.get_server_status(&config.name);
+            let init_duration = self.registry.get_init_duration(&config.name);
+            let is_initialized = status
+                .as_ref()
+                .map(|s| matches!(s, crate::lsp::LspStatus::Initialized))
+                .unwrap_or(false);
+            let status_str = status.map(|s| match s {
+                crate::lsp::LspStatus::Registered => "registered".to_string(),
+                crate::lsp::LspStatus::Initializing => "initializing".to_string(),
+                crate::lsp::LspStatus::Initialized => "initialized".to_string(),
+                crate::lsp::LspStatus::Failed(msg) => format!("failed: {msg}"),
+            });
 
             tracing::debug!(
-                "LSP {} - in PATH: {}, initialized: {}",
+                "LSP {} - in PATH: {}, status: {:?}",
                 config.name,
                 is_available,
-                is_initialized
+                status_str
             );
 
             // Map file extensions to languages using ConfigManager
@@ -549,13 +821,31 @@ impl WorkspaceManager {
                 .into_iter()
                 .collect();
 
+            // Compute workspace folders if multi_workspace is enabled and LSP is initialized
+            let workspace_folders = if config.multi_workspace && is_initialized {
+                let root_uri = url::Url::from_file_path(&self.workspace_root).ok();
+                if let Some(uri) = root_uri {
+                    crate::lsp::LspConfig::discover_workspaces(&uri, &config.project_patterns, &config.exclude_patterns)
+                        .into_iter()
+                        .map(|f| f.uri.to_string())
+                        .collect()
+                } else {
+                    Vec::new()
+                }
+            } else {
+                Vec::new()
+            };
+
             lsps.push(LspInfo {
                 name: config.name,
                 command: config.command,
                 languages,
                 is_available,
                 is_initialized,
+                status: status_str,
                 version: None,
+                workspace_folders,
+                init_duration_ms: init_duration.map(|d| d.as_millis() as u64),
             });
         }
 
@@ -567,9 +857,26 @@ impl WorkspaceManager {
         lsps
     }
 
-    /// Check if workspace is initialized
+    /// Check if workspace is fully initialized (all LSPs done)
     pub fn is_initialized(&self) -> bool {
-        self.initialized
+        self.status
+            .try_read()
+            .map(|s| *s == WorkspaceStatus::Initialized)
+            .unwrap_or(false)
+    }
+
+    /// Get current workspace initialization status
+    pub fn workspace_status(&self) -> WorkspaceStatus {
+        // Check in-memory status
+        if let Ok(guard) = self.status.try_read() {
+            return *guard;
+        }
+        WorkspaceStatus::NotInitialized
+    }
+
+    /// Check if lsp.json config exists (workspace was initialized before)
+    pub fn config_exists(&self) -> bool {
+        self.config_manager.config_exists()
     }
 
     /// Reset initialization state to allow re-initialization
@@ -587,7 +894,8 @@ impl WorkspaceManager {
             handle.abort();
         }
 
-        self.initialized = false;
+        *self.status.write().await = WorkspaceStatus::NotInitialized;
+        self.pending_inits.store(0, Ordering::SeqCst);
     }
 
     /// Check if a file is already opened
@@ -632,6 +940,15 @@ impl WorkspaceManager {
             self.workspace_info = Some(self.detect_workspace()?);
         }
         Ok(self.workspace_info.as_ref().unwrap().detected_languages.clone())
+    }
+
+    /// Check if code intelligence has been initialized (lsp.json exists)
+    pub fn is_code_intelligence_initialized(&self) -> bool {
+        self.workspace_root
+            .join(".kiro")
+            .join("settings")
+            .join("lsp.json")
+            .exists()
     }
 
     /// Start file watching with patterns based on detected languages
@@ -703,9 +1020,19 @@ impl WorkspaceManager {
 
                     // Get LSP client for this file
                     if let Ok(Some(client)) = self.get_client_for_file(&file_path).await {
+                        // Skip if client is not initialized yet
+                        if !client.is_initialized() {
+                            tracing::debug!("Skipping auto-open for {} - LSP not initialized yet", language);
+                            continue;
+                        }
+
                         // Create LSP parameters for opening the file
-                        let uri = url::Url::from_file_path(&file_path)
-                            .map_err(|_| anyhow::anyhow!("Invalid file path: {file_path:?}"))?;
+                        let uri = url::Url::from_file_path(&file_path).map_err(|_| {
+                            crate::error::CodeIntelligenceError::invalid_path(
+                                file_path.clone(),
+                                "Cannot convert to URI",
+                            )
+                        })?;
 
                         let params = lsp_types::DidOpenTextDocumentParams {
                             text_document: lsp_types::TextDocumentItem {
@@ -786,7 +1113,21 @@ impl WorkspaceManager {
             false
         }
 
-        fn find_file_recursive(dir: &Path, extension: &str, exclude_patterns: &[String]) -> Option<PathBuf> {
+        fn is_config_file(path: &Path, patterns: &[&str]) -> bool {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                let name_lower = name.to_lowercase();
+                patterns.iter().any(|p| name_lower.contains(p))
+            } else {
+                false
+            }
+        }
+
+        fn find_file_recursive(
+            dir: &Path,
+            extension: &str,
+            exclude_patterns: &[String],
+            config_patterns: &[&str],
+        ) -> Option<PathBuf> {
             if should_exclude_path(dir, exclude_patterns) {
                 return None;
             }
@@ -801,12 +1142,12 @@ impl WorkspaceManager {
 
                     if path.is_file() {
                         if let Some(file_ext) = path.extension().and_then(|e| e.to_str()) {
-                            if file_ext == extension {
+                            if file_ext == extension && !is_config_file(&path, config_patterns) {
                                 return Some(path);
                             }
                         }
                     } else if path.is_dir() {
-                        if let Some(found) = find_file_recursive(&path, extension, exclude_patterns) {
+                        if let Some(found) = find_file_recursive(&path, extension, exclude_patterns, config_patterns) {
                             return Some(found);
                         }
                     }
@@ -815,7 +1156,12 @@ impl WorkspaceManager {
             None
         }
 
-        Ok(find_file_recursive(&self.workspace_root, extension, &exclude_patterns))
+        Ok(find_file_recursive(
+            &self.workspace_root,
+            extension,
+            &exclude_patterns,
+            Self::KNOWN_CONFIG_PATTERNS,
+        ))
     }
 }
 
@@ -909,14 +1255,12 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_directory_finds_extensions() {
+    fn test_scan_workspace_finds_extensions() {
         let temp_dir = create_temp_workspace(&["test.rs", "test.ts", "test.py"]);
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
         let mut extensions = HashSet::new();
 
-        workspace_manager
-            .scan_directory(temp_dir.path(), &mut extensions, 0)
-            .unwrap();
+        workspace_manager.scan_workspace_files(&mut extensions).unwrap();
 
         assert!(extensions.contains("rs"));
         assert!(extensions.contains("ts"));
@@ -924,22 +1268,24 @@ mod tests {
     }
 
     #[test]
-    fn test_scan_directory_skips_ignored_dirs() {
+    fn test_scan_workspace_skips_ignored_dirs() {
         let temp_dir = create_temp_workspace(&[
             "src/main.rs",
             "target/debug/app",
             "node_modules/package/index.js",
             ".git/config",
         ]);
+
+        // Create .gitignore to ignore node_modules
+        std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/\ntarget/\n").unwrap();
+
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
         let mut extensions = HashSet::new();
 
-        workspace_manager
-            .scan_directory(temp_dir.path(), &mut extensions, 0)
-            .unwrap();
+        workspace_manager.scan_workspace_files(&mut extensions).unwrap();
 
         assert!(extensions.contains("rs"));
-        assert!(!extensions.contains("js")); // Should be skipped from node_modules
+        assert!(!extensions.contains("js")); // Should be skipped from node_modules via .gitignore
     }
 
     #[test]

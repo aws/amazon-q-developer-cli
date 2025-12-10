@@ -68,6 +68,7 @@ pub async fn test_file_symbol_finding(project: &TestProject) -> Result<()> {
             file_path: Some(main_file.clone()),
             symbol_type: None,
             limit: None,
+            language: None,
             exact_match: false,
         };
 
@@ -118,6 +119,7 @@ pub async fn test_workspace_symbol_search(project: &TestProject) -> Result<()> {
         file_path: None, // Workspace-wide search
         symbol_type: None,
         limit: None,
+        language: None,
         exact_match: false,
     };
 

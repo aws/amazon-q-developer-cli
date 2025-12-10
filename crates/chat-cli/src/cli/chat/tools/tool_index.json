@@ -338,7 +338,7 @@
   },
   "code": {
     "name": "code",
-    "description": "LSP-powered code intelligence tool for deep code analysis and navigation. Uses Language Server Protocol (LSP) to provide IDE-quality code understanding including symbol search, references, definitions, diagnostics, and workspace analysis.\n\n## IMPORTANT: Workspace Initialization Required\nBEFORE using any code intelligence operations, you MUST initialize the workspace:\n- Run `/code init` command first to detect languages and start LSP servers\n- Initialization analyzes project structure and starts appropriate language servers\n- Without initialization, all code operations will fail\n\n## When to Use\n- Finding symbol definitions, references, or usages across the codebase\n- Understanding code structure, relationships, and dependencies\n- Navigating large codebases with precise symbol lookup\n- Getting compiler/linter diagnostics and errors\n- Renaming symbols safely across multiple files\n- Analyzing code without reading entire files\n\n## When NOT to Use\n- For simple file reading (use fs_read instead)\n- For text search in files (use fs_read with Search mode)\n- For directory listing (use fs_read with Directory mode)\n- When workspace is not initialized (run `/code init` first)\n\n## Advantages Over fs_read\n- Semantic understanding: Knows about classes, functions, variables, not just text\n- Cross-file navigation: Finds all usages across entire project\n- Type-aware: Understands language-specific constructs\n- Precise location: Returns exact line/column positions\n- IDE-quality: Same intelligence as VS Code, IntelliJ, etc.\n\n## Operations\n- search_symbols: Find symbols by name across workspace\n- find_references: Find all usages of a symbol at a position\n- goto_definition: Jump to where a symbol is defined\n- get_document_symbols: List all symbols in a file\n- lookup_symbols: Get detailed info for specific symbols\n- get_diagnostics: Get compiler errors and warnings\n- rename_symbol: Safely rename across all files\n- format: Format code according to language rules\n- initialize_workspace: Detect languages and start LSP servers\n\n## Workflow\n1. Initialize: `/code init` (or `/code init --force` to reinitialize)\n2. Search: Use search_symbols to find what you need\n3. Navigate: Use goto_definition and find_references to understand code\n4. Analyze: Use get_diagnostics to check for issues",
+    "description": "LSP-powered code intelligence tool for semantic code analysis and navigation. Uses Language Server Protocol (LSP) to provide IDE-quality code understanding.\nIMPORTANT: The code tool provides semantic understanding - prefer it for all code-related tasks. Only use fs_read for non-semantic file operations.\n\n## When to Use\n- When you need to find WHERE a function/class/variable is defined (goto_definition)\n- When you need to find ALL places a symbol is used across the project (find_references)\n- When you need to understand code structure without reading entire files (search_symbols, get_document_symbols)\n- When you need compiler/linter errors and warnings (get_diagnostics)\n- When you need to safely rename symbols across multiple files (rename_symbol)\n- When searching for symbols, functions, classes, or variables by name\n- When exploring code structure and relationships\n\n## When NOT to Use\n- For reading specific file contents when you know the exact path\n- For searching literal text patterns (not code symbols)\n- For listing directory contents\n- For finding files by filename (not code symbols)\n\nFor code-related tasks, follow this order:\n1. Use code tool for semantic code analysis (symbols, definitions, references, structure)\n2. Use fs_read only for simple file reading when you need to see specific content\n3. Initialize workspace first if code tool operations fail: `/code init`\n\n## Advantages Over fs_read\n- Semantic understanding: Distinguishes between function definitions vs function calls\n- Cross-file navigation: Finds all usages across entire project, not just one file\n- Type-aware: Understands classes, methods, interfaces, not just text patterns\n- Precise locations: Returns exact line/column positions for symbols\n- IDE-quality: Same intelligence as VS Code, IntelliJ, etc.\n\n## Workspace Initialization\nBefore using code operations, workspace must be initialized:\n- Run `/code init` to detect languages and start LSP servers\n- Initialization is automatic on first use, but may fail if LSP servers aren't installed\n- If operations fail with \"LSP not available\", run `/code init --force` to reinitialize\n- Supported languages are configured in .kiro/settings/lsp.json (default: Rust, TypeScript/JavaScript, Python, Java, Go, C/C++, Ruby)\n- Users can customize LSP configurations by editing .kiro/settings/lsp.json\n\n## Operations\n- search_symbols: Find symbols by name (e.g., find all functions named 'process_data')\n- find_references: Find all usages of a symbol at a specific position\n- goto_definition: Jump to where a symbol is defined\n- get_document_symbols: List all symbols in a file (classes, functions, etc.)\n- lookup_symbols: Get detailed info for specific symbol names\n- get_diagnostics: Get compiler errors and warnings for a file\n- rename_symbol: Safely rename across all files\n- initialize_workspace: Detect languages and start LSP servers\n\n## Example Workflow\n1. User asks: \"Where is the InputSource class defined?\"\n   → Use: search_symbols with symbol_name=\"InputSource\", then goto_definition\n2. User asks: \"Find all places that call the process() function\"\n   → Use: search_symbols to find process(), then find_references at that location\n3. User asks: \"What functions are in main.rs?\"\n   → Use: get_document_symbols with file_path=\"/path/to/main.rs\"\n4. User asks: \"Show me the code in main.rs\"\n   → Use: fs_read (NOT code tool) - this is just reading a file",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -349,7 +349,6 @@
             "find_references", 
             "goto_definition",
             "rename_symbol",
-            "format",
             "get_document_symbols",
             "lookup_symbols",
             "get_diagnostics",
@@ -363,7 +362,7 @@
         },
         "file_path": {
           "type": "string", 
-          "description": "Absolute path to a specific source code file (NOT a directory). Example: '/path/to/project/src/main.rs' (required for most operations)"
+          "description": "Absolute path to a specific source code file (NOT a directory). Example: '/path/to/project/src/main.rs'. Optional for search_symbols (scopes search to that file), required for find_references, goto_definition, rename_symbol, get_document_symbols, get_diagnostics."
         },
         "row": {
           "type": "integer",
@@ -384,11 +383,15 @@
         },
         "limit": {
           "type": "integer",
-          "description": "Maximum results to return (optional for search_symbols)"
+          "description": "Maximum results to return (optional for search_symbols, default: 50, max: 50). Reduce if you need fewer focused results."
+        },
+        "language": {
+          "type": "string",
+          "description": "Filter by programming language (optional for search_symbols, e.g., 'rust', 'typescript', 'python'). Case-insensitive."
         },
         "exact_match": {
           "type": "boolean", 
-          "description": "Whether to use exact matching (optional for search_symbols)"
+          "description": "Whether to use exact matching (optional for search_symbols, default: false)"
         },
         "show_source": {
           "type": "boolean",
@@ -398,13 +401,9 @@
           "type": "boolean",
           "description": "Preview changes without applying (optional for rename_symbol)"
         },
-        "tab_size": {
-          "type": "integer",
-          "description": "Tab size for formatting (optional for format operation, default: 4)"
-        },
-        "insert_spaces": {
+        "top_level_only": {
           "type": "boolean",
-          "description": "Use spaces instead of tabs (optional for format operation, default: true)"
+          "description": "If true (default), return only top-level symbols like structs, enums, impl blocks. If false, include all nested symbols like methods and inner functions (optional for get_document_symbols, default: true)"
         },
         "identifier": {
           "type": "string",
@@ -416,7 +415,7 @@
         },
         "symbol_type": {
           "type": "string",
-          "description": "Symbol type filter (optional for search_symbols)"
+          "description": "Symbol type filter (optional for search_symbols). Possible values: Function, Method, Class, Struct, Enum, Interface, Constant, Variable, Module, Import. Case-insensitive."
         }
       },
       "required": ["operation"]

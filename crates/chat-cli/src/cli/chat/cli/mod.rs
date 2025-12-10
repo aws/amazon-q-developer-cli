@@ -79,8 +79,8 @@ pub enum SlashCommand {
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
-    /// (Beta) Code intelligence - Feature not available
-    #[command(subcommand, hide = true)]
+    /// Code Intelligence - Advanced code intelligence with LSP integration
+    #[command(subcommand)]
     Code(CodeSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]

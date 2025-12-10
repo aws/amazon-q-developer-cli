@@ -3,7 +3,10 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use crate::lsp::LspClient;
+use crate::lsp::{
+    LspClient,
+    LspStatus,
+};
 use crate::model::types::LanguageServerConfig;
 
 /// Registry for managing LSP client instances
@@ -34,14 +37,14 @@ impl LspRegistry {
     }
 
     /// Get or create LSP client for a language server
-    pub async fn get_client(&mut self, server_name: &str, _workspace_root: &Path) -> Result<&mut LspClient> {
+    pub async fn get_client(&mut self, server_name: &str, workspace_root: &Path) -> Result<&mut LspClient> {
         if !self.clients.contains_key(server_name) {
             let config = self
                 .configs
                 .get(server_name)
                 .ok_or_else(|| anyhow::anyhow!("Language server '{server_name}' not registered"))?;
 
-            let client = LspClient::new(config.clone()).await?;
+            let client = LspClient::new(config.clone(), workspace_root).await?;
             self.clients.insert(server_name.to_string(), client);
         }
 
@@ -76,9 +79,25 @@ impl LspRegistry {
         self.configs.keys().collect()
     }
 
-    /// Get all initialized language server names (actually running)
+    /// Get all initialized language server names (successfully completed LSP handshake)
     pub fn initialized_servers(&self) -> Vec<&String> {
-        self.clients.keys().collect()
+        self.clients
+            .iter()
+            .filter(|(_, client)| client.is_initialized())
+            .map(|(name, _)| name)
+            .collect()
+    }
+
+    /// Get the status of a specific server
+    pub fn get_server_status(&self, server_name: &str) -> Option<LspStatus> {
+        self.clients.get(server_name).map(|c| c.status())
+    }
+
+    /// Get initialization duration of a specific server
+    pub fn get_init_duration(&self, server_name: &str) -> Option<std::time::Duration> {
+        self.clients
+            .get(server_name)
+            .and_then(|c| c.init_duration.try_lock().ok().and_then(|g| *g))
     }
 
     /// Shutdown all LSP clients gracefully
@@ -98,12 +117,16 @@ mod tests {
 
     fn create_test_config(name: &str, extensions: Vec<&str>) -> LanguageServerConfig {
         LanguageServerConfig {
+            language: name.to_string(),
             name: name.to_string(),
             command: format!("{}-lsp", name),
             args: vec!["--stdio".to_string()],
             file_extensions: extensions.iter().map(|s| s.to_string()).collect(),
+            project_patterns: vec![],
             exclude_patterns: vec!["**/test/**".to_string()],
+            multi_workspace: false,
             initialization_options: None,
+            request_timeout_secs: 30,
         }
     }
 

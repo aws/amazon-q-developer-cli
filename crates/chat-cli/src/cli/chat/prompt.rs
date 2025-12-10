@@ -144,6 +144,10 @@ pub const COMMANDS: &[&str] = &[
     "/save",
     "/load",
     "/paste",
+    "/code",
+    "/code status",
+    "/code init",
+    "/code logs",
 ];
 
 /// Generate dynamic command list including experiment-based commands when enabled
@@ -488,6 +492,11 @@ impl Highlighter for ChatHelper {
             // Add tangent indicator if present (tangent yellow)
             if components.tangent_mode {
                 result.push_str(&StyledText::tangent("↯ "));
+            }
+
+            // Add code intelligence indicator if present (vibrant blue)
+            if components.code_intelligence {
+                result.push_str(&StyledText::code_intelligence("λ "));
             }
 
             // Add warning symbol if present (error red)
