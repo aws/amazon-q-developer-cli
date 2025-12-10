@@ -318,6 +318,10 @@ pub mod tips {
                 StyledText::command("MCP servers")
             ),
             format!(
+                "Set up code intelligence for LSP-based code analysis with {}",
+                StyledText::command("/code init")
+            ),
+            format!(
                 "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
                 StyledText::command(&format!("{CLI_NAME} settings mcp.initTimeout {{timeout in int}}"))
             ),
