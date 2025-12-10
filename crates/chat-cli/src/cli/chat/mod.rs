@@ -381,6 +381,20 @@ impl ChatArgs {
         let (models, default_model_opt) = get_available_models(os).await?;
         // Fallback logic: try user's saved default, then system default
         let fallback_model_id = || {
+            // Check if Bedrock mode is enabled
+            if os
+                .database
+                .settings
+                .get(Setting::BedrockEnabled)
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false)
+            {
+                // Use Bedrock model setting
+                if let Some(bedrock_model) = os.database.settings.get_string(Setting::BedrockModel) {
+                    return Some(bedrock_model);
+                }
+            }
+            
             if let Some(saved) = os.database.settings.get_string(Setting::ChatDefaultModel) {
                 find_model(&models, &saved)
                     .map(|m| m.model_id.clone())
