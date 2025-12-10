@@ -79,7 +79,7 @@ pub enum SlashCommand {
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
-    /// Code Intelligence - Advanced code intelligence with LSP integration
+    /// Code intelligence with LSP integration - https://kiro.dev/docs/cli/code-intelligence/
     #[command(subcommand)]
     Code(CodeSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt

@@ -12,6 +12,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::constants::CODE_INTELLIGENCE_DOC_URL;
 use crate::feature_flags::FeatureFlags;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -333,6 +334,13 @@ impl CodeSubcommand {
             StyledText::reset(),
             StyledText::info_fg(),
             style::Print(".kiro/settings/lsp.json"),
+            StyledText::reset(),
+            style::Print("\n"),
+            StyledText::secondary_fg(),
+            style::Print("Learn more at "),
+            StyledText::reset(),
+            StyledText::info_fg(),
+            style::Print(CODE_INTELLIGENCE_DOC_URL),
             StyledText::reset(),
             style::Print("\n"),
         )?;
