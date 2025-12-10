@@ -9,7 +9,7 @@ import time
 from typing import Any, Mapping, Sequence, List, Optional
 from const import APPLE_TEAM_ID, CHAT_BINARY_NAME, CHAT_PACKAGE_NAME
 from util import debug, info, isDarwin, isLinux, run_cmd, run_cmd_output, warn
-from rust import cargo_cmd_name, rust_env, rust_targets
+from rust import cargo_cmd_name, rust_env, rust_targets, build_hash, build_datetime
 from importlib import import_module
 
 Args = Sequence[str | os.PathLike]
@@ -384,11 +384,19 @@ def build_macos(chat_path: pathlib.Path, signing_data: CdSigningData | None):
     if signing_data:
         chat_dst = sign_and_notarize(signing_data, chat_dst)
 
+    # Create BUILD_INFO.json with commit metadata
+    build_info = {
+        "commit": build_hash(),
+        "build_time": build_datetime(),
+    }
+    build_info_path = BUILD_DIR / "BUILD_INFO.json"
+    build_info_path.write_text(json.dumps(build_info, indent=2))
+
     zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.zip"
     zip_path.unlink(missing_ok=True)
 
     info(f"Creating zip output to {zip_path}")
-    run_cmd(["zip", "-j", zip_path, chat_dst], cwd=BUILD_DIR)
+    run_cmd(["zip", "-j", zip_path, chat_dst, build_info_path], cwd=BUILD_DIR)
     generate_sha(zip_path)
 
 
@@ -512,10 +520,18 @@ def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
     chat_dst.unlink(missing_ok=True)
     shutil.copy2(chat_path, chat_dst)
 
+    # Create BUILD_INFO.json with commit metadata
+    build_info = {
+        "commit": build_hash(),
+        "build_time": build_datetime(),
+    }
+    build_info_path = BUILD_DIR / "BUILD_INFO.json"
+    build_info_path.write_text(json.dumps(build_info, indent=2))
+
     tar_gz_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.tar.gz"
     tar_gz_path.unlink(missing_ok=True)
     info(f"Creating tar output to {tar_gz_path}")
-    run_cmd(["tar", "-czf", tar_gz_path, "-C", BUILD_DIR, chat_dst.name], cwd=BUILD_DIR)
+    run_cmd(["tar", "-czf", tar_gz_path, "-C", BUILD_DIR, chat_dst.name, build_info_path.name], cwd=BUILD_DIR)
     generate_sha(tar_gz_path)
     if signer:
         signer.sign_file(tar_gz_path)
@@ -523,7 +539,7 @@ def build_linux(chat_path: pathlib.Path, signer: GpgSigner | None):
     zip_path = BUILD_DIR / f"{CHAT_BINARY_NAME}.zip"
     zip_path.unlink(missing_ok=True)
     info(f"Creating zip output to {zip_path}")
-    run_cmd(["zip", "-j", zip_path, chat_dst], cwd=BUILD_DIR)
+    run_cmd(["zip", "-j", zip_path, chat_dst, build_info_path], cwd=BUILD_DIR)
     generate_sha(zip_path)
     if signer:
         signer.sign_file(zip_path)
