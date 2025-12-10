@@ -252,7 +252,7 @@ impl<'a> AgentInfo<'a> {
                         let prefix = if idx == 0 { ">  " } else { "   " };
                         acc.push(Line::from(vec![
                             Span::styled(prefix, Style::default()),
-                            Span::styled((*text).to_string(), Style::default().fg(Color::White.into())),
+                            Span::styled((*text).to_string(), Style::default().fg(Color::Reset.into())),
                         ]));
                     }
 
@@ -278,7 +278,7 @@ impl<'a> AgentInfo<'a> {
                     let prefix = if idx == 0 { "↳ " } else { "  " };
                     Line::from(vec![
                         Span::raw(prefix),
-                        Span::styled(text.to_string(), Style::default().fg(Color::White.into())),
+                        Span::styled(text.to_string(), Style::default().fg(Color::Reset.into())),
                     ])
                 })
                 .collect::<Vec<_>>();
@@ -525,7 +525,7 @@ impl<'a> SubagentIndicator<'a> {
 
                         let (tool_tip, tool_tip_height) = {
                             let mut spans = vec![
-                                Span::styled("Controls: ", Style::default().fg(Color::White.into())),
+                                Span::styled("Controls: ", Style::default().fg(Color::Reset.into())),
                             ];
 
                             if agents.len() > 1 {
@@ -550,9 +550,9 @@ impl<'a> SubagentIndicator<'a> {
 
                             if agents.values().all(|info| info.is_done) {
                                 lines.push(Line::from(vec![
-                                    Span::styled("All agents have completed. Press ", Style::default().fg(Color::White.into())),
+                                    Span::styled("All agents have completed. Press ", Style::default().fg(Color::Reset.into())),
                                     Span::styled("↵", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
-                                    Span::styled(" to return control back to main chat", Style::default().fg(Color::White.into())),
+                                    Span::styled(" to return control back to main chat", Style::default().fg(Color::Reset.into())),
                                 ]));
                             }
 
@@ -828,7 +828,7 @@ impl<'a> SubagentIndicator<'a> {
 
                 agent_info.lines = vec![Line::from(vec![
                     Span::styled("↳ ", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
-                    Span::styled("done ", Style::default().fg(Color::White.into())),
+                    Span::styled("done ", Style::default().fg(Color::Reset.into())),
                     Span::styled(
                         format!("({tool_calls} tool uses · {duration:.2}s)"),
                         Style::default().fg(Color::Grey.into()),

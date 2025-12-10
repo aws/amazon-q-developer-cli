@@ -348,11 +348,19 @@ impl<'a> Subagent<'a> {
 
         // Holds the final result of the user turn.
         let mut user_turn_metadata = Vec::<UserTurnMetadata>::new();
-        let mut query_result = None::<Summary>;
         let mut has_sent_failsafe_msg = false;
         telemetry_sink
             .record_user_turn_completion_args
             .replace(Default::default());
+
+        enum QueryStatus {
+            Ongoing,
+            Resolved(Summary),
+            Interrupted,
+            Error(Summary),
+        }
+
+        let mut query_status = QueryStatus::Ongoing;
 
         loop {
             tokio::select! {
@@ -373,6 +381,7 @@ impl<'a> Subagent<'a> {
                         InputEventKind::Text(_) => {},
                         InputEventKind::Interrupt => {
                             agent.cancel().await?;
+                            query_status = QueryStatus::Interrupted;
                             break;
                         },
                         InputEventKind::ToolApproval(id) => {
@@ -457,7 +466,7 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::EndTurn(metadata) => {
-                            if query_result.is_some() {
+                            if matches!(query_status, QueryStatus::Resolved(_)) {
                                 user_turn_metadata.push(metadata.clone());
                                 break;
                             } else if !has_sent_failsafe_msg {
@@ -474,7 +483,7 @@ impl<'a> Subagent<'a> {
                         },
                         AgentEvent::Stop(AgentStopReason::Error(agent_error)) => {
                             telemetry_sink.update_stop_reason(agent_error.to_string());
-                            query_result.replace(Summary {
+                            query_status = QueryStatus::Error(Summary {
                                 task_description: self.query.to_string(),
                                 context_summary: None,
                                 task_result: format!("subagent has failed due to the following error: {agent_error:?}")
@@ -506,7 +515,7 @@ impl<'a> Subagent<'a> {
                                 },
                                 (false, false) => {
                                     error!("subagent cannot run in non-interactive mode with tool permission request");
-                                    query_result.replace(Summary {
+                                    query_status = QueryStatus::Error(Summary {
                                         task_description: self.query.to_string(),
                                         context_summary: None,
                                         task_result: "Subagent cannot run in non-interactive mode with tool permission request".to_string()
@@ -516,7 +525,7 @@ impl<'a> Subagent<'a> {
                             }
                         },
                         AgentEvent::SubagentSummary(summary) => {
-                            query_result.replace(summary);
+                            query_status = QueryStatus::Resolved(summary);
                         },
                         _ => {},
                     }
@@ -580,7 +589,11 @@ impl<'a> Subagent<'a> {
             }));
         }
 
-        query_result.ok_or(eyre::eyre!("subagent missing query result"))
+        match query_status {
+            QueryStatus::Ongoing => bail!("subagent has exited unexpectedly"),
+            QueryStatus::Interrupted => bail!("User has interrupted the operation"),
+            QueryStatus::Resolved(summary) | QueryStatus::Error(summary) => Ok(summary),
+        }
     }
 }
 
