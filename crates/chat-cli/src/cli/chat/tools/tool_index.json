@@ -30,12 +30,11 @@
       "properties": {
         "pattern": {
           "type": "string",
-          "description": "Glob pattern, e.g. \"**/*.rs\" or \"src/**/*.{ts,tsx}\""
+          "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\" or \"**/test*\"."
         },
         "path": {
           "type": "string",
-          "description": "Directory to search. Defaults to current working directory."
-        }
+          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."}
       },
       "required": [
         "pattern"

@@ -179,8 +179,12 @@ impl Glob {
         struct Settings {
             #[serde(default)]
             denied_paths: Vec<String>,
-            #[serde(default)]
+            #[serde(default = "default_true")]
             auto_allow: bool,
+        }
+
+        fn default_true() -> bool {
+            true
         }
 
         match Self::INFO
@@ -211,7 +215,7 @@ impl Glob {
                     PermissionEvalResult::Ask
                 }
             },
-            None => PermissionEvalResult::Ask,
+            None => PermissionEvalResult::Allow,
         }
     }
 }
