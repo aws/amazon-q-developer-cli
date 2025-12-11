@@ -3,15 +3,9 @@ use std::collections::{
     BTreeMap,
     HashMap,
 };
-use std::io::{
-    Write,
-    stdout,
-};
+use std::io::stdout;
 
-use crossterm::cursor::{
-    MoveTo,
-    position,
-};
+use crossterm::cursor::MoveTo;
 use crossterm::event::{
     KeyCode,
     KeyEventKind,
@@ -134,35 +128,46 @@ macro_rules! title {
 
 macro_rules! make_extra_rows {
     {
-        terminal_height: $terminal_height:expr,
         start_row: $start_row:expr,
         extra_rows_needed: $extra_rows_needed:expr,
         terminal: $terminal:expr
     } => {
-        // Actually scroll the terminal by printing newlines to stdout
-        // We need to do this outside of ratatui's control
-        let mut stdout = std::io::stdout();
-
         $terminal.draw(|f| {
-            f.render_widget(ratatui::widgets::Clear, f.area());
+            f.render_widget(ratatui::widgets::Clear, f.area())
         })?;
+        execute!($terminal.backend_mut(), crossterm::terminal::ScrollUp($extra_rows_needed))?;
 
-        // Move cursor to bottom and print newlines to trigger scroll
-        execute!(stdout, MoveTo(0, $terminal_height.saturating_sub(1)))?;
-        for _ in 0..$extra_rows_needed {
-            writeln!(stdout)?;
-        }
-        stdout.flush()?;
-
-        // Adjust start_row after scrolling
         $start_row = $start_row.saturating_sub($extra_rows_needed);
 
-        let backend = CrosstermBackend::new(stdout);
-        // You need to create a new terminal after this otherwise you risk
-        // clipping your rendering since the Frame<'_> passed in the FnOnce of
-        // draw could be out of date
-        $terminal = Terminal::new(backend)?
+        let terminal_area = $terminal.get_frame().area();
+        let new_height = terminal_area.height + $extra_rows_needed;
+        let terminal_width = terminal_area.width;
+
+        let backend = CrosstermBackend::new(std::io::stdout());
+        $terminal = Terminal::with_options(backend, ratatui::TerminalOptions {
+            viewport: ratatui::Viewport::Fixed(Rect::new(0, $start_row, terminal_width, new_height))
+        })?;
     }
+}
+
+// Pause event processing and drain stdin before querying position
+// This is important because you could be getting stale cursor position and it is especially
+// apparent after a clear screen event
+// If this does happen what you would see is the widget being rendered in the incorrect row
+fn get_cursor_position_reliably() -> std::io::Result<(u16, u16)> {
+    use std::time::Duration;
+
+    while crossterm::event::poll(Duration::from_millis(1))? {
+        let _ = crossterm::event::read()?;
+    }
+
+    std::thread::sleep(Duration::from_millis(10));
+
+    while crossterm::event::poll(Duration::from_millis(1))? {
+        let _ = crossterm::event::read()?;
+    }
+
+    crossterm::cursor::position()
 }
 
 pub struct SubagentIndicatorHandle {
@@ -364,19 +369,18 @@ impl<'a> SubagentIndicator<'a> {
         tokio::spawn(async move {
             let _raw_mode_guard = RawModeGuard::enter_raw_mode();
 
-            let mut terminal_width: u16;
-            let mut terminal_height: u16;
             let mut content_widget_width: u16;
             let mut max_text_width: u16;
             #[allow(unused_assignments)]
-            let mut stacked_height = 2_u16;
+            let mut stacked_height = 1_u16;
+            let (mut terminal_width, mut terminal_height) = size()?;
 
             let mut stdout = stdout();
             execute!(&mut stdout, style::Print("\n"))?;
 
             let mut counter = 0_usize;
             let (_start_col, mut start_row) = loop {
-                match position() {
+                match get_cursor_position_reliably() {
                     Ok((col, row)) => break (col, row),
                     Err(e) if counter < 3 => {
                         error!("Error getting position: {e:#?}");
@@ -389,7 +393,9 @@ impl<'a> SubagentIndicator<'a> {
             };
 
             let backend = CrosstermBackend::new(stdout);
-            let mut terminal = Terminal::new(backend)?;
+            let mut terminal = Terminal::with_options(backend, ratatui::TerminalOptions {
+                viewport: ratatui::Viewport::Fixed(Rect::new(0, start_row, terminal_width, 10)),
+            })?;
 
             let mut reader = crossterm::event::EventStream::new();
 
@@ -404,7 +410,6 @@ impl<'a> SubagentIndicator<'a> {
             loop {
                 let crossterm_event = reader.next().fuse();
 
-                (terminal_width, terminal_height) = size()?;
                 content_widget_width = u16::min(
                     Self::MAX_CONTENT_WIDGET_WIDTH,
                     terminal_width.saturating_sub(Self::ARROW_WIDGET_WIDTH),
@@ -522,7 +527,7 @@ impl<'a> SubagentIndicator<'a> {
                     _ = tokio::time::sleep_until(sleep_until) => {
                         sleep_until += render_interval;
 
-                        stacked_height = 1;
+                        stacked_height = 2;
 
                         let (tool_tip, tool_tip_height) = {
                             let mut spans = vec![
@@ -568,6 +573,9 @@ impl<'a> SubagentIndicator<'a> {
                             stacked_height = stacked_height.saturating_add(agent_info.widget_height);
                         }
 
+                        let viewport_area = terminal.get_frame().area();
+                        let viewport_height = viewport_area.height;
+
                         if stacked_height > terminal_height {
                             terminal.draw(|f| {
                                 let message = Line::from(vec![
@@ -588,6 +596,8 @@ impl<'a> SubagentIndicator<'a> {
                                 f.render_widget(message, area);
                             })?;
                             continue;
+                        } else if stacked_height > viewport_height {
+                            terminal.resize(Rect::new(0, start_row, terminal_width, stacked_height))?;
                         }
 
                         let desired_end = start_row.saturating_add(stacked_height);
@@ -595,7 +605,6 @@ impl<'a> SubagentIndicator<'a> {
 
                         if extra_rows_needed > 0 {
                             make_extra_rows! {
-                                terminal_height: terminal_height,
                                 start_row: start_row,
                                 extra_rows_needed: extra_rows_needed,
                                 terminal: terminal
@@ -624,7 +633,7 @@ impl<'a> SubagentIndicator<'a> {
                                     };
                                     let arrow_widget = Paragraph::new("→")
                                         .style(Style::default().fg(Color::AnsiValue(120).into()))
-                                        .alignment(Alignment::Left);
+                                        .alignment(Alignment::Right);
                                     f.render_widget(arrow_widget, arrow_area);
                                     120
                                 } else {
@@ -811,6 +820,11 @@ impl<'a> SubagentIndicator<'a> {
                                     _ => {},
                                 }
                             },
+                            crossterm::event::Event::Resize(cols, rows) => {
+                                terminal_width = cols;
+                                terminal_height = rows;
+                                terminal.autoresize()?;
+                            },
                             _ => {},
                         }
                     }
@@ -867,7 +881,6 @@ impl<'a> SubagentIndicator<'a> {
                     .saturating_sub(current_terminal_height);
                 if extra_rows_needed > 0 {
                     make_extra_rows! {
-                        terminal_height: terminal_height,
                         start_row: start_row,
                         extra_rows_needed: extra_rows_needed,
                         terminal: terminal
