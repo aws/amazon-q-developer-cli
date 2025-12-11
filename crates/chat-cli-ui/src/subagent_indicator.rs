@@ -112,18 +112,19 @@ macro_rules! title {
     } => {
         match $status {
             SubagentStatus::Completed => Line::from(vec![
-                Span::styled("✓ ", Style::default().fg(Color::Green.into())),
+                Span::styled(" ✓ ", Style::default().fg(Color::Green.into())),
                 Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
             SubagentStatus::Running(symbol) => Line::from(vec![
+                Span::raw(" "),
                 Span::raw(symbol),
                 Span::raw(" "),
                 Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
             SubagentStatus::Attention => Line::from(vec![
-                Span::styled("! ", Style::default().fg(Color::Red.into())),
+                Span::styled(" ! ", Style::default().fg(Color::Red.into())),
                 Span::styled($agent_name, Style::default().fg(Color::AnsiValue($agent_fg).into())),
                 Span::raw(format!(": {}... ", $init_query)),
             ]),
@@ -260,7 +261,7 @@ impl<'a> AgentInfo<'a> {
                 });
         } else if !self.blocking_servers.is_empty() {
             lines.push(Line::from(format!(
-                "↳ waiting on {} server(s)",
+                " ↳ waiting on {} server(s)",
                 self.blocking_servers.len()
             )));
             for server_name in self.blocking_servers.keys() {
@@ -275,7 +276,7 @@ impl<'a> AgentInfo<'a> {
                 .into_iter()
                 .enumerate()
                 .map(|(idx, text)| {
-                    let prefix = if idx == 0 { "↳ " } else { "  " };
+                    let prefix = if idx == 0 { " ↳ " } else { "  " };
                     Line::from(vec![
                         Span::raw(prefix),
                         Span::styled(text.to_string(), Style::default().fg(Color::Reset.into())),
@@ -827,7 +828,7 @@ impl<'a> SubagentIndicator<'a> {
                 });
 
                 agent_info.lines = vec![Line::from(vec![
-                    Span::styled("↳ ", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
+                    Span::styled(" ↳ ", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
                     Span::styled("done ", Style::default().fg(Color::Reset.into())),
                     Span::styled(
                         format!("({tool_calls} tool uses · {duration:.2}s)"),
