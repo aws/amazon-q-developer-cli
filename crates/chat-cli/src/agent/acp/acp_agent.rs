@@ -110,7 +110,7 @@ impl AcpSession {
         ));
 
         // Spawn agent
-        let agent = Agent::new(snapshot, None, None, model, McpManager::default().spawn())
+        let agent = Agent::new(snapshot, None, None, model, McpManager::default().spawn(), false)
             .await?
             .spawn();
 

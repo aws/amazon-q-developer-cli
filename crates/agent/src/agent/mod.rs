@@ -289,6 +289,8 @@ pub struct Agent {
     working_directory: Option<PathBuf>,
     /// Provider for system context like env vars, home dir, current working dir
     sys_provider: Arc<dyn SystemProvider>,
+    /// Denotes whether or not this agent is being spawned as a subagent
+    is_subagent: bool,
 }
 
 impl Agent {
@@ -303,12 +305,14 @@ impl Agent {
     /// * `global_mcp_path` - The path to global mcp.json
     /// * `model` - The backend implementation to use
     /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
+    /// * `is_subagent` - whether or not the agent is spawned as a subagent
     pub async fn new(
         snapshot: AgentSnapshot,
         local_mcp_path: Option<&PathBuf>,
         global_mcp_path: Option<&PathBuf>,
         model: Arc<dyn Model>,
         mcp_manager_handle: McpManagerHandle,
+        is_subagent: bool,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
@@ -339,6 +343,7 @@ impl Agent {
             cached_mcp_configs,
             working_directory: None,
             sys_provider: Arc::new(RealProvider),
+            is_subagent,
         })
     }
 
@@ -1424,6 +1429,12 @@ impl Agent {
     /// for the agent's current state.
     async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
         let mut tool_names = HashSet::new();
+
+        if self.is_subagent {
+            use crate::tools::summary::Summary;
+            tool_names.insert(Summary::get_canonical_name());
+        }
+
         let built_in_tool_names = built_in_tool_names();
         let config = self.get_agent_config().await;
 

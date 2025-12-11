@@ -244,6 +244,7 @@ impl<'a> Subagent<'a> {
             Some(self.global_mcp_path),
             model,
             mcp_manager_handle,
+            true,
         )
         .await?;
 

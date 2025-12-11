@@ -12,6 +12,7 @@ use super::{
     ToolExecutionOutput,
     ToolExecutionResult,
 };
+use crate::agent_config::parse::CanonicalToolName;
 use crate::protocol::AgentEvent;
 
 /// A tool for conveying information from subagent to its main agent
@@ -82,6 +83,10 @@ impl Summary {
             .send(self.into())
             .map(|_res| ToolExecutionOutput::default())
             .map_err(|e| ToolExecutionError::Custom(e.to_string()))
+    }
+
+    pub fn get_canonical_name() -> CanonicalToolName {
+        CanonicalToolName::BuiltIn(BuiltInToolName::Summary)
     }
 }
 
