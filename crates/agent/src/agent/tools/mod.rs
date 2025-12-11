@@ -109,6 +109,9 @@ trait BuiltInToolTrait {
     fn name() -> BuiltInToolName;
     fn description() -> Cow<'static, str>;
     fn input_schema() -> Cow<'static, str>;
+    fn aliases() -> Option<&'static [&'static str]> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -305,6 +308,21 @@ impl BuiltInTool {
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
             BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
+            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+        }
+    }
+
+    pub fn aliases(&self) -> Option<&[&str]> {
+        match self {
+            BuiltInTool::FileRead(_) => FsRead::aliases(),
+            BuiltInTool::FileWrite(_) => FsWrite::aliases(),
+            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Ls(_) => Ls::aliases(),
+            BuiltInTool::Mkdir(_) => panic!("unimplemented"),
+            BuiltInTool::ImageRead(_) => ImageRead::aliases(),
+            BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
+            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => Summary::aliases(),
             BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }

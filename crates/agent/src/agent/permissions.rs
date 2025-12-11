@@ -25,7 +25,14 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
 ) -> Result<PermissionEvalResult, UtilError> {
     let tn = tool.canonical_tool_name();
     let tool_name = tn.as_full_name();
-    let is_allowed = matches_any_pattern(allowed_tools, &tool_name);
+    let is_allowed = matches_any_pattern(allowed_tools, &tool_name)
+        || if let ToolKind::BuiltIn(built_in_tool) = tool {
+            built_in_tool
+                .aliases()
+                .is_some_and(|aliases| matches_any_pattern(aliases, &tool_name))
+        } else {
+            false
+        };
 
     match tool {
         ToolKind::BuiltIn(built_in) => match built_in {

@@ -96,6 +96,10 @@ impl BuiltInToolTrait for FsWrite {
     fn input_schema() -> std::borrow::Cow<'static, str> {
         FS_WRITE_SCHEMA.into()
     }
+
+    fn aliases() -> Option<&'static [&'static str]> {
+        Some(&["fs_write", "write"])
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

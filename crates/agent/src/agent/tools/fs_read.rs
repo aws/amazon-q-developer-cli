@@ -72,6 +72,10 @@ impl BuiltInToolTrait for FsRead {
     fn input_schema() -> std::borrow::Cow<'static, str> {
         FS_READ_SCHEMA.into()
     }
+
+    fn aliases() -> Option<&'static [&'static str]> {
+        Some(&["read", "fs_read"])
+    }
 }
 
 /// A tool for reading files
