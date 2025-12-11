@@ -691,7 +691,7 @@ impl<'a> SubagentIndicator<'a> {
                         //
                         // In non-interactive, we should defer to ct being cancelled as a signal to
                         // end
-                        if acknowledged {
+                        if acknowledged || agents.values().all(|info| info.is_done && !info.is_previewing_convo) {
                             std::future::ready(()).await;
                         } else if !is_interactive || !all_initialized || interrupted {
                             ct.cancelled().await;
