@@ -3,9 +3,9 @@ use std::collections::HashSet;
 use tracing::debug;
 
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::consts::BUILTIN_TOOLS_PREFIX;
 use crate::util::pattern_matching::matches_any_pattern;
 
-const BUILT_IN_PREFIX: &str = "@builtin";
 const BUILT_IN_PREFIX_WITH_SLASH: &str = "@builtin/";
 
 /// Checks if a tool is allowed based on the agent's allowed_tools configuration.
@@ -24,7 +24,7 @@ pub fn is_tool_in_allowlist(allowed_tools: &HashSet<String>, tool_name: &str, se
         None => {
             for name in allowed_tools {
                 if name
-                    .strip_prefix(BUILT_IN_PREFIX)
+                    .strip_prefix(BUILTIN_TOOLS_PREFIX)
                     .is_some_and(|n| n.is_empty() || n == "/" || n == "/*")
                 {
                     return true;
@@ -105,9 +105,9 @@ mod tests {
     #[test]
     fn test_builtin_namespace() {
         let mut allowed = HashSet::new();
-        allowed.insert("@builtin".to_string());
-        allowed.insert("@builtin/".to_string());
-        allowed.insert("@builtin/*".to_string());
+        allowed.insert(BUILTIN_TOOLS_PREFIX.to_string());
+        allowed.insert(format!("{}/", BUILTIN_TOOLS_PREFIX));
+        allowed.insert(format!("{}/*", BUILTIN_TOOLS_PREFIX));
 
         // @builtin should allow all native tools
         assert!(is_tool_in_allowlist(&allowed, "fs_read", None));

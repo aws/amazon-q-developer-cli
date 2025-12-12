@@ -102,6 +102,7 @@ use crate::os::Os;
 use crate::telemetry::TelemetryThread;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
+use crate::util::consts::BUILTIN_TOOLS_PREFIX;
 
 const NAMESPACE_DELIMITER: &str = "___";
 // This applies for both mcp server and tool name
@@ -713,7 +714,7 @@ impl ToolManager {
         self.schema = {
             let tool_list = &self.agent.lock().await.tools;
             let is_allow_all = tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*");
-            let is_allow_native = tool_list.iter().any(|t| t.as_str() == "@builtin");
+            let is_allow_native = tool_list.iter().any(|t| t.as_str() == BUILTIN_TOOLS_PREFIX);
             let mut tool_specs =
                 serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
                     .into_iter()

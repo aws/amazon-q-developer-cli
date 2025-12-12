@@ -46,6 +46,8 @@ use crate::constants::AGENT_FORMAT_HOOKS_DOC_URL;
 use crate::constants::help_text::hooks_long_help;
 use crate::theme::StyledText;
 use crate::util::MCP_SERVER_TOOL_DELIMITER;
+#[cfg(test)]
+use crate::util::consts::BUILTIN_TOOLS_PREFIX;
 use crate::util::pattern_matching::matches_any_pattern;
 
 /// Hook execution result: (exit_code, output)
@@ -489,7 +491,7 @@ mod tests {
             timeout_ms: 5000,
             cache_ttl_seconds: 0,
             max_output_size: 1000,
-            matcher: Some("@builtin".to_string()),
+            matcher: Some(BUILTIN_TOOLS_PREFIX.to_string()),
             source: crate::cli::agent::hook::Source::Session,
         };
 
