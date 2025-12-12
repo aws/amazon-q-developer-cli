@@ -32,7 +32,7 @@ jobs:
         id: toolchain
         with:
           components: clippy
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
@@ -64,7 +64,7 @@ jobs:
           components: llvm-tools-preview
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/registry/index/
@@ -85,7 +85,7 @@ jobs:
   #       id: toolchain
   #       with:
   #         components: clippy
-  #     - uses: actions/cache@v4
+  #     - uses: actions/cache@v5
   #       with:
   #         path: |
   #           ~/.cargo/registry/index/
@@ -105,7 +105,7 @@ jobs:
   #       id: toolchain
   #       with:
   #         components: llvm-tools-preview
-  #     - uses: actions/cache@v4
+  #     - uses: actions/cache@v5
   #       with:
   #         path: |
   #           ~/.cargo/registry/index/
