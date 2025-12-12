@@ -171,13 +171,18 @@ impl ServerHandler for CodeIntelligenceServer {
             },
             Tool {
                 name: "get_document_symbols".into(),
-                description: Some("Get all symbols from a document/file. Example: get_document_symbols({\"file_path\": \"src/main.rs\"}) returns all functions, classes, etc. in that file.".into()),
+                description: Some("Get symbols from a document/file. By default returns only top-level symbols (structs, enums, impl blocks). Set top_level_only=false to include nested methods and functions. Example: get_document_symbols({\"file_path\": \"src/main.rs\", \"top_level_only\": false})".into()),
                 input_schema: Arc::new(serde_json::from_value(json!({
                     "type": "object",
                     "properties": {
                         "file_path": {
                             "type": "string",
                             "description": "Path to the file to analyze"
+                        },
+                        "top_level_only": {
+                            "type": "boolean",
+                            "description": "If true (default), return only top-level symbols. If false, include all nested symbols like methods.",
+                            "default": true
                         }
                     },
                     "required": ["file_path"]
@@ -413,12 +418,14 @@ impl CodeIntelligenceServer {
             .and_then(|s| s.parse().ok());
         let limit = args.get("limit").and_then(|v| v.as_u64()).map(|v| v as u32);
         let exact_match = args.get("exact_match").and_then(|v| v.as_bool()).unwrap_or(false);
+        let language = args.get("language").and_then(|v| v.as_str()).map(|s| s.to_string());
 
         let request = FindSymbolsRequest {
             symbol_name: symbol_name.to_string(),
             file_path,
             symbol_type,
             limit,
+            language,
             exact_match,
         };
 
@@ -520,8 +527,11 @@ impl CodeIntelligenceServer {
             .and_then(|v| v.as_str())
             .ok_or_else(|| ErrorData::new(ErrorCode::INVALID_PARAMS, "Missing file_path", None))?;
 
+        let top_level_only = args.get("top_level_only").and_then(|v| v.as_bool());
+
         let request = GetDocumentSymbolsRequest {
             file_path: PathBuf::from(file_path),
+            top_level_only,
         };
 
         let mut client_guard = self.client.lock().await;

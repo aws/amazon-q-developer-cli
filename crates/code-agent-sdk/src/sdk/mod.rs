@@ -11,7 +11,10 @@ pub mod workspace_manager;
 
 use std::path::PathBuf;
 
-pub use workspace_manager::WorkspaceManager;
+pub use workspace_manager::{
+    WorkspaceManager,
+    WorkspaceStatus,
+};
 
 use crate::sdk::client::CodeIntelligence;
 

@@ -73,6 +73,8 @@ pub struct FindSymbolsRequest {
     pub symbol_type: Option<ApiSymbolKind>,
     /// Maximum number of results to return (default: 20, max: 50)
     pub limit: Option<u32>,
+    /// Filter by programming language (e.g., 'rust', 'typescript', 'python')
+    pub language: Option<String>,
     /// Whether to prioritize exact matches over fuzzy matches
     pub exact_match: bool,
 }
@@ -173,6 +175,10 @@ pub struct GotoDefinitionRequest {
 pub struct GetDocumentSymbolsRequest {
     /// Path to the file to analyze
     pub file_path: PathBuf,
+    /// If true, only return top-level symbols (structs, enums, impl blocks).
+    /// If false, return all symbols including nested methods and functions.
+    /// Default: true
+    pub top_level_only: Option<bool>,
 }
 
 /// Request to get diagnostics for a document (pull model).
@@ -187,6 +193,42 @@ pub struct GetDocumentDiagnosticsRequest {
     pub identifier: Option<String>,
     /// Optional result ID from a previous response for incremental updates
     pub previous_result_id: Option<String>,
+}
+
+/// Request to get hover information at a specific position.
+///
+/// This request retrieves hover information (documentation, type info) for the symbol
+/// at the specified position in the file.
+#[derive(Debug, Clone)]
+pub struct HoverRequest {
+    /// Path to the file
+    pub file_path: PathBuf,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+}
+
+/// Request to get code completions at a specific position.
+///
+/// This request retrieves code completion suggestions for the specified position
+/// in the file, optionally triggered by a specific character.
+#[derive(Debug, Clone)]
+pub struct CompletionRequest {
+    /// Path to the file
+    pub file_path: PathBuf,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+    /// Optional trigger character that initiated completion (e.g., '.', '::')
+    pub trigger_character: Option<String>,
+    /// Optional filter for fuzzy matching completion results
+    pub filter: Option<String>,
+    /// Optional symbol type filter (e.g., Method, Function, Class)
+    pub symbol_type: Option<ApiSymbolKind>,
+    /// Maximum number of results to return (default: 50)
+    pub limit: Option<usize>,
 }
 
 /// Request to open a file in the language server.
@@ -206,6 +248,8 @@ pub struct OpenFileRequest {
 /// including the command, arguments, and supported file extensions.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LanguageServerConfig {
+    /// Language name (e.g., "java", "typescript", "rust")
+    pub language: String,
     /// Unique name for this language server
     pub name: String,
     /// Command to execute the language server
@@ -214,10 +258,21 @@ pub struct LanguageServerConfig {
     pub args: Vec<String>,
     /// File extensions this language server handles (e.g., ["rs", "toml"])
     pub file_extensions: Vec<String>,
+    /// Project patterns for workspace discovery (e.g., ["Cargo.toml", "pom.xml"])
+    pub project_patterns: Vec<String>,
     /// Patterns to exclude from file watching (e.g., ["**/target/**", "**/node_modules/**"])
     pub exclude_patterns: Vec<String>,
+    /// Enable multi-workspace mode for mono-repos
+    pub multi_workspace: bool,
     /// Optional initialization options sent to the language server
     pub initialization_options: Option<serde_json::Value>,
+    /// Request timeout in seconds (default: 60)
+    #[serde(default = "default_request_timeout")]
+    pub request_timeout_secs: u64,
+}
+
+fn default_request_timeout() -> u64 {
+    60
 }
 
 /// Information about workspace detection results.
@@ -252,8 +307,14 @@ pub struct LspInfo {
     pub is_available: bool,
     /// Whether the language server is initialized and running
     pub is_initialized: bool,
+    /// Current status of the LSP server (Registered, Initializing, Initialized, Failed)
+    pub status: Option<String>,
     /// Version information if available
     pub version: Option<String>,
+    /// Workspace folders registered with this LSP (if multi-workspace)
+    pub workspace_folders: Vec<String>,
+    /// Initialization duration in milliseconds (if completed)
+    pub init_duration_ms: Option<u64>,
 }
 
 // ============================================================================

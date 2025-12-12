@@ -50,6 +50,9 @@ pub const MCP_SECURITY_DOC_URL: &str = "https://kiro.dev/docs/cli/mcp/security/"
 pub const TOOLS_TRUST_ALL_SAFETY_DOC_URL: &str =
     "https://kiro.dev/docs/cli/chat/security/#using-tools-trust-all-safely";
 
+/// Code intelligence documentation URL
+pub const CODE_INTELLIGENCE_DOC_URL: &str = "https://kiro.dev/docs/cli/code-intelligence/";
+
 /// Error message templates
 pub mod error_messages {
     /// Standard error message for when the service is having trouble responding
@@ -318,6 +321,10 @@ pub mod tips {
                 StyledText::command("MCP servers")
             ),
             format!(
+                "Set up code intelligence ( λ ) for LSP-based code analysis with {}",
+                StyledText::command("/code init")
+            ),
+            format!(
                 "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
                 StyledText::command(&format!("{CLI_NAME} settings mcp.initTimeout {{timeout in int}}"))
             ),
@@ -364,6 +371,10 @@ pub mod tips {
             format!(
                 "Define {} resources in your agent config to auto-sync knowledge bases when you switch agents",
                 StyledText::command("indexed")
+            ),
+            format!(
+                "Learn more about code intelligence features and setup at {}",
+                StyledText::command(super::CODE_INTELLIGENCE_DOC_URL)
             ),
         ]
     }

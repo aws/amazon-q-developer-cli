@@ -9,6 +9,8 @@ pub const BRAND_PURPLE: u8 = 141;
 pub const DARK_PURPLE: u8 = 93;
 /// Cyan
 pub const CYAN_INDICATOR: u8 = 6;
+/// Vibrant blue for code intelligence indicator
+pub const VIBRANT_BLUE: u8 = 39;
 /// Light grey for emphasis text
 pub const LIGHT_GREY: u8 = 252;
 /// Medium-light grey for secondary text
@@ -55,6 +57,8 @@ pub struct InteractiveColors {
     pub profile_indicator: Color,
     /// Tangent mode indicator ("↯ ")
     pub tangent_indicator: Color,
+    /// Code intelligence indicator ("ƒ ")
+    pub code_intelligence_indicator: Color,
     /// User message indicator ("> ")
     pub user_indicator: Color,
     /// Agent/assistant message indicator ("> ")
@@ -97,6 +101,7 @@ impl Default for InteractiveColors {
             prompt_symbol: Color::AnsiValue(DARK_PURPLE),
             profile_indicator: Color::AnsiValue(CYAN_INDICATOR),
             tangent_indicator: Color::Yellow,
+            code_intelligence_indicator: Color::AnsiValue(VIBRANT_BLUE),
             user_indicator: Color::AnsiValue(BRAND_PURPLE),
             agent_indicator: Color::AnsiValue(BRAND_PURPLE),
             usage_low: Color::Green,

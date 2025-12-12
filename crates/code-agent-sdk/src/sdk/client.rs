@@ -198,6 +198,30 @@ impl CodeIntelligence {
         self.workspace_manager.is_initialized()
     }
 
+    /// **Get current workspace initialization status**
+    ///
+    /// # Returns
+    /// * `WorkspaceStatus` - Current status (NotInitialized, Initializing, Initialized)
+    pub fn workspace_status(&self) -> crate::sdk::WorkspaceStatus {
+        self.workspace_manager.workspace_status()
+    }
+
+    /// **Check if code intelligence has been initialized**
+    ///
+    /// # Returns
+    /// * `bool` - True if workspace has been initialized
+    pub fn should_auto_initialize(&self) -> bool {
+        self.workspace_manager.config_exists()
+    }
+
+    /// **Check if code intelligence has been initialized**
+    ///
+    /// Returns true if lsp.json exists in .kiro/settings, indicating code intelligence
+    /// was previously initialized and should remain active.
+    pub fn is_code_intelligence_initialized(&self) -> bool {
+        self.workspace_manager.is_code_intelligence_initialized()
+    }
+
     /// **Reset initialization state to allow re-initialization**
     pub async fn reset_initialization(&mut self) {
         self.workspace_manager.reset_initialization().await;
@@ -330,8 +354,9 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn get_document_symbols(&mut self, request: GetDocumentSymbolsRequest) -> Result<Vec<SymbolInfo>> {
+        let top_level_only = request.top_level_only.unwrap_or(true);
         self.symbol_service
-            .get_document_symbols(&mut self.workspace_manager, &request.file_path, true)
+            .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
             .await
     }
 
@@ -672,6 +697,41 @@ impl CodeIntelligence {
             .iter()
             .map(|d| crate::model::entities::DiagnosticInfo::from_lsp_diagnostic(d, workspace_root))
             .collect())
+    }
+
+    /// **Get hover information at a specific location**
+    ///
+    /// Retrieves hover information (type info, documentation) for the symbol
+    /// at the specified position in a file.
+    ///
+    /// # Arguments
+    /// * `request` - Hover request parameters including file path and position
+    ///
+    /// # Returns
+    /// * `Result<Option<HoverInfo>>` - Hover information, or None if not available
+    pub async fn hover(
+        &mut self,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>> {
+        self.symbol_service.hover(&mut self.workspace_manager, request).await
+    }
+
+    /// **Get code completion suggestions at a specific location**
+    ///
+    /// Retrieves code completion suggestions for the specified position in a file.
+    ///
+    /// # Arguments
+    /// * `request` - Completion request parameters including file path and position
+    ///
+    /// # Returns
+    /// * `Result<Option<CompletionInfo>>` - Completion suggestions, or None if not available
+    pub async fn completion(
+        &mut self,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>> {
+        self.symbol_service
+            .completion(&mut self.workspace_manager, request)
+            .await
     }
 
     /// **Add a language server configuration**

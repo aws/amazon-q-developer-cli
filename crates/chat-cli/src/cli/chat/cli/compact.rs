@@ -104,7 +104,7 @@ pub struct CompactStrategy {
 impl Default for CompactStrategy {
     fn default() -> Self {
         Self {
-            messages_to_exclude: Default::default(),
+            messages_to_exclude: 2,
             truncate_large_messages: Default::default(),
             max_message_length: MAX_USER_MESSAGE_SIZE,
         }
@@ -119,6 +119,8 @@ const MAX_COMMANDS_IN_FACTUAL_RECORD: usize = 20;
 const MAX_REASONINGS_PER_ITEM: usize = 5;
 /// Maximum character length for file paths before truncation.
 const MAX_FILE_PATH_LENGTH: usize = 100;
+/// Maximum character length for command display before truncation.
+const MAX_COMMAND_DISPLAY_LENGTH: usize = 150;
 /// Character budget for files section (~3,500 tokens).
 const FILES_CHAR_BUDGET: usize = 14_000;
 /// Character budget for commands section (~1,500 tokens).
@@ -222,8 +224,8 @@ impl fmt::Display for CompactionFacts {
                 )?;
             }
             for (cmd, reasonings, _total_count) in &self.commands_executed {
-                let display_cmd = if cmd.len() > 60 {
-                    let truncated: String = cmd.chars().take(57).collect();
+                let display_cmd = if cmd.len() > MAX_COMMAND_DISPLAY_LENGTH {
+                    let truncated: String = cmd.chars().take(MAX_COMMAND_DISPLAY_LENGTH).collect();
                     format!("{truncated}...")
                 } else {
                     cmd.clone()

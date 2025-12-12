@@ -13,6 +13,7 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 agent = { path = "crates/agent" }
+agent-client-protocol = "0.7.0"
 amzn-codewhisperer-client = { path = "crates/amzn-codewhisperer-client" }
 amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-streaming-client" }
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
@@ -54,6 +55,7 @@ dirs = "5.0.0"
 eyre = "0.6.8"
 fd-lock = "4.0.4"
 futures = "0.3.26"
+strsim = "0.11.1"
 glob = "0.3.2"
 globset = "0.4.16"
 hex = "0.4.3"
@@ -95,6 +97,7 @@ rustls = "0.23.23"
 rustls-native-certs = "0.8.1"
 rustls-pemfile = "2.1.0"
 rustyline = { version = "15.0.0", features = ["custom-bindings", "derive", "with-file-history"], default-features = false }
+sacp = "1.0"
 security-framework = "3.2.0"
 semantic_search_client = { path = "crates/semantic-search-client" }
 semver = { version = "1.0.26", features = ["serde"] }
@@ -109,7 +112,6 @@ similar = "2.7.0"
 skim = { version = "0.16.2" }
 spinners = "4.1.0"
 strip-ansi-escapes = "0.2.1"
-strsim = "0.11"
 strum = { version = "0.27.1", features = ["derive"] }
 syn = "2.0.101"
 syntect = "5.2.0"

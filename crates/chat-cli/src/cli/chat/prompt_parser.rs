@@ -7,16 +7,18 @@ pub struct PromptComponents {
     pub profile: Option<String>,
     pub warning: bool,
     pub tangent_mode: bool,
+    pub code_intelligence: bool,
     pub usage_percentage: Option<f32>,
 }
 
 /// Parse prompt components from a plain text prompt
 pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
-    // Expected format: "[agent] 6% !> " or "> " or "!> " or "[agent] ↯ > " or "6% ↯ > " etc.
+    // Expected format: "[agent] 6% λ ↯ !> " or "> " or "!> " or "[agent] ↯ > " or "6% ↯ > " etc.
     let mut delegate_notifier = None::<String>;
     let mut profile = None;
     let mut warning = false;
     let mut tangent_mode = false;
+    let mut code_intelligence = false;
     let mut usage_percentage = None;
 
     // Check if multi-line prompt (e.g., with rich notification)
@@ -57,7 +59,13 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
         }
     }
 
-    // Check for tangent mode ↯ first
+    // Check for code intelligence symbol ƒ first
+    if let Some(after_code) = remaining.strip_prefix('λ') {
+        code_intelligence = true;
+        remaining = after_code.trim_start();
+    }
+
+    // Check for tangent mode ↯
     if let Some(after_tangent) = remaining.strip_prefix('↯') {
         tangent_mode = true;
         remaining = after_tangent.trim_start();
@@ -76,6 +84,7 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
             profile,
             warning,
             tangent_mode,
+            code_intelligence,
             usage_percentage,
         })
     } else {
@@ -87,6 +96,7 @@ pub fn generate_prompt(
     current_profile: Option<&str>,
     warning: bool,
     tangent_mode: bool,
+    code_intelligence: bool,
     usage_percentage: Option<f32>,
 ) -> String {
     // Generate plain text prompt that will be colored by highlight_prompt
@@ -98,11 +108,10 @@ pub fn generate_prompt(
 
     let percentage_part = usage_percentage.map(|p| format!("{p:.0}% ")).unwrap_or_default();
 
-    if tangent_mode {
-        format!("{profile_part}{percentage_part}↯ {warning_symbol}> ")
-    } else {
-        format!("{profile_part}{percentage_part}{warning_symbol}> ")
-    }
+    let code_intel_symbol = if code_intelligence { "λ " } else { "" };
+    let tangent_symbol = if tangent_mode { "↯ " } else { "" };
+
+    format!("{profile_part}{percentage_part}{code_intel_symbol}{tangent_symbol}{warning_symbol}> ")
 }
 
 #[cfg(test)]
@@ -112,43 +121,46 @@ mod tests {
     #[test]
     fn test_generate_prompt() {
         // Test default prompt (no profile)
-        assert_eq!(generate_prompt(None, false, false, None), "> ");
+        assert_eq!(generate_prompt(None, false, false, false, None), "> ");
         // Test default prompt with warning
-        assert_eq!(generate_prompt(None, true, false, None), "!> ");
+        assert_eq!(generate_prompt(None, true, false, false, None), "!> ");
         // Test tangent mode
-        assert_eq!(generate_prompt(None, false, true, None), "↯ > ");
+        assert_eq!(generate_prompt(None, false, true, false, None), "↯ > ");
         // Test tangent mode with warning
-        assert_eq!(generate_prompt(None, true, true, None), "↯ !> ");
+        assert_eq!(generate_prompt(None, true, true, false, None), "↯ !> ");
         // Test default profile (should be same as no profile)
-        assert_eq!(generate_prompt(Some(DEFAULT_AGENT_NAME), false, false, None), "> ");
+        assert_eq!(
+            generate_prompt(Some(DEFAULT_AGENT_NAME), false, false, false, None),
+            "> "
+        );
         // Test custom profile
         assert_eq!(
-            generate_prompt(Some("test-profile"), false, false, None),
+            generate_prompt(Some("test-profile"), false, false, false, None),
             "[test-profile] > "
         );
         // Test custom profile with tangent mode
         assert_eq!(
-            generate_prompt(Some("test-profile"), false, true, None),
+            generate_prompt(Some("test-profile"), false, true, false, None),
             "[test-profile] ↯ > "
         );
         // Test another custom profile with warning
-        assert_eq!(generate_prompt(Some("dev"), true, false, None), "[dev] !> ");
+        assert_eq!(generate_prompt(Some("dev"), true, false, false, None), "[dev] !> ");
         // Test custom profile with warning and tangent mode
-        assert_eq!(generate_prompt(Some("dev"), true, true, None), "[dev] ↯ !> ");
+        assert_eq!(generate_prompt(Some("dev"), true, true, false, None), "[dev] ↯ !> ");
         // Test custom profile with usage percentage
         assert_eq!(
-            generate_prompt(Some("rust-agent"), false, false, Some(6.2)),
+            generate_prompt(Some("rust-agent"), false, false, false, Some(6.2)),
             "[rust-agent] 6% > "
         );
         // Test custom profile with usage percentage and warning
         assert_eq!(
-            generate_prompt(Some("rust-agent"), true, false, Some(15.7)),
+            generate_prompt(Some("rust-agent"), true, false, false, Some(15.7)),
             "[rust-agent] 16% !> "
         );
         // Test usage percentage without profile
-        assert_eq!(generate_prompt(None, false, false, Some(25.3)), "25% > ");
+        assert_eq!(generate_prompt(None, false, false, false, Some(25.3)), "25% > ");
         // Test usage percentage with tangent mode
-        assert_eq!(generate_prompt(None, false, true, Some(8.9)), "9% ↯ > ");
+        assert_eq!(generate_prompt(None, false, true, false, Some(8.9)), "9% ↯ > ");
     }
 
     #[test]

@@ -17,7 +17,15 @@ pub struct LanguageConfig {
     pub file_extensions: Vec<String>,
     pub project_patterns: Vec<String>,
     pub exclude_patterns: Vec<String>,
+    #[serde(default)]
+    pub multi_workspace: bool,
     pub initialization_options: Option<Value>,
+    #[serde(default = "default_timeout")]
+    pub request_timeout_secs: Option<u64>,
+}
+
+fn default_timeout() -> Option<u64> {
+    Some(60)
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -44,6 +52,19 @@ impl LanguagesConfig {
             let config_json = serde_json::to_string_pretty(&default_config)?;
             std::fs::write(&config_path, config_json)?;
             Ok(default_config)
+        }
+    }
+
+    /// Load configuration if it exists, otherwise return default without creating file
+    pub fn load_if_exists(config_root: &std::path::Path) -> Result<Self> {
+        let config_path = config_root.join("lsp.json");
+
+        if config_path.exists() {
+            let content = std::fs::read_to_string(&config_path)?;
+            Ok(serde_json::from_str(&content)?)
+        } else {
+            // Return default config without creating file
+            Ok(Self::default_config())
         }
     }
 
@@ -93,26 +114,34 @@ impl LanguagesConfig {
             .ok_or_else(|| format!("Language '{language}' not supported"))?;
 
         Ok(LanguageServerConfig {
+            language: language.to_string(),
             name: config.name.clone(),
             command: config.command.clone(),
             args: config.args.clone(),
             file_extensions: config.file_extensions.clone(),
+            project_patterns: config.project_patterns.clone(),
             exclude_patterns: config.exclude_patterns.clone(),
+            multi_workspace: config.multi_workspace,
             initialization_options: config.initialization_options.clone(),
+            request_timeout_secs: config.request_timeout_secs.unwrap_or(60),
         })
     }
 
     /// Get all language server configs
     pub fn all_configs(&self) -> Vec<LanguageServerConfig> {
         self.languages
-            .values()
-            .map(|config| LanguageServerConfig {
+            .iter()
+            .map(|(language, config)| LanguageServerConfig {
+                language: language.clone(),
                 name: config.name.clone(),
                 command: config.command.clone(),
                 args: config.args.clone(),
                 file_extensions: config.file_extensions.clone(),
+                project_patterns: config.project_patterns.clone(),
                 exclude_patterns: config.exclude_patterns.clone(),
+                multi_workspace: config.multi_workspace,
                 initialization_options: config.initialization_options.clone(),
+                request_timeout_secs: config.request_timeout_secs.unwrap_or(60),
             })
             .collect()
     }
@@ -166,12 +195,12 @@ impl LanguagesConfig {
                     }
                 },
                 "python": {
-                    "name": "pylsp",
-                    "command": "pylsp",
-                    "args": [],
+                    "name": "pyright",
+                    "command": "pyright-langserver",
+                    "args": ["--stdio"],
                     "file_extensions": ["py"],
-                    "project_patterns": ["pyproject.toml", "setup.py", "requirements.txt"],
-                    "exclude_patterns": ["**/__pycache__/**", "**/venv/**", "**/.venv/**"],
+                    "project_patterns": ["pyproject.toml", "setup.py", "requirements.txt", "pyrightconfig.json"],
+                    "exclude_patterns": ["**/__pycache__/**", "**/venv/**", "**/.venv/**", "**/.pytest_cache/**"],
                     "initialization_options": {}
                 },
                 "java": {
@@ -181,7 +210,22 @@ impl LanguagesConfig {
                     "file_extensions": ["java"],
                     "project_patterns": ["pom.xml", "build.gradle", "build.gradle.kts", ".project"],
                     "exclude_patterns": ["**/target/**", "**/build/**", "**/.gradle/**"],
-                    "initialization_options": {}
+                    "initialization_options": {
+                        "settings": {
+                            "java": {
+                                "compile": {
+                                    "nullAnalysis": {
+                                        "mode": "automatic"
+                                    }
+                                },
+                                "configuration": {
+                                    "annotationProcessing": {
+                                        "enabled": true
+                                    }
+                                }
+                            }
+                        }
+                    }
                 },
                 "go": {
                     "name": "gopls",

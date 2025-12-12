@@ -30,6 +30,19 @@ use crate::types::LanguageServerConfig;
 
 type ResponseCallback = Box<dyn FnOnce(Result<Value>) + Send>;
 
+/// Status of an LSP server
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LspStatus {
+    /// Server process started, awaiting initialization
+    Registered,
+    /// Initialize request sent, waiting for response
+    Initializing,
+    /// Successfully initialized and ready
+    Initialized,
+    /// Initialization failed with error message
+    Failed(String),
+}
+
 /// Language Server Protocol client for communicating with language servers
 ///
 /// Provides a high-level interface for LSP operations including:
@@ -38,13 +51,22 @@ type ResponseCallback = Box<dyn FnOnce(Result<Value>) + Send>;
 /// - Document lifecycle management
 /// - Diagnostic notifications (push model)
 pub struct LspClient {
-    stdin: Arc<Mutex<tokio::process::ChildStdin>>,
-    pending_requests: Arc<Mutex<HashMap<u64, ResponseCallback>>>,
+    pub(crate) stdin: Arc<Mutex<tokio::process::ChildStdin>>,
+    pub(crate) pending_requests: Arc<Mutex<HashMap<String, ResponseCallback>>>,
     diagnostic_sender: broadcast::Sender<DiagnosticEvent>,
-    next_id: Arc<Mutex<u64>>,
-    config: LanguageServerConfig,
-    init_result: Arc<Mutex<Option<InitializeResult>>>,
-    child: Arc<Mutex<Option<tokio::process::Child>>>,
+    pub(crate) next_id: Arc<Mutex<u64>>,
+    pub(crate) config: LanguageServerConfig,
+    pub(crate) status: Arc<Mutex<LspStatus>>,
+    pub(crate) init_result: Arc<Mutex<Option<InitializeResult>>>,
+    pub(crate) child: Arc<Mutex<Option<tokio::process::Child>>>,
+    /// Captures the last error from stderr for better error messages
+    pub(crate) last_stderr_error: Arc<Mutex<Option<String>>>,
+    /// Timestamp when client was created
+    pub(crate) init_start: std::time::Instant,
+    /// Duration of initialization (set when completed)
+    pub(crate) init_duration: Arc<Mutex<Option<std::time::Duration>>>,
+    /// Whether server supports pull diagnostics (textDocument/diagnostic)
+    pub(crate) supports_pull_diagnostics: Arc<Mutex<bool>>,
 }
 
 impl LspClient {
@@ -52,17 +74,25 @@ impl LspClient {
     ///
     /// # Arguments
     /// * `config` - Language server configuration including command and args
+    /// * `workspace_root` - Root directory for the workspace (sets CWD for LSP process)
     ///
     /// # Returns
     /// * `Result<Self>` - New LSP client instance or error if server fails to start
-    pub async fn new(config: LanguageServerConfig) -> Result<Self> {
+    pub async fn new(config: LanguageServerConfig, workspace_root: &std::path::Path) -> Result<Self> {
         #[cfg(unix)]
         #[allow(unused_imports)]
         use std::os::unix::process::CommandExt;
 
+        tracing::info!(
+            "Spawning LSP server '{}' with CWD: {}",
+            config.name,
+            workspace_root.display()
+        );
+
         let mut command = Command::new(&config.command);
         command
             .args(&config.args)
+            .current_dir(workspace_root)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -73,27 +103,42 @@ impl LspClient {
 
         let mut child = command
             .spawn()
-            .map_err(|e| anyhow::anyhow!("Failed to start {}: {}", config.name, e))?;
+            .map_err(|e| crate::error::CodeIntelligenceError::init_failed(&config.name, &e.to_string()))?;
 
-        let stdin = child.stdin.take().ok_or_else(|| anyhow::anyhow!("No stdin"))?;
-        let stdout = child.stdout.take().ok_or_else(|| anyhow::anyhow!("No stdout"))?;
-        let stderr = child.stderr.take().ok_or_else(|| anyhow::anyhow!("No stderr"))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| crate::error::CodeIntelligenceError::init_failed(&config.name, "Failed to capture stdin"))?;
+        let stdout = child.stdout.take().ok_or_else(|| {
+            crate::error::CodeIntelligenceError::init_failed(&config.name, "Failed to capture stdout")
+        })?;
+        let stderr = child.stderr.take().ok_or_else(|| {
+            crate::error::CodeIntelligenceError::init_failed(&config.name, "Failed to capture stderr")
+        })?;
 
         // Create broadcast channel for diagnostics (capacity of 100 events)
         let (diagnostic_sender, _) = broadcast::channel(100);
+
+        let last_stderr_error = Arc::new(Mutex::new(None));
 
         let client = Self {
             stdin: Arc::new(Mutex::new(stdin)),
             pending_requests: Arc::new(Mutex::new(HashMap::new())),
             diagnostic_sender,
-            next_id: Arc::new(Mutex::new(1)),
+            next_id: Arc::new(Mutex::new(1_000_000)),
             config: config.clone(),
+            status: Arc::new(Mutex::new(LspStatus::Registered)),
             init_result: Arc::new(Mutex::new(None)),
             child: Arc::new(Mutex::new(Some(child))),
+            last_stderr_error: last_stderr_error.clone(),
+            init_start: std::time::Instant::now(),
+            init_duration: Arc::new(Mutex::new(None)),
+            supports_pull_diagnostics: Arc::new(Mutex::new(false)),
         };
 
-        // Start stderr monitoring
+        // Start stderr monitoring - LSPs often write info/debug to stderr
         let server_name = config.name.clone();
+        let stderr_capture = last_stderr_error;
         tokio::spawn(async move {
             let mut reader = BufReader::new(stderr);
             let mut line = String::new();
@@ -101,7 +146,13 @@ impl LspClient {
                 if n == 0 {
                     break;
                 }
-                tracing::error!("LSP {} stderr: {}", server_name, line.trim());
+                let trimmed = line.trim();
+                // Always log stderr output since LSPs write important info there
+                tracing::error!("LSP {server_name} stderr: {trimmed}");
+                // Capture error messages for better error reporting
+                if trimmed.contains("error:") || trimmed.contains("Error:") {
+                    *stderr_capture.lock().await = Some(trimmed.to_string());
+                }
                 line.clear();
             }
         });
@@ -118,32 +169,127 @@ impl LspClient {
     /// # Returns
     /// * `Result<InitializeResult>` - Server capabilities or initialization error
     pub async fn initialize(&self, root_uri: Url) -> Result<InitializeResult> {
-        tracing::debug!("Initializing LSP client for workspace: {}", root_uri);
+        // Set status to Initializing
+        *self.status.lock().await = LspStatus::Initializing;
+
+        tracing::info!("Initializing LSP client for workspace: {}", root_uri);
+
+        // Log the LSP server configuration
+        tracing::info!("LSP Server Configuration:");
+        tracing::info!("  Name: {}", self.config.name);
+        tracing::info!("  Command: {}", self.config.command);
+        tracing::info!("  Args: {:?}", self.config.args);
+        tracing::info!("  File extensions: {:?}", self.config.file_extensions);
+        if let Some(ref init_opts) = self.config.initialization_options {
+            tracing::info!(
+                "  Initialization Options: {}",
+                serde_json::to_string_pretty(init_opts).unwrap_or_else(|_| "Failed to serialize".to_string())
+            );
+        } else {
+            tracing::info!("  Initialization Options: None");
+        }
 
         let (tx, rx) = oneshot::channel();
 
         let init_params = crate::lsp::LspConfig::build_initialize_params(
             root_uri.clone(),
+            Some(&self.config),
             self.config.initialization_options.clone(),
         );
 
-        tracing::debug!("Sending initialize request to LSP server: {}", self.config.name);
+        // Log the initialization parameters being sent
+        tracing::info!(
+            "Initialize params workspace_folders: {:?}",
+            init_params.workspace_folders
+        );
+        tracing::info!(
+            "Initialize params initialization_options: {:?}",
+            init_params.initialization_options
+        );
+        tracing::info!(
+            "Initialize params (full): {}",
+            serde_json::to_string_pretty(&init_params).unwrap_or_else(|_| "Failed to serialize".to_string())
+        );
 
-        self.send_request("initialize", json!(init_params), move |result| {
-            let _ = tx.send(result);
-        })
-        .await?;
+        tracing::info!("Sending initialize request to LSP server: {}", self.config.name);
 
-        let result = rx.await??;
-        let init_result: InitializeResult = serde_json::from_value(result)?;
+        if let Err(e) = self
+            .send_request("initialize", json!(init_params), move |result| {
+                let _ = tx.send(result);
+            })
+            .await
+        {
+            let err_msg = e.to_string();
+            *self.status.lock().await = LspStatus::Failed(err_msg.clone());
+            return Err(e);
+        }
 
-        // Store the initialization result
+        let result = match rx.await {
+            Ok(Ok(v)) => v,
+            Ok(Err(e)) => {
+                let err_str = e.to_string();
+                let err = if err_str.contains("Broken pipe") || err_str.contains("os error 32") {
+                    crate::error::CodeIntelligenceError::connection_closed(
+                        &self.config.name,
+                        "Server process terminated during initialization",
+                    )
+                } else {
+                    crate::error::CodeIntelligenceError::init_failed(&self.config.name, &err_str)
+                };
+                *self.status.lock().await = LspStatus::Failed(err.to_string());
+                return Err(err.into());
+            },
+            Err(_) => {
+                let err = crate::error::CodeIntelligenceError::connection_closed(
+                    &self.config.name,
+                    "Response channel closed during initialization",
+                );
+                *self.status.lock().await = LspStatus::Failed(err.to_string());
+                return Err(err.into());
+            },
+        };
+
+        let init_result: InitializeResult = match serde_json::from_value(result) {
+            Ok(r) => r,
+            Err(e) => {
+                let err_msg = format!("Failed to parse initialize response: {e}");
+                *self.status.lock().await = LspStatus::Failed(err_msg.clone());
+                return Err(anyhow::anyhow!(err_msg));
+            },
+        };
+
+        // Log the server capabilities returned
+        tracing::info!("LSP Server Capabilities for {}:", self.config.name);
+        if let Some(ref server_info) = init_result.server_info {
+            tracing::info!(
+                "  Server Info: {} {}",
+                server_info.name,
+                server_info.version.as_ref().unwrap_or(&"unknown".to_string())
+            );
+        }
+        tracing::info!(
+            "  Capabilities: {}",
+            serde_json::to_string_pretty(&init_result.capabilities)
+                .unwrap_or_else(|_| "Failed to serialize".to_string())
+        );
+
+        // Store the initialization result and update status
         *self.init_result.lock().await = Some(init_result.clone());
+        *self.status.lock().await = LspStatus::Initialized;
+        *self.init_duration.lock().await = Some(self.init_start.elapsed());
 
-        tracing::debug!("Sending initialized notification to LSP server: {}", self.config.name);
+        tracing::info!("Sending initialized notification to LSP server: {}", self.config.name);
         self.send_notification("initialized", json!({})).await?;
 
-        tracing::debug!("LSP client initialization completed for: {}", self.config.name);
+        // Send didChangeConfiguration to kick Pyright (fixes 1.1.407 hang)
+        tracing::debug!(
+            "Sending workspace/didChangeConfiguration to LSP server: {}",
+            self.config.name
+        );
+        self.send_notification("workspace/didChangeConfiguration", json!({"settings": {}}))
+            .await?;
+
+        tracing::info!("LSP client initialization completed for: {}", self.config.name);
         Ok(init_result)
     }
 
@@ -162,6 +308,27 @@ impl LspClient {
             .await
             .as_ref()
             .map(|result| result.capabilities.clone())
+    }
+
+    /// Check if the LSP server has been successfully initialized
+    pub fn is_initialized(&self) -> bool {
+        self.status
+            .try_lock()
+            .map(|g| *g == LspStatus::Initialized)
+            .unwrap_or(false)
+    }
+
+    /// Check if server supports pull diagnostics (textDocument/diagnostic)
+    pub fn supports_pull_diagnostics(&self) -> bool {
+        self.supports_pull_diagnostics.try_lock().map(|g| *g).unwrap_or(false)
+    }
+
+    /// Get the current status of the LSP server
+    pub fn status(&self) -> LspStatus {
+        self.status
+            .try_lock()
+            .map(|g| g.clone())
+            .unwrap_or(LspStatus::Registered)
     }
 
     /// Navigate to symbol definition
@@ -208,6 +375,20 @@ impl LspClient {
         self.send_lsp_request("textDocument/documentSymbol", params).await
     }
 
+    /// Pull diagnostics for a document (LSP 3.17+)
+    ///
+    /// # Arguments
+    /// * `params` - Document identifier and optional previous result ID
+    ///
+    /// # Returns
+    /// * `Result<Option<DocumentDiagnosticReport>>` - Diagnostic report or None
+    pub async fn document_diagnostics(
+        &self,
+        params: DocumentDiagnosticParams,
+    ) -> Result<Option<DocumentDiagnosticReport>> {
+        self.send_lsp_request("textDocument/diagnostic", params).await
+    }
+
     /// Rename a symbol across the workspace
     ///
     /// # Arguments
@@ -233,11 +414,34 @@ impl LspClient {
         self.send_lsp_request("textDocument/formatting", params).await
     }
 
+    /// Send hover request to get information at a specific position
+    ///
+    /// # Arguments
+    /// * `params` - Hover request parameters (document URI and position)
+    ///
+    /// # Returns
+    /// * `Result<Option<Hover>>` - Hover information or None
+    pub async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        self.send_lsp_request("textDocument/hover", params).await
+    }
+
+    /// Send completion request to get code suggestions at a specific position
+    ///
+    /// # Arguments
+    /// * `params` - Completion request parameters (document URI and position)
+    ///
+    /// # Returns
+    /// * `Result<Option<CompletionResponse>>` - Completion suggestions or None
+    pub async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.send_lsp_request("textDocument/completion", params).await
+    }
+
     /// Notify server that a document was opened
     ///
     /// # Arguments
     /// * `params` - Document URI, language ID, version, and content
     pub async fn did_open(&self, params: DidOpenTextDocumentParams) -> Result<()> {
+        tracing::debug!("Sending didOpen for: {}", params.text_document.uri);
         self.send_notification("textDocument/didOpen", json!(params)).await
     }
 
@@ -306,19 +510,48 @@ impl LspClient {
             tracing::trace!("LSP request callback received result: {:?}", result);
             let _ = tx.send(result);
         })
-        .await
-        .map_err(|e| {
-            if e.to_string().contains("Broken pipe") || e.to_string().contains("os error 32") {
-                anyhow::anyhow!("LSP connection closed. The language server is not available or has crashed. Check code_intelligence.log for details")
-            } else {
-                e
-            }
-        })?;
+        .await?;
 
         tracing::trace!("Waiting for LSP response...");
-        let result = rx.await.map_err(|_| {
-            anyhow::anyhow!("LSP connection closed. The language server is not available or has crashed. Check code_intelligence.log for details")
-        })??;
+        let timeout_duration = std::time::Duration::from_secs(self.config.request_timeout_secs);
+        let result = tokio::time::timeout(timeout_duration, rx)
+            .await
+            .map_err(|_| {
+                tracing::error!(
+                    "LSP {} request timed out after {}s for method: {}",
+                    self.config.name,
+                    self.config.request_timeout_secs,
+                    method
+                );
+                crate::error::CodeIntelligenceError::LspError {
+                    server_name: self.config.name.clone(),
+                    code: None,
+                    message: format!(
+                        "Request timed out after {}s: {}",
+                        self.config.request_timeout_secs, method
+                    ),
+                }
+            })?
+            .map_err(|_| {
+                tracing::error!("LSP {} response channel closed unexpectedly", self.config.name);
+                crate::error::CodeIntelligenceError::connection_closed(&self.config.name, "Response channel closed")
+            })?
+            .map_err(|e| {
+                let err_str = e.to_string();
+                if err_str.contains("Broken pipe") || err_str.contains("os error 32") {
+                    let stderr_err = self.last_stderr_error.try_lock().ok().and_then(|g| g.clone());
+                    let reason = stderr_err.unwrap_or_else(|| "Server process terminated unexpectedly".to_string());
+                    tracing::error!("LSP {} connection lost: {}", self.config.name, reason);
+                    crate::error::CodeIntelligenceError::connection_closed(&self.config.name, &reason)
+                } else {
+                    tracing::error!("LSP {} error: {}", self.config.name, err_str);
+                    crate::error::CodeIntelligenceError::LspError {
+                        server_name: self.config.name.clone(),
+                        code: None,
+                        message: err_str,
+                    }
+                }
+            })?;
         tracing::trace!("Raw LSP response: {:?}", result);
 
         if result.is_null() {
@@ -336,11 +569,20 @@ impl LspClient {
         let pending_requests = self.pending_requests.clone();
         let diagnostic_sender = self.diagnostic_sender.clone();
         let stdin = self.stdin.clone();
+        let supports_pull_diagnostics = self.supports_pull_diagnostics.clone();
         tokio::spawn(async move {
             let mut reader = BufReader::new(stdout);
 
             while let Ok(content) = read_lsp_message(&mut reader).await {
-                if let Err(e) = Self::process_message(&content, &pending_requests, &diagnostic_sender, &stdin).await {
+                if let Err(e) = Self::process_message(
+                    &content,
+                    &pending_requests,
+                    &diagnostic_sender,
+                    &stdin,
+                    &supports_pull_diagnostics,
+                )
+                .await
+                {
                     error!("Failed to process LSP message: {}", e);
                 }
             }
@@ -348,12 +590,53 @@ impl LspClient {
         });
     }
 
+    /// Convert JSON-RPC ID to string key (supports both string and number IDs)
+    fn id_to_key(id: &serde_json::Value) -> Option<String> {
+        if let Some(s) = id.as_str() {
+            Some(s.to_string())
+        } else {
+            id.as_u64()
+                .or_else(|| id.as_i64().map(|n| n as u64))
+                .map(|n| n.to_string())
+        }
+    }
+
+    /// Send JSON-RPC response to server
+    async fn send_response(
+        stdin: &Arc<Mutex<tokio::process::ChildStdin>>,
+        id: &serde_json::Value,
+        result: serde_json::Value,
+    ) -> Result<()> {
+        let resp = json!({ "jsonrpc": "2.0", "id": id, "result": result });
+        let content = serde_json::to_string(&resp)?;
+        let mut g = stdin.lock().await;
+        write_lsp_message(&mut *g, &content).await
+    }
+
+    /// Send JSON-RPC error response to server
+    async fn send_error_response(
+        stdin: &Arc<Mutex<tokio::process::ChildStdin>>,
+        id: &serde_json::Value,
+        code: i32,
+        message: String,
+    ) -> Result<()> {
+        let resp = json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": { "code": code, "message": message }
+        });
+        let content = serde_json::to_string(&resp)?;
+        let mut g = stdin.lock().await;
+        write_lsp_message(&mut *g, &content).await
+    }
+
     /// Process a single LSP message and handle response callbacks
     async fn process_message(
         content: &str,
-        pending_requests: &Arc<Mutex<HashMap<u64, ResponseCallback>>>,
+        pending_requests: &Arc<Mutex<HashMap<String, ResponseCallback>>>,
         diagnostic_sender: &broadcast::Sender<DiagnosticEvent>,
         stdin: &Arc<Mutex<tokio::process::ChildStdin>>,
+        supports_pull_diagnostics: &Arc<Mutex<bool>>,
     ) -> Result<()> {
         let message = parse_lsp_message(content)?;
 
@@ -395,6 +678,30 @@ impl LspClient {
                         }
                     }
                 },
+                "window/logMessage" => {
+                    if let Some(params) = message.params {
+                        match serde_json::from_value::<LogMessageParams>(params) {
+                            Ok(p) => {
+                                tracing::info!("LSP logMessage [{:?}]: {}", p.typ, p.message);
+                            },
+                            Err(e) => {
+                                tracing::warn!("Failed to parse window/logMessage params: {}", e);
+                            },
+                        }
+                    }
+                },
+                "window/showMessage" => {
+                    if let Some(params) = message.params {
+                        match serde_json::from_value::<ShowMessageParams>(params) {
+                            Ok(p) => {
+                                tracing::info!("LSP showMessage [{:?}]: {}", p.typ, p.message);
+                            },
+                            Err(e) => {
+                                tracing::warn!("Failed to parse window/showMessage params: {}", e);
+                            },
+                        }
+                    }
+                },
                 _ => {
                     // Other notifications - just log for now
                     debug!("Received LSP notification: {}", message.method);
@@ -403,43 +710,99 @@ impl LspClient {
             return Ok(());
         }
 
-        // Handle requests from server to client (with ID)
-        let Some(id) = message.id.clone().and_then(|id| id.as_u64()) else {
-            return Ok(()); // Invalid ID
+        // Handle messages with ID (requests from server or responses to our requests)
+        let Some(id_value) = message.id.clone() else {
+            return Ok(());
         };
 
-        // Check if this is a server-to-client request (not a response to our request)
-        // TODO: Handle this requests more gracefully.
-        if !pending_requests.lock().await.contains_key(&id) {
-            // Handle server-to-client requests
+        let Some(id_key) = Self::id_to_key(&id_value) else {
+            tracing::warn!("Invalid ID type in message: {:?}", id_value);
+            return Ok(());
+        };
+
+        // Determine if this is a server→client request or a response to our request
+        // If method is present and non-empty, it's a request from server
+        if !message.method.is_empty() {
+            // Server→client request - must respond
             match message.method.as_str() {
-                "client/registerCapability" | "client/unregisterCapability" | "workspace/configuration" => {
-                    debug!("Responding to server request: {}", message.method);
-                    // Send empty success response
-                    let response = json!({
-                        "jsonrpc": "2.0",
-                        "id": message.id,
-                        "result": null
-                    });
-                    let content = serde_json::to_string(&response)?;
-                    let mut stdin_guard = stdin.lock().await;
-                    write_lsp_message(&mut *stdin_guard, &content).await?;
-                    debug!("Server request acknowledged: {}", message.method);
+                "client/registerCapability" => {
+                    tracing::info!(
+                        "LSP server registering capabilities: {}",
+                        serde_json::to_string_pretty(&message.params)
+                            .unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
+                    Self::send_response(stdin, &id_value, json!(null)).await?;
+                    tracing::info!("Capability registration acknowledged");
+                },
+                "client/unregisterCapability" => {
+                    tracing::info!(
+                        "LSP server unregistering capabilities: {}",
+                        serde_json::to_string_pretty(&message.params)
+                            .unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
+                    Self::send_response(stdin, &id_value, json!(null)).await?;
+                    tracing::info!("Capability unregistration acknowledged");
+                },
+                "workspace/configuration" => {
+                    tracing::info!(
+                        "LSP server requesting workspace configuration: {}",
+                        serde_json::to_string_pretty(&message.params)
+                            .unwrap_or_else(|_| "Failed to serialize".to_string())
+                    );
+                    // Parse params to get number of items requested
+                    let num_items = message
+                        .params
+                        .as_ref()
+                        .and_then(|p| p.get("items"))
+                        .and_then(|items| items.as_array())
+                        .map(|arr| arr.len())
+                        .unwrap_or(0);
+                    // Return null for each item (no custom settings)
+                    let result: Vec<serde_json::Value> = vec![json!(null); num_items];
+                    Self::send_response(stdin, &id_value, json!(result)).await?;
+                    tracing::info!("Workspace configuration request acknowledged");
+                },
+                "window/workDoneProgress/create" => {
+                    tracing::debug!("LSP server creating work done progress");
+                    Self::send_response(stdin, &id_value, json!(null)).await?;
+                },
+                "workspace/workspaceFolders" => {
+                    tracing::debug!("LSP server requesting workspace folders");
+                    // Return null or empty array - workspace folders are set during initialization
+                    Self::send_response(stdin, &id_value, json!(null)).await?;
+                },
+                "workspace/diagnostic/refresh" => {
+                    tracing::debug!("LSP server requesting diagnostic refresh - enabling pull diagnostics");
+                    // Set flag to indicate server supports pull diagnostics
+                    *supports_pull_diagnostics.lock().await = true;
+                    // Acknowledge immediately
+                    Self::send_response(stdin, &id_value, json!(null)).await?;
                 },
                 _ => {
-                    debug!("Unhandled server request: {}", message.method);
+                    tracing::debug!(
+                        "Unhandled server request: {} - responding with method not found",
+                        message.method
+                    );
+                    Self::send_error_response(
+                        stdin,
+                        &id_value,
+                        -32601,
+                        format!("Method not found: {}", message.method),
+                    )
+                    .await?;
                 },
             }
             return Ok(());
         }
 
-        // Handle responses to our requests
-        let Some(callback) = pending_requests.lock().await.remove(&id) else {
-            return Ok(()); // No pending request for this ID
+        // Handle responses to our requests (no method field)
+        let Some(callback) = pending_requests.lock().await.remove(&id_key) else {
+            tracing::debug!("Received response for unknown request ID: {}", id_key);
+            return Ok(());
         };
 
         let result = match message.error {
-            Some(error) => Err(anyhow::anyhow!("LSP Error: {error}")),
+            Some(error) => Err(anyhow::anyhow!("LSP server error: {error}")),
             None => Ok(message.result.unwrap_or(Value::Null)),
         };
 
@@ -468,12 +831,31 @@ impl LspClient {
 
         {
             let mut pending = self.pending_requests.lock().await;
-            pending.insert(id, Box::new(callback));
+            pending.insert(id.to_string(), Box::new(callback));
         }
 
         let content = serde_json::to_string(&request)?;
         let mut stdin = self.stdin.lock().await;
-        write_lsp_message(&mut *stdin, &content).await?;
+        write_lsp_message(&mut *stdin, &content).await.map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("Broken pipe") || err_str.contains("os error 32") {
+                let stderr_err = self.last_stderr_error.try_lock().ok().and_then(|g| g.clone());
+                let reason = stderr_err.unwrap_or_else(|| "Server process terminated unexpectedly".to_string());
+                tracing::error!(
+                    "LSP {} connection lost while sending request: {}",
+                    self.config.name,
+                    reason
+                );
+                crate::error::CodeIntelligenceError::connection_closed(&self.config.name, &reason)
+            } else {
+                tracing::error!("LSP {} write error: {}", self.config.name, err_str);
+                crate::error::CodeIntelligenceError::LspError {
+                    server_name: self.config.name.clone(),
+                    code: None,
+                    message: err_str,
+                }
+            }
+        })?;
 
         Ok(())
     }
@@ -494,7 +876,7 @@ impl LspClient {
         // Apply edits with validation
         match crate::utils::apply_workspace_edit(workspace_edit) {
             Ok(()) => Ok(true),
-            Err(e) => Err(anyhow::anyhow!("Workspace edit failed: {e}")),
+            Err(e) => Err(anyhow::anyhow!("Failed to apply workspace edit: {e}")),
         }
     }
 
@@ -521,7 +903,26 @@ impl LspClient {
 
         let content = serde_json::to_string(&notification)?;
         let mut stdin = self.stdin.lock().await;
-        write_lsp_message(&mut *stdin, &content).await?;
+        write_lsp_message(&mut *stdin, &content).await.map_err(|e| {
+            let err_str = e.to_string();
+            if err_str.contains("Broken pipe") || err_str.contains("os error 32") {
+                let stderr_err = self.last_stderr_error.try_lock().ok().and_then(|g| g.clone());
+                let reason = stderr_err.unwrap_or_else(|| "Server process terminated unexpectedly".to_string());
+                tracing::error!(
+                    "LSP {} connection lost while sending notification: {}",
+                    self.config.name,
+                    reason
+                );
+                crate::error::CodeIntelligenceError::connection_closed(&self.config.name, &reason)
+            } else {
+                tracing::error!("LSP {} notification error: {}", self.config.name, err_str);
+                crate::error::CodeIntelligenceError::LspError {
+                    server_name: self.config.name.clone(),
+                    code: None,
+                    message: err_str,
+                }
+            }
+        })?;
 
         Ok(())
     }

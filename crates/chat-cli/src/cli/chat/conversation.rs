@@ -4,6 +4,7 @@ use std::collections::{
     VecDeque,
 };
 use std::io::Write;
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use chrono::Local;
@@ -22,6 +23,7 @@ use serde::{
     Deserialize,
     Serialize,
 };
+use tokio::sync::RwLock;
 use tracing::{
     debug,
     warn,
@@ -34,6 +36,11 @@ use super::consts::{
     DUMMY_TOOL_NAME,
     MAX_CONVERSATION_STATE_HISTORY_LEN,
 };
+
+/// Maximum bytes for excluded messages after compaction
+/// Approximately 10,000 characters worth of content
+const MAX_EXCLUDED_MESSAGES_BYTES: usize = 12_000;
+
 use super::context::{
     ContextManager,
     calc_max_context_files_size,
@@ -254,7 +261,7 @@ pub struct ConversationState {
     pub user_turn_metadata: UserTurnMetadata,
     /// Code intelligence client for LSP-based code operations
     #[serde(skip)]
-    pub code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
+    pub code_intelligence_client: Option<Arc<RwLock<code_agent_sdk::CodeIntelligence>>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,7 +289,7 @@ impl ConversationState {
         current_model_id: Option<String>,
         os: &Os,
         mcp_enabled: bool,
-        code_intelligence_client: Option<code_agent_sdk::CodeIntelligence>,
+        code_intelligence_client: Option<Arc<RwLock<code_agent_sdk::CodeIntelligence>>>,
     ) -> Self {
         let model = if let Some(model_id) = current_model_id {
             match get_model_info(&model_id, os).await {
@@ -302,7 +309,7 @@ impl ConversationState {
             None
         };
 
-        Self {
+        let state = Self {
             conversation_id: conversation_id.to_string(),
             next_message: None,
             history: VecDeque::new(),
@@ -322,6 +329,45 @@ impl ConversationState {
             tangent_state: None,
             user_turn_metadata: UserTurnMetadata::new(),
             code_intelligence_client,
+        };
+
+        state.auto_initialize_code_intelligence().await;
+        state
+    }
+
+    /// Auto-initialize code intelligence if config exists and agent has code tool
+    pub async fn auto_initialize_code_intelligence(&self) {
+        use crate::cli::chat::tools::ToolMetadata;
+
+        // Check if code tool is in the agent's tools list
+        if !self.agents.has_tool(ToolMetadata::CODE.aliases) {
+            return;
+        }
+
+        if let Some(client) = &self.code_intelligence_client {
+            let mut guard = client.write().await;
+            if guard.should_auto_initialize() {
+                let _ = guard.initialize().await;
+            }
+        }
+    }
+
+    /// Handle code intelligence state after agent swap
+    pub async fn update_code_intelligence_for_agent(&self) {
+        use crate::cli::chat::tools::ToolMetadata;
+
+        if let Some(client) = &self.code_intelligence_client {
+            let mut guard = client.write().await;
+
+            if self.agents.has_tool(ToolMetadata::CODE.aliases) {
+                // Agent supports code tool - auto-initialize if needed
+                if guard.should_auto_initialize() {
+                    let _ = guard.initialize().await;
+                }
+            } else {
+                // Agent doesn't support code tool - reset to avoid unnecessary LSP servers
+                guard.reset_initialization().await;
+            }
         }
     }
 
@@ -923,7 +969,39 @@ impl ConversationState {
 
         self.history
             .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
+
+        // Truncate excluded messages to prevent context bloat
+        self.truncate_excluded_messages();
+
         self.latest_summary = Some((enhanced_summary, request_metadata));
+    }
+
+    /// Truncates excluded messages after compaction to prevent context bloat.
+    /// Latest pair gets 60% of budget, others get 40%.
+    /// Budget is allocated proportionally based on message sizes.
+    fn truncate_excluded_messages(&mut self) {
+        let len = self.history.len();
+        for (i, entry) in self.history.iter_mut().enumerate() {
+            // Latest pair gets 60%, others get 40%
+            let pair_limit = if i == len - 1 {
+                MAX_EXCLUDED_MESSAGES_BYTES * 6 / 10 // 7200 bytes
+            } else {
+                MAX_EXCLUDED_MESSAGES_BYTES * 4 / 10 // 4800 bytes
+            };
+
+            let user_size = entry.user.char_count().value();
+            let assistant_size = entry.assistant.char_count().value();
+            let total_size = user_size + assistant_size;
+
+            if total_size > pair_limit {
+                // Allocate proportionally based on current sizes
+                let user_budget = (pair_limit * user_size) / total_size;
+                let assistant_budget = pair_limit - user_budget;
+                entry.user.truncate_safe(user_budget);
+                entry.assistant.truncate_safe(assistant_budget);
+            }
+            // If under budget, no truncation needed
+        }
     }
 
     pub async fn create_agent_generation_request(
@@ -1169,6 +1247,9 @@ Return only the JSON configuration, no additional text."
             .swap_agent(os, output, agent)
             .await
             .map_err(ChatError::AgentSwapError)?;
+
+        // Update code intelligence state based on new agent's capabilities
+        self.update_code_intelligence_for_agent().await;
 
         self.update_state(true).await;
 

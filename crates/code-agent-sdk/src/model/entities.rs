@@ -164,6 +164,9 @@ pub struct SymbolInfo {
     pub detail: Option<String>,
     /// Source code line at the symbol location
     pub source_line: Option<String>,
+    /// Programming language (e.g., "rust", "typescript", "python")
+    #[serde(default)]
+    pub language: Option<String>,
 }
 
 impl SymbolInfo {
@@ -223,6 +226,7 @@ impl SymbolInfo {
                     container_name: symbol.container_name.clone(),
                     detail: None, // WorkspaceSymbol doesn't have detail field
                     source_line,
+                    language: None, // Set by caller based on LSP server
                 })
             },
             lsp_types::OneOf::Right(_) => None, // LocationLink not supported yet
@@ -365,6 +369,98 @@ impl ReferenceInfo {
             source_line,
         }
     }
+}
+
+/// Information about hover content at a specific location.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HoverInfo {
+    /// File path relative to workspace root
+    pub file_path: String,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+    /// Hover content (markdown or plain text)
+    pub content: Option<String>,
+}
+
+/// Information about code completion suggestions.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionInfo {
+    /// File path relative to workspace root
+    pub file_path: String,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+    /// List of completion items
+    pub items: Vec<CompletionItem>,
+    /// Total count before filtering/truncation
+    pub total_count: usize,
+}
+
+/// A single completion item.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CompletionItem {
+    /// The label of this completion item
+    pub label: String,
+    /// The kind of this completion item
+    pub kind: Option<String>,
+    /// A human-readable string with additional information
+    pub detail: Option<String>,
+    /// A human-readable string that represents a doc-comment
+    pub documentation: Option<String>,
+}
+
+impl CompletionInfo {
+    /// Filter completion items using fuzzy matching and return sorted by relevance
+    pub fn filter_fuzzy(&mut self, filter: &str) {
+        if filter.is_empty() {
+            return;
+        }
+
+        let filter_lower = filter.to_lowercase();
+        let mut scored_items: Vec<(f64, CompletionItem)> = self
+            .items
+            .drain(..)
+            .filter_map(|item| {
+                let score = calculate_completion_score(&filter_lower, &item.label.to_lowercase());
+                if score > 0.3 {
+                    // Minimum threshold
+                    Some((score, item))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        // Sort by score (higher is better)
+        scored_items.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Extract items back
+        self.items = scored_items.into_iter().map(|(_, item)| item).collect();
+    }
+}
+
+/// Calculate fuzzy match score for completion filtering
+fn calculate_completion_score(filter: &str, label: &str) -> f64 {
+    // Exact match
+    if filter == label {
+        return 1.0;
+    }
+
+    // Prefix match
+    if label.starts_with(filter) {
+        return 0.9;
+    }
+
+    // Contains match
+    if label.contains(filter) {
+        return 0.8;
+    }
+
+    // Fuzzy match using Jaro-Winkler
+    strsim::jaro_winkler(filter, label)
 }
 
 /// Severity level of a diagnostic message.

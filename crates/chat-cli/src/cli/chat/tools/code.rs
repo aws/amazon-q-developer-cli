@@ -21,6 +21,10 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::os::Os;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
+/// Maximum number of results to display before showing "(x more items found)"
+const MAX_VISIBLE_RESULTS: usize = 20;
 
 /// Code intelligence operations using LSP servers for symbol search, references, definitions, and
 /// workspace analysis.
@@ -35,6 +39,8 @@ pub enum Code {
     GetDocumentSymbols(GetDocumentSymbolsParams),
     LookupSymbols(LookupSymbolsParams),
     GetDiagnostics(GetDiagnosticsParams),
+    GetHover(GetHoverParams),
+    GetCompletions(GetCompletionsParams),
     InitializeWorkspace,
 }
 
@@ -55,6 +61,8 @@ pub struct SearchSymbolsParams {
     pub symbol_type: Option<String>,
     #[serde(default)]
     pub limit: Option<i32>,
+    #[serde(default)]
+    pub language: Option<String>,
     #[serde(default)]
     pub exact_match: Option<bool>,
 }
@@ -98,6 +106,8 @@ pub struct FormatCodeParams {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetDocumentSymbolsParams {
     pub file_path: String,
+    #[serde(default)]
+    pub top_level_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -116,25 +126,68 @@ pub struct GetDiagnosticsParams {
     pub previous_result_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetHoverParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetCompletionsParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    #[serde(default)]
+    pub trigger_character: Option<String>,
+    #[serde(default = "default_completion_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub symbol_type: Option<String>,
+}
+
 fn default_tab_size() -> i32 {
     4
 }
+
+fn default_completion_limit() -> usize {
+    50
+}
+
 fn default_insert_spaces() -> bool {
     true
 }
 
 impl Code {
-    /// Checks if the code intelligence feature is enabled
+    /// Checks if the code intelligence feature is enabled and configured
+    /// Returns true only if feature flag is on AND lsp.json exists
     #[allow(dead_code)]
     pub fn is_enabled(_os: &Os) -> bool {
-        crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED
+        if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
+            return false;
+        }
+        // Check if lsp.json exists (user has run /code init)
+        std::env::current_dir()
+            .map(|cwd| code_agent_sdk::ConfigManager::lsp_config_exists(&cwd))
+            .unwrap_or(false)
     }
 
-    pub fn eval_perm(_os: &Os, _agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(_os: &Os, agent: &Agent) -> PermissionEvalResult {
         if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
             return PermissionEvalResult::Deny(vec!["Code intelligence feature is not available".to_string()]);
         }
-        PermissionEvalResult::Allow
+
+        if Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None))
+        {
+            PermissionEvalResult::Allow
+        } else {
+            PermissionEvalResult::Ask
+        }
     }
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
@@ -196,6 +249,16 @@ impl Code {
                 Self::validate_file_exists(os, &params.file_path)?;
                 Ok(())
             },
+            Code::GetHover(params) => {
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
+                Ok(())
+            },
+            Code::GetCompletions(params) => {
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
+                Ok(())
+            },
             Code::InitializeWorkspace => Ok(()),
         }
     }
@@ -240,7 +303,7 @@ impl Code {
         &self,
         _os: &Os,
         _stdout: &mut impl Write,
-        code_intelligence_client: &mut Option<code_agent_sdk::sdk::client::CodeIntelligence>,
+        code_intelligence_client: &Option<std::sync::Arc<tokio::sync::RwLock<code_agent_sdk::CodeIntelligence>>>,
     ) -> Result<InvokeOutput> {
         tracing::info!("🔧 Invoking code tool operation: {:?}", self);
 
@@ -261,23 +324,65 @@ impl Code {
             ));
         }
 
-        if let Some(client) = code_intelligence_client {
+        if let Some(client_lock) = code_intelligence_client {
+            let mut client = client_lock.write().await;
+
+            // Check if lsp.json exists (user has run /code init)
+            let is_configured = client.is_code_intelligence_initialized();
+
+            // For all operations except InitializeWorkspace, require lsp.json to exist
+            if !matches!(self, Code::InitializeWorkspace) && !is_configured {
+                return Ok(InvokeOutput {
+                    output: OutputKind::Text(
+                        "Code intelligence not configured. Only manual '/code init' command can initialize code intelligence. Please run '/code init' first.".to_string()
+                    ),
+                });
+            }
+
+            // Auto-initialize if json exists but workspace not initialized yet
+            if is_configured && client.workspace_status() == code_agent_sdk::sdk::WorkspaceStatus::NotInitialized {
+                if let Err(e) = client.initialize().await {
+                    return Err(eyre::eyre!("Failed to initialize code intelligence: {e}"));
+                }
+            }
+
             // Check if workspace is initialized (except for InitializeWorkspace operation)
-            if !matches!(self, Code::InitializeWorkspace) && !client.is_initialized() {
-                return Err(eyre::eyre!(
-                    "Workspace is not initialized. Run '/code detect' to initialize the workspace."
-                ));
+            if !matches!(self, Code::InitializeWorkspace) {
+                match client.workspace_status() {
+                    code_agent_sdk::sdk::WorkspaceStatus::NotInitialized => {
+                        return Ok(InvokeOutput {
+                            output: OutputKind::Text(
+                                "Workspace initialization failed. Run '/code init' to retry.".to_string(),
+                            ),
+                        });
+                    },
+                    code_agent_sdk::sdk::WorkspaceStatus::Initializing => {
+                        return Ok(InvokeOutput {
+                            output: OutputKind::Text(
+                                "Workspace is still initializing. LSP servers are starting up. Please wait a moment and try again.".to_string()
+                            ),
+                        });
+                    },
+                    code_agent_sdk::sdk::WorkspaceStatus::Initialized => {
+                        // Good to proceed
+                    },
+                }
             }
 
             queue!(_stdout, style::Print("\n"))?;
             let mut spinner = Some(Spinner::new(Spinners::Dots, "Loading...".to_string()));
             match self {
                 Code::SearchSymbols(params) => {
+                    const MAX_RESULTS: u32 = 50;
+
+                    let limit = params.limit.map(|l| (l as u32).min(MAX_RESULTS)).or(Some(MAX_RESULTS));
+
                     let request = code_agent_sdk::model::types::FindSymbolsRequest {
                         symbol_name: params.symbol_name.clone(),
                         file_path: params.file_path.as_ref().map(std::path::PathBuf::from),
                         symbol_type: params.symbol_type.as_ref().and_then(|s| s.parse().ok()),
-                        limit: params.limit.map(|l| l as u32),
+                        limit,
+                        language: params.language.clone(),
                         exact_match: params.exact_match.unwrap_or(false),
                     };
 
@@ -379,9 +484,15 @@ impl Code {
                                 StyledText::secondary_fg(),
                                 style::Print(&format!("{}:{}", definition.start_row, definition.start_column)),
                                 StyledText::reset(),
-                                style::Print(&context),
-                                style::Print("\n"),
                             )?;
+                            if !context.is_empty() {
+                                queue!(
+                                    _stdout,
+                                    style::Print(": "),
+                                    style::Print(&context[2..]), // skip ": " prefix
+                                )?;
+                            }
+                            queue!(_stdout, style::Print("\n"))?;
 
                             result = format!("{definition:?}");
                         },
@@ -428,29 +539,37 @@ impl Code {
                             Self::stop_spinner(&mut spinner, _stdout)?;
                             let is_dry_run = params.dry_run.unwrap_or(false);
 
-                            queue!(_stdout, style::Print("\n"),)?;
+                            queue!(_stdout, style::Print("\n"))?;
 
                             if is_dry_run {
                                 queue!(
                                     _stdout,
                                     StyledText::warning_fg(),
-                                    style::Print("DRY RUN: "),
+                                    style::Print("Dry run: "),
                                     StyledText::reset(),
-                                    style::Print(&format!(
-                                        "Would rename {} occurrences in {} files\n",
-                                        rename_result.edit_count, rename_result.file_count
-                                    )),
+                                    style::Print("Would rename "),
+                                    StyledText::success_fg(),
+                                    style::Print(&format!("{}", rename_result.edit_count)),
+                                    StyledText::reset(),
+                                    style::Print(" occurrences in "),
+                                    StyledText::success_fg(),
+                                    style::Print(&format!("{}", rename_result.file_count)),
+                                    StyledText::reset(),
+                                    style::Print(" files\n"),
                                 )?;
                                 result = format!("{rename_result:?}");
                             } else {
                                 queue!(
                                     _stdout,
+                                    style::Print("Renamed "),
                                     StyledText::success_fg(),
-                                    style::Print(&format!(
-                                        "Renamed {} occurrences in {} files\n",
-                                        rename_result.edit_count, rename_result.file_count
-                                    )),
+                                    style::Print(&format!("{}", rename_result.edit_count)),
                                     StyledText::reset(),
+                                    style::Print(" occurrences in "),
+                                    StyledText::success_fg(),
+                                    style::Print(&format!("{}", rename_result.file_count)),
+                                    StyledText::reset(),
+                                    style::Print(" files\n"),
                                 )?;
                                 result = format!("{rename_result:?}");
                             }
@@ -513,6 +632,7 @@ impl Code {
                 Code::GetDocumentSymbols(params) => {
                     let request = code_agent_sdk::model::types::GetDocumentSymbolsRequest {
                         file_path: std::path::PathBuf::from(&params.file_path),
+                        top_level_only: params.top_level_only,
                     };
 
                     match client.get_document_symbols(request).await {
@@ -630,6 +750,239 @@ impl Code {
                         },
                     }
                 },
+                Code::GetHover(params) => {
+                    let request = code_agent_sdk::model::types::HoverRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                    };
+
+                    match client.hover(request).await {
+                        Ok(Some(hover_info)) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(_stdout, style::Print("\n"))?;
+
+                            // Display hover information
+                            if let Some(contents) = &hover_info.content {
+                                queue!(
+                                    _stdout,
+                                    StyledText::info_fg(),
+                                    style::Print("Hover Info: "),
+                                    StyledText::reset(),
+                                    style::Print(contents),
+                                    style::Print("\n"),
+                                )?;
+                            }
+
+                            result = format!("{hover_info:?}");
+                        },
+                        Ok(None) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(
+                                _stdout,
+                                style::Print("\nNo hover information available at "),
+                                StyledText::brand_fg(),
+                                style::Print(&params.file_path),
+                                StyledText::reset(),
+                                style::Print(":"),
+                                StyledText::secondary_fg(),
+                                style::Print(&format!("{}:{}", params.row, params.column)),
+                                StyledText::reset(),
+                                style::Print("\n"),
+                            )?;
+                            result = "No hover information available".to_string();
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let err_str = e.to_string().to_lowercase();
+                            let error_msg = if err_str.contains("position")
+                                || err_str.contains("line")
+                                || err_str.contains("column")
+                                || err_str.contains("range")
+                            {
+                                format!(
+                                    "Position error at line {}, column {}. Try adjusting the position.",
+                                    params.row, params.column
+                                )
+                            } else if e.to_string().contains("LSP server error") {
+                                format!(
+                                    "LSP server error: {}",
+                                    e.to_string().lines().next().unwrap_or("Unknown error")
+                                )
+                            } else {
+                                format!("Failed to get hover information: {e}")
+                            };
+
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Hover Error: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{error_msg}\n")),
+                            )?;
+                            result = error_msg;
+                        },
+                    }
+                },
+                Code::GetCompletions(params) => {
+                    let symbol_type = params
+                        .symbol_type
+                        .as_ref()
+                        .map(|k| k.parse::<code_agent_sdk::model::types::ApiSymbolKind>())
+                        .transpose()
+                        .map_err(|e| eyre::eyre!(e))?;
+                    let request = code_agent_sdk::model::types::CompletionRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                        trigger_character: params.trigger_character.clone(),
+                        filter: params.filter.clone(),
+                        symbol_type,
+                        limit: Some(params.limit),
+                    };
+
+                    match client.completion(request).await {
+                        Ok(Some(completion_info)) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let completions = &completion_info.items;
+
+                            if completions.is_empty() {
+                                let msg = if params.filter.is_some() {
+                                    format!(
+                                        "No completions found matching filter '{}'",
+                                        params.filter.as_ref().unwrap()
+                                    )
+                                } else {
+                                    "No completions available".to_string()
+                                };
+                                queue!(_stdout, style::Print(&format!("\n{msg}\n")))?;
+                                result = msg;
+                            } else {
+                                let total_count = completion_info.total_count;
+                                let remaining = total_count.saturating_sub(completions.len());
+
+                                queue!(
+                                    _stdout,
+                                    style::Print("\nFound "),
+                                    StyledText::brand_fg(),
+                                    style::Print(&total_count.to_string()),
+                                    StyledText::reset(),
+                                    style::Print(" completions"),
+                                )?;
+
+                                if params.symbol_type.is_some() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" of type '"),
+                                        StyledText::info_fg(),
+                                        style::Print(params.symbol_type.as_ref().unwrap()),
+                                        StyledText::reset(),
+                                        style::Print("'"),
+                                    )?;
+                                }
+
+                                if params.filter.is_some() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" matching '"),
+                                        StyledText::info_fg(),
+                                        style::Print(params.filter.as_ref().unwrap()),
+                                        StyledText::reset(),
+                                        style::Print("'"),
+                                    )?;
+                                }
+
+                                if remaining > 0 {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" (showing "),
+                                        style::Print(&completions.len().to_string()),
+                                        style::Print(")"),
+                                    )?;
+                                }
+
+                                queue!(_stdout, style::Print(":\n"))?;
+
+                                for (i, completion) in completions.iter().enumerate() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(&format!("  {}. ", i + 1)),
+                                        StyledText::brand_fg(),
+                                        style::Print(&completion.label),
+                                        StyledText::reset(),
+                                    )?;
+
+                                    if let Some(kind) = &completion.kind {
+                                        queue!(
+                                            _stdout,
+                                            style::Print(" ("),
+                                            StyledText::info_fg(),
+                                            style::Print(kind),
+                                            StyledText::reset(),
+                                            style::Print(")"),
+                                        )?;
+                                    }
+
+                                    if let Some(detail) = &completion.detail {
+                                        queue!(_stdout, style::Print(" - "), style::Print(detail),)?;
+                                    }
+
+                                    queue!(_stdout, style::Print("\n"))?;
+                                }
+
+                                if remaining > 0 {
+                                    queue!(
+                                        _stdout,
+                                        style::Print("  "),
+                                        StyledText::secondary_fg(),
+                                        style::Print(&format!("({remaining} more available)\n")),
+                                        StyledText::reset(),
+                                    )?;
+                                }
+
+                                result = format!("{completion_info:?}");
+                                if remaining > 0 {
+                                    result.push_str(&format!("\n\nNote: {remaining} more results available. Use filter or symbol_type parameters for more targeted results."));
+                                }
+                            }
+                        },
+                        Ok(None) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(_stdout, style::Print("\nNo completions available\n"),)?;
+                            result = "No completions available".to_string();
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let err_str = e.to_string().to_lowercase();
+                            let error_msg = if err_str.contains("position")
+                                || err_str.contains("line")
+                                || err_str.contains("column")
+                                || err_str.contains("range")
+                            {
+                                format!(
+                                    "Position error at line {}, column {}. Try adjusting the position.",
+                                    params.row, params.column
+                                )
+                            } else if e.to_string().contains("LSP server error") {
+                                format!(
+                                    "LSP server error: {}",
+                                    e.to_string().lines().next().unwrap_or("Unknown error")
+                                )
+                            } else {
+                                format!("Failed to get completions: {e}")
+                            };
+
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Completion Error: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{error_msg}\n")),
+                            )?;
+                            result = error_msg;
+                        },
+                    }
+                },
                 Code::InitializeWorkspace => match client.initialize().await {
                     Ok(init_response) => {
                         Self::stop_spinner(&mut spinner, _stdout)?;
@@ -666,7 +1019,10 @@ impl Code {
 
         use crate::theme::StyledText;
 
-        for (i, symbol) in symbols.iter().enumerate() {
+        let visible_count = symbols.len().min(MAX_VISIBLE_RESULTS);
+        let remaining = symbols.len().saturating_sub(MAX_VISIBLE_RESULTS);
+
+        for (i, symbol) in symbols.iter().take(visible_count).enumerate() {
             let symbol_type = symbol.symbol_type.as_deref().unwrap_or("symbol");
             queue!(
                 stdout,
@@ -688,6 +1044,17 @@ impl Code {
                 StyledText::reset(),
             )?;
         }
+
+        if remaining > 0 {
+            queue!(
+                stdout,
+                style::Print("  "),
+                StyledText::secondary_fg(),
+                style::Print(&format!("({remaining} more items found)\n")),
+                StyledText::reset(),
+            )?;
+        }
+
         Ok(())
     }
 
@@ -702,7 +1069,10 @@ impl Code {
 
         use crate::theme::StyledText;
 
-        for (i, reference) in references.iter().enumerate() {
+        let visible_count = references.len().min(MAX_VISIBLE_RESULTS);
+        let remaining = references.len().saturating_sub(MAX_VISIBLE_RESULTS);
+
+        for (i, reference) in references.iter().take(visible_count).enumerate() {
             queue!(
                 stdout,
                 style::Print(&format!("  {}. ", i + 1)),
@@ -719,18 +1089,23 @@ impl Code {
             if let Some(source) = &reference.source_line {
                 let trimmed = source.trim();
                 if !trimmed.is_empty() {
-                    queue!(
-                        stdout,
-                        style::Print(" - "),
-                        StyledText::secondary_fg(),
-                        style::Print(trimmed),
-                        StyledText::reset(),
-                    )?;
+                    queue!(stdout, style::Print(" - "), style::Print(trimmed),)?;
                 }
             }
 
             queue!(stdout, style::Print("\n"))?;
         }
+
+        if remaining > 0 {
+            queue!(
+                stdout,
+                style::Print("  "),
+                StyledText::secondary_fg(),
+                style::Print(&format!("({remaining} more items found)\n")),
+                StyledText::reset(),
+            )?;
+        }
+
         Ok(())
     }
 
@@ -743,85 +1118,58 @@ impl Code {
 
         use crate::theme::StyledText;
 
-        for (i, diagnostic) in diagnostics.iter().enumerate() {
-            // Determine severity icon and color
-            let (severity_icon, severity_text) = match diagnostic.severity {
-                ApiDiagnosticSeverity::Error => ("ERROR", "Error"),
-                ApiDiagnosticSeverity::Warning => ("WARN", "Warning"),
-                ApiDiagnosticSeverity::Information => ("INFO", "Info"),
-                ApiDiagnosticSeverity::Hint => ("HINT", "Hint"),
-            };
+        let visible_count = diagnostics.len().min(MAX_VISIBLE_RESULTS);
+        let remaining = diagnostics.len().saturating_sub(MAX_VISIBLE_RESULTS);
 
-            queue!(stdout, style::Print(&format!("  {}. {} ", i + 1, severity_icon)),)?;
+        for (i, diagnostic) in diagnostics.iter().take(visible_count).enumerate() {
+            queue!(stdout, style::Print(&format!("  {}. ", i + 1)))?;
 
-            // Color based on severity
+            // Severity with color
             match diagnostic.severity {
                 ApiDiagnosticSeverity::Error => {
-                    queue!(stdout, StyledText::error_fg())?;
-                },
-                ApiDiagnosticSeverity::Warning => {
-                    queue!(stdout, StyledText::warning_fg())?;
-                },
-                _ => {
-                    queue!(stdout, StyledText::info_fg())?;
-                },
-            }
-
-            queue!(
-                stdout,
-                style::Print(severity_text),
-                StyledText::reset(),
-                style::Print(&format!(
-                    " at line {}:{}",
-                    diagnostic.start_row, diagnostic.start_column
-                )),
-            )?;
-
-            // Show diagnostic source if available
-            if let Some(source) = &diagnostic.source {
-                queue!(
-                    stdout,
-                    style::Print(" ["),
-                    StyledText::info_fg(),
-                    style::Print(source),
-                    StyledText::reset(),
-                    style::Print("]"),
-                )?;
-            }
-
-            // Show diagnostic code if available
-            if let Some(code) = &diagnostic.code {
-                queue!(stdout, style::Print(" ("), style::Print(code), style::Print(")"),)?;
-            }
-
-            queue!(stdout, style::Print("\n"))?;
-
-            // Show the diagnostic message (indented)
-            queue!(
-                stdout,
-                style::Print("     "),
-                style::Print(&diagnostic.message),
-                style::Print("\n"),
-            )?;
-
-            // Show related information if available
-            if !diagnostic.related_information.is_empty() {
-                queue!(stdout, style::Print("     Related:\n"),)?;
-                for info in &diagnostic.related_information {
                     queue!(
                         stdout,
-                        style::Print("       • "),
-                        StyledText::info_fg(),
-                        style::Print(&info.file_path),
-                        StyledText::reset(),
-                        style::Print(&format!(
-                            ":{}:{} - {}\n",
-                            info.start_row, info.start_column, info.message
-                        )),
+                        StyledText::error_fg(),
+                        style::Print("Error"),
+                        StyledText::reset()
                     )?;
-                }
+                },
+                ApiDiagnosticSeverity::Warning => {
+                    queue!(
+                        stdout,
+                        StyledText::warning_fg(),
+                        style::Print("Warning"),
+                        StyledText::reset()
+                    )?;
+                },
+                ApiDiagnosticSeverity::Information => {
+                    queue!(stdout, StyledText::info_fg(), style::Print("Info"), StyledText::reset())?;
+                },
+                ApiDiagnosticSeverity::Hint => {
+                    queue!(stdout, StyledText::info_fg(), style::Print("Hint"), StyledText::reset())?;
+                },
             }
+
+            // Single line: "line X:Y: message"
+            queue!(
+                stdout,
+                style::Print(&format!(
+                    " line {}:{}: {}\n",
+                    diagnostic.start_row, diagnostic.start_column, diagnostic.message
+                )),
+            )?;
         }
+
+        if remaining > 0 {
+            queue!(
+                stdout,
+                style::Print("  "),
+                StyledText::secondary_fg(),
+                style::Print(&format!("({remaining} more items found)\n")),
+                StyledText::reset(),
+            )?;
+        }
+
         Ok(())
     }
 
@@ -835,20 +1183,38 @@ impl Code {
 
         match self {
             Code::SearchSymbols(params) => {
-                let limit = params.limit.unwrap_or(10);
-                let is_exact = params.exact_match.unwrap_or(false);
-
                 queue!(
                     output,
                     style::Print("Searching for symbols matching: "),
                     StyledText::brand_fg(),
                     style::Print(&format!("\"{}\"", params.symbol_name)),
                     StyledText::reset(),
-                    style::Print(&format!(" with limit {limit}")),
                 )?;
 
-                if is_exact {
-                    queue!(output, style::Print(" and exact match"))?;
+                // Show applied filters like Knowledge tool
+                let mut options = Vec::new();
+                if let Some(limit) = params.limit {
+                    options.push(format!("limit={limit}"));
+                }
+                if let Some(lang) = &params.language {
+                    options.push(format!("language={lang}"));
+                }
+                if let Some(sym_type) = &params.symbol_type {
+                    options.push(format!("type={sym_type}"));
+                }
+                if params.exact_match.unwrap_or(false) {
+                    options.push("exact".to_string());
+                }
+
+                if !options.is_empty() {
+                    queue!(
+                        output,
+                        style::Print(" ["),
+                        StyledText::info_fg(),
+                        style::Print(options.join(", ")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
                 }
             },
             Code::FindReferences(params) => {
@@ -905,7 +1271,7 @@ impl Code {
                         output,
                         style::Print(" ("),
                         StyledText::warning_fg(),
-                        style::Print("DRY RUN"),
+                        style::Print("Dry run"),
                         StyledText::reset(),
                         style::Print(")"),
                     )?;
@@ -934,6 +1300,18 @@ impl Code {
                     style::Print(&params.file_path),
                     StyledText::reset(),
                 )?;
+
+                // Show filter if explicitly set
+                if let Some(top_level_only) = params.top_level_only {
+                    queue!(
+                        output,
+                        style::Print(" ["),
+                        StyledText::info_fg(),
+                        style::Print(&format!("top_level={top_level_only}")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
+                }
             },
             Code::LookupSymbols(params) => {
                 queue!(output, style::Print("Looking up symbols: "), style::Print("["),)?;
@@ -971,6 +1349,43 @@ impl Code {
                     style::Print(&params.file_path),
                     StyledText::reset(),
                 )?;
+            },
+            Code::GetHover(params) => {
+                queue!(
+                    output,
+                    style::Print("Getting hover information at: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
+            },
+            Code::GetCompletions(params) => {
+                queue!(
+                    output,
+                    style::Print("Getting completions at: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
+
+                if let Some(trigger) = &params.trigger_character {
+                    queue!(
+                        output,
+                        style::Print(" [trigger: "),
+                        StyledText::info_fg(),
+                        style::Print(&format!("'{trigger}'")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
+                }
             },
             Code::InitializeWorkspace => {
                 queue!(output, style::Print("Initializing workspace"),)?;

@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{
@@ -72,6 +73,20 @@ pub trait SymbolService: Send + Sync {
         workspace_manager: &mut WorkspaceManager,
         request: GetDocumentDiagnosticsRequest,
     ) -> Result<Vec<Diagnostic>>;
+
+    /// Get hover information at a specific location
+    async fn hover(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>>;
+
+    /// Get code completion suggestions at a specific location
+    async fn completion(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>>;
 }
 
 /// LSP-based implementation of SymbolService
@@ -127,6 +142,24 @@ impl LspSymbolService {
         Some(symbol_info)
     }
 
+    fn collect_all_document_symbols(
+        ds: &DocumentSymbol,
+        file_path: &Path,
+        workspace_root: &Path,
+        result: &mut Vec<SymbolInfo>,
+    ) {
+        if let Some(symbol_info) = Self::document_symbol_to_symbol_info(ds, file_path, workspace_root) {
+            result.push(symbol_info);
+        }
+
+        // Recurse into children
+        if let Some(children) = &ds.children {
+            for child in children {
+                Self::collect_all_document_symbols(child, file_path, workspace_root, result);
+            }
+        }
+    }
+
     async fn find_symbols_exact(
         &self,
         workspace_manager: &mut WorkspaceManager,
@@ -136,11 +169,42 @@ impl LspSymbolService {
         // If file_path is specified, use document symbols for that file
         if let Some(file_path) = &request.file_path {
             let symbols = self.get_document_symbols(workspace_manager, file_path, false).await?;
+
+            // Count symbol types
+            let mut type_counts: HashMap<String, usize> = HashMap::new();
+            for sym in &symbols {
+                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
+                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
+            }
+
+            tracing::info!(
+                "Found {} symbols in file {:?}: {:?}",
+                symbols.len(),
+                file_path,
+                type_counts
+            );
+            tracing::debug!(
+                "File symbols: {:?}",
+                symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+            );
+
             all_symbols.extend(symbols);
         } else {
             // Use workspace symbol search only for detected languages
             let detected_languages = workspace_manager.get_detected_languages()?;
-            for language in detected_languages {
+
+            // Filter languages if language filter is specified
+            let languages_to_query: Vec<String> = if let Some(lang_filter) = &request.language {
+                let filter_lower = lang_filter.to_lowercase();
+                detected_languages
+                    .into_iter()
+                    .filter(|l| l.to_lowercase() == filter_lower)
+                    .collect()
+            } else {
+                detected_languages
+            };
+
+            for language in languages_to_query {
                 if let Ok(Some(client)) = workspace_manager.get_client_by_language(&language).await {
                     let params = WorkspaceSymbolParams {
                         query: request.symbol_name.clone(),
@@ -153,17 +217,52 @@ impl LspSymbolService {
                             let mapped_symbols: Vec<SymbolInfo> = symbols
                                 .iter()
                                 .filter_map(|s| {
-                                    SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())
+                                    let mut sym =
+                                        SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())?;
+                                    sym.language = Some(language.clone());
+                                    Some(sym)
                                 })
                                 .collect();
+
+                            // Count symbol types for this language
+                            let mut type_counts: HashMap<String, usize> = HashMap::new();
+                            for sym in &mapped_symbols {
+                                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
+                                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
+                            }
+
+                            tracing::info!(
+                                "LSP {} returned {} symbols for query '{}': {:?}",
+                                language,
+                                mapped_symbols.len(),
+                                request.symbol_name,
+                                type_counts
+                            );
+                            tracing::debug!(
+                                "LSP {} symbols: {:?}",
+                                language,
+                                mapped_symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+                            );
+
                             all_symbols.extend(mapped_symbols);
                         },
-                        Ok(None) => {},
-                        Err(_) => {}, // Skip servers that don't support workspace/symbol
+                        Ok(None) => {
+                            tracing::debug!(
+                                "LSP {} returned no symbols for query '{}'",
+                                language,
+                                request.symbol_name
+                            );
+                        },
+                        Err(e) => {
+                            tracing::debug!("LSP {} error: {}", language, e);
+                        },
                     }
                 }
             }
         }
+
+        let before_filter_count = all_symbols.len();
+
         if !request.symbol_name.is_empty() {
             let query_lower = request.symbol_name.to_lowercase();
             if request.exact_match {
@@ -171,23 +270,48 @@ impl LspSymbolService {
             } else {
                 all_symbols.retain(|s| s.name.to_lowercase().contains(&query_lower));
             }
+            tracing::debug!(
+                "Name filter '{}' (exact={}): {} -> {} symbols",
+                request.symbol_name,
+                request.exact_match,
+                before_filter_count,
+                all_symbols.len()
+            );
         }
+
         // Filter by symbol type if specified
         if let Some(symbol_type) = &request.symbol_type {
+            let before_type_filter = all_symbols.len();
             let lsp_kind = symbol_type.to_lsp_symbol_kind();
             all_symbols.retain(|s| s.symbol_type == Some(format!("{lsp_kind:?}")));
+            tracing::debug!(
+                "Type filter '{:?}': {} -> {} symbols",
+                symbol_type,
+                before_type_filter,
+                all_symbols.len()
+            );
         }
 
         // Apply limit
+        let before_limit = all_symbols.len();
         if let Some(limit) = request.limit {
             all_symbols.truncate(limit as usize);
+            if before_limit > all_symbols.len() {
+                tracing::info!(
+                    "Limit applied: {} symbols truncated to {}",
+                    before_limit,
+                    all_symbols.len()
+                );
+            }
         }
+
+        tracing::info!("Returning {} total symbols", all_symbols.len());
         Ok(all_symbols)
     }
 }
 
 const MAX_RESULTS: u32 = 50;
-const DEFAULT_RESULTS: u32 = 20;
+const DEFAULT_RESULTS: u32 = 50;
 
 #[async_trait::async_trait]
 impl SymbolService for LspSymbolService {
@@ -219,6 +343,7 @@ impl SymbolService for LspSymbolService {
                 file_path: request.file_path.clone(),
                 symbol_type: None,
                 limit: None,
+                language: None,
                 exact_match: true,
             };
 
@@ -246,7 +371,9 @@ impl SymbolService for LspSymbolService {
             .open_file(workspace_manager, &canonical_path, content)
             .await?;
         if let Some(client) = workspace_manager.get_client_for_file(&canonical_path).await? {
-            let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+            let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+                crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+            })?;
 
             let params = DocumentSymbolParams {
                 text_document: TextDocumentIdentifier { uri },
@@ -276,14 +403,24 @@ impl SymbolService for LspSymbolService {
                     DocumentSymbolResponse::Nested(nested_symbols) => {
                         let mut nested_result = Vec::new();
                         for ds in nested_symbols {
-                            if !top_level_only || Self::is_top_level_symbol_kind(ds.kind) {
-                                if let Some(symbol_info) = Self::document_symbol_to_symbol_info(
+                            if top_level_only {
+                                if Self::is_top_level_symbol_kind(ds.kind) {
+                                    if let Some(symbol_info) = Self::document_symbol_to_symbol_info(
+                                        &ds,
+                                        &canonical_path,
+                                        workspace_manager.workspace_root(),
+                                    ) {
+                                        nested_result.push(symbol_info);
+                                    }
+                                }
+                            } else {
+                                // Collect all symbols including nested ones
+                                Self::collect_all_document_symbols(
                                     &ds,
                                     &canonical_path,
                                     workspace_manager.workspace_root(),
-                                ) {
-                                    nested_result.push(symbol_info);
-                                }
+                                    &mut nested_result,
+                                );
                             }
                         }
                         nested_result
@@ -317,9 +454,13 @@ impl SymbolService for LspSymbolService {
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
 
-        let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
 
         let params = GotoDefinitionParams {
             text_document_position_params: TextDocumentPositionParams {
@@ -409,9 +550,13 @@ impl SymbolService for LspSymbolService {
         let client = workspace_manager
             .get_client_for_file(&canonical_path)
             .await?
-            .ok_or_else(|| anyhow::anyhow!("No language server for file"))?;
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
 
-        let uri = Url::from_file_path(&canonical_path).map_err(|_| anyhow::anyhow!("Invalid file path"))?;
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
 
         let params = ReferenceParams {
             text_document_position: TextDocumentPositionParams {
@@ -443,6 +588,7 @@ impl SymbolService for LspSymbolService {
             file_path: None,
             symbol_type: None,
             limit: Some(1), // Only need first match
+            language: None,
             exact_match: true,
         };
 
@@ -477,6 +623,202 @@ impl SymbolService for LspSymbolService {
         // Use new push-based approach through workspace manager
         workspace_manager.get_diagnostics_for_file(&file_path).await
     }
+
+    async fn hover(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>> {
+        use lsp_types::{
+            HoverParams,
+            TextDocumentIdentifier,
+            TextDocumentPositionParams,
+        };
+
+        use crate::model::entities::HoverInfo;
+
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: crate::utils::to_lsp_position(request.row, request.column),
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        match client.hover(params).await? {
+            Some(hover) => {
+                let content = match hover.contents {
+                    lsp_types::HoverContents::Scalar(marked_string) => match marked_string {
+                        lsp_types::MarkedString::String(s) => Some(s),
+                        lsp_types::MarkedString::LanguageString(ls) => {
+                            Some(format!("```{}\n{}\n```", ls.language, ls.value))
+                        },
+                    },
+                    lsp_types::HoverContents::Array(marked_strings) => {
+                        let content: Vec<String> = marked_strings
+                            .into_iter()
+                            .map(|ms| match ms {
+                                lsp_types::MarkedString::String(s) => s,
+                                lsp_types::MarkedString::LanguageString(ls) => {
+                                    format!("```{}\n{}\n```", ls.language, ls.value)
+                                },
+                            })
+                            .collect();
+                        if content.is_empty() {
+                            None
+                        } else {
+                            Some(content.join("\n\n"))
+                        }
+                    },
+                    lsp_types::HoverContents::Markup(markup) => Some(markup.value),
+                };
+
+                let relative_path = canonical_path
+                    .strip_prefix(workspace_manager.workspace_root())
+                    .unwrap_or(&canonical_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                Ok(Some(HoverInfo {
+                    file_path: relative_path,
+                    row: request.row,
+                    column: request.column,
+                    content,
+                }))
+            },
+            None => Ok(None),
+        }
+    }
+
+    async fn completion(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>> {
+        use lsp_types::{
+            CompletionParams,
+            TextDocumentIdentifier,
+            TextDocumentPositionParams,
+        };
+
+        use crate::model::entities::{
+            CompletionInfo,
+            CompletionItem,
+        };
+
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: crate::utils::to_lsp_position(request.row, request.column),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+
+        match client.completion(params).await? {
+            Some(completion_response) => {
+                let items = match completion_response {
+                    lsp_types::CompletionResponse::Array(items) => items,
+                    lsp_types::CompletionResponse::List(list) => list.items,
+                };
+
+                let completion_items: Vec<CompletionItem> = items
+                    .into_iter()
+                    .map(|item| CompletionItem {
+                        label: item.label,
+                        kind: item.kind.map(|k| format!("{k:?}")),
+                        detail: item.detail,
+                        documentation: item.documentation.map(|doc| match doc {
+                            lsp_types::Documentation::String(s) => s,
+                            lsp_types::Documentation::MarkupContent(markup) => markup.value,
+                        }),
+                    })
+                    .collect();
+
+                let relative_path = canonical_path
+                    .strip_prefix(workspace_manager.workspace_root())
+                    .unwrap_or(&canonical_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                let mut completion_info = CompletionInfo {
+                    file_path: relative_path,
+                    row: request.row,
+                    column: request.column,
+                    items: completion_items,
+                    total_count: 0, // Will be set after filtering
+                };
+
+                // Apply symbol_type filtering if provided (same pattern as search_symbols)
+                if let Some(symbol_type) = &request.symbol_type {
+                    let lsp_kind = symbol_type.to_lsp_symbol_kind();
+                    completion_info
+                        .items
+                        .retain(|item| item.kind.as_ref().is_some_and(|k| *k == format!("{lsp_kind:?}")));
+                }
+
+                // Apply fuzzy filtering if filter is provided
+                if let Some(filter) = &request.filter {
+                    completion_info.filter_fuzzy(filter);
+                }
+
+                // Set total_count before truncation
+                completion_info.total_count = completion_info.items.len();
+
+                // Apply limit (default 50, same as search_symbols)
+                let limit = request.limit.unwrap_or(MAX_RESULTS as usize);
+                completion_info.items.truncate(limit);
+
+                Ok(Some(completion_info))
+            },
+            None => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -499,6 +841,7 @@ mod tests {
             container_name: None,
             detail: None,
             source_line: None,
+            language: None,
         }
     }
 

@@ -12,29 +12,25 @@
     },
     {
       "type": "release",
-      "date": "2025-12-08",
+      "date": "2025-12-11",
       "version": "1.22.0",
       "title": "Version 1.22.0",
       "changes": [
         {
           "type": "added",
-          "description": "Knowledge Index to create model awareness about existing KBs"
+          "description": "Introducing code intelligence through LSP integration - kiro.dev/docs/cli/code-intelligence/"
         },
         {
           "type": "added",
-          "description": "Agent schema configuration for knowledge and auto-indexable knowledge"
-        },
-        {
-          "type": "fixed",
-          "description": "Added guardrails for fs_read to avoid context overflow"
-        },
-        {
-          "type": "added",
-          "description": "Auto-compaction with factual record extraction"
+          "description": "Knowledge Index with agent schema configuration for knowledge bases and auto-indexing support"
         },
         {
           "type": "changed",
           "description": "Enhanced auto-compaction with deterministic read, write, shell and aws tool artifacts"
+        },
+        {
+          "type": "fixed",
+          "description": "Added guardrails for fs_read to avoid context overflow"
         }
       ]
     },

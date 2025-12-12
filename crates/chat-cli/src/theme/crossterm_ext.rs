@@ -76,6 +76,15 @@ impl StyledText {
         )
     }
 
+    /// Create code-intelligence-styled text
+    pub fn code_intelligence(text: &str) -> String {
+        format!(
+            "{}{}\x1b[0m",
+            color_to_ansi_sequence(theme().interactive.code_intelligence_indicator),
+            text
+        )
+    }
+
     /// Create usage-low-styled text
     pub fn usage_low(text: &str) -> String {
         format!(

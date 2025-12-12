@@ -35,7 +35,7 @@ use logdump::LogdumpArgs;
 use mcp::McpArgs;
 use model::ModelArgs;
 use paste::PasteArgs;
-use persist::PersistSubcommand;
+use persist::ChatSubcommand;
 use profile::AgentSubcommand;
 use prompts::PromptsArgs;
 use reply::ReplyArgs;
@@ -73,14 +73,17 @@ pub enum SlashCommand {
     /// Manage agents
     #[command(subcommand)]
     Agent(AgentSubcommand),
+    /// Manage saved conversations
+    #[command(subcommand)]
+    Chat(ChatSubcommand),
     /// Manage context files and view context window usage
     Context(ContextArgs),
     /// (Beta) Manage knowledge base for persistent context storage. Requires "q settings
     /// chat.enableKnowledge true"
     #[command(subcommand, hide = true)]
     Knowledge(KnowledgeSubcommand),
-    /// (Beta) Code intelligence - Feature not available
-    #[command(subcommand, hide = true)]
+    /// Code intelligence with LSP integration - https://kiro.dev/docs/cli/code-intelligence/
+    #[command(subcommand)]
     Code(CodeSubcommand),
     /// Open $EDITOR (defaults to vi) to compose a prompt
     #[command(name = "editor")]
@@ -115,9 +118,12 @@ pub enum SlashCommand {
     /// chat.enableTangentMode true"
     #[command(hide = true)]
     Tangent(TangentArgs),
-    /// Make conversations persistent
-    #[command(flatten)]
-    Persist(PersistSubcommand),
+    /// [DEPRECATED] Use "/chat save" instead
+    #[command(hide = true)]
+    Save,
+    /// [DEPRECATED] Use "/chat load" instead
+    #[command(hide = true)]
+    Load,
     // #[command(flatten)]
     // Root(RootSubcommand),
     #[command(
@@ -139,6 +145,7 @@ impl SlashCommand {
             Self::Quit => Ok(ChatState::Exit),
             Self::Clear(args) => args.execute(session).await,
             Self::Agent(subcommand) => subcommand.execute(os, session).await,
+            Self::Chat(subcommand) => subcommand.execute(os, session).await,
             Self::Context(args) => args.execute(os, session).await,
             Self::Knowledge(subcommand) => subcommand.execute(os, session).await,
             Self::Code(subcommand) => subcommand.execute(os, session).await,
@@ -165,7 +172,44 @@ impl SlashCommand {
             Self::Experiment(args) => args.execute(os, session).await,
 
             Self::Tangent(args) => args.execute(os, session).await,
-            Self::Persist(subcommand) => subcommand.execute(os, session).await,
+            Self::Save => {
+                use crossterm::{
+                    execute,
+                    style,
+                };
+
+                use crate::theme::StyledText;
+
+                execute!(
+                    session.stderr,
+                    StyledText::warning_fg(),
+                    style::Print("\n⚠ The /save command is deprecated. Use /chat save instead.\n"),
+                    StyledText::reset_attributes()
+                )?;
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
+            Self::Load => {
+                use crossterm::{
+                    execute,
+                    style,
+                };
+
+                use crate::theme::StyledText;
+
+                execute!(
+                    session.stderr,
+                    StyledText::warning_fg(),
+                    style::Print("\n⚠ The /load command is deprecated. Use /chat load instead.\n"),
+                    StyledText::reset_attributes()
+                )?;
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
             // Self::Root(subcommand) => {
             //     if let Err(err) = subcommand.execute(os, database, telemetry).await {
             //         return Err(ChatError::Custom(err.to_string().into()));
@@ -186,6 +230,7 @@ impl SlashCommand {
             Self::Quit => "quit",
             Self::Clear(_) => "clear",
             Self::Agent(_) => "agent",
+            Self::Chat(_) => "chat",
             Self::Context(_) => "context",
             Self::Knowledge(_) => "knowledge",
             Self::Code(_) => "code",
@@ -204,10 +249,8 @@ impl SlashCommand {
             Self::Experiment(_) => "experiment",
 
             Self::Tangent(_) => "tangent",
-            Self::Persist(sub) => match sub {
-                PersistSubcommand::Save { .. } => "save",
-                PersistSubcommand::Load { .. } => "load",
-            },
+            Self::Save => "save",
+            Self::Load => "load",
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
             Self::Paste(_) => "paste",
@@ -217,6 +260,7 @@ impl SlashCommand {
     pub fn subcommand_name(&self) -> Option<&'static str> {
         match self {
             SlashCommand::Agent(sub) => Some(sub.name()),
+            SlashCommand::Chat(sub) => Some(sub.name()),
             SlashCommand::Context(args) => args.subcommand_name(),
             SlashCommand::Knowledge(sub) => Some(sub.name()),
             SlashCommand::Code(sub) => Some(sub.name()),

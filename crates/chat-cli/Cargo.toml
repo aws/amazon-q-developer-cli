@@ -16,6 +16,7 @@ default = []
 wayland = ["arboard/wayland-data-control"]
 
 [dependencies]
+agent-client-protocol.workspace = true
 agent.workspace = true
 amzn-codewhisperer-client.workspace = true
 amzn-codewhisperer-streaming-client.workspace = true
@@ -27,6 +28,7 @@ arboard.workspace = true
 async-trait.workspace = true
 aws-config.workspace = true
 aws-credential-types.workspace = true
+strsim.workspace = true
 aws-runtime.workspace = true
 aws-sdk-cognitoidentity.workspace = true
 aws-sdk-ssooidc.workspace = true
@@ -86,6 +88,7 @@ rustls.workspace = true
 rustls-native-certs.workspace = true
 rustls-pemfile.workspace = true
 rustyline.workspace = true
+sacp.workspace = true
 semantic_search_client.workspace = true
 semver.workspace = true
 serde.workspace = true

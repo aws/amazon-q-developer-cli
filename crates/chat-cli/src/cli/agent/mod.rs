@@ -64,6 +64,7 @@ use crate::constants::DEFAULT_AGENT_NAME;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::consts::BUILTIN_TOOLS_PREFIX;
 use crate::util::paths::PathResolver;
 use crate::util::{
     self,
@@ -427,7 +428,7 @@ impl Agent {
             .tools
             .iter()
             .filter_map(|tool| match tool.as_str() {
-                "*" => Some("@builtin".to_string()),
+                "*" => Some(BUILTIN_TOOLS_PREFIX.to_string()),
                 t if !is_mcp_tool_ref(t) => Some(t.to_string()),
                 _ => None,
             })
@@ -488,6 +489,37 @@ impl Agents {
 
     pub fn get_active_mut(&mut self) -> Option<&mut Agent> {
         self.agents.get_mut(&self.active_idx)
+    }
+
+    /// Check if the active agent has a specific tool in its tools list (supports wildcards)
+    ///
+    /// # Arguments
+    /// * `tool_aliases` - List of tool aliases to check
+    /// * `is_native` - Whether the tool is a native/builtin tool (used for @builtin matching)
+    pub fn has_tool_with_type(&self, tool_aliases: &[&str], is_native: bool) -> bool {
+        use crate::util::consts::BUILTIN_TOOLS_PREFIX;
+        use crate::util::pattern_matching::matches_any_pattern;
+
+        self.get_active().is_some_and(|agent| {
+            let patterns: std::collections::HashSet<&str> = agent.tools.iter().map(|s| s.as_str()).collect();
+
+            // For native tools, check if @builtin matches
+            if is_native && matches_any_pattern(&patterns, BUILTIN_TOOLS_PREFIX) {
+                return true;
+            }
+
+            // Check if any tool alias matches any pattern in the agent's tools list
+            tool_aliases.iter().any(|alias| matches_any_pattern(&patterns, alias))
+        })
+    }
+
+    /// Check if the active agent has a specific tool in its tools list (supports wildcards)
+    pub fn has_tool(&self, tool_aliases: &[&str]) -> bool {
+        use crate::cli::chat::tools::is_native_tool;
+
+        // Check if any alias is a native tool
+        let is_native = tool_aliases.iter().any(|alias| is_native_tool(alias));
+        self.has_tool_with_type(tool_aliases, is_native)
     }
 
     pub async fn switch(&mut self, name: &str, os: &Os) -> eyre::Result<&Agent> {
@@ -1051,7 +1083,7 @@ pub fn queue_permission_override_warning(
 pub fn is_mcp_tool_ref(s: &str) -> bool {
     // @builtin is not MCP, it's a reference to all built-in tools
     // Any other @ prefix is MCP (e.g., "@git", "@git/git_status")
-    !s.starts_with("@builtin") && s.starts_with('@')
+    !s.starts_with(BUILTIN_TOOLS_PREFIX) && s.starts_with('@')
 }
 
 #[cfg(test)]
@@ -1202,15 +1234,15 @@ mod tests {
         let mut agent: Agent = serde_json::from_value(json!({
             "name": "test",
             "tools": [
-                "@builtin",
-                "@builtin/fs_read",
-                "@builtin/execute_bash",
+                BUILTIN_TOOLS_PREFIX,
+                format!("{}/fs_read", BUILTIN_TOOLS_PREFIX),
+                format!("{}/execute_bash", BUILTIN_TOOLS_PREFIX),
                 "@git",
                 "@git/status",
                 "fs_write"
             ],
             "allowedTools": [
-                "@builtin/fs_read",
+                format!("{}/fs_read", BUILTIN_TOOLS_PREFIX),
                 "@git/status",
                 "fs_write"
             ],
@@ -1228,9 +1260,9 @@ mod tests {
         agent.clear_mcp_configs();
 
         // All @builtin variants should be preserved while MCP tools should be removed
-        assert!(agent.tools.contains(&"@builtin".to_string()));
-        assert!(agent.tools.contains(&"@builtin/fs_read".to_string()));
-        assert!(agent.tools.contains(&"@builtin/execute_bash".to_string()));
+        assert!(agent.tools.contains(&BUILTIN_TOOLS_PREFIX.to_string()));
+        assert!(agent.tools.contains(&format!("{}/fs_read", BUILTIN_TOOLS_PREFIX)));
+        assert!(agent.tools.contains(&format!("{}/execute_bash", BUILTIN_TOOLS_PREFIX)));
         assert!(agent.tools.contains(&"fs_write".to_string()));
         assert!(!agent.tools.contains(&"@git".to_string()));
         assert!(!agent.tools.contains(&"@git/status".to_string()));

@@ -3,7 +3,7 @@ pub struct FeatureFlags;
 
 impl FeatureFlags {
     /// Code intelligence - LSP-based code analysis and navigation
-    pub const CODE_INTELLIGENCE_ENABLED: bool = false;
+    pub const CODE_INTELLIGENCE_ENABLED: bool = true;
     /// Regions where web_search is disabled
     pub const WEB_SEARCH_BLOCKED_REGIONS: &'static [&'static str] = &[];
     /// Web search and fetch tools - global toggle
