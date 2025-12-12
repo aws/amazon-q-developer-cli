@@ -24,8 +24,7 @@
   },
   "glob": {
     "name": "glob",
-    "description": "Fast file pattern matching (respects .gitignore). Use instead of 'find' in bash.",
-    "input_schema": {
+    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore and common build ignores. Prefer this over the bash 'find' command for listing or discovering paths. The tool may cap the number of returned paths; when the JSON result has `truncated: true`, only the first `maxResults` paths are included and you should say that you're showing the first N matches, not all matches.",    "input_schema": {
       "type": "object",
       "properties": {
         "pattern": {
@@ -34,7 +33,12 @@
         },
         "path": {
           "type": "string",
-          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."}
+          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."
+        },
+        "max_results": {
+        "type": "integer",
+        "description": "Optional maximum number of paths to return. Defaults to 200. If there are more matches than this, the result will have `truncated: true`."
+        }
       },
       "required": [
         "pattern"

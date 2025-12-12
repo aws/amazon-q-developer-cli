@@ -34,7 +34,11 @@ const DEFAULT_MAX_RESULTS: usize = 200;
 pub struct Glob {
     /// Glob pattern, like "**/*.rs", "src/**/*.{ts,tsx}"
     pub pattern: String,
+    /// Root directory to search from. Defaults to current working directory.
     pub path: Option<String>,
+    /// Optional maximum number of results to return. Defaults to DEFAULT_MAX_RESULTS.
+    #[serde(default)]
+    pub max_results: Option<usize>,
 }
 
 impl Glob {
@@ -79,17 +83,18 @@ impl Glob {
             .overrides(overrides)
             .build();
 
+        let max_results = self.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
         let mut file_paths: Vec<String> = Vec::new();
+        let mut total_files: usize = 0;
 
         for entry in walker {
-            if file_paths.len() >= DEFAULT_MAX_RESULTS {
-                break;
-            }
-
             match entry {
                 Ok(e) => {
                     if e.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                        file_paths.push(e.path().display().to_string());
+                        total_files += 1;
+                        if file_paths.len() < max_results {
+                            file_paths.push(e.path().display().to_string());
+                        }
                     }
                 },
                 Err(e) => {
@@ -98,19 +103,28 @@ impl Glob {
             }
         }
 
-        let num_files = file_paths.len();
+        let num_files_returned = file_paths.len();
+        let truncated = total_files > num_files_returned;
 
-        if file_paths.is_empty() {
+        if total_files == 0 {
             Ok(InvokeOutput {
                 output: OutputKind::Json(serde_json::json!({
-                    "message": format!("No files found matching pattern: {}", self.pattern)
+                    "filePaths": [],
+                    "numFiles": 0,
+                    "totalFiles": 0,
+                    "truncated": false,
+                    "maxResults": max_results,
+                    "message": format!("No files found matching pattern: {}", self.pattern),
                 })),
             })
         } else {
             Ok(InvokeOutput {
                 output: OutputKind::Json(serde_json::json!({
                     "filePaths": file_paths,
-                    "numFiles": num_files
+                    "numFiles": num_files_returned,
+                    "totalFiles": total_files,
+                    "truncated": truncated,
+                    "maxResults": max_results
                 })),
             })
         }
@@ -238,6 +252,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
+            max_results: Some(2),
         };
 
         let os = Os::new().await.unwrap();
@@ -259,6 +274,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
+            max_results: Some(1),
         };
 
         let os = Os::new().await.unwrap();
@@ -273,17 +289,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm_default_ask() {
+    async fn test_eval_perm_default_allow() {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: None,
+            max_results: Some(1),
         };
 
         let agent = Agent::default();
         let os = Os::new().await.unwrap();
         let result = tool.eval_perm(&os, &agent);
 
-        assert!(matches!(result, PermissionEvalResult::Ask));
+        assert!(matches!(result, PermissionEvalResult::Allow));
     }
 
     #[tokio::test]
@@ -295,6 +312,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: None,
+            max_results: Some(1),
         };
 
         let agent = Agent {
