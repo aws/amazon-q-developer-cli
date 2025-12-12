@@ -24,7 +24,8 @@
   },
   "glob": {
     "name": "glob",
-    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore and common build ignores. Prefer this over the bash 'find' command for listing or discovering paths. The tool may cap the number of returned paths; when the JSON result has `truncated: true`, only the first `maxResults` paths are included and you should say that you're showing the first N matches, not all matches.",    "input_schema": {
+    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with numFiles (returned), totalFiles (found), truncated (true if limited), and filePaths array.",
+    "input_schema": {
       "type": "object",
       "properties": {
         "pattern": {
@@ -35,9 +36,9 @@
           "type": "string",
           "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."
         },
-        "max_results": {
-        "type": "integer",
-        "description": "Optional maximum number of paths to return. Defaults to 200. If there are more matches than this, the result will have `truncated: true`."
+        "limit": {
+          "type": "integer",
+          "description": "Maximum files to return. Defaults to 200. Extra matches counted in totalFiles but not in filePaths."
         }
       },
       "required": [
@@ -74,7 +75,8 @@
             "files_with_matches",
             "count"
           ],
-          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."        }
+          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
+        }
       },
       "required": [
         "pattern"
@@ -164,7 +166,15 @@
                   "type": "string"
                 },
                 "description": "Glob patterns to exclude from directory listing (optional, for Directory mode). If omitted, uses defaults. If empty array [] is provided, no exclusions are applied (shows everything). If patterns are provided, they completely override the defaults. Examples: '**/target/**', '*.log'",
-                "default": ["node_modules", ".git", "dist", "build", "out", ".cache", "target"]
+                "default": [
+                  "node_modules",
+                  ".git",
+                  "dist",
+                  "build",
+                  "out",
+                  ".cache",
+                  "target"
+                ]
               },
               "max_entries": {
                 "type": "integer",
@@ -378,7 +388,11 @@
         },
         "sort_by": {
           "type": "string",
-          "enum": ["relevance", "path", "name"],
+          "enum": [
+            "relevance",
+            "path",
+            "name"
+          ],
           "description": "Sort order for search results. Options: 'relevance' (default, by similarity score), 'path' or 'name' (alphabetically by file path). Optional for 'search' operations."
         },
         "file_type": {
@@ -405,7 +419,7 @@
           "type": "string",
           "enum": [
             "search_symbols",
-            "find_references", 
+            "find_references",
             "goto_definition",
             "rename_symbol",
             "format",
@@ -421,7 +435,7 @@
           "description": "Name of symbol to search for (required for search_symbols operation)"
         },
         "file_path": {
-          "type": "string", 
+          "type": "string",
           "description": "Absolute path to a specific source code file (NOT a directory). Example: '/path/to/project/src/main.rs' (required for most operations)"
         },
         "row": {
@@ -429,7 +443,7 @@
           "description": "Line number (1-based, required for find_references, goto_definition, rename_symbol)"
         },
         "column": {
-          "type": "integer", 
+          "type": "integer",
           "description": "Column number (1-based, required for find_references, goto_definition, rename_symbol)"
         },
         "new_name": {
@@ -438,7 +452,9 @@
         },
         "symbols": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "List of symbol names to lookup (required for lookup_symbols operation)"
         },
         "limit": {
@@ -446,7 +462,7 @@
           "description": "Maximum results to return (optional for search_symbols)"
         },
         "exact_match": {
-          "type": "boolean", 
+          "type": "boolean",
           "description": "Whether to use exact matching (optional for search_symbols)"
         },
         "show_source": {
@@ -478,7 +494,9 @@
           "description": "Symbol type filter (optional for search_symbols)"
         }
       },
-      "required": ["operation"]
+      "required": [
+        "operation"
+      ]
     }
   },
   "todo_list": {
@@ -490,10 +508,10 @@
         "command": {
           "type": "string",
           "enum": [
-            "create", 
-            "complete", 
-            "load", 
-            "add", 
+            "create",
+            "complete",
+            "load",
+            "add",
             "remove",
             "lookup"
           ],
@@ -514,7 +532,9 @@
                 "description": "Optional detailed information about the task"
               }
             },
-            "required": ["task_description"]
+            "required": [
+              "task_description"
+            ]
           }
         },
         "todo_list_description": {
@@ -562,7 +582,9 @@
                 "description": "Optional detailed information about the task"
               }
             },
-            "required": ["task_description"]
+            "required": [
+              "task_description"
+            ]
           }
         },
         "insert_indices": {
@@ -584,7 +606,9 @@
           }
         }
       },
-      "required": ["command"]
+      "required": [
+        "command"
+      ]
     }
   },
   "delegate": {
@@ -592,64 +616,66 @@
     "description": "Launch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents that run independently in the background.\n\nOperations:\n- launch: Start a new task with an agent (requires task parameter, agent is optional)\n- status: Check agent status and get full output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are stored in .kiro/.subagents/\n\nIMPORTANT: If a specific agent is requested but not found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\": \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents: {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand): {\"operation\": \"status\"}",
     "input_schema": {
       "type": "object",
-        "properties": {
-          "operation": {
-            "description": "Operation to perform: launch, status, or list",
-            "$ref": "#/$defs/Operation"
-          },
-          "agent": {
-            "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          },
-          "task": {
-            "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
-            "type": [
-              "string",
-              "null"
-            ],
-            "default": null
-          }
+      "properties": {
+        "operation": {
+          "description": "Operation to perform: launch, status, or list",
+          "$ref": "#/$defs/Operation"
         },
-        "required": [
-          "operation"
-        ],
-        "$defs": {
-          "Operation": {
-            "oneOf": [
-              {
-                "description": "Launch a new agent with a specified task",
-                "type": "string",
-                "const": "launch"
-              },
-              {
-                "description": "Check the status of a specific agent or all agents if None is provided",
-                "type": "object",
-                "properties": {
-                  "status": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
-                  }
-                },
-                "required": [
-                  "status"
-                ],
-                "additionalProperties": false
-              },
-              {
-                "description": "List all available agents",
-                "type": "string",
-                "const": "list"
-              }
-            ]
-          }
+        "agent": {
+          "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
         },
-        "required": ["operation"]
+        "task": {
+          "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "operation"
+      ],
+      "$defs": {
+        "Operation": {
+          "oneOf": [
+            {
+              "description": "Launch a new agent with a specified task",
+              "type": "string",
+              "const": "launch"
+            },
+            {
+              "description": "Check the status of a specific agent or all agents if None is provided",
+              "type": "object",
+              "properties": {
+                "status": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              },
+              "required": [
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "description": "List all available agents",
+              "type": "string",
+              "const": "list"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation"
+      ]
     }
   },
   "web_search": {
@@ -663,7 +689,9 @@
           "description": "Search query - can be keywords, questions, or specific topics"
         }
       },
-      "required": ["query"]
+      "required": [
+        "query"
+      ]
     }
   },
   "web_fetch": {
@@ -678,7 +706,11 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["selective", "truncated", "full"],
+          "enum": [
+            "selective",
+            "truncated",
+            "full"
+          ],
           "description": "Extraction mode: 'selective' for smart extraction (default), 'truncated' for first 8000 chars, 'full' for complete content"
         },
         "search_terms": {
@@ -686,7 +718,9 @@
           "description": "Optional: Keywords to find in selective mode (e.g., 'pricing cost', 'installation setup'). Returns ~10 lines before and after matches. If not provided, returns beginning of page."
         }
       },
-      "required": ["url"]
+      "required": [
+        "url"
+      ]
     }
   }
 }

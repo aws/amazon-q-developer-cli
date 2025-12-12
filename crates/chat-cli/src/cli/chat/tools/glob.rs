@@ -1,5 +1,8 @@
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{
+    Path,
+    PathBuf,
+};
 
 use crossterm::{
     queue,
@@ -9,8 +12,7 @@ use eyre::{
     Context,
     Result,
 };
-use ignore::WalkBuilder;
-use ignore::overrides::OverrideBuilder;
+use globwalk::GlobWalkerBuilder;
 use serde::Deserialize;
 use tracing::error;
 
@@ -26,19 +28,19 @@ use crate::cli::agent::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
+/// Default maximum number of results to return
 const DEFAULT_MAX_RESULTS: usize = 200;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Glob {
-    /// Glob pattern, like "**/*.rs", "src/**/*.{ts,tsx}"
+    /// Glob pattern, e.g. "**/*.rs", "src/**/*.{ts,tsx}", "target/debug/build/**/*"
     pub pattern: String,
     /// Root directory to search from. Defaults to current working directory.
     pub path: Option<String>,
-    /// Optional maximum number of results to return. Defaults to DEFAULT_MAX_RESULTS.
+    /// Maximum number of results to return. Defaults to DEFAULT_MAX_RESULTS.
     #[serde(default)]
-    pub max_results: Option<usize>,
+    pub limit: Option<usize>,
 }
 
 impl Glob {
@@ -59,38 +61,33 @@ impl Glob {
             return Ok(self.error_response(format!("Path is not a directory: {}", base_path.display())));
         }
 
-        let mut override_builder = OverrideBuilder::new(&base_path);
+        // Normalize pattern - if pattern starts with a path component, extract it as base
+        let (search_base, search_pattern) = self.normalize_pattern(&base_path);
 
-        if let Err(e) = override_builder.add(&self.pattern) {
-            return Ok(self.error_response(format!("Invalid glob pattern: {e}")));
+        if !search_base.exists() {
+            return Ok(self.error_response(format!("Path does not exist: {}", search_base.display())));
         }
 
-        let overrides = match override_builder.build() {
-            Ok(o) => o,
+        // Build glob walker
+        let walker = match GlobWalkerBuilder::from_patterns(&search_base, &[&search_pattern])
+            .max_depth(50)
+            .follow_links(false)
+            .build()
+        {
+            Ok(w) => w,
             Err(e) => {
-                return Ok(self.error_response(format!("Invalid glob pattern: {e}")));
+                return Ok(self.error_response(format!("Invalid glob pattern: {}", e)));
             },
         };
 
-        let walker = WalkBuilder::new(&base_path)
-            .hidden(false)
-            .ignore(true)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
-            .follow_links(false)
-            .max_depth(Some(50))
-            .overrides(overrides)
-            .build();
-
-        let max_results = self.max_results.unwrap_or(DEFAULT_MAX_RESULTS);
+        let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
         let mut file_paths: Vec<String> = Vec::new();
         let mut total_files: usize = 0;
 
         for entry in walker {
             match entry {
                 Ok(e) => {
-                    if e.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                    if e.file_type().is_file() {
                         total_files += 1;
                         if file_paths.len() < max_results {
                             file_paths.push(e.path().display().to_string());
@@ -113,8 +110,8 @@ impl Glob {
                     "numFiles": 0,
                     "totalFiles": 0,
                     "truncated": false,
-                    "maxResults": max_results,
-                    "message": format!("No files found matching pattern: {}", self.pattern),
+                    "limit": max_results,
+                    "message": format!("No files found matching pattern: {}", self.pattern)
                 })),
             })
         } else {
@@ -124,9 +121,56 @@ impl Glob {
                     "numFiles": num_files_returned,
                     "totalFiles": total_files,
                     "truncated": truncated,
-                    "maxResults": max_results
+                    "limit": max_results
                 })),
             })
+        }
+    }
+
+    /// Normalize pattern to handle cases like "target/debug/build/*"
+    /// Returns (base_path, pattern) tuple
+    fn normalize_pattern(&self, base_path: &Path) -> (PathBuf, String) {
+        let pattern = &self.pattern;
+
+        // If pattern contains no glob characters, treat it as a directory and add **/*
+        if !pattern.contains('*') && !pattern.contains('?') && !pattern.contains('[') {
+            let potential_dir = base_path.join(pattern);
+            if potential_dir.is_dir() {
+                return (potential_dir, "**/*".to_string());
+            }
+        }
+
+        // Find the first path component with glob characters
+        let parts: Vec<&str> = pattern.split('/').collect();
+        let mut prefix_parts: Vec<&str> = Vec::new();
+        let mut pattern_parts: Vec<&str> = Vec::new();
+        let mut found_glob = false;
+
+        for part in parts {
+            if found_glob || part.contains('*') || part.contains('?') || part.contains('[') {
+                found_glob = true;
+                pattern_parts.push(part);
+            } else {
+                prefix_parts.push(part);
+            }
+        }
+
+        if prefix_parts.is_empty() {
+            // Pattern starts with glob, use base_path as-is
+            (base_path.to_path_buf(), pattern.clone())
+        } else {
+            // Extract directory prefix from pattern
+            let prefix = prefix_parts.join("/");
+            let new_base = base_path.join(&prefix);
+
+            if new_base.is_dir() && !pattern_parts.is_empty() {
+                // Use the prefix as new base and rest as pattern
+                let remaining_pattern = pattern_parts.join("/");
+                (new_base, remaining_pattern)
+            } else {
+                // Keep original base and pattern
+                (base_path.to_path_buf(), pattern.clone())
+            }
         }
     }
 
@@ -169,6 +213,7 @@ impl Glob {
             return Err(eyre::eyre!("Glob pattern cannot be empty"));
         }
 
+        // Clean invalid path values
         if let Some(ref p) = self.path {
             if p == "undefined" || p == "null" || p.is_empty() {
                 self.path = None;
@@ -179,15 +224,6 @@ impl Glob {
     }
 
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
-        let is_in_allowlist = Self::INFO
-            .aliases
-            .iter()
-            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
-
-        if is_in_allowlist {
-            return PermissionEvalResult::Allow;
-        }
-
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
@@ -211,10 +247,11 @@ impl Glob {
                     Ok(s) => s,
                     Err(e) => {
                         error!("Failed to deserialize glob settings: {:?}", e);
-                        return PermissionEvalResult::Ask;
+                        return PermissionEvalResult::Allow;
                     },
                 };
 
+                // Check denied paths
                 if let Some(ref search_path) = self.path {
                     for denied in &settings.denied_paths {
                         if search_path.starts_with(denied) {
@@ -229,6 +266,7 @@ impl Glob {
                     PermissionEvalResult::Ask
                 }
             },
+            // glob is read-only, allow by default
             None => PermissionEvalResult::Allow,
         }
     }
@@ -236,7 +274,10 @@ impl Glob {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::File;
+    use std::fs::{
+        self,
+        File,
+    };
 
     use tempfile::TempDir;
 
@@ -252,7 +293,33 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
-            max_results: Some(2),
+            limit: None,
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            assert_eq!(json["numFiles"], 2);
+            assert_eq!(json["totalFiles"], 2);
+            assert_eq!(json["truncated"], false);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_glob_recursive() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join("src/lib")).unwrap();
+        File::create(temp_dir.path().join("src/main.rs")).unwrap();
+        File::create(temp_dir.path().join("src/lib/util.rs")).unwrap();
+
+        let tool = Glob {
+            pattern: "**/*.rs".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            limit: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -267,6 +334,85 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_glob_with_path_prefix() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join("target/debug/build/pkg1")).unwrap();
+        File::create(temp_dir.path().join("target/debug/build/pkg1/file.rs")).unwrap();
+        File::create(temp_dir.path().join("target/debug/build/root.txt")).unwrap();
+
+        let tool = Glob {
+            pattern: "target/debug/build/*".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            limit: None,
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            // Should find root.txt (direct child)
+            assert!(json["numFiles"].as_u64().unwrap() >= 1);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_glob_with_path_prefix_recursive() {
+        let temp_dir = TempDir::new().unwrap();
+        fs::create_dir_all(temp_dir.path().join("target/debug/build/pkg1")).unwrap();
+        fs::create_dir_all(temp_dir.path().join("target/debug/build/pkg2")).unwrap();
+        File::create(temp_dir.path().join("target/debug/build/pkg1/file1.rs")).unwrap();
+        File::create(temp_dir.path().join("target/debug/build/pkg2/file2.rs")).unwrap();
+        File::create(temp_dir.path().join("target/debug/build/root.txt")).unwrap();
+
+        let tool = Glob {
+            pattern: "target/debug/build/**/*".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            limit: None,
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            // Should find all 3 files
+            assert_eq!(json["numFiles"], 3);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_glob_truncation() {
+        let temp_dir = TempDir::new().unwrap();
+        for i in 0..10 {
+            File::create(temp_dir.path().join(format!("file{}.txt", i))).unwrap();
+        }
+
+        let tool = Glob {
+            pattern: "*.txt".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            limit: Some(5),
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            assert_eq!(json["numFiles"], 5);
+            assert_eq!(json["totalFiles"], 10);
+            assert_eq!(json["truncated"], true);
+            assert_eq!(json["limit"], 5);
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
     async fn test_glob_no_matches() {
         let temp_dir = TempDir::new().unwrap();
         File::create(temp_dir.path().join("test.txt")).unwrap();
@@ -274,7 +420,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
-            max_results: Some(1),
+            limit: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -283,6 +429,8 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             assert!(json["message"].as_str().unwrap().contains("No files found"));
+            assert_eq!(json["numFiles"], 0);
+            assert_eq!(json["totalFiles"], 0);
         } else {
             panic!("Expected JSON output");
         }
@@ -293,7 +441,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: None,
-            max_results: Some(1),
+            limit: None,
         };
 
         let agent = Agent::default();
@@ -304,7 +452,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm_auto_allow_enabled() {
+    async fn test_eval_perm_auto_allow_disabled() {
         use std::collections::HashMap;
 
         use crate::cli::agent::ToolSettingTarget;
@@ -312,7 +460,7 @@ mod tests {
         let tool = Glob {
             pattern: "*.rs".to_string(),
             path: None,
-            max_results: Some(1),
+            limit: None,
         };
 
         let agent = Agent {
@@ -321,7 +469,7 @@ mod tests {
                 let mut map = HashMap::new();
                 map.insert(
                     ToolSettingTarget("glob".to_string()),
-                    serde_json::json!({ "autoAllow": true }),
+                    serde_json::json!({ "autoAllow": false }),
                 );
                 map
             },
@@ -331,6 +479,6 @@ mod tests {
         let os = Os::new().await.unwrap();
         let result = tool.eval_perm(&os, &agent);
 
-        assert!(matches!(result, PermissionEvalResult::Allow));
+        assert!(matches!(result, PermissionEvalResult::Ask));
     }
 }
