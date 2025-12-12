@@ -367,7 +367,7 @@ impl<'a> SubagentIndicator<'a> {
             fn drop(&mut self) {
                 crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
                 if let Some(end_turn_tx) = self.end_turn_tx.take() {
-                    end_turn_tx.send(()).expect("failed ot send end turn message");
+                    end_turn_tx.send(()).expect("failed to send end turn message");
                 }
             }
         }
@@ -561,6 +561,7 @@ impl<'a> SubagentIndicator<'a> {
                             let mut lines = vec![Line::from(spans)];
 
                             if agents.values().all(|info| info.is_done) {
+                                lines.push(Line::from(""));
                                 lines.push(Line::from(vec![
                                     Span::styled("All agents have completed. Press ", Style::default().fg(Color::Reset.into())),
                                     Span::styled("↵", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
