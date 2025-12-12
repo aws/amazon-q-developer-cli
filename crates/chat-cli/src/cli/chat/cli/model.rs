@@ -1,5 +1,8 @@
 use amzn_codewhisperer_client::types::Model;
-use clap::Args;
+use clap::{
+    Args,
+    Subcommand,
+};
 use crossterm::style::{
     self,
 };
@@ -19,6 +22,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
 
@@ -83,14 +87,35 @@ impl ModelInfo {
 }
 
 /// Command-line arguments for model selection operations
-#[deny(missing_docs)]
 #[derive(Debug, PartialEq, Args)]
-pub struct ModelArgs;
+pub struct ModelArgs {
+    #[command(subcommand)]
+    pub subcommand: Option<ModelSubcommand>,
+}
+
 impl ModelArgs {
-    pub async fn execute(self, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
-        Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
-            skip_printing_tools: false,
-        }))
+    pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        match self.subcommand {
+            Some(subcommand) => subcommand.execute(os, session).await,
+            None => Ok(select_model(os, session).await?.unwrap_or(ChatState::PromptUser {
+                skip_printing_tools: false,
+            })),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Subcommand)]
+pub enum ModelSubcommand {
+    /// Set the current model as the default for new conversations
+    #[command(name = "set-current-as-default")]
+    SetCurrentAsDefault,
+}
+
+impl ModelSubcommand {
+    pub async fn execute(self, os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        match self {
+            Self::SetCurrentAsDefault => set_current_as_default(os, session).await,
+        }
     }
 }
 
@@ -202,6 +227,34 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
     Ok(Some(ChatState::PromptUser {
         skip_printing_tools: false,
     }))
+}
+
+async fn set_current_as_default(os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    if let Some(model_info) = &session.conversation.model_info {
+        os.database
+            .settings
+            .set(Setting::ChatDefaultModel, model_info.model_id.clone())
+            .await
+            .map_err(|e| ChatError::Custom(format!("Failed to set default model: {e}").into()))?;
+
+        queue!(
+            session.stderr,
+            style::Print("\n"),
+            style::Print(format!(" Set {} as default model\n\n", model_info.display_name())),
+            StyledText::reset(),
+        )?;
+    } else {
+        queue!(
+            session.stderr,
+            StyledText::error_fg(),
+            style::Print("No model currently selected\n"),
+            StyledText::reset(),
+        )?;
+    }
+
+    Ok(ChatState::PromptUser {
+        skip_printing_tools: false,
+    })
 }
 
 pub async fn get_model_info(model_id: &str, os: &Os) -> Result<ModelInfo, ChatError> {
