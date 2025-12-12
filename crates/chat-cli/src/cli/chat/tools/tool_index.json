@@ -43,7 +43,7 @@
   },
   "grep": {
     "name": "grep",
-    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. Returns matching lines with file paths and line numbers.",
+    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -70,8 +70,7 @@
             "files_with_matches",
             "count"
           ],
-          "description": "Output format: 'content' shows matching lines with line numbers (best for seeing actual matches), 'files_with_matches' shows only file paths (default), 'count' shows match counts per file."
-        }
+          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."        }
       },
       "required": [
         "pattern"

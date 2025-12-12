@@ -16,8 +16,6 @@ use crate::cli::agent::{Agent, PermissionEvalResult};
 use crate::os::Os;
 use crate::theme::StyledText;
 
-/// Default max matches per file
-const DEFAULT_MAX_MATCHES_PER_FILE: usize = 50;
 /// Default max files to return
 const DEFAULT_MAX_FILES: usize = 100;
 /// Default max total lines for content mode
@@ -27,10 +25,10 @@ const DEFAULT_MAX_TOTAL_LINES: usize = 500;
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum OutputMode {
-    /// Show matching lines with file path and line number
-    Content,
-    /// Only show file paths that contain matches (default)
+    /// Show matching lines with file path and line number (default)
     #[default]
+    Content,
+    /// Only show file paths that contain matches
     FilesWithMatches,
     /// Show count of matches per file
     Count,
@@ -212,54 +210,52 @@ impl Grep {
         t.peek().is_none()
     }
 
-    /// Search and return matching line content
+    /// Search and return matching line content in compact ripgrep-like format
     fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
             .build();
 
-        let mut all_results: Vec<serde_json::Value> = Vec::new();
-        let mut total_lines = 0usize;
+        // Collect all matches in ripgrep-style format: "file:line:content"
+        let mut all_matches: Vec<String> = Vec::new();
+        let mut files_with_matches = 0usize;
 
         for file_path in files {
-            if total_lines >= DEFAULT_MAX_TOTAL_LINES {
+            if all_matches.len() >= DEFAULT_MAX_TOTAL_LINES {
                 break;
             }
 
-            let mut file_matches: Vec<String> = Vec::new();
+            let file_str = file_path.display().to_string();
+            let mut file_had_match = false;
 
             let _ = searcher.search_path(
                 matcher,
                 file_path,
                 UTF8(|line_num, line| {
-                    if file_matches.len() < DEFAULT_MAX_MATCHES_PER_FILE
-                        && total_lines + file_matches.len() < DEFAULT_MAX_TOTAL_LINES
-                    {
-                        file_matches.push(format!("{}:{}", line_num, line.trim_end()));
+                    if all_matches.len() < DEFAULT_MAX_TOTAL_LINES {
+                        // Format: "path/to/file.rs:42:matching line content"
+                        all_matches.push(format!("{}:{}:{}", file_str, line_num, line.trim_end()));
+                        file_had_match = true;
                     }
-                    Ok(file_matches.len() < DEFAULT_MAX_MATCHES_PER_FILE
-                        && total_lines + file_matches.len() < DEFAULT_MAX_TOTAL_LINES)
+                    Ok(all_matches.len() < DEFAULT_MAX_TOTAL_LINES)
                 }),
             );
 
-            if !file_matches.is_empty() {
-                total_lines += file_matches.len();
-                all_results.push(serde_json::json!({
-                    "file": file_path.display().to_string(),
-                    "matches": file_matches
-                }));
+            if file_had_match {
+                files_with_matches += 1;
             }
         }
 
-        if all_results.is_empty() {
+        if all_matches.is_empty() {
             serde_json::json!({
                 "message": format!("No matches found for pattern: {}", self.pattern)
             })
         } else {
             serde_json::json!({
-                "results": all_results,
-                "totalLines": total_lines
+                "numFiles": files_with_matches,
+                "numMatches": all_matches.len(),
+                "matches": all_matches
             })
         }
     }
@@ -468,9 +464,12 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["totalLines"], 2);
-            let results = json["results"].as_array().unwrap();
-            assert_eq!(results.len(), 1);
+            assert_eq!(json["numMatches"], 2);
+            assert_eq!(json["numFiles"], 1);
+            let matches = json["matches"].as_array().unwrap();
+            // Format: "file:line:content"
+            assert!(matches[0].as_str().unwrap().contains(":1:Hello world"));
+            assert!(matches[1].as_str().unwrap().contains(":3:Hello again"));
         } else {
             panic!("Expected JSON output");
         }
@@ -555,7 +554,7 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["totalLines"], 2);
+            assert_eq!(json["numMatches"], 2);
         } else {
             panic!("Expected JSON output");
         }
