@@ -18,8 +18,6 @@ pub struct LanguageConfig {
     pub project_patterns: Vec<String>,
     pub exclude_patterns: Vec<String>,
     #[serde(default)]
-    pub source_patterns: Vec<String>,
-    #[serde(default)]
     pub multi_workspace: bool,
     pub initialization_options: Option<Value>,
     #[serde(default = "default_timeout")]
