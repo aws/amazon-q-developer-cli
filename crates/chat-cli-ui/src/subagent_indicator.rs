@@ -42,7 +42,6 @@ use serde::{
     Deserialize,
     Serialize,
 };
-use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
 use tracing::{
     error,
@@ -171,18 +170,18 @@ fn get_cursor_position_reliably() -> std::io::Result<(u16, u16)> {
 }
 
 pub struct SubagentIndicatorHandle {
-    end_turn_rx: mpsc::Receiver<()>,
+    end_turn_rx: Option<tokio::sync::oneshot::Receiver<()>>,
     guard: Option<CancellationToken>,
 }
 
 impl SubagentIndicatorHandle {
-    pub async fn wait_for_clean_screen(&mut self) -> eyre::Result<Option<()>> {
-        match self.guard.take() {
-            Some(ct) => {
+    pub async fn wait_for_clean_screen(&mut self) -> eyre::Result<()> {
+        match (self.guard.take(), self.end_turn_rx.take()) {
+            (Some(ct), Some(end_turn_rx)) => {
                 ct.cancel();
-                Ok(self.end_turn_rx.recv().await)
+                Ok(end_turn_rx.await?)
             },
-            None => bail!("display task has already been cancelled"),
+            (_, _) => bail!("display task has already been cancelled"),
         }
     }
 }
@@ -343,7 +342,7 @@ impl<'a> SubagentIndicator<'a> {
             .iter()
             .map(|(agent_id, agent_info)| (*agent_id, agent_info.to_owned()))
             .collect::<BTreeMap<_, _>>();
-        let (end_turn_tx, end_turn_rx) = mpsc::channel::<()>(1);
+        let (end_turn_tx, end_turn_rx) = tokio::sync::oneshot::channel::<()>();
         let mut focused_agent = if !self.agents.is_empty() {
             Some(0_u16)
         } else {
@@ -351,23 +350,30 @@ impl<'a> SubagentIndicator<'a> {
         };
         let is_interactive = self.is_interactive;
 
-        struct RawModeGuard;
+        struct RawModeGuard {
+            end_turn_tx: Option<tokio::sync::oneshot::Sender<()>>,
+        }
 
         impl RawModeGuard {
-            pub fn enter_raw_mode() -> Self {
+            pub fn enter_raw_mode(end_turn_tx: tokio::sync::oneshot::Sender<()>) -> Self {
                 crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
-                Self
+                Self {
+                    end_turn_tx: Some(end_turn_tx),
+                }
             }
         }
 
         impl Drop for RawModeGuard {
             fn drop(&mut self) {
                 crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+                if let Some(end_turn_tx) = self.end_turn_tx.take() {
+                    end_turn_tx.send(()).expect("failed ot send end turn message");
+                }
             }
         }
 
         tokio::spawn(async move {
-            let _raw_mode_guard = RawModeGuard::enter_raw_mode();
+            let _raw_mode_guard = RawModeGuard::enter_raw_mode(end_turn_tx);
 
             let mut content_widget_width: u16;
             let mut max_text_width: u16;
@@ -927,13 +933,11 @@ impl<'a> SubagentIndicator<'a> {
             )
             .ok();
 
-            _ = end_turn_tx.send(()).await;
-
             Ok::<(), eyre::Report>(())
         });
 
         SubagentIndicatorHandle {
-            end_turn_rx,
+            end_turn_rx: Some(end_turn_rx),
             guard: Some(cancellation_token),
         }
     }
