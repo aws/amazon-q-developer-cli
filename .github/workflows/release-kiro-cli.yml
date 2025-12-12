@@ -194,7 +194,7 @@ jobs:
         run: |
           BRANCH="${{ github.ref_name }}"
           if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]]; then
-            echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
+            echo 'ENVIRONMENT=["gamma", "prod"]' >> $GITHUB_OUTPUT
           else
             echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
           fi
