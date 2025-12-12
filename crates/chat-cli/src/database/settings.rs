@@ -51,7 +51,7 @@ pub enum Setting {
     #[strum(message = "Key binding for tangent mode toggle (single character)")]
     TangentModeKey,
     #[strum(message = "Enable subagent feature (boolean)")]
-    EnabledUseSubagent,
+    EnabledSubagent,
 
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
@@ -111,7 +111,7 @@ impl AsRef<str> for Setting {
             Self::AutocompletionKey => "chat.autocompletionKey",
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
-            Self::EnabledUseSubagent => "chat.enableUseSubagent",
+            Self::EnabledSubagent => "chat.enableSubagent",
 
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
@@ -163,7 +163,7 @@ impl TryFrom<&str> for Setting {
             "chat.autocompletionKey" => Ok(Self::AutocompletionKey),
             "chat.enableTangentMode" => Ok(Self::EnabledTangentMode),
             "chat.tangentModeKey" => Ok(Self::TangentModeKey),
-            "chat.enableUseSubagent" => Ok(Self::EnabledUseSubagent),
+            "chat.enableSubagent" => Ok(Self::EnabledSubagent),
 
             "introspect.tangentMode" => Ok(Self::IntrospectTangentMode),
             "chat.greeting.enabled" => Ok(Self::ChatGreetingEnabled),

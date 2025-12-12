@@ -103,7 +103,7 @@ impl UseSubagent {
     };
 
     pub fn is_enabled(os: &Os) -> bool {
-        ExperimentManager::is_enabled(os, ExperimentName::UseSubagent)
+        ExperimentManager::is_enabled(os, ExperimentName::Subagent)
     }
 
     pub fn validate(&self) -> Result<()> {
