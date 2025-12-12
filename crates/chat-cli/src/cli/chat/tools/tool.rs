@@ -16,6 +16,7 @@ use super::fs_read::FsRead;
 use super::fs_write::FsWrite;
 use super::gh_issue::GhIssue;
 use super::glob::Glob;
+use super::grep::Grep;
 use super::introspect::Introspect;
 use super::knowledge::Knowledge;
 use super::thinking::Thinking;
@@ -57,6 +58,7 @@ impl ToolMetadata {
     pub const FS_WRITE: &ToolInfo = &FsWrite::INFO;
     pub const GH_ISSUE: &ToolInfo = &GhIssue::INFO;
     pub const GLOB: &ToolInfo = &Glob::INFO;
+    pub const GREP: &ToolInfo = &Grep::INFO;
     pub const INTROSPECT: &ToolInfo = &Introspect::INFO;
     pub const KNOWLEDGE: &ToolInfo = &Knowledge::INFO;
     pub const THINKING: &ToolInfo = &Thinking::INFO;
@@ -95,6 +97,7 @@ pub enum Tool {
     WebSearch(WebSearch),
     WebFetch(WebFetch),
     Glob(Glob),
+    Grep(Grep),
 }
 
 impl Tool {
@@ -116,6 +119,7 @@ impl Tool {
             Tool::WebSearch(_) => WebSearch::INFO.preferred_alias,
             Tool::WebFetch(_) => WebFetch::INFO.preferred_alias,
             Tool::Glob(_) => Glob::INFO.preferred_alias,
+            Tool::Grep(_) => Grep::INFO.preferred_alias,
         }
     }
 
@@ -137,6 +141,7 @@ impl Tool {
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
             Tool::Glob(glob) => glob.eval_perm(os, agent),
+            Tool::Grep(grep) => grep.eval_perm(os, agent),
         }
     }
 
@@ -166,6 +171,7 @@ impl Tool {
             Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
             Tool::Glob(glob) => glob.invoke(os, stdout).await,
+            Tool::Grep(grep) => grep.invoke(os, stdout).await,
         }
     }
 
@@ -195,6 +201,7 @@ impl Tool {
                 Tool::WebSearch(web_search) => web_search.queue_description(self, &mut buf),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, &mut buf),
                 Tool::Glob(glob) => glob.queue_description(self, &mut buf),
+                Tool::Grep(grep) => grep.queue_description(self, &mut buf),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -223,6 +230,7 @@ impl Tool {
                 Tool::WebSearch(web_search) => web_search.queue_description(self, output),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, output),
                 Tool::Glob(glob) => glob.queue_description(self, output),
+                Tool::Grep(grep) => grep.queue_description(self, output),
             }?;
         };
 
@@ -247,6 +255,7 @@ impl Tool {
             Tool::WebSearch(web_search) => web_search.validate(os).await,
             Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
             Tool::Glob(glob) => glob.validate(os).await,
+            Tool::Grep(grep) => grep.validate(os).await,
         }
     }
 

@@ -916,6 +916,7 @@ impl Agents {
             name if ToolMetadata::THINKING.aliases.contains(&name) => "trusted (prerelease)".dark_green().bold(),
             name if ToolMetadata::TODO.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::GLOB.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::GREP.aliases.contains(&name) => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };

@@ -41,6 +41,43 @@
       ]
     }
   },
+  "grep": {
+    "name": "grep",
+    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. Returns matching lines with file paths and line numbers.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\""
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory to search from. Defaults to current working directory."
+        },
+        "include": {
+          "type": "string",
+          "description": "File filter glob. Examples: \"*.rs\", \"*.{ts,tsx}\", \"*.py\""
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Case-sensitive search. Defaults to false (case-insensitive)."
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files_with_matches",
+            "count"
+          ],
+          "description": "Output format: 'content' shows matching lines with line numbers (best for seeing actual matches), 'files_with_matches' shows only file paths (default), 'count' shows match counts per file."
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
