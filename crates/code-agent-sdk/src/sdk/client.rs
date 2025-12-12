@@ -699,6 +699,41 @@ impl CodeIntelligence {
             .collect())
     }
 
+    /// **Get hover information at a specific location**
+    ///
+    /// Retrieves hover information (type info, documentation) for the symbol
+    /// at the specified position in a file.
+    ///
+    /// # Arguments
+    /// * `request` - Hover request parameters including file path and position
+    ///
+    /// # Returns
+    /// * `Result<Option<HoverInfo>>` - Hover information, or None if not available
+    pub async fn hover(
+        &mut self,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>> {
+        self.symbol_service.hover(&mut self.workspace_manager, request).await
+    }
+
+    /// **Get code completion suggestions at a specific location**
+    ///
+    /// Retrieves code completion suggestions for the specified position in a file.
+    ///
+    /// # Arguments
+    /// * `request` - Completion request parameters including file path and position
+    ///
+    /// # Returns
+    /// * `Result<Option<CompletionInfo>>` - Completion suggestions, or None if not available
+    pub async fn completion(
+        &mut self,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>> {
+        self.symbol_service
+            .completion(&mut self.workspace_manager, request)
+            .await
+    }
+
     /// **Add a language server configuration**
     ///
     /// Registers a new language server that will be used for files matching

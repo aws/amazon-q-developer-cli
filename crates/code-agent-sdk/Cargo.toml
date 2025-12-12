@@ -6,6 +6,7 @@ edition.workspace = true
 [dependencies]
 tokio.workspace = true
 serde_json.workspace = true
+strsim.workspace = true
 serde.workspace = true
 lsp-types = "0.95.0"
 url.workspace = true

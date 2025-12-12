@@ -73,6 +73,20 @@ pub trait SymbolService: Send + Sync {
         workspace_manager: &mut WorkspaceManager,
         request: GetDocumentDiagnosticsRequest,
     ) -> Result<Vec<Diagnostic>>;
+
+    /// Get hover information at a specific location
+    async fn hover(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>>;
+
+    /// Get code completion suggestions at a specific location
+    async fn completion(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>>;
 }
 
 /// LSP-based implementation of SymbolService
@@ -608,6 +622,202 @@ impl SymbolService for LspSymbolService {
 
         // Use new push-based approach through workspace manager
         workspace_manager.get_diagnostics_for_file(&file_path).await
+    }
+
+    async fn hover(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::HoverRequest,
+    ) -> Result<Option<crate::model::entities::HoverInfo>> {
+        use lsp_types::{
+            HoverParams,
+            TextDocumentIdentifier,
+            TextDocumentPositionParams,
+        };
+
+        use crate::model::entities::HoverInfo;
+
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let params = HoverParams {
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: crate::utils::to_lsp_position(request.row, request.column),
+            },
+            work_done_progress_params: Default::default(),
+        };
+
+        match client.hover(params).await? {
+            Some(hover) => {
+                let content = match hover.contents {
+                    lsp_types::HoverContents::Scalar(marked_string) => match marked_string {
+                        lsp_types::MarkedString::String(s) => Some(s),
+                        lsp_types::MarkedString::LanguageString(ls) => {
+                            Some(format!("```{}\n{}\n```", ls.language, ls.value))
+                        },
+                    },
+                    lsp_types::HoverContents::Array(marked_strings) => {
+                        let content: Vec<String> = marked_strings
+                            .into_iter()
+                            .map(|ms| match ms {
+                                lsp_types::MarkedString::String(s) => s,
+                                lsp_types::MarkedString::LanguageString(ls) => {
+                                    format!("```{}\n{}\n```", ls.language, ls.value)
+                                },
+                            })
+                            .collect();
+                        if content.is_empty() {
+                            None
+                        } else {
+                            Some(content.join("\n\n"))
+                        }
+                    },
+                    lsp_types::HoverContents::Markup(markup) => Some(markup.value),
+                };
+
+                let relative_path = canonical_path
+                    .strip_prefix(workspace_manager.workspace_root())
+                    .unwrap_or(&canonical_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                Ok(Some(HoverInfo {
+                    file_path: relative_path,
+                    row: request.row,
+                    column: request.column,
+                    content,
+                }))
+            },
+            None => Ok(None),
+        }
+    }
+
+    async fn completion(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: crate::model::types::CompletionRequest,
+    ) -> Result<Option<crate::model::entities::CompletionInfo>> {
+        use lsp_types::{
+            CompletionParams,
+            TextDocumentIdentifier,
+            TextDocumentPositionParams,
+        };
+
+        use crate::model::entities::{
+            CompletionInfo,
+            CompletionItem,
+        };
+
+        // Ensure initialized
+        if !workspace_manager.is_initialized() {
+            workspace_manager.initialize().await?;
+        }
+
+        let canonical_path = canonicalize_path(&request.file_path)?;
+        let content = std::fs::read_to_string(&canonical_path)?;
+        self.workspace_service
+            .open_file(workspace_manager, &canonical_path, content)
+            .await?;
+
+        let client = workspace_manager
+            .get_client_for_file(&canonical_path)
+            .await?
+            .ok_or_else(|| {
+                crate::error::CodeIntelligenceError::lsp_not_available(canonical_path.clone(), "unknown", None)
+            })?;
+
+        let uri = Url::from_file_path(&canonical_path).map_err(|_| {
+            crate::error::CodeIntelligenceError::invalid_path(canonical_path.clone(), "Cannot convert to URI")
+        })?;
+
+        let params = CompletionParams {
+            text_document_position: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier { uri },
+                position: crate::utils::to_lsp_position(request.row, request.column),
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+            context: None,
+        };
+
+        match client.completion(params).await? {
+            Some(completion_response) => {
+                let items = match completion_response {
+                    lsp_types::CompletionResponse::Array(items) => items,
+                    lsp_types::CompletionResponse::List(list) => list.items,
+                };
+
+                let completion_items: Vec<CompletionItem> = items
+                    .into_iter()
+                    .map(|item| CompletionItem {
+                        label: item.label,
+                        kind: item.kind.map(|k| format!("{k:?}")),
+                        detail: item.detail,
+                        documentation: item.documentation.map(|doc| match doc {
+                            lsp_types::Documentation::String(s) => s,
+                            lsp_types::Documentation::MarkupContent(markup) => markup.value,
+                        }),
+                    })
+                    .collect();
+
+                let relative_path = canonical_path
+                    .strip_prefix(workspace_manager.workspace_root())
+                    .unwrap_or(&canonical_path)
+                    .to_string_lossy()
+                    .to_string();
+
+                let mut completion_info = CompletionInfo {
+                    file_path: relative_path,
+                    row: request.row,
+                    column: request.column,
+                    items: completion_items,
+                    total_count: 0, // Will be set after filtering
+                };
+
+                // Apply symbol_type filtering if provided (same pattern as search_symbols)
+                if let Some(symbol_type) = &request.symbol_type {
+                    let lsp_kind = symbol_type.to_lsp_symbol_kind();
+                    completion_info
+                        .items
+                        .retain(|item| item.kind.as_ref().is_some_and(|k| *k == format!("{lsp_kind:?}")));
+                }
+
+                // Apply fuzzy filtering if filter is provided
+                if let Some(filter) = &request.filter {
+                    completion_info.filter_fuzzy(filter);
+                }
+
+                // Set total_count before truncation
+                completion_info.total_count = completion_info.items.len();
+
+                // Apply limit (default 50, same as search_symbols)
+                let limit = request.limit.unwrap_or(MAX_RESULTS as usize);
+                completion_info.items.truncate(limit);
+
+                Ok(Some(completion_info))
+            },
+            None => Ok(None),
+        }
     }
 }
 

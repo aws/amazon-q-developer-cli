@@ -39,6 +39,8 @@ pub enum Code {
     GetDocumentSymbols(GetDocumentSymbolsParams),
     LookupSymbols(LookupSymbolsParams),
     GetDiagnostics(GetDiagnosticsParams),
+    GetHover(GetHoverParams),
+    GetCompletions(GetCompletionsParams),
     InitializeWorkspace,
 }
 
@@ -124,9 +126,36 @@ pub struct GetDiagnosticsParams {
     pub previous_result_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetHoverParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetCompletionsParams {
+    pub file_path: String,
+    pub row: i32,
+    pub column: i32,
+    #[serde(default)]
+    pub trigger_character: Option<String>,
+    #[serde(default = "default_completion_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub filter: Option<String>,
+    #[serde(default)]
+    pub symbol_type: Option<String>,
+}
+
 fn default_tab_size() -> i32 {
     4
 }
+
+fn default_completion_limit() -> usize {
+    50
+}
+
 fn default_insert_spaces() -> bool {
     true
 }
@@ -218,6 +247,16 @@ impl Code {
             },
             Code::GetDiagnostics(params) => {
                 Self::validate_file_exists(os, &params.file_path)?;
+                Ok(())
+            },
+            Code::GetHover(params) => {
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
+                Ok(())
+            },
+            Code::GetCompletions(params) => {
+                Self::validate_file_exists(os, &params.file_path)?;
+                Self::validate_position(params.row, params.column)?;
                 Ok(())
             },
             Code::InitializeWorkspace => Ok(()),
@@ -711,6 +750,239 @@ impl Code {
                         },
                     }
                 },
+                Code::GetHover(params) => {
+                    let request = code_agent_sdk::model::types::HoverRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                    };
+
+                    match client.hover(request).await {
+                        Ok(Some(hover_info)) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(_stdout, style::Print("\n"))?;
+
+                            // Display hover information
+                            if let Some(contents) = &hover_info.content {
+                                queue!(
+                                    _stdout,
+                                    StyledText::info_fg(),
+                                    style::Print("Hover Info: "),
+                                    StyledText::reset(),
+                                    style::Print(contents),
+                                    style::Print("\n"),
+                                )?;
+                            }
+
+                            result = format!("{hover_info:?}");
+                        },
+                        Ok(None) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(
+                                _stdout,
+                                style::Print("\nNo hover information available at "),
+                                StyledText::brand_fg(),
+                                style::Print(&params.file_path),
+                                StyledText::reset(),
+                                style::Print(":"),
+                                StyledText::secondary_fg(),
+                                style::Print(&format!("{}:{}", params.row, params.column)),
+                                StyledText::reset(),
+                                style::Print("\n"),
+                            )?;
+                            result = "No hover information available".to_string();
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let err_str = e.to_string().to_lowercase();
+                            let error_msg = if err_str.contains("position")
+                                || err_str.contains("line")
+                                || err_str.contains("column")
+                                || err_str.contains("range")
+                            {
+                                format!(
+                                    "Position error at line {}, column {}. Try adjusting the position.",
+                                    params.row, params.column
+                                )
+                            } else if e.to_string().contains("LSP server error") {
+                                format!(
+                                    "LSP server error: {}",
+                                    e.to_string().lines().next().unwrap_or("Unknown error")
+                                )
+                            } else {
+                                format!("Failed to get hover information: {e}")
+                            };
+
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Hover Error: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{error_msg}\n")),
+                            )?;
+                            result = error_msg;
+                        },
+                    }
+                },
+                Code::GetCompletions(params) => {
+                    let symbol_type = params
+                        .symbol_type
+                        .as_ref()
+                        .map(|k| k.parse::<code_agent_sdk::model::types::ApiSymbolKind>())
+                        .transpose()
+                        .map_err(|e| eyre::eyre!(e))?;
+                    let request = code_agent_sdk::model::types::CompletionRequest {
+                        file_path: std::path::PathBuf::from(&params.file_path),
+                        row: params.row as u32,
+                        column: params.column as u32,
+                        trigger_character: params.trigger_character.clone(),
+                        filter: params.filter.clone(),
+                        symbol_type,
+                        limit: Some(params.limit),
+                    };
+
+                    match client.completion(request).await {
+                        Ok(Some(completion_info)) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let completions = &completion_info.items;
+
+                            if completions.is_empty() {
+                                let msg = if params.filter.is_some() {
+                                    format!(
+                                        "No completions found matching filter '{}'",
+                                        params.filter.as_ref().unwrap()
+                                    )
+                                } else {
+                                    "No completions available".to_string()
+                                };
+                                queue!(_stdout, style::Print(&format!("\n{msg}\n")))?;
+                                result = msg;
+                            } else {
+                                let total_count = completion_info.total_count;
+                                let remaining = total_count.saturating_sub(completions.len());
+
+                                queue!(
+                                    _stdout,
+                                    style::Print("\nFound "),
+                                    StyledText::brand_fg(),
+                                    style::Print(&total_count.to_string()),
+                                    StyledText::reset(),
+                                    style::Print(" completions"),
+                                )?;
+
+                                if params.symbol_type.is_some() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" of type '"),
+                                        StyledText::info_fg(),
+                                        style::Print(params.symbol_type.as_ref().unwrap()),
+                                        StyledText::reset(),
+                                        style::Print("'"),
+                                    )?;
+                                }
+
+                                if params.filter.is_some() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" matching '"),
+                                        StyledText::info_fg(),
+                                        style::Print(params.filter.as_ref().unwrap()),
+                                        StyledText::reset(),
+                                        style::Print("'"),
+                                    )?;
+                                }
+
+                                if remaining > 0 {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(" (showing "),
+                                        style::Print(&completions.len().to_string()),
+                                        style::Print(")"),
+                                    )?;
+                                }
+
+                                queue!(_stdout, style::Print(":\n"))?;
+
+                                for (i, completion) in completions.iter().enumerate() {
+                                    queue!(
+                                        _stdout,
+                                        style::Print(&format!("  {}. ", i + 1)),
+                                        StyledText::brand_fg(),
+                                        style::Print(&completion.label),
+                                        StyledText::reset(),
+                                    )?;
+
+                                    if let Some(kind) = &completion.kind {
+                                        queue!(
+                                            _stdout,
+                                            style::Print(" ("),
+                                            StyledText::info_fg(),
+                                            style::Print(kind),
+                                            StyledText::reset(),
+                                            style::Print(")"),
+                                        )?;
+                                    }
+
+                                    if let Some(detail) = &completion.detail {
+                                        queue!(_stdout, style::Print(" - "), style::Print(detail),)?;
+                                    }
+
+                                    queue!(_stdout, style::Print("\n"))?;
+                                }
+
+                                if remaining > 0 {
+                                    queue!(
+                                        _stdout,
+                                        style::Print("  "),
+                                        StyledText::secondary_fg(),
+                                        style::Print(&format!("({remaining} more available)\n")),
+                                        StyledText::reset(),
+                                    )?;
+                                }
+
+                                result = format!("{completion_info:?}");
+                                if remaining > 0 {
+                                    result.push_str(&format!("\n\nNote: {remaining} more results available. Use filter or symbol_type parameters for more targeted results."));
+                                }
+                            }
+                        },
+                        Ok(None) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(_stdout, style::Print("\nNo completions available\n"),)?;
+                            result = "No completions available".to_string();
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let err_str = e.to_string().to_lowercase();
+                            let error_msg = if err_str.contains("position")
+                                || err_str.contains("line")
+                                || err_str.contains("column")
+                                || err_str.contains("range")
+                            {
+                                format!(
+                                    "Position error at line {}, column {}. Try adjusting the position.",
+                                    params.row, params.column
+                                )
+                            } else if e.to_string().contains("LSP server error") {
+                                format!(
+                                    "LSP server error: {}",
+                                    e.to_string().lines().next().unwrap_or("Unknown error")
+                                )
+                            } else {
+                                format!("Failed to get completions: {e}")
+                            };
+
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Completion Error: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{error_msg}\n")),
+                            )?;
+                            result = error_msg;
+                        },
+                    }
+                },
                 Code::InitializeWorkspace => match client.initialize().await {
                     Ok(init_response) => {
                         Self::stop_spinner(&mut spinner, _stdout)?;
@@ -1077,6 +1349,43 @@ impl Code {
                     style::Print(&params.file_path),
                     StyledText::reset(),
                 )?;
+            },
+            Code::GetHover(params) => {
+                queue!(
+                    output,
+                    style::Print("Getting hover information at: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
+            },
+            Code::GetCompletions(params) => {
+                queue!(
+                    output,
+                    style::Print("Getting completions at: "),
+                    StyledText::brand_fg(),
+                    style::Print(&params.file_path),
+                    StyledText::reset(),
+                    style::Print(":"),
+                    StyledText::secondary_fg(),
+                    style::Print(&format!("{}:{}", params.row, params.column)),
+                    StyledText::reset(),
+                )?;
+
+                if let Some(trigger) = &params.trigger_character {
+                    queue!(
+                        output,
+                        style::Print(" [trigger: "),
+                        StyledText::info_fg(),
+                        style::Print(&format!("'{trigger}'")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
+                }
             },
             Code::InitializeWorkspace => {
                 queue!(output, style::Print("Initializing workspace"),)?;

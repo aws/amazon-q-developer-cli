@@ -414,6 +414,28 @@ impl LspClient {
         self.send_lsp_request("textDocument/formatting", params).await
     }
 
+    /// Send hover request to get information at a specific position
+    ///
+    /// # Arguments
+    /// * `params` - Hover request parameters (document URI and position)
+    ///
+    /// # Returns
+    /// * `Result<Option<Hover>>` - Hover information or None
+    pub async fn hover(&self, params: HoverParams) -> Result<Option<Hover>> {
+        self.send_lsp_request("textDocument/hover", params).await
+    }
+
+    /// Send completion request to get code suggestions at a specific position
+    ///
+    /// # Arguments
+    /// * `params` - Completion request parameters (document URI and position)
+    ///
+    /// # Returns
+    /// * `Result<Option<CompletionResponse>>` - Completion suggestions or None
+    pub async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        self.send_lsp_request("textDocument/completion", params).await
+    }
+
     /// Notify server that a document was opened
     ///
     /// # Arguments

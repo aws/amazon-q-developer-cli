@@ -195,6 +195,42 @@ pub struct GetDocumentDiagnosticsRequest {
     pub previous_result_id: Option<String>,
 }
 
+/// Request to get hover information at a specific position.
+///
+/// This request retrieves hover information (documentation, type info) for the symbol
+/// at the specified position in the file.
+#[derive(Debug, Clone)]
+pub struct HoverRequest {
+    /// Path to the file
+    pub file_path: PathBuf,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+}
+
+/// Request to get code completions at a specific position.
+///
+/// This request retrieves code completion suggestions for the specified position
+/// in the file, optionally triggered by a specific character.
+#[derive(Debug, Clone)]
+pub struct CompletionRequest {
+    /// Path to the file
+    pub file_path: PathBuf,
+    /// Line number (1-based)
+    pub row: u32,
+    /// Column number (1-based)
+    pub column: u32,
+    /// Optional trigger character that initiated completion (e.g., '.', '::')
+    pub trigger_character: Option<String>,
+    /// Optional filter for fuzzy matching completion results
+    pub filter: Option<String>,
+    /// Optional symbol type filter (e.g., Method, Function, Class)
+    pub symbol_type: Option<ApiSymbolKind>,
+    /// Maximum number of results to return (default: 50)
+    pub limit: Option<usize>,
+}
+
 /// Request to open a file in the language server.
 ///
 /// This request opens a file for analysis, making it available for code intelligence operations.
