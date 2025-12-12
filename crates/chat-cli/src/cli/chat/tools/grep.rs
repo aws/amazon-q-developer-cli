@@ -1,25 +1,43 @@
 use std::io::Write;
 use std::path::PathBuf;
 
-use crossterm::queue;
-use crossterm::style;
-use eyre::{Context, Result};
+use crossterm::{
+    queue,
+    style,
+};
+use eyre::{
+    Context,
+    Result,
+};
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
-use grep_searcher::{BinaryDetection, SearcherBuilder};
+use grep_searcher::{
+    BinaryDetection,
+    SearcherBuilder,
+};
 use ignore::WalkBuilder;
 use serde::Deserialize;
 use tracing::error;
 
-use super::{display_tool_use, InvokeOutput, OutputKind, ToolInfo};
-use crate::cli::agent::{Agent, PermissionEvalResult};
+use super::{
+    InvokeOutput,
+    OutputKind,
+    ToolInfo,
+    display_tool_use,
+};
+use crate::cli::agent::{
+    Agent,
+    PermissionEvalResult,
+};
 use crate::os::Os;
 use crate::theme::StyledText;
 
+/// Default max matches per file in output
+const DEFAULT_MAX_MATCHES_PER_FILE: usize = 5;
 /// Default max files to return
 const DEFAULT_MAX_FILES: usize = 100;
-/// Default max total lines for content mode
-const DEFAULT_MAX_TOTAL_LINES: usize = 500;
+/// Default max total lines for content mode output
+const DEFAULT_MAX_TOTAL_LINES: usize = 200;
 
 /// Output mode for grep results
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -72,7 +90,7 @@ impl Grep {
             Ok(m) => m,
             Err(e) => {
                 return Ok(self.error_response(format!("Invalid regex: {}", e)));
-            }
+            },
         };
 
         // Collect files to search
@@ -194,14 +212,14 @@ impl Grep {
                         t.next();
                     }
                     return self.match_glob(&rest, "");
-                }
+                },
                 '?' => {
                     if t.next().is_none() {
                         return false;
                     }
-                }
+                },
                 c => match t.next() {
-                    Some(tc) if tc.eq_ignore_ascii_case(&c) => {}
+                    Some(tc) if tc.eq_ignore_ascii_case(&c) => {},
                     _ => return false,
                 },
             }
@@ -217,105 +235,149 @@ impl Grep {
             .line_number(true)
             .build();
 
-        // Collect all matches in ripgrep-style format: "file:line:content"
-        let mut all_matches: Vec<String> = Vec::new();
-        let mut files_with_matches = 0usize;
+        // Collect matches per file with counts
+        let mut file_results: Vec<(String, Vec<String>)> = Vec::new();
+        let mut total_matches: usize = 0;
+        let mut total_files_with_matches: usize = 0;
 
         for file_path in files {
-            if all_matches.len() >= DEFAULT_MAX_TOTAL_LINES {
-                break;
-            }
-
             let file_str = file_path.display().to_string();
-            let mut file_had_match = false;
+            let mut file_matches: Vec<String> = Vec::new();
 
             let _ = searcher.search_path(
                 matcher,
                 file_path,
                 UTF8(|line_num, line| {
-                    if all_matches.len() < DEFAULT_MAX_TOTAL_LINES {
-                        // Format: "path/to/file.rs:42:matching line content"
-                        all_matches.push(format!("{}:{}:{}", file_str, line_num, line.trim_end()));
-                        file_had_match = true;
-                    }
-                    Ok(all_matches.len() < DEFAULT_MAX_TOTAL_LINES)
+                    // Format: "line_num:content"
+                    file_matches.push(format!("{}:{}", line_num, line.trim_end()));
+                    Ok(true) // Continue searching to get accurate count
                 }),
             );
 
-            if file_had_match {
-                files_with_matches += 1;
+            if !file_matches.is_empty() {
+                total_matches += file_matches.len();
+                total_files_with_matches += 1;
+                file_results.push((file_str, file_matches));
             }
         }
 
-        if all_matches.is_empty() {
-            serde_json::json!({
-                "message": format!("No matches found for pattern: {}", self.pattern)
-            })
-        } else {
-            serde_json::json!({
-                "numFiles": files_with_matches,
-                "numMatches": all_matches.len(),
-                "matches": all_matches
-            })
+        if file_results.is_empty() {
+            return serde_json::json!({
+                "message": format!("No matches found for pattern: {}", self.pattern),
+                "numMatches": 0,
+                "numFiles": 0
+            });
         }
+
+        // Sort by match count descending
+        file_results.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+
+        // Build output with file-grouped matches
+        // Limit to first N files and M matches per file for output
+        let max_files_output = DEFAULT_MAX_FILES.min(file_results.len());
+        let mut output_results: Vec<serde_json::Value> = Vec::new();
+        let mut output_match_count: usize = 0;
+
+        for (file, matches) in file_results.iter().take(max_files_output) {
+            let matches_to_show = matches.len().min(DEFAULT_MAX_MATCHES_PER_FILE);
+            let file_output: Vec<String> = matches.iter().take(matches_to_show).cloned().collect();
+
+            output_match_count += file_output.len();
+
+            output_results.push(serde_json::json!({
+                "file": file,
+                "count": matches.len(),
+                "matches": file_output
+            }));
+
+            if output_match_count >= DEFAULT_MAX_TOTAL_LINES {
+                break;
+            }
+        }
+
+        let truncated = total_files_with_matches > output_results.len() || total_matches > output_match_count;
+
+        serde_json::json!({
+            "numMatches": total_matches,
+            "numFiles": total_files_with_matches,
+            "truncated": truncated,
+            "results": output_results
+        })
     }
 
-    /// Search and return only file paths with matches
+    /// Search and return only file paths with matches, sorted by match count
     fn search_files_with_matches(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(false)
             .build();
 
-        let mut matching_files: Vec<String> = Vec::new();
+        // Collect file paths with their match counts
+        let mut file_counts: Vec<(String, usize)> = Vec::new();
+        let mut total_matches: usize = 0;
 
         for file_path in files {
-            if matching_files.len() >= DEFAULT_MAX_FILES {
-                break;
-            }
-
-            let mut has_match = false;
+            let mut match_count = 0usize;
             let _ = searcher.search_path(
                 matcher,
                 file_path,
                 UTF8(|_line_num, _line| {
-                    has_match = true;
-                    Ok(false) // Stop after first match
+                    match_count += 1;
+                    Ok(true)
                 }),
             );
 
-            if has_match {
-                matching_files.push(file_path.display().to_string());
+            if match_count > 0 {
+                total_matches += match_count;
+                file_counts.push((file_path.display().to_string(), match_count));
             }
         }
 
-        if matching_files.is_empty() {
-            serde_json::json!({
-                "message": format!("No matches found for pattern: {}", self.pattern)
-            })
-        } else {
-            serde_json::json!({
-                "filePaths": matching_files,
-                "numFiles": matching_files.len()
-            })
+        if file_counts.is_empty() {
+            return serde_json::json!({
+                "message": format!("No matches found for pattern: {}", self.pattern),
+                "numMatches": 0,
+                "numFiles": 0
+            });
         }
+
+        // Sort by match count descending
+        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let total_files = file_counts.len();
+        let truncated = total_files > DEFAULT_MAX_FILES;
+
+        // Limit output and format as objects with count
+        let results: Vec<serde_json::Value> = file_counts
+            .into_iter()
+            .take(DEFAULT_MAX_FILES)
+            .map(|(file, count)| {
+                serde_json::json!({
+                    "file": file,
+                    "count": count
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "numMatches": total_matches,
+            "numFiles": total_files,
+            "truncated": truncated,
+            "results": results
+        })
     }
 
-    /// Search and return match counts per file
+    /// Search and return match counts per file, sorted by count descending
     fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(false)
             .build();
 
-        let mut results: Vec<serde_json::Value> = Vec::new();
+        let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_count = 0usize;
 
         for file_path in files {
-            if results.len() >= DEFAULT_MAX_FILES {
-                break;
-            }
-
             let mut file_count = 0usize;
             let _ = searcher.search_path(
                 matcher,
@@ -328,28 +390,51 @@ impl Grep {
 
             if file_count > 0 {
                 total_count += file_count;
-                results.push(serde_json::json!({
-                    "file": file_path.display().to_string(),
-                    "count": file_count
-                }));
+                file_counts.push((file_path.display().to_string(), file_count));
             }
         }
 
-        if results.is_empty() {
-            serde_json::json!({
-                "message": format!("No matches found for pattern: {}", self.pattern)
-            })
-        } else {
-            serde_json::json!({
-                "results": results,
-                "totalCount": total_count
-            })
+        if file_counts.is_empty() {
+            return serde_json::json!({
+                "message": format!("No matches found for pattern: {}", self.pattern),
+                "numMatches": 0,
+                "numFiles": 0
+            });
         }
+
+        // Sort by count descending
+        file_counts.sort_by(|a, b| b.1.cmp(&a.1));
+
+        let total_files = file_counts.len();
+        let truncated = total_files > DEFAULT_MAX_FILES;
+
+        let results: Vec<serde_json::Value> = file_counts
+            .into_iter()
+            .take(DEFAULT_MAX_FILES)
+            .map(|(file, count)| {
+                serde_json::json!({
+                    "file": file,
+                    "count": count
+                })
+            })
+            .collect();
+
+        serde_json::json!({
+            "numMatches": total_count,
+            "numFiles": total_files,
+            "truncated": truncated,
+            "results": results
+        })
     }
 
     pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         queue!(output, style::Print("Searching for: "))?;
-        queue!(output, StyledText::brand_fg(), style::Print(&self.pattern), StyledText::reset())?;
+        queue!(
+            output,
+            StyledText::brand_fg(),
+            style::Print(&self.pattern),
+            StyledText::reset()
+        )?;
 
         if let Some(ref path) = self.path {
             if !path.is_empty() && path != "undefined" && path != "null" {
@@ -360,7 +445,12 @@ impl Grep {
 
         if let Some(ref include) = self.include {
             queue!(output, style::Print(" ("))?;
-            queue!(output, StyledText::brand_fg(), style::Print(include), StyledText::reset())?;
+            queue!(
+                output,
+                StyledText::brand_fg(),
+                style::Print(include),
+                StyledText::reset()
+            )?;
             queue!(output, style::Print(")"))?;
         }
 
@@ -405,14 +495,18 @@ impl Grep {
             true
         }
 
-        match Self::INFO.aliases.iter().find_map(|alias| agent.tools_settings.get(*alias)) {
+        match Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
+        {
             Some(settings) => {
                 let settings: Settings = match serde_json::from_value(settings.clone()) {
                     Ok(s) => s,
                     Err(e) => {
                         error!("Failed to deserialize grep settings: {:?}", e);
                         return PermissionEvalResult::Allow;
-                    }
+                    },
                 };
 
                 // Check denied paths
@@ -429,7 +523,7 @@ impl Grep {
                 } else {
                     PermissionEvalResult::Ask
                 }
-            }
+            },
             // grep is read-only, allow by default
             None => PermissionEvalResult::Allow,
         }
@@ -438,10 +532,12 @@ impl Grep {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs::File;
     use std::io::Write as IoWrite;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_grep_content_mode() {
@@ -466,10 +562,9 @@ mod tests {
         if let OutputKind::Json(json) = result.output {
             assert_eq!(json["numMatches"], 2);
             assert_eq!(json["numFiles"], 1);
-            let matches = json["matches"].as_array().unwrap();
-            // Format: "file:line:content"
-            assert!(matches[0].as_str().unwrap().contains(":1:Hello world"));
-            assert!(matches[1].as_str().unwrap().contains(":3:Hello again"));
+            let results = json["results"].as_array().unwrap();
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0]["count"], 2);
         } else {
             panic!("Expected JSON output");
         }
@@ -487,6 +582,7 @@ mod tests {
 
         let mut file3 = File::create(temp_dir.path().join("file3.txt")).unwrap();
         writeln!(file3, "Hello again").unwrap();
+        writeln!(file3, "Hello once more").unwrap();
 
         let tool = Grep {
             pattern: "Hello".to_string(),
@@ -502,6 +598,10 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             assert_eq!(json["numFiles"], 2);
+            assert_eq!(json["numMatches"], 3); // 1 + 2 matches
+            let results = json["results"].as_array().unwrap();
+            // Sorted by count descending, file3 should be first with 2 matches
+            assert_eq!(results[0]["count"], 2);
         } else {
             panic!("Expected JSON output");
         }
@@ -528,7 +628,10 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["totalCount"], 3);
+            assert_eq!(json["numMatches"], 3);
+            assert_eq!(json["numFiles"], 1);
+            let results = json["results"].as_array().unwrap();
+            assert_eq!(results[0]["count"], 3);
         } else {
             panic!("Expected JSON output");
         }
@@ -555,6 +658,7 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             assert_eq!(json["numMatches"], 2);
+            assert_eq!(json["numFiles"], 1);
         } else {
             panic!("Expected JSON output");
         }
@@ -584,8 +688,8 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             assert_eq!(json["numFiles"], 1);
-            let files = json["filePaths"].as_array().unwrap();
-            assert!(files[0].as_str().unwrap().ends_with(".rs"));
+            let results = json["results"].as_array().unwrap();
+            assert!(results[0]["file"].as_str().unwrap().ends_with(".rs"));
         } else {
             panic!("Expected JSON output");
         }
@@ -637,6 +741,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm_auto_allow_disabled() {
         use std::collections::HashMap;
+
         use crate::cli::agent::ToolSettingTarget;
 
         let tool = Grep {

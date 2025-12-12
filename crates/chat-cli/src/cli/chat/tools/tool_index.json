@@ -54,7 +54,7 @@
       "properties": {
         "pattern": {
           "type": "string",
-          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\""
+          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\". Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
         },
         "path": {
           "type": "string",
