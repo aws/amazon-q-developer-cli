@@ -108,7 +108,10 @@ impl ContextManager {
         let paths = agent
             .resources
             .iter()
-            .filter(|resource| resource.starts_with("file://"))
+            .filter(|resource| {
+                matches!(resource, crate::cli::agent::wrapper_types::ResourcePath::FilePath(_))
+                    && resource.starts_with("file://")
+            })
             .map(|s| ContextFilePath::Agent(s.trim_start_matches("file://").to_string()))
             .collect::<Vec<_>>();
 
@@ -552,5 +555,32 @@ mod tests {
         // Test file with incomplete front matter - should be included
         let content_incomplete = "---\ninclusion: always\n# Missing closing ---\nContent here.";
         assert!(should_include_steering_file(content_incomplete).unwrap());
+    }
+
+    #[test]
+    fn test_from_agent_excludes_knowledge_base() {
+        use crate::cli::agent::Agent;
+        use crate::cli::agent::wrapper_types::{
+            ComplexResource,
+            ResourcePath,
+        };
+
+        let mut agent = Agent::default();
+        agent.resources = vec![
+            ResourcePath::FilePath("file://src/main.rs".to_string()),
+            ResourcePath::Complex(ComplexResource::KnowledgeBase {
+                source: "file://docs".to_string(),
+                name: None,
+                description: None,
+                index_type: None,
+                include: None,
+                exclude: None,
+                auto_update: None,
+            }),
+        ];
+
+        let manager = ContextManager::from_agent(&agent, 1000).unwrap();
+        assert_eq!(manager.paths.len(), 1);
+        assert_eq!(manager.paths[0].get_path_as_str(), "src/main.rs");
     }
 }
