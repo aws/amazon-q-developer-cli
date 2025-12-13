@@ -108,55 +108,9 @@ KIRO CLI includes experimental features that can be toggled on/off using the `/e
 
 **When enabled:** Use `/tangent` or the keyboard shortcut to create a checkpoint and explore tangential topics. Use the same command to return to your main conversation.
 
-### Delegate
-**Tool name**: `delegate`  
-**Description:** Launch and manage asynchronous background tasks. Enables running Q chat sessions with specific agents in parallel to your main conversation.
-
-**Features:**
-- Run tasks in the background while continuing your main conversation
-- Automatic notifications when tasks complete
-- Task summaries included in conversation context
-- Support for custom agents with specific tool permissions
-- Persistent task history and status tracking
-
-**Operations:**
-- `launch` - Start a new background task (requires task description, optional agent name)
-- `status` - Check status of a specific agent or all agents. Reading specific agents automatically reads the full std output from disk of the run.
-- `list` - Show available agents for delegation
-
-**Usage:**
-Use natural language to delegate tasks:
-```
-"Delegate a task to create a snake game in the test folder"
-"Check the status of the rust-agent task"
-"What agents are available for delegation?"
-```
-
-**Notifications:**
-When a background task completes, you'll see a notification at your next prompt showing:
-- Task status (SUCCESS/FAILED)
-- Completion time
-- Task description
-- AI-generated summary of what happened
-
-The summary is automatically added to your conversation context, so you can ask follow-up questions about the task.
-
-**Agent Approval:**
-- Tasks with specific agents require explicit approval showing agent details and permissions
-- Tasks without an agent (default) run with trust-all permissions and show a warning
-- Only one task can run per agent at a time
-
-**Task Storage:**
-Task execution details are stored in `.kiro/.subagents/` in your current directory. Files persist until the same agent runs a new task.
-
-**Settings:**
-- `chat.enableDelegate` - Enable/disable delegate feature (boolean)
-
-**When enabled:** You can delegate long-running or independent tasks to background agents. You'll be notified when tasks complete, and can ask about results in your main conversation.
-
 ### TODO Lists
 **Tool name**: `todo_list`
-**Command:** `/todos`  
+**Command:** `/todos`
 **Description:** Enables Q to create and modify TODO lists using the `todo_list` tool and the user to view and manage existing TODO lists using `/todos`.
 
 **Features:**
@@ -174,6 +128,72 @@ Task execution details are stored in `.kiro/.subagents/` in your current directo
 
 **Settings:**
 - `chat.enableTodoList` - Enable/disable TODO list functionality (boolean)
+
+### Use Subagent
+**Tool name**: `use_subagent`
+**Description:** Enables delegating complex tasks to specialized subagents that run in parallel with isolated context
+
+**Features:**
+- Spawn up to 4 subagents simultaneously for parallel task execution
+- Each subagent operates with its own isolated context to prevent main conversation bloat
+- Real-time visual indicator showing status of all running subagents
+- Support for different agent configurations per subagent
+- Interactive controls for monitoring and managing subagents
+- Automatic execution summary with tool usage and duration metrics
+
+**How it works:**
+When enabled, the main agent can delegate tasks to subagents using the `use_subagent` tool. Each subagent:
+1. Receives a specific query/task and optional context
+2. Runs independently with its own agent configuration
+3. Uses the `summary` tool to report findings back to the main agent
+4. Operates in isolation to keep the main conversation focused
+
+**Visual Indicator:**
+The subagent indicator displays:
+- Real-time status for each subagent (starting up, thinking, calling tools, summarizing)
+- Animated spinner showing active subagents
+- Current activity and progress messages
+- Tool approval requests (press 'y' to approve, 'n' to deny)
+- MCP server loading status and OAuth requirements
+- Execution summary upon completion (tool uses, duration)
+
+**Controls:**
+```
+j/↓         Navigate down through subagents
+k/↑         Navigate up through subagents
+y           Approve tool use for selected subagent
+n           Deny tool use for selected subagent
+Enter       Copy OAuth URL to clipboard (when applicable)
+Ctrl+C      Interrupt all subagents
+Esc         Deselect current subagent
+```
+
+**Use cases:**
+- Breaking down complex multi-step tasks into parallel subtasks
+- Preventing context window bloat in long conversations
+- Running independent research or analysis tasks simultaneously
+- Delegating specialized tasks to different agent configurations
+- Maintaining focus in the main conversation while handling auxiliary tasks
+
+**Example workflow:**
+```
+User: "Research the top 3 JavaScript frameworks and compare their performance"
+
+Main agent uses subagent tool to spawn 3 subagents:
+- Subagent 1: Research React performance metrics
+- Subagent 2: Research Vue.js performance metrics
+- Subagent 3: Research Angular performance metrics
+
+Each subagent:
+- Conducts independent research
+- Gathers relevant data
+- Calls summary tool with findings
+
+Main agent receives all summaries and synthesizes comparison
+```
+
+**Settings:**
+- `EnabledUseSubagent` - Enable/disable subagent functionality (boolean)
 
 ## Managing Experiments
 

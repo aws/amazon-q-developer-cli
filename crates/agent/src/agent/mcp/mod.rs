@@ -341,6 +341,11 @@ impl McpManager {
                 } else if self.servers.contains_key(&name) {
                     return Err(McpManagerError::ServerAlreadyLaunched { name });
                 }
+
+                self.event_buf.push(McpServerActorEvent::Initializing {
+                    server_name: name.clone(),
+                });
+
                 let event_tx = self.server_event_tx.clone();
                 let handle = McpServerActor::spawn(name.clone(), config, self.cred_path.clone(), event_tx);
                 let (tx, rx) = oneshot::channel();
@@ -372,6 +377,7 @@ impl McpManager {
     fn handle_mcp_actor_event(&mut self, evt: McpServerActorEvent) {
         // TODO: keep a record of all the different server events received in this layer?
         match &evt {
+            McpServerActorEvent::Initializing { server_name: _ } => { /* noop */ },
             McpServerActorEvent::Initialized {
                 server_name,
                 serve_duration: _,
@@ -469,6 +475,8 @@ pub enum McpManagerError {
 /// Provides abstraction over [McpServerActorEvent] to avoid leaking implementation details.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerEvent {
+    /// The MCP server is currently initializing
+    Initializing { server_name: String },
     /// The MCP server has launched successfully
     Initialized {
         server_name: String,
@@ -492,6 +500,7 @@ pub enum McpServerEvent {
 impl From<McpServerActorEvent> for McpServerEvent {
     fn from(value: McpServerActorEvent) -> Self {
         match value {
+            McpServerActorEvent::Initializing { server_name } => Self::Initializing { server_name },
             McpServerActorEvent::Initialized {
                 server_name,
                 serve_duration,

@@ -228,15 +228,21 @@ pub struct UserTurnMetadata {
     pub total_request_count: u32,
     /// The number of tool use / tool result pairs in the turn
     pub number_of_cycles: u32,
+    /// The number of tool uses that belong to a native tool
+    pub builtin_tool_uses: u32,
     /// Total length of time spent in the user turn until completion
     pub turn_duration: Option<Duration>,
     /// Why the user turn ended
     pub end_reason: LoopEndReason,
     pub end_timestamp: DateTime<Utc>,
+    /// Input token count associated with the turn
+    pub input_token_count: u64,
+    /// Output token count associated with the turn
+    pub output_token_count: u64,
 }
 
 /// The reason why a user turn ended
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, strum::EnumString, strum::Display, strum::AsRefStr)]
 pub enum LoopEndReason {
     /// Loop ended before handling any requests
     DidNotRun,

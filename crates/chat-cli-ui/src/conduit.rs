@@ -13,9 +13,11 @@ use crossterm::{
 
 use crate::legacy_ui_util::ThemeSource;
 use crate::protocol::{
-    Event,
+    AgentEventKind,
+    InputEvent,
     LegacyPassThroughOutput,
     MetaEvent,
+    SessionEvent,
     ToolCallRejection,
     ToolCallStart,
 };
@@ -26,7 +28,7 @@ const CONTINUATION_LINE: &str = " ⋮ ";
 #[derive(thiserror::Error, Debug)]
 pub enum ConduitError {
     #[error(transparent)]
-    Send(#[from] Box<std::sync::mpsc::SendError<Event>>),
+    Send(#[from] Box<tokio::sync::mpsc::error::SendError<SessionEvent>>),
     #[error(transparent)]
     Utf8(#[from] std::string::FromUtf8Error),
     #[error("No event set")]
@@ -42,25 +44,25 @@ pub enum ConduitError {
 pub struct ViewEnd {
     /// Used by the view to send input to the control
     // TODO: later on we will need replace this byte array with an actual event type from ACP
-    pub sender: tokio::sync::mpsc::Sender<Vec<u8>>,
+    pub sender: tokio::sync::broadcast::Sender<InputEvent>,
     /// To receive messages from control about state changes
-    pub receiver: std::sync::mpsc::Receiver<Event>,
+    pub receiver: tokio::sync::mpsc::UnboundedReceiver<SessionEvent>,
 }
 
 impl ViewEnd {
     /// Method to facilitate in the interim
     /// It takes possible messages from the old even loop and queues write to the output provided
     /// This blocks the current thread and consumes the [ViewEnd]
-    pub fn into_legacy_mode(
-        self,
+    pub async fn into_legacy_mode(
+        mut self,
         theme_source: impl ThemeSource,
         prompt_ack: Option<std::sync::mpsc::Sender<()>>,
         mut stderr: std::io::Stderr,
         mut stdout: std::io::Stdout,
     ) -> Result<(), ConduitError> {
-        while let Ok(event) = self.receiver.recv() {
+        while let Some(event) = self.receiver.recv().await {
             match event {
-                Event::LegacyPassThrough(content) => match content {
+                SessionEvent::LegacyPassThrough(content) => match content {
                     LegacyPassThroughOutput::Stderr(content) => {
                         stderr.write_all(&content)?;
                         stderr.flush()?;
@@ -70,117 +72,121 @@ impl ViewEnd {
                         stdout.flush()?;
                     },
                 },
-                Event::RunStarted(_run_started) => {},
-                Event::RunFinished(_run_finished) => {},
-                Event::RunError(_run_error) => {},
-                Event::StepStarted(_step_started) => {},
-                Event::StepFinished(_step_finished) => {},
-                Event::TextMessageStart(_text_message_start) => {
-                    queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
-                },
-                Event::TextMessageContent(text_message_content) => {
-                    stdout.write_all(&text_message_content.delta)?;
-                    stdout.flush()?;
-                },
-                Event::TextMessageEnd(_text_message_end) => {
-                    queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
-                    execute!(stdout, style::Print("\n"))?;
-                },
-                Event::TextMessageChunk(_text_message_chunk) => {},
-                Event::ToolCallStart(tool_call_start) => {
-                    let ToolCallStart {
-                        tool_call_name,
-                        is_trusted,
-                        mcp_server_name,
-                        ..
-                    } = tool_call_start;
-
-                    queue!(
-                        stdout,
-                        theme_source.emphasis_fg(),
-                        Print(format!(
-                            "🛠️  Using tool: {}{}",
+                SessionEvent::AgentEvent(agent_evt) => match agent_evt.kind {
+                    AgentEventKind::RunStarted(_run_started) => {},
+                    AgentEventKind::RunFinished(_run_finished) => {},
+                    AgentEventKind::RunError(_run_error) => {},
+                    AgentEventKind::StepStarted(_step_started) => {},
+                    AgentEventKind::StepFinished(_step_finished) => {},
+                    AgentEventKind::TextMessageStart(_text_message_start) => {
+                        queue!(stdout, theme_source.success_fg(), Print("> "), theme_source.reset(),)?;
+                    },
+                    AgentEventKind::TextMessageContent(text_message_content) => {
+                        stdout.write_all(&text_message_content.delta)?;
+                        stdout.flush()?;
+                    },
+                    AgentEventKind::TextMessageEnd(_text_message_end) => {
+                        queue!(stderr, theme_source.reset(), theme_source.reset_attributes())?;
+                        execute!(stdout, style::Print("\n"))?;
+                    },
+                    AgentEventKind::TextMessageChunk(_text_message_chunk) => {},
+                    AgentEventKind::ToolCallStart(tool_call_start) => {
+                        let ToolCallStart {
                             tool_call_name,
-                            if is_trusted {
-                                " (trusted)".dark_green()
-                            } else {
-                                "".reset()
-                            }
-                        )),
-                        theme_source.reset(),
-                    )?;
+                            is_trusted,
+                            mcp_server_name,
+                            ..
+                        } = tool_call_start;
 
-                    if let Some(server_name) = mcp_server_name {
                         queue!(
                             stdout,
-                            theme_source.reset(),
-                            Print(" from mcp server "),
                             theme_source.emphasis_fg(),
-                            Print(&server_name),
+                            Print(format!(
+                                "🛠️  Using tool: {}{}",
+                                tool_call_name,
+                                if is_trusted {
+                                    " (trusted)".dark_green()
+                                } else {
+                                    "".reset()
+                                }
+                            )),
                             theme_source.reset(),
                         )?;
-                    }
 
-                    execute!(
-                        stdout,
-                        Print("\n"),
-                        Print(CONTINUATION_LINE),
-                        Print("\n"),
-                        Print(TOOL_BULLET)
-                    )?;
-                },
-                Event::ToolCallArgs(tool_call_args) => {
-                    if let serde_json::Value::String(content) = tool_call_args.delta {
-                        execute!(stdout, style::Print(content))?;
-                    } else {
-                        execute!(stdout, style::Print(tool_call_args.delta))?;
-                    }
-                },
-                Event::ToolCallEnd(_tool_call_end) => {
-                    // noop for now
-                },
-                Event::ToolCallResult(_tool_call_result) => {
-                    // noop for now (currently we don't show the tool call results to users)
-                },
-                Event::StateSnapshot(_state_snapshot) => {},
-                Event::StateDelta(_state_delta) => {},
-                Event::MessagesSnapshot(_messages_snapshot) => {},
-                Event::Raw(_raw) => {},
-                Event::Custom(_custom) => {},
-                Event::ActivitySnapshotEvent(_activity_snapshot_event) => {},
-                Event::ActivityDeltaEvent(_activity_delta_event) => {},
-                Event::ReasoningStart(_reasoning_start) => {},
-                Event::ReasoningMessageStart(_reasoning_message_start) => {},
-                Event::ReasoningMessageContent(_reasoning_message_content) => {},
-                Event::ReasoningMessageEnd(_reasoning_message_end) => {},
-                Event::ReasoningMessageChunk(_reasoning_message_chunk) => {},
-                Event::ReasoningEnd(_reasoning_end) => {},
-                Event::MetaEvent(MetaEvent { meta_type, payload }) => {
-                    if meta_type.as_str() == "timing" {
-                        if let serde_json::Value::String(s) = payload {
-                            if s.as_str() == "prompt_user" {
-                                if let Some(prompt_ack) = prompt_ack.as_ref() {
-                                    _ = prompt_ack.send(());
+                        if let Some(server_name) = mcp_server_name {
+                            queue!(
+                                stdout,
+                                theme_source.reset(),
+                                Print(" from mcp server "),
+                                theme_source.emphasis_fg(),
+                                Print(&server_name),
+                                theme_source.reset(),
+                            )?;
+                        }
+
+                        execute!(
+                            stdout,
+                            Print("\n"),
+                            Print(CONTINUATION_LINE),
+                            Print("\n"),
+                            Print(TOOL_BULLET)
+                        )?;
+                    },
+                    AgentEventKind::ToolCallArgs(tool_call_args) => {
+                        if let serde_json::Value::String(content) = tool_call_args.delta {
+                            execute!(stdout, style::Print(content))?;
+                        } else {
+                            execute!(stdout, style::Print(tool_call_args.delta))?;
+                        }
+                    },
+                    AgentEventKind::ToolCallEnd(_tool_call_end) => {
+                        // noop for now
+                    },
+                    AgentEventKind::ToolCallResult(_tool_call_result) => {
+                        // noop for now (currently we don't show the tool call results to users)
+                    },
+                    AgentEventKind::ToolCallPermissionRequest(_) => {},
+                    AgentEventKind::StateSnapshot(_state_snapshot) => {},
+                    AgentEventKind::StateDelta(_state_delta) => {},
+                    AgentEventKind::MessagesSnapshot(_message_snapshot) => {},
+                    AgentEventKind::Raw(_raw) => {},
+                    AgentEventKind::Custom(_custom) => {},
+                    AgentEventKind::ActivitySnapshotEvent(_activity_snapshot_event) => {},
+                    AgentEventKind::ActivityDeltaEvent(_activity_delta_event) => {},
+                    AgentEventKind::ReasoningStart(_reasoning_start) => {},
+                    AgentEventKind::ReasoningMessageStart(_reasoning_message_start) => {},
+                    AgentEventKind::ReasoningMessageContent(_reasoning_message_content) => {},
+                    AgentEventKind::ReasoningMessageEnd(_reasoning_message_end) => {},
+                    AgentEventKind::ReasoningMessageChunk(_reasoning_message_chunk) => {},
+                    AgentEventKind::ReasoningEnd(_reasoning_end) => {},
+                    AgentEventKind::MetaEvent(MetaEvent { meta_type, payload }) => {
+                        if meta_type.as_str() == "timing" {
+                            if let serde_json::Value::String(s) = payload {
+                                if s.as_str() == "prompt_user" {
+                                    if let Some(prompt_ack) = prompt_ack.as_ref() {
+                                        _ = prompt_ack.send(());
+                                    }
                                 }
                             }
                         }
-                    }
-                },
-                Event::ToolCallRejection(tool_call_rejection) => {
-                    let ToolCallRejection { reason, name, .. } = tool_call_rejection;
+                    },
+                    AgentEventKind::ToolCallRejection(tool_call_rejection) => {
+                        let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
-                    execute!(
-                        stderr,
-                        theme_source.error_fg(),
-                        Print("Command "),
-                        theme_source.warning_fg(),
-                        Print(name),
-                        theme_source.error_fg(),
-                        Print(" is rejected because it matches one or more rules on the denied list:"),
-                        Print(reason),
-                        Print("\n"),
-                        theme_source.reset(),
-                    )?;
+                        execute!(
+                            stderr,
+                            theme_source.error_fg(),
+                            Print("Command "),
+                            theme_source.warning_fg(),
+                            Print(name),
+                            theme_source.error_fg(),
+                            Print(" is rejected because it matches one or more rules on the denied list:"),
+                            Print(reason),
+                            Print("\n"),
+                            theme_source.reset(),
+                        )?;
+                    },
+                    AgentEventKind::McpEvent(_mcp_event) => {},
                 },
             }
         }
@@ -196,15 +202,15 @@ pub struct DestinationStderr;
 #[derive(Clone, Debug)]
 pub struct DestinationStructuredOutput;
 
-pub type InputReceiver = tokio::sync::mpsc::Receiver<Vec<u8>>;
+pub type InputReceiver = tokio::sync::broadcast::Receiver<InputEvent>;
 
 /// This compliments the [ViewEnd]. It can be thought of as the "other end" of a pipe.
 /// The control would own this.
 #[derive(Debug)]
 pub struct ControlEnd<T> {
-    pub current_event: Option<Event>,
+    current_event: Option<SessionEvent>,
     /// Used by the control to send state changes to the view
-    pub sender: std::sync::mpsc::Sender<Event>,
+    sender: tokio::sync::mpsc::UnboundedSender<SessionEvent>,
     /// Flag indicating whether structured events should be sent through the conduit.
     /// When true, the control end will send structured event data in addition to
     /// raw pass-through content, enabling richer communication between layers.
@@ -227,16 +233,8 @@ impl<T> Clone for ControlEnd<T> {
 }
 
 impl<T> ControlEnd<T> {
-    /// Primes the [ControlEnd] with the state passed in
-    /// This api is intended to serve as an interim solution to bridge the gap between the current
-    /// code base, which heavily relies on crossterm apis to print directly to the terminal and the
-    /// refactor where the message passing paradigm is the norm
-    pub fn prime(&mut self, event: Event) {
-        self.current_event.replace(event);
-    }
-
     /// Sends an event to the view layer through the conduit
-    pub fn send(&self, event: Event) -> Result<(), ConduitError> {
+    pub fn send(&self, event: SessionEvent) -> Result<(), ConduitError> {
         Ok(self.sender.send(event).map_err(Box::new)?)
     }
 }
@@ -267,7 +265,7 @@ impl std::io::Write for ControlEnd<DestinationStderr> {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         if self.current_event.is_none() {
             self.current_event
-                .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
+                .replace(SessionEvent::LegacyPassThrough(LegacyPassThroughOutput::Stderr(
                     Default::default(),
                 )));
         }
@@ -310,7 +308,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
             if byte == &10 || byte == &13 {
                 if self.current_event.is_none() {
                     self.current_event
-                        .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
+                        .replace(SessionEvent::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                             Default::default(),
                         )));
                 }
@@ -335,7 +333,7 @@ impl std::io::Write for ControlEnd<DestinationStdout> {
         if start < end {
             if self.current_event.is_none() {
                 self.current_event
-                    .replace(Event::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
+                    .replace(SessionEvent::LegacyPassThrough(LegacyPassThroughOutput::Stdout(
                         Default::default(),
                     )));
             }
@@ -393,15 +391,15 @@ pub fn get_legacy_conduits(
     ControlEnd<DestinationStderr>,
     ControlEnd<DestinationStdout>,
 ) {
-    let (state_tx, state_rx) = std::sync::mpsc::channel::<Event>();
-    let (byte_tx, byte_rx) = tokio::sync::mpsc::channel::<Vec<u8>>(10);
+    let (state_tx, state_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
+    let (input_tx, input_rx) = tokio::sync::broadcast::channel::<InputEvent>(10);
 
     (
         ViewEnd {
-            sender: byte_tx,
+            sender: input_tx,
             receiver: state_rx,
         },
-        byte_rx,
+        input_rx,
         ControlEnd {
             current_event: None,
             should_send_structured_event,
@@ -417,6 +415,25 @@ pub fn get_legacy_conduits(
     )
 }
 
+pub fn get_conduit() -> (ViewEnd, InputReceiver, ControlEnd<DestinationStructuredOutput>) {
+    let (state_tx, state_rx) = tokio::sync::mpsc::unbounded_channel::<SessionEvent>();
+    let (input_tx, input_rx) = tokio::sync::broadcast::channel::<InputEvent>(10);
+
+    (
+        ViewEnd {
+            sender: input_tx,
+            receiver: state_rx,
+        },
+        input_rx,
+        ControlEnd {
+            current_event: None,
+            should_send_structured_event: true,
+            sender: state_tx.clone(),
+            pass_through_destination: PhantomData,
+        },
+    )
+}
+
 pub trait InterimEvent {
     type Error: std::error::Error;
     fn insert_content(&mut self, content: &[u8]) -> Result<(), Self::Error>;
@@ -425,7 +442,7 @@ pub trait InterimEvent {
 // It seems silly to implement a trait we have defined in the crate for a type we have also defined
 // in the same crate. But the plan is to move the Event type definition out of this crate (or use a
 // an external crate once AGUI has a rust crate)
-impl InterimEvent for Event {
+impl InterimEvent for SessionEvent {
     type Error = ConduitError;
 
     fn insert_content(&mut self, content: &[u8]) -> Result<(), ConduitError> {
@@ -437,7 +454,7 @@ impl InterimEvent for Event {
                     buf.extend_from_slice(content);
                 },
             },
-            _ => unreachable!(),
+            Self::AgentEvent(_) => unreachable!(),
         }
 
         Ok(())

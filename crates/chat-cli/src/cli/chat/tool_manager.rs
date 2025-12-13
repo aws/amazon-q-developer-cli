@@ -54,6 +54,7 @@ use tracing::{
 };
 
 use super::tools::custom_tool::CustomToolConfig;
+use super::tools::use_subagent::UseSubagent;
 use crate::api_client::model::{
     ToolResult,
     ToolResultContentBlock,
@@ -72,7 +73,6 @@ use crate::cli::chat::server_messenger::{
 };
 use crate::cli::chat::tools::code::Code;
 use crate::cli::chat::tools::custom_tool::CustomTool;
-use crate::cli::chat::tools::delegate::Delegate;
 use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
@@ -748,14 +748,14 @@ impl ToolManager {
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::TODO.spec_name);
             }
-            if !crate::cli::chat::tools::delegate::Delegate::is_enabled(os) {
-                tool_specs.remove(ToolMetadata::DELEGATE.spec_name);
-            }
             if !crate::cli::chat::tools::web_search::WebSearch::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::WEB_SEARCH.spec_name);
             }
             if !crate::cli::chat::tools::web_fetch::WebFetch::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
+            }
+            if !crate::cli::chat::tools::use_subagent::UseSubagent::is_enabled(os) {
+                tool_specs.remove(ToolMetadata::USE_SUBAGENT.spec_name);
             }
 
             #[cfg(windows)]
@@ -876,7 +876,11 @@ impl ToolManager {
         Ok(self.schema.clone())
     }
 
-    pub async fn get_tool_from_tool_use(&mut self, value: AssistantToolUse) -> Result<Tool, ToolResult> {
+    pub async fn get_tool_from_tool_use(
+        &mut self,
+        value: AssistantToolUse,
+        is_trust_all: bool,
+    ) -> Result<Tool, ToolResult> {
         let map_err = |parse_error: serde_json::Error| ToolResult {
             tool_use_id: value.id.clone(),
             content: vec![ToolResultContentBlock::Text(format!(
@@ -916,10 +920,18 @@ impl ToolManager {
             name if name == ToolMetadata::TODO.spec_name => {
                 Tool::Todo(serde_json::from_value::<TodoList>(value.args).map_err(map_err)?)
             },
-            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
-            name if name == ToolMetadata::DELEGATE.spec_name => {
-                Tool::Delegate(serde_json::from_value::<Delegate>(value.args).map_err(map_err)?)
+            name if name == ToolMetadata::USE_SUBAGENT.spec_name => {
+                let mut use_subagent = serde_json::from_value::<UseSubagent>(value.args).map_err(map_err)?;
+                if let UseSubagent::InvokeSubagents { convo_id, subagents } = &mut use_subagent {
+                    convo_id.replace(self.conversation_id.clone());
+                    for subagent in subagents {
+                        subagent.dangerously_trust_all_tools = is_trust_all;
+                        subagent.is_interactive = self.is_interactive;
+                    }
+                }
+                Tool::UseSubagent(use_subagent)
             },
+            // Note that this name is NO LONGER namespaced with server_name{DELIMITER}tool_name
             name if name == ToolMetadata::WEB_SEARCH.spec_name => {
                 Tool::WebSearch(serde_json::from_value::<WebSearch>(value.args).map_err(map_err)?)
             },

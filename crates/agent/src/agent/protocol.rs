@@ -23,6 +23,7 @@ use super::mcp::{
     McpServerEvent,
 };
 use super::task_executor::TaskExecutorEvent;
+use super::tools::summary::Summary;
 use super::tools::{
     Tool,
     ToolExecutionError,
@@ -36,9 +37,12 @@ use super::types::AgentSnapshot;
 #[serde(tag = "kind", content = "content")]
 #[serde(rename_all = "camelCase")]
 pub enum AgentEvent {
-    /// Agent has finished initialization, and is ready to receive requests.
+    /// Update events to be surfaced prior to an agent being fully initialized
     ///
-    /// This is the first event that the agent will emit.
+    /// This is the first event(s) the agent will emit.
+    InitializeUpdate(InitializeUpdateEvent),
+
+    /// Agent has finished initialization, and is ready to receive requests.
     Initialized,
 
     /// Real-time updates about the session.
@@ -79,6 +83,9 @@ pub enum AgentEvent {
 
     /// Events from MCP (Model Context Protocol) servers
     Mcp(McpServerEvent),
+
+    /// Summary of a subagent's execution
+    SubagentSummary(Summary),
 }
 
 impl From<TaskExecutorEvent> for AgentEvent {
@@ -96,6 +103,12 @@ impl From<AgentLoopEvent> for AgentEvent {
 impl From<ToolCall> for AgentEvent {
     fn from(value: ToolCall) -> Self {
         Self::Update(UpdateEvent::ToolCall(value))
+    }
+}
+
+impl From<&Summary> for AgentEvent {
+    fn from(value: &Summary) -> Self {
+        Self::SubagentSummary(value.clone())
     }
 }
 
@@ -118,6 +131,11 @@ pub enum UpdateEvent {
         /// The tool execution result
         result: ToolCallResult,
     },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum InitializeUpdateEvent {
+    Mcp(McpServerEvent),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

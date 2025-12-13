@@ -31,12 +31,6 @@ use tracing::{
     warn,
 };
 
-use super::util::directories::{
-    global_agents_path,
-    legacy_global_mcp_config_path,
-    legacy_workspace_mcp_config_path,
-    local_agents_path,
-};
 use crate::agent::util::error::{
     ErrorContext as _,
     UtilError,
@@ -135,10 +129,13 @@ impl From<UtilError> for AgentConfigError {
     }
 }
 
-pub async fn load_agents() -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>)> {
+pub async fn load_agents(
+    local_path: &PathBuf,
+    global_path: &PathBuf,
+) -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigError>)> {
     let mut agent_configs = Vec::new();
     let mut invalid_agents = Vec::new();
-    match load_workspace_agents().await {
+    match load_agents_from_dir(local_path, false).await {
         Ok((valid, mut invalid)) => {
             if !invalid.is_empty() {
                 error!(?invalid, "found invalid workspace agents");
@@ -159,7 +156,7 @@ pub async fn load_agents() -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigErr
         },
     };
 
-    match load_global_agents().await {
+    match load_agents_from_dir(global_path, false).await {
         Ok((valid, mut invalid)) => {
             if !invalid.is_empty() {
                 error!(?invalid, "found invalid global agents");
@@ -186,14 +183,6 @@ pub async fn load_agents() -> Result<(Vec<LoadedAgentConfig>, Vec<AgentConfigErr
     info!(?agent_configs, "loaded agent config");
 
     Ok((agent_configs, invalid_agents))
-}
-
-pub async fn load_workspace_agents() -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
-    load_agents_from_dir(local_agents_path()?, true).await
-}
-
-pub async fn load_global_agents() -> Result<(Vec<(PathBuf, AgentConfig)>, Vec<AgentConfigError>)> {
-    load_agents_from_dir(global_agents_path()?, true).await
 }
 
 async fn load_agents_from_dir(
@@ -299,7 +288,11 @@ pub struct LoadedMcpServerConfigs {
 impl LoadedMcpServerConfigs {
     /// Loads MCP configs from the given agent config, taking into consideration global and
     /// workspace MCP config files for when the use_legacy_mcp_json field is true.
-    pub async fn from_agent_config(config: &AgentConfig) -> LoadedMcpServerConfigs {
+    pub async fn from_agent_config(
+        config: &AgentConfig,
+        local_mcp_path: Option<&PathBuf>,
+        global_mcp_path: Option<&PathBuf>,
+    ) -> LoadedMcpServerConfigs {
         let mut configs = vec![];
         let mut overwritten_configs = vec![];
 
@@ -328,7 +321,7 @@ impl LoadedMcpServerConfigs {
             };
 
             // Load workspace configs
-            if let Ok(path) = legacy_workspace_mcp_config_path() {
+            if let Some(path) = local_mcp_path {
                 let workspace_configs = load_mcp_config_from_path(path)
                     .await
                     .map_err(|err| warn!(?err, "failed to load workspace mcp configs"))
@@ -337,7 +330,7 @@ impl LoadedMcpServerConfigs {
             }
 
             // Load global configs
-            if let Ok(path) = legacy_global_mcp_config_path() {
+            if let Some(path) = global_mcp_path {
                 let global_configs = load_mcp_config_from_path(path)
                     .await
                     .map_err(|err| warn!(?err, "failed to load global mcp configs"))
@@ -374,15 +367,4 @@ async fn load_mcp_config_from_path(path: impl AsRef<Path>) -> Result<McpServers,
         .await
         .with_context(|| format!("Failed to read MCP config from path {:?}", path.to_string_lossy()))?;
     Ok(serde_json::from_str(&contents)?)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_load_agents() {
-        let result = load_agents().await;
-        println!("{:?}", result);
-    }
 }

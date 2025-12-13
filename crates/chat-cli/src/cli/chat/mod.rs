@@ -61,8 +61,8 @@ use chat_cli_ui::conduit::{
     get_legacy_conduits,
 };
 use chat_cli_ui::protocol::{
-    Event,
     MessageRole,
+    SessionEvent,
     TextMessageContent,
     TextMessageEnd,
     TextMessageStart,
@@ -136,11 +136,6 @@ use tool_manager::{
     PromptQueryResult,
     ToolManager,
     ToolManagerBuilder,
-};
-use tools::delegate::{
-    AgentExecution,
-    save_agent_execution,
-    status_all_agents,
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
@@ -552,68 +547,9 @@ const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
+
 fn trust_all_text() -> String {
     ui_text::trust_all_warning()
-}
-
-fn format_rich_notification(executions: &[AgentExecution]) -> String {
-    let count = executions.len();
-    let header = if count == 1 {
-        "1 Background Task Completed".to_string()
-    } else {
-        format!("{count} Background Tasks Completed")
-    };
-
-    // Plain text notification - will be colored by highlight_prompt
-    let mut notification = format!("{header}\n\n");
-
-    for (i, execution) in executions.iter().enumerate() {
-        let status_icon = match execution.status {
-            tools::delegate::AgentStatus::Completed => "✓ SUCCESS",
-            tools::delegate::AgentStatus::Failed => "✗ FAILED",
-            tools::delegate::AgentStatus::Running => "⏳ RUNNING", // shouldn't happen but just in case
-        };
-
-        let time_ago = if let Some(completed_at) = execution.completed_at {
-            let duration = chrono::Utc::now().signed_duration_since(completed_at);
-            if duration.num_minutes() < 1 {
-                "Completed just now".to_string()
-            } else if duration.num_minutes() < 60 {
-                format!("Completed {} min ago", duration.num_minutes())
-            } else if duration.num_hours() < 24 {
-                format!("Completed {} hr ago", duration.num_hours())
-            } else {
-                format!("Completed {} days ago", duration.num_days())
-            }
-        } else {
-            "unknown".to_string()
-        };
-
-        // Shorten CWD path - replace home directory with ~
-        let shortened_cwd = if let Ok(home) = std::env::var("HOME") {
-            execution.cwd.replace(&home, "~")
-        } else {
-            execution.cwd.clone()
-        };
-
-        let summary = execution.summary.as_deref().unwrap_or("No summary available");
-
-        notification.push_str(&format!(
-            "[{}] {} · {} · {} · {}\n\nTask: {}\n\n{}\n\n",
-            i + 1,
-            execution.agent,
-            shortened_cwd,
-            status_icon,
-            time_ago,
-            execution.task,
-            summary
-        ));
-    }
-
-    // Add footer with instructions
-    notification.push_str("To read the full details of any task, ask the delegate tool.\n");
-
-    notification
 }
 
 const TOOL_BULLET: &str = "- ";
@@ -758,8 +694,6 @@ pub struct ChatSession {
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
-    /// Additional context to be added to the next user message (e.g., delegate task summaries)
-    pending_additional_context: Option<String>,
 }
 
 impl ChatSession {
@@ -787,10 +721,13 @@ impl ChatSession {
             get_legacy_conduits(should_send_structured_msg);
         let (prompt_ack_tx, prompt_ack_rx) = std::sync::mpsc::channel::<()>();
 
-        tokio::task::spawn_blocking(move || {
+        tokio::spawn(async move {
             let stderr = std::io::stderr();
             let stdout = std::io::stdout();
-            if let Err(e) = view_end.into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout) {
+            if let Err(e) = view_end
+                .into_legacy_mode(StyledText, Some(prompt_ack_tx), stderr, stdout)
+                .await
+            {
                 error!("Conduit view end legacy mode exited: {:?}", e);
             }
         });
@@ -923,7 +860,6 @@ impl ChatSession {
             ctrlc_rx,
             wrap,
             prompt_ack_rx,
-            pending_additional_context: None,
         })
     }
 
@@ -2223,11 +2159,15 @@ impl ChatSession {
         // users, and we are going to wait until the ui layer acknowledges.
         // Note that this works because [std::sync::mpsc] preserves order between sending and
         // receiving
-        self.stderr
-            .send(Event::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+        let signal_event = SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+            agent_id: Default::default(),
+            kind: chat_cli_ui::protocol::AgentEventKind::MetaEvent(chat_cli_ui::protocol::MetaEvent {
                 meta_type: "timing".to_string(),
                 payload: serde_json::Value::String("prompt_user".to_string()),
-            }))
+            }),
+        });
+        self.stderr
+            .send(signal_event)
             .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
         if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
             error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
@@ -2578,7 +2518,11 @@ impl ChatSession {
                         name: tool.name.clone(),
                         reason: formatted_set,
                     };
-                    self.stderr.send(Event::ToolCallRejection(event))?;
+                    self.stderr
+                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                            agent_id: Default::default(),
+                            kind: chat_cli_ui::protocol::AgentEventKind::ToolCallRejection(event),
+                        }))?;
                 }
 
                 return Ok(ChatState::HandleInput {
@@ -2643,6 +2587,20 @@ impl ChatSession {
                     tool_telemetry =
                         tool_telemetry.and_modify(|ev| ev.aws_operation_name = Some(aws_operation_name.to_string()));
                 }
+            }
+
+            let signal_event = SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                agent_id: Default::default(),
+                kind: chat_cli_ui::protocol::AgentEventKind::MetaEvent(chat_cli_ui::protocol::MetaEvent {
+                    meta_type: "timing".to_string(),
+                    payload: serde_json::Value::String("prompt_user".to_string()),
+                }),
+            });
+            self.stderr
+                .send(signal_event)
+                .map_err(|_e| ChatError::Custom("Error sending timing event for prompting user".into()))?;
+            if let Err(e) = self.prompt_ack_rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                error!("Failed to receive user prompting acknowledgement from UI: {:?}", e);
             }
 
             let invoke_result = tool
@@ -3038,7 +2996,11 @@ impl ChatSession {
                                         role: MessageRole::Assistant,
                                     };
 
-                                    self.stdout.send(Event::TextMessageStart(msg_start))?;
+                                    self.stdout
+                                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                                            agent_id: Default::default(),
+                                            kind: chat_cli_ui::protocol::AgentEventKind::TextMessageStart(msg_start),
+                                        }))?;
                                     response_prefix_printed = true;
                                 }
                             } else {
@@ -3284,7 +3246,11 @@ impl ChatSession {
                                 message_id: request_id.clone().unwrap_or_default(),
                                 delta: std::mem::take(&mut temp_buf),
                             };
-                            self.stdout.send(Event::TextMessageContent(text_msg_content))?;
+                            self.stdout
+                                .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                                    agent_id: Default::default(),
+                                    kind: chat_cli_ui::protocol::AgentEventKind::TextMessageContent(text_msg_content),
+                                }))?;
 
                             state.newline = state.set_newline;
                             state.set_newline = false;
@@ -3336,9 +3302,13 @@ impl ChatSession {
                 }
 
                 if self.stderr.should_send_structured_event {
-                    self.stderr.send(Event::TextMessageEnd(TextMessageEnd {
-                        message_id: request_id.clone().unwrap_or_default(),
-                    }))?;
+                    self.stderr
+                        .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                            agent_id: Default::default(),
+                            kind: chat_cli_ui::protocol::AgentEventKind::TextMessageEnd(TextMessageEnd {
+                                message_id: request_id.clone().unwrap_or_default(),
+                            }),
+                        }))?;
                 } else {
                     queue!(self.stderr, StyledText::reset(), StyledText::reset_attributes())?;
                 }
@@ -3469,7 +3439,14 @@ impl ChatSession {
             .set_tool_use_id(tool_use_id.clone())
             .set_tool_name(tool_use.name.clone())
             .utterance_id(self.conversation.message_id().map(|s| s.to_string()));
-            match self.conversation.tool_manager.get_tool_from_tool_use(tool_use).await {
+
+            let is_trust_all = self.conversation.agents.trust_all_tools;
+            match self
+                .conversation
+                .tool_manager
+                .get_tool_from_tool_use(tool_use, is_trust_all)
+                .await
+            {
                 Ok(mut tool) => {
                     // Apply non-Q-generated context to tools
                     self.contextualize_tool(&mut tool);
@@ -3712,7 +3689,11 @@ impl ChatSession {
                 is_trusted: trusted,
                 parent_message_id: None,
             };
-            self.stdout.send(Event::ToolCallStart(tool_call_start))?;
+            self.stdout
+                .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
+                    agent_id: Default::default(),
+                    kind: chat_cli_ui::protocol::AgentEventKind::ToolCallStart(tool_call_start),
+                }))?;
         }
 
         tool_use
@@ -3773,35 +3754,13 @@ impl ChatSession {
             None
         };
 
-        let mut generated_prompt = prompt::generate_prompt(
+        prompt::generate_prompt(
             profile.as_deref(),
             all_trusted,
             tangent_mode,
             code_intelligence,
             usage_percentage,
-        );
-
-        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
-            if let Ok(mut executions) = status_all_agents(os).await {
-                if !executions.is_empty() {
-                    let rich_notification = format_rich_notification(&executions);
-                    generated_prompt = format!("{rich_notification}\n{generated_prompt}");
-
-                    // Use the notification text as context for the model (it's already plain text)
-                    self.pending_additional_context = Some(rich_notification.clone());
-
-                    // Mark all shown tasks as user_notified
-                    for execution in &mut executions {
-                        execution.user_notified = true;
-                        if let Err(e) = save_agent_execution(os, execution).await {
-                            eprintln!("Failed to mark agent execution as notified: {e}");
-                        }
-                    }
-                }
-            }
-        }
-
-        generated_prompt
+        )
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
@@ -3949,6 +3908,7 @@ impl ChatSession {
                         .iter()
                         .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
                         .count() as i64,
+                    is_subagent: false,
                 })
                 .await
                 .ok();

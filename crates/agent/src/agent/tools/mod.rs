@@ -8,6 +8,7 @@ pub mod ls;
 pub mod mcp;
 pub mod mkdir;
 pub mod rm;
+pub mod summary;
 
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -31,6 +32,7 @@ use serde::{
     Serialize,
 };
 use strum::IntoEnumIterator;
+use summary::Summary;
 
 use super::agent_config::parse::CanonicalToolName;
 use super::agent_loop::types::ToolUseBlock;
@@ -100,12 +102,16 @@ pub enum BuiltInToolName {
     ExecuteCmd,
     ImageRead,
     Ls,
+    Summary,
 }
 
 trait BuiltInToolTrait {
     fn name() -> BuiltInToolName;
     fn description() -> Cow<'static, str>;
     fn input_schema() -> Cow<'static, str>;
+    fn aliases() -> Option<&'static [&'static str]> {
+        None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -236,6 +242,7 @@ pub enum BuiltInTool {
     ImageRead(ImageRead),
     ExecuteCmd(ExecuteCmd),
     Introspect(Introspect),
+    Summary(Summary),
     /// TODO
     SpawnSubagent,
 }
@@ -258,6 +265,9 @@ impl BuiltInTool {
             BuiltInToolName::Ls => serde_json::from_value::<Ls>(args)
                 .map(Self::Ls)
                 .map_err(ToolParseErrorKind::schema_failure),
+            BuiltInToolName::Summary => serde_json::from_value::<Summary>(args)
+                .map(Self::Summary)
+                .map_err(ToolParseErrorKind::schema_failure),
         }
     }
 
@@ -268,6 +278,7 @@ impl BuiltInTool {
             BuiltInToolName::ExecuteCmd => generate_tool_spec_from_trait::<ExecuteCmd>(),
             BuiltInToolName::ImageRead => generate_tool_spec_from_trait::<ImageRead>(),
             BuiltInToolName::Ls => generate_tool_spec_from_trait::<Ls>(),
+            BuiltInToolName::Summary => generate_tool_spec_from_trait::<Summary>(),
         }
     }
 
@@ -281,6 +292,7 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead,
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd,
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => BuiltInToolName::Summary,
             BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
@@ -295,6 +307,22 @@ impl BuiltInTool {
             BuiltInTool::ImageRead(_) => BuiltInToolName::ImageRead.into(),
             BuiltInTool::ExecuteCmd(_) => BuiltInToolName::ExecuteCmd.into(),
             BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => BuiltInToolName::Summary.into(),
+            BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+        }
+    }
+
+    pub fn aliases(&self) -> Option<&[&str]> {
+        match self {
+            BuiltInTool::FileRead(_) => FsRead::aliases(),
+            BuiltInTool::FileWrite(_) => FsWrite::aliases(),
+            BuiltInTool::Grep(_) => panic!("unimplemented"),
+            BuiltInTool::Ls(_) => Ls::aliases(),
+            BuiltInTool::Mkdir(_) => panic!("unimplemented"),
+            BuiltInTool::ImageRead(_) => ImageRead::aliases(),
+            BuiltInTool::ExecuteCmd(_) => ExecuteCmd::aliases(),
+            BuiltInTool::Introspect(_) => panic!("unimplemented"),
+            BuiltInTool::Summary(_) => Summary::aliases(),
             BuiltInTool::SpawnSubagent => panic!("unimplemented"),
         }
     }
