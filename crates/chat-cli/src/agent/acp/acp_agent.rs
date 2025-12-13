@@ -110,7 +110,7 @@ impl AcpSession {
         ));
 
         // Spawn agent
-        let agent = Agent::new(snapshot, model, McpManager::default().spawn())
+        let agent = Agent::new(snapshot, None, None, model, McpManager::default().spawn(), false)
             .await?
             .spawn();
 
@@ -273,6 +273,7 @@ fn get_tool_kind(tool_name: &str) -> ToolKind {
             BuiltInToolName::ExecuteCmd => ToolKind::Execute,
             BuiltInToolName::ImageRead => ToolKind::Read,
             BuiltInToolName::Ls => ToolKind::Read,
+            BuiltInToolName::Summary => ToolKind::Other,
         }
     } else {
         ToolKind::Other

@@ -75,6 +75,10 @@ impl BuiltInToolTrait for ExecuteCmd {
     fn input_schema() -> std::borrow::Cow<'static, str> {
         EXECUTE_CMD_SCHEMA.into()
     }
+
+    fn aliases() -> Option<&'static [&'static str]> {
+        Some(&["execute_bash", "execute_cmd", "shell"])
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]

@@ -201,7 +201,7 @@ impl RtsModel {
         &self,
         mut messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
-        _system_prompt: Option<String>,
+        system_prompt: Option<String>,
     ) -> Result<ConversationState, String> {
         debug!(?messages, ?tool_specs, "creating conversation state");
         let tools = tool_specs.map(|v| {
@@ -235,41 +235,58 @@ impl RtsModel {
             None => return Err("Empty conversation".to_string()),
         };
 
-        let history = messages
-            .into_iter()
-            .map(|m| match m.role {
-                Role::User => {
-                    let content = m.text();
-                    let (tool_results, _) = extract_tool_results_and_images(&m);
-                    let ctx = if tool_results.is_some() {
-                        Some(UserInputMessageContext {
-                            env_state: None,
-                            git_state: None,
-                            tool_results,
-                            tools: None,
-                        })
-                    } else {
-                        None
-                    };
-                    let msg = UserInputMessage {
-                        content,
-                        user_input_message_context: ctx,
-                        user_intent: None,
-                        images: None,
-                        model_id: None,
-                    };
-                    rts::ChatMessage::UserInputMessage(msg)
-                },
-                Role::Assistant => {
-                    let msg = rts::AssistantResponseMessage {
-                        message_id: m.id.clone(),
-                        content: m.text(),
-                        tool_uses: m.tool_uses().map(|v| v.into_iter().map(Into::into).collect()),
-                    };
-                    rts::ChatMessage::AssistantResponseMessage(msg)
-                },
-            })
-            .collect();
+        let mut history = Vec::<rts::ChatMessage>::new();
+        if let Some(system_prompt) = system_prompt {
+            history.push(rts::ChatMessage::UserInputMessage(UserInputMessage {
+                content: system_prompt,
+                user_input_message_context: None,
+                user_intent: None,
+                images: None,
+                model_id: None,
+            }));
+            history.push(rts::ChatMessage::AssistantResponseMessage(rts::AssistantResponseMessage {
+                message_id: None,
+                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
+                tool_uses: None }));
+        }
+
+        history.append(
+            &mut messages
+                .into_iter()
+                .map(|m| match m.role {
+                    Role::User => {
+                        let content = m.text();
+                        let (tool_results, _) = extract_tool_results_and_images(&m);
+                        let ctx = if tool_results.is_some() {
+                            Some(UserInputMessageContext {
+                                env_state: None,
+                                git_state: None,
+                                tool_results,
+                                tools: None,
+                            })
+                        } else {
+                            None
+                        };
+                        let msg = UserInputMessage {
+                            content,
+                            user_input_message_context: ctx,
+                            user_intent: None,
+                            images: None,
+                            model_id: None,
+                        };
+                        rts::ChatMessage::UserInputMessage(msg)
+                    },
+                    Role::Assistant => {
+                        let msg = rts::AssistantResponseMessage {
+                            message_id: m.id.clone(),
+                            content: m.text(),
+                            tool_uses: m.tool_uses().map(|v| v.into_iter().map(Into::into).collect()),
+                        };
+                        rts::ChatMessage::AssistantResponseMessage(msg)
+                    },
+                })
+                .collect(),
+        );
 
         Ok(ConversationState {
             conversation_id: Some(self.conversation_id.to_string()),

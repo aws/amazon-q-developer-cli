@@ -1,6 +1,5 @@
 pub mod code;
 pub mod custom_tool;
-pub mod delegate;
 pub mod execute;
 pub mod fs_read;
 pub mod fs_write;
@@ -13,6 +12,7 @@ pub mod thinking;
 pub mod todo;
 pub mod tool;
 pub mod use_aws;
+pub mod use_subagent;
 pub mod web_fetch;
 pub mod web_search;
 

@@ -144,6 +144,8 @@ impl From<ServiceError> for McpServerActorError {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum McpServerActorEvent {
+    /// The MCP server is currently initializing
+    Initializing { server_name: String },
     /// The MCP server has launched successfully
     Initialized {
         server_name: String,

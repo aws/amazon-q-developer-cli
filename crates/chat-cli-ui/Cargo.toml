@@ -23,7 +23,8 @@ tokio.workspace = true
 eyre.workspace = true
 tokio-util.workspace = true
 futures.workspace = true
-ratatui = "0.29.0"
+arboard.workspace = true
+ratatui = { version = "0.29.0", features = ["scrolling-regions"] }
 
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true

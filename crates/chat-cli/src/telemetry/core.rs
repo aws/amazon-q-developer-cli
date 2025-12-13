@@ -10,7 +10,10 @@ use strum::{
     EnumString,
 };
 
-use super::definitions::metrics::CodewhispererterminalRecordUserTurnCompletion;
+use super::definitions::metrics::{
+    CodewhispererterminalRecordUserTurnCompletion,
+    KirocliSubagentInvocation,
+};
 use super::definitions::types::CodewhispererterminalChatConversationType;
 use crate::telemetry::definitions::IntoMetricDatum;
 use crate::telemetry::definitions::metrics::{
@@ -241,6 +244,7 @@ impl Event {
                         follow_up_count,
                         user_prompt_length,
                         message_meta_tags,
+                        is_subagent,
                     },
             } => Some(
                 CodewhispererterminalRecordUserTurnCompletion {
@@ -285,6 +289,7 @@ impl Event {
                             .join(",")
                             .into(),
                     ),
+                    codewhispererterminal_is_subagent: Some(is_subagent.into()),
                 }
                 .into_metric_datum(),
             ),
@@ -538,6 +543,23 @@ impl Event {
                 }
                 .into_metric_datum(),
             ),
+            EventType::SubagentInvocation {
+                parent_conversation_id,
+                subagent_name,
+                builtin_tool_uses,
+                mcp_tool_uses,
+            } => Some(
+                KirocliSubagentInvocation {
+                    amazonq_conversation_id: Some(parent_conversation_id.into()),
+                    create_time: self.created_time,
+                    value: None,
+                    credential_start_url: self.credential_start_url.map(Into::into),
+                    codewhispererterminal_subagent_name: subagent_name.into(),
+                    codewhispererterminal_builtin_tool_uses: (builtin_tool_uses as i64).into(),
+                    codewhispererterminal_mcp_tool_uses: (mcp_tool_uses as i64).into(),
+                }
+                .into_metric_datum(),
+            ),
         }
     }
 }
@@ -614,6 +636,7 @@ pub struct RecordUserTurnCompletionArgs {
     pub user_turn_duration_seconds: i64,
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,
+    pub is_subagent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -741,6 +764,12 @@ pub enum EventType {
         context_file_length: Option<usize>,
     },
     DailyHeartbeat {},
+    SubagentInvocation {
+        parent_conversation_id: String,
+        subagent_name: String,
+        builtin_tool_uses: u32,
+        mcp_tool_uses: u32,
+    },
 }
 
 #[derive(Debug)]

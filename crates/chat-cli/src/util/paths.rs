@@ -455,18 +455,6 @@ impl<'a> GlobalPaths<'a> {
         Ok(home_dir(self.os)?.join(".kiro").join("steering"))
     }
 
-    pub fn subagents_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, ".subagents", ".subagents")
-    }
-
-    pub async fn ensure_subagents_dir(&self) -> Result<PathBuf> {
-        let dir = self.subagents_dir()?;
-        if !dir.exists() {
-            self.os.fs.create_dir_all(&dir).await?;
-        }
-        Ok(dir)
-    }
-
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
         let dir = self.agents_dir()?;
         if !dir.exists() {

@@ -68,6 +68,7 @@ use protocol::{
     AgentStopReason,
     ApprovalResult,
     ContentChunk,
+    InitializeUpdateEvent,
     InternalEvent,
     PermissionEvalResult,
     SendApprovalResultArgs,
@@ -216,6 +217,18 @@ impl AgentHandle {
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
     }
+
+    pub async fn cancel(&self) -> Result<(), AgentError> {
+        match self
+            .sender
+            .send_recv(AgentRequest::Cancel)
+            .await
+            .unwrap_or(Err(AgentError::Channel))?
+        {
+            AgentResponse::Success => Ok(()),
+            other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -276,6 +289,8 @@ pub struct Agent {
     working_directory: Option<PathBuf>,
     /// Provider for system context like env vars, home dir, current working dir
     sys_provider: Arc<dyn SystemProvider>,
+    /// Denotes whether or not this agent is being spawned as a subagent
+    is_subagent: bool,
 }
 
 impl Agent {
@@ -286,19 +301,26 @@ impl Agent {
     /// # Arguments
     ///
     /// * `snapshot` - Agent state to initialize with
+    /// * `local_mcp_path` - The path to workspace level mcp.json
+    /// * `global_mcp_path` - The path to global mcp.json
     /// * `model` - The backend implementation to use
     /// * `mcp_manager_handle` - Handle to an actor managing MCP servers
+    /// * `is_subagent` - whether or not the agent is spawned as a subagent
     pub async fn new(
         snapshot: AgentSnapshot,
+        local_mcp_path: Option<&PathBuf>,
+        global_mcp_path: Option<&PathBuf>,
         model: Arc<dyn Model>,
         mcp_manager_handle: McpManagerHandle,
+        is_subagent: bool,
     ) -> eyre::Result<Agent> {
         debug!(?snapshot, "initializing agent from snapshot");
 
         let (agent_event_tx, agent_event_rx) = broadcast::channel(1024);
 
         let agent_config = snapshot.agent_config;
-        let cached_mcp_configs = LoadedMcpServerConfigs::from_agent_config(&agent_config).await;
+        let cached_mcp_configs =
+            LoadedMcpServerConfigs::from_agent_config(&agent_config, local_mcp_path, global_mcp_path).await;
         let task_executor = TaskExecutor::new();
 
         Ok(Self {
@@ -321,6 +343,7 @@ impl Agent {
             cached_mcp_configs,
             working_directory: None,
             sys_provider: Arc::new(RealProvider),
+            is_subagent,
         })
     }
 
@@ -347,6 +370,32 @@ impl Agent {
             if !self.cached_mcp_configs.overridden_configs.is_empty() {
                 warn!(?self.cached_mcp_configs.overridden_configs, "ignoring overridden configs");
             }
+
+            // Here we need to monitor mcp manager for events that are related to initialization
+            // and surface them. One example is oauth request.
+            let ct = CancellationToken::new();
+            let _guard = ct.clone().drop_guard();
+            let mut mcp_manager_handle = self.mcp_manager_handle.clone();
+            let agent_event_tx = self.agent_event_tx.clone();
+
+            tokio::spawn(async move {
+                loop {
+                    tokio::select! {
+                        _ = ct.cancelled() => {
+                            break;
+                        },
+
+                        evt = mcp_manager_handle.recv() => {
+                            let Ok(evt) = evt else {
+                                error!("mcp manager handle channel closed");
+                                break;
+                            };
+
+                            _ = agent_event_tx.send(AgentEvent::InitializeUpdate(InitializeUpdateEvent::Mcp(evt)));
+                        }
+                    }
+                }
+            });
 
             let mut results = FuturesUnordered::new();
 
@@ -403,7 +452,7 @@ impl Agent {
                             break;
                         };
                         debug!(?name, "MCP server successfully initialized");
-                        launched_servers.push(name);
+                        launched_servers.push(name.clone());
                     },
                     name = failed_rx.recv() => {
                         let Some(name) = name else {
@@ -1380,6 +1429,12 @@ impl Agent {
     /// for the agent's current state.
     async fn get_tool_names(&self) -> Vec<CanonicalToolName> {
         let mut tool_names = HashSet::new();
+
+        if self.is_subagent {
+            use crate::tools::summary::Summary;
+            tool_names.insert(Summary::get_canonical_name());
+        }
+
         let built_in_tool_names = built_in_tool_names();
         let config = self.get_agent_config().await;
 
@@ -1520,6 +1575,7 @@ impl Agent {
                 BuiltInTool::Mkdir(_) => Ok(()),
                 BuiltInTool::ExecuteCmd(_) => Ok(()),
                 BuiltInTool::Introspect(_) => Ok(()),
+                BuiltInTool::Summary(_) => Ok(()),
                 BuiltInTool::SpawnSubagent => Ok(()),
                 BuiltInTool::ImageRead(t) => t.validate().await.map_err(ToolParseErrorKind::invalid_args),
             },
@@ -1626,6 +1682,10 @@ impl Agent {
                 BuiltInTool::Ls(t) => Box::pin(async move { t.execute(&provider).await }),
                 BuiltInTool::Mkdir(_) => panic!("unimplemented"),
                 BuiltInTool::SpawnSubagent => panic!("unimplemented"),
+                BuiltInTool::Summary(t) => {
+                    let result_tx = self.agent_event_tx.clone();
+                    Box::pin(async move { t.execute(result_tx).await })
+                },
             },
             ToolKind::Mcp(t) => {
                 let mcp_tool = t.clone();
@@ -1714,6 +1774,16 @@ impl Agent {
     async fn handle_mcp_events(&mut self, evt: McpServerEvent) {
         let converted_evt = AgentEvent::Mcp(evt);
         self.agent_event_buf.push(converted_evt);
+    }
+
+    /// This prepends the embedded user msg to the system prompt field of the agent
+    pub fn prepend_embedded_user_msg(&mut self, msg: &str) {
+        self.agent_config.prepend_to_system_prompt(msg);
+    }
+
+    /// This appends the embedded user msg to the system prompt field of the agent
+    pub fn append_embedded_user_msg(&mut self, msg: &str) {
+        self.agent_config.append_to_system_prompt(msg);
     }
 }
 

@@ -88,6 +88,28 @@ impl AgentConfig {
             AgentConfig::V2025_08_22(a) => a.use_legacy_mcp_json,
         }
     }
+
+    pub fn append_to_system_prompt(&mut self, incoming: &str) {
+        match self {
+            AgentConfig::V2025_08_22(a) => {
+                if let Some(prompt) = a.system_prompt.as_mut() {
+                    prompt.push_str("\n\n");
+                    prompt.push_str(incoming);
+                }
+            },
+        }
+    }
+
+    pub fn prepend_to_system_prompt(&mut self, incoming: &str) {
+        match self {
+            AgentConfig::V2025_08_22(a) => {
+                if let Some(prompt) = a.system_prompt.as_mut() {
+                    let mut new_prompt = format!("{incoming}\n\n{prompt}");
+                    std::mem::swap(prompt, &mut new_prompt);
+                }
+            },
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -166,14 +188,14 @@ impl Default for AgentConfigV2025_08_22 {
             name: DEFAULT_AGENT_NAME.to_string(),
             description: Some("The default agent for Q CLI".to_string()),
             system_prompt: None,
-            tools: vec!["@builtin".to_string()],
+            tools: vec!["*".to_string()],
             tool_settings: Default::default(),
             tool_aliases: Default::default(),
             tool_schema: Default::default(),
             hooks: Default::default(),
             model_preferences: Default::default(),
             mcp_servers: Default::default(),
-            use_legacy_mcp_json: false,
+            use_legacy_mcp_json: true,
 
             resources: vec![
                 "file://AmazonQ.md",

@@ -217,7 +217,6 @@ impl WorkspaceManager {
             },
             WorkspaceStatus::NotInitialized => {},
         }
-
         // Ensure config file exists (creates lsp.json if it doesn't exist)
         self.config_manager.ensure_config_exists()?;
 
@@ -227,7 +226,6 @@ impl WorkspaceManager {
         // Auto-detect and register language servers if none are present
         tracing::debug!("Ensuring language servers are registered");
         self.ensure_language_servers()?;
-
         let workspace_uri = Url::from_file_path(&self.workspace_root).map_err(|_| {
             crate::error::CodeIntelligenceError::invalid_path(self.workspace_root.clone(), "Cannot convert to URI")
         })?;
@@ -395,7 +393,12 @@ impl WorkspaceManager {
                             Ok::<_, anyhow::Error>(())
                         };
 
-                        match tokio::time::timeout(tokio::time::Duration::from_secs(180), init_future).await {
+                        match tokio::time::timeout(
+                            tokio::time::Duration::from_secs(config.request_timeout_secs),
+                            init_future,
+                        )
+                        .await
+                        {
                             Ok(Ok(_)) => {
                                 tracing::info!("✅ LSP server '{}' initialized successfully", name);
                             },
@@ -437,7 +440,7 @@ impl WorkspaceManager {
         if let Err(e) = self.subscribe_to_diagnostics().await {
             tracing::warn!("Failed to subscribe to diagnostics: {}", e);
         }
-
+        tracing::debug!("Starting file watching");
         // Start file watching after LSP initialization
         if let Err(e) = self.start_file_watching() {
             tracing::warn!("Failed to start file watching: {}", e);
@@ -1079,89 +1082,48 @@ impl WorkspaceManager {
 
     /// Find the first file with the given extension in the workspace, respecting exclude patterns
     async fn find_first_file_with_extension(&self, extension: &str) -> Result<Option<PathBuf>> {
-        use std::fs;
+        use ignore::WalkBuilder;
+        let walker = WalkBuilder::new(&self.workspace_root)
+            .max_depth(Some(8)) // Same as extension detection
+            .hidden(false) // Include hidden files
+            .git_ignore(true) // Respect .gitignore
+            .git_global(true) // Respect global gitignore
+            .git_exclude(true) // Respect .git/info/exclude
+            .build();
 
-        // Get all exclude patterns from config
-        let exclude_patterns = self.config_manager.get_all_exclude_patterns();
+        let mut file_count = 0;
+        const MAX_FILES: usize = 10000; // Same limit as extension detection
 
-        fn should_exclude_path(path: &Path, exclude_patterns: &[String]) -> bool {
-            let path_str = path.to_string_lossy();
+        for entry in walker.filter_map(|e| e.ok()) {
+            file_count += 1;
 
-            // Check against exclude patterns (simple glob-like matching)
-            for pattern in exclude_patterns {
-                if pattern.starts_with("**/") && pattern.ends_with("/**") {
-                    // Pattern like "**/node_modules/**"
-                    let dir_name = &pattern[3..pattern.len() - 3];
-                    if path_str.contains(&format!("/{dir_name}/")) || path_str.ends_with(&format!("/{dir_name}")) {
-                        return true;
-                    }
-                } else if let Some(suffix) = pattern.strip_prefix("**/") {
-                    // Pattern like "**/dist"
-                    if path_str.ends_with(suffix) {
-                        return true;
+            if file_count > MAX_FILES {
+                tracing::warn!(
+                    "Representative file search stopped at {} files to prevent performance issues",
+                    MAX_FILES
+                );
+                break;
+            }
+
+            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                if let Some(file_ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                    if file_ext == extension && !self.is_config_file(entry.path()) {
+                        return Ok(Some(entry.path().to_path_buf()));
                     }
                 }
             }
+        }
+        Ok(None)
+    }
 
-            // Also exclude hidden directories
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name.starts_with('.') {
-                    return true;
-                }
-            }
-
+    /// Check if a file is a config file that should be skipped
+    fn is_config_file(&self, path: &Path) -> bool {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let name_lower = name.to_lowercase();
+            Self::KNOWN_CONFIG_PATTERNS.iter().any(|p| name_lower.contains(p))
+        } else {
             false
         }
-
-        fn is_config_file(path: &Path, patterns: &[&str]) -> bool {
-            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                let name_lower = name.to_lowercase();
-                patterns.iter().any(|p| name_lower.contains(p))
-            } else {
-                false
-            }
-        }
-
-        fn find_file_recursive(
-            dir: &Path,
-            extension: &str,
-            exclude_patterns: &[String],
-            config_patterns: &[&str],
-        ) -> Option<PathBuf> {
-            if should_exclude_path(dir, exclude_patterns) {
-                return None;
-            }
-
-            if let Ok(entries) = fs::read_dir(dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-
-                    if should_exclude_path(&path, exclude_patterns) {
-                        continue;
-                    }
-
-                    if path.is_file() {
-                        if let Some(file_ext) = path.extension().and_then(|e| e.to_str()) {
-                            if file_ext == extension && !is_config_file(&path, config_patterns) {
-                                return Some(path);
-                            }
-                        }
-                    } else if path.is_dir() {
-                        if let Some(found) = find_file_recursive(&path, extension, exclude_patterns, config_patterns) {
-                            return Some(found);
-                        }
-                    }
-                }
-            }
-            None
-        }
-
-        Ok(find_file_recursive(
-            &self.workspace_root,
-            extension,
-            &exclude_patterns,
-            Self::KNOWN_CONFIG_PATTERNS,
-        ))
     }
 }
 

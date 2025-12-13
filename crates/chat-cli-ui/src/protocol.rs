@@ -175,6 +175,15 @@ pub struct ToolCallRejection {
     pub reason: String,
 }
 
+/// Represents a request for permission to execute a tool call
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallPermissionRequest {
+    pub tool_call_id: String,
+    pub name: String,
+    pub input: serde_json::Value,
+}
+
 // ============================================================================
 // State Management Events
 // ============================================================================
@@ -331,14 +340,26 @@ pub struct MetaEvent {
     pub payload: Value,
 }
 
-// ============================================================================
-// Main Event Enum
-// ============================================================================
-
-/// Main event enum that encompasses all event types in the Agent UI Protocol
+/// Events related to MCP (Model Context Protocol) server lifecycle and operations
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-pub enum Event {
+#[serde(rename_all = "camelCase")]
+pub enum McpEvent {
+    Loading { server_name: String },
+    LoadSuccess { server_name: String },
+    LoadFailure { server_name: String, error: String },
+    OauthRequest { server_name: String, oauth_url: String },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentEvent {
+    pub agent_id: u16,
+    pub kind: AgentEventKind,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AgentEventKind {
     // Lifecycle Events
     RunStarted(RunStarted),
     RunFinished(RunFinished),
@@ -359,6 +380,7 @@ pub enum Event {
     ToolCallResult(ToolCallResult),
     // bespoke variant
     ToolCallRejection(ToolCallRejection),
+    ToolCallPermissionRequest(ToolCallPermissionRequest),
 
     // State Management Events
     StateSnapshot(StateSnapshot),
@@ -368,8 +390,6 @@ pub enum Event {
     // Special Events
     Raw(Raw),
     Custom(Custom),
-    // bespoke variant
-    LegacyPassThrough(LegacyPassThroughOutput),
 
     // Draft Events - Activity Events
     ActivitySnapshotEvent(ActivitySnapshotEvent),
@@ -385,72 +405,95 @@ pub enum Event {
 
     // Draft Events - Meta Events
     MetaEvent(MetaEvent),
+
+    // Bespoke MCP Events
+    McpEvent(McpEvent),
 }
 
-impl Event {
+// ============================================================================
+// Main Event Enum
+// ============================================================================
+
+/// Main event enum that encompasses all event types in the Agent UI Protocol
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SessionEvent {
+    AgentEvent(AgentEvent),
+    LegacyPassThrough(LegacyPassThroughOutput),
+}
+
+impl SessionEvent {
     /// Get the event type string for this event
     pub fn event_type(&self) -> &'static str {
         match self {
-            // Lifecycle Events
-            Event::RunStarted(_) => "runStarted",
-            Event::RunFinished(_) => "runFinished",
-            Event::RunError(_) => "runError",
-            Event::StepStarted(_) => "stepStarted",
-            Event::StepFinished(_) => "stepFinished",
+            SessionEvent::AgentEvent(agent_evt) => match agent_evt.kind {
+                // Lifecycle Events
+                AgentEventKind::RunStarted(_) => "runStarted",
+                AgentEventKind::RunFinished(_) => "runFinished",
+                AgentEventKind::RunError(_) => "runError",
+                AgentEventKind::StepStarted(_) => "stepStarted",
+                AgentEventKind::StepFinished(_) => "stepFinished",
 
-            // Text Message Events
-            Event::TextMessageStart(_) => "textMessageStart",
-            Event::TextMessageContent(_) => "textMessageContent",
-            Event::TextMessageEnd(_) => "textMessageEnd",
-            Event::TextMessageChunk(_) => "textMessageChunk",
+                // Text Message Events
+                AgentEventKind::TextMessageStart(_) => "textMessageStart",
+                AgentEventKind::TextMessageContent(_) => "textMessageContent",
+                AgentEventKind::TextMessageEnd(_) => "textMessageEnd",
+                AgentEventKind::TextMessageChunk(_) => "textMessageChunk",
 
-            // Tool Call Events
-            Event::ToolCallStart(_) => "toolCallStart",
-            Event::ToolCallArgs(_) => "toolCallArgs",
-            Event::ToolCallEnd(_) => "toolCallEnd",
-            Event::ToolCallResult(_) => "toolCallResult",
-            Event::ToolCallRejection(_) => "toolCallRejection",
+                // Tool Call Events
+                AgentEventKind::ToolCallStart(_) => "toolCallStart",
+                AgentEventKind::ToolCallArgs(_) => "toolCallArgs",
+                AgentEventKind::ToolCallEnd(_) => "toolCallEnd",
+                AgentEventKind::ToolCallResult(_) => "toolCallResult",
+                AgentEventKind::ToolCallRejection(_) => "toolCallRejection",
+                AgentEventKind::ToolCallPermissionRequest(_) => "toolCallPermissionRequest",
 
-            // State Management Events
-            Event::StateSnapshot(_) => "stateSnapshot",
-            Event::StateDelta(_) => "stateDelta",
-            Event::MessagesSnapshot(_) => "messagesSnapshot",
+                // State Management Events
+                AgentEventKind::StateSnapshot(_) => "stateSnapshot",
+                AgentEventKind::StateDelta(_) => "stateDelta",
+                AgentEventKind::MessagesSnapshot(_) => "messagesSnapshot",
 
-            // Special Events
-            Event::Raw(_) => "raw",
-            Event::Custom(_) => "custom",
-            Event::LegacyPassThrough(_) => "legacyPassThrough",
+                // Special Events
+                AgentEventKind::Raw(_) => "raw",
+                AgentEventKind::Custom(_) => "custom",
 
-            // Draft Events - Activity Events
-            Event::ActivitySnapshotEvent(_) => "activitySnapshotEvent",
-            Event::ActivityDeltaEvent(_) => "activityDeltaEvent",
+                // Draft Events - Activity Events
+                AgentEventKind::ActivitySnapshotEvent(_) => "activitySnapshotEvent",
+                AgentEventKind::ActivityDeltaEvent(_) => "activityDeltaEvent",
 
-            // Draft Events - Reasoning Events
-            Event::ReasoningStart(_) => "reasoningStart",
-            Event::ReasoningMessageStart(_) => "reasoningMessageStart",
-            Event::ReasoningMessageContent(_) => "reasoningMessageContent",
-            Event::ReasoningMessageEnd(_) => "reasoningMessageEnd",
-            Event::ReasoningMessageChunk(_) => "reasoningMessageChunk",
-            Event::ReasoningEnd(_) => "reasoningEnd",
+                // Draft Events - Reasoning Events
+                AgentEventKind::ReasoningStart(_) => "reasoningStart",
+                AgentEventKind::ReasoningMessageStart(_) => "reasoningMessageStart",
+                AgentEventKind::ReasoningMessageContent(_) => "reasoningMessageContent",
+                AgentEventKind::ReasoningMessageEnd(_) => "reasoningMessageEnd",
+                AgentEventKind::ReasoningMessageChunk(_) => "reasoningMessageChunk",
+                AgentEventKind::ReasoningEnd(_) => "reasoningEnd",
 
-            // Draft Events - Meta Events
-            Event::MetaEvent(_) => "metaEvent",
+                // Draft Events - Meta Events
+                AgentEventKind::MetaEvent(_) => "metaEvent",
+
+                AgentEventKind::McpEvent(_) => "mcpEvent",
+            },
+            SessionEvent::LegacyPassThrough(_) => "legacyPassThrough",
         }
     }
 
     pub fn is_compatible_with_legacy_event_loop(&self) -> bool {
-        matches!(self, Event::LegacyPassThrough(_))
+        matches!(self, SessionEvent::LegacyPassThrough { .. })
     }
 
     /// Check if this is a lifecycle event
     pub fn is_lifecycle_event(&self) -> bool {
         matches!(
             self,
-            Event::RunStarted(_)
-                | Event::RunFinished(_)
-                | Event::RunError(_)
-                | Event::StepStarted(_)
-                | Event::StepFinished(_)
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::RunStarted(_)
+                    | AgentEventKind::RunFinished(_)
+                    | AgentEventKind::RunError(_)
+                    | AgentEventKind::StepStarted(_)
+                    | AgentEventKind::StepFinished(_),
+                ..
+            })
         )
     }
 
@@ -458,10 +501,13 @@ impl Event {
     pub fn is_text_message_event(&self) -> bool {
         matches!(
             self,
-            Event::TextMessageStart(_)
-                | Event::TextMessageContent(_)
-                | Event::TextMessageEnd(_)
-                | Event::TextMessageChunk(_)
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::TextMessageStart(_)
+                    | AgentEventKind::TextMessageContent(_)
+                    | AgentEventKind::TextMessageEnd(_)
+                    | AgentEventKind::TextMessageChunk(_),
+                ..
+            })
         )
     }
 
@@ -469,7 +515,13 @@ impl Event {
     pub fn is_tool_call_event(&self) -> bool {
         matches!(
             self,
-            Event::ToolCallStart(_) | Event::ToolCallArgs(_) | Event::ToolCallEnd(_) | Event::ToolCallResult(_)
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::ToolCallStart(_)
+                    | AgentEventKind::ToolCallArgs(_)
+                    | AgentEventKind::ToolCallEnd(_)
+                    | AgentEventKind::ToolCallResult(_),
+                ..
+            })
         )
     }
 
@@ -477,7 +529,12 @@ impl Event {
     pub fn is_state_management_event(&self) -> bool {
         matches!(
             self,
-            Event::StateSnapshot(_) | Event::StateDelta(_) | Event::MessagesSnapshot(_)
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::StateSnapshot(_)
+                    | AgentEventKind::StateDelta(_)
+                    | AgentEventKind::MessagesSnapshot(_),
+                ..
+            })
         )
     }
 
@@ -485,15 +542,38 @@ impl Event {
     pub fn is_draft_event(&self) -> bool {
         matches!(
             self,
-            Event::ActivitySnapshotEvent(_)
-                | Event::ActivityDeltaEvent(_)
-                | Event::ReasoningStart(_)
-                | Event::ReasoningMessageStart(_)
-                | Event::ReasoningMessageContent(_)
-                | Event::ReasoningMessageEnd(_)
-                | Event::ReasoningMessageChunk(_)
-                | Event::ReasoningEnd(_)
-                | Event::MetaEvent(_)
+            SessionEvent::AgentEvent(AgentEvent {
+                kind: AgentEventKind::ActivitySnapshotEvent(_)
+                    | AgentEventKind::ActivityDeltaEvent(_)
+                    | AgentEventKind::ReasoningStart(_)
+                    | AgentEventKind::ReasoningMessageStart(_)
+                    | AgentEventKind::ReasoningMessageContent(_)
+                    | AgentEventKind::ReasoningMessageEnd(_)
+                    | AgentEventKind::ReasoningMessageChunk(_)
+                    | AgentEventKind::ReasoningEnd(_)
+                    | AgentEventKind::MetaEvent(_),
+                ..
+            })
         )
     }
+}
+
+/// This is a stop gap until we adopt ACP
+/// This will likely be done when UI revamp is done
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub struct InputEvent {
+    pub agent_id: Option<u16>,
+    pub kind: InputEventKind,
+}
+
+/// This is a stop gap until we adopt ACP
+/// This will likely be done when UI revamp is done
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum InputEventKind {
+    Text(String),
+    Interrupt,
+    ToolApproval(String),
+    ToolRejection(String),
 }

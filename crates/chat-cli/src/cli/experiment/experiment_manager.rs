@@ -13,7 +13,7 @@ pub enum ExperimentName {
     TodoList,
     Checkpoint,
     ContextUsageIndicator,
-    Delegate,
+    Subagent,
 }
 
 impl ExperimentName {
@@ -25,7 +25,7 @@ impl ExperimentName {
             Self::TodoList => "Todo Lists",
             Self::Checkpoint => "Checkpoint",
             Self::ContextUsageIndicator => "Context Usage Indicator",
-            Self::Delegate => "Delegate",
+            Self::Subagent => "Subagent",
         }
     }
 }
@@ -111,9 +111,9 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         commands: &[],
     },
     Experiment {
-        experiment_name: ExperimentName::Delegate,
-        description: "Enables launching and managing asynchronous subagent processes",
-        setting_key: Setting::EnabledDelegate,
+        experiment_name: ExperimentName::Subagent,
+        description: "Enables using subagent for complex tasks that require multiple steps, preventing context bloat in the main conversation",
+        setting_key: Setting::EnabledSubagent,
         enabled: true,
         commands: &[],
     },
