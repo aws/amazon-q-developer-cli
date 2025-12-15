@@ -54,18 +54,30 @@ impl Glob {
         let base_path = self.get_base_path(os)?;
 
         if !base_path.exists() {
-            return Ok(self.error_response(format!("Path does not exist: {}", base_path.display())));
+            return Ok(InvokeOutput {
+                output: OutputKind::Json(serde_json::json!({
+                    "error": format!("Path does not exist: {}", base_path.display())
+                })),
+            });
         }
 
         if !base_path.is_dir() {
-            return Ok(self.error_response(format!("Path is not a directory: {}", base_path.display())));
+            return Ok(InvokeOutput {
+                output: OutputKind::Json(serde_json::json!({
+                    "error": format!("Path is not a directory: {}", base_path.display())
+                })),
+            });
         }
 
         // Normalize pattern - if pattern starts with a path component, extract it as base
         let (search_base, search_pattern) = self.normalize_pattern(&base_path);
 
         if !search_base.exists() {
-            return Ok(self.error_response(format!("Path does not exist: {}", search_base.display())));
+            return Ok(InvokeOutput {
+                output: OutputKind::Json(serde_json::json!({
+                    "error": format!("Path does not exist: {}", search_base.display())
+                })),
+            });
         }
 
         // Build glob walker
@@ -76,7 +88,11 @@ impl Glob {
         {
             Ok(w) => w,
             Err(e) => {
-                return Ok(self.error_response(format!("Invalid glob pattern: {}", e)));
+                return Ok(InvokeOutput {
+                    output: OutputKind::Json(serde_json::json!({
+                        "error": format!("Invalid glob pattern: {e}")
+                    })),
+                });
             },
         };
 
@@ -178,12 +194,6 @@ impl Glob {
         match &self.path {
             Some(p) if !p.is_empty() && p != "undefined" && p != "null" => Ok(PathBuf::from(p)),
             _ => os.env.current_dir().wrap_err("Failed to get current directory"),
-        }
-    }
-
-    fn error_response(&self, message: String) -> InvokeOutput {
-        InvokeOutput {
-            output: OutputKind::Json(serde_json::json!({ "error": message })),
         }
     }
 

@@ -78,7 +78,11 @@ impl Grep {
         let base_path = self.get_base_path(os)?;
 
         if !base_path.exists() {
-            return Ok(self.error_response(format!("Path does not exist: {}", base_path.display())));
+            return Ok(InvokeOutput {
+                output: OutputKind::Json(serde_json::json!({
+                    "error": format!("Path does not exist: {}", base_path.display())
+                })),
+            });
         }
 
         // Build regex matcher using RegexMatcherBuilder
@@ -89,7 +93,11 @@ impl Grep {
         {
             Ok(m) => m,
             Err(e) => {
-                return Ok(self.error_response(format!("Invalid regex: {}", e)));
+                return Ok(InvokeOutput {
+                    output: OutputKind::Json(serde_json::json!({
+                        "error": format!("Invalid regex: {e}")
+                    })),
+                });
             },
         };
 
@@ -124,12 +132,6 @@ impl Grep {
         }
     }
 
-    fn error_response(&self, message: String) -> InvokeOutput {
-        InvokeOutput {
-            output: OutputKind::Json(serde_json::json!({ "error": message })),
-        }
-    }
-
     fn collect_files(&self, base_path: &PathBuf) -> Result<Vec<PathBuf>> {
         // If path is a file, search only that file
         if base_path.is_file() {
@@ -149,21 +151,19 @@ impl Grep {
         let mut files = Vec::new();
         let include_glob = self.include.as_deref();
 
-        for entry in walker.build() {
-            if let Ok(entry) = entry {
-                if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                    let path = entry.path();
+        for entry in walker.build().flatten() {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                let path = entry.path();
 
-                    // Apply glob filter
-                    if let Some(pattern) = include_glob {
-                        let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if !self.match_include(pattern, file_name) {
-                            continue;
-                        }
+                // Apply glob filter
+                if let Some(pattern) = include_glob {
+                    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                    if !self.match_include(pattern, file_name) {
+                        continue;
                     }
-
-                    files.push(path.to_path_buf());
                 }
+
+                files.push(path.to_path_buf());
             }
         }
 
@@ -180,14 +180,14 @@ impl Grep {
 
                 return options.split(',').any(|opt| {
                     let expanded = format!("{}{}{}", prefix, opt.trim(), suffix);
-                    self.match_glob(&expanded, file_name)
+                    Self::match_glob(&expanded, file_name)
                 });
             }
         }
-        self.match_glob(pattern, file_name)
+        Self::match_glob(pattern, file_name)
     }
 
-    fn match_glob(&self, pattern: &str, text: &str) -> bool {
+    fn match_glob(pattern: &str, text: &str) -> bool {
         let mut p = pattern.chars().peekable();
         let mut t = text.chars().peekable();
 
@@ -206,12 +206,12 @@ impl Grep {
                     let rest: String = p.collect();
                     while t.peek().is_some() {
                         let remaining: String = t.clone().collect();
-                        if self.match_glob(&rest, &remaining) {
+                        if Self::match_glob(&rest, &remaining) {
                             return true;
                         }
                         t.next();
                     }
-                    return self.match_glob(&rest, "");
+                    return Self::match_glob(&rest, "");
                 },
                 '?' => {
                     if t.next().is_none() {
@@ -309,7 +309,7 @@ impl Grep {
     fn search_files_with_matches(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
-            .line_number(false)
+            .line_number(true)
             .build();
 
         // Collect file paths with their match counts
@@ -371,7 +371,7 @@ impl Grep {
     fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
-            .line_number(false)
+            .line_number(true)
             .build();
 
         let mut file_counts: Vec<(String, usize)> = Vec::new();
