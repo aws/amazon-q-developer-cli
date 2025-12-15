@@ -137,6 +137,11 @@ use tool_manager::{
     ToolManager,
     ToolManagerBuilder,
 };
+use tools::delegate::{
+    AgentExecution,
+    save_agent_execution,
+    status_all_agents,
+};
 use tools::gh_issue::GhIssueContext;
 use tools::{
     OutputKind,
@@ -547,9 +552,68 @@ const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
-
 fn trust_all_text() -> String {
     ui_text::trust_all_warning()
+}
+
+fn format_rich_notification(executions: &[AgentExecution]) -> String {
+    let count = executions.len();
+    let header = if count == 1 {
+        "1 Background Task Completed".to_string()
+    } else {
+        format!("{count} Background Tasks Completed")
+    };
+
+    // Plain text notification - will be colored by highlight_prompt
+    let mut notification = format!("{header}\n\n");
+
+    for (i, execution) in executions.iter().enumerate() {
+        let status_icon = match execution.status {
+            tools::delegate::AgentStatus::Completed => "✓ SUCCESS",
+            tools::delegate::AgentStatus::Failed => "✗ FAILED",
+            tools::delegate::AgentStatus::Running => "⏳ RUNNING", // shouldn't happen but just in case
+        };
+
+        let time_ago = if let Some(completed_at) = execution.completed_at {
+            let duration = chrono::Utc::now().signed_duration_since(completed_at);
+            if duration.num_minutes() < 1 {
+                "Completed just now".to_string()
+            } else if duration.num_minutes() < 60 {
+                format!("Completed {} min ago", duration.num_minutes())
+            } else if duration.num_hours() < 24 {
+                format!("Completed {} hr ago", duration.num_hours())
+            } else {
+                format!("Completed {} days ago", duration.num_days())
+            }
+        } else {
+            "unknown".to_string()
+        };
+
+        // Shorten CWD path - replace home directory with ~
+        let shortened_cwd = if let Ok(home) = std::env::var("HOME") {
+            execution.cwd.replace(&home, "~")
+        } else {
+            execution.cwd.clone()
+        };
+
+        let summary = execution.summary.as_deref().unwrap_or("No summary available");
+
+        notification.push_str(&format!(
+            "[{}] {} · {} · {} · {}\n\nTask: {}\n\n{}\n\n",
+            i + 1,
+            execution.agent,
+            shortened_cwd,
+            status_icon,
+            time_ago,
+            execution.task,
+            summary
+        ));
+    }
+
+    // Add footer with instructions
+    notification.push_str("To read the full details of any task, ask the delegate tool.\n");
+
+    notification
 }
 
 const TOOL_BULLET: &str = "- ";
@@ -694,6 +758,8 @@ pub struct ChatSession {
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
+    /// Additional context to be added to the next user message (e.g., delegate task summaries)
+    pending_additional_context: Option<String>,
 }
 
 impl ChatSession {
@@ -860,6 +926,7 @@ impl ChatSession {
             ctrlc_rx,
             wrap,
             prompt_ack_rx,
+            pending_additional_context: None,
         })
     }
 
@@ -3754,13 +3821,35 @@ impl ChatSession {
             None
         };
 
-        prompt::generate_prompt(
+        let mut generated_prompt = prompt::generate_prompt(
             profile.as_deref(),
             all_trusted,
             tangent_mode,
             code_intelligence,
             usage_percentage,
-        )
+        );
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+            if let Ok(mut executions) = status_all_agents(os).await {
+                if !executions.is_empty() {
+                    let rich_notification = format_rich_notification(&executions);
+                    generated_prompt = format!("{rich_notification}\n{generated_prompt}");
+
+                    // Use the notification text as context for the model (it's already plain text)
+                    self.pending_additional_context = Some(rich_notification.clone());
+
+                    // Mark all shown tasks as user_notified
+                    for execution in &mut executions {
+                        execution.user_notified = true;
+                        if let Err(e) = save_agent_execution(os, execution).await {
+                            eprintln!("Failed to mark agent execution as notified: {e}");
+                        }
+                    }
+                }
+            }
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {
