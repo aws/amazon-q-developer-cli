@@ -621,6 +621,35 @@ impl ChatResponseStream {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Returns true if this event type should be skipped during content parsing.
+    ///
+    /// Metadata and supplementary events don't contribute to the main content flow
+    /// and should be transparently handled without blocking the parser state machine.
+    ///
+    /// This includes:
+    /// - Metadata events (token usage, message IDs)
+    /// - Supplementary events (code references, follow-up prompts, web links, intents)
+    /// - Unknown events (forward compatibility with new backend event types)
+    ///
+    /// # Forward Compatibility
+    ///
+    /// By treating Unknown events as skippable, the parser remains functional
+    /// when the backend introduces new event types that the client doesn't recognize yet.
+    /// This prevents crashes and allows graceful degradation of features.
+    pub fn is_skippable_metadata(&self) -> bool {
+        matches!(
+            self,
+            Self::MetadataEvent { .. }
+                | Self::MeteringEvent { .. }
+                | Self::MessageMetadataEvent { .. }
+                | Self::CodeReferenceEvent(_)
+                | Self::FollowupPromptEvent(_)
+                | Self::IntentsEvent(_)
+                | Self::SupplementaryWebLinksEvent(_)
+                | Self::Unknown
+        )
+    }
 }
 
 impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for ChatResponseStream {
@@ -1312,6 +1341,62 @@ mod tests {
                 input: None,
                 stop: None,
             }
+        );
+    }
+
+    #[test]
+    fn test_event_categorization() {
+        // Metadata events should be skippable
+        assert!(
+            ChatResponseStream::MetadataEvent {
+                total_tokens: Some(100),
+                uncached_input_tokens: None,
+                output_tokens: None,
+                cache_read_input_tokens: None,
+                cache_write_input_tokens: None,
+            }
+            .is_skippable_metadata()
+        );
+        assert!(
+            ChatResponseStream::MeteringEvent {
+                usage: Some(1.0),
+                unit: Some("unit".to_string()),
+                unit_plural: Some("units".to_string()),
+            }
+            .is_skippable_metadata()
+        );
+        assert!(
+            ChatResponseStream::MessageMetadataEvent {
+                conversation_id: None,
+                utterance_id: None,
+            }
+            .is_skippable_metadata()
+        );
+
+        // Supplementary events should be skippable
+        assert!(ChatResponseStream::CodeReferenceEvent(()).is_skippable_metadata());
+        assert!(ChatResponseStream::FollowupPromptEvent(()).is_skippable_metadata());
+        assert!(ChatResponseStream::IntentsEvent(()).is_skippable_metadata());
+        assert!(ChatResponseStream::SupplementaryWebLinksEvent(()).is_skippable_metadata());
+
+        // Unknown events should be skippable (forward compatibility)
+        assert!(ChatResponseStream::Unknown.is_skippable_metadata());
+
+        // Content events should NOT be skippable
+        assert!(
+            !ChatResponseStream::AssistantResponseEvent {
+                content: "test".to_string()
+            }
+            .is_skippable_metadata()
+        );
+
+        // InvalidStateEvent should not be skippable (it's a control event)
+        assert!(
+            !ChatResponseStream::InvalidStateEvent {
+                reason: "test".to_string(),
+                message: "test".to_string(),
+            }
+            .is_skippable_metadata()
         );
     }
 }
