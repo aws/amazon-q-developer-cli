@@ -13,7 +13,6 @@ pub enum ExperimentName {
     TodoList,
     Checkpoint,
     ContextUsageIndicator,
-    Subagent,
 }
 
 impl ExperimentName {
@@ -25,7 +24,6 @@ impl ExperimentName {
             Self::TodoList => "Todo Lists",
             Self::Checkpoint => "Checkpoint",
             Self::ContextUsageIndicator => "Context Usage Indicator",
-            Self::Subagent => "Subagent",
         }
     }
 }
@@ -107,13 +105,6 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
         experiment_name: ExperimentName::ContextUsageIndicator,
         description: "Shows context usage percentage in the prompt (e.g., [rust-agent] 6% >)",
         setting_key: Setting::EnabledContextUsageIndicator,
-        enabled: true,
-        commands: &[],
-    },
-    Experiment {
-        experiment_name: ExperimentName::Subagent,
-        description: "Enables using subagent for complex tasks that require multiple steps, preventing context bloat in the main conversation",
-        setting_key: Setting::EnabledSubagent,
         enabled: true,
         commands: &[],
     },
