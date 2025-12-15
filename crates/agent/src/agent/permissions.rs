@@ -29,7 +29,7 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
         || if let ToolKind::BuiltIn(built_in_tool) = tool {
             built_in_tool
                 .aliases()
-                .is_some_and(|aliases| matches_any_pattern(aliases, &tool_name))
+                .is_some_and(|aliases| aliases.iter().any(|alias| matches_any_pattern(allowed_tools, alias)))
         } else {
             false
         };
