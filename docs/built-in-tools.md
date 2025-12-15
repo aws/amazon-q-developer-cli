@@ -135,6 +135,12 @@ This tool has no configuration options.
 
 Make AWS CLI API calls with the specified service, operation, and parameters.
 
+## Use Subagent Tool
+
+Tool name: `use_subagent`
+
+For more details please see `subagent.md`
+
 ### Configuration
 
 ```json
