@@ -123,10 +123,8 @@ impl Glob {
             Ok(InvokeOutput {
                 output: OutputKind::Json(serde_json::json!({
                     "filePaths": [],
-                    "numFiles": 0,
                     "totalFiles": 0,
                     "truncated": false,
-                    "limit": max_results,
                     "message": format!("No files found matching pattern: {}", self.pattern)
                 })),
             })
@@ -134,10 +132,8 @@ impl Glob {
             Ok(InvokeOutput {
                 output: OutputKind::Json(serde_json::json!({
                     "filePaths": file_paths,
-                    "numFiles": num_files_returned,
                     "totalFiles": total_files,
                     "truncated": truncated,
-                    "limit": max_results
                 })),
             })
         }
@@ -311,9 +307,10 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["numFiles"], 2);
             assert_eq!(json["totalFiles"], 2);
             assert_eq!(json["truncated"], false);
+            let paths = json["filePaths"].as_array().unwrap();
+            assert_eq!(paths.len(), 2);
         } else {
             panic!("Expected JSON output");
         }
@@ -337,7 +334,9 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["numFiles"], 2);
+            assert_eq!(json["totalFiles"], 2);
+            let paths = json["filePaths"].as_array().unwrap();
+            assert_eq!(paths.len(), 2);
         } else {
             panic!("Expected JSON output");
         }
@@ -362,7 +361,7 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             // Should find root.txt (direct child)
-            assert!(json["numFiles"].as_u64().unwrap() >= 1);
+            assert!(json["totalFiles"].as_u64().unwrap() >= 1);
         } else {
             panic!("Expected JSON output");
         }
@@ -389,7 +388,9 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             // Should find all 3 files
-            assert_eq!(json["numFiles"], 3);
+            assert_eq!(json["totalFiles"], 3);
+            let paths = json["filePaths"].as_array().unwrap();
+            assert_eq!(paths.len(), 3);
         } else {
             panic!("Expected JSON output");
         }
@@ -399,7 +400,7 @@ mod tests {
     async fn test_glob_truncation() {
         let temp_dir = TempDir::new().unwrap();
         for i in 0..10 {
-            File::create(temp_dir.path().join(format!("file{}.txt", i))).unwrap();
+            File::create(temp_dir.path().join(format!("file{i}.txt"))).unwrap();
         }
 
         let tool = Glob {
@@ -413,10 +414,10 @@ mod tests {
         let result = tool.invoke(&os, &mut buf).await.unwrap();
 
         if let OutputKind::Json(json) = result.output {
-            assert_eq!(json["numFiles"], 5);
             assert_eq!(json["totalFiles"], 10);
             assert_eq!(json["truncated"], true);
-            assert_eq!(json["limit"], 5);
+            let paths = json["filePaths"].as_array().unwrap();
+            assert_eq!(paths.len(), 5);
         } else {
             panic!("Expected JSON output");
         }
@@ -439,30 +440,15 @@ mod tests {
 
         if let OutputKind::Json(json) = result.output {
             assert!(json["message"].as_str().unwrap().contains("No files found"));
-            assert_eq!(json["numFiles"], 0);
             assert_eq!(json["totalFiles"], 0);
+            assert_eq!(json["truncated"], false);
         } else {
             panic!("Expected JSON output");
         }
     }
 
     #[tokio::test]
-    async fn test_eval_perm_default_allow() {
-        let tool = Glob {
-            pattern: "*.rs".to_string(),
-            path: None,
-            limit: None,
-        };
-
-        let agent = Agent::default();
-        let os = Os::new().await.unwrap();
-        let result = tool.eval_perm(&os, &agent);
-
-        assert!(matches!(result, PermissionEvalResult::Allow));
-    }
-
-    #[tokio::test]
-    async fn test_eval_perm_auto_allow_disabled() {
+    async fn test_eval_perm() {
         use std::collections::HashMap;
 
         use crate::cli::agent::ToolSettingTarget;
@@ -473,21 +459,28 @@ mod tests {
             limit: None,
         };
 
-        let agent = Agent {
+        let os = Os::new().await.unwrap();
+
+        // Case 1: default agent -> Allow
+        let default_agent = Agent::default();
+        let result = tool.eval_perm(&os, &default_agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+
+        // Case 2: agent disables autoAllow -> Ask
+        let agent_with_restriction = Agent {
             name: "test".to_string(),
             tools_settings: {
-                let mut map = HashMap::new();
-                map.insert(
+                let mut settings = HashMap::new();
+                settings.insert(
                     ToolSettingTarget("glob".to_string()),
                     serde_json::json!({ "autoAllow": false }),
                 );
-                map
+                settings
             },
             ..Default::default()
         };
 
-        let os = Os::new().await.unwrap();
-        let result = tool.eval_perm(&os, &agent);
+        let result = tool.eval_perm(&os, &agent_with_restriction);
 
         assert!(matches!(result, PermissionEvalResult::Ask));
     }

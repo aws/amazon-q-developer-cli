@@ -721,25 +721,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_eval_perm_default_allow() {
-        let tool = Grep {
-            pattern: "test".to_string(),
-            path: None,
-            include: None,
-            case_sensitive: None,
-            output_mode: None,
-        };
-
-        let agent = Agent::default();
-        let os = Os::new().await.unwrap();
-        let result = tool.eval_perm(&os, &agent);
-
-        // grep is read-only, should allow by default
-        assert!(matches!(result, PermissionEvalResult::Allow));
-    }
-
-    #[tokio::test]
-    async fn test_eval_perm_auto_allow_disabled() {
+    async fn test_eval_perm() {
         use std::collections::HashMap;
 
         use crate::cli::agent::ToolSettingTarget;
@@ -752,6 +734,14 @@ mod tests {
             output_mode: None,
         };
 
+        let os: Os = Os::new().await.unwrap();
+
+        // Case 1: default agent -> Allow
+        let default_agent = Agent::default();
+        let result = tool.eval_perm(&os, &default_agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+
+        // Case 2: agent disables autoAllow -> Ask
         let agent = Agent {
             name: "test".to_string(),
             tools_settings: {
@@ -765,10 +755,7 @@ mod tests {
             ..Default::default()
         };
 
-        let os = Os::new().await.unwrap();
         let result = tool.eval_perm(&os, &agent);
-
-        // Should ask when explicitly disabled
         assert!(matches!(result, PermissionEvalResult::Ask));
     }
 

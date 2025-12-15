@@ -24,7 +24,7 @@
   },
    "glob": {
     "name": "glob",
-    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with numFiles (returned), totalFiles (found), truncated (true if limited), and filePaths array.",
+    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -38,7 +38,7 @@
         },
         "limit": {
           "type": "integer",
-          "description": "Maximum files to return. Defaults to 200. Extra matches counted in totalFiles but not in filePaths."
+          "description": "Maximum files to return. If totalFiles exceeds this, truncated will be true."
         }
       },
       "required": [
