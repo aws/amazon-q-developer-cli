@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   build-darwin:
-    name: Build Darwin Universal Binary
+    name: Build Darwin Universal Binary (${{ inputs.environment }})
     runs-on: macos-latest
     environment: ${{ inputs.environment }}
     steps:

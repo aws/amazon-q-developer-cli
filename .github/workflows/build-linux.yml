@@ -35,7 +35,7 @@ permissions:
 
 jobs:
   build-linux:
-    name: Build Linux (${{ matrix.target }})
+    name: Build Linux (${{ matrix.target }}, ${{ inputs.environment }})
     runs-on: ${{ matrix.runner }}
     environment: ${{ inputs.environment }}
     strategy:
