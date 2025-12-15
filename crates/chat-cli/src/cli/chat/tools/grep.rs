@@ -158,7 +158,7 @@ impl Grep {
                 // Apply glob filter
                 if let Some(pattern) = include_glob {
                     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                    if !self.match_include(pattern, file_name) {
+                    if !Self::match_include(pattern, file_name) {
                         continue;
                     }
                 }
@@ -170,7 +170,7 @@ impl Grep {
         Ok(files)
     }
 
-    fn match_include(&self, pattern: &str, file_name: &str) -> bool {
+    fn match_include(pattern: &str, file_name: &str) -> bool {
         // Handle {a,b} brace expansion
         if pattern.contains('{') && pattern.contains('}') {
             if let (Some(start), Some(end)) = (pattern.find('{'), pattern.find('}')) {
@@ -774,17 +774,9 @@ mod tests {
 
     #[test]
     fn test_include_glob_matching() {
-        let tool = Grep {
-            pattern: "test".to_string(),
-            path: None,
-            include: None,
-            case_sensitive: None,
-            output_mode: None,
-        };
-
-        assert!(tool.match_include("*.rs", "main.rs"));
-        assert!(tool.match_include("*.{ts,tsx}", "component.ts"));
-        assert!(tool.match_include("*.{ts,tsx}", "component.tsx"));
-        assert!(!tool.match_include("*.{ts,tsx}", "component.js"));
+        assert!(Grep::match_include("*.rs", "main.rs"));
+        assert!(Grep::match_include("*.{ts,tsx}", "component.ts"));
+        assert!(Grep::match_include("*.{ts,tsx}", "component.tsx"));
+        assert!(!Grep::match_include("*.{ts,tsx}", "component.js"));
     }
 }

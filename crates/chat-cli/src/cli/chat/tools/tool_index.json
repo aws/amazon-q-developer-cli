@@ -22,67 +22,6 @@
       "required": []
     }
   },
-  "glob": {
-    "name": "glob",
-    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with numFiles (returned), totalFiles (found), truncated (true if limited), and filePaths array.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "pattern": {
-          "type": "string",
-          "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\" or \"**/test*\"."
-        },
-        "path": {
-          "type": "string",
-          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."
-        },
-        "limit": {
-          "type": "integer",
-          "description": "Maximum files to return. Defaults to 200. Extra matches counted in totalFiles but not in filePaths."
-        }
-      },
-      "required": [
-        "pattern"
-      ]
-    }
-  },
-  "grep": {
-    "name": "grep",
-    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "pattern": {
-          "type": "string",
-          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\". Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
-        },
-        "path": {
-          "type": "string",
-          "description": "Directory to search from. Defaults to current working directory."
-        },
-        "include": {
-          "type": "string",
-          "description": "File filter glob. Examples: \"*.rs\", \"*.{ts,tsx}\", \"*.py\""
-        },
-        "case_sensitive": {
-          "type": "boolean",
-          "description": "Case-sensitive search. Defaults to false (case-insensitive)."
-        },
-        "output_mode": {
-          "type": "string",
-          "enum": [
-            "content",
-            "files_with_matches",
-            "count"
-          ],
-          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
-        }
-      },
-      "required": [
-        "pattern"
-      ]
-    }
-  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
@@ -166,15 +105,7 @@
                   "type": "string"
                 },
                 "description": "Glob patterns to exclude from directory listing (optional, for Directory mode). If omitted, uses defaults. If empty array [] is provided, no exclusions are applied (shows everything). If patterns are provided, they completely override the defaults. Examples: '**/target/**', '*.log'",
-                "default": [
-                  "node_modules",
-                  ".git",
-                  "dist",
-                  "build",
-                  "out",
-                  ".cache",
-                  "target"
-                ]
+                "default": ["node_modules", ".git", "dist", "build", "out", ".cache", "target"]
               },
               "max_entries": {
                 "type": "integer",
@@ -388,11 +319,7 @@
         },
         "sort_by": {
           "type": "string",
-          "enum": [
-            "relevance",
-            "path",
-            "name"
-          ],
+          "enum": ["relevance", "path", "name"],
           "description": "Sort order for search results. Options: 'relevance' (default, by similarity score), 'path' or 'name' (alphabetically by file path). Optional for 'search' operations."
         },
         "file_type": {
