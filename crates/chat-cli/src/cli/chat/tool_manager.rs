@@ -756,9 +756,6 @@ impl ToolManager {
             if !crate::cli::chat::tools::web_fetch::WebFetch::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::WEB_FETCH.spec_name);
             }
-            if !crate::cli::chat::tools::use_subagent::UseSubagent::is_enabled(os) {
-                tool_specs.remove(ToolMetadata::USE_SUBAGENT.spec_name);
-            }
 
             #[cfg(windows)]
             {

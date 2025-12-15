@@ -429,7 +429,10 @@ impl ResponseParser {
                         self.parsing_tool_use = Some((tool_use_id.clone(), name.clone()));
                         return Ok(ResponseEvent::ToolUseStart { name });
                     },
-                    _ => {},
+                    ref event if event.is_skippable_metadata() => {},
+                    _ => {
+                        warn!(?output, "received unexpected event type in main parsing loop");
+                    },
                 },
                 Ok(None) => {
                     let message_id = Some(self.message_id.clone());
@@ -480,7 +483,8 @@ impl ResponseParser {
                         }
                     }
                 },
-                Some(ChatResponseStream::MetadataEvent { .. } | ChatResponseStream::MeteringEvent { .. }) => {
+                Some(event) if event.is_skippable_metadata() => {
+                    // Skip metadata events during tool use parsing
                     self.next().await?;
                 },
                 _other => {

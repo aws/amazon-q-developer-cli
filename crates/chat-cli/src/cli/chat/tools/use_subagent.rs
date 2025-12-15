@@ -19,10 +19,6 @@ use super::{
 };
 use crate::agent::Subagent;
 use crate::cli::agent::Agents;
-use crate::cli::experiment::experiment_manager::{
-    ExperimentManager,
-    ExperimentName,
-};
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::paths::PathResolver;
@@ -101,10 +97,6 @@ impl UseSubagent {
         preferred_alias: "subagent",
         aliases: &["use_subagent", "subagent"],
     };
-
-    pub fn is_enabled(os: &Os) -> bool {
-        ExperimentManager::is_enabled(os, ExperimentName::Subagent)
-    }
 
     pub fn validate(&self) -> Result<()> {
         if let UseSubagent::InvokeSubagents { subagents, .. } = self {

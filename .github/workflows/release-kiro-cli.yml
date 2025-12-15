@@ -1,4 +1,4 @@
-name: Release Kiro CLI Chat (All Platforms)
+name: Build Kiro CLI Chat (All Platforms)
 on:
   workflow_dispatch:
     inputs:
