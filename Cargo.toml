@@ -19,6 +19,7 @@ amzn-codewhisperer-streaming-client = { path = "crates/amzn-codewhisperer-stream
 amzn-consolas-client = { path = "crates/amzn-consolas-client" }
 amzn-qdeveloper-streaming-client = { path = "crates/amzn-qdeveloper-streaming-client" }
 amzn-toolkit-telemetry-client = { path = "crates/amzn-toolkit-telemetry-client" }
+anyhow = "1.0"
 anstream = "0.6.13"
 arboard = { version = "3.6.1", default-features = false, features = ["image-data"] }
 assert_cmd = "2.0"
@@ -68,6 +69,7 @@ indicatif = "0.17.11"
 indoc = "2.0.6"
 insta = "1.43.1"
 libc = "0.2.172"
+lsp-types = "0.95.0"
 mimalloc = "0.1.46"
 mockito = "1.7.0"
 nix = { version = "0.29.0", features = ["feature", "fs", "ioctl", "process", "signal", "term", "user"] }
