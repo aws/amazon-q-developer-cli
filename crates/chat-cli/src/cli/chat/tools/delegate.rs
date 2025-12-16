@@ -141,7 +141,16 @@ impl Delegate {
             Operation::Launch => {
                 queue!(output, style::Print("Delegating task to agent"))?;
                 super::display_tool_use(tool, output)?;
-                queue!(output, style::Print("\n"))?;
+                queue!(
+                    output,
+                    style::Print("\n"),
+                    style::SetForegroundColor(style::Color::Yellow),
+                    style::Print(
+                        "WARNING: Being replaced by subagent tool. Non-blocking support coming to subagent tool soon."
+                    ),
+                    style::ResetColor,
+                    style::Print("\n")
+                )?;
             },
             Operation::Status => {
                 queue!(output, style::Print("Checking agent status"))?;

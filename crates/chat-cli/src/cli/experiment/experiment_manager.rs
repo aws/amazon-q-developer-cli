@@ -112,7 +112,7 @@ static AVAILABLE_EXPERIMENTS: &[Experiment] = &[
     },
     Experiment {
         experiment_name: ExperimentName::Delegate,
-        description: "Enables launching and managing asynchronous subagent processes",
+        description: "[BEING REPLACED] Being replaced by subagent tool (blocking), which enables complex multi-step tasks without context bloat. Non-blocking support coming soon.",
         setting_key: Setting::EnabledDelegate,
         enabled: true,
         commands: &[],
