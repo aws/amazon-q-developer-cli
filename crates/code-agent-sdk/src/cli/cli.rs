@@ -189,11 +189,11 @@ async fn main() -> anyhow::Result<()> {
             if let Some(symbol_name) = name {
                 // Name-based reference search
                 let request = FindReferencesByNameRequest { symbol_name };
-                let references = code_intel.find_references_by_name(request).await?;
-                if references.is_empty() {
+                let result = code_intel.find_references_by_name(request).await?;
+                if result.references.is_empty() {
                     println!("No references found");
                 } else {
-                    for reference in references {
+                    for reference in &result.references {
                         println!(
                             "{} ({}:{} to {}:{})",
                             reference.file_path,
@@ -206,6 +206,12 @@ async fn main() -> anyhow::Result<()> {
                             println!("  {source}");
                         }
                     }
+                    if result.total_count > result.references.len() {
+                        println!(
+                            "\n({} more references not shown)",
+                            result.total_count - result.references.len()
+                        );
+                    }
                 }
             } else if let (Some(file), Some(row), Some(column)) = (file, row, column) {
                 // Position-based reference search
@@ -213,9 +219,12 @@ async fn main() -> anyhow::Result<()> {
                     file_path: file,
                     row,
                     column,
+                    limit: Some(100),
+                    offset: None,
+                    workspace_only: None,
                 };
-                let references = code_intel.find_references_by_location(request).await?;
-                for reference in references {
+                let result = code_intel.find_references_by_location(request).await?;
+                for reference in &result.references {
                     println!(
                         "{} ({}:{} to {}:{})",
                         reference.file_path,
@@ -227,6 +236,12 @@ async fn main() -> anyhow::Result<()> {
                     if let Some(source) = &reference.source_line {
                         println!("  {source}");
                     }
+                }
+                if result.total_count > result.references.len() {
+                    println!(
+                        "\n({} more references not shown)",
+                        result.total_count - result.references.len()
+                    );
                 }
             } else {
                 println!("Either --name or all of --file, --line, --column must be provided");

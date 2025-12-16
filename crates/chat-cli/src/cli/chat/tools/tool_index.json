@@ -385,7 +385,7 @@
         },
         "limit": {
           "type": "integer",
-          "description": "Maximum results to return (for search_symbols and get_completions, default: 50, max: 50)"
+          "description": "Maximum results to return. For search_symbols and get_completions: default 50, max 50. For find_references: default 500, max 1000."
         },
         "language": {
           "type": "string",
@@ -407,14 +407,6 @@
           "type": "boolean",
           "description": "If true (default), return only top-level symbols like structs, enums, impl blocks. If false, include all nested symbols like methods and inner functions (optional for get_document_symbols, default: true)"
         },
-        "identifier": {
-          "type": "string",
-          "description": "Optional identifier for the diagnostic request (optional for get_diagnostics)"
-        },
-        "previous_result_id": {
-          "type": "string",
-          "description": "Optional result ID from a previous diagnostic response for incremental updates (optional for get_diagnostics)"
-        },
         "symbol_type": {
           "type": "string",
           "description": "Symbol type filter (for search_symbols and get_completions). Values: Function, Method, Class, Struct, Enum, Interface, Constant, Variable, Module, Import."
@@ -426,6 +418,10 @@
         "filter": {
           "type": "string",
           "description": "Fuzzy search filter for completion results (recommended for completion operation). Uses Jaro-Winkler algorithm. Example: filter='get' finds 'getUserData', 'getConfig', 'targetElement'. Without filter, completion returns 1000+ results."
+        },
+        "workspace_only": {
+          "type": "boolean",
+          "description": "Only include references within the workspace, excluding dependencies (optional for find_references, default: true)"
         }
       },
       "required": ["operation"]

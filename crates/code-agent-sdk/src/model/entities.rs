@@ -371,6 +371,15 @@ impl ReferenceInfo {
     }
 }
 
+/// Result of a find references operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReferencesResult {
+    /// List of references (may be truncated)
+    pub references: Vec<ReferenceInfo>,
+    /// Total count before truncation
+    pub total_count: usize,
+}
+
 /// Information about hover content at a specific location.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HoverInfo {

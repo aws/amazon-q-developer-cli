@@ -208,10 +208,13 @@ pub async fn test_find_references(project: &TestProject) -> Result<()> {
         file_path: main_file.clone(),
         row,
         column,
+        limit: None,
+        offset: None,
+        workspace_only: Some(false),
     };
 
     let references = code_intel.find_references_by_location(request).await?;
-    assert!(!references.is_empty(), "Should find at least the definition");
+    assert!(!references.references.is_empty(), "Should find at least the definition");
 
     Ok(())
 }

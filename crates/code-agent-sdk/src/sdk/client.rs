@@ -4,7 +4,7 @@ use anyhow::Result;
 
 use crate::model::entities::{
     DefinitionInfo,
-    ReferenceInfo,
+    ReferencesResult,
     SymbolInfo,
 };
 use crate::model::types::*;
@@ -458,7 +458,7 @@ impl CodeIntelligence {
     pub async fn find_references_by_location(
         &mut self,
         request: FindReferencesByLocationRequest,
-    ) -> Result<Vec<ReferenceInfo>> {
+    ) -> Result<ReferencesResult> {
         self.symbol_service
             .find_references_by_location(&mut self.workspace_manager, request)
             .await
@@ -502,10 +502,7 @@ impl CodeIntelligence {
     ///
     /// # }
     /// ```ignore
-    pub async fn find_references_by_name(
-        &mut self,
-        request: FindReferencesByNameRequest,
-    ) -> Result<Vec<ReferenceInfo>> {
+    pub async fn find_references_by_name(&mut self, request: FindReferencesByNameRequest) -> Result<ReferencesResult> {
         self.symbol_service
             .find_references_by_name(&mut self.workspace_manager, request)
             .await

@@ -545,11 +545,7 @@ impl LspClient {
                     crate::error::CodeIntelligenceError::connection_closed(&self.config.name, &reason)
                 } else {
                     tracing::error!("LSP {} error: {}", self.config.name, err_str);
-                    crate::error::CodeIntelligenceError::LspError {
-                        server_name: self.config.name.clone(),
-                        code: None,
-                        message: err_str,
-                    }
+                    crate::error::CodeIntelligenceError::from_lsp_error(&self.config.name, None, &err_str)
                 }
             })?;
         tracing::trace!("Raw LSP response: {:?}", result);
