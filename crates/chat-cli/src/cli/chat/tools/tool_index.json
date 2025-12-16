@@ -22,7 +22,7 @@
       "required": []
     }
   },
-   "glob": {
+  "glob": {
     "name": "glob",
     "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",
     "input_schema": {
