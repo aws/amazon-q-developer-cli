@@ -22,30 +22,6 @@
       "required": []
     }
   },
-   "glob": {
-    "name": "glob",
-    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",
-    "input_schema": {
-      "type": "object",
-      "properties": {
-        "pattern": {
-          "type": "string",
-          "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\" or \"**/test*\"."
-        },
-        "path": {
-          "type": "string",
-          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."
-        },
-        "limit": {
-          "type": "integer",
-          "description": "Maximum files to return. If totalFiles exceeds this, truncated will be true."
-        }
-      },
-      "required": [
-        "pattern"
-      ]
-    }
-  },
   "grep": {
     "name": "grep",
     "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
@@ -166,7 +142,15 @@
                   "type": "string"
                 },
                 "description": "Glob patterns to exclude from directory listing (optional, for Directory mode). If omitted, uses defaults. If empty array [] is provided, no exclusions are applied (shows everything). If patterns are provided, they completely override the defaults. Examples: '**/target/**', '*.log'",
-                "default": ["node_modules", ".git", "dist", "build", "out", ".cache", "target"]
+                "default": [
+                  "node_modules",
+                  ".git",
+                  "dist",
+                  "build",
+                  "out",
+                  ".cache",
+                  "target"
+                ]
               },
               "max_entries": {
                 "type": "integer",
@@ -380,7 +364,11 @@
         },
         "sort_by": {
           "type": "string",
-          "enum": ["relevance", "path", "name"],
+          "enum": [
+            "relevance",
+            "path",
+            "name"
+          ],
           "description": "Sort order for search results. Options: 'relevance' (default, by similarity score), 'path' or 'name' (alphabetically by file path). Optional for 'search' operations."
         },
         "file_type": {
@@ -441,7 +429,9 @@
         },
         "symbols": {
           "type": "array",
-          "items": {"type": "string"},
+          "items": {
+            "type": "string"
+          },
           "description": "List of symbol names to lookup (required for lookup_symbols operation)"
         },
         "limit": {
@@ -489,7 +479,9 @@
           "description": "Fuzzy search filter for completion results (recommended for completion operation). Uses Jaro-Winkler algorithm. Example: filter='get' finds 'getUserData', 'getConfig', 'targetElement'. Without filter, completion returns 1000+ results."
         }
       },
-      "required": ["operation"]
+      "required": [
+        "operation"
+      ]
     }
   },
   "todo_list": {
@@ -501,10 +493,10 @@
         "command": {
           "type": "string",
           "enum": [
-            "create", 
-            "complete", 
-            "load", 
-            "add", 
+            "create",
+            "complete",
+            "load",
+            "add",
             "remove",
             "lookup"
           ],
@@ -525,7 +517,9 @@
                 "description": "Optional detailed information about the task"
               }
             },
-            "required": ["task_description"]
+            "required": [
+              "task_description"
+            ]
           }
         },
         "todo_list_description": {
@@ -573,7 +567,9 @@
                 "description": "Optional detailed information about the task"
               }
             },
-            "required": ["task_description"]
+            "required": [
+              "task_description"
+            ]
           }
         },
         "insert_indices": {
@@ -595,7 +591,9 @@
           }
         }
       },
-      "required": ["command"]
+      "required": [
+        "command"
+      ]
     }
   },
   "web_search": {
@@ -609,7 +607,9 @@
           "description": "Search query - can be keywords, questions, or specific topics"
         }
       },
-      "required": ["query"]
+      "required": [
+        "query"
+      ]
     }
   },
   "web_fetch": {
@@ -624,7 +624,11 @@
         },
         "mode": {
           "type": "string",
-          "enum": ["selective", "truncated", "full"],
+          "enum": [
+            "selective",
+            "truncated",
+            "full"
+          ],
           "description": "Extraction mode: 'selective' for smart extraction (default), 'truncated' for first 8000 chars, 'full' for complete content"
         },
         "search_terms": {
@@ -632,7 +636,9 @@
           "description": "Optional: Keywords to find in selective mode (e.g., 'pricing cost', 'installation setup'). Returns ~10 lines before and after matches. If not provided, returns beginning of page."
         }
       },
-      "required": ["url"]
+      "required": [
+        "url"
+      ]
     }
   },
   "use_subagent": {

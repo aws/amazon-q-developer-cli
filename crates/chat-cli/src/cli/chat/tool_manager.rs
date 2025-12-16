@@ -77,7 +77,6 @@ use crate::cli::chat::tools::execute::ExecuteCommand;
 use crate::cli::chat::tools::fs_read::FsRead;
 use crate::cli::chat::tools::fs_write::FsWrite;
 use crate::cli::chat::tools::gh_issue::GhIssue;
-use crate::cli::chat::tools::glob::Glob;
 use crate::cli::chat::tools::grep::Grep;
 use crate::cli::chat::tools::introspect::Introspect;
 use crate::cli::chat::tools::knowledge::Knowledge;
@@ -936,9 +935,6 @@ impl ToolManager {
             },
             name if name == ToolMetadata::WEB_FETCH.spec_name => {
                 Tool::WebFetch(serde_json::from_value::<WebFetch>(value.args).map_err(map_err)?)
-            },
-            name if name == ToolMetadata::GLOB.spec_name => {
-                Tool::Glob(serde_json::from_value::<Glob>(value.args).map_err(map_err)?)
             },
             name if name == ToolMetadata::GREP.spec_name => {
                 Tool::Grep(serde_json::from_value::<Grep>(value.args).map_err(map_err)?)
