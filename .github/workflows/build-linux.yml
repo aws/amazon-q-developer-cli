@@ -1,4 +1,4 @@
-name: Build Linux
+name: 1.1 Build Linux
 
 on:
   workflow_dispatch:

@@ -1,4 +1,4 @@
-name: Build Darwin (Universal Binary)
+name: 1.2 Build Darwin (Universal Binary)
 
 on:
   workflow_dispatch:
@@ -23,6 +23,11 @@ on:
         description: 'Deployment environment'
         type: string
         required: true
+      trigger_autocomplete_build:
+        description: 'Trigger autocomplete build after success'
+        type: boolean
+        required: false
+        default: false
 
 env:
   AWS_REGION: "us-east-1"
@@ -95,3 +100,25 @@ jobs:
               echo "❌ Build artifacts not found in build/ directory"
               exit 1
           fi
+
+  trigger-autocomplete-build:
+    name: Trigger Autocomplete Build
+    needs: build-darwin
+    runs-on: ubuntu-latest
+    if: inputs.trigger_autocomplete_build == true && inputs.environment == 'gamma'
+    steps:
+      - name: Trigger Autocomplete Workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              workflow_id: 'build-kiro-cli.yml',
+              ref: '${{ github.ref_name }}',
+              inputs: {
+                version_increment: 'none',
+                release_quality: '${{ inputs.channel }}',
+                chat_binary_commit: 'latest'
+              }
+            })
