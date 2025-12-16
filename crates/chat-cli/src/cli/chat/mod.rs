@@ -1673,6 +1673,13 @@ impl ChatSession {
         let hist = self.conversation.history();
         debug!(?strategy, ?hist, "compacting history");
 
+        // Improve handling where initial message itself is too big.
+        let history_len = self.conversation.history().len();
+        let adjusted_strategy = CompactStrategy {
+            messages_to_exclude: strategy.messages_to_exclude.min(history_len.saturating_sub(1)),
+            ..strategy
+        };
+
         if self.conversation.history().is_empty() {
             execute!(
                 self.stderr,
@@ -1686,7 +1693,7 @@ impl ChatSession {
             });
         }
 
-        if strategy.truncate_large_messages {
+        if adjusted_strategy.truncate_large_messages {
             info!("truncating large messages");
             execute!(
                 self.stderr,
@@ -1701,7 +1708,7 @@ impl ChatSession {
 
         let summary_state = self
             .conversation
-            .create_summary_request(os, custom_prompt.as_ref(), strategy)
+            .create_summary_request(os, custom_prompt.as_ref(), adjusted_strategy)
             .await?;
 
         if self.interactive {
@@ -1736,12 +1743,12 @@ impl ChatSession {
                     ChatError::SendMessage(err)
                         if matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow) =>
                     {
-                        error!(?strategy, "failed to send compaction request");
+                        error!(?adjusted_strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to
                         // truncate it. We use two messages since it's almost guaranteed to contain:
                         // 1. A small user prompt
                         // 2. A large user tool use result
-                        if history_len <= 2 && !strategy.truncate_large_messages {
+                        if history_len <= 2 && !adjusted_strategy.truncate_large_messages {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
@@ -1755,23 +1762,23 @@ impl ChatSession {
 
                         // Otherwise, we will first exclude the most recent message, and only then
                         // truncate. If both of these have already been set, then return an error.
-                        if history_len > 2 && strategy.messages_to_exclude < 1 {
+                        if history_len > 2 && adjusted_strategy.messages_to_exclude < 1 {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
                                 strategy: CompactStrategy {
                                     messages_to_exclude: 1,
-                                    ..strategy
+                                    ..adjusted_strategy
                                 },
                             });
-                        } else if !strategy.truncate_large_messages {
+                        } else if !adjusted_strategy.truncate_large_messages {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
                                 strategy: CompactStrategy {
                                     truncate_large_messages: true,
                                     max_message_length: 25_000,
-                                    ..strategy
+                                    ..adjusted_strategy
                                 },
                             });
                         } else {
@@ -1836,7 +1843,7 @@ impl ChatSession {
         }
 
         self.conversation
-            .replace_history_with_summary(summary.clone(), strategy, request_metadata);
+            .replace_history_with_summary(summary.clone(), adjusted_strategy, request_metadata);
 
         // If a next message is set, then retry the request.
         let should_retry = self.conversation.next_user_message().is_some();
