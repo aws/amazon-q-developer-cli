@@ -754,7 +754,10 @@ impl Agents {
 
         // Add default agent
         all_agents.push({
-            let mut agent = Agent::default();
+            let mut agent = Agent {
+                prompt: Some(include_str!("../../default_agent_prompt.md").to_string()),
+                ..Default::default()
+            };
             configure_builtin_agent_resources(&mut agent, &resolver).await;
             if mcp_enabled {
                 let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
