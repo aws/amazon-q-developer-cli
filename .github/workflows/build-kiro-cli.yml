@@ -1,4 +1,4 @@
-name: Build Kiro CLI Chat (All Platforms)
+name: 1.0 Build Kiro CLI Chat (All Platforms)
 on:
   workflow_dispatch:
     inputs:
@@ -26,11 +26,16 @@ on:
         type: boolean
         required: false
         default: false
+      trigger_autocomplete_build:
+        description: 'Trigger autocomplete build after Darwin build succeeds'
+        type: boolean
+        required: false
+        default: false
   schedule:
     - cron: "21 5 * * *"
   push:
     branches:
-      - build-infra
+      - prod
       - main
       - feature/*
 
@@ -221,7 +226,8 @@ jobs:
                 "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
                 "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
                 "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}",
-                "environment": "${{ matrix.environment }}"
+                "environment": "${{ matrix.environment }}",
+                "trigger_autocomplete_build": "${{ github.event.inputs.trigger_autocomplete_build || 'false' }}"
               }
             })
 
