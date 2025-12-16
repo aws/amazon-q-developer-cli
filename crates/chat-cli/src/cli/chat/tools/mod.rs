@@ -5,7 +5,6 @@ pub mod fs_read;
 pub mod fs_write;
 pub mod gh_issue;
 pub mod glob;
-pub mod grep;
 pub mod introspect;
 pub mod knowledge;
 pub mod thinking;

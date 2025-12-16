@@ -15,7 +15,6 @@ use super::fs_read::FsRead;
 use super::fs_write::FsWrite;
 use super::gh_issue::GhIssue;
 use super::glob::Glob;
-use super::grep::Grep;
 use super::introspect::Introspect;
 use super::knowledge::Knowledge;
 use super::thinking::Thinking;
@@ -57,7 +56,6 @@ impl ToolMetadata {
     pub const FS_WRITE: &ToolInfo = &FsWrite::INFO;
     pub const GH_ISSUE: &ToolInfo = &GhIssue::INFO;
     pub const GLOB: &ToolInfo = &Glob::INFO;
-    pub const GREP: &ToolInfo = &Grep::INFO;
     pub const INTROSPECT: &ToolInfo = &Introspect::INFO;
     pub const KNOWLEDGE: &ToolInfo = &Knowledge::INFO;
     pub const THINKING: &ToolInfo = &Thinking::INFO;
@@ -97,7 +95,6 @@ pub enum Tool {
     WebFetch(WebFetch),
     UseSubagent(UseSubagent),
     Glob(Glob),
-    Grep(Grep),
 }
 
 impl Tool {
@@ -119,7 +116,6 @@ impl Tool {
             Tool::WebFetch(_) => WebFetch::INFO.preferred_alias,
             Tool::UseSubagent(_) => UseSubagent::INFO.preferred_alias,
             Tool::Glob(_) => Glob::INFO.preferred_alias,
-            Tool::Grep(_) => Grep::INFO.preferred_alias,
         }
     }
 
@@ -141,7 +137,6 @@ impl Tool {
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
             Tool::UseSubagent(_use_subagent) => PermissionEvalResult::Allow,
             Tool::Glob(glob) => glob.eval_perm(os, agent),
-            Tool::Grep(grep) => grep.eval_perm(os, agent),
         }
     }
 
@@ -171,7 +166,6 @@ impl Tool {
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
             Tool::UseSubagent(use_subagent) => use_subagent.invoke(os, agents).await,
             Tool::Glob(glob) => glob.invoke(os, stdout).await,
-            Tool::Grep(grep) => grep.invoke(os, stdout).await,
         }
     }
 
@@ -201,7 +195,6 @@ impl Tool {
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, &mut buf),
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, &mut buf),
                 Tool::Glob(glob) => glob.queue_description(self, &mut buf),
-                Tool::Grep(grep) => grep.queue_description(self, &mut buf),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -233,7 +226,6 @@ impl Tool {
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, output),
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, output),
                 Tool::Glob(glob) => glob.queue_description(self, output),
-                Tool::Grep(grep) => grep.queue_description(self, output),
             }?;
         };
 
@@ -258,7 +250,6 @@ impl Tool {
             Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
             Tool::UseSubagent(use_subagent) => use_subagent.validate(),
             Tool::Glob(glob) => glob.validate(os).await,
-            Tool::Grep(grep) => grep.validate(os).await,
         }
     }
 
