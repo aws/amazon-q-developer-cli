@@ -105,7 +105,7 @@ jobs:
     name: Trigger Autocomplete Build
     needs: build-darwin
     runs-on: ubuntu-latest
-    if: inputs.trigger_autocomplete_build == true && inputs.environment == 'prod'
+    if: inputs.trigger_autocomplete_build == true && inputs.environment == 'gamma'
     steps:
       - name: Trigger Autocomplete Workflow
         uses: actions/github-script@v7
@@ -115,7 +115,7 @@ jobs:
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
               workflow_id: 'build-kiro-cli.yml',
-              ref: 'main',
+              ref: '${{ github.ref_name }}',
               inputs: {
                 version_increment: 'none',
                 release_quality: '${{ inputs.channel }}',
