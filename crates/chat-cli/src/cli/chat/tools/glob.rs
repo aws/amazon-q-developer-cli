@@ -12,7 +12,11 @@ use eyre::{
     Context,
     Result,
 };
-use globwalk::GlobWalkerBuilder;
+use globset::{
+    Glob as GlobPattern,
+    GlobMatcher,
+};
+use ignore::WalkBuilder;
 use serde::Deserialize;
 use tracing::error;
 
@@ -69,7 +73,7 @@ impl Glob {
             });
         }
 
-        // Normalize pattern - if pattern starts with a path component, extract it as base
+        // Normalize pattern - extract directory prefix if present
         let (search_base, search_pattern) = self.normalize_pattern(&base_path);
 
         if !search_base.exists() {
@@ -80,13 +84,9 @@ impl Glob {
             });
         }
 
-        // Build glob walker
-        let walker = match GlobWalkerBuilder::from_patterns(&search_base, &[&search_pattern])
-            .max_depth(50)
-            .follow_links(false)
-            .build()
-        {
-            Ok(w) => w,
+        // Build glob matcher
+        let glob_matcher = match GlobPattern::new(&search_pattern) {
+            Ok(g) => g.compile_matcher(),
             Err(e) => {
                 return Ok(InvokeOutput {
                     output: OutputKind::Json(serde_json::json!({
@@ -96,28 +96,38 @@ impl Glob {
             },
         };
 
+        // Build walker with gitignore support
+        let walker = WalkBuilder::new(&search_base)
+            .hidden(false)
+            .ignore(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .follow_links(false)
+            .max_depth(Some(50))
+            .build();
+
         let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
         let mut file_paths: Vec<String> = Vec::new();
         let mut total_files: usize = 0;
 
-        for entry in walker {
-            match entry {
-                Ok(e) => {
-                    if e.file_type().is_file() {
-                        total_files += 1;
-                        if file_paths.len() < max_results {
-                            file_paths.push(e.path().display().to_string());
-                        }
+        for entry in walker.flatten() {
+            if entry.file_type().is_some_and(|ft| ft.is_file()) {
+                let path = entry.path();
+
+                // Match against the relative path from search_base
+                let relative_path = path.strip_prefix(&search_base).unwrap_or(path);
+
+                if Self::matches_glob(&glob_matcher, relative_path, &search_pattern) {
+                    total_files += 1;
+                    if file_paths.len() < max_results {
+                        file_paths.push(path.display().to_string());
                     }
-                },
-                Err(e) => {
-                    error!("Glob walk error: {:?}", e);
-                },
+                }
             }
         }
 
-        let num_files_returned = file_paths.len();
-        let truncated = total_files > num_files_returned;
+        let truncated = total_files > file_paths.len();
 
         if total_files == 0 {
             Ok(InvokeOutput {
@@ -133,9 +143,23 @@ impl Glob {
                 output: OutputKind::Json(serde_json::json!({
                     "filePaths": file_paths,
                     "totalFiles": total_files,
-                    "truncated": truncated,
+                    "truncated": truncated
                 })),
             })
+        }
+    }
+
+    /// Check if path matches the glob pattern
+    fn matches_glob(matcher: &GlobMatcher, path: &Path, pattern: &str) -> bool {
+        // For patterns like "*.rs", match against filename only
+        // For patterns like "**/*.rs" or "src/**", match against full relative path
+        if pattern.contains('/') || pattern.starts_with("**") {
+            matcher.is_match(path)
+        } else {
+            // Simple pattern like "*.rs" - match filename only
+            path.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|name| matcher.is_match(name))
         }
     }
 
@@ -218,6 +242,9 @@ impl Glob {
         if self.pattern.is_empty() {
             return Err(eyre::eyre!("Glob pattern cannot be empty"));
         }
+
+        // Validate glob pattern
+        GlobPattern::new(&self.pattern).map_err(|e| eyre::eyre!("Invalid glob pattern '{}': {}", self.pattern, e))?;
 
         // Clean invalid path values
         if let Some(ref p) = self.path {

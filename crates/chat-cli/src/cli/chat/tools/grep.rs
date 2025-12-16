@@ -9,6 +9,7 @@ use eyre::{
     Context,
     Result,
 };
+use globset::GlobBuilder;
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{
@@ -171,61 +172,11 @@ impl Grep {
     }
 
     fn match_include(pattern: &str, file_name: &str) -> bool {
-        // Handle {a,b} brace expansion
-        if pattern.contains('{') && pattern.contains('}') {
-            if let (Some(start), Some(end)) = (pattern.find('{'), pattern.find('}')) {
-                let prefix = &pattern[..start];
-                let suffix = &pattern[end + 1..];
-                let options = &pattern[start + 1..end];
-
-                return options.split(',').any(|opt| {
-                    let expanded = format!("{}{}{}", prefix, opt.trim(), suffix);
-                    Self::match_glob(&expanded, file_name)
-                });
-            }
-        }
-        Self::match_glob(pattern, file_name)
-    }
-
-    fn match_glob(pattern: &str, text: &str) -> bool {
-        let mut p = pattern.chars().peekable();
-        let mut t = text.chars().peekable();
-
-        while let Some(pc) = p.next() {
-            match pc {
-                '*' => {
-                    // Skip consecutive *
-                    while p.peek() == Some(&'*') {
-                        p.next();
-                    }
-                    // If * is at end, match everything
-                    if p.peek().is_none() {
-                        return true;
-                    }
-                    // Try matching rest at each position
-                    let rest: String = p.collect();
-                    while t.peek().is_some() {
-                        let remaining: String = t.clone().collect();
-                        if Self::match_glob(&rest, &remaining) {
-                            return true;
-                        }
-                        t.next();
-                    }
-                    return Self::match_glob(&rest, "");
-                },
-                '?' => {
-                    if t.next().is_none() {
-                        return false;
-                    }
-                },
-                c => match t.next() {
-                    Some(tc) if tc.eq_ignore_ascii_case(&c) => {},
-                    _ => return false,
-                },
-            }
-        }
-
-        t.peek().is_none()
+        GlobBuilder::new(pattern)
+            .case_insensitive(false)
+            .build()
+            .ok()
+            .is_some_and(|g| g.compile_matcher().is_match(file_name))
     }
 
     /// Search and return matching line content in compact ripgrep-like format
