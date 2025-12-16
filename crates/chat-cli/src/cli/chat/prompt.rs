@@ -571,6 +571,8 @@ pub fn rl(
     sender: PromptQuerySender,
     receiver: PromptQueryResponseReceiver,
     paste_state: PasteState,
+    agents: &crate::cli::agent::Agents,
+    agent_swap_state: &super::agent_swap::AgentSwapState,
 ) -> Result<Editor<ChatHelper, FileHistory>> {
     let edit_mode = match os.database.settings.get_string(Setting::ChatEditMode).as_deref() {
         Some("vi" | "vim") => EditMode::Vi,
@@ -658,6 +660,9 @@ pub fn rl(
         KeyEvent(KeyCode::Char('v'), Modifiers::CTRL),
         EventHandler::Conditional(Box::new(PasteImageHandler::new(paste_state))),
     );
+
+    // Setup agent keybinds
+    super::agent_keybinds::bind_agent_shortcuts(&mut rl, agents, agent_swap_state)?;
 
     Ok(rl)
 }
@@ -1002,7 +1007,9 @@ mod tests {
         // Create a mock Os for testing
         let mock_os = crate::os::Os::new().await.unwrap();
         let paste_state = PasteState::new();
-        let mut test_editor = rl(&mock_os, sender, receiver, paste_state).unwrap();
+        let agents = crate::cli::agent::Agents::default();
+        let agent_swap_state = crate::cli::chat::agent_swap::AgentSwapState::new();
+        let mut test_editor = rl(&mock_os, sender, receiver, paste_state, &agents, &agent_swap_state).unwrap();
 
         // Reserved Emacs keybindings that should not be overridden
         let reserved_keys = ['a', 'e', 'f', 'b', 'k'];

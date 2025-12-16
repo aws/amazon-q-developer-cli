@@ -118,6 +118,11 @@ pub enum SlashCommand {
     /// chat.enableTangentMode true"
     #[command(hide = true)]
     Tangent(TangentArgs),
+    /// Switch to planner agent
+    Plan {
+        /// Optional prompt to send to the planner agent
+        prompt: Option<String>,
+    },
     /// [DEPRECATED] Use "/chat save" instead
     #[command(hide = true)]
     Save,
@@ -172,6 +177,63 @@ impl SlashCommand {
             Self::Experiment(args) => args.execute(os, session).await,
 
             Self::Tangent(args) => args.execute(os, session).await,
+            Self::Plan { prompt } => {
+                use crossterm::{
+                    execute,
+                    style,
+                };
+
+                use crate::constants::PLANNER_AGENT_NAME;
+                use crate::theme::StyledText;
+
+                let current_agent = session.input_source.agent_swap_state().get_current_agent();
+
+                // If already in planner, handle prompt if provided
+                if current_agent == PLANNER_AGENT_NAME {
+                    if let Some(prompt) = prompt {
+                        // Add to transcript and return as HandleInput to process immediately
+                        session.conversation.append_user_transcript(&prompt);
+                        return Ok(ChatState::HandleInput { input: prompt });
+                    } else {
+                        execute!(
+                            session.stderr,
+                            StyledText::warning_fg(),
+                            style::Print("Already in planner agent\n"),
+                            StyledText::reset()
+                        )?;
+                        return Ok(ChatState::PromptUser {
+                            skip_printing_tools: false,
+                        });
+                    }
+                }
+
+                // Store current agent as previous before switching to planner
+                session
+                    .input_source
+                    .agent_swap_state()
+                    .set_previous_agent(current_agent);
+
+                // Do immediate swap to planner
+                session
+                    .conversation
+                    .swap_agent(os, &mut session.stderr, PLANNER_AGENT_NAME)
+                    .await?;
+                session
+                    .input_source
+                    .agent_swap_state()
+                    .set_current_agent(PLANNER_AGENT_NAME.to_string());
+
+                // If prompt provided, handle it
+                if let Some(prompt) = prompt {
+                    // Add to transcript and return as HandleInput to process immediately
+                    session.conversation.append_user_transcript(&prompt);
+                    return Ok(ChatState::HandleInput { input: prompt });
+                }
+
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: false,
+                })
+            },
             Self::Save => {
                 use crossterm::{
                     execute,
@@ -249,6 +311,7 @@ impl SlashCommand {
             Self::Experiment(_) => "experiment",
 
             Self::Tangent(_) => "tangent",
+            Self::Plan { .. } => "plan",
             Self::Save => "save",
             Self::Load => "load",
             Self::Checkpoint(_) => "checkpoint",

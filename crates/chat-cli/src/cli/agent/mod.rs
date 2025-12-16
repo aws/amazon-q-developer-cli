@@ -752,41 +752,33 @@ impl Agents {
         local_agents.append(&mut global_agents);
         let mut all_agents = local_agents;
 
+        // Add default agent
         all_agents.push({
             let mut agent = Agent::default();
-
-            // Add global steering (KIRO-only)
-            if let Ok(global_steering_dir) = resolver.global().steering_dir() {
-                if global_steering_dir.exists() {
-                    let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
-                    agent.resources.push(global_steering_pattern.into());
-                }
-            }
-
-            // Add workspace steering (KIRO-only)
-            if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
-                if workspace_steering_dir.exists() {
-                    let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
-                    agent.resources.push(workspace_steering_pattern.into());
-                }
-            }
-
-            // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
-            if let Some(rules_dir) = resolver.workspace().rules_dir() {
-                let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
-                agent.resources.push(rules_pattern.into());
-            }
-
-            agent.resources.insert(0, "file://AmazonQ.md".into());
-
+            configure_builtin_agent_resources(&mut agent, &resolver).await;
             if mcp_enabled {
-                // Load merged global + workspace MCP config for default agent
                 let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
                 set_agent_mcp_config(&mut agent, legacy_mcp_config);
             } else {
                 agent.mcp_servers = McpServerConfig::default();
             }
+            agent
+        });
 
+        // Add planner agent
+        all_agents.push({
+            use crate::constants::PLANNER_AGENT_NAME;
+
+            let mut agent = Agent {
+                name: PLANNER_AGENT_NAME.to_string(),
+                description: Some(
+                    "Specialized planning agent that helps break down ideas into implementation plans".to_string(),
+                ),
+                prompt: Some(include_str!("../../planner_prompt.md").to_string()),
+                ..Default::default()
+            };
+            configure_builtin_agent_resources(&mut agent, &resolver).await;
+            // Note: Planner agent intentionally does not get MCP tools to keep it read-only
             agent
         });
 
@@ -964,6 +956,33 @@ pub struct AgentsLoadMetadata {
     pub load_count: u32,
     pub load_failed_count: u32,
     pub launched_agent: String,
+}
+
+/// Configure built-in agents with resources
+async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathResolver<'_>) {
+    // Add global steering (KIRO-only)
+    if let Ok(global_steering_dir) = resolver.global().steering_dir() {
+        if global_steering_dir.exists() {
+            let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
+            agent.resources.push(global_steering_pattern.into());
+        }
+    }
+
+    // Add workspace steering (KIRO-only)
+    if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
+        if workspace_steering_dir.exists() {
+            let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
+            agent.resources.push(workspace_steering_pattern.into());
+        }
+    }
+
+    // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
+    if let Some(rules_dir) = resolver.workspace().rules_dir() {
+        let rules_pattern = paths::workspace::RULES_PATTERN.replace("{}", &rules_dir.display().to_string());
+        agent.resources.push(rules_pattern.into());
+    }
+
+    agent.resources.insert(0, "file://AmazonQ.md".into());
 }
 
 async fn load_agents_from_entries(

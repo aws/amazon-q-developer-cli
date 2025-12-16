@@ -17,6 +17,12 @@ pub const GITHUB_ISSUES_URL: &str = "https://github.com/kirodotdev/Kiro/issues/n
 /// Default agent name
 pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 
+/// Planner agent name
+pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
+
+/// List of all built-in agent names
+pub const BUILT_IN_AGENTS: &[&str] = &[DEFAULT_AGENT_NAME, PLANNER_AGENT_NAME];
+
 /// Legacy product name (Amazon Q Developer CLI)
 pub const LEGACY_PRODUCT_NAME: &str = "Amazon Q Developer CLI";
 

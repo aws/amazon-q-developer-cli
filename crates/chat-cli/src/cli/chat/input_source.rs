@@ -1,6 +1,7 @@
 use eyre::Result;
 use rustyline::error::ReadlineError;
 
+use super::agent_swap::AgentSwapState;
 use super::prompt::{
     PasteState,
     PromptQueryResponseReceiver,
@@ -15,6 +16,7 @@ use crate::os::Os;
 pub struct InputSource {
     inner: inner::Inner,
     paste_state: PasteState,
+    swap_state: AgentSwapState,
 }
 
 mod inner {
@@ -41,11 +43,18 @@ impl Drop for InputSource {
     }
 }
 impl InputSource {
-    pub fn new(os: &Os, sender: PromptQuerySender, receiver: PromptQueryResponseReceiver) -> Result<Self> {
+    pub fn new(
+        os: &Os,
+        sender: PromptQuerySender,
+        receiver: PromptQueryResponseReceiver,
+        agents: &crate::cli::agent::Agents,
+    ) -> Result<Self> {
         let paste_state = PasteState::new();
+        let swap_state = AgentSwapState::new();
         Ok(Self {
-            inner: inner::Inner::Readline(rl(os, sender, receiver, paste_state.clone())?),
+            inner: inner::Inner::Readline(rl(os, sender, receiver, paste_state.clone(), agents, &swap_state)?),
             paste_state,
+            swap_state,
         })
     }
 
@@ -101,6 +110,7 @@ impl InputSource {
         Self {
             inner: inner::Inner::Mock { index: 0, lines },
             paste_state: PasteState::new(),
+            swap_state: AgentSwapState::new(),
         }
     }
 
@@ -154,6 +164,10 @@ impl InputSource {
     /// Reset the paste counter (called after submitting a message)
     pub fn reset_paste_count(&mut self) {
         self.paste_state.reset_count();
+    }
+
+    pub fn agent_swap_state(&mut self) -> &mut AgentSwapState {
+        &mut self.swap_state
     }
 }
 

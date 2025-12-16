@@ -9,6 +9,8 @@ use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 
+mod agent_keybinds;
+mod agent_swap;
 pub mod cli;
 mod consts;
 pub mod context;
@@ -521,12 +523,14 @@ impl ChatArgs {
             None
         };
 
+        let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver, &agents)?;
+
         ChatSession::new(
             os,
             &conversation_id,
             agents,
             input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
+            input_source,
             resume_session_id,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,
@@ -2164,7 +2168,7 @@ impl ChatSession {
     }
 
     /// Read input from the user.
-    async fn prompt_user(&mut self, os: &Os, skip_printing_tools: bool) -> Result<ChatState, ChatError> {
+    async fn prompt_user(&mut self, os: &mut Os, skip_printing_tools: bool) -> Result<ChatState, ChatError> {
         execute!(self.stderr, cursor::Show)?;
 
         // Check token usage and display warnings if needed
@@ -3784,6 +3788,16 @@ impl ChatSession {
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
+            // Check for pending agent swap FIRST (like feature branch)
+            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
+                return Some(format!("/agent swap {agent_name}"));
+            }
+
+            // Check for pending prompt (from /plan command)
+            if let Some(pending_prompt) = self.input_source.agent_swap_state().take_pending_prompt() {
+                return Some(pending_prompt);
+            }
+
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
