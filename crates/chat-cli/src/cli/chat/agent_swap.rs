@@ -75,6 +75,16 @@ impl AgentSwapState {
         self.inner.lock().unwrap().pending_prompt.take()
     }
 
+    pub fn set_pending_swap_with_prompt(&self, agent_name: String, prompt: String) {
+        let mut inner = self.inner.lock().unwrap();
+        inner.pending_swap = Some(agent_name);
+        inner.pending_prompt = Some(prompt);
+    }
+
+    pub fn get_previous_agent(&self) -> Option<String> {
+        self.inner.lock().unwrap().previous_agent.clone()
+    }
+
     pub fn set_previous_agent(&self, agent_name: String) {
         self.inner.lock().unwrap().previous_agent = Some(agent_name);
     }

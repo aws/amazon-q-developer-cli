@@ -79,6 +79,7 @@ use crate::cli::chat::tools::glob::Glob;
 use crate::cli::chat::tools::grep::Grep;
 use crate::cli::chat::tools::introspect::Introspect;
 use crate::cli::chat::tools::knowledge::Knowledge;
+use crate::cli::chat::tools::switch_to_execution::SwitchToExecution;
 use crate::cli::chat::tools::thinking::Thinking;
 use crate::cli::chat::tools::todo::TodoList;
 use crate::cli::chat::tools::use_aws::UseAws;
@@ -765,13 +766,14 @@ impl ToolManager {
         let notify = self.notify.take();
         self.schema = {
             let tool_list = &self.agent.lock().await.tools;
-            let is_allow_all = tool_list.len() == 1 && tool_list.first().is_some_and(|n| n == "*");
+            let is_allow_all = tool_list.iter().any(|n| n == "*");
             let is_allow_native = tool_list.iter().any(|t| t.as_str() == BUILTIN_TOOLS_PREFIX);
-            let mut tool_specs =
-                serde_json::from_str::<HashMap<String, ToolSpec>>(include_str!("tools/tool_index.json"))?
+
+            let mut tool_specs: HashMap<String, ToolSpec> =
+                serde_json::from_str::<HashMap<String, serde_json::Value>>(include_str!("tools/tool_index.json"))?
                     .into_iter()
-                    .filter(|(name, _)| {
-                        if name == DUMMY_TOOL_NAME || is_allow_all || is_allow_native {
+                    .filter(|(name, spec_value)| {
+                        if name == DUMMY_TOOL_NAME {
                             return true;
                         }
 
@@ -782,10 +784,53 @@ impl ToolManager {
 
                         // For native tools, check if any alias in tool_list matches this tool
                         if let Some(info) = ToolMetadata::get_by_spec_name(name) {
-                            return tool_list.iter().any(|t| info.aliases.contains(&t.as_str()));
+                            if tool_list.iter().any(|t| info.aliases.contains(&t.as_str())) {
+                                return true;
+                            }
+                        }
+
+                        // Handle @builtin OR * (allow all) - exclude tools marked exclude_from_builtin
+                        if is_allow_native || is_allow_all {
+                            let exclude_from_builtin = spec_value
+                                .get("exclude_from_builtin")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+
+                            if exclude_from_builtin {
+                                return false;
+                            }
+
+                            // Check if tool is completely denied via fallback_action
+                            if let Ok(agent) = self.agent.try_lock() {
+                                if let Some(settings) = agent
+                                    .tools_settings
+                                    .get(&crate::cli::agent::ToolSettingTarget(name.clone()))
+                                {
+                                    // If fallback_action is "deny" and no allowed_paths field exists, exclude tool
+                                    // entirely
+                                    let fallback_action = settings
+                                        .get("fallback_action")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("interactive");
+
+                                    let has_allowed_paths = settings
+                                        .as_object()
+                                        .is_some_and(|obj| obj.contains_key("allowed_paths"));
+
+                                    if fallback_action == "deny" && !has_allowed_paths {
+                                        return false;
+                                    }
+                                }
+                            }
+
+                            return true;
                         }
 
                         false
+                    })
+                    .map(|(name, value)| {
+                        let spec: ToolSpec = serde_json::from_value(value).unwrap();
+                        (name, spec)
                     })
                     .collect::<HashMap<_, _>>();
             if !crate::cli::chat::tools::thinking::Thinking::is_enabled(os) {
@@ -1006,6 +1051,9 @@ impl ToolManager {
             },
             name if name == ToolMetadata::GREP.spec_name => {
                 Tool::Grep(serde_json::from_value::<Grep>(value.args).map_err(map_err)?)
+            },
+            name if name == ToolMetadata::SWITCH_TO_EXECUTION.spec_name => {
+                Tool::SwitchToExecution(serde_json::from_value::<SwitchToExecution>(value.args).map_err(map_err)?)
             },
             name => {
                 // Note: tn_map also has tools that underwent no transformation. In otherwords, if

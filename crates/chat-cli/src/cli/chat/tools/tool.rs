@@ -19,6 +19,7 @@ use super::glob::Glob;
 use super::grep::Grep;
 use super::introspect::Introspect;
 use super::knowledge::Knowledge;
+use super::switch_to_execution::SwitchToExecution;
 use super::thinking::Thinking;
 use super::todo::TodoList;
 use super::use_aws::UseAws;
@@ -52,6 +53,7 @@ impl ToolMetadata {
         Self::WEB_SEARCH,
         Self::WEB_FETCH,
         Self::USE_SUBAGENT,
+        Self::SWITCH_TO_EXECUTION,
     ];
     pub const CODE: &ToolInfo = &Code::INFO;
     pub const DELEGATE: &ToolInfo = &Delegate::INFO;
@@ -63,6 +65,7 @@ impl ToolMetadata {
     pub const GREP: &ToolInfo = &Grep::INFO;
     pub const INTROSPECT: &ToolInfo = &Introspect::INFO;
     pub const KNOWLEDGE: &ToolInfo = &Knowledge::INFO;
+    pub const SWITCH_TO_EXECUTION: &ToolInfo = &SwitchToExecution::INFO;
     pub const THINKING: &ToolInfo = &Thinking::INFO;
     pub const TODO: &ToolInfo = &TodoList::INFO;
     pub const USE_AWS: &ToolInfo = &UseAws::INFO;
@@ -102,6 +105,7 @@ pub enum Tool {
     UseSubagent(UseSubagent),
     Glob(Glob),
     Grep(Grep),
+    SwitchToExecution(SwitchToExecution),
 }
 
 impl Tool {
@@ -125,6 +129,7 @@ impl Tool {
             Tool::UseSubagent(_) => UseSubagent::INFO.preferred_alias,
             Tool::Glob(_) => Glob::INFO.preferred_alias,
             Tool::Grep(_) => Grep::INFO.preferred_alias,
+            Tool::SwitchToExecution(_) => SwitchToExecution::INFO.preferred_alias,
         }
     }
 
@@ -148,6 +153,7 @@ impl Tool {
             Tool::UseSubagent(_use_subagent) => PermissionEvalResult::Allow,
             Tool::Glob(glob) => glob.eval_perm(os, agent),
             Tool::Grep(grep) => grep.eval_perm(os, agent),
+            Tool::SwitchToExecution(_) => PermissionEvalResult::Allow,
         }
     }
 
@@ -179,6 +185,21 @@ impl Tool {
             Tool::UseSubagent(use_subagent) => use_subagent.invoke(os, agents).await,
             Tool::Glob(glob) => glob.invoke(os, stdout).await,
             Tool::Grep(grep) => grep.invoke(os, stdout).await,
+            Tool::SwitchToExecution(switch) => switch.invoke(stdout).await,
+        }
+    }
+
+    /// Post-process tool results for tools that need additional actions
+    pub async fn post_process(
+        &self,
+        result: &super::InvokeOutput,
+        session: &mut crate::cli::chat::ChatSession,
+        os: &crate::os::Os,
+    ) -> eyre::Result<()> {
+        match self {
+            Tool::SwitchToExecution(switch) => switch.post_process(result, session, os).await,
+            // Most tools don't need post-processing
+            _ => Ok(()),
         }
     }
 
@@ -210,6 +231,7 @@ impl Tool {
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, &mut buf),
                 Tool::Glob(glob) => glob.queue_description(self, &mut buf),
                 Tool::Grep(grep) => grep.queue_description(self, &mut buf),
+                Tool::SwitchToExecution(_) => Ok(()),
             }?;
 
             let tool_call_args = ToolCallArgs {
@@ -243,6 +265,7 @@ impl Tool {
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, output),
                 Tool::Glob(glob) => glob.queue_description(self, output),
                 Tool::Grep(grep) => grep.queue_description(self, output),
+                Tool::SwitchToExecution(_) => Ok(()),
             }?;
         };
 
@@ -269,6 +292,7 @@ impl Tool {
             Tool::UseSubagent(use_subagent) => use_subagent.validate(),
             Tool::Glob(glob) => glob.validate(os).await,
             Tool::Grep(grep) => grep.validate(os).await,
+            Tool::SwitchToExecution(_) => Ok(()),
         }
     }
 

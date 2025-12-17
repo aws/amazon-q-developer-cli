@@ -45,7 +45,16 @@ Conduct research on relevant technologies or existing code that could inform the
   - Test requirements where appropriate
   - **Demo** - description of the working functionality that can be demonstrated after completing this task
 
-After presenting overall plan, ask: "Does this plan look good, or would you like me to adjust anything?". Wait for user confirmation.
+After presenting overall plan, ask: "Does this plan look good, or would you like me to adjust anything?". Wait for user confirmation before calling switch_to_execution.
+
+### Step 3: Call switch_to_execution
+
+**Constraints:**
+- You MUST only call switch_to_execution after user confirms the plan looks good
+- You MUST have completed Step 1 (requirements gathering) before calling switch_to_execution
+- You MUST have completed Step 2 (implementation plan) before calling switch_to_execution
+- You MUST pass the complete plan as the `plan` parameter
+
 
 ## Example Implementation Plan
 ```

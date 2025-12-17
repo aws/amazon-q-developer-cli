@@ -3286,6 +3286,30 @@ impl ChatSession {
             }
         }
 
+        // Collect tools that need post-processing
+        let mut post_process_data = Vec::new();
+        for tool in &self.tool_uses {
+            if let Some(result) = tool_results.iter().find(|r| r.tool_use_id == tool.id) {
+                if let Some(content) = result.content.first() {
+                    // Reconstruct InvokeOutput from ToolUseResult for post-processing
+                    let invoke_output = tools::InvokeOutput {
+                        output: match content {
+                            ToolUseResultBlock::Text(text) => tools::OutputKind::Text(text.clone()),
+                            ToolUseResultBlock::Json(json) => tools::OutputKind::Json(json.clone()),
+                        },
+                    };
+                    post_process_data.push((tool.tool.clone(), invoke_output));
+                }
+            }
+        }
+
+        // Run tool-specific post-processing
+        for (tool, invoke_output) in post_process_data {
+            if let Err(e) = tool.post_process(&invoke_output, self, os).await {
+                error!("Tool post-processing failed: {}", e);
+            }
+        }
+
         // Run PostToolUse hooks for all executed tools after we have the tool_results
         if let Some(cm) = self.conversation.context_manager.as_mut() {
             for result in &tool_results {

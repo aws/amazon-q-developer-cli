@@ -789,6 +789,23 @@ impl Agents {
                 prompt: Some(include_str!("../../planner_prompt.md").to_string()),
                 ..Default::default()
             };
+
+            // Add switch_to_execution tool (excluded from builtin "*")
+            agent.tools.push("switch_to_execution".to_string());
+
+            // Ensure Planner Agent is read-only
+            // TODO: Added fallback_action setting to execute_bash as well
+            agent.tools_settings.extend([
+                (
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({"fallback_action": "deny"}),
+                ),
+                (
+                    ToolSettingTarget("execute_bash".to_string()),
+                    serde_json::json!({"autoAllowReadonly": true, "denyByDefault": true}),
+                ),
+            ]);
+
             configure_builtin_agent_resources(&mut agent, &resolver).await;
             // Note: Planner agent intentionally does not get MCP tools to keep it read-only
             agent
@@ -954,6 +971,7 @@ impl Agents {
             name if ToolMetadata::GLOB.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::GREP.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::USE_SUBAGENT.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::SWITCH_TO_EXECUTION.aliases.contains(&name) => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
         };

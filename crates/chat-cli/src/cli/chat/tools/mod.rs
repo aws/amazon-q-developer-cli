@@ -9,6 +9,7 @@ pub mod glob;
 pub mod grep;
 pub mod introspect;
 pub mod knowledge;
+pub mod switch_to_execution;
 pub mod thinking;
 pub mod todo;
 pub mod tool;

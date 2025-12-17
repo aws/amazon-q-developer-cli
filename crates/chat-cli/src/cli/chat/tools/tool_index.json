@@ -768,5 +768,20 @@
         "command"
       ]
     }
+  },
+  "switch_to_execution": {
+    "name": "switch_to_execution",
+    "exclude_from_builtin": true,
+    "description": "Use this tool when you have finished planning and are ready to switch back to the execution agent.\n\n## How This Tool Works\n- This tool signals that planning is complete and presents the user with two options:\n  - **y**: Switch to execution agent and begin implementation immediately\n  - **n**: Continue planning (stay with planner agent for refinements)\n- The user will see your plan and choose how to proceed\n\n## When to Use This Tool\nIMPORTANT: Only use this tool when you have completed planning for a task that requires code implementation. For research tasks where you're gathering information, searching files, reading files or in general trying to understand the codebase - do NOT use this tool.\n\n## Handling Ambiguity in Plans\nBefore using this tool, ensure your plan is clear and unambiguous. If there are multiple valid approaches or unclear requirements:\n1. Ask the user questions to clarify\n2. Ask about specific implementation choices (e.g., architectural patterns, which library to use)\n3. Clarify any assumptions that could affect the implementation\n4. Edit your plan to incorporate user feedback\n5. Only proceed with SwitchToExecution after resolving ambiguities",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "plan": {
+          "type": "string",
+          "description": "The generated implementation plan"
+        }
+      },
+      "required": ["plan"]
+    }
   }
 }
