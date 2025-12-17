@@ -661,18 +661,16 @@ impl KnowledgeStore {
                         auto_update,
                     }) => {
                         let file_path = source.trim_start_matches("file://");
-                        let resolved_path = if !file_path.starts_with('/') {
-                            std::env::current_dir().ok()?.join(file_path).display().to_string()
-                        } else {
-                            file_path.to_string()
-                        };
+
+                        // Use sanitize_path_tool_arg to handle ~ expansion and relative paths
+                        let resolved_path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
 
                         Some((
                             name.as_deref().unwrap_or("unnamed"),
                             description
                                 .as_deref()
                                 .unwrap_or_else(|| name.as_deref().unwrap_or("unnamed")),
-                            resolved_path,
+                            resolved_path.to_string_lossy().to_string(),
                             include.clone(),
                             exclude.clone(),
                             Self::index_type_to_string(index_type.as_ref()),
