@@ -35,6 +35,10 @@ use crate::theme::StyledText;
 
 /// Default maximum number of results to return
 const DEFAULT_MAX_RESULTS: usize = 200;
+/// Maximum allowed depth to prevent excessive traversal
+const MAX_ALLOWED_DEPTH: usize = 100;
+/// Default maximum depth for directory traversal
+const DEFAULT_MAX_DEPTH: usize = 50;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Glob {
@@ -45,6 +49,9 @@ pub struct Glob {
     /// Maximum number of results to return. Defaults to DEFAULT_MAX_RESULTS.
     #[serde(default)]
     pub limit: Option<usize>,
+    /// Maximum directory depth to traverse. Defaults to DEFAULT_MAX_DEPTH.
+    #[serde(default)]
+    pub max_depth: Option<usize>,
 }
 
 impl Glob {
@@ -97,6 +104,8 @@ impl Glob {
         };
 
         // Build walker with gitignore support
+        let max_depth = self.max_depth.map_or(DEFAULT_MAX_DEPTH, |d| d.min(MAX_ALLOWED_DEPTH));
+
         let walker = WalkBuilder::new(&search_base)
             .hidden(false)
             .ignore(true)
@@ -104,7 +113,7 @@ impl Glob {
             .git_global(true)
             .git_exclude(true)
             .follow_links(false)
-            .max_depth(Some(50))
+            .max_depth(Some(max_depth))
             .build();
 
         let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
@@ -234,7 +243,6 @@ impl Glob {
         }
 
         display_tool_use(tool, output)?;
-        queue!(output, style::Print("\n\n"))?;
         Ok(())
     }
 
@@ -327,6 +335,7 @@ mod tests {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -354,6 +363,7 @@ mod tests {
             pattern: "**/*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -380,6 +390,7 @@ mod tests {
             pattern: "target/debug/build/*".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -407,6 +418,7 @@ mod tests {
             pattern: "target/debug/build/**/*".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -434,6 +446,7 @@ mod tests {
             pattern: "*.txt".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: Some(5),
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -459,6 +472,7 @@ mod tests {
             pattern: "*.rs".to_string(),
             path: Some(temp_dir.path().to_string_lossy().to_string()),
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -484,6 +498,7 @@ mod tests {
             pattern: "*.rs".to_string(),
             path: None,
             limit: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();

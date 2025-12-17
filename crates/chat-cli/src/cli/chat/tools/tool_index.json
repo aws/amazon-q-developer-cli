@@ -39,6 +39,10 @@
         "limit": {
           "type": "integer",
           "description": "Maximum files to return. If totalFiles exceeds this, truncated will be true."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum directory depth to traverse. Increase for deep nested structures."
         }
       },
       "required": [
