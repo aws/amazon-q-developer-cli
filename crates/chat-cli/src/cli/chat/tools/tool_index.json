@@ -22,6 +22,59 @@
       "required": []
     }
   },
+  "grep": {
+    "name": "grep",
+    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\". Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory to search from. Defaults to current working directory."
+        },
+        "include": {
+          "type": "string",
+          "description": "File filter glob. Examples: \"*.rs\", \"*.{ts,tsx}\", \"*.py\""
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Case-sensitive search. Defaults to false (case-insensitive)."
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files_with_matches",
+            "count"
+          ],
+          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
+        },
+        "max_matches_per_file": {
+          "type": "integer",
+          "description": "Max matches returned per file (output limit). Increase to see all occurrences in a file."
+        },
+        "max_files": {
+          "type": "integer",
+          "description": "Max number of files returned (output limit). Increase for comprehensive codebase searches."
+        },
+        "max_total_lines": {
+          "type": "integer",
+          "description": "Max total matched lines returned across all files (output limit). Increase when searching for many occurrences."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Max directory depth to traverse when searching (search limit). Increase for deeply nested structures."
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
