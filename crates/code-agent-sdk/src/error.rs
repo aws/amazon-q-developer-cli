@@ -89,6 +89,12 @@ pub enum CodeIntelligenceError {
         message: String,
     },
 
+    /// Invalid position (line/column) provided to LSP.
+    ///
+    /// **When it occurs**: Position is out of bounds or file content changed.
+    /// **Recovery**: Verify the position is within file bounds and file is saved.
+    InvalidPosition { server_name: String, message: String },
+
     /// File operation failed.
     ///
     /// **When it occurs**: Read, write, or edit operation failed on a file.
@@ -193,6 +199,12 @@ impl fmt::Display for CodeIntelligenceError {
                     write!(f, "LSP error from {server_name}: {message}")
                 }
             },
+            Self::InvalidPosition { server_name, message } => {
+                write!(
+                    f,
+                    "Invalid position for {server_name}: {message}. Verify the position is within file bounds."
+                )
+            },
             Self::FileError {
                 path,
                 operation,
@@ -267,6 +279,25 @@ impl CodeIntelligenceError {
             code,
             message: message.to_string(),
         }
+    }
+
+    /// Create an LSP error, classifying it as InvalidPosition if the message indicates a position
+    /// error
+    pub fn from_lsp_error(server_name: &str, code: Option<i32>, message: &str) -> Self {
+        if Self::is_position_error(message) {
+            Self::InvalidPosition {
+                server_name: server_name.to_string(),
+                message: message.to_string(),
+            }
+        } else {
+            Self::lsp_error(server_name, code, message)
+        }
+    }
+
+    /// Check if an error message indicates a position-related error
+    fn is_position_error(message: &str) -> bool {
+        let msg = message.to_lowercase();
+        msg.contains("position") || msg.contains("line") || msg.contains("column") || msg.contains("range")
     }
 
     /// Create a method not supported error

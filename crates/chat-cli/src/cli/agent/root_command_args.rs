@@ -22,7 +22,7 @@ use super::{
     McpServerConfig,
     legacy,
 };
-use crate::constants::DEFAULT_AGENT_NAME;
+use crate::constants::BUILT_IN_AGENTS;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -106,7 +106,7 @@ impl AgentArgs {
                                 .path
                                 .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
                                 .unwrap_or_else(|| {
-                                    if name == DEFAULT_AGENT_NAME {
+                                    if BUILT_IN_AGENTS.contains(&name.as_str()) {
                                         StyledText::secondary("(Built-in)")
                                     } else {
                                         "**No path found**".to_string()

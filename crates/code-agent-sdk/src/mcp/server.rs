@@ -639,10 +639,17 @@ impl CodeIntelligenceServer {
                 .and_then(|v| v.as_u64())
                 .ok_or_else(|| ErrorData::new(ErrorCode::INVALID_PARAMS, "Missing column", None))? as u32;
 
+        let limit = args.get("limit").and_then(|v| v.as_u64()).map(|l| l as u32);
+        let offset = args.get("offset").and_then(|v| v.as_u64()).map(|o| o as u32);
+        let workspace_only = args.get("workspace_only").and_then(|v| v.as_bool());
+
         let request = FindReferencesByLocationRequest {
             file_path: PathBuf::from(file_path),
             row,
             column,
+            limit,
+            offset,
+            workspace_only,
         };
 
         let mut client_guard = self.client.lock().await;
@@ -654,13 +661,14 @@ impl CodeIntelligenceServer {
             .map_err(|e| ErrorData::new(ErrorCode::INTERNAL_ERROR, format!("Find references failed: {e}"), None))?;
 
         let response = json!({
-            "references": references.iter().map(|r| json!({
+            "references": references.references.iter().map(|r| json!({
                 "file_path": r.file_path,
                 "start_row": r.start_row,
                 "start_column": r.start_column,
                 "end_row": r.end_row,
                 "end_column": r.end_column
-            })).collect::<Vec<_>>()
+            })).collect::<Vec<_>>(),
+            "total_count": references.total_count
         });
 
         Ok(CallToolResult::success(vec![Content::text(
@@ -697,13 +705,14 @@ impl CodeIntelligenceServer {
         })?;
 
         let response = json!({
-            "references": references.iter().map(|r| json!({
+            "references": references.references.iter().map(|r| json!({
                 "file_path": r.file_path,
                 "start_row": r.start_row,
                 "start_column": r.start_column,
                 "end_row": r.end_row,
                 "end_column": r.end_column
-            })).collect::<Vec<_>>()
+            })).collect::<Vec<_>>(),
+            "total_count": references.total_count
         });
 
         Ok(CallToolResult::success(vec![Content::text(

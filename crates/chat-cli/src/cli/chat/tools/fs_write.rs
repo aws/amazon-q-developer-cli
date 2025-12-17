@@ -488,6 +488,16 @@ impl FsWrite {
             allowed_paths: Vec<String>,
             #[serde(default)]
             denied_paths: Vec<String>,
+            #[serde(default)]
+            fallback_action: FallbackAction,
+        }
+
+        #[derive(Debug, Deserialize, Default)]
+        #[serde(rename_all = "snake_case")]
+        enum FallbackAction {
+            #[default]
+            Interactive,
+            Deny,
         }
 
         let is_in_allowlist = Self::INFO
@@ -503,6 +513,7 @@ impl FsWrite {
                 let Settings {
                     allowed_paths,
                     denied_paths,
+                    fallback_action,
                 } = match serde_json::from_value::<Settings>(settings.clone()) {
                     Ok(settings) => settings,
                     Err(e) => {
@@ -562,12 +573,21 @@ impl FsWrite {
                                             .collect::<Vec<_>>()
                                     });
                                 }
-                                if is_in_allowlist || allow_set.is_match(path.as_ref() as &str) {
+                                if allow_set.is_match(path.as_ref() as &str) {
+                                    return PermissionEvalResult::Allow;
+                                }
+                                // When fallback_action is interactive, is_in_allowlist can bypass allowedPaths
+                                if matches!(fallback_action, FallbackAction::Interactive) && is_in_allowlist {
                                     return PermissionEvalResult::Allow;
                                 }
                             },
                         }
-                        PermissionEvalResult::Ask
+                        match fallback_action {
+                            FallbackAction::Deny => {
+                                PermissionEvalResult::Deny(vec!["path not in allowed paths list".to_string()])
+                            },
+                            FallbackAction::Interactive => PermissionEvalResult::Ask,
+                        }
                     },
                     (allow_res, deny_res) => {
                         if let Err(e) = allow_res {
@@ -1585,5 +1605,106 @@ mod tests {
             actual_line_count, tracker.after_fswrite_lines,
             "after_lines should match the actual line count in the file"
         );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_fallback_action_deny() {
+        const ALLOW_PATH: &str = "/allowed/path";
+
+        let agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [ALLOW_PATH],
+                        "fallbackAction": "deny"
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        let os = Os::new().await.unwrap();
+
+        // Test path in allowedPaths - should allow
+        let tool_allowed = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/allowed/path/file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_allowed.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
+
+        // Test path NOT in allowedPaths - should deny (not ask)
+        let tool_not_allowed = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/other/path/file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_not_allowed.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "fallback_action deny should deny paths not in allowedPaths, got {:?}",
+            res
+        );
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_fallback_action_deny_ignores_allowlist() {
+        const ALLOW_PATH: &str = "/allowed/path";
+
+        let mut agent = Agent {
+            name: "test_agent".to_string(),
+            tools_settings: {
+                let mut map = HashMap::<ToolSettingTarget, serde_json::Value>::new();
+                map.insert(
+                    ToolSettingTarget("fs_write".to_string()),
+                    serde_json::json!({
+                        "allowedPaths": [ALLOW_PATH],
+                        "fallbackAction": "deny"
+                    }),
+                );
+                map
+            },
+            ..Default::default()
+        };
+
+        // Add fs_write to allowed_tools (simulating user pressing 't' to trust)
+        agent.allowed_tools.insert("fs_write".to_string());
+
+        let os = Os::new().await.unwrap();
+
+        // Test path NOT in allowedPaths - should still deny even though tool is trusted
+        let tool_not_allowed = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/other/path/file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_not_allowed.eval_perm(&os, &agent);
+        assert!(
+            matches!(res, PermissionEvalResult::Deny(_)),
+            "fallback_action deny should deny even when tool is in allowed_tools, got {:?}",
+            res
+        );
+
+        // Test path in allowedPaths - should still allow
+        let tool_allowed = serde_json::from_value::<FsWrite>(serde_json::json!({
+            "path": "/allowed/path/file.txt",
+            "command": "create",
+            "file_text": "content"
+        }))
+        .unwrap();
+
+        let res = tool_allowed.eval_perm(&os, &agent);
+        assert!(matches!(res, PermissionEvalResult::Allow));
     }
 }

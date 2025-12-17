@@ -27,6 +27,11 @@ impl StyledText {
         format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().status.info), text)
     }
 
+    /// Create warning-styled text
+    pub fn warning(text: &str) -> String {
+        format!("\x1b[{}m{}\x1b[0m", color_to_ansi_code(theme().status.warning), text)
+    }
+
     /// Create emphasis-styled text
     pub fn emphasis(text: &str) -> String {
         format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.emphasis), text)

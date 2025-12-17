@@ -50,6 +50,59 @@
       ]
     }
   },
+  "grep": {
+    "name": "grep",
+    "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Regex pattern to search for. Examples: \"fn main\", \"class.*Component\", \"TODO|FIXME\". Start with simple patterns first (e.g. just the word you're looking for), then refine if needed."
+        },
+        "path": {
+          "type": "string",
+          "description": "Directory to search from. Defaults to current working directory."
+        },
+        "include": {
+          "type": "string",
+          "description": "File filter glob. Examples: \"*.rs\", \"*.{ts,tsx}\", \"*.py\""
+        },
+        "case_sensitive": {
+          "type": "boolean",
+          "description": "Case-sensitive search. Defaults to false (case-insensitive)."
+        },
+        "output_mode": {
+          "type": "string",
+          "enum": [
+            "content",
+            "files_with_matches",
+            "count"
+          ],
+          "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
+        },
+        "max_matches_per_file": {
+          "type": "integer",
+          "description": "Max matches returned per file (output limit). Increase to see all occurrences in a file."
+        },
+        "max_files": {
+          "type": "integer",
+          "description": "Max number of files returned (output limit). Increase for comprehensive codebase searches."
+        },
+        "max_total_lines": {
+          "type": "integer",
+          "description": "Max total matched lines returned across all files (output limit). Increase when searching for many occurrences."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Max directory depth to traverse when searching (search limit). Increase for deeply nested structures."
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
   "execute_bash": {
     "name": "execute_bash",
     "description": "Execute the specified bash command.",
@@ -413,7 +466,7 @@
         },
         "limit": {
           "type": "integer",
-          "description": "Maximum results to return (for search_symbols and get_completions, default: 50, max: 50)"
+          "description": "Maximum results to return. For search_symbols and get_completions: default 50, max 50. For find_references: default 500, max 1000."
         },
         "language": {
           "type": "string",
@@ -435,14 +488,6 @@
           "type": "boolean",
           "description": "If true (default), return only top-level symbols like structs, enums, impl blocks. If false, include all nested symbols like methods and inner functions (optional for get_document_symbols, default: true)"
         },
-        "identifier": {
-          "type": "string",
-          "description": "Optional identifier for the diagnostic request (optional for get_diagnostics)"
-        },
-        "previous_result_id": {
-          "type": "string",
-          "description": "Optional result ID from a previous diagnostic response for incremental updates (optional for get_diagnostics)"
-        },
         "symbol_type": {
           "type": "string",
           "description": "Symbol type filter (for search_symbols and get_completions). Values: Function, Method, Class, Struct, Enum, Interface, Constant, Variable, Module, Import."
@@ -454,6 +499,10 @@
         "filter": {
           "type": "string",
           "description": "Fuzzy search filter for completion results (recommended for completion operation). Uses Jaro-Winkler algorithm. Example: filter='get' finds 'getUserData', 'getConfig', 'targetElement'. Without filter, completion returns 1000+ results."
+        },
+        "workspace_only": {
+          "type": "boolean",
+          "description": "Only include references within the workspace, excluding dependencies (optional for find_references, default: true)"
         }
       },
       "required": ["operation"]
@@ -563,6 +612,71 @@
         }
       },
       "required": ["command"]
+    }
+  },
+  "delegate": {
+    "name": "delegate",
+    "description": "IMPORTANT: This tool is being replaced by 'use_subagent'. For most tasks requiring agent execution, use the 'use_subagent' tool instead. The delegate tool runs tasks asynchronously in the background (non-blocking), while use_subagent runs synchronously (blocking). Only use 'delegate' if the user explicitly requests background/async execution or mentions 'delegate' by name.\n\nLaunch and manage asynchronous agent processes. This tool allows you to delegate tasks to agents that run independently in the background.\n\nOperations:\n- launch: Start a new task with an agent (requires task parameter, agent is optional)\n- status: Check agent status and get full output if completed. Agent is optional - defaults to 'all' if not specified\n\nIf no agent is specified for launch, uses 'default_agent'. Only one task can run per agent at a time. Files are stored in .kiro/.subagents/\n\nIMPORTANT: If a specific agent is requested but not found, DO NOT automatically retry with 'default_agent' or any other agent. Simply report the error and available agents to the user.\n\nExample usage:\n1. Launch with agent: {\"operation\": \"launch\", \"agent\": \"rust-agent\", \"task\": \"Create a snake game\"}\n2. Launch without agent: {\"operation\": \"launch\", \"task\": \"Write a Python script\"}\n3. Check specific agent: {\"operation\": \"status\", \"agent\": \"rust-agent\"}\n4. Check all agents: {\"operation\": \"status\", \"agent\": \"all\"}\n5. Check all agents (shorthand): {\"operation\": \"status\"}",
+    "input_schema": {
+      "type": "object",
+        "properties": {
+          "operation": {
+            "description": "Operation to perform: launch, status, or list",
+            "$ref": "#/$defs/Operation"
+          },
+          "agent": {
+            "description": "Agent name to use (optional - uses \"q_cli_default\" if not specified)",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          },
+          "task": {
+            "description": "Task description (required for launch operation). This process is supposed to be async. DO NOT query immediately after launching a task.",
+            "type": [
+              "string",
+              "null"
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "operation"
+        ],
+        "$defs": {
+          "Operation": {
+            "oneOf": [
+              {
+                "description": "Launch a new agent with a specified task",
+                "type": "string",
+                "const": "launch"
+              },
+              {
+                "description": "Check the status of a specific agent or all agents if None is provided",
+                "type": "object",
+                "properties": {
+                  "status": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "description": "List all available agents",
+                "type": "string",
+                "const": "list"
+              }
+            ]
+          }
+        },
+        "required": ["operation"]
     }
   },
   "web_search": {

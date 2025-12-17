@@ -552,7 +552,7 @@ impl KnowledgeStore {
                 description: None,
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
-                embedding_type: None,
+                embedding_type: Some(context.embedding_type.to_string().to_owned()),
                 auto_sync: context.auto_sync,
             };
             self.add(&context.name, path_str, options).await
@@ -592,7 +592,7 @@ impl KnowledgeStore {
             description: None,
             include_patterns: context.include_patterns.clone(),
             exclude_patterns: context.exclude_patterns.clone(),
-            embedding_type: None,
+            embedding_type: Some(context.embedding_type.to_string().to_owned()),
             auto_sync: context.auto_sync,
         };
         self.add(&context_name, path_str, options).await
@@ -612,7 +612,7 @@ impl KnowledgeStore {
                 description: None,
                 include_patterns: context.include_patterns.clone(),
                 exclude_patterns: context.exclude_patterns.clone(),
-                embedding_type: None,
+                embedding_type: Some(context.embedding_type.to_string().to_owned()),
                 auto_sync: context.auto_sync,
             };
             self.add(name, path_str, options).await
@@ -648,7 +648,6 @@ impl KnowledgeStore {
             .filter_map(|resource| {
                 use crate::cli::agent::wrapper_types::{
                     ComplexResource,
-                    IndexType,
                     ResourcePath,
                 };
                 match resource {
@@ -676,10 +675,7 @@ impl KnowledgeStore {
                             resolved_path,
                             include.clone(),
                             exclude.clone(),
-                            index_type.as_ref().map(|it| match it {
-                                IndexType::Fast => "fast",
-                                IndexType::Best => "best",
-                            }),
+                            Self::index_type_to_string(index_type.as_ref()),
                             auto_update.unwrap_or(false),
                         ))
                     },
@@ -726,7 +722,7 @@ impl KnowledgeStore {
                 }
 
                 if let Some(index_type) = index_type {
-                    options.embedding_type = Some(index_type.to_string());
+                    options.embedding_type = Some(index_type.clone());
                 }
 
                 options.description = Some(description.to_string());
@@ -736,6 +732,14 @@ impl KnowledgeStore {
         }
 
         Ok(())
+    }
+
+    fn index_type_to_string(index_type: Option<&crate::cli::agent::wrapper_types::IndexType>) -> Option<String> {
+        use crate::cli::agent::wrapper_types::IndexType;
+        index_type.map(|it| match it {
+            IndexType::Fast => "fast".to_string(),
+            IndexType::Best => "best".to_string(),
+        })
     }
 }
 

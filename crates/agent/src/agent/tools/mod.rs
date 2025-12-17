@@ -97,12 +97,33 @@ where
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum BuiltInToolName {
+    #[strum(to_string = "fs_read", serialize = "fsRead", serialize = "read")]
     FsRead,
+    #[strum(to_string = "fs_write", serialize = "fsWrite", serialize = "write")]
     FsWrite,
+    #[strum(
+        to_string = "execute_bash",
+        serialize = "executeCmd",
+        serialize = "execute_cmd",
+        serialize = "shell"
+    )]
     ExecuteCmd,
     ImageRead,
     Ls,
     Summary,
+}
+
+impl BuiltInToolName {
+    pub fn aliases(&self) -> Option<&'static [&'static str]> {
+        match self {
+            BuiltInToolName::FsRead => FsRead::aliases(),
+            BuiltInToolName::FsWrite => FsWrite::aliases(),
+            BuiltInToolName::ExecuteCmd => ExecuteCmd::aliases(),
+            BuiltInToolName::ImageRead => ImageRead::aliases(),
+            BuiltInToolName::Ls => Ls::aliases(),
+            BuiltInToolName::Summary => Summary::aliases(),
+        }
+    }
 }
 
 trait BuiltInToolTrait {
@@ -501,5 +522,11 @@ mod tests {
     #[test]
     fn test_built_in_tools() {
         built_in_tool_names();
+    }
+
+    #[test]
+    fn test_parse() {
+        assert_eq!("fsWrite".parse::<BuiltInToolName>().unwrap(), BuiltInToolName::FsWrite);
+        assert_eq!("fs_write".parse::<BuiltInToolName>().unwrap(), BuiltInToolName::FsWrite);
     }
 }

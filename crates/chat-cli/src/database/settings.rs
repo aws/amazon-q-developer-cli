@@ -52,6 +52,8 @@ pub enum Setting {
     TangentModeKey,
     #[strum(message = "Enable subagent feature (boolean)")]
     EnabledSubagent,
+    #[strum(message = "Key binding for delegate command (single character)")]
+    DelegateModeKey,
 
     #[strum(message = "Auto-enter tangent mode for introspect questions (boolean)")]
     IntrospectTangentMode,
@@ -89,6 +91,8 @@ pub enum Setting {
     EnabledTodoList,
     #[strum(message = "Enable the checkpoint feature (boolean)")]
     EnabledCheckpoint,
+    #[strum(message = "Enable the delegate tool for subagent management (boolean)")]
+    EnabledDelegate,
     #[strum(message = "Specify UI variant to use (string)")]
     UiMode,
 }
@@ -112,6 +116,7 @@ impl AsRef<str> for Setting {
             Self::EnabledTangentMode => "chat.enableTangentMode",
             Self::TangentModeKey => "chat.tangentModeKey",
             Self::EnabledSubagent => "chat.enableSubagent",
+            Self::DelegateModeKey => "chat.delegateModeKey",
 
             Self::IntrospectTangentMode => "introspect.tangentMode",
             Self::ChatGreetingEnabled => "chat.greeting.enabled",
@@ -131,6 +136,7 @@ impl AsRef<str> for Setting {
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
             Self::EnabledContextUsageIndicator => "chat.enableContextUsageIndicator",
+            Self::EnabledDelegate => "chat.enableDelegate",
             Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
             Self::UiMode => "chat.uiMode",
         }

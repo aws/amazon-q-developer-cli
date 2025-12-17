@@ -3,7 +3,7 @@
 {"result":"ok","contentBlockDelta":{"delta":{"text":"I'll create a simple"},"contentBlockIndex":null}}
 {"result":"ok","contentBlockDelta":{"delta":{"text":" Python hello world script, save it,"},"contentBlockIndex":null}}
 {"result":"ok","contentBlockDelta":{"delta":{"text":" list it, and then read it back."},"contentBlockIndex":null}}
-{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_first","name":"fsWrite"}},"contentBlockIndex":null}}
+{"result":"ok","contentBlockStart":{"contentBlockStart":{"toolUse":{"toolUseId":"tooluse_first","name":"fs_write"}},"contentBlockIndex":null}}
 {"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"{\"comma"}},"contentBlockIndex":null}}
 {"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":"nd\""}},"contentBlockIndex":null}}
 {"result":"ok","contentBlockDelta":{"delta":{"toolUse":{"input":": \"cre"}},"contentBlockIndex":null}}
