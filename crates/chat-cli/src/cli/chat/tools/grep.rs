@@ -32,6 +32,8 @@ use crate::cli::agent::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::paths;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Constants: Maximum allowed values (hard limits for safety)
 const MAX_ALLOWED_MATCHES_PER_FILE: usize = 100;
@@ -481,52 +483,89 @@ impl Grep {
         Ok(())
     }
 
-    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
+    // grep.rs - eval_perm
+
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
             #[serde(default)]
+            allowed_paths: Vec<String>,
+            #[serde(default)]
             denied_paths: Vec<String>,
-            #[serde(default = "default_true")]
-            auto_allow: bool,
+            #[serde(default)]
+            allow_read_only: bool,
         }
 
-        fn default_true() -> bool {
-            true
-        }
+        // Check if tool is in agent's allowlist
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
 
-        match Self::INFO
+        // Get settings, default to empty object if not configured
+        let settings = Self::INFO
             .aliases
             .iter()
             .find_map(|alias| agent.tools_settings.get(*alias))
-        {
-            Some(settings) => {
-                let settings: Settings = match serde_json::from_value(settings.clone()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!("Failed to deserialize grep settings: {:?}", e);
-                        return PermissionEvalResult::Allow;
-                    },
-                };
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
 
-                // Check denied paths
-                if let Some(ref search_path) = self.path {
-                    for denied in &settings.denied_paths {
-                        if search_path.starts_with(denied) {
-                            return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
-                        }
-                    }
-                }
-
-                if settings.auto_allow {
-                    PermissionEvalResult::Allow
-                } else {
-                    PermissionEvalResult::Ask
-                }
+        let Settings {
+            allowed_paths,
+            denied_paths,
+            allow_read_only,
+        } = match serde_json::from_value::<Settings>(settings) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to deserialize grep settings: {:?}", e);
+                return PermissionEvalResult::Ask;
             },
-            // grep is read-only, allow by default
-            None => PermissionEvalResult::Allow,
+        };
+
+        // Get and canonicalize the search path
+        let search_path = match &self.path {
+            Some(p) if !p.is_empty() => p.clone(),
+            _ => match os.env.current_dir() {
+                Ok(cwd) => cwd.to_string_lossy().to_string(),
+                Err(_) => return PermissionEvalResult::Ask,
+            },
+        };
+
+        let canonical_search_path = match paths::canonicalizes_path(os, &search_path) {
+            Ok(p) => p,
+            Err(_) => return PermissionEvalResult::Ask,
+        };
+
+        // 1. Deny check first - denied_paths takes priority
+        for denied in &denied_paths {
+            if let Ok(canonical_denied) = paths::canonicalizes_path(os, denied) {
+                if canonical_search_path.starts_with(&canonical_denied) {
+                    return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
+                }
+            }
         }
+
+        // 2. If tool is in allowlist or allow_read_only is true, allow
+        if is_in_allowlist || allow_read_only {
+            return PermissionEvalResult::Allow;
+        }
+
+        // 3. Check allowed_paths + CWD
+        let mut all_allowed: Vec<String> = allowed_paths;
+        if let Ok(cwd) = os.env.current_dir() {
+            all_allowed.push(cwd.to_string_lossy().to_string());
+        }
+
+        for allowed in &all_allowed {
+            if let Ok(canonical_allowed) = paths::canonicalizes_path(os, allowed) {
+                if canonical_search_path.starts_with(&canonical_allowed) {
+                    return PermissionEvalResult::Allow;
+                }
+            }
+        }
+
+        PermissionEvalResult::Ask
     }
 }
 
