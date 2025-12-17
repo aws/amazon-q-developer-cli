@@ -22,7 +22,7 @@
       "required": []
     }
   },
-   "glob": {
+  "glob": {
     "name": "glob",
     "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",
     "input_schema": {
@@ -39,6 +39,10 @@
         "limit": {
           "type": "integer",
           "description": "Maximum files to return. If totalFiles exceeds this, truncated will be true."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum directory depth to traverse. Increase for deep nested structures."
         }
       },
       "required": [
@@ -76,6 +80,22 @@
             "count"
           ],
           "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
+        },
+        "max_matches_per_file": {
+          "type": "integer",
+          "description": "Max matches returned per file (output limit). Increase to see all occurrences in a file."
+        },
+        "max_files": {
+          "type": "integer",
+          "description": "Max number of files returned (output limit). Increase for comprehensive codebase searches."
+        },
+        "max_total_lines": {
+          "type": "integer",
+          "description": "Max total matched lines returned across all files (output limit). Increase when searching for many occurrences."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Max directory depth to traverse when searching (search limit). Increase for deeply nested structures."
         }
       },
       "required": [
