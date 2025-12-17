@@ -34,8 +34,31 @@ use crate::cli::chat::tools::custom_tool::{
     default_timeout,
 };
 use crate::constants::{
+    CLI_NAME,
     DEFAULT_AGENT_NAME,
     MCP_SECURITY_DOC_URL,
+};
+
+/// Truncate server description to fit in terminal display
+fn truncate_server_description(description: &str) -> String {
+    if description.is_empty() {
+        "(no description)".to_string()
+    } else if description.len() <= 50 {
+        description.to_string()
+    } else {
+        // Find a good break point (word boundary) within the limit
+        let truncated = &description[..50];
+        if let Some(last_space) = truncated.rfind(' ') {
+            format!("{}...", &description[..last_space])
+        } else {
+            format!("{truncated}...")
+        }
+    }
+}
+use crate::database::settings::Setting;
+use crate::mcp_registry::{
+    McpRegistryClient,
+    McpRegistryResponse,
 };
 use crate::os::Os;
 use crate::util::paths::PathResolver;
@@ -72,6 +95,22 @@ pub enum McpSubcommand {
     Status(StatusArgs),
 }
 
+// Internal struct used by AddArgs when delegating to registry functionality
+#[derive(Debug, Clone, PartialEq, Eq, Args)]
+struct RegistryAddArgs {
+    /// Agent to add server to (defaults to user's configured default agent)
+    #[arg(long)]
+    pub agent: Option<String>,
+
+    /// Scope for legacy config (workspace/global)
+    #[arg(long)]
+    pub scope: Option<Scope>,
+
+    /// Specific server name (non-interactive)
+    #[arg(long)]
+    pub server: Option<String>,
+}
+
 impl McpSubcommand {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<ExitCode> {
         match self {
@@ -89,15 +128,16 @@ impl McpSubcommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct AddArgs {
-    /// Name for the server
+    /// Name for the server (optional when registry is configured - shows interactive menu)
     #[arg(long)]
-    pub name: String,
+    pub name: Option<String>,
     /// Scope. This parameter is only meaningful in the absence of agent name.
     #[arg(long)]
     pub scope: Option<Scope>,
-    /// The command used to launch the server
+    /// The command used to launch the server (required for custom servers, not needed for registry
+    /// servers)
     #[arg(long)]
-    pub command: String,
+    pub command: Option<String>,
     /// Arguments to pass to the command. Can be provided as:
     /// 1. Multiple --args flags: --args arg1 --args arg2 --args "arg,with,commas"
     /// 2. Comma-separated with escaping: --args "arg1,arg2,arg\,with\,commas"
@@ -124,18 +164,120 @@ pub struct AddArgs {
 
 impl AddArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        // For non-enterprise users, skip registry check and allow custom servers
+        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+
+        if !is_enterprise {
+            // Non-enterprise user - allow custom servers without registry check
+            if self.name.is_none() {
+                writeln!(output, "❌ --name is required when adding custom servers.")?;
+                writeln!(
+                    output,
+                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                )?;
+                return Ok(());
+            }
+            if self.command.is_none() {
+                writeln!(output, "❌ --command is required when adding custom servers.")?;
+                writeln!(
+                    output,
+                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                )?;
+                return Ok(());
+            }
+            // Continue with custom server addition below
+        } else {
+            // Enterprise user - check if MCP registry is configured
+            match os.client.get_mcp_config().await {
+                Ok((_, Some(registry_url))) => {
+                    // Registry is configured - verify connectivity before blocking custom servers
+                    let registry_client = McpRegistryClient::new();
+                    match registry_client.fetch_registry(&registry_url).await {
+                        Ok(registry) => {
+                            // Registry is reachable - delegate to registry add functionality
+
+                            // Check if user provided command in registry mode
+                            if self.command.is_some() {
+                                show_registry_only_error(output)?;
+                                return Ok(());
+                            }
+
+                            // If user provided a server name, validate it exists in the registry
+                            if let Some(ref name) = self.name {
+                                if registry.get_server(name).is_none() {
+                                    show_registry_only_error(output)?;
+                                    return Ok(());
+                                }
+                            }
+
+                            let registry_args = RegistryAddArgs {
+                                agent: self.agent,
+                                scope: self.scope,
+                                server: self.name,
+                            };
+                            return registry_args.execute(os, output, registry_url).await;
+                        },
+                        Err(e) => {
+                            // Registry is unavailable - block all server operations
+                            writeln!(output, "❌ Failed to fetch registry data: {e}")?;
+                            let error_type = crate::mcp_registry::RegistryErrorType::from_error(&e);
+                            match error_type {
+                                crate::mcp_registry::RegistryErrorType::NetworkConnectivity => {
+                                    writeln!(output, "Check your network connection and try again.\n")?;
+                                },
+                                crate::mcp_registry::RegistryErrorType::RegistryData => {
+                                    writeln!(output, "Registry contains invalid data. Contact your administrator.\n")?;
+                                },
+                            }
+                            return Ok(());
+                        },
+                    }
+                },
+                Ok((_, None)) => {
+                    // Registry is not configured - allow custom servers
+                    // Validate that both name and command are provided for custom servers
+                    if self.name.is_none() {
+                        writeln!(output, "❌ --name is required when adding custom servers.")?;
+                        writeln!(
+                            output,
+                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                        )?;
+                        return Ok(());
+                    }
+                    if self.command.is_none() {
+                        writeln!(output, "❌ --command is required when adding custom servers.")?;
+                        writeln!(
+                            output,
+                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                        )?;
+                        return Ok(());
+                    }
+                },
+                Err(e) => {
+                    // Failed to check registry config - be conservative and block operations
+                    writeln!(output, "❌ Failed to check MCP configuration: {e}")?;
+                    writeln!(output, "🔒 MCP server operations are currently unavailable.")?;
+                    writeln!(output, "   Please try again later.\n")?;
+                    return Ok(());
+                },
+            }
+        }
+
         // Process args to handle comma-separated values, escaping, and JSON arrays
         let processed_args = self.process_args()?;
+
+        // Extract name for custom server operations (guaranteed to be Some at this point)
+        let server_name = self.name.as_ref().unwrap();
 
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
                 let mcp_servers = &mut agent.mcp_servers.mcp_servers;
 
-                if mcp_servers.contains_key(&self.name) && !self.force {
+                if mcp_servers.contains_key(server_name) && !self.force {
                     bail!(
                         "\nMCP server '{}' already exists in agent {} (path {}). Use --force to overwrite.",
-                        self.name,
+                        server_name,
                         agent_name,
                         config_path.display(),
                     );
@@ -143,17 +285,17 @@ impl AddArgs {
 
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command,
+                    "command": self.command.unwrap(),
                     "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
                 }))?;
 
-                mcp_servers.insert(self.name.clone(), tool);
+                mcp_servers.insert(server_name.clone(), tool);
                 let json = agent.to_str_pretty()?;
                 os.fs.write(config_path, json).await?;
-                writeln!(output, "✓ Added MCP server '{}' to agent {}\n", self.name, agent_name)?;
+                writeln!(output, "✓ Added MCP server '{server_name}' to agent {agent_name}\n")?;
             },
             None => {
                 let resolver = PathResolver::new(os);
@@ -172,10 +314,10 @@ impl AddArgs {
                 }
                 let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
 
-                if mcp_servers.mcp_servers.contains_key(&self.name) && !self.force {
+                if mcp_servers.mcp_servers.contains_key(server_name) && !self.force {
                     bail!(
                         "\nMCP server '{}' already exists in {} config (path {}). Use --force to overwrite.",
-                        self.name,
+                        server_name,
                         scope,
                         &legacy_mcp_config_path.display(),
                     );
@@ -183,19 +325,19 @@ impl AddArgs {
 
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
                 let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command,
+                    "command": self.command.unwrap(),
                     "args": processed_args,
                     "env": merged_env,
                     "timeout": self.timeout.unwrap_or(default_timeout()),
                     "disabled": self.disabled,
                 }))?;
 
-                mcp_servers.mcp_servers.insert(self.name.clone(), tool);
+                mcp_servers.mcp_servers.insert(server_name.clone(), tool);
                 mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
                 writeln!(
                     output,
                     "✓ Added MCP server '{}' to {} config in {}\n",
-                    self.name,
+                    server_name,
                     scope,
                     legacy_mcp_config_path.display()
                 )?;
@@ -230,6 +372,8 @@ pub struct RemoveArgs {
 
 impl RemoveArgs {
     pub async fn execute(self, os: &Os, output: &mut impl Write) -> Result<()> {
+        // Remove works the same regardless of registry configuration
+
         match self.agent.as_deref() {
             Some(agent_name) => {
                 let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
@@ -241,22 +385,31 @@ impl RemoveArgs {
 
                 let config = &mut agent.mcp_servers.mcp_servers;
 
+                // Check if server exists and if it's from legacy config
+                if let Some(server_config) = config.get(&self.name) {
+                    if server_config.is_from_legacy_mcp_json {
+                        writeln!(
+                            output,
+                            "⚠ Server '{}' is from legacy mcp.json and cannot be removed from agent config.",
+                            self.name
+                        )?;
+                        writeln!(
+                            output,
+                            "   To remove it, use: {CLI_NAME} mcp remove --name {} --scope workspace",
+                            self.name
+                        )?;
+                        return Ok(());
+                    }
+                }
+
                 match config.remove(&self.name) {
                     Some(_) => {
                         let json = agent.to_str_pretty()?;
                         os.fs.write(config_path, json).await?;
-                        writeln!(
-                            output,
-                            "\n✓ Removed MCP server '{}' from agent {}\n",
-                            self.name, agent_name,
-                        )?;
+                        writeln!(output, "✓ Removed MCP server '{}' from agent {agent_name}", self.name)?;
                     },
                     None => {
-                        writeln!(
-                            output,
-                            "\nNo MCP server named '{}' found in agent {}\n",
-                            self.name, agent_name,
-                        )?;
+                        writeln!(output, "⚠ Server '{}' not found in agent '{agent_name}'", self.name)?;
                     },
                 }
             },
@@ -272,22 +425,10 @@ impl RemoveArgs {
                 match config.mcp_servers.remove(&self.name) {
                     Some(_) => {
                         config.save_to_file(os, &legacy_mcp_config_path).await?;
-                        writeln!(
-                            output,
-                            "\n✓ Removed MCP server '{}' from {} config (path {})\n",
-                            self.name,
-                            scope,
-                            &legacy_mcp_config_path.display(),
-                        )?;
+                        writeln!(output, "✓ Removed MCP server '{}' from {scope} config", self.name)?;
                     },
                     None => {
-                        writeln!(
-                            output,
-                            "\nNo MCP server named '{}' found in {} config (path {})\n",
-                            self.name,
-                            scope,
-                            &legacy_mcp_config_path.display(),
-                        )?;
+                        writeln!(output, "⚠ Server '{}' not found in {scope} config", self.name)?;
                     },
                 }
             },
@@ -305,12 +446,54 @@ pub struct ListArgs {
 
 impl ListArgs {
     pub async fn execute(self, os: &mut Os, output: &mut impl Write) -> Result<()> {
+        // Check if registry mode is enabled
+        // For non-enterprise users, skip the API call and default to enabled with no registry
+        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let (mcp_enabled, registry_url) = if !is_enterprise {
+            (true, None)
+        } else {
+            match os.client.get_mcp_config().await {
+                Ok((enabled, url)) => (enabled, url),
+                Err(_) => (false, None),
+            }
+        };
+
+        let is_registry_mode = mcp_enabled && registry_url.is_some();
+
         let mut configs = get_mcp_server_configs(os).await?;
         configs.retain(|k, _| self.scope.is_none_or(|s| s == *k));
         if configs.is_empty() {
             writeln!(output, "No MCP server configurations found.\n")?;
             return Ok(());
         }
+
+        // Fetch registry data if in registry mode
+        let registry_data = if is_registry_mode {
+            match registry_url {
+                Some(url) => {
+                    let registry_client = crate::mcp_registry::McpRegistryClient::new();
+                    match registry_client.fetch_registry(&url).await {
+                        Ok(registry) => Some(registry),
+                        Err(e) => {
+                            writeln!(output, "❌ Failed to fetch registry data: {e}")?;
+                            let error_type = crate::mcp_registry::RegistryErrorType::from_error(&e);
+                            match error_type {
+                                crate::mcp_registry::RegistryErrorType::NetworkConnectivity => {
+                                    writeln!(output, "Check your network connection and try again.\n")?;
+                                },
+                                crate::mcp_registry::RegistryErrorType::RegistryData => {
+                                    writeln!(output, "Registry contains invalid data. Contact your administrator.\n")?;
+                                },
+                            }
+                            return Ok(());
+                        },
+                    }
+                },
+                None => None,
+            }
+        } else {
+            None
+        };
 
         for (scope, agents) in configs {
             if let Some(s) = self.scope {
@@ -324,15 +507,7 @@ impl ListArgs {
                 writeln!(output, "  {}", &agent_name)?;
                 match cfg_opt {
                     Some(cfg) if !cfg.mcp_servers.is_empty() => {
-                        // Sorting servers by name since HashMap is unordered, and having a bunch
-                        // of agents with the same global MCP servers included with different
-                        // ordering looks weird.
-                        let mut servers = cfg.mcp_servers.into_iter().collect::<Vec<_>>();
-                        servers.sort_by(|a, b| a.0.cmp(&b.0));
-                        for (name, tool_cfg) in &servers {
-                            let status = if tool_cfg.disabled { " (disabled)" } else { "" };
-                            writeln!(output, "    • {name:<12} {}{}", tool_cfg.command, status)?;
-                        }
+                        self.display_agent_servers(&cfg, &registry_data, output).await?;
                     },
                     _ => {
                         writeln!(output, "    (empty)")?;
@@ -340,7 +515,79 @@ impl ListArgs {
                 }
             }
         }
+
+        // Add legend if registry mode is active
+        if registry_data.is_some() {
+            writeln!(output, "Legend:")?;
+            writeln!(output, "  ✓ Active server (loaded from registry)")?;
+            writeln!(output, "  ⚠ Ignored server (not in registry)")?;
+            writeln!(output, "  [legacy] Server from legacy mcp.json")?;
+        }
         writeln!(output, "\n")?;
+
+        Ok(())
+    }
+
+    async fn display_agent_servers(
+        &self,
+        cfg: &McpServerConfig,
+        registry_data: &Option<crate::mcp_registry::McpRegistryResponse>,
+        output: &mut impl Write,
+    ) -> Result<()> {
+        // Sort servers by name for consistent display
+        let mut servers = cfg.mcp_servers.iter().collect::<Vec<_>>();
+        servers.sort_by(|a, b| a.0.cmp(b.0));
+
+        if let Some(registry) = registry_data {
+            // Registry mode: show active and ignored servers separately
+            let result = crate::mcp_registry::process_mcp_servers(&cfg.mcp_servers, Some(registry))?;
+
+            // Show active servers
+            for (name, _tool_cfg) in &servers {
+                if result.servers.contains_key(*name) {
+                    let config = &result.servers[*name];
+                    let status = if config.disabled { " (disabled)" } else { "" };
+                    let source = if config.is_from_legacy_mcp_json {
+                        " [legacy]"
+                    } else {
+                        ""
+                    };
+                    writeln!(output, "    ✓ {name:<12} {}{}{}", config.command, status, source)?;
+                }
+            }
+
+            // Show ignored servers
+            if !result.ignored_servers.is_empty() {
+                writeln!(output, "    ")?;
+                writeln!(output, "    Ignored (not in registry):")?;
+                for ignored_name in &result.ignored_servers {
+                    if let Some((_name, tool_cfg)) = servers.iter().find(|(n, _)| *n == ignored_name) {
+                        let status = if tool_cfg.disabled { " (disabled)" } else { "" };
+                        let source = if tool_cfg.is_from_legacy_mcp_json {
+                            " [legacy]"
+                        } else {
+                            ""
+                        };
+                        writeln!(
+                            output,
+                            "    ⚠ {ignored_name:<12} {}{}{}",
+                            tool_cfg.command, status, source
+                        )?;
+                    }
+                }
+            }
+        } else {
+            // Non-registry mode: show all servers as before
+            for (name, tool_cfg) in &servers {
+                let status = if tool_cfg.disabled { " (disabled)" } else { "" };
+                let source = if tool_cfg.is_from_legacy_mcp_json {
+                    " [legacy]"
+                } else {
+                    ""
+                };
+                writeln!(output, "    • {name:<12} {}{}{}", tool_cfg.command, status, source)?;
+            }
+        }
 
         Ok(())
     }
@@ -443,12 +690,19 @@ impl StatusArgs {
 async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let mcp_enabled = match os.client.is_mcp_enabled().await {
-        Ok(enabled) => enabled,
-        Err(err) => {
-            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-            true
-        },
+
+    // For non-enterprise users, skip the API call and default to enabled
+    let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+    let mcp_enabled = if !is_enterprise {
+        true
+    } else {
+        match os.client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to disabled");
+                false
+            },
+        }
     };
     let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
     let global_path = PathResolver::new(os).global().agents_dir()?;
@@ -601,6 +855,18 @@ async fn load_cfg(os: &Os, p: &PathBuf) -> Result<McpServerConfig> {
     })
 }
 
+fn show_registry_only_error(output: &mut impl Write) -> Result<()> {
+    writeln!(
+        output,
+        "❌ Your administrator has configured an MCP registry, and you can only install servers from that registry."
+    )?;
+    writeln!(output, "To install a registry server:")?;
+    writeln!(output, "{CLI_NAME} mcp add                    # Add to default agent")?;
+    writeln!(output, "{CLI_NAME} mcp add --agent <name>     # For specific agent")?;
+    writeln!(output, "{CLI_NAME} mcp add --scope <scope>    # For workspace/global\n")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -648,9 +914,9 @@ mod tests {
 
         // 1. add
         AddArgs {
-            name: "local".into(),
+            name: Some("local".to_string()),
             scope: None,
-            command: "echo hi".into(),
+            command: Some("echo hi".to_string()),
             args: vec![
                 "awslabs.eks-mcp-server".to_string(),
                 "--allow-write".to_string(),
@@ -701,9 +967,9 @@ mod tests {
                 "key1=value1,key2=value2"
             ],
             RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
-                name: "test_server".to_string(),
+                name: Some("test_server".to_string()),
                 scope: None,
-                command: "test_command".to_string(),
+                command: Some("test_command".to_string()),
                 args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
@@ -804,4 +1070,429 @@ mod tests {
         let result = parse_args(r#"["invalid json"#);
         assert!(result.is_err());
     }
+}
+
+impl RegistryAddArgs {
+    pub async fn execute(self, os: &Os, output: &mut impl Write, registry_url: String) -> Result<()> {
+        let target_agent = match (self.agent.as_deref(), self.scope) {
+            // Explicit agent specified
+            (Some(agent_name), None) => agent_name.to_string(),
+
+            // Explicit scope specified (legacy mode)
+            (None, Some(scope)) => {
+                return self.execute_legacy_scope(scope, os, output, registry_url).await;
+            },
+
+            // No target specified - use the same logic as chat sessions
+            (None, None) => match determine_default_agent_or_scope(os).await? {
+                Either::Left(agent_name) => {
+                    writeln!(output, "No target specified, using default agent '{agent_name}'")?;
+                    agent_name
+                },
+                Either::Right(scope) => {
+                    writeln!(output, "No agent files found, using {scope} scope instead")?;
+                    return self.execute_legacy_scope(scope, os, output, registry_url).await;
+                },
+            },
+
+            // Both specified - error
+            (Some(_), Some(_)) => {
+                bail!("Cannot specify both --agent and --scope");
+            },
+        };
+
+        self.execute_agent_mode(&target_agent, os, output, registry_url).await
+    }
+
+    async fn execute_agent_mode(
+        &self,
+        agent_name: &str,
+        os: &Os,
+        output: &mut impl Write,
+        registry_url: String,
+    ) -> Result<()> {
+        // Load the target agent
+        let (mut agent, config_path) = Agent::get_agent_by_name(os, agent_name).await?;
+
+        // Fetch registry data with fallback for registry issues
+        let registry_client = McpRegistryClient::new();
+        let registry = match registry_client.fetch_registry(&registry_url).await {
+            Ok(registry) => registry,
+            Err(e) => {
+                let error_type = crate::mcp_registry::RegistryErrorType::from_error(&e);
+                match error_type {
+                    crate::mcp_registry::RegistryErrorType::NetworkConnectivity => {
+                        writeln!(output, "Check your network connection and try again.\n")?;
+                    },
+                    crate::mcp_registry::RegistryErrorType::RegistryData => {
+                        writeln!(output, "Registry contains invalid data. Contact your administrator.\n")?;
+                    },
+                }
+                return Ok(());
+            },
+        };
+
+        // Get currently enabled servers for this agent
+        let enabled_servers: std::collections::HashSet<String> =
+            agent.mcp_servers.mcp_servers.keys().cloned().collect();
+
+        // If specific server requested, add it directly
+        if let Some(server_name) = &self.server {
+            return self
+                .add_specific_server(server_name, &mut agent, &config_path, &registry, os, output)
+                .await;
+        }
+
+        // Interactive mode - show available servers
+        self.interactive_add(&mut agent, &config_path, &registry, &enabled_servers, os, output)
+            .await
+    }
+
+    async fn execute_legacy_scope(
+        &self,
+        scope: Scope,
+        os: &Os,
+        output: &mut impl Write,
+        registry_url: String,
+    ) -> Result<()> {
+        // Fetch registry data with fallback for connectivity issues
+        let registry_client = McpRegistryClient::new();
+        let registry = match registry_client.fetch_registry(&registry_url).await {
+            Ok(registry) => registry,
+            Err(e) => {
+                writeln!(output, "❌ Failed to fetch registry data: {e}")?;
+                let error_type = crate::mcp_registry::RegistryErrorType::from_error(&e);
+                match error_type {
+                    crate::mcp_registry::RegistryErrorType::NetworkConnectivity => {
+                        writeln!(output, "Check your network connection and try again.\n")?;
+                    },
+                    crate::mcp_registry::RegistryErrorType::RegistryData => {
+                        writeln!(output, "Registry contains invalid data. Contact your administrator.\n")?;
+                    },
+                }
+                return Ok(());
+            },
+        };
+
+        // Load legacy config
+        let resolver = PathResolver::new(os);
+        let legacy_mcp_config_path = match scope {
+            Scope::Workspace => resolver.workspace().mcp_config()?,
+            _ => resolver.global().mcp_config()?,
+        };
+
+        // Ensure config file exists
+        if !legacy_mcp_config_path.exists() {
+            if let Some(parent) = legacy_mcp_config_path.parent() {
+                os.fs.create_dir_all(parent).await?;
+            }
+            os.fs.write(&legacy_mcp_config_path, "{ \"mcpServers\": {} }").await?;
+        }
+
+        let mut mcp_servers = McpServerConfig::load_from_file(os, &legacy_mcp_config_path).await?;
+        let enabled_servers: std::collections::HashSet<String> = mcp_servers.mcp_servers.keys().cloned().collect();
+
+        // If specific server requested, add it directly
+        if let Some(server_name) = &self.server {
+            return self
+                .add_specific_server_to_legacy(
+                    server_name,
+                    &mut mcp_servers,
+                    &legacy_mcp_config_path,
+                    &registry,
+                    scope,
+                    os,
+                    output,
+                )
+                .await;
+        }
+
+        // Interactive mode for legacy config
+        self.interactive_add_legacy(
+            &mut mcp_servers,
+            &legacy_mcp_config_path,
+            &registry,
+            &enabled_servers,
+            scope,
+            os,
+            output,
+        )
+        .await
+    }
+
+    /// Helper function for interactive server selection menu
+    /// Returns the selected server name, or None if user cancelled (ESC)
+    async fn interactive_select_server(
+        enabled_servers: &std::collections::HashSet<String>,
+        registry: &McpRegistryResponse,
+        all_enabled_message: &str,
+        output: &mut impl Write,
+    ) -> Result<Option<String>> {
+        use dialoguer::Select;
+
+        // Build list of available servers (not already enabled)
+        let mut server_names = Vec::new();
+        let mut server_labels = Vec::new();
+
+        for server_entry in &registry.servers {
+            let server = &server_entry.server;
+            if !enabled_servers.contains(&server.name) {
+                server_names.push(server.name.clone());
+
+                let truncated_description = truncate_server_description(&server.description);
+                let label = format!(
+                    "{:<25} {}",
+                    server.name.as_str(),
+                    crossterm::style::Stylize::dark_grey(truncated_description)
+                );
+                server_labels.push(label);
+            }
+        }
+
+        if server_names.is_empty() {
+            writeln!(output, "✓ {all_enabled_message}")?;
+            return Ok(None);
+        }
+
+        // Show interactive menu
+        let interact_result = Select::with_theme(&crate::util::dialoguer_theme())
+            .with_prompt("Press (↑↓) to navigate · Enter(⏎) to add a server".to_string())
+            .items(&server_labels)
+            .default(0)
+            .report(false)
+            .interact_on_opt(&dialoguer::console::Term::stdout());
+
+        let selection = match interact_result {
+            Ok(sel) => sel,
+            // EINTR (Interrupted system call) - retry
+            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => {
+                return Ok(Some(String::new())); // Signal to retry
+            },
+            Err(e) => {
+                return Err(eyre::eyre!("Failed to choose server: {}", e));
+            },
+        };
+
+        if let Some(index) = selection {
+            if index < server_names.len() {
+                return Ok(Some(server_names[index].clone()));
+            }
+        }
+
+        // ESC was pressed
+        Ok(None)
+    }
+
+    async fn interactive_add(
+        &self,
+        agent: &mut Agent,
+        config_path: &PathBuf,
+        registry: &McpRegistryResponse,
+        _enabled_servers: &std::collections::HashSet<String>,
+        os: &Os,
+        output: &mut impl Write,
+    ) -> Result<()> {
+        writeln!(
+            output,
+            "📋 Interactive mode: Select servers to add (you can add multiple servers, press ESC when done)\n"
+        )?;
+        let mut changes_made = false;
+
+        // Loop to allow adding multiple servers
+        loop {
+            // Get currently enabled servers (refresh each iteration)
+            let enabled_servers: std::collections::HashSet<String> =
+                agent.mcp_servers.mcp_servers.keys().cloned().collect();
+
+            let all_enabled_msg = format!("All registry servers are already enabled for agent '{}'", agent.name);
+
+            match Self::interactive_select_server(&enabled_servers, registry, &all_enabled_msg, output).await? {
+                Some(server_name) if server_name.is_empty() => {
+                    // Retry signal (EINTR) - loop continues
+                },
+                Some(server_name) => {
+                    self.add_specific_server(&server_name, agent, config_path, registry, os, output)
+                        .await?;
+                    changes_made = true;
+                },
+                None => {
+                    // User cancelled or all servers enabled
+                    break;
+                },
+            }
+        }
+
+        if changes_made {
+            writeln!(output, "\n✓ Agent configuration updated successfully")?;
+        }
+
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn interactive_add_legacy(
+        &self,
+        mcp_servers: &mut McpServerConfig,
+        config_path: &PathBuf,
+        registry: &McpRegistryResponse,
+        _enabled_servers: &std::collections::HashSet<String>,
+        scope: Scope,
+        os: &Os,
+        output: &mut impl Write,
+    ) -> Result<()> {
+        writeln!(
+            output,
+            "📋 Interactive mode: Select servers to add (you can add multiple servers, press ESC when done)\n"
+        )?;
+        let mut changes_made = false;
+
+        // Loop to allow adding multiple servers
+        loop {
+            // Get currently enabled servers (refresh each iteration)
+            let enabled_servers: std::collections::HashSet<String> = mcp_servers.mcp_servers.keys().cloned().collect();
+
+            let all_enabled_msg = format!("All registry servers are already enabled in {scope} config");
+
+            match Self::interactive_select_server(&enabled_servers, registry, &all_enabled_msg, output).await? {
+                Some(server_name) if server_name.is_empty() => {
+                    // Retry signal (EINTR) - loop continues
+                },
+                Some(server_name) => {
+                    self.add_specific_server_to_legacy(
+                        &server_name,
+                        mcp_servers,
+                        config_path,
+                        registry,
+                        scope,
+                        os,
+                        output,
+                    )
+                    .await?;
+                    changes_made = true;
+                },
+                None => {
+                    // User cancelled or all servers enabled
+                    break;
+                },
+            }
+        }
+
+        if changes_made {
+            writeln!(output, "\n✓ {scope} configuration updated successfully")?;
+        }
+
+        Ok(())
+    }
+
+    async fn add_specific_server(
+        &self,
+        server_name: &str,
+        agent: &mut Agent,
+        config_path: &PathBuf,
+        registry: &McpRegistryResponse,
+        os: &Os,
+        output: &mut impl Write,
+    ) -> Result<()> {
+        // Verify server exists in registry
+        if registry.get_server(server_name).is_none() {
+            return Err(eyre::eyre!("Server '{}' not found in registry", server_name));
+        }
+
+        // Create a minimal registry reference config - just type: "registry"
+        let server_config = CustomToolConfig::minimal_registry();
+
+        // Check if server already exists
+        if agent.mcp_servers.mcp_servers.contains_key(server_name) {
+            writeln!(
+                output,
+                "⚠ Server '{server_name}' is already configured in agent '{}'",
+                agent.name
+            )?;
+            return Ok(());
+        }
+
+        // Add to agent
+        agent
+            .mcp_servers
+            .mcp_servers
+            .insert(server_name.to_string(), server_config);
+
+        // Add to tools whitelist if not using "*"
+        if !agent.tools.contains(&"*".to_string()) {
+            let tool_name = format!("@{server_name}");
+            if !agent.tools.contains(&tool_name) {
+                agent.tools.push(tool_name);
+            }
+        }
+
+        // Save agent config
+        let json = agent.to_str_pretty()?;
+        os.fs.write(config_path, json).await?;
+
+        writeln!(output, "✓ {server_name} added to agent '{}'", agent.name)?;
+        Ok(())
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn add_specific_server_to_legacy(
+        &self,
+        server_name: &str,
+        mcp_servers: &mut McpServerConfig,
+        config_path: &PathBuf,
+        registry: &McpRegistryResponse,
+        scope: Scope,
+        os: &Os,
+        output: &mut impl Write,
+    ) -> Result<()> {
+        // Verify server exists in registry
+        if registry.get_server(server_name).is_none() {
+            return Err(eyre::eyre!("Server '{}' not found in registry", server_name));
+        }
+
+        // Create a minimal registry reference config - just type: "registry"
+        let server_config = CustomToolConfig::minimal_registry();
+
+        // Check if server already exists
+        if mcp_servers.mcp_servers.contains_key(server_name) {
+            writeln!(
+                output,
+                "⚠ Server '{server_name}' is already configured in {scope} config"
+            )?;
+            return Ok(());
+        }
+
+        // Add to legacy config
+        mcp_servers.mcp_servers.insert(server_name.to_string(), server_config);
+
+        // Save legacy config
+        mcp_servers.save_to_file(os, config_path).await?;
+
+        writeln!(output, "✓ {server_name} added to {scope} config")?;
+        Ok(())
+    }
+}
+
+async fn determine_default_agent_or_scope(os: &Os) -> Result<Either<String, Scope>> {
+    // Use the same logic as Agents::load() for determining active agent
+    if let Some(user_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
+        // Verify the user's default agent exists as a file
+        if Agent::get_agent_by_name(os, &user_default).await.is_ok() {
+            return Ok(Either::Left(user_default));
+        }
+    }
+
+    // Check if kiro_default agent exists
+    if Agent::get_agent_by_name(os, DEFAULT_AGENT_NAME).await.is_ok() {
+        return Ok(Either::Left(DEFAULT_AGENT_NAME.to_string()));
+    }
+
+    // If no agent files exist, fall back to workspace scope
+    // This happens when kiro_default is in-memory only
+    Ok(Either::Right(Scope::Workspace))
+}
+
+#[derive(Debug)]
+enum Either<L, R> {
+    Left(L),
+    Right(R),
 }

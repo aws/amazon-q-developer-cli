@@ -358,15 +358,36 @@ impl ChatArgs {
         }
 
         // Check MCP status once at the beginning of the session
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
+        // For non-enterprise users, skip the API call and default to enabled with no registry
+        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let (mut mcp_enabled, mcp_registry_url) = if !is_enterprise {
+            tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
+            (true, None)
+        } else {
+            match os.client.get_mcp_config().await {
+                Ok((enabled, registry_url)) => {
+                    tracing::debug!(
+                        "Retrieved MCP config from API: enabled={}, registry_url={:?}",
+                        enabled,
+                        registry_url
+                    );
+
+                    (enabled, registry_url)
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to get MCP config from API: {}, defaulting to disabled", e);
+                    (false, None)
+                },
+            }
         };
 
-        let agents = {
+        tracing::debug!(
+            "Initial MCP state: enabled={}, registry_url={:?}",
+            mcp_enabled,
+            mcp_registry_url
+        );
+
+        let mut agents = {
             let skip_migration = self.no_interactive;
             let (mut agents, md) =
                 Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr, mcp_enabled).await;
@@ -434,6 +455,66 @@ impl ChatArgs {
             agents
         };
 
+        // Fetch registry data for ToolManager if in registry mode
+        let registry_data = if mcp_enabled && mcp_registry_url.is_some() {
+            if let Some(registry_url) = &mcp_registry_url {
+                let registry_client = crate::mcp_registry::McpRegistryClient::new();
+                match registry_client.fetch_registry(registry_url).await {
+                    Ok(registry) => {
+                        // Apply filtering to all agents before ToolManager creation
+                        for agent in agents.agents.values_mut() {
+                            tracing::debug!(
+                                "BEFORE filtering - Agent '{}' has {} servers: {:?}",
+                                agent.name,
+                                agent.mcp_servers.mcp_servers.len(),
+                                agent.mcp_servers.mcp_servers.keys().collect::<Vec<_>>()
+                            );
+
+                            if let Err(e) = crate::mcp_registry::apply_registry_filtering_to_agent(agent, &registry) {
+                                tracing::error!("Failed to apply registry filtering to agent '{}': {}", agent.name, e);
+                                // On error, clear MCP servers to avoid using invalid configs
+                                agent.mcp_servers.mcp_servers.clear();
+                            } else {
+                                tracing::debug!(
+                                    "AFTER filtering - Agent '{}' has {} servers: {:?}",
+                                    agent.name,
+                                    agent.mcp_servers.mcp_servers.len(),
+                                    agent.mcp_servers.mcp_servers.keys().collect::<Vec<_>>()
+                                );
+                            }
+                        }
+                        Some(registry)
+                    },
+                    Err(e) => {
+                        tracing::error!("Failed to fetch registry: {}", e);
+                        // Disable MCP when registry fetch fails
+                        mcp_enabled = false;
+
+                        // Display error to user
+                        let error_type = crate::mcp_registry::RegistryErrorType::from_error(&e);
+                        let _ = crate::mcp_registry::display_registry_error_to_writer(
+                            &mut stderr,
+                            registry_url,
+                            &error_type,
+                            "\n⚠️  WARNING: ",
+                            "",
+                        );
+
+                        // Clear MCP servers from all agents
+                        for agent in agents.agents.values_mut() {
+                            agent.mcp_servers.mcp_servers.clear();
+                        }
+
+                        None
+                    },
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
         // If modelId is specified, verify it exists before starting the chat
         // Otherwise, CLI will use a default model when starting chat
         let (models, default_model_opt) = get_available_models(os).await?;
@@ -485,13 +566,20 @@ impl ChatArgs {
         let (prompt_request_sender, prompt_request_receiver) = tokio::sync::broadcast::channel::<PromptQuery>(5);
         let (prompt_response_sender, prompt_response_receiver) =
             tokio::sync::broadcast::channel::<PromptQueryResult>(5);
-        let mut tool_manager = ToolManagerBuilder::default()
+        let mut tool_manager_builder = ToolManagerBuilder::default()
             .prompt_query_result_sender(prompt_response_sender)
             .prompt_query_receiver(prompt_request_receiver)
             .prompt_query_sender(prompt_request_sender.clone())
             .prompt_query_result_receiver(prompt_response_receiver.resubscribe())
             .conversation_id(&conversation_id)
-            .agent(agents.get_active().cloned().unwrap_or_default())
+            .agent(agents.get_active().cloned().unwrap_or_default());
+
+        // Add registry data if available
+        if let Some(registry) = &registry_data {
+            tool_manager_builder = tool_manager_builder.registry_data(registry.clone());
+        }
+
+        let mut tool_manager = tool_manager_builder
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
@@ -538,7 +626,9 @@ impl ChatArgs {
             tool_config,
             !self.no_interactive,
             mcp_enabled,
+            mcp_registry_url,
             self.wrap,
+            registry_data,
         )
         .await?
         .spawn(os)
@@ -781,7 +871,9 @@ impl ChatSession {
         tool_config: HashMap<String, ToolSpec>,
         interactive: bool,
         mcp_enabled: bool,
+        mcp_registry_url: Option<String>,
         wrap: Option<WrapMode>,
+        registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
     ) -> Result<Self> {
         // Only load prior conversation if we need to resume
         let mut existing_conversation = false;
@@ -819,7 +911,7 @@ impl ChatSession {
             None
         };
 
-        let conversation = match resume_session_id {
+        let mut conversation = match resume_session_id {
             Some(session_id) => {
                 // Resume conversation - either by ID or most recent from current directory
                 let previous_conversation = if session_id.is_empty() {
@@ -853,7 +945,6 @@ impl ChatSession {
                             }
                         }
                         cs.agents = agents;
-                        cs.mcp_enabled = mcp_enabled;
                         cs.code_intelligence_client = code_intelligence_client.clone();
                         cs.auto_initialize_code_intelligence().await;
                         cs.update_state(true).await;
@@ -861,7 +952,6 @@ impl ChatSession {
                         cs
                     },
                     None => {
-                        // just start a new session if session is empty / not found
                         ConversationState::new(
                             conversation_id,
                             agents,
@@ -892,6 +982,49 @@ impl ChatSession {
             },
         };
 
+        // Set registry URL and cache for new conversations with MCP enabled
+        if !existing_conversation && mcp_enabled {
+            conversation.mcp_registry_url = mcp_registry_url.clone();
+
+            // Use the already-fetched registry data from Block 1 instead of fetching again
+            if let Some(registry) = &registry_data {
+                let source_url = mcp_registry_url.as_deref().unwrap_or("unknown").to_string();
+                conversation.mcp_registry_cache = Some(crate::mcp_registry::CachedRegistry {
+                    data: registry.clone(),
+                    fetched_at: time::OffsetDateTime::now_utc(),
+                    source_url,
+                });
+                tracing::debug!("Cached registry data for new conversation");
+            }
+        }
+
+        // Process MCP servers based on registry mode
+        let registry_cloned = if conversation.mcp_enabled && conversation.mcp_registry_url.is_some() {
+            conversation.mcp_registry_cache.as_ref().map(|cache| cache.data.clone())
+        } else {
+            None
+        };
+
+        let server_names_to_cache: Vec<String> = if let Some(active_agent) = conversation.agents.get_active() {
+            active_agent.mcp_servers.mcp_servers.keys().cloned().collect()
+        } else {
+            Vec::new()
+        };
+
+        // Cache server versions for registry-mode servers (for periodic sync validation)
+        if let Some(registry) = &registry_cloned {
+            for server_name in &server_names_to_cache {
+                if let Some(registry_server) = registry.get_server(server_name) {
+                    conversation.cache_mcp_server_version(server_name.clone(), registry_server.version.clone());
+                    tracing::debug!(
+                        "Cached version {} for MCP server '{}'",
+                        registry_server.version,
+                        server_name
+                    );
+                }
+            }
+        }
+
         // Spawn a task for listening and broadcasting sigints.
         let (ctrlc_tx, ctrlc_rx) = tokio::sync::broadcast::channel(4);
         tokio::spawn(async move {
@@ -909,7 +1042,7 @@ impl ChatSession {
             }
         });
 
-        Ok(Self {
+        let mut session = Self {
             stdout: control_end_stdout,
             stderr: control_end_stderr,
             initial_input: input,
@@ -931,7 +1064,14 @@ impl ChatSession {
             wrap,
             prompt_ack_rx,
             pending_additional_context: None,
-        })
+        };
+
+        // For resumed conversations, refresh MCP data if cache is stale
+        if existing_conversation {
+            session.ensure_fresh_mcp_data(os).await.ok();
+        }
+
+        Ok(session)
     }
 
     pub async fn next(&mut self, os: &mut Os) -> Result<(), ChatError> {
@@ -1426,6 +1566,236 @@ impl Default for ChatState {
 }
 
 impl ChatSession {
+    /// Check and refresh MCP data if stale, including server removal/reload
+    /// Returns Some(registry) if MCP is enabled and registry is available, None if disabled
+    pub async fn ensure_fresh_mcp_data(
+        &mut self,
+        os: &mut Os,
+    ) -> Result<Option<crate::mcp_registry::McpRegistryResponse>, ChatError> {
+        if !self.conversation.mcp_enabled {
+            return Ok(None);
+        }
+
+        // Check if cache should be refreshed (TTL expired)
+        let should_refresh_config = self.conversation.should_refresh_mcp_cache();
+
+        if should_refresh_config {
+            // For non-enterprise users, skip the API call
+            let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+            if !is_enterprise {
+                // Non-enterprise user - just update the last checked time and keep MCP enabled
+                self.conversation.mcp_last_checked = Some(time::OffsetDateTime::now_utc());
+                // Return current cache if available, or None if no registry
+                return Ok(self.conversation.mcp_registry_cache.as_ref().map(|c| c.data.clone()));
+            }
+
+            // Refresh MCP config (including registry URL) from API for enterprise users
+            match os.client.get_mcp_config().await {
+                Ok((enabled, new_registry_url)) => {
+                    let old_url = self.conversation.mcp_registry_url.clone();
+                    self.conversation.mcp_enabled = enabled;
+                    self.conversation.mcp_registry_url = new_registry_url.clone();
+                    self.conversation.mcp_last_checked = Some(time::OffsetDateTime::now_utc());
+
+                    if !enabled {
+                        return Ok(None);
+                    }
+
+                    // Special case: if registry URL was removed (became None), switch to non-registry mode
+                    let Some(new_url) = new_registry_url.as_deref() else {
+                        // Clear registry cache (no longer needed)
+                        self.conversation.mcp_registry_cache = None;
+
+                        // Clear cached server versions (no longer validating against registry)
+                        self.conversation.mcp_server_versions.clear();
+
+                        // Return None to indicate no registry data (non-registry mode)
+                        return Ok(None);
+                    };
+
+                    // Check if URL changed or cache is stale
+                    let url_changed = old_url.as_deref() != Some(new_url);
+                    let cache_stale =
+                        self.conversation.mcp_registry_cache.as_ref().is_none_or(|cache| {
+                            cache.should_refresh(new_url, crate::mcp_registry::MCP_CACHE_TTL_HOURS)
+                        });
+
+                    if url_changed || cache_stale {
+                        // Fetch fresh registry data
+                        if let Some(fresh_registry) = self.conversation.fetch_mcp_registry().await {
+                            // Check for server changes and handle removal/restart
+                            let (servers_to_remove, servers_to_restart) =
+                                self.conversation.check_mcp_server_changes(&fresh_registry);
+
+                            // Handle server removal and restart with user warnings
+                            self.handle_server_changes_with_warnings(
+                                servers_to_remove.clone(),
+                                servers_to_restart.clone(),
+                            )
+                            .await?;
+
+                            // If any servers were changed, restart tool manager and update conversation state
+                            if !servers_to_remove.is_empty() || !servers_to_restart.is_empty() {
+                                // Update conversation state to reflect server changes
+                                self.conversation.update_state(false).await;
+                            }
+
+                            return Ok(Some(fresh_registry));
+                        } else {
+                            // Registry fetch failed - disable MCP
+                            self.conversation.mcp_enabled = false;
+                            self.conversation.mcp_registry_cache = None;
+                            self.conversation.mcp_server_versions.clear();
+
+                            // Clear MCP servers from agent
+                            if let Some(agent) = self.conversation.agents.get_active_mut() {
+                                agent.mcp_servers.mcp_servers.clear();
+                            }
+
+                            // Display error to user
+                            let url = new_registry_url.as_deref().unwrap_or("unknown");
+                            let error_type = self
+                                .conversation
+                                .mcp_registry_error_type
+                                .as_ref()
+                                .unwrap_or(&crate::mcp_registry::RegistryErrorType::NetworkConnectivity);
+
+                            let _ = crate::mcp_registry::display_registry_error_to_writer(
+                                &mut self.stderr,
+                                url,
+                                error_type,
+                                "\n⚠️  WARNING: ",
+                                "",
+                            );
+
+                            return Ok(None);
+                        }
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!("Failed to refresh MCP config from API: {}", e);
+                    // Disable MCP when API call fails
+                    self.conversation.mcp_enabled = false;
+                    self.conversation.mcp_registry_url = None;
+                    self.conversation.mcp_registry_cache = None;
+                    self.conversation.mcp_server_versions.clear();
+
+                    // Clear MCP servers from agent
+                    if let Some(agent) = self.conversation.agents.get_active_mut() {
+                        agent.mcp_servers.mcp_servers.clear();
+                    }
+
+                    return Ok(None);
+                },
+            }
+        }
+
+        // Return cached registry if available
+        Ok(self
+            .conversation
+            .mcp_registry_cache
+            .as_ref()
+            .map(|cache| cache.data.clone()))
+    }
+
+    async fn handle_server_changes_with_warnings(
+        &mut self,
+        servers_to_remove: Vec<String>,
+        servers_to_restart: Vec<String>,
+    ) -> Result<(), ChatError> {
+        use crossterm::{
+            queue,
+            style,
+        };
+
+        use crate::theme::StyledText;
+
+        // Display warnings for removed servers
+        for server_name in &servers_to_remove {
+            queue!(
+                self.stderr,
+                StyledText::warning_fg(),
+                style::Print("\n⚠️  WARNING: "),
+                StyledText::reset(),
+                style::Print("MCP server '"),
+                StyledText::brand_fg(),
+                style::Print(server_name),
+                StyledText::reset(),
+                style::Print("' has been removed from the registry and will be terminated.\n"),
+            )?;
+            self.stderr.flush()?;
+            self.conversation.remove_cached_mcp_version(server_name);
+            self.conversation.terminate_mcp_server(server_name).await;
+        }
+
+        // Display warnings for servers with version changes
+        let registry_data = self.conversation.mcp_registry_cache.as_ref().map(|c| c.data.clone());
+        if let Some(registry) = registry_data {
+            for server_name in &servers_to_restart {
+                if let Some(registry_server) = registry.get_server(server_name) {
+                    let old_version = self
+                        .conversation
+                        .get_cached_mcp_version(server_name)
+                        .map_or("unknown", |s| s.as_str());
+                    queue!(
+                        self.stderr,
+                        StyledText::warning_fg(),
+                        style::Print("\n⚠️  WARNING: "),
+                        StyledText::reset(),
+                        style::Print("MCP server '"),
+                        StyledText::brand_fg(),
+                        style::Print(server_name),
+                        StyledText::reset(),
+                        style::Print("' version changed ("),
+                        style::Print(old_version),
+                        style::Print(" → "),
+                        style::Print(&registry_server.version),
+                        style::Print(") and will be restarted.\n"),
+                    )?;
+
+                    // Terminate the old version
+                    self.conversation.terminate_mcp_server(server_name).await;
+                    // Update cached version
+                    self.conversation
+                        .cache_mcp_server_version(server_name.clone(), registry_server.version.clone());
+                }
+            }
+        }
+
+        if !servers_to_remove.is_empty() || !servers_to_restart.is_empty() {
+            self.stderr.flush()?;
+
+            // Check if all servers have been removed and show appropriate message
+            let enabled_servers = self
+                .conversation
+                .agents
+                .get_active()
+                .map(|agent| {
+                    agent
+                        .mcp_servers
+                        .mcp_servers
+                        .keys()
+                        .cloned()
+                        .collect::<std::collections::HashSet<String>>()
+                })
+                .unwrap_or_default();
+
+            if enabled_servers.is_empty() {
+                queue!(
+                    self.stderr,
+                    style::Print("\n"),
+                    StyledText::warning_fg(),
+                    style::Print("⚠ "),
+                    StyledText::reset(),
+                    style::Print("No registry servers are currently enabled.\n\n"),
+                )?;
+                self.stderr.flush()?;
+            }
+        }
+
+        Ok(())
+    }
+
     /// Sends a request to the SendMessage API. Emits error telemetry on failure.
     async fn send_message(
         &mut self,
@@ -2282,6 +2652,9 @@ impl ChatSession {
     }
 
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
+        // Ensure MCP data is fresh when user submits input (periodic sync check)
+        self.ensure_fresh_mcp_data(os).await.ok();
+
         queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
         let input_trimmed = user_input.trim().to_string();
@@ -4327,6 +4700,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4468,6 +4843,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4564,6 +4941,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4638,6 +5017,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4763,6 +5144,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4896,6 +5279,8 @@ mod tests {
             true,
             false,
             None,
+            None,
+            None, // registry_data
         )
         .await
         .unwrap()
@@ -4950,6 +5335,8 @@ mod tests {
                 true,
                 false,
                 None,
+                None,
+                None, // registry_data
             )
             .await
             .unwrap()
@@ -5224,6 +5611,8 @@ mod tests {
             true,
             false,
             None,
+            None, // wrap: Option<WrapMode>
+            None, // registry_data
         )
         .await
         .unwrap();
@@ -5280,6 +5669,8 @@ mod tests {
             true,
             false,
             None,
+            None, // wrap: Option<WrapMode>
+            None, // registry_data
         )
         .await
         .unwrap();
@@ -5329,6 +5720,8 @@ mod tests {
             true,
             false,
             None,
+            None, // wrap: Option<WrapMode>
+            None, // registry_data
         )
         .await
         .unwrap();

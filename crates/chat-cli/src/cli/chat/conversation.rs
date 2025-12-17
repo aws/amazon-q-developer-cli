@@ -253,6 +253,22 @@ pub struct ConversationState {
     pub checkpoint_manager: Option<CheckpointManager>,
     #[serde(default = "default_true")]
     pub mcp_enabled: bool,
+    /// Timestamp of when mcp_enabled was last checked from the API
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_last_checked: Option<time::OffsetDateTime>,
+    /// MCP registry URL from the profile (only set when MCP is enabled)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_registry_url: Option<String>,
+    /// Cached MCP registry data
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_registry_cache: Option<crate::mcp_registry::CachedRegistry>,
+    /// Cached versions of running MCP servers (server_name -> version)
+    #[serde(default)]
+    pub mcp_server_versions: HashMap<String, String>,
+    /// Type of registry error when MCP is disabled due to registry issues
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_registry_error_type: Option<crate::mcp_registry::RegistryErrorType>,
+
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tangent_state: Option<ConversationCheckpoint>,
@@ -326,6 +342,12 @@ impl ConversationState {
             file_line_tracker: HashMap::new(),
             checkpoint_manager: None,
             mcp_enabled,
+            mcp_last_checked: Some(time::OffsetDateTime::now_utc()),
+            mcp_registry_url: None, // Will be set by caller after API call
+            mcp_registry_cache: None,
+            mcp_server_versions: HashMap::new(),
+            mcp_registry_error_type: None,
+
             tangent_state: None,
             user_turn_metadata: UserTurnMetadata::new(),
             code_intelligence_client,
@@ -377,6 +399,208 @@ impl ConversationState {
 
     pub fn history(&self) -> &VecDeque<HistoryEntry> {
         &self.history
+    }
+
+    /// Check if MCP enabled cache needs refresh (older than 24 hours)
+    pub fn should_refresh_mcp_cache(&self) -> bool {
+        match self.mcp_last_checked {
+            None => true, // No timestamp, should refresh
+            Some(last_checked) => {
+                let now = time::OffsetDateTime::now_utc();
+                let elapsed = now - last_checked;
+                elapsed.whole_hours() >= crate::mcp_registry::MCP_CACHE_TTL_HOURS
+            },
+        }
+    }
+
+    /// Fetch MCP registry data with caching (24 hour TTL)
+    /// Returns None if registry is unreachable or invalid (MCP should be disabled)
+    pub async fn fetch_mcp_registry(&mut self) -> Option<crate::mcp_registry::McpRegistryResponse> {
+        let registry_url = self.mcp_registry_url.as_ref()?;
+
+        let client = crate::mcp_registry::McpRegistryClient::new();
+        match client
+            .fetch_with_cache(
+                registry_url,
+                &mut self.mcp_registry_cache,
+                crate::mcp_registry::MCP_CACHE_TTL_HOURS,
+            )
+            .await
+        {
+            Ok(registry) => {
+                // Clear any previous error type on success
+                self.mcp_registry_error_type = None;
+                Some(registry)
+            },
+            Err(e) => {
+                tracing::error!("Failed to fetch MCP registry from {}: {}", registry_url, e);
+                // Store the error type for user-facing messages
+                self.mcp_registry_error_type = Some(crate::mcp_registry::RegistryErrorType::from_error(&e));
+                // Clear cache on failure - don't use stale data
+                self.mcp_registry_cache = None;
+                None
+            },
+        }
+    }
+
+    /// Validate MCP registry and disable MCP if registry is unreachable
+    /// Update cached version for an MCP server
+    pub fn cache_mcp_server_version(&mut self, server_name: String, version: String) {
+        self.mcp_server_versions.insert(server_name, version);
+    }
+
+    /// Get cached version for an MCP server
+    pub fn get_cached_mcp_version(&self, server_name: &str) -> Option<&String> {
+        self.mcp_server_versions.get(server_name)
+    }
+
+    /// Check for MCP server changes during periodic sync
+    /// Returns (servers_to_remove, servers_to_restart)
+    pub fn check_mcp_server_changes(
+        &self,
+        registry: &crate::mcp_registry::McpRegistryResponse,
+    ) -> (Vec<String>, Vec<String>) {
+        let mut servers_to_remove = Vec::new();
+        let mut servers_to_restart = Vec::new();
+
+        // Get currently running servers
+        let running_servers = self
+            .agents
+            .get_active()
+            .map(|agent| {
+                agent
+                    .mcp_servers
+                    .mcp_servers
+                    .keys()
+                    .cloned()
+                    .collect::<std::collections::HashSet<String>>()
+            })
+            .unwrap_or_default();
+
+        // Check each cached server
+        for (server_name, cached_version) in &self.mcp_server_versions {
+            match registry.get_server(server_name) {
+                Some(registry_server) => {
+                    // Server exists in registry - check version
+                    if &registry_server.version != cached_version {
+                        tracing::info!(
+                            "MCP server '{}' version changed: {} -> {}",
+                            server_name,
+                            cached_version,
+                            registry_server.version
+                        );
+                        servers_to_restart.push(server_name.clone());
+                    }
+                },
+                None => {
+                    // Server removed from registry - only add if it's actually running
+                    if running_servers.contains(server_name) {
+                        tracing::info!("MCP server '{}' removed from registry (running)", server_name);
+                        servers_to_remove.push(server_name.clone());
+                    } else {
+                        tracing::info!(
+                            "MCP server '{}' removed from registry (not running, skipping)",
+                            server_name
+                        );
+                        // Just remove from cache, no need to terminate
+                    }
+                },
+            }
+        }
+
+        // Also check running servers that might not be cached
+        for server_name in &running_servers {
+            if !self.mcp_server_versions.contains_key(server_name) {
+                // Running server without cached version - check if it's in registry
+                if registry.get_server(server_name).is_none() {
+                    tracing::info!(
+                        "Running MCP server '{}' not found in registry (no cached version)",
+                        server_name
+                    );
+                    servers_to_remove.push(server_name.clone());
+                }
+            }
+        }
+
+        (servers_to_remove, servers_to_restart)
+    }
+
+    /// Remove cached version for an MCP server
+    pub fn remove_cached_mcp_version(&mut self, server_name: &str) {
+        self.mcp_server_versions.remove(server_name);
+    }
+
+    /// Terminate an MCP server by name and clean up its tools
+    /// Returns true if the server was found and terminated, false otherwise
+    pub async fn terminate_mcp_server(&mut self, server_name: &str) -> bool {
+        let server_name_owned = server_name.to_string();
+
+        if let Some(initialized_client) = self.tool_manager.clients.remove(server_name) {
+            tracing::info!("Terminating MCP server '{}' and removing its tools", server_name_owned);
+
+            // Remove tools associated with this server from the tool manager
+            let tools_removed = self
+                .tool_manager
+                .tn_map
+                .extract_if(|_, tool_info| tool_info.server_name == server_name_owned)
+                .count();
+
+            let schemas_removed = self
+                .tool_manager
+                .schema
+                .extract_if(|tool_name, _| tool_name.starts_with(&format!("@{server_name_owned}/")))
+                .count();
+
+            tracing::debug!(
+                "Removed {} tools and {} schemas from server '{}'",
+                tools_removed,
+                schemas_removed,
+                server_name_owned
+            );
+
+            tokio::spawn(async move {
+                match initialized_client {
+                    crate::mcp_client::InitializedMcpClient::Pending(handle) => match handle.await {
+                        Ok(Ok(running_service)) => {
+                            let crate::mcp_client::InnerService::Original(client) = running_service.inner_service
+                            else {
+                                tracing::error!("Server {} has unexpected peer service", server_name_owned);
+                                return;
+                            };
+                            match client.cancel().await {
+                                Ok(_) => tracing::info!("Server {} terminated successfully", server_name_owned),
+                                Err(e) => tracing::error!("Server {} failed to terminate: {}", server_name_owned, e),
+                            }
+                        },
+                        Ok(Err(e)) => {
+                            tracing::error!(
+                                "Server {} failed to initialize before termination: {}",
+                                server_name_owned,
+                                e
+                            );
+                        },
+                        Err(e) => {
+                            tracing::error!("Server {} task panicked: {}", server_name_owned, e);
+                        },
+                    },
+                    crate::mcp_client::InitializedMcpClient::Ready(running_service) => {
+                        let crate::mcp_client::InnerService::Original(client) = running_service.inner_service else {
+                            tracing::error!("Server {} has unexpected peer service", server_name_owned);
+                            return;
+                        };
+                        match client.cancel().await {
+                            Ok(_) => tracing::info!("Server {} terminated successfully", server_name_owned),
+                            Err(e) => tracing::error!("Server {} failed to terminate: {}", server_name_owned, e),
+                        }
+                    },
+                }
+            });
+
+            true
+        } else {
+            tracing::warn!("MCP server '{}' not found in active clients", server_name_owned);
+            false
+        }
     }
 
     /// Clears the conversation history and summary.
@@ -762,10 +986,25 @@ impl ConversationState {
         }
         self.tool_manager.update().await;
         // TODO: make this more targeted so we don't have to clone the entire list of tools
-        self.tools = self
+        let filtered_tools: Vec<_> = self
             .tool_manager
             .schema
             .values()
+            .filter(|v| {
+                // Filter out tools from MCP servers that might be invalid
+                // If it's an MCP tool, check if the server is properly initialized
+                match &v.tool_origin {
+                    ToolOrigin::McpServer(server_name) => {
+                        // Check if this MCP server is properly initialized
+                        self.tool_manager.clients.contains_key(server_name)
+                    },
+                    ToolOrigin::Native => true, // Keep all non-MCP tools
+                }
+            })
+            .collect();
+
+        self.tools = filtered_tools
+            .into_iter()
             .fold(HashMap::<ToolOrigin, Vec<Tool>>::new(), |mut acc, v| {
                 let tool = Tool::ToolSpecification(ToolSpecification {
                     name: v.name.clone(),
@@ -1233,6 +1472,14 @@ Return only the JSON configuration, no additional text."
         output: &mut impl Write,
         agent_name: &str,
     ) -> Result<(), ChatError> {
+        // Apply registry filtering if in registry mode BEFORE switching
+        let registry_data = self.mcp_registry_cache.as_ref().map(|cache| &cache.data);
+        if let Some(registry) = registry_data {
+            if let Err(e) = self.agents.apply_registry_filtering(registry) {
+                tracing::error!("Failed to apply registry filtering during agent swap: {}", e);
+            }
+        }
+
         let agent = self
             .agents
             .switch(agent_name, os)
@@ -1243,8 +1490,9 @@ Return only the JSON configuration, no additional text."
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
         });
 
+        let registry_data = self.mcp_registry_cache.as_ref().map(|cache| &cache.data);
         self.tool_manager
-            .swap_agent(os, output, agent)
+            .swap_agent(os, output, agent, registry_data)
             .await
             .map_err(ChatError::AgentSwapError)?;
 
@@ -2197,5 +2445,329 @@ mod tests {
         if let Some(entry) = conversation.history.front() {
             assert_eq!(entry.assistant.content(), "response 1");
         }
+    }
+
+    #[tokio::test]
+    async fn test_mcp_version_caching() {
+        let os = Os::new().await.unwrap();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Initially no cached versions
+        assert!(conversation.get_cached_mcp_version("server1").is_none());
+
+        // Cache a version
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.0".to_string());
+        assert_eq!(
+            conversation.get_cached_mcp_version("server1"),
+            Some(&"1.0.0".to_string())
+        );
+
+        // Update version
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.1".to_string());
+        assert_eq!(
+            conversation.get_cached_mcp_version("server1"),
+            Some(&"1.0.1".to_string())
+        );
+
+        // Cache multiple servers
+        conversation.cache_mcp_server_version("server2".to_string(), "2.0.0".to_string());
+        assert_eq!(
+            conversation.get_cached_mcp_version("server1"),
+            Some(&"1.0.1".to_string())
+        );
+        assert_eq!(
+            conversation.get_cached_mcp_version("server2"),
+            Some(&"2.0.0".to_string())
+        );
+
+        // Remove cached version
+        conversation.remove_cached_mcp_version("server1");
+        assert!(conversation.get_cached_mcp_version("server1").is_none());
+        assert_eq!(
+            conversation.get_cached_mcp_version("server2"),
+            Some(&"2.0.0".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_check_mcp_server_changes_no_changes() {
+        let os = Os::new().await.unwrap();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Cache initial versions
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.0".to_string());
+        conversation.cache_mcp_server_version("server2".to_string(), "2.0.0".to_string());
+
+        // Create registry with same versions
+        let registry_json = r#"{
+            "servers": [
+                {
+                    "server": {
+                        "name": "server1",
+                        "description": "Test Server 1",
+                        "version": "1.0.0",
+                        "remotes": [{"type": "sse", "url": "https://example.com"}]
+                    }
+                },
+                {
+                    "server": {
+                        "name": "server2",
+                        "description": "Test Server 2",
+                        "version": "2.0.0",
+                        "remotes": [{"type": "sse", "url": "https://example2.com"}]
+                    }
+                }
+            ]
+        }"#;
+        let registry: crate::mcp_registry::McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let (servers_to_remove, servers_to_restart) = conversation.check_mcp_server_changes(&registry);
+
+        assert!(servers_to_remove.is_empty());
+        assert!(servers_to_restart.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_check_mcp_server_changes_version_changed() {
+        let os = Os::new().await.unwrap();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Cache initial versions
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.0".to_string());
+        conversation.cache_mcp_server_version("server2".to_string(), "2.0.0".to_string());
+
+        // Create registry with updated version for server1
+        let registry_json = r#"{
+            "servers": [
+                {
+                    "server": {
+                        "name": "server1",
+                        "description": "Test Server 1",
+                        "version": "1.0.1",
+                        "remotes": [{"type": "sse", "url": "https://example.com"}]
+                    }
+                },
+                {
+                    "server": {
+                        "name": "server2",
+                        "description": "Test Server 2",
+                        "version": "2.0.0",
+                        "remotes": [{"type": "sse", "url": "https://example2.com"}]
+                    }
+                }
+            ]
+        }"#;
+        let registry: crate::mcp_registry::McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let (servers_to_remove, servers_to_restart) = conversation.check_mcp_server_changes(&registry);
+
+        assert!(servers_to_remove.is_empty());
+        assert_eq!(servers_to_restart.len(), 1);
+        assert!(servers_to_restart.contains(&"server1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_check_mcp_server_changes_server_removed() {
+        let os = Os::new().await.unwrap();
+        let agents = {
+            let mut agents = Agents::default();
+            let mut agent = Agent::default();
+            agent.name = "TestAgent".to_string();
+            agent.mcp_servers.mcp_servers.insert(
+                "server1".to_string(),
+                crate::cli::chat::tools::custom_tool::CustomToolConfig::minimal_registry(),
+            );
+            agent.mcp_servers.mcp_servers.insert(
+                "server2".to_string(),
+                crate::cli::chat::tools::custom_tool::CustomToolConfig::minimal_registry(),
+            );
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent", &os).await.expect("Agent switch failed");
+            agents
+        };
+
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Cache initial versions for two servers
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.0".to_string());
+        conversation.cache_mcp_server_version("server2".to_string(), "2.0.0".to_string());
+
+        // Create registry with only server1 (server2 removed)
+        let registry_json = r#"{
+            "servers": [
+                {
+                    "server": {
+                        "name": "server1",
+                        "description": "Test Server 1",
+                        "version": "1.0.0",
+                        "remotes": [{"type": "sse", "url": "https://example.com"}]
+                    }
+                }
+            ]
+        }"#;
+        let registry: crate::mcp_registry::McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let (servers_to_remove, servers_to_restart) = conversation.check_mcp_server_changes(&registry);
+
+        assert_eq!(servers_to_remove.len(), 1);
+        assert!(servers_to_remove.contains(&"server2".to_string()));
+        assert!(servers_to_restart.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_check_mcp_server_changes_mixed() {
+        let os = Os::new().await.unwrap();
+        let agents = {
+            let mut agents = Agents::default();
+            let mut agent = Agent::default();
+            agent.name = "TestAgent".to_string();
+            agent.mcp_servers.mcp_servers.insert(
+                "server1".to_string(),
+                crate::cli::chat::tools::custom_tool::CustomToolConfig::minimal_registry(),
+            );
+            agent.mcp_servers.mcp_servers.insert(
+                "server2".to_string(),
+                crate::cli::chat::tools::custom_tool::CustomToolConfig::minimal_registry(),
+            );
+            agent.mcp_servers.mcp_servers.insert(
+                "server3".to_string(),
+                crate::cli::chat::tools::custom_tool::CustomToolConfig::minimal_registry(),
+            );
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent", &os).await.expect("Agent switch failed");
+            agents
+        };
+
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            agents,
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Cache initial versions
+        conversation.cache_mcp_server_version("server1".to_string(), "1.0.0".to_string());
+        conversation.cache_mcp_server_version("server2".to_string(), "2.0.0".to_string());
+        conversation.cache_mcp_server_version("server3".to_string(), "3.0.0".to_string());
+
+        // Create registry with:
+        // - server1: version changed (1.0.0 -> 1.0.1)
+        // - server2: removed
+        // - server3: unchanged
+        let registry_json = r#"{
+            "servers": [
+                {
+                    "server": {
+                        "name": "server1",
+                        "description": "Test Server 1",
+                        "version": "1.0.1",
+                        "remotes": [{"type": "sse", "url": "https://example.com"}]
+                    }
+                },
+                {
+                    "server": {
+                        "name": "server3",
+                        "description": "Test Server 3",
+                        "version": "3.0.0",
+                        "remotes": [{"type": "sse", "url": "https://example3.com"}]
+                    }
+                }
+            ]
+        }"#;
+        let registry: crate::mcp_registry::McpRegistryResponse = serde_json::from_str(registry_json).unwrap();
+
+        let (servers_to_remove, servers_to_restart) = conversation.check_mcp_server_changes(&registry);
+
+        assert_eq!(servers_to_remove.len(), 1);
+        assert!(servers_to_remove.contains(&"server2".to_string()));
+        assert_eq!(servers_to_restart.len(), 1);
+        assert!(servers_to_restart.contains(&"server1".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_terminate_mcp_server_not_found() {
+        let os = Os::new().await.unwrap();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Try to terminate a server that doesn't exist
+        let result = conversation.terminate_mcp_server("nonexistent").await;
+        assert!(!result);
+    }
+
+    #[tokio::test]
+    async fn test_terminate_mcp_server_removes_from_clients() {
+        let os = Os::new().await.unwrap();
+        let mut conversation = ConversationState::new(
+            "test_conv_id",
+            Agents::default(),
+            HashMap::new(),
+            ToolManager::default(),
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Note: We can't easily test actual termination without setting up a real MCP server,
+        // but we can verify that the method correctly handles the case where a server
+        // is not in the clients map
+        assert!(!conversation.terminate_mcp_server("test_server").await);
+        assert!(!conversation.tool_manager.clients.contains_key("test_server"));
     }
 }

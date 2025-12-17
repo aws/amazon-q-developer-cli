@@ -60,10 +60,7 @@ use crate::api_client::model::{
     ToolResultContentBlock,
     ToolResultStatus,
 };
-use crate::cli::agent::{
-    Agent,
-    McpServerConfig,
-};
+use crate::cli::agent::Agent;
 use crate::cli::chat::cli::prompts::GetPromptError;
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
@@ -195,6 +192,7 @@ pub struct ToolManagerBuilder {
     pending_clients: Option<Arc<RwLock<HashSet<String>>>>,
     is_first_launch: bool,
     agent: Option<Arc<Mutex<Agent>>>,
+    registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
 }
 
 impl Default for ToolManagerBuilder {
@@ -212,6 +210,7 @@ impl Default for ToolManagerBuilder {
             pending_clients: Default::default(),
             is_first_launch: true,
             agent: Default::default(),
+            registry_data: Default::default(),
         }
     }
 }
@@ -221,6 +220,7 @@ impl From<&mut ToolManager> for ToolManagerBuilder {
         Self {
             conversation_id: Some(value.conversation_id.clone()),
             agent: Some(value.agent.clone()),
+            registry_data: None, // Will be set when needed
             prompt_query_sender: value
                 .prompts_sender_receiver_pair
                 .as_ref()
@@ -274,6 +274,11 @@ impl ToolManagerBuilder {
         self
     }
 
+    pub fn registry_data(mut self, registry: crate::mcp_registry::McpRegistryResponse) -> Self {
+        self.registry_data.replace(registry);
+        self
+    }
+
     /// Creates a [ToolManager] based on the current fields populated, which consists of the
     /// following:
     /// - Instantiates child processes associated with the list of mcp servers in scope
@@ -287,9 +292,31 @@ impl ToolManagerBuilder {
         mut output: Box<dyn Write + Send + Sync + 'static>,
         interactive: bool,
     ) -> eyre::Result<ToolManager> {
-        let McpServerConfig { mcp_servers } = match &self.agent {
-            Some(agent) => agent.lock().await.mcp_servers.clone(),
+        let agent_servers = match &self.agent {
+            Some(agent) => agent.lock().await.mcp_servers.mcp_servers.clone(),
             None => Default::default(),
+        };
+
+        // Process MCP servers (expand registry-type servers to full configs)
+        let mcp_servers = {
+            let registry_data = self.registry_data.as_ref();
+            match crate::mcp_registry::process_mcp_servers(&agent_servers, registry_data) {
+                Ok(result) => {
+                    tracing::debug!(
+                        "ToolManager processed {} MCP servers for runtime use (registry mode: {})",
+                        result.servers.len(),
+                        registry_data.is_some()
+                    );
+                    result.servers
+                },
+                Err(e) => {
+                    // Processing can only fail in registry mode (e.g., unknown registry type)
+                    // This indicates corrupt/invalid registry data - disable MCP entirely
+                    tracing::error!("Failed to process MCP servers (invalid registry data): {}", e);
+                    tracing::warn!("Disabling all MCP servers due to registry processing failure");
+                    std::collections::HashMap::new()
+                },
+            }
         };
         debug_assert!(self.conversation_id.is_some());
         let conversation_id = self.conversation_id.ok_or(eyre::eyre!("Missing conversation id"))?;
@@ -654,7 +681,13 @@ impl ToolManager {
     /// - Swapping the old with the new (the old would be dropped after we exit the scope of this
     ///   function)
     /// - Calling load tools
-    pub async fn swap_agent(&mut self, os: &mut Os, output: &mut impl Write, agent: &Agent) -> eyre::Result<()> {
+    pub async fn swap_agent(
+        &mut self,
+        os: &mut Os,
+        output: &mut impl Write,
+        agent: &Agent,
+        registry_data: Option<&crate::mcp_registry::McpRegistryResponse>,
+    ) -> eyre::Result<()> {
         let to_evict = self.clients.drain().collect::<Vec<_>>();
         tokio::spawn(async move {
             for (server_name, initialized_client) in to_evict {
@@ -698,11 +731,18 @@ impl ToolManager {
 
         self.mcp_load_record.lock().await.clear();
 
-        let builder = ToolManagerBuilder::from(&mut *self);
+        // Clear pending clients to remove stale references to removed servers
+        self.pending_clients.write().await.clear();
+
+        let mut builder = ToolManagerBuilder::from(&mut *self);
+        if let Some(registry) = registry_data {
+            builder = builder.registry_data(registry.clone());
+        }
         let mut new_tool_manager = builder.build(os, Box::new(std::io::sink()), true).await?;
         std::mem::swap(self, &mut new_tool_manager);
 
-        self.load_tools(os, output).await?;
+        // Use a short timeout for agent swaps to avoid blocking
+        self.load_tools_with_timeout(os, output, Some(1000)).await?;
 
         Ok(())
     }
@@ -711,6 +751,15 @@ impl ToolManager {
         &mut self,
         os: &mut Os,
         stderr: &mut impl Write,
+    ) -> eyre::Result<HashMap<String, ToolSpec>> {
+        self.load_tools_with_timeout(os, stderr, None).await
+    }
+
+    pub async fn load_tools_with_timeout(
+        &mut self,
+        os: &mut Os,
+        stderr: &mut impl Write,
+        timeout_override: Option<u64>,
     ) -> eyre::Result<HashMap<String, ToolSpec>> {
         let tx = self.loading_status_sender.take();
         let notify = self.notify.take();
@@ -794,9 +843,16 @@ impl ToolManager {
 
         // We need to cast it to erase the type otherwise the compiler will default to static
         // dispatch, which would result in an error of inconsistent match arm return type.
-        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() || !self.is_first_launch {
+
+        let timeout_fut: Pin<Box<dyn Future<Output = ()>>> = if self.clients.is_empty() {
             // If there is no server loaded, we want to resolve immediately
             Box::pin(future::ready(()))
+        } else if !self.is_first_launch {
+            // For agent swaps, wait a short time to let fast servers load (1 second)
+            Box::pin(tokio::time::sleep(std::time::Duration::from_millis(1000)))
+        } else if let Some(timeout_ms) = timeout_override {
+            // Use override timeout (e.g., for agent swaps)
+            Box::pin(tokio::time::sleep(std::time::Duration::from_millis(timeout_ms)))
         } else if self.is_interactive {
             let init_timeout = os
                 .database
@@ -821,6 +877,7 @@ impl ToolManager {
         let loading_display_task = self.loading_display_task.take();
         tokio::select! {
             _ = timeout_fut => {
+
                 if let Some(tx) = tx {
                     let still_loading = self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>();
                     let _ = tx.send(LoadingMsg::Terminate { still_loading }).await;

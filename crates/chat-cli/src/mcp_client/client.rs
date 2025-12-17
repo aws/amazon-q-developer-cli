@@ -447,6 +447,8 @@ impl McpClientService {
                 Ok((service, child_stderr, None))
             },
             TransportType::Http => {
+                let scopes = self.config.get_oauth_scopes();
+
                 let CustomToolConfig {
                     url,
                     headers,
@@ -454,8 +456,6 @@ impl McpClientService {
                     timeout,
                     ..
                 } = &self.config;
-
-                let scopes = self.config.get_oauth_scopes();
 
                 // Process environment variables in headers
                 let mut processed_headers = headers.clone();
@@ -469,6 +469,18 @@ impl McpClientService {
                 let (service, auth_client_wrapper) = http_service_builder.try_build(&self).await?;
 
                 Ok((service, None, auth_client_wrapper))
+            },
+            TransportType::Registry => {
+                // Registry type should have been converted to Stdio or Http before reaching here
+                // If we encounter a registry type here, it means the server doesn't exist in the registry
+                // Log a warning and skip this server instead of failing
+                tracing::warn!(
+                    "Registry-type MCP server '{}' was not processed by registry (likely doesn't exist), skipping",
+                    self.server_name
+                );
+                Err(McpClientError::MalformedConfig(
+                    "Registry server not found - skipping initialization",
+                ))
             },
         }
     }

@@ -12,6 +12,7 @@ pub mod database;
 pub mod feature_flags;
 pub mod logging;
 pub mod mcp_client;
+pub mod mcp_registry;
 pub mod os;
 pub mod request;
 pub mod telemetry;

@@ -84,12 +84,19 @@ pub struct AgentArgs {
 impl AgentArgs {
     pub async fn execute(self, os: &mut Os) -> Result<ExitCode> {
         let mut stderr = std::io::stderr();
-        let mcp_enabled = match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
-            Err(err) => {
-                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
-                true
-            },
+
+        // For non-enterprise users, skip the API call and default to enabled
+        let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
+        let mcp_enabled = if !is_enterprise {
+            true
+        } else {
+            match os.client.is_mcp_enabled().await {
+                Ok(enabled) => enabled,
+                Err(err) => {
+                    tracing::warn!(?err, "Failed to check MCP configuration, defaulting to disabled");
+                    false
+                },
+            }
         };
         match self.cmd {
             Some(AgentSubcommands::List) | None => {

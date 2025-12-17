@@ -8,6 +8,7 @@ mod database;
 mod feature_flags;
 mod logging;
 mod mcp_client;
+mod mcp_registry;
 mod os;
 mod request;
 mod telemetry;

@@ -359,18 +359,27 @@ impl ApiClient {
     }
 
     pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
+        let (enabled, _) = self.get_mcp_config().await?;
+        Ok(enabled)
+    }
+
+    /// Get MCP configuration including enabled status and registry URL
+    pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
         let request = self
             .client
             .get_profile()
             .set_profile_arn(self.profile.as_ref().map(|p| p.arn.clone()));
 
         let response = request.send().await?;
-        let mcp_enabled = response
+        let mcp_config = response
             .profile()
             .opt_in_features()
-            .and_then(|features| features.mcp_configuration())
-            .is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
-        Ok(mcp_enabled)
+            .and_then(|features| features.mcp_configuration());
+
+        let mcp_enabled = mcp_config.is_none_or(|config| matches!(config.toggle(), OptInFeatureToggle::On));
+        let registry_url = mcp_config.and_then(|config| config.mcp_registry_url().map(|s| s.to_string()));
+
+        Ok((mcp_enabled, registry_url))
     }
 
     pub async fn create_subscription_token(&self) -> Result<CreateSubscriptionTokenOutput, ApiClientError> {

@@ -157,7 +157,7 @@ impl SlashCommand {
             Self::PromptEditor(args) => args.execute(session).await,
             Self::Reply(args) => args.execute(session).await,
             Self::Compact(args) => args.execute(os, session).await,
-            Self::Tools(args) => args.execute(session).await,
+            Self::Tools(args) => args.execute(session, os).await,
             Self::Issue(args) => {
                 if let Err(err) = args.execute(os).await {
                     return Err(ChatError::Custom(err.to_string().into()));
@@ -172,7 +172,7 @@ impl SlashCommand {
             Self::Prompts(args) => args.execute(os, session).await,
             Self::Hooks(args) => args.execute(session).await,
             Self::Usage(args) => args.execute(os, session).await,
-            Self::Mcp(args) => args.execute(session).await,
+            Self::Mcp(args) => args.execute(os, session).await,
             Self::Model(args) => args.execute(os, session).await,
             Self::Experiment(args) => args.execute(os, session).await,
 

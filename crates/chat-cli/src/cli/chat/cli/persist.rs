@@ -526,6 +526,8 @@ mod tests {
             true,
             false,
             None,
+            None, // wrap: Option<WrapMode>
+            None, // registry_data
         )
         .await
         .unwrap();

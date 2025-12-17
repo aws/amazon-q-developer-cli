@@ -44,10 +44,16 @@ pub struct ToolsArgs {
 }
 
 impl ToolsArgs {
-    pub async fn execute(self, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+    pub async fn execute(self, session: &mut ChatSession, os: &mut crate::os::Os) -> Result<ChatState, ChatError> {
         if let Some(subcommand) = self.subcommand {
             return subcommand.execute(session).await;
         }
+
+        // Ensure MCP data is fresh before displaying tools
+        session.ensure_fresh_mcp_data(os).await.ok();
+
+        // Update conversation state to refresh tools after potential server changes
+        session.conversation.update_state(false).await;
 
         // No subcommand - print the current tools and their permissions.
         // Determine how to format the output nicely.
@@ -124,7 +130,8 @@ impl ToolsArgs {
                 let display_name =
                     ToolMetadata::get_by_spec_name(tool_name).map_or(*tool_name, |info| info.preferred_alias);
 
-                let width = longest - display_name.len() + 4;
+                // Use saturating subtraction to avoid underflow if display_name is longer than longest
+                let width = longest.saturating_sub(display_name.len()).saturating_add(4);
                 acc.push_str(
                     format!(
                         "- {}{:>width$}{}\n",

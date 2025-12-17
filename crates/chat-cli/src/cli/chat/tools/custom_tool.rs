@@ -37,6 +37,8 @@ pub enum TransportType {
     Stdio,
     /// HTTP transport for web-based communication
     Http,
+    /// Registry-based server (loaded from MCP registry)
+    Registry,
 }
 
 impl Default for TransportType {
@@ -60,35 +62,38 @@ pub struct OAuthConfig {
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
+    /// Transport type: "stdio", "http", or "registry"
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub transport_type: Option<String>,
     /// The URL for HTTP-based MCP server communication
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
     /// HTTP headers to include when communicating with HTTP-based MCP servers
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
     /// Scopes with which oauth is done (deprecated: use oauth.oauthScopes instead)
-    #[serde(default = "get_default_scopes")]
+    #[serde(default = "get_default_scopes", skip_serializing_if = "is_default_oauth_scopes")]
     pub oauth_scopes: Vec<String>,
     /// OAuth configuration for this server
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthConfig>,
     /// The command string used to initialize the mcp server
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub command: String,
     /// A list of arguments to be used to run the command with
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// A list of environment variables to run the command with
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
     /// Timeout for each mcp request in ms
-    #[serde(default = "default_timeout")]
+    #[serde(default = "default_timeout", skip_serializing_if = "is_default_timeout")]
     pub timeout: u64,
     /// A boolean flag to denote whether or not to load this mcp server
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_false")]
     pub disabled: bool,
     /// List of tool names from this server to disable
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "is_empty_vec")]
     pub disabled_tools: Vec<String>,
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
@@ -98,6 +103,17 @@ pub struct CustomToolConfig {
 impl CustomToolConfig {
     /// Infer the transport type based on which fields are present
     pub fn inferred_type(&self) -> TransportType {
+        // Check explicit type field first
+        if let Some(ref type_str) = self.transport_type {
+            match type_str.as_str() {
+                "registry" => return TransportType::Registry,
+                "http" => return TransportType::Http,
+                "stdio" => return TransportType::Stdio,
+                _ => {}, // Fall through to inference
+            }
+        }
+
+        // Infer from fields
         if !self.command.is_empty() {
             TransportType::Stdio
         } else if !self.url.is_empty() {
@@ -107,12 +123,25 @@ impl CustomToolConfig {
         }
     }
 
+    /// Check if this is a registry-type server
+    pub fn is_registry_type(&self) -> bool {
+        matches!(self.inferred_type(), TransportType::Registry)
+    }
+
     /// Get the effective oauth scopes, preferring the new location inside oauth object
     pub fn get_oauth_scopes(&self) -> Vec<String> {
         self.oauth
             .as_ref()
             .and_then(|o| o.oauth_scopes.clone())
             .unwrap_or_else(|| self.oauth_scopes.clone())
+    }
+
+    /// Create a minimal registry server config with only type: "registry"
+    pub fn minimal_registry() -> Self {
+        Self {
+            transport_type: Some("registry".to_string()),
+            ..Default::default()
+        }
     }
 }
 
@@ -125,6 +154,42 @@ pub fn get_default_scopes() -> Vec<String> {
 
 pub fn default_timeout() -> u64 {
     120 * 1000
+}
+
+// Helper functions for serde skip_serializing_if
+fn is_default_timeout(timeout: &u64) -> bool {
+    *timeout == default_timeout()
+}
+
+fn is_false(b: &bool) -> bool {
+    !b
+}
+
+fn is_empty_vec<T>(v: &[T]) -> bool {
+    v.is_empty()
+}
+
+fn is_default_oauth_scopes(scopes: &Vec<String>) -> bool {
+    *scopes == get_default_scopes()
+}
+
+impl Default for CustomToolConfig {
+    fn default() -> Self {
+        Self {
+            transport_type: None,
+            url: String::new(),
+            headers: std::collections::HashMap::new(),
+            oauth_scopes: get_default_scopes(),
+            oauth: None,
+            command: String::new(),
+            args: Vec::new(),
+            env: None,
+            timeout: default_timeout(),
+            disabled: false,
+            disabled_tools: Vec::new(),
+            is_from_legacy_mcp_json: false,
+        }
+    }
 }
 
 /// Represents a custom tool that can be invoked through the Model Context Protocol (MCP).
@@ -263,5 +328,36 @@ mod tests {
         }"#;
         let config: CustomToolConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.get_oauth_scopes(), vec!["new1", "new2"]);
+    }
+
+    #[test]
+    fn test_minimal_registry_config() {
+        let config = CustomToolConfig::minimal_registry();
+        assert_eq!(config.transport_type, Some("registry".to_string()));
+        assert_eq!(config.timeout, default_timeout());
+        assert!(config.headers.is_empty());
+        assert!(config.env.is_none());
+        assert!(!config.disabled);
+        assert!(config.disabled_tools.is_empty());
+    }
+
+    #[test]
+    fn test_registry_serialization_skips_defaults() {
+        let config = CustomToolConfig::minimal_registry();
+        let json = serde_json::to_string(&config).unwrap();
+
+        // Should only contain type: "registry", other fields should be skipped
+        assert!(json.contains(r#""type":"registry""#));
+        assert!(!json.contains("url")); // Should be skipped (empty string)
+        assert!(!json.contains("oauthScopes")); // Should be skipped (default scopes)
+        assert!(!json.contains("command")); // Should be skipped (empty string)
+        assert!(!json.contains("args")); // Should be skipped (empty vec)
+        assert!(!json.contains("timeout")); // Should be skipped (default value)
+        assert!(!json.contains("headers")); // Should be skipped (empty)
+        assert!(!json.contains("env")); // Should be skipped (None)
+        assert!(!json.contains("disabled")); // Should be skipped (false)
+
+        // The final JSON should be very minimal
+        assert_eq!(json, r#"{"type":"registry"}"#);
     }
 }

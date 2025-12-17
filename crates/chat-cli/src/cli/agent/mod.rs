@@ -539,6 +539,18 @@ impl Agents {
             .ok_or(eyre::eyre!("No agent with name {name} found"))
     }
 
+    /// Apply registry filtering to all agents in the collection
+    /// This should be called after loading agents when in registry mode
+    pub fn apply_registry_filtering(
+        &mut self,
+        registry: &crate::mcp_registry::McpRegistryResponse,
+    ) -> eyre::Result<()> {
+        for agent in self.agents.values_mut() {
+            crate::mcp_registry::apply_registry_filtering_to_agent(agent, registry)?;
+        }
+        Ok(())
+    }
+
     /// This function does a number of things in the following order:
     /// 1. Migrates old profiles if applicable
     /// 2. Loads local agents
@@ -1756,6 +1768,7 @@ mod tests {
         config
             .mcp_servers
             .insert("workspace_server".to_string(), CustomToolConfig {
+                transport_type: None,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],
@@ -1771,6 +1784,7 @@ mod tests {
         config
             .mcp_servers
             .insert("global_server".to_string(), CustomToolConfig {
+                transport_type: None,
                 url: String::new(),
                 headers: HashMap::new(),
                 oauth_scopes: vec![],
