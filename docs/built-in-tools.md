@@ -76,7 +76,8 @@ Tool for creating and editing files.
   "toolsSettings": {
     "fs_write": {
       "allowedPaths": ["~/projects/output.txt", "./src/**"],
-      "deniedPaths": ["/some/denied/path/", "/another/denied/path/**/file.txt"]
+      "deniedPaths": ["/some/denied/path/", "/another/denied/path/**/file.txt"],
+      "fallbackAction": "deny"
     }
   }
 }
@@ -88,6 +89,7 @@ Tool for creating and editing files.
 |--------|------|---------|-------------|
 | `allowedPaths` | array of strings | `[]` | List of paths that can be written to without prompting. Supports glob patterns. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
 | `deniedPaths` | array of strings | `[]` | List of paths that are denied. Supports glob patterns. Deny rules are evaluated before allow rules. Glob patterns have the same behavior as gitignore.For example, `~/temp` would match `~/temp/child` and `~/temp/child/grandchild` |
+| `fallbackAction` | string | `"interactive"` | Controls behavior for paths outside `allowedPaths`: `"interactive"` (default Y/N/T prompts), `"deny"` (block completely, bypasses tool trust) |
 
 ## Introspect Tool
 
