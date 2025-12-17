@@ -33,12 +33,21 @@ use crate::cli::agent::{
 use crate::os::Os;
 use crate::theme::StyledText;
 
+// Constants: Maximum allowed values (hard limits for safety)
+const MAX_ALLOWED_MATCHES_PER_FILE: usize = 100;
+const MAX_ALLOWED_FILES: usize = 500;
+const MAX_ALLOWED_TOTAL_LINES: usize = 2000;
+const MAX_ALLOWED_DEPTH: usize = 100;
+
+// Constants: Default values (conservative defaults for typical usage)
 /// Default max matches per file in output
 const DEFAULT_MAX_MATCHES_PER_FILE: usize = 5;
 /// Default max files to return
 const DEFAULT_MAX_FILES: usize = 100;
 /// Default max total lines for content mode output
 const DEFAULT_MAX_TOTAL_LINES: usize = 200;
+/// Default max directory depth
+const DEFAULT_MAX_DEPTH: usize = 50;
 
 /// Output mode for grep results
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -66,6 +75,18 @@ pub struct Grep {
     pub case_sensitive: Option<bool>,
     /// Output mode: "content", "files_with_matches", "count"
     pub output_mode: Option<OutputMode>,
+    /// Maximum matches to return per file (content mode only).
+    #[serde(default)]
+    pub max_matches_per_file: Option<usize>,
+    /// Maximum number of files to include in results.
+    #[serde(default)]
+    pub max_files: Option<usize>,
+    /// Maximum total lines in output (content mode only).
+    #[serde(default)]
+    pub max_total_lines: Option<usize>,
+    /// Maximum directory depth to traverse.
+    #[serde(default)]
+    pub max_depth: Option<usize>,
 }
 
 impl Grep {
@@ -74,6 +95,27 @@ impl Grep {
         preferred_alias: "grep",
         aliases: &["grep"],
     };
+
+    fn max_matches_per_file(&self) -> usize {
+        self.max_matches_per_file.map_or(DEFAULT_MAX_MATCHES_PER_FILE, |v| {
+            v.clamp(1, MAX_ALLOWED_MATCHES_PER_FILE)
+        })
+    }
+
+    fn max_files(&self) -> usize {
+        self.max_files
+            .map_or(DEFAULT_MAX_FILES, |v| v.clamp(1, MAX_ALLOWED_FILES))
+    }
+
+    fn max_total_lines(&self) -> usize {
+        self.max_total_lines
+            .map_or(DEFAULT_MAX_TOTAL_LINES, |v| v.clamp(1, MAX_ALLOWED_TOTAL_LINES))
+    }
+
+    fn max_depth(&self) -> usize {
+        self.max_depth
+            .map_or(DEFAULT_MAX_DEPTH, |v| v.clamp(1, MAX_ALLOWED_DEPTH))
+    }
 
     pub async fn invoke(&self, os: &Os, _output: &mut impl Write) -> Result<InvokeOutput> {
         let base_path = self.get_base_path(os)?;
@@ -147,7 +189,7 @@ impl Grep {
             .git_global(true)
             .git_exclude(true)
             .follow_links(false)
-            .max_depth(Some(50));
+            .max_depth(Some(self.max_depth()));
 
         let mut files = Vec::new();
         let include_glob = self.include.as_deref();
@@ -186,6 +228,11 @@ impl Grep {
             .line_number(true)
             .build();
 
+        // Get configured limits
+        let max_matches_per_file = self.max_matches_per_file();
+        let max_files = self.max_files();
+        let max_total_lines = self.max_total_lines();
+
         // Collect matches per file with counts
         let mut file_results: Vec<(String, Vec<String>)> = Vec::new();
         let mut total_matches: usize = 0;
@@ -223,14 +270,13 @@ impl Grep {
         // Sort by match count descending
         file_results.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
 
-        // Build output with file-grouped matches
-        // Limit to first N files and M matches per file for output
-        let max_files_output = DEFAULT_MAX_FILES.min(file_results.len());
+        // Build output with file-grouped matches using configured limits
+        let max_files_output = max_files.min(file_results.len());
         let mut output_results: Vec<serde_json::Value> = Vec::new();
         let mut output_match_count: usize = 0;
 
         for (file, matches) in file_results.iter().take(max_files_output) {
-            let matches_to_show = matches.len().min(DEFAULT_MAX_MATCHES_PER_FILE);
+            let matches_to_show = matches.len().min(max_matches_per_file);
             let file_output: Vec<String> = matches.iter().take(matches_to_show).cloned().collect();
 
             output_match_count += file_output.len();
@@ -241,7 +287,7 @@ impl Grep {
                 "matches": file_output
             }));
 
-            if output_match_count >= DEFAULT_MAX_TOTAL_LINES {
+            if output_match_count >= max_total_lines {
                 break;
             }
         }
@@ -262,6 +308,8 @@ impl Grep {
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
             .build();
+
+        let max_files = self.max_files();
 
         // Collect file paths with their match counts
         let mut file_counts: Vec<(String, usize)> = Vec::new();
@@ -296,12 +344,12 @@ impl Grep {
         file_counts.sort_by(|a, b| b.1.cmp(&a.1));
 
         let total_files = file_counts.len();
-        let truncated = total_files > DEFAULT_MAX_FILES;
+        let truncated = total_files > max_files;
 
         // Limit output and format as objects with count
         let results: Vec<serde_json::Value> = file_counts
             .into_iter()
-            .take(DEFAULT_MAX_FILES)
+            .take(max_files)
             .map(|(file, count)| {
                 serde_json::json!({
                     "file": file,
@@ -324,6 +372,8 @@ impl Grep {
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
             .build();
+
+        let max_files = self.max_files();
 
         let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_count = 0usize;
@@ -357,11 +407,11 @@ impl Grep {
         file_counts.sort_by(|a, b| b.1.cmp(&a.1));
 
         let total_files = file_counts.len();
-        let truncated = total_files > DEFAULT_MAX_FILES;
+        let truncated = total_files > max_files;
 
         let results: Vec<serde_json::Value> = file_counts
             .into_iter()
-            .take(DEFAULT_MAX_FILES)
+            .take(max_files)
             .map(|(file, count)| {
                 serde_json::json!({
                     "file": file,
@@ -406,7 +456,6 @@ impl Grep {
         }
 
         display_tool_use(tool, output)?;
-        queue!(output, style::Print("\n\n"))?;
         Ok(())
     }
 
@@ -504,6 +553,10 @@ mod tests {
             include: None,
             case_sensitive: None,
             output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -541,6 +594,10 @@ mod tests {
             include: None,
             case_sensitive: None,
             output_mode: Some(OutputMode::FilesWithMatches),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -572,6 +629,10 @@ mod tests {
             include: None,
             case_sensitive: None,
             output_mode: Some(OutputMode::Count),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -601,6 +662,10 @@ mod tests {
             include: None,
             case_sensitive: Some(false),
             output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -631,6 +696,10 @@ mod tests {
             include: Some("*.rs".to_string()),
             case_sensitive: None,
             output_mode: Some(OutputMode::FilesWithMatches),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -658,6 +727,10 @@ mod tests {
             include: None,
             case_sensitive: None,
             output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os = Os::new().await.unwrap();
@@ -683,6 +756,10 @@ mod tests {
             include: None,
             case_sensitive: None,
             output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
         };
 
         let os: Os = Os::new().await.unwrap();

@@ -52,6 +52,22 @@
             "count"
           ],
           "description": "Output format: 'content' returns matches as 'file:line:content' (default, best for seeing actual matches), 'files_with_matches' returns only file paths, 'count' returns match counts per file."
+        },
+        "max_matches_per_file": {
+          "type": "integer",
+          "description": "Max matches returned per file (output limit). Increase to see all occurrences in a file."
+        },
+        "max_files": {
+          "type": "integer",
+          "description": "Max number of files returned (output limit). Increase for comprehensive codebase searches."
+        },
+        "max_total_lines": {
+          "type": "integer",
+          "description": "Max total matched lines returned across all files (output limit). Increase when searching for many occurrences."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Max directory depth to traverse when searching (search limit). Increase for deeply nested structures."
         }
       },
       "required": [
