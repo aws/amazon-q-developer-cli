@@ -231,11 +231,7 @@ impl Grep {
     }
 
     /// Search and return matching line content in compact ripgrep-like format
-    async fn search_content(
-        &self,
-        matcher: &grep_regex::RegexMatcher,
-        files: &[PathBuf],
-    ) -> serde_json::Value {
+    async fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -398,11 +394,7 @@ impl Grep {
     }
 
     /// Search and return match counts per file, sorted by count descending
-    async fn search_count(
-        &self,
-        matcher: &grep_regex::RegexMatcher,
-        files: &[PathBuf],
-    ) -> serde_json::Value {
+    async fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
