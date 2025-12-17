@@ -105,6 +105,7 @@ jobs:
     name: Trigger Autocomplete Build
     needs: build-darwin
     runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
     if: inputs.trigger_autocomplete_build == true && inputs.environment == 'gamma'
     steps:
       - name: Trigger Autocomplete Workflow
