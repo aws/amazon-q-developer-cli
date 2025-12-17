@@ -48,6 +48,8 @@ const DEFAULT_MAX_FILES: usize = 100;
 const DEFAULT_MAX_TOTAL_LINES: usize = 200;
 /// Default max directory depth
 const DEFAULT_MAX_DEPTH: usize = 50;
+/// How often to yield to allow cancellation (every N files)
+const YIELD_INTERVAL: u32 = 100;
 
 /// Output mode for grep results
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Default)]
@@ -145,7 +147,7 @@ impl Grep {
         };
 
         // Collect files to search
-        let files = self.collect_files(&base_path)?;
+        let files = self.collect_files(&base_path).await?;
 
         if files.is_empty() {
             return Ok(InvokeOutput {
@@ -158,9 +160,9 @@ impl Grep {
         // Execute search based on output mode
         let output_mode = self.output_mode.unwrap_or_default();
         let result = match output_mode {
-            OutputMode::Content => self.search_content(&matcher, &files),
-            OutputMode::FilesWithMatches => self.search_files_with_matches(&matcher, &files),
-            OutputMode::Count => self.search_count(&matcher, &files),
+            OutputMode::Content => self.search_content(&matcher, &files).await,
+            OutputMode::FilesWithMatches => self.search_files_with_matches(&matcher, &files).await,
+            OutputMode::Count => self.search_count(&matcher, &files).await,
         };
 
         Ok(InvokeOutput {
@@ -175,7 +177,7 @@ impl Grep {
         }
     }
 
-    fn collect_files(&self, base_path: &PathBuf) -> Result<Vec<PathBuf>> {
+    async fn collect_files(&self, base_path: &PathBuf) -> Result<Vec<PathBuf>> {
         // If path is a file, search only that file
         if base_path.is_file() {
             return Ok(vec![base_path.clone()]);
@@ -193,8 +195,15 @@ impl Grep {
 
         let mut files = Vec::new();
         let include_glob = self.include.as_deref();
+        let mut entry_count: u32 = 0;
 
         for entry in walker.build().flatten() {
+            // Yield periodically to allow cancellation (Ctrl+C handling)
+            entry_count += 1;
+            if entry_count % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+
             if entry.file_type().is_some_and(|ft| ft.is_file()) {
                 let path = entry.path();
 
@@ -222,7 +231,7 @@ impl Grep {
     }
 
     /// Search and return matching line content in compact ripgrep-like format
-    fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    async fn search_content(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -237,8 +246,15 @@ impl Grep {
         let mut file_results: Vec<(String, Vec<String>)> = Vec::new();
         let mut total_matches: usize = 0;
         let mut total_files_with_matches: usize = 0;
+        let mut file_count: u32 = 0;
 
         for file_path in files {
+            // Yield periodically to allow cancellation
+            file_count += 1;
+            if file_count % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+
             let file_str = file_path.display().to_string();
             let mut file_matches: Vec<String> = Vec::new();
 
@@ -303,7 +319,11 @@ impl Grep {
     }
 
     /// Search and return only file paths with matches, sorted by match count
-    fn search_files_with_matches(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    async fn search_files_with_matches(
+        &self,
+        matcher: &grep_regex::RegexMatcher,
+        files: &[PathBuf],
+    ) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -314,8 +334,15 @@ impl Grep {
         // Collect file paths with their match counts
         let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_matches: usize = 0;
+        let mut file_count: u32 = 0;
 
         for file_path in files {
+            // Yield periodically to allow cancellation
+            file_count += 1;
+            if file_count % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+
             let mut match_count = 0usize;
             let _ = searcher.search_path(
                 matcher,
@@ -367,7 +394,7 @@ impl Grep {
     }
 
     /// Search and return match counts per file, sorted by count descending
-    fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
+    async fn search_count(&self, matcher: &grep_regex::RegexMatcher, files: &[PathBuf]) -> serde_json::Value {
         let mut searcher = SearcherBuilder::new()
             .binary_detection(BinaryDetection::quit(0x00))
             .line_number(true)
@@ -377,21 +404,28 @@ impl Grep {
 
         let mut file_counts: Vec<(String, usize)> = Vec::new();
         let mut total_count = 0usize;
+        let mut file_count: u32 = 0;
 
         for file_path in files {
-            let mut file_count = 0usize;
+            // Yield periodically to allow cancellation
+            file_count += 1;
+            if file_count % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+
+            let mut count = 0usize;
             let _ = searcher.search_path(
                 matcher,
                 file_path,
                 UTF8(|_line_num, _line| {
-                    file_count += 1;
+                    count += 1;
                     Ok(true)
                 }),
             );
 
-            if file_count > 0 {
-                total_count += file_count;
-                file_counts.push((file_path.display().to_string(), file_count));
+            if count > 0 {
+                total_count += count;
+                file_counts.push((file_path.display().to_string(), count));
             }
         }
 
