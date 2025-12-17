@@ -480,8 +480,35 @@ impl Agents {
     /// - model tool name -> host tool name
     /// - custom tool namespacing
     pub fn untrust_tools(&mut self, tool_names: &[String]) {
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
         if let Some(agent) = self.get_active_mut() {
-            agent.allowed_tools.retain(|t| !tool_names.contains(t));
+            agent.allowed_tools.retain(|allowed_tool| {
+                for tool_name in tool_names {
+                    // Direct string match
+                    if allowed_tool == tool_name {
+                        return false;
+                    }
+
+                    // Check if tool_name and allowed_tool refer to the same native tool via aliases
+                    if let Some(tool_info) = ToolMetadata::get_by_any_alias(tool_name) {
+                        // Check if allowed_tool is also an alias of the same tool
+                        if tool_info.aliases.contains(&allowed_tool.as_str()) {
+                            return false;
+                        }
+                        // Check if allowed_tool is a wildcard pattern that matches any alias
+                        let single_pattern: HashSet<String> = [allowed_tool.clone()].into_iter().collect();
+                        if tool_info
+                            .aliases
+                            .iter()
+                            .any(|alias| is_tool_in_allowlist(&single_pattern, alias, None))
+                        {
+                            return false;
+                        }
+                    }
+                }
+                true
+            });
         }
     }
 
@@ -1993,5 +2020,70 @@ mod tests {
         assert_eq!(agent.resources.len(), 2);
         assert!(matches!(agent.resources[0], ResourcePath::FilePath(_)));
         assert!(matches!(agent.resources[1], ResourcePath::Complex(_)));
+    }
+
+    #[test]
+    fn test_untrust_tools_with_aliases() {
+        let mut agents = Agents::default();
+        let mut agent = Agent::default();
+
+        // Test case 1: allowed_tools has "fs_write", untrust "write"
+        agent.allowed_tools.insert("fs_write".to_string());
+        agent.allowed_tools.insert("fs_read".to_string());
+        agents.agents.insert("test".to_string(), agent.clone());
+        agents.active_idx = "test".to_string();
+
+        agents.untrust_tools(&["write".to_string()]);
+        let active = agents.get_active().unwrap();
+        assert!(
+            !active.allowed_tools.contains("fs_write"),
+            "fs_write should be removed when untrusting 'write'"
+        );
+        assert!(active.allowed_tools.contains("fs_read"), "fs_read should remain");
+
+        // Test case 2: allowed_tools has "write", untrust "fs_write"
+        let mut agent = Agent::default();
+        agent.allowed_tools.insert("write".to_string());
+        agent.allowed_tools.insert("read".to_string());
+        agents.agents.insert("test2".to_string(), agent.clone());
+        agents.active_idx = "test2".to_string();
+
+        agents.untrust_tools(&["fs_write".to_string()]);
+        let active = agents.get_active().unwrap();
+        assert!(
+            !active.allowed_tools.contains("write"),
+            "write should be removed when untrusting 'fs_write'"
+        );
+        assert!(active.allowed_tools.contains("read"), "read should remain");
+
+        // Test case 3: wildcard pattern "@builtin/fs*", untrust "write"
+        let mut agent = Agent::default();
+        agent.allowed_tools.insert("@builtin/fs*".to_string());
+        agent.allowed_tools.insert("shell".to_string());
+        agents.agents.insert("test3".to_string(), agent.clone());
+        agents.active_idx = "test3".to_string();
+
+        agents.untrust_tools(&["write".to_string()]);
+        let active = agents.get_active().unwrap();
+        assert!(
+            !active.allowed_tools.contains("@builtin/fs*"),
+            "wildcard pattern should be removed when untrusting 'write'"
+        );
+        assert!(active.allowed_tools.contains("shell"), "shell should remain");
+
+        // Test case 4: multiple aliases, untrust one
+        let mut agent = Agent::default();
+        agent.allowed_tools.insert("execute_bash".to_string());
+        agent.allowed_tools.insert("fs_write".to_string());
+        agents.agents.insert("test4".to_string(), agent.clone());
+        agents.active_idx = "test4".to_string();
+
+        agents.untrust_tools(&["shell".to_string()]);
+        let active = agents.get_active().unwrap();
+        assert!(
+            !active.allowed_tools.contains("execute_bash"),
+            "execute_bash should be removed when untrusting 'shell'"
+        );
+        assert!(active.allowed_tools.contains("fs_write"), "fs_write should remain");
     }
 }

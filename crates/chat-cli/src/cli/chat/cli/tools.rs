@@ -273,7 +273,9 @@ impl ToolsSubcommand {
             Self::Trust { tool_names } => {
                 let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) =
                     tool_names.into_iter().partition(|tool_name| {
-                        existing_custom_tools.contains(tool_name) || native_tool_names.contains(tool_name)
+                        existing_custom_tools.contains(tool_name)
+                            || native_tool_names.contains(tool_name)
+                            || ToolMetadata::get_by_any_alias(tool_name).is_some()
                     });
 
                 if !invalid_tools.is_empty() {
@@ -293,7 +295,8 @@ impl ToolsSubcommand {
                     let tools_to_trust = valid_tools
                         .into_iter()
                         .filter_map(|tool_name| {
-                            if native_tool_names.contains(&tool_name) {
+                            // Check if it's a native tool by any alias
+                            if ToolMetadata::get_by_any_alias(&tool_name).is_some() {
                                 Some(tool_name)
                             } else {
                                 existing_custom_tools
@@ -303,38 +306,42 @@ impl ToolsSubcommand {
                         })
                         .collect::<Vec<_>>();
 
-                    queue!(
-                        session.stderr,
-                        StyledText::success_fg(),
-                        if tools_to_trust.len() > 1 {
-                            style::Print(format!("\nTools '{}' are ", tools_to_trust.join("', '")))
-                        } else {
-                            style::Print(format!("\nTool '{}' is ", tools_to_trust[0]))
-                        },
-                        style::Print("now trusted. I will "),
-                        style::SetAttribute(Attribute::Bold),
-                        style::Print("not"),
-                        StyledText::reset_attributes(),
-                        StyledText::success_fg(),
-                        style::Print(format!(
-                            " ask for confirmation before running {}.",
+                    if !tools_to_trust.is_empty() {
+                        queue!(
+                            session.stderr,
+                            StyledText::success_fg(),
                             if tools_to_trust.len() > 1 {
-                                "these tools"
+                                style::Print(format!("\nTools '{}' are ", tools_to_trust.join("', '")))
                             } else {
-                                "this tool"
-                            }
-                        )),
-                        style::Print("\n"),
-                        StyledText::reset(),
-                    )?;
+                                style::Print(format!("\nTool '{}' is ", tools_to_trust[0]))
+                            },
+                            style::Print("now trusted. I will "),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print("not"),
+                            StyledText::reset_attributes(),
+                            StyledText::success_fg(),
+                            style::Print(format!(
+                                " ask for confirmation before running {}.",
+                                if tools_to_trust.len() > 1 {
+                                    "these tools"
+                                } else {
+                                    "this tool"
+                                }
+                            )),
+                            style::Print("\n"),
+                            StyledText::reset(),
+                        )?;
 
-                    session.conversation.agents.trust_tools(tools_to_trust);
+                        session.conversation.agents.trust_tools(tools_to_trust);
+                    }
                 }
             },
             Self::Untrust { tool_names } => {
                 let (valid_tools, invalid_tools): (Vec<String>, Vec<String>) =
                     tool_names.into_iter().partition(|tool_name| {
-                        existing_custom_tools.contains(tool_name) || native_tool_names.contains(tool_name)
+                        existing_custom_tools.contains(tool_name)
+                            || native_tool_names.contains(tool_name)
+                            || ToolMetadata::get_by_any_alias(tool_name).is_some()
                     });
 
                 if !invalid_tools.is_empty() {
@@ -354,7 +361,8 @@ impl ToolsSubcommand {
                     let tools_to_untrust = valid_tools
                         .into_iter()
                         .filter_map(|tool_name| {
-                            if native_tool_names.contains(&tool_name) {
+                            // Check if it's a native tool by any alias
+                            if ToolMetadata::get_by_any_alias(&tool_name).is_some() {
                                 Some(tool_name)
                             } else {
                                 existing_custom_tools
@@ -364,19 +372,21 @@ impl ToolsSubcommand {
                         })
                         .collect::<Vec<_>>();
 
-                    session.conversation.agents.untrust_tools(&tools_to_untrust);
+                    if !tools_to_untrust.is_empty() {
+                        session.conversation.agents.untrust_tools(&tools_to_untrust);
 
-                    queue!(
-                        session.stderr,
-                        StyledText::success_fg(),
-                        if tools_to_untrust.len() > 1 {
-                            style::Print(format!("\nTools '{}' are ", tools_to_untrust.join("', '")))
-                        } else {
-                            style::Print(format!("\nTool '{}' is ", tools_to_untrust[0]))
-                        },
-                        style::Print("set to per-request confirmation.\n"),
-                        StyledText::reset(),
-                    )?;
+                        queue!(
+                            session.stderr,
+                            StyledText::success_fg(),
+                            if tools_to_untrust.len() > 1 {
+                                style::Print(format!("\nTools '{}' are ", tools_to_untrust.join("', '")))
+                            } else {
+                                style::Print(format!("\nTool '{}' is ", tools_to_untrust[0]))
+                            },
+                            style::Print("set to per-request confirmation.\n"),
+                            StyledText::reset(),
+                        )?;
+                    }
                 }
             },
             Self::TrustAll => {

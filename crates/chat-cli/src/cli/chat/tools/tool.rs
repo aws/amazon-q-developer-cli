@@ -77,6 +77,11 @@ impl ToolMetadata {
     pub fn get_by_spec_name(spec_name: &str) -> Option<&'static ToolInfo> {
         Self::ALL.iter().copied().find(|info| info.spec_name == spec_name)
     }
+
+    /// Get ToolInfo by any alias (including spec_name and preferred_alias)
+    pub fn get_by_any_alias(alias: &str) -> Option<&'static ToolInfo> {
+        Self::ALL.iter().copied().find(|info| info.aliases.contains(&alias))
+    }
 }
 
 /// Check if a tool name matches any native tool (by any alias)
