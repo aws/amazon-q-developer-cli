@@ -182,6 +182,10 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
         })
         .collect();
 
+    let default_index = active_model_id
+        .and_then(|id| models.iter().position(|m| m.model_id == id))
+        .unwrap_or(0);
+
     let selection: Option<_> = match Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt(format!(
             "{}({}) {} · {}({}) {}",
@@ -193,7 +197,7 @@ pub async fn select_model(os: &Os, session: &mut ChatSession) -> Result<Option<C
             StyledText::secondary("to select model")
         ))
         .items(&labels)
-        .default(0)
+        .default(default_index)
         .interact_on_opt(&dialoguer::console::Term::stdout())
     {
         Ok(sel) => {
