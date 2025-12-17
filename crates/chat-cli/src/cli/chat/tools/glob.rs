@@ -39,6 +39,8 @@ const DEFAULT_MAX_RESULTS: usize = 200;
 const MAX_ALLOWED_DEPTH: usize = 100;
 /// Default maximum depth for directory traversal
 const DEFAULT_MAX_DEPTH: usize = 50;
+/// How often to yield to allow cancellation (every N entries)
+const YIELD_INTERVAL: u32 = 500;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Glob {
@@ -119,8 +121,15 @@ impl Glob {
         let max_results = self.limit.unwrap_or(DEFAULT_MAX_RESULTS);
         let mut file_paths: Vec<String> = Vec::new();
         let mut total_files: usize = 0;
+        let mut entry_count: u32 = 0;
 
         for entry in walker.flatten() {
+            // Yield periodically to allow cancellation (Ctrl+C handling)
+            entry_count += 1;
+            if entry_count % YIELD_INTERVAL == 0 {
+                tokio::task::yield_now().await;
+            }
+
             if entry.file_type().is_some_and(|ft| ft.is_file()) {
                 let path = entry.path();
 
