@@ -938,4 +938,12 @@ mod tests {
             "Expected Deny for denied path, got {result:?}",
         );
     }
+
+    #[test]
+    fn test_include_glob_matching() {
+        assert!(Grep::match_include("*.rs", "main.rs"));
+        assert!(Grep::match_include("*.{ts,tsx}", "component.ts"));
+        assert!(Grep::match_include("*.{ts,tsx}", "component.tsx"));
+        assert!(!Grep::match_include("*.{ts,tsx}", "component.js"));
+    }
 }
