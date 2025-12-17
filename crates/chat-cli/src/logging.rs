@@ -161,7 +161,25 @@ pub fn initialize_logging<T: AsRef<Path>>(args: LogArgs<T>) -> Result<LogGuard, 
     // Set up LSP layer to separate LSP logs from main chat logs
     let (lsp_layer, _lsp_file_guard) = if let Some(ref parent) = mcp_path {
         let lsp_path = parent.join("lsp.log");
-        let file = File::options().append(true).create(true).open(&lsp_path)?;
+        if args.delete_old_log_file {
+            std::fs::remove_file(&lsp_path).ok();
+        } else if lsp_path.exists() && std::fs::metadata(&lsp_path)?.len() > MAX_FILE_SIZE {
+            std::fs::remove_file(&lsp_path)?;
+        }
+        let file = if args.delete_old_log_file {
+            File::create(&lsp_path)?
+        } else {
+            File::options().append(true).create(true).open(&lsp_path)?
+        };
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(metadata) = file.metadata() {
+                let mut permissions = metadata.permissions();
+                permissions.set_mode(0o600);
+                file.set_permissions(permissions).ok();
+            }
+        }
         let (non_blocking, guard) = tracing_appender::non_blocking(file);
         let file_layer = fmt::layer()
             .with_line_number(true)
