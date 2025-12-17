@@ -12,6 +12,46 @@
     },
     {
       "type": "release",
+      "date": "2025-12-18",
+      "version": "1.23.0",
+      "title": "Version 1.23.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Introducing Subagents - Delegate complex tasks to specialized agents with live progress tracking"
+        },
+        {
+          "type": "added",
+          "description": "Introducing the Planner Agent - a specialized built-in agent for breaking down complex tasks into implementation plans"
+        },
+        {
+          "type": "added",
+          "description": "New grep and glob tools for advanced file searching and pattern matching"
+        },
+        {
+          "type": "added",
+          "description": "MCP registry support for governance of MCP tools"
+        },
+        {
+          "type": "added",
+          "description": "Multi-session support with interactive session picker"
+        },
+        {
+          "type": "added",
+          "description": "Default agent prompt, highlighting Kiro CLI capabilities"
+        },
+        {
+          "type": "added",
+          "description": "/model set-current-as-default command for persisting model selection"
+        },
+        {
+          "type": "fixed",
+          "description": "Improve LSP loading time for code intelligence tools"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-12-11",
       "version": "1.22.0",
       "title": "Version 1.22.0",
