@@ -22,6 +22,34 @@
       "required": []
     }
   },
+  "glob": {
+    "name": "glob",
+    "description": "Find files and directories whose paths match a glob pattern. Respects .gitignore. Prefer this over the bash 'find' command for listing or discovering paths. Returns JSON with totalFiles (count found), truncated (true if limited), and filePaths array. When truncated is true, just mention results are truncated, don't state the limit number.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pattern": {
+          "type": "string",
+          "description": "Glob pattern, e.g. \"**/*.rs\", \"src/**/*.{ts,tsx}\" or \"**/test*\"."
+        },
+        "path": {
+          "type": "string",
+          "description": "Root directory to search from. Only set this when the user explicitly mentions a directory path. In all other cases, omit this so the tool searches from the current working directory (the project root)."
+        },
+        "limit": {
+          "type": "integer",
+          "description": "Maximum files to return. If totalFiles exceeds this, truncated will be true."
+        },
+        "max_depth": {
+          "type": "integer",
+          "description": "Maximum directory depth to traverse. Increase for deep nested structures."
+        }
+      },
+      "required": [
+        "pattern"
+      ]
+    }
+  },
   "grep": {
     "name": "grep",
     "description": "Fast content search in files using regex. ALWAYS use this tool instead of 'grep', 'rg', or 'ag' commands in bash. Respects .gitignore. Use for: finding code patterns, searching for function definitions, locating string occurrences. When you use this tool, prefer to show the user a small list of representative matches (including file paths and line numbers) instead of only giving a high-level summary.",
