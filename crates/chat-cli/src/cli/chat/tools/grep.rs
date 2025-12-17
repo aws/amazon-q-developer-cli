@@ -9,7 +9,10 @@ use eyre::{
     Context,
     Result,
 };
-use globset::GlobBuilder;
+use globset::{
+    GlobBuilder,
+    GlobSetBuilder,
+};
 use grep_regex::RegexMatcherBuilder;
 use grep_searcher::sinks::UTF8;
 use grep_searcher::{
@@ -18,7 +21,10 @@ use grep_searcher::{
 };
 use ignore::WalkBuilder;
 use serde::Deserialize;
-use tracing::error;
+use tracing::{
+    error,
+    warn,
+};
 
 use super::{
     InvokeOutput,
@@ -32,6 +38,8 @@ use crate::cli::agent::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::paths;
+use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Constants: Maximum allowed values (hard limits for safety)
 const MAX_ALLOWED_MATCHES_PER_FILE: usize = 100;
@@ -515,51 +523,105 @@ impl Grep {
         Ok(())
     }
 
-    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
+    pub fn eval_perm(&self, os: &Os, agent: &Agent) -> PermissionEvalResult {
         #[derive(Debug, Deserialize)]
         #[serde(rename_all = "camelCase")]
         struct Settings {
             #[serde(default)]
+            allowed_paths: Vec<String>,
+            #[serde(default)]
             denied_paths: Vec<String>,
-            #[serde(default = "default_true")]
-            auto_allow: bool,
+            #[serde(default)]
+            allow_read_only: bool,
         }
 
-        fn default_true() -> bool {
-            true
-        }
+        // Check if tool is in agent's allowlist
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
 
-        match Self::INFO
+        // Get settings, default to empty object if not configured
+        let settings = Self::INFO
             .aliases
             .iter()
             .find_map(|alias| agent.tools_settings.get(*alias))
-        {
-            Some(settings) => {
-                let settings: Settings = match serde_json::from_value(settings.clone()) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        error!("Failed to deserialize grep settings: {:?}", e);
-                        return PermissionEvalResult::Allow;
-                    },
-                };
+            .cloned()
+            .unwrap_or_else(|| serde_json::json!({}));
 
-                // Check denied paths
-                if let Some(ref search_path) = self.path {
-                    for denied in &settings.denied_paths {
-                        if search_path.starts_with(denied) {
-                            return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
-                        }
-                    }
-                }
-
-                if settings.auto_allow {
-                    PermissionEvalResult::Allow
-                } else {
-                    PermissionEvalResult::Ask
-                }
+        let Settings {
+            mut allowed_paths,
+            denied_paths,
+            allow_read_only,
+        } = match serde_json::from_value::<Settings>(settings) {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to deserialize grep settings: {:?}", e);
+                return PermissionEvalResult::Ask;
             },
-            // grep is read-only, allow by default
-            None => PermissionEvalResult::Allow,
+        };
+
+        // Get and canonicalize the search path
+        let search_path = match &self.path {
+            Some(p) if !p.is_empty() => p.clone(),
+            _ => match os.env.current_dir() {
+                Ok(cwd) => cwd.to_string_lossy().to_string(),
+                Err(_) => return PermissionEvalResult::Ask,
+            },
+        };
+
+        let canonical_search_path = match paths::canonicalizes_path(os, &search_path) {
+            Ok(p) => p,
+            Err(_) => return PermissionEvalResult::Ask,
+        };
+
+        // Build deny set
+        let deny_set = {
+            let mut builder = GlobSetBuilder::new();
+            for path in &denied_paths {
+                let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
+                    continue;
+                };
+                if let Err(e) = paths::add_gitignore_globs(&mut builder, &canonical_path) {
+                    warn!("Failed to create glob from denied path: {path}: {e}");
+                }
+            }
+            builder.build()
+        };
+
+        // 1. Deny check first
+        if let Ok(deny_set) = deny_set {
+            if deny_set.is_match(&canonical_search_path) {
+                return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
+            }
+        }
+
+        // 2. If tool is in allowlist or allow_read_only is true, allow
+        if is_in_allowlist || allow_read_only {
+            return PermissionEvalResult::Allow;
+        }
+
+        // 3. Check allowed_paths + CWD
+        if let Ok(cwd) = os.env.current_dir() {
+            allowed_paths.push(cwd.to_string_lossy().to_string());
+        }
+
+        let allow_set = {
+            let mut builder = GlobSetBuilder::new();
+            for path in &allowed_paths {
+                let Ok(canonical_path) = paths::canonicalizes_path(os, path) else {
+                    continue;
+                };
+                if let Err(e) = paths::add_gitignore_globs(&mut builder, &canonical_path) {
+                    warn!("Failed to create glob from allowed path: {path}: {e}");
+                }
+            }
+            builder.build()
+        };
+
+        match allow_set {
+            Ok(allow_set) if allow_set.is_match(&canonical_search_path) => PermissionEvalResult::Allow,
+            _ => PermissionEvalResult::Ask,
         }
     }
 }
@@ -781,10 +843,54 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm() {
         use std::collections::HashMap;
+        use std::path::PathBuf;
 
         use crate::cli::agent::ToolSettingTarget;
 
-        let tool = Grep {
+        let os = Os::new().await.unwrap();
+        os.env.set_current_dir_for_test(PathBuf::from("/home/user/project"));
+
+        // Case 1: path outside CWD, default agent -> Ask
+        let tool_outside_cwd = Grep {
+            pattern: "test".to_string(),
+            path: Some("/tmp/other/path".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let default_agent = Agent::default();
+        let result = tool_outside_cwd.eval_perm(&os, &default_agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Ask),
+            "Expected Ask for path outside CWD, got {result:?}",
+        );
+
+        // Case 2: path inside CWD, default agent -> Allow
+        let tool_inside_cwd = Grep {
+            pattern: "test".to_string(),
+            path: Some("/home/user/project/src".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let result = tool_inside_cwd.eval_perm(&os, &default_agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Expected Allow for path inside CWD, got {result:?}",
+        );
+
+        // Case 3: path is None (defaults to CWD) -> Allow
+        let tool_no_path = Grep {
             pattern: "test".to_string(),
             path: None,
             include: None,
@@ -796,29 +902,75 @@ mod tests {
             max_depth: None,
         };
 
-        let os: Os = Os::new().await.unwrap();
+        let result = tool_no_path.eval_perm(&os, &default_agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Expected Allow when path is CWD, got {result:?}",
+        );
 
-        // Case 1: default agent -> Allow
-        let default_agent = Agent::default();
-        let result = tool.eval_perm(&os, &default_agent);
-        assert!(matches!(result, PermissionEvalResult::Allow));
+        // Case 4: allowReadOnly=true -> Allow anywhere
+        let tool_outside_cwd = Grep {
+            pattern: "test".to_string(),
+            path: Some("/tmp/other/path".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
 
-        // Case 2: agent disables autoAllow -> Ask
-        let agent = Agent {
+        let agent_allow_read = Agent {
             name: "test".to_string(),
             tools_settings: {
-                let mut map = HashMap::new();
-                map.insert(
+                let mut settings = HashMap::new();
+                settings.insert(
                     ToolSettingTarget("grep".to_string()),
-                    serde_json::json!({ "autoAllow": false }),
+                    serde_json::json!({ "allowReadOnly": true }),
                 );
-                map
+                settings
             },
             ..Default::default()
         };
 
-        let result = tool.eval_perm(&os, &agent);
-        assert!(matches!(result, PermissionEvalResult::Ask));
+        let result = tool_outside_cwd.eval_perm(&os, &agent_allow_read);
+        assert!(
+            matches!(result, PermissionEvalResult::Allow),
+            "Expected Allow with allowReadOnly=true, got {result:?}",
+        );
+
+        // Case 5: denied path -> Deny
+        let tool_denied = Grep {
+            pattern: "test".to_string(),
+            path: Some("/secret/path".to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: None,
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let agent_with_deny = Agent {
+            name: "test".to_string(),
+            tools_settings: {
+                let mut settings = HashMap::new();
+                settings.insert(
+                    ToolSettingTarget("grep".to_string()),
+                    serde_json::json!({ "deniedPaths": ["/secret"] }),
+                );
+                settings
+            },
+            ..Default::default()
+        };
+
+        let result = tool_denied.eval_perm(&os, &agent_with_deny);
+        assert!(
+            matches!(result, PermissionEvalResult::Deny(_)),
+            "Expected Deny for denied path, got {result:?}",
+        );
     }
 
     #[test]

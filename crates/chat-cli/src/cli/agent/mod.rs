@@ -85,6 +85,8 @@ const EXAMPLE_AGENT_NATIVE_TOOLS: &[&str] = &[
     ToolMetadata::THINKING.preferred_alias,
     ToolMetadata::TODO.preferred_alias,
     ToolMetadata::DELEGATE.preferred_alias,
+    ToolMetadata::GREP.preferred_alias,
+    ToolMetadata::GLOB.preferred_alias,
 ];
 
 #[derive(Debug, Error)]
@@ -971,8 +973,8 @@ impl Agents {
             name if ToolMetadata::INTROSPECT.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::THINKING.aliases.contains(&name) => "trusted (prerelease)".dark_green().bold(),
             name if ToolMetadata::TODO.aliases.contains(&name) => "trusted".dark_green().bold(),
-            name if ToolMetadata::GLOB.aliases.contains(&name) => "trusted".dark_green().bold(),
-            name if ToolMetadata::GREP.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::GLOB.aliases.contains(&name) => "trust working directory".dark_grey(),
+            name if ToolMetadata::GREP.aliases.contains(&name) => "trust working directory".dark_grey(),
             name if ToolMetadata::USE_SUBAGENT.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::SWITCH_TO_EXECUTION.aliases.contains(&name) => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
