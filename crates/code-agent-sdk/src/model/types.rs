@@ -118,6 +118,12 @@ pub struct FindReferencesByLocationRequest {
     pub row: u32,
     /// Column number (1-based) of the symbol
     pub column: u32,
+    /// Maximum number of references to return
+    pub limit: Option<u32>,
+    /// Number of references to skip (for pagination)
+    pub offset: Option<u32>,
+    /// Only include references within the workspace (exclude dependencies)
+    pub workspace_only: Option<bool>,
 }
 
 /// Request to rename a symbol.
@@ -229,6 +235,8 @@ pub struct CompletionRequest {
     pub symbol_type: Option<ApiSymbolKind>,
     /// Maximum number of results to return (default: 50)
     pub limit: Option<usize>,
+    /// Number of results to skip (for pagination)
+    pub offset: Option<usize>,
 }
 
 /// Request to open a file in the language server.

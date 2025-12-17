@@ -26,6 +26,12 @@ use crate::util::tool_permission_checker::is_tool_in_allowlist;
 /// Maximum number of results to display before showing "(x more items found)"
 const MAX_VISIBLE_RESULTS: usize = 20;
 
+/// Default limit for find_references results
+const DEFAULT_REFERENCES_LIMIT: usize = 500;
+
+/// Maximum limit for find_references results
+const MAX_REFERENCES_LIMIT: usize = 1000;
+
 /// Code intelligence operations using LSP servers for symbol search, references, definitions, and
 /// workspace analysis.
 #[derive(Debug, Clone, Deserialize)]
@@ -72,6 +78,10 @@ pub struct FindReferencesParams {
     pub file_path: String,
     pub row: i32,
     pub column: i32,
+    #[serde(default)]
+    pub limit: Option<usize>,
+    #[serde(default)]
+    pub workspace_only: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -120,10 +130,6 @@ pub struct LookupSymbolsParams {
 #[derive(Debug, Clone, Deserialize)]
 pub struct GetDiagnosticsParams {
     pub file_path: String,
-    #[serde(default)]
-    pub identifier: Option<String>,
-    #[serde(default)]
-    pub previous_result_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -416,30 +422,59 @@ impl Code {
                         file_path: std::path::PathBuf::from(&params.file_path),
                         row: params.row as u32,
                         column: params.column as u32,
+                        limit: Some(
+                            params
+                                .limit
+                                .unwrap_or(DEFAULT_REFERENCES_LIMIT)
+                                .min(MAX_REFERENCES_LIMIT) as u32,
+                        ),
+                        offset: None,
+                        workspace_only: Some(params.workspace_only.unwrap_or(true)),
                     };
 
                     match client.find_references_by_location(request).await {
-                        Ok(references) => {
+                        Ok(refs_result) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
-                            if references.is_empty() {
+                            if refs_result.references.is_empty() {
                                 queue!(_stdout, style::Print("\nNo references found\n"),)?;
                                 result = "No references found".to_string();
                             } else {
                                 queue!(_stdout, style::Print("\n"))?;
-                                Self::render_references(&references, _stdout)?;
-                                result = format!("{references:?}");
+                                Self::render_references(&refs_result.references, _stdout)?;
+
+                                let truncated = refs_result.total_count - refs_result.references.len();
+                                result = format!("{:?}", refs_result.references);
+                                if truncated > 0 {
+                                    result.push_str(&format!("\n\nNote: {truncated} more references available. Increase limit parameter to see more (max: {MAX_REFERENCES_LIMIT})."));
+                                }
                             }
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
+                            let (display_msg, model_msg) =
+                                if let Some(code_agent_sdk::CodeIntelligenceError::InvalidPosition { .. }) =
+                                    e.downcast_ref::<code_agent_sdk::CodeIntelligenceError>()
+                                {
+                                    (
+                                        format!("Invalid position: line {}, column {}", params.row, params.column),
+                                        format!(
+                                            "Position error at line {}, column {}. Try adjusting the position.",
+                                            params.row, params.column
+                                        ),
+                                    )
+                                } else {
+                                    let msg = format!("Failed to find references: {e}");
+                                    (msg.clone(), msg)
+                                };
+
                             queue!(
                                 _stdout,
                                 StyledText::error_fg(),
-                                style::Print("Failed to find references: "),
+                                style::Print("Find References Error: "),
                                 StyledText::reset(),
-                                style::Print(&format!("{e}\n")),
+                                style::Print(&format!("{display_msg}\n")),
                             )?;
-                            result = format!("Failed to find references: {e}");
+                            result = model_msg;
                         },
                     }
                 },
@@ -721,8 +756,8 @@ impl Code {
                 Code::GetDiagnostics(params) => {
                     let request = code_agent_sdk::model::types::GetDocumentDiagnosticsRequest {
                         file_path: std::path::PathBuf::from(&params.file_path),
-                        identifier: params.identifier.clone(),
-                        previous_result_id: params.previous_result_id.clone(),
+                        identifier: None,
+                        previous_result_id: None,
                     };
 
                     match client.get_document_diagnostics(request).await {
@@ -794,33 +829,30 @@ impl Code {
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
-                            let err_str = e.to_string().to_lowercase();
-                            let error_msg = if err_str.contains("position")
-                                || err_str.contains("line")
-                                || err_str.contains("column")
-                                || err_str.contains("range")
-                            {
-                                format!(
-                                    "Position error at line {}, column {}. Try adjusting the position.",
-                                    params.row, params.column
-                                )
-                            } else if e.to_string().contains("LSP server error") {
-                                format!(
-                                    "LSP server error: {}",
-                                    e.to_string().lines().next().unwrap_or("Unknown error")
-                                )
-                            } else {
-                                format!("Failed to get hover information: {e}")
-                            };
+                            let (display_msg, model_msg) =
+                                if let Some(code_agent_sdk::CodeIntelligenceError::InvalidPosition { .. }) =
+                                    e.downcast_ref::<code_agent_sdk::CodeIntelligenceError>()
+                                {
+                                    (
+                                        format!("Invalid position: line {}, column {}", params.row, params.column),
+                                        format!(
+                                            "Position error at line {}, column {}. Try adjusting the position.",
+                                            params.row, params.column
+                                        ),
+                                    )
+                                } else {
+                                    let msg = format!("Failed to get hover information: {e}");
+                                    (msg.clone(), msg)
+                                };
 
                             queue!(
                                 _stdout,
                                 StyledText::error_fg(),
                                 style::Print("Hover Error: "),
                                 StyledText::reset(),
-                                style::Print(&format!("{error_msg}\n")),
+                                style::Print(&format!("{display_msg}\n")),
                             )?;
-                            result = error_msg;
+                            result = model_msg;
                         },
                     }
                 },
@@ -839,6 +871,7 @@ impl Code {
                         filter: params.filter.clone(),
                         symbol_type,
                         limit: Some(params.limit),
+                        offset: None,
                     };
 
                     match client.completion(request).await {
@@ -953,33 +986,30 @@ impl Code {
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
-                            let err_str = e.to_string().to_lowercase();
-                            let error_msg = if err_str.contains("position")
-                                || err_str.contains("line")
-                                || err_str.contains("column")
-                                || err_str.contains("range")
-                            {
-                                format!(
-                                    "Position error at line {}, column {}. Try adjusting the position.",
-                                    params.row, params.column
-                                )
-                            } else if e.to_string().contains("LSP server error") {
-                                format!(
-                                    "LSP server error: {}",
-                                    e.to_string().lines().next().unwrap_or("Unknown error")
-                                )
-                            } else {
-                                format!("Failed to get completions: {e}")
-                            };
+                            let (display_msg, model_msg) =
+                                if let Some(code_agent_sdk::CodeIntelligenceError::InvalidPosition { .. }) =
+                                    e.downcast_ref::<code_agent_sdk::CodeIntelligenceError>()
+                                {
+                                    (
+                                        format!("Invalid position: line {}, column {}", params.row, params.column),
+                                        format!(
+                                            "Position error at line {}, column {}. Try adjusting the position.",
+                                            params.row, params.column
+                                        ),
+                                    )
+                                } else {
+                                    let msg = format!("Failed to get completions: {e}");
+                                    (msg.clone(), msg)
+                                };
 
                             queue!(
                                 _stdout,
                                 StyledText::error_fg(),
                                 style::Print("Completion Error: "),
                                 StyledText::reset(),
-                                style::Print(&format!("{error_msg}\n")),
+                                style::Print(&format!("{display_msg}\n")),
                             )?;
-                            result = error_msg;
+                            result = model_msg;
                         },
                     }
                 },
@@ -1229,6 +1259,25 @@ impl Code {
                     style::Print(&format!("{}:{}", params.row, params.column)),
                     StyledText::reset(),
                 )?;
+
+                let mut options = Vec::new();
+                if let Some(limit) = params.limit {
+                    options.push(format!("limit={limit}"));
+                }
+                if let Some(workspace_only) = params.workspace_only {
+                    options.push(format!("workspace_only={workspace_only}"));
+                }
+
+                if !options.is_empty() {
+                    queue!(
+                        output,
+                        style::Print(" ["),
+                        StyledText::info_fg(),
+                        style::Print(options.join(", ")),
+                        StyledText::reset(),
+                        style::Print("]"),
+                    )?;
+                }
             },
             Code::GotoDefinition(params) => {
                 queue!(

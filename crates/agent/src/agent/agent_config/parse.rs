@@ -74,8 +74,14 @@ impl<'a> ToolNameKind<'a> {
             return Ok(Self::All);
         }
 
-        if name == "@builtin" {
+        if matches!(name, "@builtin" | "@builtin/" | "@builtin/*") {
             return Ok(Self::AllBuiltIn);
+        } else if let Some(rest) = name.strip_prefix("@builtin/") {
+            if rest.contains("*") {
+                return Ok(Self::BuiltInGlob(rest));
+            } else {
+                return Ok(Self::BuiltIn(rest));
+            }
         }
 
         // Check for MCP tool

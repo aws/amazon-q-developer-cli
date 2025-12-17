@@ -9,6 +9,8 @@ use crate::api_client::error::ConverseStreamErrorKind;
 use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 
+mod agent_keybinds;
+mod agent_swap;
 pub mod cli;
 mod consts;
 pub mod context;
@@ -136,6 +138,11 @@ use tool_manager::{
     PromptQueryResult,
     ToolManager,
     ToolManagerBuilder,
+};
+use tools::delegate::{
+    AgentExecution,
+    save_agent_execution,
+    status_all_agents,
 };
 use tools::gh_issue::GhIssueContext;
 use tools::{
@@ -516,12 +523,14 @@ impl ChatArgs {
             None
         };
 
+        let input_source = InputSource::new(os, prompt_request_sender, prompt_response_receiver, &agents)?;
+
         ChatSession::new(
             os,
             &conversation_id,
             agents,
             input,
-            InputSource::new(os, prompt_request_sender, prompt_response_receiver)?,
+            input_source,
             resume_session_id,
             || terminal::window_size().map(|s| s.columns.into()).ok(),
             tool_manager,
@@ -547,9 +556,68 @@ const WELCOME_ANNOUNCEMENT_MAX_SHOW_COUNT: i64 = 2;
 const GREETING_BREAK_POINT: usize = 80;
 
 const RESPONSE_TIMEOUT_CONTENT: &str = "Response timed out - message took too long to generate";
-
 fn trust_all_text() -> String {
     ui_text::trust_all_warning()
+}
+
+fn format_rich_notification(executions: &[AgentExecution]) -> String {
+    let count = executions.len();
+    let header = if count == 1 {
+        "1 Background Task Completed".to_string()
+    } else {
+        format!("{count} Background Tasks Completed")
+    };
+
+    // Plain text notification - will be colored by highlight_prompt
+    let mut notification = format!("{header}\n\n");
+
+    for (i, execution) in executions.iter().enumerate() {
+        let status_icon = match execution.status {
+            tools::delegate::AgentStatus::Completed => "✓ SUCCESS",
+            tools::delegate::AgentStatus::Failed => "✗ FAILED",
+            tools::delegate::AgentStatus::Running => "⏳ RUNNING", // shouldn't happen but just in case
+        };
+
+        let time_ago = if let Some(completed_at) = execution.completed_at {
+            let duration = chrono::Utc::now().signed_duration_since(completed_at);
+            if duration.num_minutes() < 1 {
+                "Completed just now".to_string()
+            } else if duration.num_minutes() < 60 {
+                format!("Completed {} min ago", duration.num_minutes())
+            } else if duration.num_hours() < 24 {
+                format!("Completed {} hr ago", duration.num_hours())
+            } else {
+                format!("Completed {} days ago", duration.num_days())
+            }
+        } else {
+            "unknown".to_string()
+        };
+
+        // Shorten CWD path - replace home directory with ~
+        let shortened_cwd = if let Ok(home) = std::env::var("HOME") {
+            execution.cwd.replace(&home, "~")
+        } else {
+            execution.cwd.clone()
+        };
+
+        let summary = execution.summary.as_deref().unwrap_or("No summary available");
+
+        notification.push_str(&format!(
+            "[{}] {} · {} · {} · {}\n\nTask: {}\n\n{}\n\n",
+            i + 1,
+            execution.agent,
+            shortened_cwd,
+            status_icon,
+            time_ago,
+            execution.task,
+            summary
+        ));
+    }
+
+    // Add footer with instructions
+    notification.push_str("To read the full details of any task, ask the delegate tool.\n");
+
+    notification
 }
 
 const TOOL_BULLET: &str = "- ";
@@ -694,6 +762,8 @@ pub struct ChatSession {
     ctrlc_rx: broadcast::Receiver<()>,
     wrap: Option<WrapMode>,
     prompt_ack_rx: std::sync::mpsc::Receiver<()>,
+    /// Additional context to be added to the next user message (e.g., delegate task summaries)
+    pending_additional_context: Option<String>,
 }
 
 impl ChatSession {
@@ -860,6 +930,7 @@ impl ChatSession {
             ctrlc_rx,
             wrap,
             prompt_ack_rx,
+            pending_additional_context: None,
         })
     }
 
@@ -1606,6 +1677,13 @@ impl ChatSession {
         let hist = self.conversation.history();
         debug!(?strategy, ?hist, "compacting history");
 
+        // Improve handling where initial message itself is too big.
+        let history_len = self.conversation.history().len();
+        let adjusted_strategy = CompactStrategy {
+            messages_to_exclude: strategy.messages_to_exclude.min(history_len.saturating_sub(1)),
+            ..strategy
+        };
+
         if self.conversation.history().is_empty() {
             execute!(
                 self.stderr,
@@ -1619,7 +1697,7 @@ impl ChatSession {
             });
         }
 
-        if strategy.truncate_large_messages {
+        if adjusted_strategy.truncate_large_messages {
             info!("truncating large messages");
             execute!(
                 self.stderr,
@@ -1634,7 +1712,7 @@ impl ChatSession {
 
         let summary_state = self
             .conversation
-            .create_summary_request(os, custom_prompt.as_ref(), strategy)
+            .create_summary_request(os, custom_prompt.as_ref(), adjusted_strategy)
             .await?;
 
         if self.interactive {
@@ -1669,12 +1747,12 @@ impl ChatSession {
                     ChatError::SendMessage(err)
                         if matches!(err.source.kind, ConverseStreamErrorKind::ContextWindowOverflow) =>
                     {
-                        error!(?strategy, "failed to send compaction request");
+                        error!(?adjusted_strategy, "failed to send compaction request");
                         // If there's only two messages in the history, we have no choice but to
                         // truncate it. We use two messages since it's almost guaranteed to contain:
                         // 1. A small user prompt
                         // 2. A large user tool use result
-                        if history_len <= 2 && !strategy.truncate_large_messages {
+                        if history_len <= 2 && !adjusted_strategy.truncate_large_messages {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
@@ -1688,23 +1766,23 @@ impl ChatSession {
 
                         // Otherwise, we will first exclude the most recent message, and only then
                         // truncate. If both of these have already been set, then return an error.
-                        if history_len > 2 && strategy.messages_to_exclude < 1 {
+                        if history_len > 2 && adjusted_strategy.messages_to_exclude < 1 {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
                                 strategy: CompactStrategy {
                                     messages_to_exclude: 1,
-                                    ..strategy
+                                    ..adjusted_strategy
                                 },
                             });
-                        } else if !strategy.truncate_large_messages {
+                        } else if !adjusted_strategy.truncate_large_messages {
                             return Ok(ChatState::CompactHistory {
                                 prompt: custom_prompt,
                                 show_summary,
                                 strategy: CompactStrategy {
                                     truncate_large_messages: true,
                                     max_message_length: 25_000,
-                                    ..strategy
+                                    ..adjusted_strategy
                                 },
                             });
                         } else {
@@ -1769,7 +1847,7 @@ impl ChatSession {
         }
 
         self.conversation
-            .replace_history_with_summary(summary.clone(), strategy, request_metadata);
+            .replace_history_with_summary(summary.clone(), adjusted_strategy, request_metadata);
 
         // If a next message is set, then retry the request.
         let should_retry = self.conversation.next_user_message().is_some();
@@ -2090,7 +2168,7 @@ impl ChatSession {
     }
 
     /// Read input from the user.
-    async fn prompt_user(&mut self, os: &Os, skip_printing_tools: bool) -> Result<ChatState, ChatError> {
+    async fn prompt_user(&mut self, os: &mut Os, skip_printing_tools: bool) -> Result<ChatState, ChatError> {
         execute!(self.stderr, cursor::Show)?;
 
         // Check token usage and display warnings if needed
@@ -3710,6 +3788,16 @@ impl ChatSession {
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
+            // Check for pending agent swap FIRST (like feature branch)
+            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
+                return Some(format!("/agent swap {agent_name}"));
+            }
+
+            // Check for pending prompt (from /plan command)
+            if let Some(pending_prompt) = self.input_source.agent_swap_state().take_pending_prompt() {
+                return Some(pending_prompt);
+            }
+
             match (self.input_source.read_line(Some(prompt)), ctrl_c) {
                 (Ok(Some(line)), _) => {
                     if line.trim().is_empty() {
@@ -3754,13 +3842,35 @@ impl ChatSession {
             None
         };
 
-        prompt::generate_prompt(
+        let mut generated_prompt = prompt::generate_prompt(
             profile.as_deref(),
             all_trusted,
             tangent_mode,
             code_intelligence,
             usage_percentage,
-        )
+        );
+
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
+            if let Ok(mut executions) = status_all_agents(os).await {
+                if !executions.is_empty() {
+                    let rich_notification = format_rich_notification(&executions);
+                    generated_prompt = format!("{rich_notification}\n{generated_prompt}");
+
+                    // Use the notification text as context for the model (it's already plain text)
+                    self.pending_additional_context = Some(rich_notification.clone());
+
+                    // Mark all shown tasks as user_notified
+                    for execution in &mut executions {
+                        execution.user_notified = true;
+                        if let Err(e) = save_agent_execution(os, execution).await {
+                            eprintln!("Failed to mark agent execution as notified: {e}");
+                        }
+                    }
+                }
+            }
+        }
+
+        generated_prompt
     }
 
     async fn send_tool_use_telemetry(&mut self, os: &Os) {

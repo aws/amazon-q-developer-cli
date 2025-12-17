@@ -12,6 +12,7 @@ use super::workspace_service::WorkspaceService;
 use crate::model::entities::{
     DefinitionInfo,
     ReferenceInfo,
+    ReferencesResult,
     SymbolInfo,
 };
 use crate::model::types::*;
@@ -58,14 +59,14 @@ pub trait SymbolService: Send + Sync {
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FindReferencesByLocationRequest,
-    ) -> Result<Vec<ReferenceInfo>>;
+    ) -> Result<ReferencesResult>;
 
     /// Find references by symbol name
     async fn find_references_by_name(
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FindReferencesByNameRequest,
-    ) -> Result<Vec<ReferenceInfo>>;
+    ) -> Result<ReferencesResult>;
 
     /// Get diagnostics for a document using pull model
     async fn get_document_diagnostics(
@@ -310,7 +311,7 @@ impl LspSymbolService {
     }
 }
 
-const MAX_RESULTS: u32 = 50;
+const MAX_RESULTS: u32 = 100;
 const DEFAULT_RESULTS: u32 = 50;
 
 #[async_trait::async_trait]
@@ -535,7 +536,7 @@ impl SymbolService for LspSymbolService {
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FindReferencesByLocationRequest,
-    ) -> Result<Vec<ReferenceInfo>> {
+    ) -> Result<ReferencesResult> {
         // Ensure initialized
         if !workspace_manager.is_initialized() {
             workspace_manager.initialize().await?;
@@ -570,18 +571,46 @@ impl SymbolService for LspSymbolService {
             partial_result_params: Default::default(),
         };
 
-        let references = client.find_references(params).await?.unwrap_or_default();
-        Ok(references
-            .iter()
-            .map(|r| ReferenceInfo::from_location(r, workspace_manager.workspace_root()))
-            .collect())
+        let lsp_references = client.find_references(params).await?.unwrap_or_default();
+        let workspace_root = workspace_manager.workspace_root();
+
+        // Filter to workspace only if requested
+        let filtered_refs: Vec<_> = if request.workspace_only.unwrap_or(false) {
+            lsp_references
+                .iter()
+                .filter(|r| {
+                    r.uri
+                        .to_file_path()
+                        .map(|p| p.starts_with(workspace_root))
+                        .unwrap_or(false)
+                })
+                .collect()
+        } else {
+            lsp_references.iter().collect()
+        };
+
+        let total_count = filtered_refs.len();
+        let offset = request.offset.unwrap_or(0) as usize;
+        let limit = request.limit.map(|l| l as usize).unwrap_or(usize::MAX);
+
+        let references: Vec<ReferenceInfo> = filtered_refs
+            .into_iter()
+            .skip(offset)
+            .take(limit)
+            .map(|r| ReferenceInfo::from_location(r, workspace_root))
+            .collect();
+
+        Ok(ReferencesResult {
+            references,
+            total_count,
+        })
     }
 
     async fn find_references_by_name(
         &self,
         workspace_manager: &mut WorkspaceManager,
         request: FindReferencesByNameRequest,
-    ) -> Result<Vec<ReferenceInfo>> {
+    ) -> Result<ReferencesResult> {
         // Find the symbol first
         let find_request = FindSymbolsRequest {
             symbol_name: request.symbol_name,
@@ -600,11 +629,17 @@ impl SymbolService for LspSymbolService {
                 file_path: workspace_file_path,
                 row: symbol.start_row - 1,       // Convert back to 0-based
                 column: symbol.start_column - 1, // Convert back to 0-based
+                limit: None,
+                offset: None,
+                workspace_only: None,
             };
             self.find_references_by_location(workspace_manager, location_request)
                 .await
         } else {
-            Ok(Vec::new())
+            Ok(ReferencesResult {
+                references: Vec::new(),
+                total_count: 0,
+            })
         }
     }
 
@@ -810,8 +845,12 @@ impl SymbolService for LspSymbolService {
                 // Set total_count before truncation
                 completion_info.total_count = completion_info.items.len();
 
-                // Apply limit (default 50, same as search_symbols)
+                // Apply offset and limit
+                let offset = request.offset.unwrap_or(0);
                 let limit = request.limit.unwrap_or(MAX_RESULTS as usize);
+                if offset > 0 {
+                    completion_info.items = completion_info.items.into_iter().skip(offset).collect();
+                }
                 completion_info.items.truncate(limit);
 
                 Ok(Some(completion_info))

@@ -10,6 +10,7 @@ use eyre::Result;
 use super::ToolInfo;
 use super::code::Code;
 use super::custom_tool::CustomTool;
+use super::delegate::Delegate;
 use super::execute::ExecuteCommand;
 use super::fs_read::FsRead;
 use super::fs_write::FsWrite;
@@ -47,11 +48,13 @@ impl ToolMetadata {
         Self::CODE,
         Self::THINKING,
         Self::TODO,
+        Self::DELEGATE,
         Self::WEB_SEARCH,
         Self::WEB_FETCH,
         Self::USE_SUBAGENT,
     ];
     pub const CODE: &ToolInfo = &Code::INFO;
+    pub const DELEGATE: &ToolInfo = &Delegate::INFO;
     pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
     pub const FS_READ: &ToolInfo = &FsRead::INFO;
     pub const FS_WRITE: &ToolInfo = &FsWrite::INFO;
@@ -93,6 +96,7 @@ pub enum Tool {
     Code(Code),
     Thinking(Thinking),
     Todo(TodoList),
+    Delegate(Delegate),
     WebSearch(WebSearch),
     WebFetch(WebFetch),
     UseSubagent(UseSubagent),
@@ -115,6 +119,7 @@ impl Tool {
             Tool::Code(_) => Code::INFO.preferred_alias,
             Tool::Thinking(_) => Thinking::INFO.preferred_alias,
             Tool::Todo(_) => TodoList::INFO.preferred_alias,
+            Tool::Delegate(_) => Delegate::INFO.preferred_alias,
             Tool::WebSearch(_) => WebSearch::INFO.preferred_alias,
             Tool::WebFetch(_) => WebFetch::INFO.preferred_alias,
             Tool::UseSubagent(_) => UseSubagent::INFO.preferred_alias,
@@ -137,6 +142,7 @@ impl Tool {
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
             Tool::Code(_) => Code::eval_perm(os, agent),
+            Tool::Delegate(_) => PermissionEvalResult::Allow,
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
             Tool::UseSubagent(_use_subagent) => PermissionEvalResult::Allow,
@@ -167,6 +173,7 @@ impl Tool {
             Tool::Code(code) => code.invoke(os, stdout, code_intelligence_client).await,
             Tool::Thinking(think) => think.invoke(stdout).await,
             Tool::Todo(todo) => todo.invoke(os, stdout).await,
+            Tool::Delegate(delegate) => delegate.invoke(os, stdout, agents).await,
             Tool::WebSearch(web_search) => web_search.invoke(os, stdout).await,
             Tool::WebFetch(web_fetch) => web_fetch.invoke(os, stdout).await,
             Tool::UseSubagent(use_subagent) => use_subagent.invoke(os, agents).await,
@@ -197,6 +204,7 @@ impl Tool {
                 Tool::Code(code) => code.queue_description(self, &mut buf),
                 Tool::Thinking(thinking) => thinking.queue_description(self, &mut buf),
                 Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(self, &mut buf),
                 Tool::WebSearch(web_search) => web_search.queue_description(self, &mut buf),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, &mut buf),
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, &mut buf),
@@ -229,6 +237,7 @@ impl Tool {
                 Tool::Code(code) => code.queue_description(self, output),
                 Tool::Thinking(thinking) => thinking.queue_description(self, output),
                 Tool::Todo(_) => Ok(()),
+                Tool::Delegate(delegate) => delegate.queue_description(self, output),
                 Tool::WebSearch(web_search) => web_search.queue_description(self, output),
                 Tool::WebFetch(web_fetch) => web_fetch.queue_description(self, output),
                 Tool::UseSubagent(use_subagent) => use_subagent.queue_description(self, output),
@@ -254,6 +263,7 @@ impl Tool {
             Tool::Code(code) => code.validate(os).await,
             Tool::Thinking(think) => think.validate(os).await,
             Tool::Todo(todo) => todo.validate(os).await,
+            Tool::Delegate(_) => Ok(()),
             Tool::WebSearch(web_search) => web_search.validate(os).await,
             Tool::WebFetch(web_fetch) => web_fetch.validate(os).await,
             Tool::UseSubagent(use_subagent) => use_subagent.validate(),

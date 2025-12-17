@@ -25,14 +25,26 @@ pub fn evaluate_tool_permission<P: SystemProvider>(
 ) -> Result<PermissionEvalResult, UtilError> {
     let tn = tool.canonical_tool_name();
     let tool_name = tn.as_full_name();
-    let is_allowed = matches_any_pattern(allowed_tools, &tool_name)
-        || if let ToolKind::BuiltIn(built_in_tool) = tool {
-            built_in_tool
-                .aliases()
-                .is_some_and(|aliases| matches_any_pattern(aliases, &tool_name))
-        } else {
-            false
-        };
+    let is_allowed = match tool {
+        ToolKind::BuiltIn(built_in_tool) => {
+            allowed_tools.contains("@builtin")
+                || allowed_tools.contains("@builtin/")
+                || allowed_tools.contains("@builtin/*")
+                || matches_any_pattern(allowed_tools, tool_name)
+                || built_in_tool.aliases().is_some_and(|aliases| {
+                    aliases.iter().any(|alias| {
+                        matches_any_pattern(allowed_tools, alias)
+                            || matches_any_pattern(allowed_tools, format!("@builtin/{alias}"))
+                    })
+                })
+        },
+        ToolKind::Mcp(mcp_tool) => {
+            let server_name = &mcp_tool.server_name;
+            allowed_tools.contains(&format!("@{server_name}"))
+                || allowed_tools.contains(&format!("@{server_name}/"))
+                || matches_any_pattern(allowed_tools, &tool_name)
+        },
+    };
 
     match tool {
         ToolKind::BuiltIn(built_in) => match built_in {
@@ -206,6 +218,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tools::fs_read::FsRead;
+    use crate::tools::mcp::McpTool;
     use crate::util::test::TestProvider;
 
     #[derive(Debug)]
@@ -229,6 +243,80 @@ mod tests {
                 expected: value.3,
             }
         }
+    }
+
+    #[test]
+    fn test_evaluate_basic_tool_permission() {
+        let provider = TestProvider::new();
+        let fs_read_tool = ToolKind::BuiltIn(BuiltInTool::FileRead(FsRead { ops: vec![] }));
+        let mut allowed_tools = HashSet::new();
+
+        // Test builtin tool with @builtin wildcard
+        allowed_tools.insert("@builtin".to_string());
+        let settings = ToolSettings::default();
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test builtin tool with @builtin/ prefix
+        allowed_tools.clear();
+        allowed_tools.insert("@builtin/".to_string());
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test builtin tool with @builtin/* pattern
+        allowed_tools.clear();
+        allowed_tools.insert("@builtin/*".to_string());
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test builtin tool with specific tool name
+        allowed_tools.clear();
+        allowed_tools.insert("@builtin/fs_read".to_string());
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test builtin tool with wildcard
+        allowed_tools.clear();
+        allowed_tools.insert("@builtin/fs_*".to_string());
+        let result_fs_read = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        let result_fs_write = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result_fs_read, Ok(PermissionEvalResult::Allow)));
+        assert!(matches!(result_fs_write, Ok(PermissionEvalResult::Allow)));
+
+        allowed_tools.clear();
+        allowed_tools.insert("fs_*".to_string());
+        let result_fs_read = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        let result_fs_write = evaluate_tool_permission(&allowed_tools, &settings, &fs_read_tool, &provider);
+        assert!(matches!(result_fs_read, Ok(PermissionEvalResult::Allow)));
+        assert!(matches!(result_fs_write, Ok(PermissionEvalResult::Allow)));
+
+        // Test MCP tool with server name
+        allowed_tools.clear();
+        allowed_tools.insert("@test_server".to_string());
+        let mcp_tool = ToolKind::Mcp(McpTool {
+            server_name: "test_server".to_string(),
+            tool_name: "test_tool".to_string(),
+            params: None,
+        });
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &mcp_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test MCP tool with server name and slash
+        allowed_tools.clear();
+        allowed_tools.insert("@test_server/".to_string());
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &mcp_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test MCP tool with full tool name pattern
+        allowed_tools.clear();
+        allowed_tools.insert("@test_server/*".to_string());
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &mcp_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Allow)));
+
+        // Test MCP tool not allowed should ask
+        allowed_tools.clear();
+        let result = evaluate_tool_permission(&allowed_tools, &settings, &mcp_tool, &provider);
+        assert!(matches!(result, Ok(PermissionEvalResult::Ask)));
     }
 
     #[test]

@@ -20,6 +20,7 @@ pub use model::entities::{
     DiagnosticInfo as ApiDiagnosticInfo,
     DiagnosticSeverity as ApiDiagnosticSeverity,
     ReferenceInfo as ApiReferenceInfo,
+    ReferencesResult as ApiReferencesResult,
     SymbolInfo as ApiSymbolInfo,
 };
 pub use model::*;

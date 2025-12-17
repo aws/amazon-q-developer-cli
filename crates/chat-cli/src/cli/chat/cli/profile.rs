@@ -38,7 +38,7 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::constants::DEFAULT_AGENT_NAME;
+use crate::constants::BUILT_IN_AGENTS;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -170,7 +170,7 @@ impl AgentSubcommand {
                             .as_ref()
                             .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
                             .unwrap_or_else(|| {
-                                if profile.name == DEFAULT_AGENT_NAME {
+                                if BUILT_IN_AGENTS.contains(&profile.name.as_str()) {
                                     StyledText::secondary("(Built-in)")
                                 } else {
                                     "**No path found**".to_string()
@@ -521,6 +521,7 @@ impl AgentSubcommand {
             Self::Swap { name } => {
                 if let Some(name) = name {
                     session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                    session.input_source.agent_swap_state().set_current_agent(name.clone());
                 } else {
                     let labels = session
                         .conversation
@@ -560,6 +561,7 @@ impl AgentSubcommand {
 
                     if let Some(name) = name {
                         session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                        session.input_source.agent_swap_state().set_current_agent(name.clone());
                     }
                 }
             },
