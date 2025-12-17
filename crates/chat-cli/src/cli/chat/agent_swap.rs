@@ -6,6 +6,7 @@ use std::sync::{
 use crate::constants::{
     DEFAULT_AGENT_NAME,
     PLANNER_AGENT_NAME,
+    PLANNER_WELCOME_MESSAGE,
 };
 
 /// Shared state for agent swap operations
@@ -18,6 +19,7 @@ pub struct AgentSwapState {
 struct AgentSwapStateInner {
     pending_swap: Option<String>,
     pending_prompt: Option<String>,
+    pending_message: Option<String>,
     current_agent: String,
     previous_agent: Option<String>,
 }
@@ -41,6 +43,7 @@ impl AgentSwapState {
             inner.previous_agent = Some(inner.current_agent.clone());
         }
         inner.current_agent = PLANNER_AGENT_NAME.to_string();
+        inner.pending_message = Some(PLANNER_WELCOME_MESSAGE.to_string());
         PLANNER_AGENT_NAME.to_string()
     }
 
@@ -87,5 +90,13 @@ impl AgentSwapState {
 
     pub fn set_previous_agent(&self, agent_name: String) {
         self.inner.lock().unwrap().previous_agent = Some(agent_name);
+    }
+
+    pub fn set_pending_message(&self, message: String) {
+        self.inner.lock().unwrap().pending_message = Some(message);
+    }
+
+    pub fn take_pending_message(&self) -> Option<String> {
+        self.inner.lock().unwrap().pending_message.take()
     }
 }

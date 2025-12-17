@@ -1,4 +1,7 @@
-use crate::constants::DEFAULT_AGENT_NAME;
+use crate::constants::{
+    DEFAULT_AGENT_NAME,
+    PLANNER_AGENT_NAME,
+};
 
 /// Components extracted from a prompt string
 #[derive(Debug, PartialEq)]
@@ -103,7 +106,13 @@ pub fn generate_prompt(
     let warning_symbol = if warning { "!" } else { "" };
     let profile_part = current_profile
         .filter(|&p| p != DEFAULT_AGENT_NAME)
-        .map(|p| format!("[{p}] "))
+        .map(|p| {
+            if p == PLANNER_AGENT_NAME {
+                "[plan] ".to_string()
+            } else {
+                format!("[{p}] ")
+            }
+        })
         .unwrap_or_default();
 
     let percentage_part = usage_percentage.map(|p| format!("{p:.0}% ")).unwrap_or_default();

@@ -480,9 +480,15 @@ impl Highlighter for ChatHelper {
                 result.push('\n');
             }
 
-            // Add profile part if present (profile indicator cyan)
+            // Add profile part if present
             if let Some(profile) = components.profile {
-                result.push_str(&StyledText::profile(&format!("[{profile}] ")));
+                if profile == "plan" {
+                    // Special styling for planner agent: [plan] in purple (brand color)
+                    result.push_str(&StyledText::brand("[plan] "));
+                } else {
+                    // Default styling for other agents: [agent] in cyan (profile indicator)
+                    result.push_str(&StyledText::profile(&format!("[{profile}] ")));
+                }
             }
 
             // Add percentage part if present (colored by usage level)

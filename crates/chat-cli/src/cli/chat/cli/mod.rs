@@ -223,6 +223,12 @@ impl SlashCommand {
                     .agent_swap_state()
                     .set_current_agent(PLANNER_AGENT_NAME.to_string());
 
+                // Set welcome message to be displayed on next prompt
+                session
+                    .input_source
+                    .agent_swap_state()
+                    .set_pending_message(crate::constants::PLANNER_WELCOME_MESSAGE.to_string());
+
                 // If prompt provided, handle it
                 if let Some(prompt) = prompt {
                     // Add to transcript and return as HandleInput to process immediately

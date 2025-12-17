@@ -20,6 +20,10 @@ pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 /// Planner agent name
 pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
+/// Welcome message when switching to planner agent (second line)
+pub const PLANNER_WELCOME_MESSAGE: &str =
+    "Transform any idea into fully working code. What do you want to build today?";
+
 /// List of all built-in agent names
 pub const BUILT_IN_AGENTS: &[&str] = &[DEFAULT_AGENT_NAME, PLANNER_AGENT_NAME];
 

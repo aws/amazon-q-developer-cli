@@ -4192,6 +4192,23 @@ impl ChatSession {
                 return Some(format!("/agent swap {agent_name}"));
             }
 
+            // Display pending welcome message (after agent swap)
+            if let Some(message) = self.input_source.agent_swap_state().take_pending_message() {
+                let _ = execute!(
+                    self.stderr,
+                    style::Print("\n"),
+                    StyledText::secondary_fg(),
+                    style::Print("Switched to the Kiro "),
+                    StyledText::brand_fg(),
+                    style::Print("[plan]"),
+                    StyledText::secondary_fg(),
+                    style::Print(" agent.\n"),
+                    StyledText::reset(),
+                    style::Print(&message),
+                    style::Print("\n\n")
+                );
+            }
+
             // Check for pending prompt (from /plan command)
             if let Some(pending_prompt) = self.input_source.agent_swap_state().take_pending_prompt() {
                 return Some(pending_prompt);

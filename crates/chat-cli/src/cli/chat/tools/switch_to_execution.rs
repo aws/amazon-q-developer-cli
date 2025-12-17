@@ -45,7 +45,10 @@ impl SwitchToExecution {
         execute!(
             std::io::stdout(),
             StyledText::secondary_fg(),
-            style::Print("\nPlanning complete!\nReady to switch to implementation mode? ["),
+            style::Print("\nPlanning complete!\nReady to exit "),
+            style::Print(StyledText::brand("[plan]")),
+            StyledText::secondary_fg(),
+            style::Print(" agent to start your implementation? ["),
             StyledText::current_item_fg(),
             style::Print("y"),
             StyledText::secondary_fg(),
