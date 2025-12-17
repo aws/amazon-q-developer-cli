@@ -896,8 +896,10 @@ impl ChatSession {
 
         // Initialize code intelligence client if feature is enabled
         let code_intelligence_client = if crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
+            let workspace_root = std::env::current_dir().unwrap_or_default();
+
             match code_agent_sdk::CodeIntelligence::builder()
-                .workspace_root(std::env::current_dir().unwrap_or_default())
+                .workspace_root(workspace_root)
                 .auto_detect_languages()
                 .build()
             {

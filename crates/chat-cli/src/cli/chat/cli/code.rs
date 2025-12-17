@@ -126,6 +126,25 @@ impl CodeSubcommand {
             match code_client.workspace_status() {
                 code_agent_sdk::sdk::WorkspaceStatus::NotInitialized => {
                     if initialize {
+                        // Warn if initializing home directory
+                        if let Some(home) = dirs::home_dir() {
+                            if let (Ok(home_canonical), Ok(workspace_canonical)) = (
+                                home.canonicalize(),
+                                code_client.workspace_manager.workspace_root().canonicalize(),
+                            ) {
+                                if home_canonical == workspace_canonical {
+                                    queue!(
+                                        session.stderr,
+                                        StyledText::warning_fg(),
+                                        style::Print("Warning: "),
+                                        StyledText::reset(),
+                                        style::Print("Workspace is home directory - scan depth will be limited\n"),
+                                        style::Print("If initialized by mistake, remove ~/.kiro/settings/lsp.json\n\n"),
+                                    )?;
+                                }
+                            }
+                        }
+
                         match code_client.initialize().await {
                             Ok(_) => {
                                 should_reload_tools = true;

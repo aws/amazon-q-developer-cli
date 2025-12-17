@@ -24,6 +24,8 @@ notify.workspace = true
 ignore.workspace = true
 globset.workspace = true
 which.workspace = true
+dashmap.workspace = true
+dirs.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

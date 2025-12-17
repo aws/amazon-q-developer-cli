@@ -50,7 +50,26 @@ pub struct FileState {
     pub is_open: bool,
 }
 
-/// Manages workspace detection and LSP client lifecycle
+/// Manages workspace detection, LSP client lifecycle, and file watching.
+///
+/// The WorkspaceManager is responsible for:
+/// - Detecting project languages by scanning file extensions
+/// - Starting and managing LSP servers for detected languages
+/// - Tracking file state (open/closed, versions) for LSP synchronization
+/// - Watching for file changes and notifying LSP servers
+/// - Collecting and caching diagnostics from LSP servers
+///
+/// # LSP Initialization Strategy
+///
+/// LSP servers are "lazy" - they don't index the workspace until a file is opened.
+/// To ensure workspace-wide features (go-to-definition, find-references) work
+/// immediately, we auto-open a "representative file" for each detected language.
+/// This triggers the LSP to begin indexing the workspace.
+///
+/// The `representative_files` cache maps file extensions to the first non-config
+/// source file found during workspace scanning (e.g., "rs" -> "/src/main.rs").
+/// Config files like `tsconfig.json` are excluded since they don't trigger
+/// proper workspace indexing.
 pub struct WorkspaceManager {
     workspace_root: PathBuf,
     pub config_manager: ConfigManager,
@@ -59,6 +78,10 @@ pub struct WorkspaceManager {
     pending_inits: Arc<AtomicUsize>,
     opened_files: HashMap<PathBuf, FileState>, // Track version and open state
     workspace_info: Option<WorkspaceInfo>,
+    /// Cache mapping file extensions to representative source files.
+    /// Used to auto-open files that trigger LSP workspace indexing.
+    /// Populated during workspace scan, excludes config files.
+    representative_files: Option<HashMap<String, PathBuf>>,
     diagnostics: Arc<RwLock<HashMap<PathBuf, Vec<lsp_types::Diagnostic>>>>, // shared diagnostics map
 
     // File watching infrastructure
@@ -112,6 +135,7 @@ impl WorkspaceManager {
             pending_inits: Arc::new(AtomicUsize::new(0)),
             opened_files: HashMap::new(),
             workspace_info: None,
+            representative_files: None,
             diagnostics: Arc::new(RwLock::new(HashMap::new())),
             _file_watcher: None,
             event_processor_handle: None,
@@ -122,7 +146,7 @@ impl WorkspaceManager {
     fn detect_workspace_root(file_path: &Path, config: &LanguagesConfig) -> Option<PathBuf> {
         const MAX_DEPTH: usize = 10;
 
-        tracing::debug!("🔍 Detecting workspace root from: {}", file_path.display());
+        tracing::debug!("Detecting workspace root from: {}", file_path.display());
 
         let current_dir;
         let start_dir = if file_path.is_file() {
@@ -147,7 +171,7 @@ impl WorkspaceManager {
                     for pattern in &language_patterns {
                         let check_path = current.join(pattern);
                         if check_path.exists() {
-                            tracing::info!("✅ Found project marker '{}' at: {}", pattern, current.display());
+                            tracing::info!("Found project marker '{}' at: {}", pattern, current.display());
                             return Some(current.to_path_buf());
                         }
                     }
@@ -174,7 +198,7 @@ impl WorkspaceManager {
                     for pattern in &patterns {
                         let check_path = current.join(pattern);
                         if check_path.exists() {
-                            tracing::info!("✅ Found project marker '{}' at: {}", pattern, current.display());
+                            tracing::info!("Found project marker '{}' at: {}", pattern, current.display());
                             return Some(current.to_path_buf());
                         }
                     }
@@ -208,11 +232,11 @@ impl WorkspaceManager {
         let current_status = *self.status.read().await;
         match current_status {
             WorkspaceStatus::Initialized => {
-                tracing::info!("✅ Workspace already initialized, skipping");
+                tracing::info!("Workspace already initialized, skipping");
                 return Ok(());
             },
             WorkspaceStatus::Initializing => {
-                tracing::info!("⏳ Workspace initialization already in progress");
+                tracing::info!("Workspace initialization already in progress");
                 return Ok(());
             },
             WorkspaceStatus::NotInitialized => {},
@@ -226,13 +250,13 @@ impl WorkspaceManager {
         // Auto-detect and register language servers if none are present
         tracing::debug!("Ensuring language servers are registered");
         self.ensure_language_servers()?;
-
         let workspace_uri = Url::from_file_path(&self.workspace_root).map_err(|_| {
             crate::error::CodeIntelligenceError::invalid_path(self.workspace_root.clone(), "Cannot convert to URI")
         })?;
 
         // Get detected languages to only initialize relevant LSPs
         let workspace_info = self.detect_workspace()?;
+
         let detected_languages: HashSet<String> = workspace_info.detected_languages.iter().cloned().collect();
 
         // Build set of server names that support detected languages
@@ -252,7 +276,7 @@ impl WorkspaceManager {
             .collect();
 
         tracing::info!(
-            "📋 Initializing {} of {} registered servers for detected languages {:?}: {:?}",
+            "Initializing {} of {} registered servers for detected languages {:?}: {:?}",
             server_names.len(),
             all_servers_count,
             detected_languages,
@@ -262,7 +286,7 @@ impl WorkspaceManager {
         // If no servers to initialize, mark as initialized immediately
         if server_names.is_empty() {
             *self.status.write().await = WorkspaceStatus::Initialized;
-            tracing::info!("✅ Workspace initialization completed (no LSP servers needed)");
+            tracing::info!("Workspace initialization completed (no LSP servers needed)");
             return Ok(());
         }
 
@@ -271,7 +295,7 @@ impl WorkspaceManager {
 
         // Initialize clients for filtered servers - spawn background tasks
         for server_name in server_names {
-            tracing::info!("⏳ Starting LSP server: {}", server_name);
+            tracing::info!("Starting LSP server: {}", server_name);
 
             // Create the client (this spawns the process)
             // TODO: This manually reimplements LspClient::initialize() to enable parallel initialization
@@ -401,14 +425,14 @@ impl WorkspaceManager {
                         .await
                         {
                             Ok(Ok(_)) => {
-                                tracing::info!("✅ LSP server '{}' initialized successfully", name);
+                                tracing::info!("LSP server '{}' initialized successfully", name);
                             },
                             Ok(Err(e)) => {
-                                tracing::error!("❌ LSP server '{}' initialization failed: {}", name, e);
+                                tracing::error!("LSP server '{}' initialization failed: {}", name, e);
                                 *status.lock().await = crate::lsp::LspStatus::Failed(e.to_string());
                             },
                             Err(_) => {
-                                tracing::warn!("⏰ LSP server '{}' timed out during initialization", name);
+                                tracing::warn!("LSP server '{}' timed out during initialization", name);
                                 *status.lock().await =
                                     crate::lsp::LspStatus::Failed("Initialization timed out".to_string());
                             },
@@ -418,29 +442,30 @@ impl WorkspaceManager {
                         let remaining = pending_inits.fetch_sub(1, Ordering::SeqCst) - 1;
                         if remaining == 0 {
                             *workspace_status.write().await = WorkspaceStatus::Initialized;
-                            tracing::info!("✅ All LSP servers finished initialization");
+                            tracing::info!("All LSP servers finished initialization");
                         }
                     });
                 },
                 Err(e) => {
-                    tracing::error!("❌ Failed to start LSP server '{}': {}", server_name, e);
+                    tracing::error!("Failed to start LSP server '{}': {}", server_name, e);
                     // Decrement pending count for failed starts too
                     let remaining = self.pending_inits.fetch_sub(1, Ordering::SeqCst) - 1;
                     if remaining == 0 {
                         *self.status.write().await = WorkspaceStatus::Initialized;
-                        tracing::info!("✅ All LSP servers finished initialization");
+                        tracing::info!("All LSP servers finished initialization");
                     }
                 },
             }
         }
 
-        tracing::info!("✅ Workspace initialization started (LSP servers initializing in background)");
+        tracing::info!("Workspace initialization started (LSP servers initializing in background)");
 
         // Subscribe to diagnostics from all initialized LSP clients
         tracing::debug!("Subscribing to diagnostics");
         if let Err(e) = self.subscribe_to_diagnostics().await {
             tracing::warn!("Failed to subscribe to diagnostics: {}", e);
         }
+
         tracing::debug!("Starting file watching");
         // Start file watching after LSP initialization
         if let Err(e) = self.start_file_watching() {
@@ -682,22 +707,22 @@ impl WorkspaceManager {
 
     /// Detect workspace languages and available LSPs
     pub fn detect_workspace(&mut self) -> Result<WorkspaceInfo> {
-        tracing::info!("🔍 Starting workspace detection for: {}", self.workspace_root.display());
+        tracing::info!("Starting workspace detection for: {}", self.workspace_root.display());
 
         // Use cached detection results if available, but always refresh LSP status
         let (detected_languages, project_markers) = if let Some(ref info) = self.workspace_info {
-            tracing::info!("✅ Using cached workspace detection (will refresh LSP status)");
+            tracing::info!("Using cached workspace detection (will refresh LSP status)");
             (info.detected_languages.clone(), info.project_markers.clone())
         } else {
-            // Perform full workspace detection
+            // Perform full workspace detection with unified scan
             let mut detected_languages = Vec::new();
-            let mut file_extensions = HashSet::new();
 
-            // Recursively scan workspace for file extensions using ignore crate
-            tracing::info!("📂 Scanning directory for file extensions (respecting .gitignore)");
-            self.scan_workspace_files(&mut file_extensions)?;
+            // Recursively scan workspace for file extensions AND representative files in one pass
+            tracing::info!("Scanning directory for file extensions and representative files (respecting .gitignore)");
+            let (file_extensions, representative_files) = self.scan_workspace_unified()?;
+            self.representative_files = Some(representative_files); // Cache for auto-open
             tracing::info!(
-                "✅ Found {} unique file extensions: {:?}",
+                "Found {} unique file extensions: {:?}",
                 file_extensions.len(),
                 file_extensions
             );
@@ -714,7 +739,7 @@ impl WorkspaceManager {
             detected_languages.sort();
             detected_languages.dedup();
             tracing::info!(
-                "✅ Detected {} languages: {:?}",
+                "Detected {} languages: {:?}",
                 detected_languages.len(),
                 detected_languages
             );
@@ -729,7 +754,7 @@ impl WorkspaceManager {
                     }
                 }
             }
-            tracing::info!("📋 Detected project markers: {:?}", project_markers);
+            tracing::info!("Detected project markers: {:?}", project_markers);
 
             (detected_languages, project_markers)
         };
@@ -737,7 +762,7 @@ impl WorkspaceManager {
         // Always check current LSP status (don't cache as it changes during initialization)
         tracing::debug!("Checking available LSPs");
         let available_lsps = self.check_available_lsps();
-        tracing::info!("✅ Available LSPs: {:?}", available_lsps);
+        tracing::info!("Available LSPs: {:?}", available_lsps);
 
         let info = WorkspaceInfo {
             root_path: self.workspace_root.clone(),
@@ -747,32 +772,75 @@ impl WorkspaceManager {
         };
 
         self.workspace_info = Some(info.clone());
-        tracing::info!("✅ Workspace detection completed");
+        tracing::info!("Workspace detection completed");
         Ok(info)
     }
 
-    /// Scan workspace for file extensions using ignore crate (respects .gitignore)
-    fn scan_workspace_files(&self, extensions: &mut HashSet<String>) -> Result<()> {
+    /// Unified workspace scan: collects extensions AND representative files in one parallel pass
+    fn scan_workspace_unified(&self) -> Result<(HashSet<String>, HashMap<String, PathBuf>)> {
+        use dashmap::DashMap;
         use ignore::WalkBuilder;
 
-        let walker = WalkBuilder::new(&self.workspace_root)
-            .max_depth(Some(10))
-            .hidden(false) // Include hidden files
-            .git_ignore(true) // Respect .gitignore
-            .git_global(true) // Respect global gitignore
-            .git_exclude(true) // Respect .git/info/exclude
-            .build();
+        // Detect if scanning home directory (cross-platform: Linux, Mac, Windows)
+        let is_home_dir = dirs::home_dir()
+            .and_then(|home| home.canonicalize().ok())
+            .map(|home| self.workspace_root.canonicalize().ok() == Some(home))
+            .unwrap_or(false);
 
-        for entry in walker.filter_map(|e| e.ok()) {
-            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                if let Some(ext) = entry.path().extension() {
-                    if let Some(ext_str) = ext.to_str() {
-                        extensions.insert(ext_str.to_string());
+        let max_depth = if is_home_dir {
+            tracing::warn!("Workspace is home directory - limiting scan depth to 3 to avoid scanning entire home");
+            3
+        } else {
+            10
+        };
+
+        let extensions: DashMap<String, ()> = DashMap::new();
+        let rep_files: DashMap<String, PathBuf> = DashMap::new();
+
+        WalkBuilder::new(&self.workspace_root)
+            .max_depth(Some(max_depth))
+            .standard_filters(true)
+            .hidden(false)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .build_parallel()
+            .run(|| {
+                let extensions = &extensions;
+                let rep_files = &rep_files;
+
+                Box::new(move |entry| {
+                    if let Ok(entry) = entry {
+                        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
+                            if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                                let ext_str = ext.to_string();
+                                extensions.insert(ext_str.clone(), ());
+
+                                // Only insert non-config files as representatives
+                                if !Self::is_config_file_static(entry.path()) {
+                                    rep_files.entry(ext_str).or_insert(entry.path().to_path_buf());
+                                }
+                            }
+                        }
                     }
-                }
-            }
+                    ignore::WalkState::Continue
+                })
+            });
+
+        let ext_set: HashSet<String> = extensions.into_iter().map(|(k, _)| k).collect();
+        let rep_map: HashMap<String, PathBuf> = rep_files.into_iter().collect();
+
+        Ok((ext_set, rep_map))
+    }
+
+    /// Static version of is_config_file for use in closures
+    fn is_config_file_static(path: &Path) -> bool {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+            let name_lower = name.to_lowercase();
+            Self::KNOWN_CONFIG_PATTERNS.iter().any(|p| name_lower.contains(p))
+        } else {
+            false
         }
-        Ok(())
     }
 
     /// Check which LSPs are available in the system
@@ -786,7 +854,7 @@ impl WorkspaceManager {
         let initialized_servers: HashSet<String> = self.registry.initialized_servers().into_iter().cloned().collect();
 
         tracing::info!(
-            "🔍 Checking {} LSP configurations against {} initialized servers",
+            "Checking {} LSP configurations against {} initialized servers",
             configs.len(),
             initialized_servers.len()
         );
@@ -854,7 +922,7 @@ impl WorkspaceManager {
         }
 
         tracing::info!(
-            "✅ Found {} available, {} initialized LSP servers",
+            "Found {} available, {} initialized LSP servers",
             lsps.iter().filter(|l| l.is_available).count(),
             lsps.iter().filter(|l| l.is_initialized).count()
         );
@@ -994,7 +1062,7 @@ impl WorkspaceManager {
         self._file_watcher = Some(file_watcher);
         self.event_processor_handle = Some(handle);
 
-        tracing::info!("🔍 File watching started for languages: {:?}", detected_languages);
+        tracing::info!("File watching started for languages: {:?}", detected_languages);
         Ok(())
     }
 
@@ -1083,48 +1151,10 @@ impl WorkspaceManager {
 
     /// Find the first file with the given extension in the workspace, respecting exclude patterns
     async fn find_first_file_with_extension(&self, extension: &str) -> Result<Option<PathBuf>> {
-        use ignore::WalkBuilder;
-        let walker = WalkBuilder::new(&self.workspace_root)
-            .max_depth(Some(8)) // Same as extension detection
-            .hidden(false) // Include hidden files
-            .git_ignore(true) // Respect .gitignore
-            .git_global(true) // Respect global gitignore
-            .git_exclude(true) // Respect .git/info/exclude
-            .build();
-
-        let mut file_count = 0;
-        const MAX_FILES: usize = 10000; // Same limit as extension detection
-
-        for entry in walker.filter_map(|e| e.ok()) {
-            file_count += 1;
-
-            if file_count > MAX_FILES {
-                tracing::warn!(
-                    "Representative file search stopped at {} files to prevent performance issues",
-                    MAX_FILES
-                );
-                break;
-            }
-
-            if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                if let Some(file_ext) = entry.path().extension().and_then(|e| e.to_str()) {
-                    if file_ext == extension && !self.is_config_file(entry.path()) {
-                        return Ok(Some(entry.path().to_path_buf()));
-                    }
-                }
-            }
-        }
-        Ok(None)
-    }
-
-    /// Check if a file is a config file that should be skipped
-    fn is_config_file(&self, path: &Path) -> bool {
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            let name_lower = name.to_lowercase();
-            Self::KNOWN_CONFIG_PATTERNS.iter().any(|p| name_lower.contains(p))
-        } else {
-            false
-        }
+        Ok(self
+            .representative_files
+            .as_ref()
+            .and_then(|files| files.get(extension).cloned()))
     }
 }
 
@@ -1221,9 +1251,8 @@ mod tests {
     fn test_scan_workspace_finds_extensions() {
         let temp_dir = create_temp_workspace(&["test.rs", "test.ts", "test.py"]);
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
-        let mut extensions = HashSet::new();
 
-        workspace_manager.scan_workspace_files(&mut extensions).unwrap();
+        let (extensions, _) = workspace_manager.scan_workspace_unified().unwrap();
 
         assert!(extensions.contains("rs"));
         assert!(extensions.contains("ts"));
@@ -1243,9 +1272,8 @@ mod tests {
         std::fs::write(temp_dir.path().join(".gitignore"), "node_modules/\ntarget/\n").unwrap();
 
         let workspace_manager = WorkspaceManager::new(temp_dir.path().to_path_buf());
-        let mut extensions = HashSet::new();
 
-        workspace_manager.scan_workspace_files(&mut extensions).unwrap();
+        let (extensions, _) = workspace_manager.scan_workspace_unified().unwrap();
 
         assert!(extensions.contains("rs"));
         assert!(!extensions.contains("js")); // Should be skipped from node_modules via .gitignore
