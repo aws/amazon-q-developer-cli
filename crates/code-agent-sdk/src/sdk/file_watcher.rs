@@ -52,6 +52,7 @@ impl GitignoreMatcher {
         for entry in ignore::WalkBuilder::new(workspace_root)
             .hidden(false) // We want to see .gitignore files
             .git_ignore(false) // Don't apply gitignore while searching for gitignore files
+            .max_depth(Some(5)) // Limit depth: covers root + multi-workspace projects
             .build()
         {
             let entry = entry?;

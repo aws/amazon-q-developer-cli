@@ -226,6 +226,7 @@ impl WorkspaceManager {
         // Auto-detect and register language servers if none are present
         tracing::debug!("Ensuring language servers are registered");
         self.ensure_language_servers()?;
+
         let workspace_uri = Url::from_file_path(&self.workspace_root).map_err(|_| {
             crate::error::CodeIntelligenceError::invalid_path(self.workspace_root.clone(), "Cannot convert to URI")
         })?;
