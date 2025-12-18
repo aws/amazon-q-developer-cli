@@ -30,8 +30,7 @@ impl rustyline::ConditionalEventHandler for PlannerToggleHandler {
         _positive: bool,
         _ctx: &rustyline::EventContext<'_>,
     ) -> Option<Cmd> {
-        let target_agent = self.swap_state.toggle();
-        self.swap_state.set_pending_swap(target_agent);
+        self.swap_state.planner_toggle(None);
         Some(Cmd::AcceptLine)
     }
 }

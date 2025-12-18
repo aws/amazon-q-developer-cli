@@ -37,37 +37,25 @@ impl AgentSwapState {
         self.inner.lock().unwrap().current_agent.clone()
     }
 
-    pub fn toggle_to_planner(&self) -> String {
+    /// Toggle between planner and previous agent.
+    /// Sets all necessary pending fields in one atomic operation:
+    pub fn planner_toggle(&self, prompt: Option<String>) {
         let mut inner = self.inner.lock().unwrap();
-        if inner.current_agent != PLANNER_AGENT_NAME {
-            inner.previous_agent = Some(inner.current_agent.clone());
-        }
-        inner.current_agent = PLANNER_AGENT_NAME.to_string();
-        inner.pending_message = Some(PLANNER_WELCOME_MESSAGE.to_string());
-        PLANNER_AGENT_NAME.to_string()
-    }
+        inner.pending_prompt = prompt;
 
-    pub fn toggle_from_planner(&self) -> String {
-        let mut inner = self.inner.lock().unwrap();
-        let target = inner
-            .previous_agent
-            .clone()
-            .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
-        inner.current_agent = target.clone();
-        target
-    }
-
-    pub fn toggle(&self) -> String {
-        let current = self.get_current_agent();
-        if current == PLANNER_AGENT_NAME {
-            self.toggle_from_planner()
+        if inner.current_agent == PLANNER_AGENT_NAME {
+            // From planner: go back to previous agent
+            let target = inner
+                .previous_agent
+                .clone()
+                .unwrap_or_else(|| DEFAULT_AGENT_NAME.to_string());
+            inner.pending_swap = Some(target);
         } else {
-            self.toggle_to_planner()
+            // To planner: save current as previous, set welcome message
+            inner.previous_agent = Some(inner.current_agent.clone());
+            inner.pending_swap = Some(PLANNER_AGENT_NAME.to_string());
+            inner.pending_message = Some(PLANNER_WELCOME_MESSAGE.to_string());
         }
-    }
-
-    pub fn set_pending_swap(&self, agent_name: String) {
-        self.inner.lock().unwrap().pending_swap = Some(agent_name);
     }
 
     pub fn take_pending_swap(&self) -> Option<String> {
@@ -76,24 +64,6 @@ impl AgentSwapState {
 
     pub fn take_pending_prompt(&self) -> Option<String> {
         self.inner.lock().unwrap().pending_prompt.take()
-    }
-
-    pub fn set_pending_swap_with_prompt(&self, agent_name: String, prompt: String) {
-        let mut inner = self.inner.lock().unwrap();
-        inner.pending_swap = Some(agent_name);
-        inner.pending_prompt = Some(prompt);
-    }
-
-    pub fn get_previous_agent(&self) -> Option<String> {
-        self.inner.lock().unwrap().previous_agent.clone()
-    }
-
-    pub fn set_previous_agent(&self, agent_name: String) {
-        self.inner.lock().unwrap().previous_agent = Some(agent_name);
-    }
-
-    pub fn set_pending_message(&self, message: String) {
-        self.inner.lock().unwrap().pending_message = Some(message);
     }
 
     pub fn take_pending_message(&self) -> Option<String> {

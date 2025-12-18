@@ -186,7 +186,8 @@ impl SlashCommand {
                 use crate::constants::PLANNER_AGENT_NAME;
                 use crate::theme::StyledText;
 
-                let current_agent = session.input_source.agent_swap_state().get_current_agent();
+                let swap_state = session.input_source.agent_swap_state();
+                let current_agent = swap_state.get_current_agent();
 
                 // If already in planner, handle prompt if provided
                 if current_agent == PLANNER_AGENT_NAME {
@@ -207,34 +208,7 @@ impl SlashCommand {
                     }
                 }
 
-                // Store current agent as previous before switching to planner
-                session
-                    .input_source
-                    .agent_swap_state()
-                    .set_previous_agent(current_agent);
-
-                // Do immediate swap to planner
-                session
-                    .conversation
-                    .swap_agent(os, &mut session.stderr, PLANNER_AGENT_NAME)
-                    .await?;
-                session
-                    .input_source
-                    .agent_swap_state()
-                    .set_current_agent(PLANNER_AGENT_NAME.to_string());
-
-                // Set welcome message to be displayed on next prompt
-                session
-                    .input_source
-                    .agent_swap_state()
-                    .set_pending_message(crate::constants::PLANNER_WELCOME_MESSAGE.to_string());
-
-                // If prompt provided, handle it
-                if let Some(prompt) = prompt {
-                    // Add to transcript and return as HandleInput to process immediately
-                    session.conversation.append_user_transcript(&prompt);
-                    return Ok(ChatState::HandleInput { input: prompt });
-                }
+                swap_state.planner_toggle(prompt);
 
                 Ok(ChatState::PromptUser {
                     skip_printing_tools: false,

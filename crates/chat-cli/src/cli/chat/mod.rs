@@ -4187,26 +4187,25 @@ impl ChatSession {
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
-            // Check for pending agent swap FIRST (like feature branch)
-            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
-                return Some(format!("/agent swap {agent_name}"));
-            }
-
-            // Display pending welcome message (after agent swap)
+            // Display pending welcome message FIRST, before processing agent swap.
             if let Some(message) = self.input_source.agent_swap_state().take_pending_message() {
+                let mut stderr = std::io::stderr();
                 let _ = execute!(
-                    self.stderr,
-                    style::Print("\n"),
+                    stderr,
                     StyledText::secondary_fg(),
-                    style::Print("Switched to the Kiro "),
+                    style::Print("Switching to the Kiro "),
                     StyledText::brand_fg(),
                     style::Print("[plan]"),
                     StyledText::secondary_fg(),
                     style::Print(" agent.\n"),
                     StyledText::reset(),
                     style::Print(&message),
-                    style::Print("\n\n")
                 );
+            }
+
+            // Check for pending agent swap
+            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
+                return Some(format!("/agent swap {agent_name}"));
             }
 
             // Check for pending prompt (from /plan command)

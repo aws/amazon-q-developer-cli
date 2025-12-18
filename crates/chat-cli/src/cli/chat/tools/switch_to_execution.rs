@@ -95,17 +95,8 @@ impl SwitchToExecution {
         if let super::OutputKind::Json(json) = &result.output {
             let response: SwitchResponse = serde_json::from_value(json.clone())?;
             if response.approved {
-                let target_agent = session
-                    .input_source
-                    .agent_swap_state()
-                    .get_previous_agent()
-                    .unwrap_or_else(|| crate::constants::DEFAULT_AGENT_NAME.to_string());
-
                 let prompt = format!("Implement this plan:\n{}", response.plan);
-                session
-                    .input_source
-                    .agent_swap_state()
-                    .set_pending_swap_with_prompt(target_agent, prompt);
+                session.input_source.agent_swap_state().planner_toggle(Some(prompt));
             }
         }
         Ok(())
