@@ -118,10 +118,11 @@ pub enum SlashCommand {
     /// chat.enableTangentMode true"
     #[command(hide = true)]
     Tangent(TangentArgs),
-    /// Switch to planner agent
+    /// Switch to Plan agent for breaking down ideas into implementation plans.
+    /// Use Shift+Tab to switch back to your previous agent.
     Plan {
-        /// Optional prompt to send to the planner agent
-        prompt: Option<String>,
+        /// Optional prompt to send to the Plan agent
+        prompt: Vec<String>,
     },
     /// [DEPRECATED] Use "/chat save" instead
     #[command(hide = true)]
@@ -191,15 +192,20 @@ impl SlashCommand {
 
                 // If already in planner, handle prompt if provided
                 if current_agent == PLANNER_AGENT_NAME {
-                    if let Some(prompt) = prompt {
+                    if !prompt.is_empty() {
+                        let prompt_text = prompt.join(" ");
                         // Add to transcript and return as HandleInput to process immediately
-                        session.conversation.append_user_transcript(&prompt);
-                        return Ok(ChatState::HandleInput { input: prompt });
+                        session.conversation.append_user_transcript(&prompt_text);
+                        return Ok(ChatState::HandleInput { input: prompt_text });
                     } else {
                         execute!(
                             session.stderr,
                             StyledText::warning_fg(),
-                            style::Print("Already in planner agent\n"),
+                            style::Print("Already in Plan agent. Use "),
+                            StyledText::current_item_fg(),
+                            style::Print("Shift+Tab"),
+                            StyledText::warning_fg(),
+                            style::Print(" to return to previous agent.\n"),
                             StyledText::reset()
                         )?;
                         return Ok(ChatState::PromptUser {
@@ -208,7 +214,12 @@ impl SlashCommand {
                     }
                 }
 
-                swap_state.planner_toggle(prompt);
+                let prompt_option = if prompt.is_empty() {
+                    None
+                } else {
+                    Some(prompt.join(" "))
+                };
+                swap_state.planner_toggle(prompt_option);
 
                 Ok(ChatState::PromptUser {
                     skip_printing_tools: false,

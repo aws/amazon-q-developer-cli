@@ -89,6 +89,9 @@ impl Introspect {
             documentation.push_str(include_str!("../../../../../../docs/code-intelligence.md"));
         }
 
+        documentation.push_str("\n\n--- docs/planning-agent.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/planning-agent.md"));
+
         documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
 

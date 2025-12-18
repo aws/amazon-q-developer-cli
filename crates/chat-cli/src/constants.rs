@@ -386,6 +386,12 @@ pub mod tips {
                 "Learn more about code intelligence features and setup at {}",
                 StyledText::command(super::CODE_INTELLIGENCE_DOC_URL)
             ),
+            format!(
+                "Use {} or {} to enter Plan agent to define requirements before coding starts. Use {} anytime to return to previous agent",
+                StyledText::command("shift + tab"),
+                StyledText::brand("/plan"),
+                StyledText::command("shift + tab")
+            ),
         ]
     }
 }
