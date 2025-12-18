@@ -459,7 +459,7 @@ impl<'a> SubagentIndicator<'a> {
                                 },
                                 AgentEventKind::ToolCallEnd(tool_call_end) => {
                                     if let Some(agent_info) = agents.get_mut(&agent_id) {
-                                        agent_info.msg = format!("tool call {} ended", tool_call_end.tool_call_id);
+                                        agent_info.msg = format!("tool call {} ended", tool_call_end.tool_name);
                                     }
                                 },
                                 AgentEventKind::TextMessageContent(content) => {
@@ -554,8 +554,6 @@ impl<'a> SubagentIndicator<'a> {
                                 Span::styled(" toggle convo ", Style::default().fg(Color::Grey.into())),
                                 Span::styled("^+C", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
                                 Span::styled(" interrupt ", Style::default().fg(Color::Grey.into())),
-                                Span::styled("esc", Style::default().fg(Color::AnsiValue(Self::BRAND_PURPLE).into())),
-                                Span::styled(" reset select ", Style::default().fg(Color::Grey.into())),
                             ]);
 
                             let mut lines = vec![Line::from(spans)];
@@ -821,9 +819,6 @@ impl<'a> SubagentIndicator<'a> {
                                             }
                                         }
                                     },
-                                    KeyCode::Esc => {
-                                        focused_agent.take();
-                                    },
                                     _ => {},
                                 }
                             },
@@ -843,7 +838,8 @@ impl<'a> SubagentIndicator<'a> {
 
             for agent_info in agents.values_mut() {
                 let (tool_calls, duration) = agent_info.execution_summary.as_ref().map_or((0_u32, 0_f64), |summary| {
-                    let tool_calls = summary.tool_call_count;
+                    // We will exclude summary tool from total tool call count
+                    let tool_calls = summary.tool_call_count.saturating_sub(1);
                     let duration = summary.duration.unwrap_or_default();
                     (tool_calls, duration.as_secs_f64())
                 });

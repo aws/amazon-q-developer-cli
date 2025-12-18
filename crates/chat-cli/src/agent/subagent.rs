@@ -431,10 +431,13 @@ impl<'a> Subagent<'a> {
                                     }));
                                 },
                                 UpdateEvent::ToolCallFinished { tool_call, result: _ } => {
+                                    let tool_name =
+                                        tool_call.tool.kind.canonical_tool_name().tool_name().to_string();
                                     _ = control_end.send(SessionEvent::AgentEvent(AgentEventForUi {
                                         agent_id: self.id,
                                         kind: AgentEventKind::ToolCallEnd(
                                             ToolCallEnd {
+                                                tool_name,
                                                 tool_call_id: tool_call.id,
                                             }
                                         )

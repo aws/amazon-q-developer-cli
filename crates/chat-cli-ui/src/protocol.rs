@@ -152,6 +152,7 @@ pub struct ToolCallArgs {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ToolCallEnd {
+    pub tool_name: String,
     pub tool_call_id: String,
 }
 
