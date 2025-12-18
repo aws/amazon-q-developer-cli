@@ -168,6 +168,14 @@ pub struct AgentHandle {
     event_rx: broadcast::Receiver<AgentEvent>,
 }
 
+impl Drop for AgentHandle {
+    fn drop(&mut self) {
+        if self.sender.count() == 1 {
+            self.terminate();
+        }
+    }
+}
+
 impl Clone for AgentHandle {
     fn clone(&self) -> Self {
         Self {
@@ -228,6 +236,10 @@ impl AgentHandle {
             AgentResponse::Success => Ok(()),
             other => Err(AgentError::Custom(format!("received unexpected response: {other:?}"))),
         }
+    }
+
+    pub fn terminate(&self) {
+        _ = self.sender.try_blocking_send_recv(AgentRequest::Terminate);
     }
 }
 
@@ -509,7 +521,13 @@ impl Agent {
                         break;
                     };
                     let res = self.handle_agent_request(req.payload).await;
-                    respond!(req, res);
+
+                    if let Ok(AgentResponse::TerminateAcknowledged) = res {
+                        respond!(req, res);
+                        break;
+                    } else {
+                        respond!(req, res);
+                    }
                 },
 
                 // Branch for handling the next stream event.
@@ -678,6 +696,13 @@ impl Agent {
                     }
                 }
                 Ok(AgentResponse::McpPrompts(response))
+            },
+            AgentRequest::Terminate => {
+                // TODO: Fill this in to ensure a full clean up
+                _ = self.handle_cancel_request().await;
+                self.mcp_manager_handle.terminate();
+
+                Ok(AgentResponse::TerminateAcknowledged)
             },
         }
     }

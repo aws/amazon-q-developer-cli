@@ -99,6 +99,10 @@ impl McpServerActorHandle {
             ))),
         }
     }
+
+    pub fn terminate(&self) {
+        _ = self.sender.try_blocking_send_recv(McpServerActorRequest::Terminate);
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -109,6 +113,7 @@ pub enum McpServerActorRequest {
         name: String,
         args: Option<serde_json::Map<String, Value>>,
     },
+    Terminate,
 }
 
 #[derive(Debug)]
@@ -116,6 +121,7 @@ enum McpServerActorResponse {
     Tools(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
+    TerminateAcknowledged,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, thiserror::Error)]
@@ -267,7 +273,13 @@ impl McpServerActor {
                         break;
                     };
                     let res = self.handle_actor_request(req.payload).await;
-                    respond!(req, res);
+
+                    if let Ok(McpServerActorResponse::TerminateAcknowledged) = res {
+                        respond!(req, res);
+                        break;
+                    } else {
+                        respond!(req, res);
+                    }
                 },
                 res = self.message_rx.recv() => {
                     self.handle_mcp_message(res).await;
@@ -303,6 +315,7 @@ impl McpServerActor {
                 self.executing_tools.insert(self.curr_tool_execution_id, tx);
                 Ok(McpServerActorResponse::ExecuteTool(rx))
             },
+            McpServerActorRequest::Terminate => Ok(McpServerActorResponse::TerminateAcknowledged),
         }
     }
 

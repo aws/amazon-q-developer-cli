@@ -257,6 +257,10 @@ impl McpManagerHandle {
             .await
             .map(|evt| evt.into())
     }
+
+    pub fn terminate(&self) {
+        _ = self.request_tx.try_blocking_send_recv(McpManagerRequest::Terminate);
+    }
 }
 
 #[derive(Debug)]
@@ -315,7 +319,13 @@ impl McpManager {
                         break;
                     };
                     let res = self.handle_mcp_manager_request(req.payload).await;
-                    respond!(req, res);
+
+                    if let Ok(McpManagerResponse::TerminateAcknowledged) = res {
+                        respond!(req, res);
+                        break;
+                    } else {
+                        respond!(req, res);
+                    }
                 },
                 res = self.server_event_rx.recv() => {
                     if let Some(evt) = res {
@@ -370,6 +380,12 @@ impl McpManager {
                     handle.execute_tool(tool_name, args).await?,
                 )),
                 None => Err(McpManagerError::ServerNotInitialized { name: server_name }),
+            },
+            McpManagerRequest::Terminate => {
+                for server in self.servers.values() {
+                    server.terminate();
+                }
+                Ok(McpManagerResponse::TerminateAcknowledged)
             },
         }
     }
@@ -441,6 +457,8 @@ pub enum McpManagerRequest {
         tool_name: String,
         args: Option<serde_json::Map<String, Value>>,
     },
+    // TODO: add server targeted termination
+    Terminate,
 }
 
 #[derive(Debug)]
@@ -449,6 +467,7 @@ pub enum McpManagerResponse {
     ToolSpecs(Vec<ToolSpec>),
     Prompts(Vec<Prompt>),
     ExecuteTool(oneshot::Receiver<ExecuteToolResult>),
+    TerminateAcknowledged,
 }
 
 pub type ExecuteToolResult = Result<CallToolResult, McpServerActorError>;

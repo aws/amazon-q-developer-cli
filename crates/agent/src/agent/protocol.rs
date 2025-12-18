@@ -164,6 +164,7 @@ pub enum AgentRequest {
     /// Creates a serializable snapshot of the agent's current state
     CreateSnapshot,
     GetMcpPrompts,
+    Terminate,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -288,6 +289,7 @@ pub enum AgentResponse {
     Success,
     Snapshot(AgentSnapshot),
     McpPrompts(HashMap<String, Vec<Prompt>>),
+    TerminateAcknowledged,
     Unknown,
 }
 

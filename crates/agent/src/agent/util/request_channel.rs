@@ -88,6 +88,32 @@ where
             },
         }
     }
+
+    pub fn try_blocking_send_recv(&self, payload: Req) -> Option<Result<Res, Err>> {
+        trace!(?payload, "sending payload");
+        let (res_tx, mut res_rx) = oneshot::channel();
+        let request = Request { payload, res_tx };
+
+        // Errors if the channel is full or the channel has closed
+        if (self.tx.try_send(request)).is_err() {
+            error!("request receiver has closed");
+            return None;
+        }
+
+        // Errors if the response tx is dropped before sending a result, indicates a bug with the
+        // responder.
+        match res_rx.try_recv() {
+            Ok(res) => Some(res),
+            Err(_) => {
+                error!("response tx dropped before sending a result");
+                None
+            },
+        }
+    }
+
+    pub fn count(&self) -> usize {
+        self.tx.strong_count()
+    }
 }
 
 pub type RequestReceiver<Req, Res, Err> = mpsc::Receiver<Request<Req, Res, Err>>;
