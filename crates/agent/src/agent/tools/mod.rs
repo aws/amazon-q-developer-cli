@@ -97,15 +97,15 @@ where
 #[serde(rename_all = "camelCase")]
 #[strum(serialize_all = "camelCase")]
 pub enum BuiltInToolName {
-    #[strum(to_string = "fs_read", serialize = "fsRead", serialize = "read")]
+    #[strum(serialize = "fs_read", serialize = "fsRead", to_string = "read")]
     FsRead,
-    #[strum(to_string = "fs_write", serialize = "fsWrite", serialize = "write")]
+    #[strum(serialize = "fs_write", serialize = "fsWrite", to_string = "write")]
     FsWrite,
     #[strum(
-        to_string = "execute_bash",
+        serialize = "execute_bash",
         serialize = "executeCmd",
         serialize = "execute_cmd",
-        serialize = "shell"
+        to_string = "shell"
     )]
     ExecuteCmd,
     ImageRead,
