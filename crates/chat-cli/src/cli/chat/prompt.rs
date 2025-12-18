@@ -10,7 +10,6 @@ use eyre::Result;
 use rustyline::completion::{
     Completer,
     FilenameCompleter,
-    extract_word,
 };
 use rustyline::error::ReadlineError;
 use rustyline::highlight::{
@@ -42,7 +41,6 @@ use rustyline::{
     KeyEvent,
     Modifiers,
 };
-use winnow::stream::AsChar;
 
 pub use super::prompt_parser::generate_prompt;
 use super::prompt_parser::parse_prompt_components;
@@ -170,15 +168,12 @@ pub type PromptQuerySender = tokio::sync::broadcast::Sender<PromptQuery>;
 pub type PromptQueryResponseReceiver = tokio::sync::broadcast::Receiver<PromptQueryResult>;
 
 /// Complete commands that start with a slash
-fn complete_command(commands: Vec<&'static str>, word: &str, start: usize) -> (usize, Vec<String>) {
-    (
-        start,
-        commands
-            .iter()
-            .filter(|p| p.starts_with(word))
-            .map(|s| (*s).to_owned())
-            .collect(),
-    )
+fn complete_command(commands: Vec<&'static str>, word: &str) -> Vec<String> {
+    commands
+        .iter()
+        .filter(|p| p.starts_with(word))
+        .map(|s| (*s).to_owned())
+        .collect()
 }
 
 /// A wrapper around FilenameCompleter that provides enhanced path detection
@@ -307,11 +302,13 @@ impl Completer for ChatCompleter {
         pos: usize,
         _ctx: &Context<'_>,
     ) -> Result<(usize, Vec<Self::Candidate>), ReadlineError> {
-        let (start, word) = extract_word(line, pos, None, |c| c.is_space());
-
-        // Handle command completion
-        if word.starts_with('/') {
-            return Ok(complete_command(self.available_commands.clone(), word, start));
+        // Handle command completion - check if line starts with / for multi-word commands
+        if line.starts_with('/') {
+            let cmd_part = &line[..pos];
+            let candidates = complete_command(self.available_commands.clone(), cmd_part);
+            if !candidates.is_empty() {
+                return Ok((0, candidates));
+            }
         }
 
         if line.starts_with('@') {
@@ -331,7 +328,7 @@ impl Completer for ChatCompleter {
         }
 
         // Default: no completions
-        Ok((start, Vec::new()))
+        Ok((pos, Vec::new()))
     }
 }
 

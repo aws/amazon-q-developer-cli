@@ -22,7 +22,7 @@
         },
         {
           "type": "added",
-          "description": "Introducing the Planner Agent - a specialized built-in agent for breaking down complex tasks into implementation plans"
+          "description": "Introducing the Plan Agent - a specialized built-in agent for breaking down complex tasks into implementation plans"
         },
         {
           "type": "added",
