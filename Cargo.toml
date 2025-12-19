@@ -62,7 +62,7 @@ hyper = { version = "1.6.0", features = ["server"] }
 hyper-util = { version = "0.1.11", features = ["tokio"] }
 indicatif = "0.17.11"
 indoc = "2.0.6"
-insta = "1.43.1"
+insta = "1.45.0"
 libc = "0.2.172"
 mimalloc = "0.1.46"
 mockito = "1.7.0"
