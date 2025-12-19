@@ -68,7 +68,7 @@ impl Glob {
         aliases: &["glob"],
     };
 
-    pub async fn invoke(&self, os: &Os, _output: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
         let base_path = self.get_base_path(os)?;
 
         if !base_path.exists() {
@@ -152,24 +152,44 @@ impl Glob {
 
         let truncated = total_files > file_paths.len();
 
-        if total_files == 0 {
-            Ok(InvokeOutput {
-                output: OutputKind::Json(serde_json::json!({
-                    "filePaths": [],
-                    "totalFiles": 0,
-                    "truncated": false,
-                    "message": format!("No files found matching pattern: {}", self.pattern)
-                })),
+        let result = if total_files == 0 {
+            serde_json::json!({
+                "filePaths": [],
+                "totalFiles": 0,
+                "truncated": false,
+                "message": format!("No files found matching pattern: {}", self.pattern)
             })
         } else {
-            Ok(InvokeOutput {
-                output: OutputKind::Json(serde_json::json!({
-                    "filePaths": file_paths,
-                    "totalFiles": total_files,
-                    "truncated": truncated
-                })),
+            serde_json::json!({
+                "filePaths": file_paths,
+                "totalFiles": total_files,
+                "truncated": truncated
             })
-        }
+        };
+
+        // Display result summary
+        let search_path = self.path.as_deref().unwrap_or("current directory");
+        let summary = if total_files == 0 {
+            format!(
+                "No files found matching pattern: {} under {}",
+                StyledText::secondary(&self.pattern),
+                search_path
+            )
+        } else {
+            let truncated_suffix = if truncated { " (result is truncated)" } else { "" };
+            format!(
+                "Successfully found {} under {}{}",
+                StyledText::secondary(&format!("{total_files} files",)),
+                search_path,
+                truncated_suffix
+            )
+        };
+
+        super::queue_function_result(&summary, output, total_files == 0, false)?;
+
+        Ok(InvokeOutput {
+            output: OutputKind::Json(result),
+        })
     }
 
     /// Check if path matches the glob pattern
@@ -235,7 +255,7 @@ impl Glob {
 
     fn get_base_path(&self, os: &Os) -> Result<PathBuf> {
         match &self.path {
-            Some(p) if !p.is_empty() && p != "undefined" && p != "null" => Ok(PathBuf::from(p)),
+            Some(p) if !p.is_empty() => Ok(PathBuf::from(p)),
             _ => os.env.current_dir().wrap_err("Failed to get current directory"),
         }
     }

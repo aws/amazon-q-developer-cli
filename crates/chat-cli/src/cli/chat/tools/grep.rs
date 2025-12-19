@@ -129,7 +129,7 @@ impl Grep {
             .map_or(DEFAULT_MAX_DEPTH, |v| v.clamp(1, MAX_ALLOWED_DEPTH))
     }
 
-    pub async fn invoke(&self, os: &Os, _output: &mut impl Write) -> Result<InvokeOutput> {
+    pub async fn invoke(&self, os: &Os, output: &mut impl Write) -> Result<InvokeOutput> {
         let base_path = self.get_base_path(os)?;
 
         if !base_path.exists() {
@@ -175,6 +175,30 @@ impl Grep {
             OutputMode::Count => self.search_count(&matcher, &files).await,
         };
 
+        // Display result summary
+        let num_matches = result["numMatches"].as_u64().unwrap_or(0);
+        let num_files = result["numFiles"].as_u64().unwrap_or(0);
+        let truncated = result["truncated"].as_bool().unwrap_or(false);
+        let search_path = self.path.as_deref().unwrap_or("current directory");
+        let summary = if num_matches == 0 {
+            format!(
+                "No matches found for pattern: {} under {}",
+                StyledText::secondary(&self.pattern),
+                search_path,
+            )
+        } else {
+            let truncated_suffix = if truncated { " (result is truncated)" } else { "" };
+            format!(
+                "Successfully found {} in {} under {}{}",
+                StyledText::secondary(&format!("{num_matches} matches",)),
+                StyledText::secondary(&format!("{num_files} files",)),
+                search_path,
+                truncated_suffix
+            )
+        };
+
+        super::queue_function_result(&summary, output, num_matches == 0, false)?;
+
         Ok(InvokeOutput {
             output: OutputKind::Json(result),
         })
@@ -182,7 +206,7 @@ impl Grep {
 
     fn get_base_path(&self, os: &Os) -> Result<PathBuf> {
         match &self.path {
-            Some(p) if !p.is_empty() && p != "undefined" && p != "null" => Ok(PathBuf::from(p)),
+            Some(p) if !p.is_empty() => Ok(PathBuf::from(p)),
             _ => os.env.current_dir().wrap_err("Failed to get current directory"),
         }
     }
@@ -493,7 +517,7 @@ impl Grep {
         )?;
 
         if let Some(ref path) = self.path {
-            if !path.is_empty() && path != "undefined" && path != "null" {
+            if !path.is_empty() {
                 queue!(output, style::Print(" in "))?;
                 queue!(output, StyledText::brand_fg(), style::Print(path), StyledText::reset())?;
             }
