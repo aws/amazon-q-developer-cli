@@ -224,14 +224,19 @@ async fn execute_status(session: &mut ChatSession) -> Result<ChatState, ChatErro
     } else {
         // Show all configured servers (filtered by registry if in registry mode)
         if let Some(agent) = session.conversation.agents.get_active() {
-            let mut configured_servers: std::collections::HashSet<String> =
-                agent.mcp_servers.mcp_servers.keys().cloned().collect();
+            let mut configured_servers: std::collections::HashSet<String> = agent
+                .mcp_servers
+                .mcp_servers
+                .iter()
+                .filter(|(_, config)| !config.disabled)  // Filter out disabled servers
+                .map(|(name, _)| name.clone())
+                .collect();
 
-            // Filter servers by registry if in registry mode
+            // Filter servers based on registry mode
             if session.conversation.mcp_enabled && session.conversation.mcp_registry_url.is_some() {
+                // Registry mode: only show registry-type servers that exist in registry
                 if let Some(registry_cache) = &session.conversation.mcp_registry_cache {
                     let registry = &registry_cache.data;
-                    // Only show servers that exist in the registry
                     configured_servers.retain(|server_name| {
                         let agent_config = agent.mcp_servers.mcp_servers.get(server_name);
                         if let Some(config) = agent_config {
@@ -247,6 +252,16 @@ async fn execute_status(session: &mut ChatSession) -> Result<ChatState, ChatErro
                         }
                     });
                 }
+            } else {
+                // Non-registry mode: filter out registry-type servers (they can't run without a registry)
+                configured_servers.retain(|server_name| {
+                    let agent_config = agent.mcp_servers.mcp_servers.get(server_name);
+                    if let Some(config) = agent_config {
+                        !config.is_registry_type()
+                    } else {
+                        false
+                    }
+                });
             }
 
             for server_name in configured_servers {
