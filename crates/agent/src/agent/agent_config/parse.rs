@@ -86,8 +86,7 @@ impl<'a> ToolNameKind<'a> {
 
         // Check for MCP tool
         if let Some(rest) = name.strip_prefix("@") {
-            if let Some(i) = rest.find("/") {
-                let (server_name, tool_part) = rest.split_at(i);
+            if let Some((server_name, tool_part)) = rest.split_once("/") {
                 if tool_part.contains("*") {
                     return Ok(Self::McpGlob {
                         server_name,
@@ -232,5 +231,76 @@ mod tests {
             original: resource,
             pattern: glob::Pattern::new("/home/testuser/project/**/*.rs").unwrap()
         });
+    }
+
+    #[test]
+    fn test_tool_name_kind_parse() {
+        // Test wildcard for all tools
+        match ToolNameKind::parse("*").unwrap() {
+            ToolNameKind::All => {},
+            _ => panic!("Expected All variant"),
+        }
+
+        // Test built-in all variants
+        match ToolNameKind::parse("@builtin").unwrap() {
+            ToolNameKind::AllBuiltIn => {},
+            _ => panic!("Expected AllBuiltIn variant"),
+        }
+        match ToolNameKind::parse("@builtin/").unwrap() {
+            ToolNameKind::AllBuiltIn => {},
+            _ => panic!("Expected AllBuiltIn variant"),
+        }
+        match ToolNameKind::parse("@builtin/*").unwrap() {
+            ToolNameKind::AllBuiltIn => {},
+            _ => panic!("Expected AllBuiltIn variant"),
+        }
+
+        // Test built-in glob
+        match ToolNameKind::parse("@builtin/edit_*").unwrap() {
+            ToolNameKind::BuiltInGlob(glob) => assert_eq!(glob, "edit_*"),
+            _ => panic!("Expected BuiltInGlob variant"),
+        }
+
+        // Test built-in specific tool
+        match ToolNameKind::parse("@builtin/bash").unwrap() {
+            ToolNameKind::BuiltIn(name) => assert_eq!(name, "bash"),
+            _ => panic!("Expected BuiltIn variant"),
+        }
+
+        // Test MCP full name
+        match ToolNameKind::parse("@myserver/mytool").unwrap() {
+            ToolNameKind::McpFullName { server_name, tool_name } => {
+                assert_eq!(server_name, "myserver");
+                assert_eq!(tool_name, "mytool");
+            },
+            _ => panic!("Expected McpFullName variant"),
+        }
+
+        // Test MCP glob
+        match ToolNameKind::parse("@myserver/edit_*").unwrap() {
+            ToolNameKind::McpGlob { server_name, glob_part } => {
+                assert_eq!(server_name, "myserver");
+                assert_eq!(glob_part, "edit_*");
+            },
+            _ => panic!("Expected McpGlob variant"),
+        }
+
+        // Test MCP server only
+        match ToolNameKind::parse("@myserver").unwrap() {
+            ToolNameKind::McpServer { server_name } => assert_eq!(server_name, "myserver"),
+            _ => panic!("Expected McpServer variant"),
+        }
+
+        // Test plain built-in glob (no prefix)
+        match ToolNameKind::parse("bash_*").unwrap() {
+            ToolNameKind::BuiltInGlob(glob) => assert_eq!(glob, "bash_*"),
+            _ => panic!("Expected BuiltInGlob variant"),
+        }
+
+        // Test plain built-in (no prefix)
+        match ToolNameKind::parse("bash").unwrap() {
+            ToolNameKind::BuiltIn(name) => assert_eq!(name, "bash"),
+            _ => panic!("Expected BuiltIn variant"),
+        }
     }
 }
