@@ -42,10 +42,12 @@ use crate::util::paths;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 // Constants: Maximum allowed values (hard limits for safety)
-const MAX_ALLOWED_MATCHES_PER_FILE: usize = 100;
-const MAX_ALLOWED_FILES: usize = 500;
-const MAX_ALLOWED_TOTAL_LINES: usize = 2000;
-const MAX_ALLOWED_DEPTH: usize = 100;
+const MAX_ALLOWED_MATCHES_PER_FILE: usize = 30;
+const MAX_ALLOWED_FILES: usize = 400;
+const MAX_ALLOWED_TOTAL_LINES: usize = 300;
+const MAX_ALLOWED_DEPTH: usize = 50;
+/// Maximum characters per line to prevent minified files from blowing up output
+const MAX_LINE_LENGTH: usize = 500;
 
 // Constants: Default values (conservative defaults for typical usage)
 /// Default max matches per file in output
@@ -53,9 +55,9 @@ const DEFAULT_MAX_MATCHES_PER_FILE: usize = 5;
 /// Default max files to return
 const DEFAULT_MAX_FILES: usize = 100;
 /// Default max total lines for content mode output
-const DEFAULT_MAX_TOTAL_LINES: usize = 200;
+const DEFAULT_MAX_TOTAL_LINES: usize = 100;
 /// Default max directory depth
-const DEFAULT_MAX_DEPTH: usize = 50;
+const DEFAULT_MAX_DEPTH: usize = 30;
 /// How often to yield to allow cancellation (every N files)
 const YIELD_INTERVAL: u32 = 100;
 
@@ -270,8 +272,19 @@ impl Grep {
                 matcher,
                 file_path,
                 UTF8(|line_num, line| {
+                    let trimmed = line.trim_end();
+                    // Truncate long lines (protection against minified files)
+                    let display_line = if trimmed.len() > MAX_LINE_LENGTH {
+                        format!(
+                            "{}...[+{} chars]",
+                            &trimmed[..MAX_LINE_LENGTH],
+                            trimmed.len() - MAX_LINE_LENGTH
+                        )
+                    } else {
+                        trimmed.to_string()
+                    };
                     // Format: "line_num:content"
-                    file_matches.push(format!("{}:{}", line_num, line.trim_end()));
+                    file_matches.push(format!("{line_num}:{display_line}"));
                     Ok(true) // Continue searching to get accurate count
                 }),
             );
@@ -979,5 +992,91 @@ mod tests {
         assert!(Grep::match_include("*.{ts,tsx}", "component.ts"));
         assert!(Grep::match_include("*.{ts,tsx}", "component.tsx"));
         assert!(!Grep::match_include("*.{ts,tsx}", "component.js"));
+    }
+    #[tokio::test]
+    async fn test_long_line_truncation() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut file = File::create(temp_dir.path().join("bundle.min.js")).unwrap();
+        let long_line = "x".repeat(10_000); // 10k chars, simulating minified content
+        writeln!(file, "{}", long_line).unwrap();
+        writeln!(file, "normal short line").unwrap();
+
+        let tool = Grep {
+            pattern: "x".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            let results = json["results"].as_array().unwrap();
+            assert!(!results.is_empty());
+
+            let matches = results[0]["matches"].as_array().unwrap();
+            let first_match = matches[0].as_str().unwrap();
+
+            // Line should be truncated: "1:xxx...[+9500 chars]"
+            assert!(
+                first_match.len() < 1000,
+                "Long line should be truncated, got {} chars",
+                first_match.len()
+            );
+            assert!(
+                first_match.contains("...[+"),
+                "Truncated line should indicate remaining chars, got: {}",
+                &first_match[..100.min(first_match.len())]
+            );
+        } else {
+            panic!("Expected JSON output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_normal_lines_not_truncated() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create a file with normal length lines
+        let mut file = File::create(temp_dir.path().join("normal.rs")).unwrap();
+        writeln!(file, "fn main() {{ println!(\"hello world\"); }}").unwrap();
+        writeln!(file, "fn other() {{ println!(\"test\"); }}").unwrap();
+
+        let tool = Grep {
+            pattern: "fn".to_string(),
+            path: Some(temp_dir.path().to_string_lossy().to_string()),
+            include: None,
+            case_sensitive: None,
+            output_mode: Some(OutputMode::Content),
+            max_matches_per_file: None,
+            max_files: None,
+            max_total_lines: None,
+            max_depth: None,
+        };
+
+        let os = Os::new().await.unwrap();
+        let mut buf = Vec::new();
+        let result = tool.invoke(&os, &mut buf).await.unwrap();
+
+        if let OutputKind::Json(json) = result.output {
+            let results = json["results"].as_array().unwrap();
+            let matches = results[0]["matches"].as_array().unwrap();
+
+            // Normal lines should NOT be truncated
+            for m in matches {
+                let line = m.as_str().unwrap();
+                assert!(!line.contains("...[+"), "Normal line should not be truncated: {line}");
+            }
+        } else {
+            panic!("Expected JSON output");
+        }
     }
 }

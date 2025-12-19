@@ -41,9 +41,9 @@ use crate::util::tool_permission_checker::is_tool_in_allowlist;
 /// Default maximum number of results to return
 const DEFAULT_MAX_RESULTS: usize = 200;
 /// Maximum allowed depth to prevent excessive traversal
-const MAX_ALLOWED_DEPTH: usize = 100;
+const MAX_ALLOWED_DEPTH: usize = 50;
 /// Default maximum depth for directory traversal
-const DEFAULT_MAX_DEPTH: usize = 50;
+const DEFAULT_MAX_DEPTH: usize = 30;
 /// How often to yield to allow cancellation (every N entries)
 const YIELD_INTERVAL: u32 = 500;
 
