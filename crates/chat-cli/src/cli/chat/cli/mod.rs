@@ -126,10 +126,19 @@ pub enum SlashCommand {
     },
     /// [DEPRECATED] Use "/chat save" instead
     #[command(hide = true)]
-    Save,
+    Save {
+        /// Path where the chat session will be saved
+        path: Option<String>,
+        #[arg(short, long)]
+        /// Force overwrite if file already exists
+        force: bool,
+    },
     /// [DEPRECATED] Use "/chat load" instead
     #[command(hide = true)]
-    Load,
+    Load {
+        /// Path to the chat session file to load
+        path: Option<String>,
+    },
     // #[command(flatten)]
     // Root(RootSubcommand),
     #[command(
@@ -225,7 +234,7 @@ impl SlashCommand {
                     skip_printing_tools: false,
                 })
             },
-            Self::Save => {
+            Self::Save { .. } => {
                 use crossterm::{
                     execute,
                     style,
@@ -244,7 +253,7 @@ impl SlashCommand {
                     skip_printing_tools: true,
                 })
             },
-            Self::Load => {
+            Self::Load { .. } => {
                 use crossterm::{
                     execute,
                     style,
@@ -303,8 +312,8 @@ impl SlashCommand {
 
             Self::Tangent(_) => "tangent",
             Self::Plan { .. } => "plan",
-            Self::Save => "save",
-            Self::Load => "load",
+            Self::Save { .. } => "save",
+            Self::Load { .. } => "load",
             Self::Checkpoint(_) => "checkpoint",
             Self::Todos(_) => "todos",
             Self::Paste(_) => "paste",
