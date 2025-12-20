@@ -809,35 +809,11 @@ impl Agents {
             agent
         });
 
-        // Add planner agent
+        // Add planner agent (loaded from embedded JSON config)
         all_agents.push({
-            use crate::constants::PLANNER_AGENT_NAME;
-
-            let mut agent = Agent {
-                name: PLANNER_AGENT_NAME.to_string(),
-                description: Some(
-                    "Specialized planning agent that helps break down ideas into implementation plans".to_string(),
-                ),
-                prompt: Some(include_str!("../../planner_prompt.md").to_string()),
-                ..Default::default()
-            };
-
-            // Add switch_to_execution tool (excluded from builtin "*")
-            agent.tools.push("switch_to_execution".to_string());
-
-            // Ensure Planner Agent is read-only
-            // TODO: Added fallback_action setting to execute_bash as well
-            agent.tools_settings.extend([
-                (
-                    ToolSettingTarget("fs_write".to_string()),
-                    serde_json::json!({"fallback_action": "deny"}),
-                ),
-                (
-                    ToolSettingTarget("execute_bash".to_string()),
-                    serde_json::json!({"autoAllowReadonly": true, "denyByDefault": true}),
-                ),
-            ]);
-
+            let mut agent: Agent =
+                serde_json::from_str(include_str!("../../kiro_planner.json")).expect("Invalid kiro_planner.json");
+            agent.prompt = Some(include_str!("../../planner_prompt.md").to_string());
             configure_builtin_agent_resources(&mut agent, &resolver).await;
             // Note: Planner agent intentionally does not get MCP tools to keep it read-only
             agent
