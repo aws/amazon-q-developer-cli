@@ -155,7 +155,7 @@ impl Tool {
             Tool::Delegate(_) => PermissionEvalResult::Allow,
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
-            Tool::UseSubagent(_use_subagent) => PermissionEvalResult::Allow,
+            Tool::UseSubagent(use_subagent) => use_subagent.eval_perm(os, agent),
             Tool::Glob(glob) => glob.eval_perm(os, agent),
             Tool::Grep(grep) => grep.eval_perm(os, agent),
             Tool::SwitchToExecution(_) => PermissionEvalResult::Allow,

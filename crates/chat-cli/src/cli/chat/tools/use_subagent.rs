@@ -18,7 +18,11 @@ use super::{
     ToolInfo,
 };
 use crate::agent::Subagent;
-use crate::cli::agent::Agents;
+use crate::cli::Agent;
+use crate::cli::agent::{
+    Agents,
+    PermissionEvalResult,
+};
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::paths::PathResolver;
@@ -106,6 +110,112 @@ impl UseSubagent {
         }
 
         Ok(())
+    }
+
+    pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "camelCase")]
+        struct Settings {
+            #[serde(default)]
+            allowed_agents: Vec<AgentIdentifier>,
+        }
+
+        #[derive(Debug)]
+        enum AgentIdentifier {
+            ExactName(String),
+            NameGlob(regex::Regex, String),
+        }
+
+        impl PartialEq for AgentIdentifier {
+            fn eq(&self, other: &AgentIdentifier) -> bool {
+                match (self, other) {
+                    (AgentIdentifier::NameGlob(_, self_pattern), AgentIdentifier::NameGlob(_, other_pattern)) => {
+                        self_pattern == other_pattern
+                    },
+                    (AgentIdentifier::ExactName(self_name), AgentIdentifier::ExactName(other_name)) => {
+                        self_name == other_name
+                    },
+                    (_, _) => false,
+                }
+            }
+        }
+
+        impl PartialEq<str> for AgentIdentifier {
+            fn eq(&self, other: &str) -> bool {
+                match self {
+                    AgentIdentifier::NameGlob(r, _) => r.is_match(other),
+                    AgentIdentifier::ExactName(name) => name == other,
+                }
+            }
+        }
+
+        impl<'de> Deserialize<'de> for AgentIdentifier {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: serde::Deserializer<'de>,
+            {
+                let s = String::deserialize(deserializer)?;
+                if s.contains("*") {
+                    let r = regex::Regex::new(s.as_str()).map_err(serde::de::Error::custom)?;
+                    Ok(AgentIdentifier::NameGlob(r, s))
+                } else {
+                    Ok(AgentIdentifier::ExactName(s))
+                }
+            }
+        }
+
+        let is_in_allowlist = Self::INFO
+            .aliases
+            .iter()
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+        let tool_setting = Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias));
+
+        match self {
+            UseSubagent::ListAgents => {
+                if is_in_allowlist || tool_setting.is_some() {
+                    PermissionEvalResult::Allow
+                } else {
+                    PermissionEvalResult::Ask
+                }
+            },
+            UseSubagent::InvokeSubagents { subagents, .. } => match tool_setting.cloned() {
+                Some(settings) => {
+                    let Settings { allowed_agents } = match serde_json::from_value::<Settings>(settings) {
+                        Ok(settings) => settings,
+                        Err(e) => {
+                            error!("Failed to deserialize tool settings for subagent: {:?}", e);
+                            return PermissionEvalResult::Ask;
+                        },
+                    };
+
+                    let agents_to_spawn = subagents
+                        .iter()
+                        .map(|invoke| invoke.agent_name.as_deref().unwrap_or(DEFAULT_AGENT_NAME))
+                        .collect::<Vec<_>>();
+
+                    if agents_to_spawn
+                        .iter()
+                        .all(|agent| allowed_agents.iter().any(|allowed_agent| allowed_agent == *agent))
+                    {
+                        PermissionEvalResult::Allow
+                    } else {
+                        PermissionEvalResult::Ask
+                    }
+                },
+                None => {
+                    if is_in_allowlist {
+                        PermissionEvalResult::Allow
+                    } else {
+                        PermissionEvalResult::Ask
+                    }
+                },
+            },
+        }
     }
 
     pub async fn invoke(&self, os: &Os, agents: &Agents) -> Result<InvokeOutput> {
@@ -240,7 +350,15 @@ impl UseSubagent {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
+    use serde_json::json;
+
     use super::*;
+    use crate::cli::agent::{
+        PermissionEvalResult,
+        ToolSettingTarget,
+    };
 
     #[test]
     fn test_deser() {
@@ -265,5 +383,394 @@ mod tests {
 
         let result: Result<UseSubagent, _> = serde_json::from_value(input);
         assert!(result.is_ok());
+    }
+
+    // Helper function to create a minimal Agent for testing
+    fn create_test_agent(allowed_tools: Vec<&str>, tools_settings: HashMap<&str, serde_json::Value>) -> Agent {
+        Agent {
+            name: "test_agent".to_string(),
+            allowed_tools: allowed_tools.into_iter().map(|s| s.to_string()).collect(),
+            tools_settings: tools_settings
+                .into_iter()
+                .map(|(k, v)| (ToolSettingTarget(k.to_string()), v))
+                .collect(),
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_list_agents_in_allowlist() {
+        let os = Os::new().await.unwrap();
+        let agent = create_test_agent(vec!["use_subagent"], HashMap::new());
+        let tool = UseSubagent::ListAgents;
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_list_agents_with_settings() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["agent1", "agent2"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::ListAgents;
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_list_agents_no_permission() {
+        let os = Os::new().await.unwrap();
+        let agent = create_test_agent(vec![], HashMap::new());
+        let tool = UseSubagent::ListAgents;
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_in_allowlist() {
+        let os = Os::new().await.unwrap();
+        let agent = create_test_agent(vec!["use_subagent"], HashMap::new());
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("test_agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_exact_name_match_allowed() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["agent1", "agent2"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_exact_name_match_denied() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["agent1", "agent2"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent3".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_glob_pattern_match() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["test-*"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("test-agent-1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_glob_pattern_no_match() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["test-*"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("production-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_multiple_subagents_all_allowed() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["agent1", "agent2", "agent3"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![
+                InvokeSubagent {
+                    query: "query 1".to_string(),
+                    agent_name: Some("agent1".to_string()),
+                    relevant_context: None,
+                    dangerously_trust_all_tools: false,
+                    is_interactive: false,
+                },
+                InvokeSubagent {
+                    query: "query 2".to_string(),
+                    agent_name: Some("agent2".to_string()),
+                    relevant_context: None,
+                    dangerously_trust_all_tools: false,
+                    is_interactive: false,
+                },
+            ],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_multiple_subagents_some_denied() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["agent1", "agent2"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![
+                InvokeSubagent {
+                    query: "query 1".to_string(),
+                    agent_name: Some("agent1".to_string()),
+                    relevant_context: None,
+                    dangerously_trust_all_tools: false,
+                    is_interactive: false,
+                },
+                InvokeSubagent {
+                    query: "query 2".to_string(),
+                    agent_name: Some("agent3".to_string()),
+                    relevant_context: None,
+                    dangerously_trust_all_tools: false,
+                    is_interactive: false,
+                },
+            ],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_default_agent_name() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": [DEFAULT_AGENT_NAME]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: None, // Should use DEFAULT_AGENT_NAME
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_invalid_settings() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        // Invalid settings - not matching expected schema
+        settings.insert("subagent", json!("invalid"));
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        // Should fall back to Ask when settings are invalid
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_empty_allowed_agents() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": []
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_subagents_no_settings_no_allowlist() {
+        let os = Os::new().await.unwrap();
+        let agent = create_test_agent(vec![], HashMap::new());
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_mixed_glob_and_exact_patterns() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "allowedAgents": ["exact-agent", "test-.*"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+
+        // Test exact match
+        let tool1 = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("exact-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+        assert_eq!(tool1.eval_perm(&os, &agent), PermissionEvalResult::Allow);
+
+        // Test glob match
+        let tool2 = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("test-123".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+        assert_eq!(tool2.eval_perm(&os, &agent), PermissionEvalResult::Allow);
+
+        // Test no match
+        let tool3 = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("other-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+        };
+        assert_eq!(tool3.eval_perm(&os, &agent), PermissionEvalResult::Ask);
     }
 }

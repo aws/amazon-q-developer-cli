@@ -985,7 +985,7 @@ impl Agents {
             name if ToolMetadata::TODO.aliases.contains(&name) => "trusted".dark_green().bold(),
             name if ToolMetadata::GLOB.aliases.contains(&name) => "trust working directory".dark_grey(),
             name if ToolMetadata::GREP.aliases.contains(&name) => "trust working directory".dark_grey(),
-            name if ToolMetadata::USE_SUBAGENT.aliases.contains(&name) => "trusted".dark_green().bold(),
+            name if ToolMetadata::USE_SUBAGENT.aliases.contains(&name) => "not trusted".dark_grey(),
             name if ToolMetadata::SWITCH_TO_EXECUTION.aliases.contains(&name) => "trusted".dark_green().bold(),
             _ if self.trust_all_tools => "trusted".dark_grey().bold(),
             _ => "not trusted".dark_grey(),
