@@ -95,6 +95,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/introspect-tool.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/introspect-tool.md"));
 
+        documentation.push_str("\n\n--- docs/mcp-registry.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/mcp-registry.md"));
+
         documentation.push_str("\n\n--- docs/todo-lists.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/todo-lists.md"));
 
