@@ -366,6 +366,20 @@ Display LSP logs for troubleshooting.
 | Ruby | `.rb` | `solargraph` | `gem install solargraph` |
 | C/C++ | `.c`, `.cpp`, `.h`, `.hpp` | `clangd` | `brew install llvm` (macOS) or `apt install clangd` (Linux) |
 
+### "Code tool is not enabled for this agent"
+**Cause**: The agent you're using doesn't have the `code` tool in its tool list.
+**Solution**: Add the code tool to your agent configuration:
+- Add `"code"` to the agent's tools array, or
+- Use `@builtin` to include all built-in tools, or
+- Use `@builtin/code` to include only the code tool
+
+**Example agent configuration:**
+```json
+{
+  "tools": ["@builtin/code", "other_tool"]
+}
+```
+
 ### "Workspace is still initializing"
 **Cause**: LSP servers are starting up.
 **Solution**: Wait a moment and try again. If servers crashed, use `/code init -f` to restart.
