@@ -215,9 +215,16 @@ impl AgentSubcommand {
                     .map_err(|e| ChatError::Custom(format!("Error printing agent schema: {e}").into()))?;
             },
             Self::Create { name, directory, from } => {
-                let mut agents = Agents::load(os, None, true, &mut session.stderr, session.conversation.mcp_enabled)
-                    .await
-                    .0;
+                let mut agents = Agents::load(
+                    os,
+                    None,
+                    true,
+                    &mut session.stderr,
+                    session.conversation.mcp_enabled,
+                    session.conversation.mcp_disabled_due_to_api_failure,
+                )
+                .await
+                .0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from)
                     .await
                     .map_err(|e| ChatError::Custom(Cow::Owned(e.to_string())))?;
@@ -612,7 +619,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
 
     // 1. Load from agent configurations (highest priority)
     let mut null_writer = NullWriter;
-    let (agents, _) = Agents::load(os, None, true, &mut null_writer, true).await;
+    let (agents, _) = Agents::load(os, None, true, &mut null_writer, true, false).await;
 
     for (_, agent) in agents.agents {
         for (server_name, server_config) in agent.mcp_servers.mcp_servers {

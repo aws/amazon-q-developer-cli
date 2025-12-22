@@ -87,20 +87,24 @@ impl AgentArgs {
 
         // For non-enterprise users, skip the API call and default to enabled
         let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
-        let mcp_enabled = if !is_enterprise {
-            true
+        let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
+            (true, false)
         } else {
             match os.client.is_mcp_enabled().await {
-                Ok(enabled) => enabled,
+                Ok(enabled) => (enabled, false),
                 Err(err) => {
+                    // Check if this is a GetProfile API error
+                    let is_api_failure = matches!(err, crate::api_client::ApiClientError::GetProfileError(_));
                     tracing::warn!(?err, "Failed to check MCP configuration, defaulting to disabled");
-                    false
+                    (false, is_api_failure)
                 },
             }
         };
         match self.cmd {
             Some(AgentSubcommands::List) | None => {
-                let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+                let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+                    .await
+                    .0;
 
                 let active_agent_name = agents.active_idx.clone();
                 let agent_with_path =
@@ -135,7 +139,9 @@ impl AgentArgs {
                 writeln!(stderr, "{output_str}")?;
             },
             Some(AgentSubcommands::Create { name, directory, from }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+                    .await
+                    .0;
                 let path_with_file_name = create_agent(os, &mut agents, name.clone(), directory, from).await?;
 
                 crate::util::editor::launch_editor(&path_with_file_name)?;
@@ -161,7 +167,9 @@ impl AgentArgs {
                 )?;
             },
             Some(AgentSubcommands::Edit { name, path }) => {
-                let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+                let _agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+                    .await
+                    .0;
 
                 let mut show_both_params_warning = false;
                 let (agent_name, path_with_file_name) = match (name, path) {
@@ -349,7 +357,9 @@ impl AgentArgs {
                 }
             },
             Some(AgentSubcommands::SetDefault { name }) => {
-                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+                let mut agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+                    .await
+                    .0;
                 match agents.switch(&name, os).await {
                     Ok(agent) => {
                         os.database

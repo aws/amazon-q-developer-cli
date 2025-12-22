@@ -599,15 +599,22 @@ impl Agents {
         skip_migration: bool,
         output: &mut impl Write,
         mcp_enabled: bool,
+        mcp_api_failure: bool,
     ) -> (Self, AgentsLoadMetadata) {
         if !mcp_enabled {
+            let message = if mcp_api_failure {
+                "Failed to retrieve MCP settings; MCP functionality disabled\n\n"
+            } else {
+                "MCP functionality has been disabled by your administrator.\n\n"
+            };
+
             let _ = execute!(
                 output,
                 StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 StyledText::reset(),
-                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+                style::Print(message),
             );
         }
 
@@ -1870,7 +1877,7 @@ mod tests {
         std::fs::write(workspace_steering.join("workspace.md"), "Workspace steering").unwrap();
 
         let mut output = Vec::new();
-        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false, false).await;
 
         let default_agent = agents.agents.get("kiro_default").unwrap();
 
@@ -1897,7 +1904,7 @@ mod tests {
 
         // Test without .amazonq directory
         let mut output = Vec::new();
-        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false, false).await;
         let default_agent = agents.agents.get("kiro_default").unwrap();
 
         let has_rules = default_agent.resources.iter().any(|r| r.contains(".amazonq/rules"));
@@ -1917,7 +1924,7 @@ mod tests {
         }
 
         let mut output = Vec::new();
-        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false, false).await;
         let default_agent = agents.agents.get("kiro_default").unwrap();
 
         let has_rules = default_agent.resources.iter().any(|r| r.contains(".amazonq/rules"));
@@ -1938,7 +1945,7 @@ mod tests {
 
         // Don't create steering directories
         let mut output = Vec::new();
-        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false).await;
+        let (agents, _) = Agents::load(&mut os, None, false, &mut output, false, false).await;
         let default_agent = agents.agents.get("kiro_default").unwrap();
 
         // Should not have steering patterns when directories don't exist

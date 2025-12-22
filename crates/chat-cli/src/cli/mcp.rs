@@ -693,18 +693,22 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
 
     // For non-enterprise users, skip the API call and default to enabled
     let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
-    let mcp_enabled = if !is_enterprise {
-        true
+    let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
+        (true, false)
     } else {
         match os.client.is_mcp_enabled().await {
-            Ok(enabled) => enabled,
+            Ok(enabled) => (enabled, false),
             Err(err) => {
+                // Check if this is a GetProfile API error
+                let is_api_failure = matches!(err, crate::api_client::ApiClientError::GetProfileError(_));
                 tracing::warn!(?err, "Failed to check MCP configuration, defaulting to disabled");
-                false
+                (false, is_api_failure)
             },
         }
     };
-    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled).await.0;
+    let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
+        .await
+        .0;
     let global_path = PathResolver::new(os).global().agents_dir()?;
     for (_, agent) in agents.agents {
         let scope = if agent

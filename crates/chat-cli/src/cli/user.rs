@@ -432,8 +432,9 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
     ]);
     let profiles = list_available_profiles(&os.env, &os.fs, &mut os.database).await?;
     if profiles.is_empty() {
-        info!("Available profiles was empty");
-        return Ok(());
+        spinner.stop_with_message(String::new());
+        error!("No profiles available for IdC user");
+        bail!("No profiles available. Please contact your administrator.");
     }
 
     let sso_region = os.database.get_idc_region()?;
@@ -462,57 +463,66 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
         .collect();
     let active_profile = os.database.get_auth_profile()?;
 
-    if let Some(default_idx) = active_profile
+    let default_idx = active_profile
         .as_ref()
         .and_then(|active| profiles.iter().position(|p| p.arn == active.arn))
-    {
-        items[default_idx] = format!("{} (active)", items[default_idx].as_str());
+        .unwrap_or(0);
+
+    if let Some(active) = active_profile.as_ref() {
+        if let Some(idx) = profiles.iter().position(|p| p.arn == active.arn) {
+            items[idx] = format!("{} (active)", items[idx].as_str());
+        }
     }
 
     spinner.stop_with_message(String::new());
     let selected = Select::with_theme(&crate::util::dialoguer_theme())
         .with_prompt("Select an IAM Identity Center profile")
         .items(&items)
-        .default(0)
+        .default(default_idx)
         .interact_opt()?;
 
-    match selected {
-        Some(i) => {
-            let chosen = &profiles[i];
-            eprintln!("Profile set");
-            os.database.set_auth_profile(chosen)?;
+    // Default to active profile (or first if no active) if user cancels
+    let chosen_idx = selected.unwrap_or(default_idx);
+    let chosen = &profiles[chosen_idx];
 
-            if let Some(profile_region) = chosen.arn.split(':').nth(3) {
-                let intent = if whoami {
-                    QProfileSwitchIntent::Auth
-                } else {
-                    QProfileSwitchIntent::User
-                };
+    if selected.is_some() {
+        eprintln!("Profile set");
+    } else {
+        eprintln!(
+            "No selection made, defaulting to {}: {}",
+            if default_idx == 0 && active_profile.is_none() {
+                "first profile"
+            } else {
+                "active profile"
+            },
+            chosen.profile_name
+        );
+    }
 
-                os.telemetry
-                    .send_did_select_profile(
-                        intent,
-                        profile_region.to_string(),
-                        TelemetryResult::Succeeded,
-                        sso_region,
-                        Some(total_profiles),
-                    )
-                    .ok();
-            }
-        },
-        None => {
-            os.telemetry
-                .send_did_select_profile(
-                    QProfileSwitchIntent::User,
-                    "not-set".to_string(),
-                    TelemetryResult::Cancelled,
-                    sso_region,
-                    Some(total_profiles),
-                )
-                .ok();
+    os.database.set_auth_profile(chosen)?;
 
-            bail!("No profile selected.\n");
-        },
+    if let Some(profile_region) = chosen.arn.split(':').nth(3) {
+        let intent = if whoami {
+            QProfileSwitchIntent::Auth
+        } else {
+            QProfileSwitchIntent::User
+        };
+
+        let result = if selected.is_some() {
+            TelemetryResult::Succeeded
+        } else {
+            TelemetryResult::Cancelled
+        };
+
+        os.telemetry
+            .send_did_select_profile(
+                intent,
+                profile_region.to_string(),
+                result,
+                sso_region,
+                Some(total_profiles),
+            )
+            .ok();
     }
 
     Ok(())

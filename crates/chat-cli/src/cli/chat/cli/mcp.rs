@@ -47,13 +47,19 @@ fn truncate_server_description(description: &str) -> String {
 
 /// Helper function to handle MCP disabled state with appropriate error messages
 fn handle_mcp_disabled_state(session: &mut ChatSession) -> Result<ChatState, ChatError> {
-    // MCP is disabled by admin (toggle is Off)
+    // Check if MCP was disabled due to API failure vs admin configuration
+    let message = if session.conversation.mcp_disabled_due_to_api_failure {
+        "Failed to retrieve MCP settings; MCP functionality disabled\n\n"
+    } else {
+        "MCP functionality has been disabled by your administrator.\n\n"
+    };
+
     queue!(
         session.stderr,
         StyledText::warning_fg(),
         style::Print("\n⚠️  WARNING: "),
         StyledText::reset(),
-        style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+        style::Print(message),
     )?;
     session.stderr.flush()?;
     Ok(ChatState::PromptUser {

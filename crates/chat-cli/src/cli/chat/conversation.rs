@@ -268,6 +268,9 @@ pub struct ConversationState {
     /// Type of registry error when MCP is disabled due to registry issues
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mcp_registry_error_type: Option<crate::mcp_registry::RegistryErrorType>,
+    /// Whether MCP was disabled due to API failure (getProfile) vs admin configuration
+    #[serde(default)]
+    pub mcp_disabled_due_to_api_failure: bool,
 
     /// Tangent mode checkpoint - stores main conversation when in tangent mode
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -347,6 +350,7 @@ impl ConversationState {
             mcp_registry_cache: None,
             mcp_server_versions: HashMap::new(),
             mcp_registry_error_type: None,
+            mcp_disabled_due_to_api_failure: false, // Will be set by caller if needed
 
             tangent_state: None,
             user_turn_metadata: UserTurnMetadata::new(),

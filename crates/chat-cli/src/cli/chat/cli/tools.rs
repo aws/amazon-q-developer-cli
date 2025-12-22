@@ -191,13 +191,19 @@ impl ToolsArgs {
         }
 
         if !session.conversation.mcp_enabled {
+            let message = if session.conversation.mcp_disabled_due_to_api_failure {
+                "Failed to retrieve MCP settings; MCP functionality disabled\n\n"
+            } else {
+                "MCP functionality has been disabled by your administrator.\n\n"
+            };
+
             queue!(
                 session.stderr,
                 StyledText::warning_fg(),
                 style::Print("\n"),
                 style::Print("⚠️  WARNING: "),
                 StyledText::reset(),
-                style::Print("MCP functionality has been disabled by your administrator.\n\n"),
+                style::Print(message),
             )?;
         }
 

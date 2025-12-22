@@ -526,8 +526,9 @@ mod tests {
             true,
             false,
             None,
-            None, // wrap: Option<WrapMode>
-            None, // registry_data
+            false, // mcp_api_failure
+            None,  // wrap: Option<WrapMode>
+            None,  // registry_data
         )
         .await
         .unwrap();

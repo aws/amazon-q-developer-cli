@@ -360,9 +360,9 @@ impl ChatArgs {
         // Check MCP status once at the beginning of the session
         // For non-enterprise users, skip the API call and default to enabled with no registry
         let is_enterprise = crate::auth::builder_id::is_idc_user(&os.database).await;
-        let (mut mcp_enabled, mcp_registry_url) = if !is_enterprise {
+        let (mut mcp_enabled, mcp_registry_url, mcp_api_failure) = if !is_enterprise {
             tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
-            (true, None)
+            (true, None, false)
         } else {
             match os.client.get_mcp_config().await {
                 Ok((enabled, registry_url)) => {
@@ -372,11 +372,13 @@ impl ChatArgs {
                         registry_url
                     );
 
-                    (enabled, registry_url)
+                    (enabled, registry_url, false)
                 },
                 Err(e) => {
+                    // Check if this is a GetProfile API error
+                    let is_api_failure = matches!(e, crate::api_client::ApiClientError::GetProfileError(_));
                     tracing::warn!("Failed to get MCP config from API: {}, defaulting to disabled", e);
-                    (false, None)
+                    (false, None, is_api_failure)
                 },
             }
         };
@@ -389,8 +391,15 @@ impl ChatArgs {
 
         let mut agents = {
             let skip_migration = self.no_interactive;
-            let (mut agents, md) =
-                Agents::load(os, self.agent.as_deref(), skip_migration, &mut stderr, mcp_enabled).await;
+            let (mut agents, md) = Agents::load(
+                os,
+                self.agent.as_deref(),
+                skip_migration,
+                &mut stderr,
+                mcp_enabled,
+                mcp_api_failure,
+            )
+            .await;
             agents.trust_all_tools = self.trust_all_tools;
 
             os.telemetry
@@ -627,6 +636,7 @@ impl ChatArgs {
             !self.no_interactive,
             mcp_enabled,
             mcp_registry_url,
+            mcp_api_failure,
             self.wrap,
             registry_data,
         )
@@ -872,6 +882,7 @@ impl ChatSession {
         interactive: bool,
         mcp_enabled: bool,
         mcp_registry_url: Option<String>,
+        mcp_api_failure: bool,
         wrap: Option<WrapMode>,
         registry_data: Option<crate::mcp_registry::McpRegistryResponse>,
     ) -> Result<Self> {
@@ -998,6 +1009,11 @@ impl ChatSession {
                 });
                 tracing::debug!("Cached registry data for new conversation");
             }
+        }
+
+        // Set API failure flag for new conversations
+        if !existing_conversation {
+            conversation.mcp_disabled_due_to_api_failure = mcp_api_failure;
         }
 
         // Process MCP servers based on registry mode
@@ -1675,9 +1691,12 @@ impl ChatSession {
                     }
                 },
                 Err(e) => {
+                    // Check if this is a GetProfile API error
+                    let is_api_failure = matches!(e, crate::api_client::ApiClientError::GetProfileError(_));
                     tracing::warn!("Failed to refresh MCP config from API: {}", e);
                     // Disable MCP when API call fails
                     self.conversation.mcp_enabled = false;
+                    self.conversation.mcp_disabled_due_to_api_failure = is_api_failure;
                     self.conversation.mcp_registry_url = None;
                     self.conversation.mcp_registry_cache = None;
                     self.conversation.mcp_server_versions.clear();
@@ -4742,6 +4761,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -4885,6 +4905,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -4983,6 +5004,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -5059,6 +5081,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -5186,6 +5209,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -5321,6 +5345,7 @@ mod tests {
             true,
             false,
             None,
+            false, // mcp_api_failure
             None,
             None, // registry_data
         )
@@ -5377,6 +5402,7 @@ mod tests {
                 true,
                 false,
                 None,
+                false, // mcp_api_failure
                 None,
                 None, // registry_data
             )
@@ -5653,8 +5679,9 @@ mod tests {
             true,
             false,
             None,
-            None, // wrap: Option<WrapMode>
-            None, // registry_data
+            false, // mcp_api_failure
+            None,  // wrap: Option<WrapMode>
+            None,  // registry_data
         )
         .await
         .unwrap();
@@ -5711,8 +5738,9 @@ mod tests {
             true,
             false,
             None,
-            None, // wrap: Option<WrapMode>
-            None, // registry_data
+            false, // mcp_api_failure
+            None,  // wrap: Option<WrapMode>
+            None,  // registry_data
         )
         .await
         .unwrap();
@@ -5762,8 +5790,9 @@ mod tests {
             true,
             false,
             None,
-            None, // wrap: Option<WrapMode>
-            None, // registry_data
+            false, // mcp_api_failure
+            None,  // wrap: Option<WrapMode>
+            None,  // registry_data
         )
         .await
         .unwrap();
