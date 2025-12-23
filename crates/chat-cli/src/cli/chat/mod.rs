@@ -833,6 +833,8 @@ impl ChatSession {
                         return Ok(());
                     },
                     (false, false) => {
+                        // This should be unreachable now - tools are rejected in the permission loop
+                        error!("Reached PromptUser with pending tools in non-interactive mode");
                         return Err(ChatError::NonInteractiveToolApproval);
                     },
                     _ => (),
@@ -2380,6 +2382,9 @@ impl ChatSession {
             self.conversation.enter_tangent_mode();
         }
 
+        // Initialize tool_results to collect errors for rejected tools
+        let mut tool_results: Vec<ToolUseResult> = vec![];
+
         // Verify tools have permissions.
         for i in 0..self.tool_uses.len() {
             let tool = &mut self.tool_uses[i];
@@ -2465,6 +2470,30 @@ impl ChatSession {
                 continue;
             }
 
+            // Handle non-interactive mode - reject tool and continue
+            if !self.interactive {
+                let error_message = format!(
+                    "Tool '{}' requires approval but --no-interactive was specified. \
+                    This tool is not trusted. Please try an alternative approach.",
+                    tool.name
+                );
+                
+                tool_results.push(ToolUseResult {
+                    tool_use_id: tool.id.clone(),
+                    content: vec![ToolUseResultBlock::Text(error_message)],
+                    status: ToolResultStatus::Error,
+                });
+                
+                self.tool_use_telemetry_events
+                    .entry(tool.id.clone())
+                    .and_modify(|ev| {
+                        ev.is_trusted = false;
+                        ev.is_accepted = false;
+                    });
+                
+                continue;
+            }
+
             self.pending_tool_index = Some(i);
 
             return Ok(ChatState::PromptUser {
@@ -2474,10 +2503,14 @@ impl ChatSession {
 
         // All tools are allowed now
         // Execute the requested tools.
-        let mut tool_results = vec![];
         let mut image_blocks: Vec<RichImageBlock> = Vec::new();
 
         for tool in &self.tool_uses {
+            // Skip tools that weren't accepted (already have error results)
+            if !tool.accepted {
+                continue;
+            }
+
             let tool_start = std::time::Instant::now();
             let mut tool_telemetry = self.tool_use_telemetry_events.entry(tool.id.clone());
             tool_telemetry = tool_telemetry.and_modify(|ev| {
