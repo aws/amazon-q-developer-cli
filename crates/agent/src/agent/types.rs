@@ -143,6 +143,52 @@ impl Default for AgentSettings {
     }
 }
 
+pub struct DecoratedEmbeddedUserMessagesIterator<'a> {
+    pub inner_iter: std::slice::Iter<'a, String>,
+}
+
+impl<'a> Iterator for DecoratedEmbeddedUserMessagesIterator<'a> {
+    type Item = String;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        self.inner_iter.next().map(|message| {
+            format!(
+                "{}{message}\n{}",
+                EmbeddedUserMessages::START_HEADER,
+                EmbeddedUserMessages::END_HEADER
+            )
+        })
+    }
+}
+
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct EmbeddedUserMessages {
+    pub messages: Vec<String>,
+}
+
+impl EmbeddedUserMessages {
+    const END_HEADER: &str = "--- EMBEDDED USER MESSAGE SEGMENT END ---\n\n";
+    const START_HEADER: &str = "--- EMBEDDED USER MESSAGE SEGMENT BEGIN ---\n";
+
+    pub fn to_string(&self) -> String {
+        self.into_iter().fold(String::new(), |mut acc, msg| {
+            acc.push_str(&msg);
+            acc
+        })
+    }
+}
+
+impl<'a> IntoIterator for &'a EmbeddedUserMessages {
+    type IntoIter = DecoratedEmbeddedUserMessagesIterator<'a>;
+    type Item = String;
+
+    fn into_iter(self) -> Self::IntoIter {
+        DecoratedEmbeddedUserMessagesIterator {
+            inner_iter: self.messages.iter(),
+        }
+    }
+}
+
 /// State associated with a history of messages.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationState {

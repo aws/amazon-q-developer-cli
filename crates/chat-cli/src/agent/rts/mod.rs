@@ -201,7 +201,7 @@ impl RtsModel {
         &self,
         mut messages: Vec<Message>,
         tool_specs: Option<Vec<ToolSpec>>,
-        _system_prompt: Option<String>,
+        system_prompt: Option<String>,
     ) -> Result<ConversationState, String> {
         debug!(?messages, ?tool_specs, "creating conversation state");
         let tools = tool_specs.map(|v| {
@@ -235,7 +235,22 @@ impl RtsModel {
             None => return Err("Empty conversation".to_string()),
         };
 
-        let history = messages
+        let mut history = Vec::<rts::ChatMessage>::new();
+        if let Some(system_prompt) = system_prompt {
+            history.push(rts::ChatMessage::UserInputMessage(UserInputMessage {
+                content: system_prompt,
+                user_input_message_context: None,
+                user_intent: None,
+                images: None,
+                model_id: None,
+            }));
+            history.push(rts::ChatMessage::AssistantResponseMessage(rts::AssistantResponseMessage { 
+                message_id: None, 
+                content: "I will fully incorporate this information when generating my responses, and explicitly acknowledge relevant parts of the summary when answering questions.".to_string(),
+                tool_uses: None }));
+        }
+
+        history.append(&mut messages
             .into_iter()
             .map(|m| match m.role {
                 Role::User => {
@@ -269,7 +284,7 @@ impl RtsModel {
                     rts::ChatMessage::AssistantResponseMessage(msg)
                 },
             })
-            .collect();
+            .collect());
 
         Ok(ConversationState {
             conversation_id: Some(self.conversation_id.to_string()),

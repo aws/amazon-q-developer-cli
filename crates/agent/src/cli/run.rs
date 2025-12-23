@@ -1,4 +1,5 @@
 use std::io::Write as _;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::sync::Arc;
 
@@ -61,6 +62,9 @@ pub struct RunArgs {
     /// Trust all tools
     #[arg(long)]
     dangerously_trust_all_tools: bool,
+    /// Credential path for remote mcp
+    #[arg(long)]
+    mcp_cred_path: Option<String>,
     /// The initial prompt.
     prompt: Vec<String>,
 }
@@ -102,7 +106,13 @@ impl RunArgs {
             }
         };
 
-        let agent = Agent::new(snapshot, model, McpManager::new().spawn()).await?.spawn();
+        let mcp_manager_handle = if let Some(path) = self.mcp_cred_path.as_ref() {
+            let cred_path = PathBuf::from(path);
+            McpManager::new(cred_path).spawn()
+        } else {
+            McpManager::default().spawn()
+        };
+        let agent = Agent::new(snapshot, model, mcp_manager_handle).await?.spawn();
 
         self.main_loop(agent).await
     }
@@ -112,6 +122,10 @@ impl RunArgs {
 
         // First, wait for agent initialization
         while let Ok(evt) = agent.recv().await {
+            if matches!(evt, AgentEvent::Mcp(_)) {
+                info!(?evt, "received mcp agent event");
+                // TODO: Send it through conduit
+            }
             if matches!(evt, AgentEvent::Initialized) {
                 break;
             }
@@ -159,7 +173,10 @@ impl RunArgs {
                             .await?;
                     }
                 },
-                _ => (),
+                AgentEvent::Mcp(evt) => {
+                    info!(?evt, "received mcp agent event");
+                },
+                _ => {},
             }
         }
 

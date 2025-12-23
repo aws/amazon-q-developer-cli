@@ -12,6 +12,7 @@ use serde::{
 use super::types::ResourcePath;
 use crate::agent::consts::DEFAULT_AGENT_NAME;
 use crate::agent::tools::BuiltInToolName;
+use crate::mcp::oauth_util::OAuthConfig;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(untagged)]
@@ -214,14 +215,61 @@ pub struct McpServers {
     pub mcp_servers: HashMap<String, McpServerConfig>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(untagged)]
+#[derive(Debug, Clone, Serialize, JsonSchema)]
+#[serde(tag = "type")]
 pub enum McpServerConfig {
+    #[serde(rename = "stdio")]
     Local(LocalMcpServerConfig),
-    StreamableHTTP(StreamableHTTPMcpServerConfig),
+    #[serde(rename = "http")]
+    Remote(RemoteMcpServerConfig),
+}
+
+impl<'de> Deserialize<'de> for McpServerConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+
+        // Helper enum with derived Deserialize to avoid infinite recursion
+        #[derive(Deserialize)]
+        #[serde(tag = "type")]
+        enum McpServerConfigHelper {
+            #[serde(rename = "stdio")]
+            Local(LocalMcpServerConfig),
+            #[serde(rename = "http")]
+            Remote(RemoteMcpServerConfig),
+        }
+
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        // Check if "type" field exists
+        if let Some(obj) = value.as_object() {
+            if !obj.contains_key("type") {
+                // If "type" is missing, default to "stdio" by adding it
+                let mut obj = obj.clone();
+                obj.insert("type".to_string(), serde_json::Value::String("stdio".to_string()));
+                let value_with_type = serde_json::Value::Object(obj);
+                let helper: McpServerConfigHelper =
+                    serde_json::from_value(value_with_type).map_err(D::Error::custom)?;
+                return Ok(match helper {
+                    McpServerConfigHelper::Local(config) => McpServerConfig::Local(config),
+                    McpServerConfigHelper::Remote(config) => McpServerConfig::Remote(config),
+                });
+            }
+        }
+
+        // Normal deserialization with type field present
+        let helper: McpServerConfigHelper = serde_json::from_value(value).map_err(D::Error::custom)?;
+        Ok(match helper {
+            McpServerConfigHelper::Local(config) => McpServerConfig::Local(config),
+            McpServerConfigHelper::Remote(config) => McpServerConfig::Remote(config),
+        })
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalMcpServerConfig {
     /// The command string used to initialize the mcp server
     pub command: String,
@@ -241,7 +289,8 @@ pub struct LocalMcpServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct StreamableHTTPMcpServerConfig {
+#[serde(rename_all = "camelCase")]
+pub struct RemoteMcpServerConfig {
     /// The URL endpoint for HTTP-based MCP servers
     pub url: String,
     /// HTTP headers to include when communicating with HTTP-based MCP servers
@@ -251,6 +300,15 @@ pub struct StreamableHTTPMcpServerConfig {
     #[serde(alias = "timeout")]
     #[serde(default = "default_timeout")]
     pub timeout_ms: u64,
+    /// OAuth scopes required for authentication with the remote MCP server
+    #[serde(default)]
+    pub oauth_scopes: Vec<String>,
+    /// OAuth configuration for this server
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub oauth: Option<OAuthConfig>,
+    /// A boolean flag to denote whether or not to load this mcp server
+    #[serde(default)]
+    pub disabled: bool,
 }
 
 pub fn default_timeout() -> u64 {
@@ -391,5 +449,112 @@ mod tests {
         });
 
         let _: AgentConfig = serde_json::from_value(agent).unwrap();
+    }
+
+    #[test]
+    fn test_mcp_server_config_http_deser() {
+        // Test HTTP server without oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.api.coingecko.com/sse"
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://mcp.api.coingecko.com/sse");
+                assert!(remote.oauth_scopes.is_empty());
+            },
+            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+        }
+
+        // Test HTTP server with oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+            "oauthScopes": ["mcp", "profile", "email"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp");
+                assert_eq!(remote.oauth_scopes, vec!["mcp", "profile", "email"]);
+            },
+            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+        }
+
+        // Test HTTP server with empty oauth scopes
+        let config = serde_json::json!({
+            "type": "http",
+            "url": "https://example-server.modelcontextprotocol.io/mcp",
+            "oauthScopes": []
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Remote(remote) => {
+                assert_eq!(remote.url, "https://example-server.modelcontextprotocol.io/mcp");
+                assert!(remote.oauth_scopes.is_empty());
+            },
+            McpServerConfig::Local(_) => panic!("Expected Remote variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_config_stdio_deser() {
+        let config = serde_json::json!({
+            "type": "stdio",
+            "command": "node",
+            "args": ["server.js"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Local(local) => {
+                assert_eq!(local.command, "node");
+                assert_eq!(local.args, vec!["server.js"]);
+            },
+            McpServerConfig::Remote(_) => panic!("Expected Local variant"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_server_config_defaults_to_stdio() {
+        // Test that when "type" field is missing, it defaults to "stdio" (Local variant)
+        let config = serde_json::json!({
+            "command": "node",
+            "args": ["server.js"]
+        });
+        let result: McpServerConfig = serde_json::from_value(config).unwrap();
+        match result {
+            McpServerConfig::Local(local) => {
+                assert_eq!(local.command, "node");
+                assert_eq!(local.args, vec!["server.js"]);
+            },
+            McpServerConfig::Remote(_) => panic!("Expected Local variant when type field is missing"),
+        }
+    }
+
+    #[test]
+    fn test_mcp_servers_map_deser() {
+        let servers = serde_json::json!({
+            "coin-gecko": {
+                "type": "http",
+                "url": "https://mcp.api.coingecko.com/sse"
+            },
+            "datadog": {
+                "type": "http",
+                "url": "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp",
+                "oauthScopes": ["mcp", "profile", "email"]
+            },
+            "local-server": {
+                "type": "stdio",
+                "command": "npx",
+                "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+            }
+        });
+
+        let result: HashMap<String, McpServerConfig> = serde_json::from_value(servers).unwrap();
+        assert_eq!(result.len(), 3);
+        assert!(result.contains_key("coin-gecko"));
+        assert!(result.contains_key("datadog"));
+        assert!(result.contains_key("local-server"));
     }
 }
