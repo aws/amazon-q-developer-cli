@@ -36,6 +36,7 @@ use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
 };
+use crate::cli::chat::util::truncate_safe;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::paths;
@@ -299,11 +300,9 @@ impl Grep {
                     let trimmed = line.trim_end();
                     // Truncate long lines (protection against minified files)
                     let display_line = if trimmed.len() > MAX_LINE_LENGTH {
-                        format!(
-                            "{}...[+{} chars]",
-                            &trimmed[..MAX_LINE_LENGTH],
-                            trimmed.len() - MAX_LINE_LENGTH
-                        )
+                        let truncated = truncate_safe(trimmed, MAX_LINE_LENGTH);
+                        let remaining_chars = trimmed[truncated.len()..].chars().count();
+                        format!("{truncated}...[+{remaining_chars} chars]")
                     } else {
                         trimmed.to_string()
                     };
