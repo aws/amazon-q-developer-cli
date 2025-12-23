@@ -435,10 +435,16 @@ impl StatusArgs {
 async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(String, Option<McpServerConfig>, bool)>>> {
     let mut results = BTreeMap::new();
     let mut stderr = std::io::stderr();
-    let mcp_enabled = match os.client.is_mcp_enabled().await {
-        Ok(enabled) => enabled,
-        Err(err) => {
-            tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+    let mcp_enabled = match os.client.as_ref() {
+        Some(client) => match client.is_mcp_enabled().await {
+            Ok(enabled) => enabled,
+            Err(err) => {
+                tracing::warn!(?err, "Failed to check MCP configuration, defaulting to enabled");
+                true
+            },
+        },
+        None => {
+            tracing::debug!("API client not available, defaulting MCP to enabled");
             true
         },
     };
