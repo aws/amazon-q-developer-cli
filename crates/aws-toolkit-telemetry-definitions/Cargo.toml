@@ -10,7 +10,7 @@ workspace = true
 [build-dependencies]
 convert_case = "0.8.0"
 prettyplease = "0.2.32"
-quote = "1.0.40"
+quote = "1.0.42"
 serde.workspace = true
 serde_json.workspace = true
 syn = "2.0.101"
