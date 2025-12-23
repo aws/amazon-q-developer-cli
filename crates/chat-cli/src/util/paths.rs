@@ -306,6 +306,20 @@ pub fn canonicalizes_path(os: &Os, path_as_str: &str) -> Result<String> {
     }
 }
 
+/// Expand path with tilde and relative path support.
+/// Does not expand environment variables or canonicalize (file doesn't need to exist).
+pub fn expand_path(os: &Os, p: &str) -> Result<PathBuf> {
+    let home_fn = || os.env.home().map(|h| h.to_string_lossy().to_string());
+    let expanded = shellexpand::tilde_with_context(p, home_fn);
+
+    let mut path = PathBuf::from(expanded.as_ref() as &str);
+    if path.is_relative() {
+        path = os.env.current_dir()?.join(path);
+    }
+
+    Ok(os.fs.chroot_path(path))
+}
+
 /// Manually normalize a path by resolving . and .. components
 fn normalize_path(path: &std::path::Path) -> std::path::PathBuf {
     let mut components = Vec::new();

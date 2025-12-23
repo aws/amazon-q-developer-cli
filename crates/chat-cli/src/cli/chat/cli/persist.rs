@@ -16,6 +16,7 @@ use crate::cli::chat::{
 };
 use crate::os::Os;
 use crate::theme::StyledText;
+use crate::util::paths;
 
 /// Display entry for chat session selection
 pub struct ChatSessionDisplayEntry {
@@ -125,14 +126,20 @@ impl ChatSubcommand {
                 return resume_chat_session(os, session);
             },
             Self::Save { path, force } => {
-                let contents = tri!(serde_json::to_string_pretty(&session.conversation), "export to", &path);
-                if os.fs.exists(&path) && !force {
+                let expanded_path = tri!(paths::expand_path(os, &path), "expand path", &path);
+                let path_str = expanded_path.to_string_lossy().to_string();
+                let contents = tri!(
+                    serde_json::to_string_pretty(&session.conversation),
+                    "export to",
+                    &path_str
+                );
+                if os.fs.exists(&path_str) && !force {
                     execute!(
                         session.stderr,
                         StyledText::error_fg(),
                         style::Print(format!(
                             "\nFile at {} already exists. To overwrite, use -f or --force\n\n",
-                            &path
+                            &path_str
                         )),
                         StyledText::reset_attributes()
                     )?;
@@ -140,12 +147,12 @@ impl ChatSubcommand {
                         skip_printing_tools: true,
                     });
                 }
-                tri!(os.fs.write(&path, contents).await, "export to", &path);
+                tri!(os.fs.write(&path_str, contents).await, "export to", &path_str);
 
                 execute!(
                     session.stderr,
                     StyledText::success_fg(),
-                    style::Print(format!("\n✔ Exported chat session state to {}\n", &path)),
+                    style::Print(format!("\n✔ Exported chat session state to {}\n", &path_str)),
                     StyledText::reset_attributes(),
                     style::Print(format!("To restore this session later, use: /chat load {}\n", &path))
                 )?;
@@ -167,12 +174,15 @@ impl ChatSubcommand {
                 }
             },
             Self::Load { path } => {
+                let expanded_path = tri!(paths::expand_path(os, &path), "expand path", &path);
+                let path_str = expanded_path.to_string_lossy().to_string();
+
                 // Try the original path first
-                let original_result = os.fs.read_to_string(&path).await;
+                let original_result = os.fs.read_to_string(&path_str).await;
 
                 // If the original path fails and doesn't end with .json, try with .json appended
-                let contents = if original_result.is_err() && !path.ends_with(".json") {
-                    let json_path = format!("{path}.json");
+                let contents = if original_result.is_err() && !path_str.ends_with(".json") {
+                    let json_path = format!("{path_str}.json");
                     match os.fs.read_to_string(&json_path).await {
                         Ok(content) => content,
                         Err(_) => {
@@ -648,35 +658,51 @@ mod tests {
 
     #[tokio::test]
     async fn test_save_and_load_file() {
-        use super::ChatSubcommand;
+        async fn test_with_path(path: &str) {
+            use super::ChatSubcommand;
 
-        let mut os = Os::new().await.unwrap();
-        let user_input = "who is the 16th president of US";
+            let mut os = Os::new().await.unwrap();
+            let user_input = "who is the 16th president of US";
 
-        let (_, mut session) =
-            create_test_session(&mut os, vec![user_input, "exit"], vec!["Abraham Lincoln"], None).await;
+            let (_, mut session) =
+                create_test_session(&mut os, vec![user_input, "exit"], vec!["Abraham Lincoln"], None).await;
 
-        let path_str = "test_session.json".to_string();
-
-        ChatSubcommand::Save {
-            path: path_str.clone(),
-            force: true,
-        }
-        .execute(&mut os, &mut session)
-        .await
-        .unwrap();
-
-        let (_, mut session2) = create_test_session(&mut os, vec![], vec![], None).await;
-
-        ChatSubcommand::Load { path: path_str }
-            .execute(&mut os, &mut session2)
+            ChatSubcommand::Save {
+                path: path.to_string(),
+                force: true,
+            }
+            .execute(&mut os, &mut session)
             .await
             .unwrap();
 
-        assert_eq!(
-            session.conversation.history().len(),
-            session2.conversation.history().len(),
-            "Loaded session should have same history length"
-        );
+            let (_, mut session2) = create_test_session(&mut os, vec![], vec![], None).await;
+
+            ChatSubcommand::Load { path: path.to_string() }
+                .execute(&mut os, &mut session2)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                session.conversation.history().len(),
+                session2.conversation.history().len(),
+                "Loaded session should have same history length for path: {}",
+                path
+            );
+        }
+
+        // Test relative path
+        test_with_path("test_session.json").await;
+
+        // Test tilde expansion
+        test_with_path("~/test_tilde.json").await;
+
+        // Test relative with ./
+        test_with_path("./test_relative.json").await;
+
+        // Test absolute path
+        let os = Os::new().await.unwrap();
+        let cwd = os.env.current_dir().unwrap();
+        let abs_path = cwd.join("test_absolute.json");
+        test_with_path(&abs_path.to_string_lossy()).await;
     }
 }
