@@ -61,6 +61,10 @@ cargo install typos-cli
 
 For security related concerns, see [here](SECURITY.md).
 
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=aws/amazon-q-developer-cli&type=Date)](https://star-history.com/#aws/amazon-q-developer-cli&Date)
+
 ## Licensing
 
 This repo is dual licensed under MIT and Apache 2.0 licenses.
