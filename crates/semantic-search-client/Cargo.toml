@@ -45,7 +45,7 @@ pdf-extract.workspace = true
 candle-core = { version = "0.9.1", features = [] }
 candle-nn = "0.9.1"
 candle-transformers = "0.9.1"
-tokenizers = "0.21.1"
+tokenizers = "0.22.1"
 
 # Conditionally enable Metal on macOS
 [target.'cfg(all(target_os = "macos", not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies.candle-core]
