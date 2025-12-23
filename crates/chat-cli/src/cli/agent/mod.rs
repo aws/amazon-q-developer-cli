@@ -704,6 +704,7 @@ impl Agents {
         // 2. If the above is missing or invalid, assume one that is specified by chat.defaultAgent
         // 3. If the above is missing or invalid, assume the in-memory default
         let active_idx = 'active_idx: {
+            // 1. Command line argument --agent
             if let Some(name) = agent_name {
                 if all_agents.iter().any(|a| a.name.as_str() == name) {
                     break 'active_idx name.to_string();
@@ -714,7 +715,7 @@ impl Agents {
                     style::Print("Error"),
                     StyledText::warning_fg(),
                     style::Print(format!(
-                        ": no agent with name {} found. Falling back to user specified default",
+                        ": no agent with name {} found. Falling back to local default",
                         name
                     )),
                     style::Print("\n"),
@@ -722,6 +723,30 @@ impl Agents {
                 );
             }
 
+            // 2. Local settings .amazonq/settings.json
+            if let Ok(current_dir) = std::env::current_dir() {
+                if let Ok(local_settings) = crate::database::local_settings::LocalSettings::new(&current_dir).await {
+                    if let Some(local_default) = local_settings.get_string(Setting::ChatDefaultAgent) {
+                        if all_agents.iter().any(|a| a.name == local_default) {
+                            break 'active_idx local_default;
+                        }
+                        let _ = queue!(
+                            output,
+                            style::SetForegroundColor(Color::Red),
+                            style::Print("Error"),
+                            style::SetForegroundColor(Color::Yellow),
+                            style::Print(format!(
+                                ": local default agent {} not found. Falling back to global default",
+                                local_default
+                            )),
+                            style::Print("\n"),
+                            style::SetForegroundColor(Color::Reset)
+                        );
+                    }
+                }
+            }
+
+            // 3. Global settings
             if let Some(user_set_default) = os.database.settings.get_string(Setting::ChatDefaultAgent) {
                 if all_agents.iter().any(|a| a.name == user_set_default) {
                     break 'active_idx user_set_default;
@@ -732,7 +757,7 @@ impl Agents {
                     style::Print("Error"),
                     StyledText::warning_fg(),
                     style::Print(format!(
-                        ": user defined default {} not found. Falling back to in-memory default",
+                        ": global default agent {} not found. Falling back to in-memory default",
                         user_set_default
                     )),
                     style::Print("\n"),
@@ -740,6 +765,7 @@ impl Agents {
                 );
             }
 
+            // 4. In-memory default
             all_agents.push({
                 let mut agent = Agent::default();
                 if mcp_enabled {
