@@ -134,7 +134,7 @@ winreg = "0.55.0"
 schemars = "1.0.4"
 jsonschema = "0.30.0"
 zip = "2.2.0"
-rmcp = { version = "0.8.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
+rmcp = { version = "0.10.0", features = ["client", "transport-sse-client-reqwest", "reqwest", "transport-streamable-http-client-reqwest", "transport-child-process", "tower", "auth"] }
 chat-cli-ui = { path = "crates/chat-cli-ui" }
 
 [workspace.lints.rust]
