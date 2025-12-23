@@ -15,7 +15,7 @@ use aws_smithy_types::{
 use eyre::Result;
 
 use super::ChatError;
-use super::token_counter::TokenCounter;
+use super::context::ContextFile;
 use crate::util::env_var::get_term;
 
 pub fn truncate_safe(s: &str, max_bytes: usize) -> &str {
@@ -161,23 +161,29 @@ fn should_play_bell() -> bool {
 /// until the total size is below the limit
 ///
 /// # Arguments
-/// * `files` - A mutable reference to a vector of tuples: (filename, content). This file will be
-///   sorted but the content will not be changed.
+/// * `files` - A mutable reference to a vector of ContextFile. This vector will be sorted by size
+///   and modified to remove dropped files.
 ///
 /// Returns the dropped files
-pub fn drop_matched_context_files(files: &mut [(String, String)], limit: usize) -> Result<Vec<(String, String)>> {
-    files.sort_by(|a, b| TokenCounter::count_tokens(&b.1).cmp(&TokenCounter::count_tokens(&a.1)));
+pub fn drop_matched_context_files(files: &mut Vec<ContextFile>, limit: usize) -> Result<Vec<ContextFile>> {
+    // Sort by size (largest first)
+    files.sort_by_key(|b| std::cmp::Reverse(b.size()));
+
     let mut total_size = 0;
     let mut dropped_files = Vec::new();
 
-    for (filename, content) in files.iter() {
-        let size = TokenCounter::count_tokens(content);
+    for file in files.iter() {
+        let size = file.size();
         if total_size + size > limit {
-            dropped_files.push((filename.clone(), content.clone()));
+            dropped_files.push(file.clone());
         } else {
             total_size += size;
         }
     }
+
+    // Remove dropped files from the original vector
+    files.retain(|f| !dropped_files.iter().any(|d| d.filepath() == f.filepath()));
+
     Ok(dropped_files)
 }
 
@@ -272,23 +278,29 @@ mod tests {
 
     #[test]
     fn test_drop_matched_context_files() {
+        use crate::cli::chat::context::ContextFile;
+
         let mut files = vec![
-            ("file1".to_string(), "This is a test file".to_string()),
-            (
-                "file3".to_string(),
-                "Yet another test file that's has the largest context file".to_string(),
-            ),
+            ContextFile::Full {
+                filepath: "file1".to_string(),
+                content: "This is a test file".to_string(),
+            },
+            ContextFile::Full {
+                filepath: "file3".to_string(),
+                content: "Yet another test file that's has the largest context file".to_string(),
+            },
         ];
         let limit = 9;
 
         let dropped_files = drop_matched_context_files(&mut files, limit).unwrap();
         assert_eq!(dropped_files.len(), 1);
-        assert_eq!(dropped_files[0].0, "file3");
-        assert_eq!(files.len(), 2);
 
-        for (filename, _) in dropped_files.iter() {
-            files.retain(|(f, _)| f != filename);
+        if let ContextFile::Full { filepath, .. } = &dropped_files[0] {
+            assert_eq!(filepath, "file3");
+        } else {
+            panic!("Expected Full file");
         }
+
         assert_eq!(files.len(), 1);
     }
     #[test]

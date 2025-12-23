@@ -42,6 +42,7 @@ use super::consts::{
 const MAX_EXCLUDED_MESSAGES_BYTES: usize = 12_000;
 
 use super::context::{
+    ContextFile,
     ContextManager,
     calc_max_context_files_size,
 };
@@ -95,6 +96,7 @@ use crate::theme::StyledText;
 
 pub const CONTEXT_ENTRY_START_HEADER: &str = "--- CONTEXT ENTRY BEGIN ---\n";
 pub const CONTEXT_ENTRY_END_HEADER: &str = "--- CONTEXT ENTRY END ---\n\n";
+pub const AUTO_FILES_MESSAGE: &str = "The following file entries contain: name, filepath, and description. You SHOULD decide when to read the full file using the filepath based on its description. :\n\n";
 
 /// Result of attempting to forget conversation entries
 #[derive(Debug, Clone, PartialEq)]
@@ -1351,15 +1353,40 @@ Return only the JSON configuration, no additional text."
         // Add context files if available
         if let Some(context_manager) = self.context_manager.as_mut() {
             match context_manager.collect_context_files_with_limit(os).await {
-                Ok((files_to_use, files_dropped)) => {
-                    if !files_dropped.is_empty() {
-                        dropped_context_files.extend(files_dropped);
+                Ok((context_files, files_dropped)) => {
+                    // Extract dropped files info
+                    for file in &files_dropped {
+                        if let ContextFile::Full { filepath, content } = file {
+                            dropped_context_files.push((filepath.clone(), content.clone()));
+                        }
                     }
 
-                    if !files_to_use.is_empty() {
+                    // Regular files block
+                    context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+                    for file in &context_files {
+                        match file {
+                            ContextFile::Full { filepath, content } => {
+                                context_content.push_str(&format!("[{filepath}]\n{content}\n"));
+                            },
+                            ContextFile::Auto { .. } => {}, // Skip for now, handle in second pass
+                        }
+                    }
+                    context_content.push_str(CONTEXT_ENTRY_END_HEADER);
+
+                    // Auto files block
+                    let has_auto = context_files.iter().any(|f| matches!(f, ContextFile::Auto { .. }));
+                    if has_auto {
                         context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-                        for (filename, content) in files_to_use {
-                            context_content.push_str(&format!("[{filename}]\n{content}\n"));
+                        context_content.push_str(AUTO_FILES_MESSAGE);
+                        for file in &context_files {
+                            if let ContextFile::Auto {
+                                name,
+                                filepath,
+                                description,
+                            } = file
+                            {
+                                context_content.push_str(&format!("{name}: {description} (file: {filepath})\n"));
+                            }
                         }
                         context_content.push_str(CONTEXT_ENTRY_END_HEADER);
                     }
@@ -2773,5 +2800,91 @@ mod tests {
         // is not in the clients map
         assert!(!conversation.terminate_mcp_server("test_server").await);
         assert!(!conversation.tool_manager.clients.contains_key("test_server"));
+    }
+
+    #[tokio::test]
+    async fn test_conversation_state_with_auto_load_context_files() {
+        use crate::cli::agent::wrapper_types::ResourcePath;
+
+        let mut os = Os::new().await.unwrap();
+        let agents = {
+            let mut agents = Agents::default();
+            let mut agent = Agent::default();
+            agent.name = "TestAgent".to_string();
+
+            // Add regular file
+            agent
+                .resources
+                .push(ResourcePath::FilePath("file://README.md".to_string()));
+
+            // Add auto file
+            agent
+                .resources
+                .push(ResourcePath::Skill("skill://test-skill.md".to_string()));
+
+            agents.agents.insert("TestAgent".to_string(), agent);
+            agents.switch("TestAgent", &os).await.expect("Agent switch failed");
+            agents
+        };
+
+        // Write regular file
+        os.fs
+            .write("README.md", "# Regular File\nThis is regular content")
+            .await
+            .unwrap();
+
+        // Write auto file with frontmatter
+        let auto_content = "---\nname: rust-helper\ndescription: Helps with Rust programming tasks\n---\n# Rust Helper Skill\nThis skill provides Rust programming assistance.";
+        os.fs.write("test-skill.md", auto_content).await.unwrap();
+
+        let mut output = vec![];
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "fake_conv_id",
+            agents,
+            tool_manager.load_tools(&mut os, &mut output).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Get context messages
+        let (context_messages, _) = conversation.context_messages(&os, None).await;
+
+        // Verify we got context messages
+        assert!(context_messages.is_some());
+        let entries = context_messages.unwrap();
+        assert_eq!(entries.len(), 1);
+
+        let context_content = match entries[0].user.content() {
+            crate::cli::chat::message::UserMessageContent::Prompt { prompt } => prompt,
+            _ => panic!("Expected Prompt content"),
+        };
+
+        // Verify regular file content is included
+        assert!(context_content.contains("# Regular File"));
+        assert!(context_content.contains("This is regular content"));
+
+        // Verify auto file appears as hint
+        assert!(context_content.contains("rust-helper: Helps with Rust programming tasks"));
+        assert!(context_content.contains("file: ") && context_content.contains("test-skill.md"));
+        assert!(context_content.contains(AUTO_FILES_MESSAGE));
+
+        // Verify order: AUTO_FILES_MESSAGE should come before auto file entries
+        let auto_message_pos = context_content.find(AUTO_FILES_MESSAGE).unwrap();
+        let auto_file_pos = context_content
+            .find("rust-helper: Helps with Rust programming tasks")
+            .unwrap();
+        assert!(
+            auto_message_pos < auto_file_pos,
+            "AUTO_FILES_MESSAGE should appear before auto file entries"
+        );
+
+        // Verify auto file full content is NOT included
+        assert!(!context_content.contains("# Rust Helper Skill"));
+        assert!(!context_content.contains("This skill provides Rust programming assistance"));
     }
 }

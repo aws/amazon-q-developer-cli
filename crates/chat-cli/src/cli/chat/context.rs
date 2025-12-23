@@ -27,12 +27,49 @@ use crate::cli::chat::cli::hooks::HookExecutor;
 use crate::cli::chat::cli::model::ModelInfo;
 use crate::os::Os;
 
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Inclusion {
+    #[default]
+    Always,
+    Auto,
+}
+
 #[derive(Debug, Clone)]
 pub enum ContextFilePath {
     /// Signifies that the path is brought in from the agent config
-    Agent(String),
+    Agent(String, Inclusion), // (path, inclusion)
     /// Signifies that the path is brought in via /context add
     Session(String),
+}
+
+#[derive(Debug, Clone)]
+pub enum ContextFile {
+    Full {
+        filepath: String,
+        content: String,
+    },
+    Auto {
+        name: String,
+        filepath: String,
+        description: String,
+    },
+}
+
+impl ContextFile {
+    pub fn filepath(&self) -> &str {
+        match self {
+            ContextFile::Full { filepath, .. } | ContextFile::Auto { filepath, .. } => filepath,
+        }
+    }
+
+    pub fn size(&self) -> usize {
+        use crate::cli::chat::token_counter::TokenCounter;
+        match self {
+            ContextFile::Full { content, .. } => TokenCounter::count_tokens(content),
+            ContextFile::Auto { .. } => 0,
+        }
+    }
 }
 
 impl Serialize for ContextFilePath {
@@ -41,7 +78,7 @@ impl Serialize for ContextFilePath {
         S: Serializer,
     {
         match self {
-            ContextFilePath::Agent(path) | ContextFilePath::Session(path) => path.serialize(serializer),
+            ContextFilePath::Agent(path, _) | ContextFilePath::Session(path) => path.serialize(serializer),
         }
     }
 }
@@ -52,14 +89,21 @@ impl<'de> Deserialize<'de> for ContextFilePath {
         D: Deserializer<'de>,
     {
         let path = String::deserialize(deserializer)?;
-        Ok(ContextFilePath::Agent(path))
+        Ok(ContextFilePath::Agent(path, Inclusion::Always))
     }
 }
 
 impl ContextFilePath {
     pub fn get_path_as_str(&self) -> &str {
         match self {
-            Self::Agent(path) | Self::Session(path) => path.as_str(),
+            Self::Agent(path, _) | Self::Session(path) => path.as_str(),
+        }
+    }
+
+    pub fn get_inclusion(&self) -> &Inclusion {
+        match self {
+            Self::Agent(_, inclusion) => inclusion,
+            Self::Session(_) => &Inclusion::Always,
         }
     }
 }
@@ -82,7 +126,7 @@ impl PartialEq<str> for ContextFilePath {
 impl PartialEq<ContextFilePath> for String {
     fn eq(&self, other: &ContextFilePath) -> bool {
         let inner = match other {
-            ContextFilePath::Agent(path) | ContextFilePath::Session(path) => path,
+            ContextFilePath::Agent(path, _) | ContextFilePath::Session(path) => path,
         };
 
         self == inner
@@ -105,14 +149,28 @@ pub struct ContextManager {
 
 impl ContextManager {
     pub fn from_agent(agent: &Agent, max_context_files_size: usize) -> Result<Self> {
+        use crate::cli::agent::wrapper_types::ResourcePath;
+
         let paths = agent
             .resources
             .iter()
-            .filter(|resource| {
-                matches!(resource, crate::cli::agent::wrapper_types::ResourcePath::FilePath(_))
-                    && resource.starts_with("file://")
+            .filter_map(|resource| match resource {
+                ResourcePath::FilePath(uri) => {
+                    if !uri.starts_with("file://") {
+                        return None;
+                    }
+                    let path = uri.trim_start_matches("file://").to_string();
+                    Some(ContextFilePath::Agent(path, Inclusion::Always))
+                },
+                ResourcePath::Skill(uri) => {
+                    if !uri.starts_with("skill://") {
+                        return None;
+                    }
+                    let path = uri.trim_start_matches("skill://").to_string();
+                    Some(ContextFilePath::Agent(path, Inclusion::Auto))
+                },
+                ResourcePath::Complex(_) => None,
             })
-            .map(|s| ContextFilePath::Agent(s.trim_start_matches("file://").to_string()))
             .collect::<Vec<_>>();
 
         Ok(Self {
@@ -141,7 +199,7 @@ impl ContextManager {
             for path in &paths {
                 // We're using a temporary context_files vector just for validation
                 // Pass is_validation=true to ensure we error if glob patterns don't match any files
-                match process_path(os, path, &mut context_files, true).await {
+                match process_path(os, path, &mut context_files, true, &Inclusion::Always).await {
                     Ok(_) => {}, // Path is valid
                     Err(e) => return Err(eyre!("Invalid path '{}': {}. Use --force to add anyway.", path, e)),
                 }
@@ -196,51 +254,49 @@ impl ContextManager {
     ///
     ///
     /// # Returns
-    /// A Result containing a vector of (filename, content) pairs or an error
-    pub async fn get_context_files(&self, os: &Os) -> Result<Vec<(String, String)>> {
+    /// A Result containing a vector of context files or an error
+    pub async fn get_context_files(&self, os: &Os) -> Result<Vec<ContextFile>> {
         let mut context_files = Vec::new();
 
-        self.collect_context_files(os, &self.paths, &mut context_files).await?;
+        for path in &self.paths {
+            // Use is_validation=false to handle non-matching globs gracefully
+            process_path(
+                os,
+                path.get_path_as_str(),
+                &mut context_files,
+                false,
+                path.get_inclusion(),
+            )
+            .await?;
+        }
 
-        context_files.sort_by(|a, b| a.0.cmp(&b.0));
-        context_files.dedup_by(|a, b| a.0 == b.0);
+        context_files.sort_by(|a, b| a.filepath().cmp(b.filepath()));
+        context_files.dedup_by(|a, b| a.filepath() == b.filepath());
 
         Ok(context_files)
     }
 
-    pub async fn get_context_files_by_path(&self, os: &Os, path: &str) -> Result<Vec<(String, String)>> {
+    pub async fn get_context_files_by_path(&self, os: &Os, path: &ContextFilePath) -> Result<Vec<ContextFile>> {
         let mut context_files = Vec::new();
-        process_path(os, path, &mut context_files, true).await?;
+        process_path(
+            os,
+            path.get_path_as_str(),
+            &mut context_files,
+            true,
+            path.get_inclusion(),
+        )
+        .await?;
         Ok(context_files)
     }
 
     /// Collects context files and optionally drops files if the total size exceeds the limit.
     /// Returns (files_to_use, dropped_files)
-    pub async fn collect_context_files_with_limit(
-        &self,
-        os: &Os,
-    ) -> Result<(Vec<(String, String)>, Vec<(String, String)>)> {
-        let mut files = self.get_context_files(os).await?;
+    pub async fn collect_context_files_with_limit(&self, os: &Os) -> Result<(Vec<ContextFile>, Vec<ContextFile>)> {
+        let mut context_files = self.get_context_files(os).await?;
 
-        let dropped_files = drop_matched_context_files(&mut files, self.max_context_files_size).unwrap_or_default();
+        let dropped_files = drop_matched_context_files(&mut context_files, self.max_context_files_size)?;
 
-        // remove dropped files from files
-        files.retain(|file| !dropped_files.iter().any(|dropped| dropped.0 == file.0));
-
-        Ok((files, dropped_files))
-    }
-
-    async fn collect_context_files(
-        &self,
-        os: &Os,
-        paths: &[ContextFilePath],
-        context_files: &mut Vec<(String, String)>,
-    ) -> Result<()> {
-        for path in paths {
-            // Use is_validation=false to handle non-matching globs gracefully
-            process_path(os, path.get_path_as_str(), context_files, false).await?;
-        }
-        Ok(())
+        Ok((context_files, dropped_files))
     }
 
     /// Run all the currently enabled hooks from both the global and profile contexts.
@@ -288,8 +344,9 @@ pub fn calc_max_context_files_size(model: Option<&ModelInfo>) -> usize {
 async fn process_path(
     os: &Os,
     path: &str,
-    context_files: &mut Vec<(String, String)>,
+    context_files: &mut Vec<ContextFile>,
     is_validation: bool,
+    inclusion: &Inclusion,
 ) -> Result<()> {
     // Expand ~ to home directory
     let expanded_path = if path.starts_with('~') {
@@ -323,7 +380,7 @@ async fn process_path(
                     match entry {
                         Ok(path) => {
                             if path.is_file() {
-                                add_file_to_context(os, &path, context_files).await?;
+                                add_file_to_context(os, &path, context_files, inclusion).await?;
                                 found_any = true;
                             }
                         },
@@ -345,14 +402,14 @@ async fn process_path(
         let path = Path::new(&full_path);
         if path.exists() {
             if path.is_file() {
-                add_file_to_context(os, path, context_files).await?;
+                add_file_to_context(os, path, context_files, inclusion).await?;
             } else if path.is_dir() {
                 // For directories, add all files in the directory (non-recursive)
                 let mut read_dir = os.fs.read_dir(path).await?;
                 while let Some(entry) = read_dir.next_entry().await? {
                     let path = entry.path();
                     if path.is_file() {
-                        add_file_to_context(os, &path, context_files).await?;
+                        add_file_to_context(os, &path, context_files, inclusion).await?;
                     }
                 }
             }
@@ -370,7 +427,7 @@ async fn process_path(
 /// This method:
 /// 1. Reads the content of the file
 /// 2. Checks front matter inclusion rules for steering files
-/// 3. Adds the (filename, content) pair to the context collection if allowed
+/// 3. Adds the file to the context collection
 ///
 /// # Arguments
 /// * `path` - The path to the file
@@ -378,7 +435,12 @@ async fn process_path(
 ///
 /// # Returns
 /// A Result indicating success or an error
-async fn add_file_to_context(os: &Os, path: &Path, context_files: &mut Vec<(String, String)>) -> Result<()> {
+async fn add_file_to_context(
+    os: &Os,
+    path: &Path,
+    context_files: &mut Vec<ContextFile>,
+    inclusion: &Inclusion,
+) -> Result<()> {
     let filename = path.to_string_lossy().to_string();
     let content = os.fs.read_to_string(path).await?;
 
@@ -387,7 +449,14 @@ async fn add_file_to_context(os: &Os, path: &Path, context_files: &mut Vec<(Stri
         return Ok(());
     }
 
-    context_files.push((filename, content));
+    if inclusion == &Inclusion::Auto {
+        create_auto_load_context_file(filename, content, context_files);
+    } else {
+        context_files.push(ContextFile::Full {
+            filepath: filename,
+            content,
+        });
+    }
     Ok(())
 }
 
@@ -396,15 +465,18 @@ struct FrontMatter {
     inclusion: Option<String>,
 }
 
-/// Check if a steering file should be included based on its front matter
-fn should_include_steering_file(content: &str) -> Result<bool> {
-    // Check if file has YAML front matter
+#[derive(Debug, Deserialize)]
+struct AutoLoadContextFileMetadata {
+    name: Option<String>,
+    description: Option<String>,
+}
+
+/// Extract YAML frontmatter from file content
+fn extract_yaml_frontmatter(content: &str) -> Option<String> {
     if !content.starts_with("---\n") {
-        // No front matter - include the file
-        return Ok(true);
+        return None;
     }
 
-    // Find the end of the front matter
     let lines: Vec<&str> = content.lines().collect();
     let mut end_index = None;
 
@@ -415,17 +487,44 @@ fn should_include_steering_file(content: &str) -> Result<bool> {
         }
     }
 
-    let end_index = match end_index {
-        Some(idx) => idx,
-        None => {
-            // Malformed front matter - include the file
-            return Ok(true);
-        },
-    };
-
-    // Extract and parse the front matter
+    let end_index = end_index?;
     let front_matter_lines = &lines[1..end_index];
-    let front_matter_yaml = front_matter_lines.join("\n");
+    Some(front_matter_lines.join("\n"))
+}
+
+/// Create Auto ContextFile from content, fallback to Full file
+fn create_auto_load_context_file(filename: String, content: String, context_files: &mut Vec<ContextFile>) {
+    if let Some(yaml) = extract_yaml_frontmatter(&content) {
+        if let Ok(metadata) = parse_auto_load_metadata(&yaml) {
+            context_files.push(ContextFile::Auto {
+                name: metadata.name.unwrap_or_else(|| filename.clone()),
+                filepath: filename,
+                description: metadata
+                    .description
+                    .unwrap_or_else(|| "No description available".to_string()),
+            });
+            return;
+        }
+    }
+
+    // Fallback: add as Full file
+    context_files.push(ContextFile::Full {
+        filepath: filename,
+        content,
+    });
+}
+
+/// Parse frontmatter for auto files to extract name and description
+fn parse_auto_load_metadata(yaml: &str) -> Result<AutoLoadContextFileMetadata> {
+    serde_yaml::from_str::<AutoLoadContextFileMetadata>(yaml).map_err(|e| eyre!("Failed to parse frontmatter: {}", e))
+}
+
+/// Check if a steering file should be included based on its front matter
+fn should_include_steering_file(content: &str) -> Result<bool> {
+    let front_matter_yaml = match extract_yaml_frontmatter(content) {
+        Some(yaml) => yaml,
+        None => return Ok(true), // No front matter - include the file
+    };
 
     match serde_yaml::from_str::<FrontMatter>(&front_matter_yaml) {
         Ok(front_matter) => {
@@ -469,6 +568,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_path_ops() -> Result<()> {
+        use crate::cli::chat::context::ContextFile;
+
         let os = Os::new().await.unwrap();
         let mut manager = create_test_context_manager(None).expect("Failed to create test context manager");
 
@@ -484,10 +585,20 @@ mod tests {
 
         manager.add_paths(&os, vec!["test/*.md".to_string()], false).await?;
         let files = manager.get_context_files(&os).await?;
-        assert!(files[0].0.ends_with("p1.md"));
-        assert_eq!(files[0].1, "p1");
-        assert!(files[1].0.ends_with("p2.md"));
-        assert_eq!(files[1].1, "p2");
+
+        if let ContextFile::Full { filepath, content } = &files[0] {
+            assert!(filepath.ends_with("p1.md"));
+            assert_eq!(content, "p1");
+        } else {
+            panic!("Expected Full file");
+        }
+
+        if let ContextFile::Full { filepath, content } = &files[1] {
+            assert!(filepath.ends_with("p2.md"));
+            assert_eq!(content, "p2");
+        } else {
+            panic!("Expected Full file");
+        }
 
         assert!(
             manager
@@ -558,6 +669,41 @@ mod tests {
     }
 
     #[test]
+    fn test_mixed_resource_types_parsing() -> Result<()> {
+        use serde_json;
+
+        use crate::cli::agent::Agent;
+
+        // Test agent config with mixed resource types
+        let agent_json = r#"{
+            "name": "test-agent",
+            "resources": [
+                "file://README.md",
+                "skill://skills/**/SKILL.md"
+            ]
+        }"#;
+
+        let agent: Agent = serde_json::from_str(agent_json)?;
+        let context_manager = ContextManager::from_agent(&agent, 1000)?;
+
+        // Verify we have 2 paths
+        assert_eq!(context_manager.paths.len(), 2);
+
+        // Verify the inclusion modes are correct
+        let paths: Vec<_> = context_manager.paths.iter().collect();
+
+        // First resource: "file://README.md" -> inclusion "always"
+        assert_eq!(paths[0].get_path_as_str(), "README.md");
+        assert_eq!(paths[0].get_inclusion(), &Inclusion::Always);
+
+        // Second resource: "skill://skills/**/SKILL.md" -> inclusion "auto"
+        assert_eq!(paths[1].get_path_as_str(), "skills/**/SKILL.md");
+        assert_eq!(paths[1].get_inclusion(), &Inclusion::Auto);
+
+        Ok(())
+    }
+
+    #[test]
     fn test_from_agent_excludes_knowledge_base() {
         use crate::cli::agent::Agent;
         use crate::cli::agent::wrapper_types::{
@@ -568,6 +714,7 @@ mod tests {
         let mut agent = Agent::default();
         agent.resources = vec![
             ResourcePath::FilePath("file://src/main.rs".to_string()),
+            ResourcePath::Skill("skill://src/lib.rs".to_string()),
             ResourcePath::Complex(ComplexResource::KnowledgeBase {
                 source: "file://docs".to_string(),
                 name: None,
@@ -580,7 +727,74 @@ mod tests {
         ];
 
         let manager = ContextManager::from_agent(&agent, 1000).unwrap();
-        assert_eq!(manager.paths.len(), 1);
+        assert_eq!(manager.paths.len(), 2);
         assert_eq!(manager.paths[0].get_path_as_str(), "src/main.rs");
+        assert_eq!(manager.paths[0].get_inclusion(), &Inclusion::Always);
+        assert_eq!(manager.paths[1].get_path_as_str(), "src/lib.rs");
+        assert_eq!(manager.paths[1].get_inclusion(), &Inclusion::Auto);
+    }
+
+    #[tokio::test]
+    async fn test_collect_auto_load_context_files() -> Result<()> {
+        use crate::cli::agent::Agent;
+        use crate::cli::agent::wrapper_types::ResourcePath;
+        use crate::os::Os;
+
+        // Create test OS and write files
+        let os = Os::new().await?;
+
+        // Regular file
+        let regular_file = "README.md";
+        os.fs
+            .write(regular_file, "# Regular File\nThis is regular content")
+            .await?;
+
+        // Auto file with frontmatter
+        let auto_file = "test-skill.md";
+        let auto_content = "---\nname: database-helper\ndescription: Helps with database queries\n---\n# Database Helper\nSome content here";
+        os.fs.write(auto_file, auto_content).await?;
+
+        // Create agent with both regular and auto resources
+        let mut agent = Agent::default();
+        agent.name = "TestAgent".to_string();
+        agent
+            .resources
+            .push(ResourcePath::FilePath(format!("file://{}", regular_file)));
+        agent
+            .resources
+            .push(ResourcePath::Skill(format!("skill://{}", auto_file)));
+
+        let context_manager = ContextManager::from_agent(&agent, 1000)?;
+
+        // Test the method
+        let (context_files, dropped_files) = context_manager.collect_context_files_with_limit(&os).await?;
+
+        // Assertions
+        assert_eq!(context_files.len(), 2);
+        assert_eq!(dropped_files.len(), 0);
+
+        // Check regular file
+        if let ContextFile::Full { filepath, content } = &context_files[0] {
+            assert!(filepath.contains("README.md"));
+            assert!(content.contains("# Regular File"));
+        } else {
+            panic!("Expected Full file");
+        }
+
+        // Check auto file
+        if let ContextFile::Auto {
+            name,
+            filepath,
+            description,
+        } = &context_files[1]
+        {
+            assert_eq!(name, "database-helper");
+            assert_eq!(description, "Helps with database queries");
+            assert!(filepath.contains("test-skill.md"));
+        } else {
+            panic!("Expected Auto file");
+        }
+
+        Ok(())
     }
 }

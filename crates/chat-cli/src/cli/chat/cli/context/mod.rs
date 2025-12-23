@@ -13,6 +13,7 @@ use crossterm::{
 pub mod context_data_provider;
 pub mod context_renderer;
 use crate::cli::chat::context::{
+    ContextFile,
     ContextFilePath,
     calc_max_context_files_size,
 };
@@ -127,7 +128,7 @@ impl ContextSubcommand {
                 let (agent_owned_list, session_owned_list) = context_manager
                     .paths
                     .iter()
-                    .partition::<Vec<_>, _>(|p| matches!(**p, ContextFilePath::Agent(_)));
+                    .partition::<Vec<_>, _>(|p| matches!(**p, ContextFilePath::Agent(_, _)));
 
                 execute!(
                     session.stderr,
@@ -147,20 +148,27 @@ impl ContextSubcommand {
                 } else {
                     for path in &agent_owned_list {
                         execute!(session.stderr, style::Print(format!("  - {} ", path.get_path_as_str())))?;
-                        if let Ok(context_files) = context_manager
-                            .get_context_files_by_path(os, path.get_path_as_str())
-                            .await
-                        {
-                            for (file_path, _content) in &context_files {
+                        if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
+                            for file in &context_files {
                                 execute!(
                                     session.stderr,
                                     StyledText::current_item_fg(),
-                                    style::Print(format!("{file_path}\n")),
+                                    style::Print(format!("{}\n", file.filepath())),
                                     StyledText::reset()
                                 )?;
                             }
-                            profile_context_files
-                                .extend(context_files.into_iter().map(|(path, content)| (path, content, false)));
+
+                            profile_context_files.extend(context_files.into_iter().map(|file| match file {
+                                ContextFile::Full { filepath, content } => (filepath, content, false),
+                                ContextFile::Auto {
+                                    name,
+                                    filepath,
+                                    description,
+                                } => {
+                                    let hint = format!("{name}: {description} (file: {filepath})");
+                                    (filepath, hint, false)
+                                },
+                            }));
                         } else {
                             execute!(
                                 session.stderr,
@@ -190,20 +198,21 @@ impl ContextSubcommand {
                     )?;
                 } else {
                     for path in &session_owned_list {
-                        if let Ok(context_files) = context_manager
-                            .get_context_files_by_path(os, path.get_path_as_str())
-                            .await
-                        {
-                            for (file_path, _content) in &context_files {
+                        if let Ok(context_files) = context_manager.get_context_files_by_path(os, path).await {
+                            for file in &context_files {
                                 execute!(
                                     session.stderr,
                                     StyledText::current_item_fg(),
-                                    style::Print(format!("  {file_path}\n")),
+                                    style::Print(format!("  {}\n", file.filepath())),
                                     StyledText::reset()
                                 )?;
                             }
-                            profile_context_files
-                                .extend(context_files.into_iter().map(|(path, content)| (path, content, true)));
+                            profile_context_files.extend(context_files.into_iter().filter_map(|file| {
+                                match file {
+                                    ContextFile::Full { filepath, content } => Some((filepath, content, true)),
+                                    ContextFile::Auto { .. } => None, // Session files are never auto
+                                }
+                            }));
                         } else {
                             execute!(
                                 session.stderr,
@@ -276,7 +285,10 @@ impl ContextSubcommand {
                     let context_files_max_size = calc_max_context_files_size(session.conversation.model_info.as_ref());
                     let mut files_as_vec = profile_context_files
                         .iter()
-                        .map(|(path, content, _)| (path.clone(), content.clone()))
+                        .map(|(path, content, _)| ContextFile::Full {
+                            filepath: path.clone(),
+                            content: content.clone(),
+                        })
                         .collect::<Vec<_>>();
                     let dropped_files = drop_matched_context_files(&mut files_as_vec, context_files_max_size).ok();
 
@@ -301,18 +313,20 @@ impl ContextSubcommand {
                             )?;
                             let total_files = dropped_files.len();
 
-                            let truncated_dropped_files = &dropped_files[..10];
+                            let truncated_dropped_files = &dropped_files[..std::cmp::min(10, dropped_files.len())];
 
-                            for (filename, content) in truncated_dropped_files {
-                                let est_tokens = TokenCounter::count_tokens(content);
-                                let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
-                                execute!(
-                                    session.stderr,
-                                    style::Print(format!("{filename} ")),
-                                    StyledText::secondary_fg(),
-                                    style::Print(format!("({percentage:.1}% of context window)\n")),
-                                    StyledText::reset(),
-                                )?;
+                            for file in truncated_dropped_files {
+                                if let ContextFile::Full { filepath, content } = file {
+                                    let est_tokens = TokenCounter::count_tokens(content);
+                                    let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
+                                    execute!(
+                                        session.stderr,
+                                        style::Print(format!("{filepath} ")),
+                                        StyledText::secondary_fg(),
+                                        style::Print(format!("({percentage:.1}% of context window)\n")),
+                                        StyledText::reset(),
+                                    )?;
+                                }
                             }
 
                             if total_files > 10 {

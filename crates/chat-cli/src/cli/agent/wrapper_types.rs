@@ -126,20 +126,49 @@ impl ComplexResource {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Eq, Hash, PartialEq, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Eq, Hash, PartialEq, JsonSchema)]
 #[serde(untagged)]
 pub enum ResourcePath {
-    FilePath(
-        #[schemars(regex(pattern = r"^(file://)"))]
-        String,
-    ),
+    FilePath(String),
+    Skill(String),
     Complex(ComplexResource),
+}
+
+impl<'de> Deserialize<'de> for ResourcePath {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        use serde::de::Error;
+        let v = serde_json::Value::deserialize(deserializer)?;
+        match v {
+            serde_json::Value::String(s) => {
+                if s.starts_with("file://") {
+                    Ok(ResourcePath::FilePath(s))
+                } else if s.starts_with("skill://") {
+                    Ok(ResourcePath::Skill(s))
+                } else {
+                    Err(D::Error::custom(format!(
+                        "resource must start with file:// or skill://, got: {s}"
+                    )))
+                }
+            },
+            serde_json::Value::Object(_) => {
+                let obj = ComplexResource::deserialize(v).map_err(D::Error::custom)?;
+                Ok(ResourcePath::Complex(obj))
+            },
+            _ => Err(D::Error::custom(
+                "resource must be a string (file:// or skill://) or an object",
+            )),
+        }
+    }
 }
 
 impl ResourcePath {
     pub fn source(&self) -> &str {
         match self {
             ResourcePath::FilePath(s) => s,
+            ResourcePath::Skill(s) => s,
             ResourcePath::Complex(res) => res.source(),
         }
     }

@@ -12,7 +12,10 @@ use eyre::{
 };
 use serde::Deserialize;
 
-use super::super::context::ContextManager;
+use super::super::context::{
+    ContextFile,
+    ContextManager,
+};
 use super::super::util::issue::IssueCreator;
 use super::{
     InvokeOutput,
@@ -171,12 +174,19 @@ impl GhIssue {
                 os_str.push_str("files=\n");
                 let total_size: usize = context_files
                     .iter()
-                    .map(|(file, content)| {
-                        let size = TokenCounter::count_tokens(content);
-                        os_str.push_str(&format!("{file}, {size} tkns\n"));
-                        size
+                    .map(|file| match file {
+                        ContextFile::Full { filepath, content } => {
+                            let size = TokenCounter::count_tokens(content);
+                            os_str.push_str(&format!("{filepath}, {size} tkns\n"));
+                            size
+                        },
+                        ContextFile::Auto { filepath, .. } => {
+                            os_str.push_str(&format!("{filepath} (auto), 0 tkns\n"));
+                            0
+                        },
                     })
                     .sum();
+
                 os_str.push_str(&format!("total context size={total_size} tkns"));
             },
             _ => os_str.push_str("files=none"),

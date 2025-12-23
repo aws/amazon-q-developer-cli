@@ -274,22 +274,39 @@ For built-in tool configuration options, please refer to the [built-in tools doc
 
 ## Resources Field
 
-The `resources` field gives an agent access to local resources. Currently, only file resources are supported, and all resource paths must start with `file://`.
+The `resources` field gives an agent access to local resources.
 
 ```json
 {
   "resources": [
     "file://AmazonQ.md",
     "file://README.md",
-    "file://.amazonq/rules/**/*.md"
+    "file://.amazonq/rules/**/*.md",
+    "skill://.kiro/skills/**/SKILL.md"
   ]
 }
 ```
 
-Resources can include:
-- Specific files
-- Glob patterns for multiple files
+Resources support different types via URI schemes:
+- `file://` - Files (always loaded into context)
+- `skill://` - Skills (progressively loaded into context)
+
+Both support:
+- Specific paths: `file://README.md` or `skill://my-skill.md`
+- Glob patterns: `file://.amazonq/**/*.md` or `skill://.kiro/skills/**/SKILL.md`
 - Absolute or relative paths
+
+### Skill
+
+A Skill is a resource whose metadata (name, description, path) is loaded at startup, with full content loaded on demand by the Kiro agent.
+Skill files MUST begin with YAML frontmatter with `name` and `description`. Be specific in the description so the agent can reliably load the full file when needed.
+
+```markdown
+---
+name: dynamodb-data-modeling
+description: Comprehensive guide for dynamodb data modeling best practices. Use when designing or analyzing dynamodb schema.
+---
+```
 
 ## Hooks Field
 
@@ -411,7 +428,8 @@ Here's a complete example of an agent configuration file:
   },
   "resources": [
     "file://README.md",
-    "file://docs/**/*.md"
+    "file://docs/**/*.md",
+    "skill://.kiro/skills/**/SKILL.md"
   ],
   "hooks": {
     "agentSpawn": [
