@@ -32,7 +32,7 @@ clap = { workspace = true, features = ["derive"] }
 color-eyre = "0.6.5"
 color-print.workspace = true
 crossterm.workspace = true
-dialoguer = { version = "0.11.0", features = ["fuzzy-select"] }
+dialoguer = { version = "0.12.0", features = ["fuzzy-select"] }
 dirs.workspace = true
 eyre.workspace = true
 fd-lock = "4.0.4"
