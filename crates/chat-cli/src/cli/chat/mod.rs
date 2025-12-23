@@ -12,6 +12,7 @@ pub mod cli;
 mod consts;
 pub mod context;
 mod conversation;
+mod file_injection;
 mod input_source;
 mod message;
 mod parse;
@@ -2119,6 +2120,11 @@ impl ChatSession {
     async fn handle_input(&mut self, os: &mut Os, mut user_input: String) -> Result<ChatState, ChatError> {
         queue!(self.stderr, style::Print('\n'))?;
         user_input = sanitize_unicode_tags(&user_input);
+
+        if let Some(injected_input) = file_injection::FileInjector::inject_at_files(user_input.trim()).await {
+            user_input = injected_input;
+        }
+
         let input = user_input.trim();
 
         // handle image path
@@ -3858,6 +3864,7 @@ impl ChatSession {
                 .content,
         })
     }
+
 }
 
 /// Replaces amzn_codewhisperer_client::types::SubscriptionStatus with a more descriptive type.

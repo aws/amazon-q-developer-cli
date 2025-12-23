@@ -435,6 +435,38 @@ impl ChatHelper {
     pub fn get_history_path(&self) -> PathBuf {
         self.hinter.get_history_path()
     }
+
+    /// Highlights @filepath patterns in the input line if the files exist
+    fn highlight_filepath_patterns<'l>(&self, line: &'l str) -> Cow<'l, str> {
+        use regex::Regex;
+        use crossterm::style::Stylize;
+
+        // Create regex to match @filepath patterns
+        if let Ok(re) = Regex::new(r"(@[^\s]+)") {
+            let mut result = line.to_string();
+            let mut found_valid_files = false;
+
+            // Check each @filepath match and only highlight if file exists
+            for caps in re.captures_iter(line) {
+                let full_match = &caps[0]; // @filepath
+                let file_path = &full_match[1..]; // Remove the @ prefix
+                let path = std::path::Path::new(file_path);
+
+                // Only highlight if the file exists
+                if path.exists() && path.is_file() {
+                    let highlighted_match = full_match.green().to_string();
+                    result = result.replace(full_match, &highlighted_match);
+                    found_valid_files = true;
+                }
+            }
+
+            if found_valid_files {
+                return Cow::Owned(result);
+            }
+        }
+
+        Cow::Borrowed(line)
+    }
 }
 
 impl Validator for ChatHelper {
@@ -449,6 +481,11 @@ impl Highlighter for ChatHelper {
     }
 
     fn highlight<'l>(&self, line: &'l str, _pos: usize) -> Cow<'l, str> {
+        // Apply filepath pattern highlighting
+        if let Cow::Owned(highlighted) = self.highlight_filepath_patterns(line) {
+            return Cow::Owned(highlighted);
+        }
+
         Cow::Borrowed(line)
     }
 
