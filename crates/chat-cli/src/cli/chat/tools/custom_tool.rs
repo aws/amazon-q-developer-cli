@@ -1,5 +1,8 @@
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::io::Write;
 
 use crossterm::{
@@ -39,13 +42,34 @@ pub enum TransportType {
     Http,
 }
 
+impl std::str::FromStr for TransportType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "stdio" => Ok(TransportType::Stdio),
+            "http" => Ok(TransportType::Http),
+            _ => Err(format!("Invalid transport type: {}", s)),
+        }
+    }
+}
+
+impl std::fmt::Display for TransportType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TransportType::Stdio => write!(f, "stdio"),
+            TransportType::Http => write!(f, "http"),
+        }
+    }
+}
+
 impl Default for TransportType {
     fn default() -> Self {
         Self::Stdio
     }
 }
 
-#[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
+#[derive(Clone, Serialize, Deserialize, Debug, Default, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct OAuthConfig {
     /// Custom redirect URI for OAuth flow (e.g., "127.0.0.1:7778")
@@ -58,25 +82,25 @@ pub struct OAuthConfig {
 #[serde(rename_all = "camelCase")]
 pub struct CustomToolConfig {
     /// The transport type to use for communication with the MCP server
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "should_skip_ser_transport_type")]
     pub r#type: TransportType,
     /// The URL for HTTP-based MCP server communication
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub url: String,
     /// HTTP headers to include when communicating with HTTP-based MCP servers
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     pub headers: HashMap<String, String>,
     /// Scopes with which oauth is done
-    #[serde(default = "get_default_scopes")]
+    #[serde(default = "get_default_scopes", skip_serializing_if = "should_skip_ser_scope")]
     pub oauth_scopes: Vec<String>,
     /// OAuth configuration for this server
     #[serde(skip_serializing_if = "Option::is_none")]
     pub oauth: Option<OAuthConfig>,
     /// The command string used to initialize the mcp server
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub command: String,
     /// A list of arguments to be used to run the command with
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     /// A list of environment variables to run the command with
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -85,11 +109,29 @@ pub struct CustomToolConfig {
     #[serde(default = "default_timeout")]
     pub timeout: u64,
     /// A boolean flag to denote whether or not to load this mcp server
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "should_skip_ser_disabled")]
     pub disabled: bool,
     /// A flag to denote whether this is a server from the legacy mcp.json
     #[serde(skip)]
     pub is_from_legacy_mcp_json: bool,
+}
+
+fn should_skip_ser_disabled(disabled: &bool) -> bool {
+    !*disabled
+}
+
+fn should_skip_ser_transport_type(transport_type: &TransportType) -> bool {
+    matches!(transport_type, &TransportType::Stdio)
+}
+
+fn should_skip_ser_scope(scopes: &[String]) -> bool {
+    let mut set = HashSet::<&str>::new();
+    let default_scopes = oauth_util::get_default_scopes();
+    for scope in default_scopes {
+        set.insert(*scope);
+    }
+
+    scopes.iter().all(|s| set.contains(s.as_str()))
 }
 
 pub fn get_default_scopes() -> Vec<String> {
