@@ -173,14 +173,26 @@ impl ViewEnd {
                     AgentEventKind::ToolCallRejection(tool_call_rejection) => {
                         let ToolCallRejection { reason, name, .. } = tool_call_rejection;
 
+                        let (prefix, suffix) = if name == "web_fetch" {
+                            (
+                                "This request using the ",
+                                " tool is rejected because it matches one or more blocked patterns:",
+                            )
+                        } else {
+                            (
+                                "Command ",
+                                " is rejected because it matches one or more rules on the denied list:",
+                            )
+                        };
+
                         execute!(
                             stderr,
                             theme_source.error_fg(),
-                            Print("Command "),
+                            Print(prefix),
                             theme_source.warning_fg(),
                             Print(name),
                             theme_source.error_fg(),
-                            Print(" is rejected because it matches one or more rules on the denied list:"),
+                            Print(suffix),
                             Print(reason),
                             Print("\n"),
                             theme_source.reset(),

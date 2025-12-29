@@ -2966,21 +2966,80 @@ impl ChatSession {
                     || self.conversation.agents.trust_all_tools;
 
             if let Some(match_set) = denied_match_set {
-                let formatted_set = match_set.into_iter().fold(String::new(), |mut acc, rule| {
+                // Separate matched patterns (for user) from all patterns (for LLM)
+                // web_fetch uses [MATCHED] prefix, other tools don't
+                let has_matched_prefix = match_set.iter().any(|p| p.starts_with("[MATCHED] "));
+
+                let matched_patterns: Vec<String> = if has_matched_prefix {
+                    // web_fetch: only show matched patterns to user
+                    match_set
+                        .iter()
+                        .filter(|p| p.starts_with("[MATCHED] "))
+                        .map(|p| p.strip_prefix("[MATCHED] ").unwrap_or(p).to_string())
+                        .collect()
+                } else {
+                    // Other tools: show all patterns to user
+                    match_set.clone()
+                };
+
+                let formatted_user_msg = matched_patterns.iter().fold(String::new(), |mut acc, rule| {
                     acc.push_str(&format!("\n  - {rule}"));
                     acc
                 });
 
+                let formatted_llm_msg = match_set.iter().fold(String::new(), |mut acc, rule| {
+                    let clean_rule = rule.strip_prefix("[MATCHED] ").unwrap_or(rule);
+                    acc.push_str(&format!("\n  - {clean_rule}"));
+                    acc
+                });
+
+                // Extract URL from tool input if available
+                let url_info = if tool.name == "web_fetch" {
+                    tool.tool_input
+                        .get("url")
+                        .and_then(|v| v.as_str())
+                        .map(|url| {
+                            if url.len() > 80 {
+                                format!(" (URL: {}...)", &url[..77])
+                            } else {
+                                format!(" (URL: {url})")
+                            }
+                        })
+                        .unwrap_or_default()
+                } else {
+                    String::new()
+                };
+
+                // Show tool description FIRST, before rejection message
+                if let Err(e) = tool.tool.queue_description(os, &mut self.stdout).await {
+                    warn!("Failed to queue tool description for denied tool: {}", e);
+                }
+                self.stdout.flush()?;
+
+                // Then show rejection message
                 if self.stderr.should_send_structured_event {
+                    let (prefix, suffix) = if tool.name == "web_fetch" {
+                        ("This request using the ", " tool is rejected")
+                    } else {
+                        ("Command ", " is rejected")
+                    };
+                    let pattern_desc = if tool.name == "web_fetch" {
+                        " because it matches one or more blocked patterns:"
+                    } else {
+                        " because it matches one or more rules on the denied list:"
+                    };
+
                     execute!(
                         self.stderr,
                         StyledText::error_fg(),
-                        style::Print("Command "),
+                        style::Print(prefix),
                         StyledText::warning_fg(),
                         style::Print(&tool.name),
                         StyledText::error_fg(),
-                        style::Print(" is rejected because it matches one or more rules on the denied list:"),
-                        style::Print(formatted_set),
+                        style::Print(suffix),
+                        style::Print(&url_info),
+                        style::Print(pattern_desc),
+                        style::Print(formatted_user_msg),
                         style::Print("\n"),
                         StyledText::reset(),
                     )?;
@@ -2988,7 +3047,7 @@ impl ChatSession {
                     let event = ToolCallRejection {
                         tool_call_id: tool.id.clone(),
                         name: tool.name.clone(),
-                        reason: formatted_set,
+                        reason: format!("{url_info}{formatted_user_msg}"),
                     };
                     self.stderr
                         .send(SessionEvent::AgentEvent(chat_cli_ui::protocol::AgentEvent {
@@ -2999,7 +3058,7 @@ impl ChatSession {
 
                 return Ok(ChatState::HandleInput {
                     input: format!(
-                        "Tool use with {} was rejected because the arguments supplied were forbidden",
+                        "Tool use with {} was rejected{url_info} because the arguments supplied were forbidden. Blocked patterns:{formatted_llm_msg}",
                         tool.name
                     ),
                 });

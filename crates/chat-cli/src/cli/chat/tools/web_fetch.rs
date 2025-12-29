@@ -10,6 +10,7 @@ use eyre::{
     WrapErr,
 };
 use serde::Deserialize;
+use tracing::error;
 
 use super::{
     InvokeOutput,
@@ -21,6 +22,11 @@ use crate::cli::agent::{
     PermissionEvalResult,
 };
 use crate::os::Os;
+use crate::util::resource_permission::{
+    ResourceSettings,
+    ResourceType,
+    eval_permission,
+};
 
 const USER_AGENT: &str = "Kiro-CLI";
 const MAX_TRUNCATE_CHARS: usize = 8000;
@@ -73,11 +79,22 @@ impl WebFetch {
             .iter()
             .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
 
-        if is_in_allowlist {
-            PermissionEvalResult::Allow
-        } else {
-            PermissionEvalResult::Ask
-        }
+        let settings = match Self::INFO
+            .aliases
+            .iter()
+            .find_map(|alias| agent.tools_settings.get(*alias))
+        {
+            Some(settings) => match serde_json::from_value::<ResourceSettings>(settings.clone()) {
+                Ok(settings) => settings,
+                Err(e) => {
+                    error!("Failed to deserialize tool settings for web_fetch: {:?}", e);
+                    return PermissionEvalResult::Ask;
+                },
+            },
+            None => ResourceSettings::default(),
+        };
+
+        eval_permission(&settings, &self.url, ResourceType::Url, is_in_allowlist)
     }
 
     pub async fn invoke(&self, _os: &Os, updates: impl Write) -> Result<InvokeOutput> {
@@ -309,5 +326,203 @@ impl WebFetch {
         url::Url::parse(&self.url).map_err(|e| eyre::eyre!("Invalid URL format: {}", e))?;
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use super::*;
+    use crate::cli::agent::Agent;
+    use crate::cli::agent::wrapper_types::ToolSettingTarget;
+
+    fn create_agent(allowed_tools: Vec<&str>, settings: serde_json::Value) -> Agent {
+        Agent {
+            allowed_tools: allowed_tools.into_iter().map(String::from).collect(),
+            tools_settings: {
+                let mut map = HashMap::new();
+                map.insert(ToolSettingTarget("web_fetch".to_string()), settings);
+                map
+            },
+            ..Default::default()
+        }
+    }
+
+    fn create_web_fetch(url: &str) -> WebFetch {
+        WebFetch {
+            url: url.to_string(),
+            mode: FetchMode::default(),
+            search_terms: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tool_not_in_allowed_tools_with_trusted_url_allows() {
+        // Settings apply even when tool is not in allowedTools
+        let agent = create_agent(
+            vec![],
+            serde_json::json!({
+                "trusted": [".*docs\\.aws\\.amazon\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://docs.aws.amazon.com/lambda/");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_tool_not_in_allowed_tools_default_asks() {
+        // Default is Ask when tool not in allowedTools and no pattern matches
+        let agent = create_agent(
+            vec![],
+            serde_json::json!({
+                "trusted": [".*docs\\.aws\\.amazon\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://example.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Ask));
+    }
+
+    #[tokio::test]
+    async fn test_blocked_url_denies() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "blocked": [".*pastebin\\.com.*", ".*malicious\\.org.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://pastebin.com/abc123");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(
+            matches!(result, PermissionEvalResult::Deny(ref patterns) if patterns.iter().any(|p| p.contains("pastebin\\.com")))
+        );
+    }
+
+    #[tokio::test]
+    async fn test_trusted_url_allows() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "trusted": [".*docs\\.aws\\.amazon\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://docs.aws.amazon.com/lambda/");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_url_not_in_any_list_allows() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "trusted": [".*docs\\.aws\\.amazon\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://example.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_regex_in_blocked_urls_denies() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "blocked": ["(unclosed-paren"]
+            }),
+        );
+        let tool = create_web_fetch("https://example.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        // Invalid regex in blocked should deny (deny-all behavior)
+        assert!(matches!(result, PermissionEvalResult::Deny(_)));
+    }
+
+    #[tokio::test]
+    async fn test_invalid_regex_in_trusted_urls_skips() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "trusted": ["(unclosed-paren", ".*valid\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://valid.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        // Invalid regex should be skipped, valid pattern should match
+        assert!(matches!(result, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_blocked_urls_precedence_over_trusted() {
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "trusted": [".*example\\.com.*"],
+                "blocked": [".*example\\.com.*"]
+            }),
+        );
+        let tool = create_web_fetch("https://example.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        // blocked should take precedence
+        assert!(matches!(result, PermissionEvalResult::Deny(_)));
+    }
+
+    #[tokio::test]
+    async fn test_no_settings_allows_when_tool_trusted() {
+        let agent = Agent {
+            allowed_tools: vec!["web_fetch".to_string()].into_iter().collect(),
+            tools_settings: HashMap::new(),
+            ..Default::default()
+        };
+        let tool = create_web_fetch("https://example.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Allow));
+    }
+
+    #[tokio::test]
+    async fn test_pattern_sampling_with_many_blocked_urls() {
+        let mut blocked_resources = Vec::new();
+        for i in 0..150 {
+            blocked_resources.push(format!(".*blocked{}\\.com.*", i));
+        }
+
+        let agent = create_agent(
+            vec!["web_fetch"],
+            serde_json::json!({
+                "blocked": blocked_resources
+            }),
+        );
+        let tool = create_web_fetch("https://blocked0.com");
+        let os = Os::new().await.unwrap();
+
+        let result = tool.eval_perm(&os, &agent);
+        if let PermissionEvalResult::Deny(patterns) = result {
+            // Should return at most 100 patterns
+            assert!(patterns.len() <= 100);
+            // Should include the matched pattern
+            assert!(patterns.iter().any(|p| p.contains("blocked0")));
+        } else {
+            panic!("Expected Deny result");
+        }
     }
 }
