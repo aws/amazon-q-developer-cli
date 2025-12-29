@@ -1,6 +1,5 @@
 use std::path::PathBuf;
 
-#[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
 use candle_transformers::models::bert::Config as BertConfig;
 
 /// Type of model to use for text embedding
@@ -30,7 +29,6 @@ pub struct ModelConfig {
     /// Name of the tokenizer file
     pub tokenizer_file: String,
     /// BERT configuration
-    #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
     pub config: BertConfig,
     /// Whether to normalize embeddings
     pub normalize_embeddings: bool,
@@ -47,7 +45,6 @@ impl ModelType {
                 repo_path: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
                 model_file: "model.safetensors".to_string(),
                 tokenizer_file: "tokenizer.json".to_string(),
-                #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
                 config: BertConfig {
                     vocab_size: 30522,
                     hidden_size: 384,
@@ -74,7 +71,6 @@ impl ModelType {
                 repo_path: "sentence-transformers/all-MiniLM-L12-v2".to_string(),
                 model_file: "model.safetensors".to_string(),
                 tokenizer_file: "tokenizer.json".to_string(),
-                #[cfg(not(all(target_os = "linux", target_arch = "aarch64")))]
                 config: BertConfig {
                     vocab_size: 30522,
                     hidden_size: 384,

@@ -124,22 +124,17 @@ The library supports two index types for different use cases:
 **Best (Semantic)**:
 - Intelligent semantic search with natural language understanding
 - Uses vector embeddings with different backends based on platform:
-  - **macOS/Windows**: Candle with optimized models
-  - **Linux (non-ARM)**: Candle for embeddings
-  - **Linux (ARM64)**: Falls back to BM25 when semantic models unavailable
+  - **All platforms**: Candle with optimized models (default)
+  - **Fallback**: BM25 for keyword-based search when needed
 
 ## Index Types and Backends
 
-The library supports multiple index types with automatic backend selection:
+The library supports multiple index types:
 
-1. **Candle**: Good performance, used on Linux (non-ARM)
-2. **BM25**: Keyword matching, used on Linux ARM64
+1. **Candle**: High-quality semantic embeddings using all-MiniLM-L6-v2 (default on all platforms)
+2. **BM25**: Fast keyword-based matching (available as fallback)
 
-The default selection logic prioritizes performance where possible:
-- macOS/Windows: ONNX is the default
-- Linux (non-ARM): Candle is the default
-- Linux ARM64: BM25 is the default
-- ARM64: BM25 is the default
+The default selection uses Candle (Best) on all platforms for optimal semantic search quality.
 
 ## Detailed Usage
 
@@ -383,21 +378,13 @@ The library supports different embedding backends:
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 let client = SemanticSearchClient::with_embedding_type(
     "/path/to/storage",
-    EmbeddingType::Onnx,
+    EmbeddingType::Best,
 )?;
 
-// Use Candle (used on Linux non-ARM)
-#[cfg(all(target_os = "linux", not(target_arch = "aarch64")))]
+// Use Fast (BM25 keyword-based search)
 let client = SemanticSearchClient::with_embedding_type(
     "/path/to/storage",
-    EmbeddingType::Candle,
-)?;
-
-// Use BM25 (used on Linux ARM64)
-#[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-let client = SemanticSearchClient::with_embedding_type(
-    "/path/to/storage",
-    EmbeddingType::BM25,
+    EmbeddingType::Fast,
 )?;
 ```
 
@@ -566,10 +553,9 @@ let workspace_context = client.add_context_from_directory("/workspace", "Full Wo
 
 ## Platform-Specific Features
 
-- **macOS**: Uses Metal for hardware-accelerated embeddings via ONNX Runtime and Candle
-- **Windows**: Uses optimized CPU execution via ONNX Runtime and Candle
-- **Linux (non-ARM)**: Uses Candle for embeddings
-- **Linux ARM64**: Uses BM25 keyword-based embeddings as a fallback
+- **macOS**: Uses Metal for hardware-accelerated embeddings via Candle
+- **Windows**: Uses optimized CPU execution via Candle
+- **Linux**: Uses Candle for high-quality semantic embeddings (all architectures including ARM64)
 
 ## Error Handling
 
