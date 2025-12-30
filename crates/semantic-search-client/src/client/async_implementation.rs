@@ -80,7 +80,6 @@ impl AsyncSemanticSearchClient {
         let base_dir = base_dir.as_ref().to_path_buf();
 
         tokio::fs::create_dir_all(&base_dir).await?;
-
         config::ensure_models_dir(&base_dir)?;
         ModelDownloader::ensure_models_downloaded(&config.embedding_type).await?;
 
@@ -101,17 +100,14 @@ impl AsyncSemanticSearchClient {
 
         tokio::spawn(worker.run());
 
-        let client = Self {
+        Ok(Self {
             base_dir,
             embedder,
             config,
             job_tx,
             context_manager,
             operation_manager,
-        };
-
-        client.context_manager.load_persistent_contexts().await?;
-        Ok(client)
+        })
     }
 
     /// Creates a new AsyncSemanticSearchClient with default configuration.
@@ -664,5 +660,13 @@ impl AsyncSemanticSearchClient {
     /// Returns a `Vec<String>` with entries in the format "name -> path".
     pub async fn list_context_paths(&self) -> Vec<String> {
         self.context_manager.list_context_paths().await
+    }
+
+    /// Returns the number of loaded BM25 and semantic contexts
+    #[doc(hidden)]
+    pub async fn loaded_contexts_count(&self) -> (usize, usize) {
+        let bm25 = self.context_manager.get_bm25_contexts_ref().read().await.len();
+        let semantic = self.context_manager.get_volatile_contexts_ref().read().await.len();
+        (bm25, semantic)
     }
 }

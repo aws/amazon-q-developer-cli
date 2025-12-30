@@ -93,21 +93,30 @@ impl ContextManager {
         embedder: &dyn TextEmbedderTrait,
     ) -> Result<Vec<(ContextId, SearchResults)>> {
         let mut all_results = Vec::new();
-        let contexts_metadata = self.contexts.read().await;
 
-        for (context_id, context_meta) in contexts_metadata.iter() {
-            if context_meta.embedding_type.is_bm25() {
+        let context_ids: Vec<(String, EmbeddingType)> = {
+            let contexts_metadata = self.contexts.read().await;
+            contexts_metadata
+                .iter()
+                .map(|(id, meta)| (id.clone(), meta.embedding_type))
+                .collect()
+        };
+
+        for (context_id, embedding_type) in context_ids {
+            self.load_persistent_context(&context_id).await?;
+
+            if embedding_type.is_bm25() {
                 if let Some(results) = self
-                    .search_bm25_context_paginated(context_id, query_text, limit, offset)
+                    .search_bm25_context_paginated(&context_id, query_text, limit, offset)
                     .await
                 {
-                    all_results.push((context_id.clone(), results));
+                    all_results.push((context_id, results));
                 }
             } else if let Some(results) = self
-                .search_semantic_context_paginated(context_id, query_text, limit, offset, embedder)
+                .search_semantic_context_paginated(&context_id, query_text, limit, offset, embedder)
                 .await?
             {
-                all_results.push((context_id.clone(), results));
+                all_results.push((context_id, results));
             }
         }
 
@@ -144,12 +153,17 @@ impl ContextManager {
         offset: usize,
         embedder: &dyn TextEmbedderTrait,
     ) -> Result<Option<SearchResults>> {
-        let contexts_metadata = self.contexts.read().await;
-        let context_meta = contexts_metadata
-            .get(context_id)
-            .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))?;
+        let embedding_type = {
+            let contexts_metadata = self.contexts.read().await;
+            let context_meta = contexts_metadata
+                .get(context_id)
+                .ok_or_else(|| SemanticSearchError::ContextNotFound(context_id.to_string()))?;
+            context_meta.embedding_type
+        };
 
-        if context_meta.embedding_type.is_bm25() {
+        self.load_persistent_context(context_id).await?;
+
+        if embedding_type.is_bm25() {
             Ok(self
                 .search_bm25_context_paginated(context_id, query_text, limit, offset)
                 .await)
