@@ -300,7 +300,7 @@ pub mod tips {
             ),
             format!(
                 "{} shows you a visual breakdown of your current context window usage",
-                StyledText::command("/usage")
+                StyledText::command("/context")
             ),
             format!(
                 "Get notified whenever {PRODUCT_NAME} CLI finishes responding. Just run {}",

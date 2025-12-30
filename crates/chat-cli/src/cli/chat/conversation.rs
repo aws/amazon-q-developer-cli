@@ -1516,6 +1516,28 @@ Return only the JSON configuration, no additional text."
             .switch(agent_name, os)
             .await
             .map_err(ChatError::AgentSwapError)?;
+
+        // Update model if agent specifies one
+        if let Some(agent_model) = agent.model.as_ref() {
+            let (models, _) = super::cli::model::get_available_models(os).await?;
+            if let Some(model) = super::cli::model::find_model(&models, agent_model) {
+                self.model_info = Some(model.clone());
+            } else {
+                // Model not found - show warning but continue (matches initialization behavior)
+                let _ = execute!(
+                    output,
+                    StyledText::warning_fg(),
+                    style::Print("WARNING: "),
+                    StyledText::reset(),
+                    style::Print("Agent specifies model '"),
+                    StyledText::brand_fg(),
+                    style::Print(agent_model),
+                    StyledText::reset(),
+                    style::Print("' which is not available. Keeping current model.\n"),
+                );
+            }
+        }
+
         self.context_manager.replace({
             ContextManager::from_agent(agent, calc_max_context_files_size(self.model_info.as_ref()))
                 .map_err(|e| ChatError::Custom(format!("Context manager has failed to instantiate: {e}").into()))?
