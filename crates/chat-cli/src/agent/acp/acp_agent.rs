@@ -44,7 +44,6 @@ use sacp::schema::{
     ContentBlock,
     ContentChunk as SacpContentChunk,
     Diff,
-    Implementation,
     InitializeRequest,
     InitializeResponse,
     NewSessionRequest,
@@ -54,6 +53,7 @@ use sacp::schema::{
     PermissionOptionKind,
     PromptRequest,
     PromptResponse,
+    ProtocolVersion,
     RequestPermissionOutcome,
     RequestPermissionRequest,
     SessionId,
@@ -68,10 +68,10 @@ use sacp::schema::{
     ToolCallUpdate,
     ToolCallUpdateFields,
     ToolKind,
-    V1,
 };
 use sacp::{
-    JrHandlerChain,
+    AgentToClient,
+    JrConnectionCx,
     JrRequestCx,
 };
 use tokio_util::compat::{
@@ -88,7 +88,6 @@ use crate::agent::rts::{
     RtsModelState,
 };
 use crate::os::Os;
-use crate::util::consts::CLI_BINARY_NAME;
 
 /// ACP Session that processes requests using Kiro Agent
 struct AcpSession {
@@ -125,6 +124,7 @@ impl AcpSession {
         &self,
         request: PromptRequest,
         request_cx: JrRequestCx<PromptResponse>,
+        mut cx: JrConnectionCx<sacp::AgentToClient>,
     ) -> Result<(), sacp::Error> {
         let session_id = request.session_id.clone();
         let mut agent = self.agent.clone();
@@ -134,26 +134,23 @@ impl AcpSession {
 
         // We want to avoid blocking the main event loop because it needs to do other work!
         // so spawn a new task and wait for end of turn
-        let _ = request_cx.connection_cx().spawn(async move {
+        let _ = cx.clone().spawn(async move {
             loop {
                 match agent.recv().await {
                     Ok(event) => match event {
                         AgentEvent::Update(update_event) => {
-                            handle_update_event(update_event, session_id.clone(), &request_cx)?;
+                            handle_update_event(update_event, session_id.clone(), &request_cx, &mut cx)?;
                         },
                         AgentEvent::ApprovalRequest { id, tool_use, context } => {
                             info!(
                                 "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
                                 id, tool_use, context
                             );
-                            handle_approval_request(id, tool_use, session_id.clone(), agent.clone(), &request_cx)?;
+                            handle_approval_request(id, tool_use, session_id.clone(), agent.clone(), &request_cx, &mut cx)?;
                         },
                         AgentEvent::EndTurn(_metadata) => {
                             // Conversation complete - respond and exit task
-                            return request_cx.respond(PromptResponse {
-                                stop_reason: StopReason::EndTurn,
-                                meta: None,
-                            });
+                            return request_cx.respond(PromptResponse::new(StopReason::EndTurn));
                         },
                         AgentEvent::Stop(AgentStopReason::Error(_)) => {
                             // Agent error - respond with error
@@ -205,31 +202,24 @@ impl AcpSession {
 fn handle_update_event(
     update_event: UpdateEvent,
     session_id: SessionId,
-    request_cx: &JrRequestCx<PromptResponse>,
+    _request_cx: &JrRequestCx<PromptResponse>,
+    cx: &mut JrConnectionCx<sacp::AgentToClient>,
 ) -> Result<(), sacp::Error> {
     let session_update = match update_event {
         UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
-            Some(SessionUpdate::AgentMessageChunk(SacpContentChunk {
-                content: ContentBlock::Text(TextContent {
-                    text,
-                    annotations: None,
-                    meta: None,
-                }),
-                meta: None,
-            }))
+            Some(SessionUpdate::AgentMessageChunk(SacpContentChunk::new(
+                ContentBlock::Text(TextContent::new(text))
+            )))
         },
         UpdateEvent::ToolCall(tool_call) => {
-            let acp_tool_call = ToolCall {
-                id: ToolCallId(tool_call.id.into()),
-                title: tool_call.tool_use_block.name.clone(),
-                kind: get_tool_kind(&tool_call.tool_use_block.name),
-                status: ToolCallStatus::InProgress,
-                content: get_tool_content(&tool_call.tool),
-                locations: vec![], // TODO: We need line number for fs_write
-                raw_input: Some(tool_call.tool_use_block.input.clone()),
-                raw_output: None,
-                meta: None,
-            };
+            let acp_tool_call = ToolCall::new(
+                ToolCallId::new(tool_call.id),
+                tool_call.tool_use_block.name.clone()
+            )
+            .kind(get_tool_kind(&tool_call.tool_use_block.name))
+            .status(ToolCallStatus::InProgress)
+            .content(get_tool_content(&tool_call.tool))
+            .raw_input(Some(tool_call.tool_use_block.input.clone()));
             Some(SessionUpdate::ToolCall(acp_tool_call))
         },
         UpdateEvent::ToolCallFinished { tool_call, result } => {
@@ -238,28 +228,21 @@ fn handle_update_event(
                 ToolCallResult::Error(_) => (ToolCallStatus::Failed, None),
                 ToolCallResult::Cancelled => (ToolCallStatus::Failed, None),
             };
-            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate {
-                id: ToolCallId(tool_call.id.into()),
-                fields: ToolCallUpdateFields {
-                    status: Some(status),
-                    title: Some(tool_call.tool_use_block.name.clone()),
-                    kind: Some(get_tool_kind(&tool_call.tool_use_block.name)),
-                    raw_input: Some(tool_call.tool_use_block.input.clone()),
-                    raw_output,
-                    ..Default::default()
-                },
-                meta: None,
-            }))
+            Some(SessionUpdate::ToolCallUpdate(ToolCallUpdate::new(
+                ToolCallId::new(tool_call.id),
+                ToolCallUpdateFields::new()
+                    .status(Some(status))
+                    .title(Some(tool_call.tool_use_block.name.clone()))
+                    .kind(Some(get_tool_kind(&tool_call.tool_use_block.name)))
+                    .raw_input(Some(tool_call.tool_use_block.input.clone()))
+                    .raw_output(raw_output)
+            )))
         },
         _ => None,
     };
 
     if let Some(update) = session_update {
-        request_cx.connection_cx().send_notification(SessionNotification {
-            session_id,
-            update,
-            meta: None,
-        })?;
+        cx.send_notification(SessionNotification::new(session_id, update))?;
     }
     Ok(())
 }
@@ -291,14 +274,10 @@ fn get_tool_content(tool: &Tool) -> Vec<ToolCallContent> {
                 FsWrite::Insert(_) => return vec![],
             };
 
-            vec![ToolCallContent::Diff {
-                diff: Diff {
-                    path: path.into(),
-                    old_text,
-                    new_text,
-                    meta: None,
-                },
-            }]
+            vec![ToolCallContent::Diff(Diff::new(
+                path,
+                new_text
+            ).old_text(old_text))]
         },
         _ => vec![],
     }
@@ -310,46 +289,40 @@ fn handle_approval_request(
     tool_use: ToolUseBlock,
     session_id: SessionId,
     agent: AgentHandle,
-    request_cx: &JrRequestCx<PromptResponse>,
+    _request_cx: &JrRequestCx<PromptResponse>,
+    cx: &mut JrConnectionCx<sacp::AgentToClient>,
 ) -> Result<(), sacp::Error> {
-    let permission_request = RequestPermissionRequest {
+    let permission_request = RequestPermissionRequest::new(
         session_id,
-        tool_call: ToolCallUpdate {
-            id: ToolCallId(tool_use.tool_use_id.clone().into()),
-            fields: ToolCallUpdateFields {
-                status: Some(ToolCallStatus::Pending),
-                title: Some(tool_use.name.clone()),
-                raw_input: Some(tool_use.input.clone()),
-                ..Default::default()
-            },
-            meta: None,
-        },
-        options: vec![
-            PermissionOption {
-                id: PermissionOptionId("allow".into()),
-                name: "Allow".to_string(),
-                kind: PermissionOptionKind::AllowOnce,
-                meta: None,
-            },
-            PermissionOption {
-                id: PermissionOptionId("deny".into()),
-                name: "Deny".to_string(),
-                kind: PermissionOptionKind::RejectOnce,
-                meta: None,
-            },
-        ],
-        meta: None,
-    };
+        ToolCallUpdate::new(
+            ToolCallId::new(tool_use.tool_use_id.clone()),
+            ToolCallUpdateFields::new()
+                .status(Some(ToolCallStatus::Pending))
+                .title(Some(tool_use.name.clone()))
+                .raw_input(Some(tool_use.input.clone()))
+        ),
+        vec![
+            PermissionOption::new(
+                PermissionOptionId::new("allow"),
+                "Allow".to_string(),
+                PermissionOptionKind::AllowOnce
+            ),
+            PermissionOption::new(
+                PermissionOptionId::new("deny"),
+                "Deny".to_string(),
+                PermissionOptionKind::RejectOnce
+            ),
+        ]
+    );
 
-    request_cx
-        .connection_cx()
+    cx
         .send_request(permission_request)
-        .await_when_result_received(|result| async move {
+        .on_receiving_result(|result| async move {
             info!("Permission request result: {:?}", result);
             let approval_result = match result {
                 Ok(response) => match &response.outcome {
-                    RequestPermissionOutcome::Selected { option_id } => {
-                        if option_id.0.as_ref() == "allow" {
+                    RequestPermissionOutcome::Selected(option_id) => {
+                        if option_id.option_id.0.as_ref() == "allow" {
                             agent::protocol::ApprovalResult::Approve
                         } else {
                             agent::protocol::ApprovalResult::Deny { reason: None }
@@ -357,6 +330,9 @@ fn handle_approval_request(
                     },
                     RequestPermissionOutcome::Cancelled => agent::protocol::ApprovalResult::Deny {
                         reason: Some("Cancelled".to_string()),
+                    },
+                    _ => agent::protocol::ApprovalResult::Deny {
+                        reason: Some("Unknown outcome".to_string()),
                     },
                 },
                 Err(_) => agent::protocol::ApprovalResult::Deny {
@@ -376,7 +352,9 @@ fn handle_approval_request(
                 })
                 .ok();
             Ok(())
-        })
+        })?;
+
+    Ok(())
 }
 
 /// Entry point for SACP agent
@@ -392,60 +370,55 @@ pub async fn execute(os: &mut Os) -> Result<ExitCode> {
     local_set
         .run_until(async move {
             // Create SACP connection with handlers
-            JrHandlerChain::new()
+            AgentToClient::builder()
                 .name("kiro-cli-agent")
                 // Handle initialize request
-                .on_receive_request({
-                    async move |_request: InitializeRequest, request_cx| {
-                        request_cx.respond(InitializeResponse {
-                            protocol_version: V1,
-                            agent_capabilities: AgentCapabilities::default(),
-                            auth_methods: Vec::new(),
-                            agent_info: Some(Implementation {
-                                name: CLI_BINARY_NAME.to_string(),
-                                title: Some("Kiro Agent".to_string()),
-                                version: env!("CARGO_PKG_VERSION").to_string(),
-                            }),
-                            meta: None,
-                        })
-                    }
-                })
+                .on_receive_request(
+                    async |_request: InitializeRequest, request_cx: JrRequestCx<InitializeResponse>, _cx: JrConnectionCx<sacp::AgentToClient>| {
+                        request_cx.respond(InitializeResponse::new(ProtocolVersion::LATEST)
+                            .agent_capabilities(AgentCapabilities::default()))
+                    },
+                    sacp::on_receive_request!()
+                )
                 // Handle new_session request
-                .on_receive_request({
-                    let sessions = Arc::clone(&sessions);
-                    let os = Arc::clone(&os);
-                    async move |_request: NewSessionRequest, request_cx| {
-                        let session_id = SessionId(uuid::Uuid::new_v4().to_string().into());
-                        let os_clone = os.lock().unwrap().clone();
-                        let session = Arc::new(AcpSession::new(os_clone).await.map_err(|_e| sacp::Error::internal_error())?);
-                        sessions.lock().unwrap().insert(session_id.clone(), session);
+                .on_receive_request(
+                    {
+                        let sessions = Arc::clone(&sessions);
+                        let os = Arc::clone(&os);
+                        async move |_request: NewSessionRequest, request_cx: JrRequestCx<NewSessionResponse>, _cx: JrConnectionCx<sacp::AgentToClient>| {
+                            let session_id = SessionId::new(uuid::Uuid::new_v4().to_string());
+                            let os_clone = os.lock().unwrap().clone();
+                            let session = Arc::new(AcpSession::new(os_clone).await.map_err(|_e| sacp::Error::internal_error())?);
+                            sessions.lock().unwrap().insert(session_id.clone(), session);
 
-                        request_cx.respond(NewSessionResponse {
-                            session_id,
-                            modes: None,
-                            meta: None,
-                        })
-                    }
-                })
-                // Handle prompt request
-                .on_receive_request({
-                    let sessions = Arc::clone(&sessions);
-                    async move |request: PromptRequest, request_cx| {
-                        let session = sessions.lock().expect("not poisoned").get(&request.session_id).cloned();
-
-                        match session {
-                            Some(session) => session.handle_prompt_request(request, request_cx).await,
-                            None => request_cx.respond_with_error(sacp::Error::invalid_request()),
+                            request_cx.respond(NewSessionResponse::new(session_id))
                         }
-                    }
-                })
+                    },
+                    sacp::on_receive_request!()
+                )
+                // Handle prompt request
+                .on_receive_request(
+                    {
+                        let sessions = Arc::clone(&sessions);
+                        async move |request: PromptRequest, request_cx: JrRequestCx<PromptResponse>, cx: JrConnectionCx<sacp::AgentToClient>| {
+                            let session = sessions.lock().expect("not poisoned").get(&request.session_id).cloned();
+
+                            match session {
+                                Some(session) => session.handle_prompt_request(request, request_cx, cx).await,
+                                None => request_cx.respond_with_error(sacp::Error::invalid_request()),
+                            }
+                        }
+                    },
+                    sacp::on_receive_request!()
+                )
                 // Handle cancel notification
-                .on_receive_notification({
-                    async move |_notification: CancelNotification, _cx| {
+                .on_receive_notification(
+                    async |_notification: CancelNotification, _cx: JrConnectionCx<sacp::AgentToClient>| {
                         // TODO: Implement cancellation
                         Ok(())
-                    }
-                })
+                    },
+                    sacp::on_receive_notification!()
+                )
                 // Run the connection
                 .serve(sacp::ByteStreams::new(outgoing, incoming))
                 .await
