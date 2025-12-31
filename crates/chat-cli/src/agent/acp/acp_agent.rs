@@ -146,7 +146,14 @@ impl AcpSession {
                                 "AgentEvent::ApprovalRequest: id={}, tool_use={:?}, context={:?}",
                                 id, tool_use, context
                             );
-                            handle_approval_request(id, tool_use, session_id.clone(), agent.clone(), &request_cx, &mut cx)?;
+                            handle_approval_request(
+                                id,
+                                tool_use,
+                                session_id.clone(),
+                                agent.clone(),
+                                &request_cx,
+                                &mut cx,
+                            )?;
                         },
                         AgentEvent::EndTurn(_metadata) => {
                             // Conversation complete - respond and exit task
@@ -206,20 +213,15 @@ fn handle_update_event(
     cx: &mut JrConnectionCx<sacp::AgentToClient>,
 ) -> Result<(), sacp::Error> {
     let session_update = match update_event {
-        UpdateEvent::AgentContent(ContentChunk::Text(text)) => {
-            Some(SessionUpdate::AgentMessageChunk(SacpContentChunk::new(
-                ContentBlock::Text(TextContent::new(text))
-            )))
-        },
+        UpdateEvent::AgentContent(ContentChunk::Text(text)) => Some(SessionUpdate::AgentMessageChunk(
+            SacpContentChunk::new(ContentBlock::Text(TextContent::new(text))),
+        )),
         UpdateEvent::ToolCall(tool_call) => {
-            let acp_tool_call = ToolCall::new(
-                ToolCallId::new(tool_call.id),
-                tool_call.tool_use_block.name.clone()
-            )
-            .kind(get_tool_kind(&tool_call.tool_use_block.name))
-            .status(ToolCallStatus::InProgress)
-            .content(get_tool_content(&tool_call.tool))
-            .raw_input(Some(tool_call.tool_use_block.input.clone()));
+            let acp_tool_call = ToolCall::new(ToolCallId::new(tool_call.id), tool_call.tool_use_block.name.clone())
+                .kind(get_tool_kind(&tool_call.tool_use_block.name))
+                .status(ToolCallStatus::InProgress)
+                .content(get_tool_content(&tool_call.tool))
+                .raw_input(Some(tool_call.tool_use_block.input.clone()));
             Some(SessionUpdate::ToolCall(acp_tool_call))
         },
         UpdateEvent::ToolCallFinished { tool_call, result } => {
@@ -235,7 +237,7 @@ fn handle_update_event(
                     .title(Some(tool_call.tool_use_block.name.clone()))
                     .kind(Some(get_tool_kind(&tool_call.tool_use_block.name)))
                     .raw_input(Some(tool_call.tool_use_block.input.clone()))
-                    .raw_output(raw_output)
+                    .raw_output(raw_output),
             )))
         },
         _ => None,
@@ -274,10 +276,7 @@ fn get_tool_content(tool: &Tool) -> Vec<ToolCallContent> {
                 FsWrite::Insert(_) => return vec![],
             };
 
-            vec![ToolCallContent::Diff(Diff::new(
-                path,
-                new_text
-            ).old_text(old_text))]
+            vec![ToolCallContent::Diff(Diff::new(path, new_text).old_text(old_text))]
         },
         _ => vec![],
     }
@@ -299,25 +298,24 @@ fn handle_approval_request(
             ToolCallUpdateFields::new()
                 .status(Some(ToolCallStatus::Pending))
                 .title(Some(tool_use.name.clone()))
-                .raw_input(Some(tool_use.input.clone()))
+                .raw_input(Some(tool_use.input.clone())),
         ),
         vec![
             PermissionOption::new(
                 PermissionOptionId::new("allow"),
                 "Allow".to_string(),
-                PermissionOptionKind::AllowOnce
+                PermissionOptionKind::AllowOnce,
             ),
             PermissionOption::new(
                 PermissionOptionId::new("deny"),
                 "Deny".to_string(),
-                PermissionOptionKind::RejectOnce
+                PermissionOptionKind::RejectOnce,
             ),
-        ]
+        ],
     );
 
-    cx
-        .send_request(permission_request)
-        .on_receiving_result(|result| async move {
+    cx.send_request(permission_request)
+        .on_receiving_result(async move |result| {
             info!("Permission request result: {:?}", result);
             let approval_result = match result {
                 Ok(response) => match &response.outcome {
