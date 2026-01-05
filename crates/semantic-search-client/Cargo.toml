@@ -36,7 +36,7 @@ bm25 = { version = "2.3.2", features = ["language_detection"] }
 anyhow = "1.0"
 reqwest = { workspace = true }
 zip = { version = "4.3.0", default-features = false, features = ["deflate", "time"] }
-tokio-stream = "0.1.17"
+tokio-stream = "0.1.18"
 sha2 = "0.10.9"
 pdf-extract.workspace = true
 
