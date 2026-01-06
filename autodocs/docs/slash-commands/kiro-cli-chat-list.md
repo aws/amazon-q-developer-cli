@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-05
+  commit: a1d370b5
   status: validated
   testable_headless: false
   category: slash_command
@@ -11,7 +11,7 @@ doc_meta:
   related: [chat-save, chat-load, chat-delete]
 ---
 
-# /chat list
+# kiro-cli chat --list-sessions
 
 List all saved chat sessions for current directory.
 
@@ -22,10 +22,8 @@ Shows all conversations saved in database for current directory with session IDs
 ## Usage
 
 ```
-/chat list
+kiro-cli chat --list-sessions
 ```
-
-**Alternative**: `kiro-cli chat --list-sessions`
 
 ## Output
 
@@ -45,7 +43,7 @@ To delete a session, use: kiro-cli chat --delete-session <SESSION_ID>
 
 - [/chat save](chat-save.md) - Save conversations
 - [/chat load](chat-load.md) - Load conversations
-- [/chat delete](chat-delete.md) - Delete sessions
+- [kiro-cli chat --delete-session <sessionId>](chat-delete.md) - Delete sessions
 - [kiro-cli chat --list-sessions](../commands/chat.md) - CLI version
 
 ## Examples
@@ -53,7 +51,7 @@ To delete a session, use: kiro-cli chat --delete-session <SESSION_ID>
 ### Example 1: List Sessions
 
 ```
-/chat list
+kiro-cli chat --list-sessions
 ```
 
 **Output**:

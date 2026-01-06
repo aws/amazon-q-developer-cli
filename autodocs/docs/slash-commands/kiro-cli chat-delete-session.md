@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-05
+  commit: a1d370b5
   status: validated
   testable_headless: false
   category: slash_command
@@ -11,28 +11,26 @@ doc_meta:
   related: [chat-list, chat-save]
 ---
 
-# /chat delete
+# kiro-cli chat --delete-session
 
 Delete saved chat session by ID.
 
 ## Overview
 
-Deletes a saved conversation from database by session ID. Use `/chat list` to see available session IDs.
+Deletes a saved conversation from database by session ID. Use `kiro-cli chat --list-sessions` to see available session IDs.
 
 ## Usage
 
 ```
-/chat delete <session-id>
+kiro-cli chat --delete-session <session-id>
 ```
-
-**Alternative**: `kiro-cli chat --delete-session <session-id>`
 
 ## Examples
 
 ### Example 1: Delete Session
 
 ```
-/chat delete abc123
+kiro-cli chat --delete-session abc123
 ```
 
 **Output**:
@@ -43,13 +41,13 @@ Deletes a saved conversation from database by session ID. Use `/chat list` to se
 ### Example 2: Delete from List
 
 ```
-/chat list
+kiro-cli chat --list-sessions
 ```
 
 Copy session ID, then:
 
 ```
-/chat delete <session-id>
+kiro-cli chat --delete-session <session-id>
 ```
 
 ## Troubleshooting
@@ -58,7 +56,7 @@ Copy session ID, then:
 
 **Symptom**: Error "Session not found"  
 **Cause**: Invalid session ID or already deleted  
-**Solution**: Use `/chat list` to verify session ID exists
+**Solution**: Use `kiro-cli chat --list-sessions` to verify session ID exists
 
 ### Issue: Can't Delete
 
@@ -74,5 +72,5 @@ Copy session ID, then:
 
 ## Related
 
-- [/chat list](chat-list.md) - List sessions to find IDs
+- [kiro-cli chat --list-sessions](chat-list.md) - List sessions to find IDs
 - [kiro-cli chat --delete-session](../commands/chat.md) - CLI version

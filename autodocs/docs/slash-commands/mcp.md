@@ -1,7 +1,7 @@
 ---
 doc_meta:
   validated: 2025-12-19
-  commit: 57090ffe
+  commit: a1d370b5
   status: validated
   testable_headless: false
   category: slash_command
@@ -13,17 +13,57 @@ doc_meta:
 
 # /mcp
 
-View MCP server status, authentication requirements, and available tools.
+See MCP server loaded and manage MCP servers.
 
 ## Overview
 
-Displays status of all MCP servers configured in current agent. Shows server state, authentication requirements, available tools, and OAuth URLs if needed.
+The `/mcp` command displays status of MCP servers and provides subcommands to manage them. Shows server state, authentication requirements, available tools, and OAuth URLs if needed.
 
 ## Usage
 
 ```
-/mcp
+/mcp [COMMAND]
 ```
+
+## Commands
+
+### list (default)
+
+List all MCP servers (shows registry servers if configured by admin, or local configured servers).
+
+```
+/mcp
+/mcp list
+```
+
+### add
+
+Add an MCP server from the registry (only available if a registry has been configured by admin).
+
+```
+/mcp add
+```
+
+### remove
+
+Remove an enabled MCP server (only available if a registry has been configured by admin).
+
+```
+/mcp remove
+```
+
+### help
+
+Print help message or help for specific subcommand.
+
+```
+/mcp help
+/mcp help <subcommand>
+```
+
+## Options
+
+- `-h, --help` - Print help
 
 ## Output
 
@@ -40,10 +80,11 @@ Shows for each server:
 
 ## Examples
 
-### Example 1: View MCP Status
+### Example 1: View MCP Status (Default/List)
 
 ```
 /mcp
+/mcp list
 ```
 
 **Output**:
@@ -56,6 +97,47 @@ Shows for each server:
   Status: ⚠ Needs authentication
   OAuth URL: https://github.com/login/oauth/...
   Tools: (not loaded)
+```
+
+### Example 2: Add MCP Server
+
+```
+/mcp add
+```
+
+**Output**:
+```
+Select MCP server to add:
+  filesystem - File system operations
+  database - Database connectivity
+  web-scraper - Web scraping tools
+```
+
+### Example 3: Remove MCP Server
+
+```
+/mcp remove
+```
+
+**Output**:
+```
+Select MCP server to remove:
+* @filesystem (enabled)
+* @database (enabled)
+  @web-scraper (disabled)
+```
+
+### Example 4: Get Help
+
+```
+/mcp help
+/mcp help add
+```
+
+**Output**:
+```
+Usage: /mcp add
+Add an MCP server from the registry
 ```
 
 ## Troubleshooting

@@ -234,7 +234,7 @@ Context files have size limits to prevent overwhelming context window:
 
 - [Agent Configuration](../agent-config/overview.md) - Permanent context configuration
 - [Hooks](../features/hooks.md) - Context hooks for dynamic content
-- [/agent](agent-switch.md) - Switch agents with different context
+- [/agent](agent-swap.md) - Switch agents with different context
 
 ## Limitations
 

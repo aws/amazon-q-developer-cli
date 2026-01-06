@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-05
+  commit: a1d370b5
   status: validated
   testable_headless: false
   category: slash_command
@@ -93,7 +93,33 @@ Shows generated summary after compaction.
 
 Keeps last 3 message pairs, summarizes rest.
 
-### Example 4: Custom Summary Focus
+### Example 4: Truncate Large Messages
+
+```
+/compact --truncate-large-messages true --max-message-length 1000
+```
+
+**Output**:
+```
+Truncating large messages...
+Summarizing conversation...
+✔ Conversation compacted. Summary created.
+```
+
+### Example 5: With Max Message Length
+
+```
+/compact --max-message-length 500 --truncate-large-messages true
+```
+
+**Output**:
+```
+Truncating messages to 500 characters...
+Summarizing conversation...
+✔ Conversation compacted. Summary created.
+```
+
+### Example 6: Custom Summary Focus
 
 ```
 /compact Emphasize API design decisions and performance considerations

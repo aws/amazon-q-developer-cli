@@ -8,7 +8,7 @@ doc_meta:
   title: /plan
   description: Switch to Plan agent for breaking down ideas into implementation plans
   keywords: [plan, planning, agent, breakdown]
-  related: [agent-switch]
+  related: [agent-swap]
 ---
 
 # /plan
@@ -47,7 +47,7 @@ Switches to Plan agent and sends prompt.
 
 ## Related
 
-- [/agent](agent-switch.md) - Switch agents
+- [/agent](agent-swap.md) - Switch agents
 - [Planning Agent](../features/planning-agent.md) - Plan agent details
 
 ## Technical Details

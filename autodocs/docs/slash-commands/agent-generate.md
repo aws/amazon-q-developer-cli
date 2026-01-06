@@ -8,7 +8,7 @@ doc_meta:
   title: /agent generate
   description: Create new agent configuration interactively with AI assistance
   keywords: [agent, generate, create, ai, interactive]
-  related: [agent-switch, cmd-agent, agent-config]
+  related: [agent-swap, cmd-agent, agent-config]
 ---
 
 # /agent generate
@@ -107,7 +107,7 @@ AI creates complete agent JSON with:
 
 ## Related Features
 
-- [/agent](agent-switch.md) - Switch to generated agent
+- [/agent](agent-swap.md) - Switch to generated agent
 - [kiro-cli agent create](../commands/agent.md) - CLI version
 - [Agent Configuration](../agent-config/overview.md) - Manual agent creation
 - [/tools](tools.md) - See available tools
