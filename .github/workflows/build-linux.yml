@@ -59,12 +59,6 @@ jobs:
             echo "BUILD_OUTPUT_BUCKET=${{ secrets.BUILD_OUTPUT_BUCKET }}"
           } >> "$GITHUB_ENV"
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -79,6 +73,13 @@ jobs:
       - name: Install cross (for cross-compilation)
         if: matrix.musl || matrix.cross_target
         run: cargo install cross --git https://github.com/cross-rs/cross --locked
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_GITHUB_ACTIONS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-duration-seconds: 7200
 
       - name: Build Linux Binary
         env:
