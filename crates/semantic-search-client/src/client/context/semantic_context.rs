@@ -8,12 +8,16 @@ use std::io::{
 };
 use std::path::PathBuf;
 
+use tracing::debug;
+
 use crate::error::Result;
 use crate::index::VectorIndex;
 use crate::types::{
     DataPoint,
     SearchResult,
 };
+
+const HNSW_BASENAME: &str = "index";
 
 /// A semantic context containing data points and a vector index
 pub struct SemanticContext {
@@ -47,12 +51,40 @@ impl SemanticContext {
             context.data_points = serde_json::from_reader(reader)?;
         }
 
-        // If we have data points, rebuild the index
+        // If we have data points, try to load persisted index or rebuild
         if !context.data_points.is_empty() {
-            context.rebuild_index()?;
+            context.load_or_rebuild_index()?;
         }
 
         Ok(context)
+    }
+
+    /// Get the directory containing the index files
+    fn index_dir(&self) -> Option<&std::path::Path> {
+        self.data_path.parent()
+    }
+
+    /// Try to load persisted HNSW index, fall back to rebuilding
+    fn load_or_rebuild_index(&mut self) -> Result<()> {
+        if let Some(dir) = self.index_dir() {
+            if let Some(index) = VectorIndex::load(dir, HNSW_BASENAME) {
+                debug!("Loaded persisted HNSW index");
+                self.index = Some(index);
+                return Ok(());
+            }
+        }
+        debug!("No index present, rebuilding");
+        // Fall back to rebuilding and save for next time
+        self.rebuild_index()?;
+        self.save_index();
+        Ok(())
+    }
+
+    /// Save the HNSW index to disk (best effort, failures are logged)
+    fn save_index(&self) {
+        if let (Some(index), Some(dir)) = (&self.index, self.index_dir()) {
+            index.save(dir, HNSW_BASENAME);
+        }
     }
 
     /// Save data points to disk
@@ -61,6 +93,9 @@ impl SemanticContext {
         let file = File::create(&self.data_path)?;
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, &self.data_points)?;
+
+        // Also save the HNSW index
+        self.save_index();
 
         Ok(())
     }
@@ -146,5 +181,44 @@ impl SemanticContext {
     /// Get the data points for serialization
     pub fn get_data_points(&self) -> &Vec<DataPoint> {
         &self.data_points
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tempfile::tempdir;
+
+    use super::*;
+
+    #[test]
+    fn test_load_without_hnsw_files_rebuilds_index() {
+        let dir = tempdir().unwrap();
+        let data_path = dir.path().join("data.json");
+
+        // Write only data points JSON (simulating old format without HNSW files)
+        let data_points = vec![
+            DataPoint {
+                id: 0,
+                payload: Default::default(),
+                vector: vec![1.0, 0.0, 0.0],
+            },
+            DataPoint {
+                id: 1,
+                payload: Default::default(),
+                vector: vec![0.0, 1.0, 0.0],
+            },
+        ];
+        std::fs::write(&data_path, serde_json::to_string(&data_points).unwrap()).unwrap();
+
+        // Verify no HNSW files exist
+        assert!(!dir.path().join("index.hnsw.graph").exists());
+
+        // Load should succeed by rebuilding
+        let context = SemanticContext::new(data_path).unwrap();
+        assert_eq!(context.data_points.len(), 2);
+
+        // Search should work
+        let results = context.search(&[1.0, 0.0, 0.0], 1).unwrap();
+        assert_eq!(results.len(), 1);
     }
 }

@@ -26,8 +26,8 @@ tokio.workspace = true
 tokio-util.workspace = true
 glob.workspace = true
 
-# Vector search library - pin to avoid edition2024 requirement
-hnsw_rs = "=0.3.1"
+# Vector search library
+hnsw_rs.workspace = true
 
 # BM25 implementation - works on all platforms including ARM
 bm25 = { version = "2.3.2", features = ["language_detection"] }
