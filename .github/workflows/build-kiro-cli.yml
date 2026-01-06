@@ -30,7 +30,7 @@ on:
         description: 'Trigger autocomplete build after Darwin build succeeds'
         type: boolean
         required: false
-        default: false
+        default: true
   schedule:
     - cron: "21 5 * * *"
   push:
@@ -223,7 +223,6 @@ jobs:
       version: ${{ needs.UpdateVersionNumber.outputs.version }}
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
-      trigger_autocomplete_build: ${{ github.event.inputs.trigger_autocomplete_build == 'true' }}
 
   TriggerLinuxBuild:
     needs: UpdateVersionNumber
@@ -239,3 +238,26 @@ jobs:
       version: ${{ needs.UpdateVersionNumber.outputs.version }}
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
+
+  TriggerAutocompleteBuild:
+    name: Trigger Autocomplete Build
+    needs: [TriggerDarwinBuild, TriggerLinuxBuild, UpdateVersionNumber]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.trigger_autocomplete_build == 'true'
+    steps:
+      - name: Trigger Autocomplete Workflow
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
+          script: |
+            github.rest.actions.createWorkflowDispatch({
+              owner: 'kiro-team',
+              repo: 'kiro-cli-autocomplete',
+              workflow_id: 'build-kiro-cli.yml',
+              ref: '${{ github.ref_name }}',
+              inputs: {
+                version_increment: 'none',
+                release_quality: '${{ needs.UpdateVersionNumber.outputs.release_quality }}',
+                chat_binary_commit: 'latest'
+              }
+            })

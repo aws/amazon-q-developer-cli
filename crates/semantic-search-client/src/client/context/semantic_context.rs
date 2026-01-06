@@ -66,12 +66,12 @@ impl SemanticContext {
 
     /// Try to load persisted HNSW index, fall back to rebuilding
     fn load_or_rebuild_index(&mut self) -> Result<()> {
-        if let Some(dir) = self.index_dir() {
-            if let Some(index) = VectorIndex::load(dir, HNSW_BASENAME) {
-                debug!("Loaded persisted HNSW index");
-                self.index = Some(index);
-                return Ok(());
-            }
+        if let Some(dir) = self.index_dir()
+            && let Some(index) = VectorIndex::load(dir, HNSW_BASENAME)
+        {
+            debug!("Loaded persisted HNSW index");
+            self.index = Some(index);
+            return Ok(());
         }
         debug!("No index present, rebuilding");
         // Fall back to rebuilding and save for next time
