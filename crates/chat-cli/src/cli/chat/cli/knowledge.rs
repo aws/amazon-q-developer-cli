@@ -151,7 +151,7 @@ impl KnowledgeSubcommand {
                 session.stderr,
                 style::SetAttribute(crossterm::style::Attribute::Bold),
                 StyledText::emphasis_fg(),
-                style::Print(format!("👤 Agent ({agent}):\n")),
+                style::Print(format!("  Agent ({agent}):\n")),
                 StyledText::reset_attributes(),
             )?;
 
@@ -372,7 +372,7 @@ impl KnowledgeSubcommand {
         // Require confirmation
         queue!(
             session.stderr,
-            style::Print("⚠️  This action will remove all knowledge base entries.\n"),
+            style::Print("This action will remove all knowledge base entries.\n"),
             style::Print("Clear the knowledge base? (y/N): ")
         )
         .unwrap();
@@ -396,25 +396,17 @@ impl KnowledgeSubcommand {
         let mut store = async_knowledge_store.lock().await;
 
         // First, cancel any pending operations
-        queue!(
-            session.stderr,
-            style::Print("🛑 Cancelling any pending operations...\n")
-        )
-        .unwrap();
+        queue!(session.stderr, style::Print("Cancelling any pending operations...\n")).unwrap();
         if let Err(e) = store.cancel_operation(None).await {
             queue!(
                 session.stderr,
-                style::Print(&format!("⚠️  Warning: Failed to cancel operations: {e}\n"))
+                style::Print(&format!("Warning: Failed to cancel operations: {e}\n"))
             )
             .unwrap();
         }
 
         // Now perform immediate synchronous clear
-        queue!(
-            session.stderr,
-            style::Print("🗑️  Clearing all knowledge base entries...\n")
-        )
-        .unwrap();
+        queue!(session.stderr, style::Print("Clearing all knowledge base entries...\n")).unwrap();
         match store.clear_immediate().await {
             Ok(message) => OperationResult::Success(message),
             Err(e) => OperationResult::Error(format!("Failed to clear: {e}")),

@@ -320,18 +320,20 @@ impl KnowledgeStore {
     /// Add context with flexible options
     pub async fn add(&mut self, name: &str, path_str: &str, options: AddOptions) -> Result<String, String> {
         let path_buf = std::path::PathBuf::from(path_str);
-        let canonical_path = path_buf
+
+        // Validate path exists (canonicalize for validation only)
+        let _ = path_buf
             .canonicalize()
-            .map_err(|_io_error| format!("❌ Path does not exist: {path_str}"))?;
+            .map_err(|_io_error| format!("Path does not exist: {path_str}"))?;
 
         // Use provided description or generate default
         let description = options
             .description
             .unwrap_or_else(|| format!("Knowledge context for {name}"));
 
-        // Create AddContextRequest with all options
+        // Create AddContextRequest with original path (preserves symlinks)
         let request = AddContextRequest {
-            path: canonical_path.clone(),
+            path: path_buf.clone(),
             name: name.to_string(),
             description: if !options.include_patterns.is_empty() || !options.exclude_patterns.is_empty() {
                 let mut full_description = description;
@@ -371,20 +373,20 @@ impl KnowledgeStore {
         match self.agent_client.add_context(request).await {
             Ok((operation_id, _)) => {
                 let mut message = format!(
-                    "🚀 Started indexing '{}'\n📁 Path: {}\n🆔 Operation ID: {}",
+                    "Started indexing '{}'\nPath: {}\nOperation ID: {}",
                     name,
-                    canonical_path.display(),
+                    path_buf.display(),
                     &operation_id.to_string()[..8]
                 );
                 if !options.include_patterns.is_empty() || !options.exclude_patterns.is_empty() {
-                    message.push_str("\n📋 Pattern filtering applied:");
+                    message.push_str("\nPattern filtering applied:");
                     if !options.include_patterns.is_empty() {
                         message.push_str(&format!("\n   Include: {}", options.include_patterns.join(", ")));
                     }
                     if !options.exclude_patterns.is_empty() {
                         message.push_str(&format!("\n   Exclude: {}", options.exclude_patterns.join(", ")));
                     }
-                    message.push_str("\n✅ Only matching files will be indexed");
+                    message.push_str("\nOnly matching files will be indexed");
                 }
                 Ok(message)
             },
@@ -490,7 +492,7 @@ impl KnowledgeStore {
     pub async fn clear(&mut self) -> Result<String, String> {
         match self.agent_client.clear_all().await {
             Ok((operation_id, _cancel_token)) => Ok(format!(
-                "🚀 Started clearing all contexts in background.\n📊 Use 'knowledge status' to check progress.\n🆔 Operation ID: {}",
+                "Started clearing all contexts in background.\nUse '/knowledge show' to check progress.\nOperation ID: {}",
                 &operation_id.to_string()[..8]
             )),
             Err(e) => Err(format!("Failed to start clear operation: {e}")),

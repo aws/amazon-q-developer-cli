@@ -389,7 +389,7 @@ impl Knowledge {
                     .await
                 {
                     Ok(context_id) => format!(
-                        "Added '{}' to knowledge base with ID: {}. Track active jobs in '/knowledge status' with provided id.",
+                        "Added '{}' to knowledge base with ID: {}. Use '/knowledge show' to track progress.",
                         add.name, context_id
                     ),
                     Err(e) => format!("Failed to add to knowledge base: {e}"),
@@ -444,7 +444,7 @@ impl Knowledge {
                     // Update by ID
                     match store.update_context_by_id(&update.context_id, &sanitized_path).await {
                         Ok(_) => format!(
-                            "Updated context with ID '{}' using path '{}'.  Track active jobs in '/knowledge status' with provided id.",
+                            "Updated context with ID '{}' using path '{}'. Use '/knowledge show' to track progress.",
                             update.context_id, update.path
                         ),
                         Err(e) => format!("Failed to update context by ID: {e}"),
@@ -453,7 +453,7 @@ impl Knowledge {
                     // Update by name
                     match store.update_context_by_name(&update.name, &sanitized_path).await {
                         Ok(_) => format!(
-                            "Updated context with name '{}' using path '{}'. Track active jobs in '/knowledge status' with provided id.",
+                            "Updated context with name '{}' using path '{}'. Use '/knowledge show' to track progress.",
                             update.name, update.path
                         ),
                         Err(e) => format!("Failed to update context by name: {e}"),
@@ -462,7 +462,7 @@ impl Knowledge {
                     // Update by path (if no ID or name provided)
                     match store.update_by_path(&sanitized_path).await {
                         Ok(_) => format!(
-                            "Updated context with path '{}'. Track active jobs in '/knowledge status' with provided id.",
+                            "Updated context with path '{}'. Use '/knowledge show' to track progress.",
                             update.path
                         ),
                         Err(e) => format!("Failed to update context by path: {e}"),
@@ -549,7 +549,7 @@ impl Knowledge {
                                 .unwrap_or("unknown");
 
                             output.push_str(&format!(
-                                "Result {}:\n📄 File: {}\n📊 Chunk: {}/{} | Type: {} | Score: {:.4}\n",
+                                "Result {}:\nFile: {}\nChunk: {}/{} | Type: {} | Score: {:.4}\n",
                                 idx + 1,
                                 path,
                                 chunk_index + 1,

@@ -67,11 +67,10 @@ KIRO CLI includes experimental features that can be toggled on/off using the `/e
 **Usage:**
 ```
 /knowledge add <path>        # Add files or directories to knowledge base
-/knowledge show             # Display knowledge base contents
+/knowledge show             # Display knowledge base contents or show background operation status
 /knowledge remove <path>    # Remove knowledge base entry by path
 /knowledge update <path>    # Update a file or directory in knowledge base
 /knowledge clear            # Remove all knowledge base entries
-/knowledge status           # Show background operation status
 /knowledge cancel           # Cancel background operation
 ```
 

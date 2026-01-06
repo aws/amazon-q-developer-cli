@@ -191,4 +191,65 @@ mod tests {
             assert!(!file_results.is_empty(), "Expected to find test file {i}");
         }
     }
+
+    /// Test that symlinks are preserved (not resolved) when adding knowledge base contexts.
+    /// This is critical for environments like Apollo where symlinks point to versioned directories.
+    #[tokio::test]
+    #[cfg(unix)]
+    async fn test_symlink_path_preserved() {
+        use std::time::Duration;
+
+        use semantic_search_client::AsyncSemanticSearchClient;
+        use semantic_search_client::types::AddContextRequest;
+
+        // Create temp directories
+        let temp_dir = TempDir::new().unwrap();
+        let base_dir = temp_dir.path().join("knowledge_base");
+        std::fs::create_dir_all(&base_dir).unwrap();
+
+        // Create a "versioned" target directory (simulating Apollo's versioned packages)
+        let target_dir = temp_dir.path().join("package-v1.0.0");
+        std::fs::create_dir_all(&target_dir).unwrap();
+        std::fs::write(target_dir.join("test.txt"), "test content").unwrap();
+
+        // Create a symlink pointing to the target (simulating Apollo's /apollo/env symlinks)
+        let symlink_path = temp_dir.path().join("current");
+        std::os::unix::fs::symlink(&target_dir, &symlink_path).unwrap();
+
+        // Create client and add context via symlink
+        let client = AsyncSemanticSearchClient::new(base_dir).await.unwrap();
+
+        let request = AddContextRequest {
+            path: symlink_path.clone(),
+            name: "test-symlink".to_string(),
+            description: "Test symlink preservation".to_string(),
+            persistent: true,
+            include_patterns: None,
+            exclude_patterns: None,
+            embedding_type: None,
+            auto_sync: false,
+        };
+
+        let (_op_id, _cancel) = client.add_context(request).await.unwrap();
+
+        // Wait for indexing to complete
+        tokio::time::sleep(Duration::from_secs(3)).await;
+
+        // Verify the stored source_path is the symlink, NOT the resolved target
+        let contexts = client.get_contexts().await;
+        assert_eq!(contexts.len(), 1, "Expected exactly one context");
+
+        let context = &contexts[0];
+        let source_path = context.source_path.as_ref().expect("source_path should be set");
+
+        // The key assertion: source_path should be the symlink path, not the resolved target
+        assert!(
+            source_path.contains("current"),
+            "source_path should contain symlink name 'current', got: {source_path}"
+        );
+        assert!(
+            !source_path.contains("package-v1.0.0"),
+            "source_path should NOT contain resolved target 'package-v1.0.0', got: {source_path}"
+        );
+    }
 }

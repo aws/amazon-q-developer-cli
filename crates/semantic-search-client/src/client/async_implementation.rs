@@ -262,15 +262,19 @@ impl AsyncSemanticSearchClient {
     /// # }
     /// ```
     pub async fn add_context(&self, request: AddContextRequest) -> Result<(Uuid, CancellationToken)> {
-        let canonical_path = request.path.canonicalize().map_err(|_e| {
+        // Validate path exists (canonicalize for validation only, but preserve original path)
+        let _ = request.path.canonicalize().map_err(|_e| {
             SemanticSearchError::InvalidPath(format!(
                 "Path does not exist or is not accessible: {}",
                 request.path.display()
             ))
         })?;
 
+        // Use the original path (preserves symlinks) for storage and operations
+        let original_path = request.path.clone();
+
         self.context_manager
-            .check_path_exists(&canonical_path, &self.operation_manager)
+            .check_path_exists(&original_path, &self.operation_manager)
             .await?;
 
         // Validate patterns early to fail fast
@@ -291,7 +295,7 @@ impl AsyncSemanticSearchClient {
                 operation_id,
                 OperationType::Indexing {
                     name: request.name.clone(),
-                    path: canonical_path.to_string_lossy().to_string(),
+                    path: original_path.to_string_lossy().to_string(),
                 },
                 cancel_token.clone(),
             )
@@ -300,7 +304,7 @@ impl AsyncSemanticSearchClient {
         let job = IndexingJob::AddDirectory {
             id: operation_id,
             cancel: cancel_token.clone(),
-            path: canonical_path,
+            path: original_path,
             name: request.name.clone(),
             description: request.description.clone(),
             persistent: request.persistent,
