@@ -162,6 +162,7 @@ impl<'a> Drop for TelemetrySink<'a> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 struct JsonOutput {
     /// Whether or not the user turn completed successfully
     is_error: bool,

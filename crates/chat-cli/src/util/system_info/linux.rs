@@ -14,12 +14,14 @@ use super::{
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum DisplayServer {
     X11,
     Wayland,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub enum DesktopEnvironment {
     Gnome,
     Plasma,

@@ -225,30 +225,29 @@ impl KnowledgeStore {
             .unwrap_or(DEFAULT_AGENT_NAME);
 
         // Migrate from knowledge_bases root - get file list first to avoid recursion
-        if let Some(kb_root) = agent_dir.parent() {
-            if kb_root.exists() {
-                if let Ok(entries) = std::fs::read_dir(kb_root) {
-                    let files_to_migrate: Vec<_> = entries
-                        .flatten()
-                        .filter(|entry| {
-                            let path = entry.path();
-                            let name = entry.file_name();
-                            let name_str = name.to_string_lossy();
-                            // Only migrate FILES, not directories (to avoid moving other agent directories)
-                            path.is_file()
-                                && name_str != current_agent_id
-                                && name_str != DEFAULT_AGENT_NAME
-                                && !name_str.starts_with('.')
-                        })
-                        .collect();
+        if let Some(kb_root) = agent_dir.parent()
+            && kb_root.exists()
+            && let Ok(entries) = std::fs::read_dir(kb_root)
+        {
+            let files_to_migrate: Vec<_> = entries
+                .flatten()
+                .filter(|entry| {
+                    let path = entry.path();
+                    let name = entry.file_name();
+                    let name_str = name.to_string_lossy();
+                    // Only migrate FILES, not directories (to avoid moving other agent directories)
+                    path.is_file()
+                        && name_str != current_agent_id
+                        && name_str != DEFAULT_AGENT_NAME
+                        && !name_str.starts_with('.')
+                })
+                .collect();
 
-                    std::fs::create_dir_all(agent_dir).ok();
-                    for entry in files_to_migrate {
-                        let dst_path = agent_dir.join(entry.file_name());
-                        if !dst_path.exists() && std::fs::rename(entry.path(), &dst_path).is_ok() {
-                            migrated = true;
-                        }
-                    }
+            std::fs::create_dir_all(agent_dir).ok();
+            for entry in files_to_migrate {
+                let dst_path = agent_dir.join(entry.file_name());
+                if !dst_path.exists() && std::fs::rename(entry.path(), &dst_path).is_ok() {
+                    migrated = true;
                 }
             }
         }

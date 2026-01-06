@@ -179,11 +179,12 @@ impl Prompts {
                     for entry in fs::read_dir(&dir)? {
                         let entry = entry?;
                         let path = entry.path();
-                        if path.is_file() && path.extension().and_then(|s| s.to_str()) == Some("md") {
-                            if let Some(file_stem) = path.file_stem().and_then(|s| s.to_str()) {
-                                let prompt = Prompt::new(file_stem, dir.clone());
-                                names.insert(prompt.name);
-                            }
+                        if path.is_file()
+                            && path.extension().and_then(|s| s.to_str()) == Some("md")
+                            && let Some(file_stem) = path.file_stem().and_then(|s| s.to_str())
+                        {
+                            let prompt = Prompt::new(file_stem, dir.clone());
+                            names.insert(prompt.name);
                         }
                     }
                 }
@@ -414,40 +415,40 @@ fn handle_mcp_invalid_params_error(
 /// and displays it in a user-friendly format.
 fn handle_mcp_internal_error(name: &str, error_str: &str, session: &mut ChatSession) -> Result<(), ChatError> {
     // Try to parse JSON error response
-    if let Some(json_start) = error_str.find('{') {
-        if let Some(json_end) = error_str.rfind('}') {
-            let json_str = &error_str[json_start..=json_end];
-            if let Ok(error_obj) = serde_json::from_str::<serde_json::Value>(json_str) {
-                if let Some(error_field) = error_obj.get("error") {
-                    let message = error_field
-                        .get("message")
-                        .and_then(|m| m.as_str())
-                        .unwrap_or("Internal error");
+    if let Some(json_start) = error_str.find('{')
+        && let Some(json_end) = error_str.rfind('}')
+    {
+        let json_str = &error_str[json_start..=json_end];
+        if let Ok(error_obj) = serde_json::from_str::<serde_json::Value>(json_str)
+            && let Some(error_field) = error_obj.get("error")
+        {
+            let message = error_field
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Internal error");
 
-                    queue!(
-                        session.stderr,
-                        style::Print("\n"),
-                        StyledText::error_fg(),
-                        style::Print("Error: "),
-                        style::Print(message),
-                        StyledText::reset(),
-                        style::Print("\n"),
-                    )?;
+            queue!(
+                session.stderr,
+                style::Print("\n"),
+                StyledText::error_fg(),
+                style::Print("Error: "),
+                style::Print(message),
+                StyledText::reset(),
+                style::Print("\n"),
+            )?;
 
-                    if let Some(data) = error_field.get("data") {
-                        if let Ok(data_str) = serde_json::to_string_pretty(data) {
-                            queue!(
-                                session.stderr,
-                                style::Print("Details: "),
-                                style::Print(data_str),
-                                style::Print("\n"),
-                            )?;
-                        }
-                    }
-                    execute!(session.stderr)?;
-                    return Ok(());
-                }
+            if let Some(data) = error_field.get("data")
+                && let Ok(data_str) = serde_json::to_string_pretty(data)
+            {
+                queue!(
+                    session.stderr,
+                    style::Print("Details: "),
+                    style::Print(data_str),
+                    style::Print("\n"),
+                )?;
             }
+            execute!(session.stderr)?;
+            return Ok(());
         }
     }
 
@@ -495,81 +496,80 @@ fn display_missing_args_error(
         prompt_name
     };
 
-    if let Some(bundles) = prompts.get(actual_prompt_name) {
-        if let Some(bundle) = bundles.first() {
-            if let Some(args) = &bundle.prompt_get.arguments {
-                let required_args: Vec<_> = args.iter().filter(|arg| arg.required == Some(true)).collect();
-                let optional_args: Vec<_> = args.iter().filter(|arg| arg.required != Some(true)).collect();
+    if let Some(bundles) = prompts.get(actual_prompt_name)
+        && let Some(bundle) = bundles.first()
+        && let Some(args) = &bundle.prompt_get.arguments
+    {
+        let required_args: Vec<_> = args.iter().filter(|arg| arg.required == Some(true)).collect();
+        let optional_args: Vec<_> = args.iter().filter(|arg| arg.required != Some(true)).collect();
 
-                // Usage line
+        // Usage line
+        queue!(
+            session.stderr,
+            style::Print("Usage: "),
+            StyledText::brand_fg(),
+            style::Print("@"),
+            style::Print(prompt_name),
+        )?;
+
+        for arg in &required_args {
+            queue!(
+                session.stderr,
+                style::Print(" <"),
+                style::Print(&arg.name),
+                style::Print(">"),
+            )?;
+        }
+        for arg in &optional_args {
+            queue!(
+                session.stderr,
+                style::Print(" ["),
+                style::Print(&arg.name),
+                style::Print("]"),
+            )?;
+        }
+
+        queue!(session.stderr, StyledText::reset(), style::Print("\n"),)?;
+
+        if !args.is_empty() {
+            queue!(session.stderr, style::Print("\nArguments:\n"),)?;
+
+            // Show required arguments first
+            for arg in required_args {
                 queue!(
                     session.stderr,
-                    style::Print("Usage: "),
+                    style::Print("  "),
+                    StyledText::error_fg(),
+                    style::Print("(required) "),
                     StyledText::brand_fg(),
-                    style::Print("@"),
-                    style::Print(prompt_name),
+                    style::Print(&arg.name),
+                    StyledText::reset(),
                 )?;
-
-                for arg in &required_args {
-                    queue!(
-                        session.stderr,
-                        style::Print(" <"),
-                        style::Print(&arg.name),
-                        style::Print(">"),
-                    )?;
+                if let Some(desc) = &arg.description
+                    && !desc.trim().is_empty()
+                {
+                    queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
                 }
-                for arg in &optional_args {
-                    queue!(
-                        session.stderr,
-                        style::Print(" ["),
-                        style::Print(&arg.name),
-                        style::Print("]"),
-                    )?;
+                queue!(session.stderr, style::Print("\n"))?;
+            }
+
+            // Then show optional arguments
+            for arg in optional_args {
+                queue!(
+                    session.stderr,
+                    style::Print("  "),
+                    StyledText::secondary_fg(),
+                    style::Print("(optional) "),
+                    StyledText::brand_fg(),
+                    style::Print(&arg.name),
+                    StyledText::reset(),
+                )?;
+                if let Some(desc) = &arg.description
+                    && !desc.trim().is_empty()
+                {
+                    queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
                 }
-
-                queue!(session.stderr, StyledText::reset(), style::Print("\n"),)?;
-
-                if !args.is_empty() {
-                    queue!(session.stderr, style::Print("\nArguments:\n"),)?;
-
-                    // Show required arguments first
-                    for arg in required_args {
-                        queue!(
-                            session.stderr,
-                            style::Print("  "),
-                            StyledText::error_fg(),
-                            style::Print("(required) "),
-                            StyledText::brand_fg(),
-                            style::Print(&arg.name),
-                            StyledText::reset(),
-                        )?;
-                        if let Some(desc) = &arg.description {
-                            if !desc.trim().is_empty() {
-                                queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
-                            }
-                        }
-                        queue!(session.stderr, style::Print("\n"))?;
-                    }
-
-                    // Then show optional arguments
-                    for arg in optional_args {
-                        queue!(
-                            session.stderr,
-                            style::Print("  "),
-                            StyledText::secondary_fg(),
-                            style::Print("(optional) "),
-                            StyledText::brand_fg(),
-                            style::Print(&arg.name),
-                            StyledText::reset(),
-                        )?;
-                        if let Some(desc) = &arg.description {
-                            if !desc.trim().is_empty() {
-                                queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
-                            }
-                        }
-                        queue!(session.stderr, style::Print("\n"))?;
-                    }
-                }
+                queue!(session.stderr, style::Print("\n"))?;
             }
         }
     }
@@ -602,17 +602,17 @@ impl PromptsArgs {
             _ => None,
         };
 
-        if let Some(subcommand) = self.subcommand {
-            if matches!(
+        if let Some(subcommand) = self.subcommand
+            && matches!(
                 subcommand,
                 PromptsSubcommand::Get { .. }
                     | PromptsSubcommand::Details { .. }
                     | PromptsSubcommand::Create { .. }
                     | PromptsSubcommand::Edit { .. }
                     | PromptsSubcommand::Remove { .. }
-            ) {
-                return subcommand.execute(os, session).await;
-            }
+            )
+        {
+            return subcommand.execute(os, session).await;
         }
 
         let terminal_width = session.terminal_width();
@@ -809,24 +809,24 @@ impl PromptsArgs {
                 )?;
 
                 // Print arguments if they exist
-                if let Some(args) = bundle.prompt_get.arguments.as_ref() {
-                    if !args.is_empty() {
-                        let current_pos = description_pos + UnicodeWidthStr::width(truncated_desc.as_str());
-                        let arguments_padding = arguments_pos.saturating_sub(current_pos);
-                        queue!(session.stderr, style::Print(" ".repeat(arguments_padding)))?;
+                if let Some(args) = bundle.prompt_get.arguments.as_ref()
+                    && !args.is_empty()
+                {
+                    let current_pos = description_pos + UnicodeWidthStr::width(truncated_desc.as_str());
+                    let arguments_padding = arguments_pos.saturating_sub(current_pos);
+                    queue!(session.stderr, style::Print(" ".repeat(arguments_padding)))?;
 
-                        for (i, arg) in args.iter().enumerate() {
-                            queue!(
-                                session.stderr,
-                                StyledText::secondary_fg(),
-                                style::Print(match arg.required {
-                                    Some(true) => format!("{}*", arg.name),
-                                    _ => arg.name.clone(),
-                                }),
-                                StyledText::reset(),
-                                style::Print(if i < args.len() - 1 { ", " } else { "" }),
-                            )?;
-                        }
+                    for (i, arg) in args.iter().enumerate() {
+                        queue!(
+                            session.stderr,
+                            StyledText::secondary_fg(),
+                            style::Print(match arg.required {
+                                Some(true) => format!("{}*", arg.name),
+                                _ => arg.name.clone(),
+                            }),
+                            StyledText::reset(),
+                            style::Print(if i < args.len() - 1 { ", " } else { "" }),
+                        )?;
                     }
                 }
                 queue!(session.stderr, style::Print("\n"))?;
@@ -1163,10 +1163,10 @@ impl PromptsSubcommand {
                     )?;
 
                     // Show argument description if available
-                    if let Some(desc) = &arg.description {
-                        if !desc.trim().is_empty() {
-                            queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
-                        }
+                    if let Some(desc) = &arg.description
+                        && !desc.trim().is_empty()
+                    {
+                        queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
                     }
 
                     queue!(session.stderr, style::Print("\n"))?;
@@ -1185,10 +1185,10 @@ impl PromptsSubcommand {
                     )?;
 
                     // Show argument description if available
-                    if let Some(desc) = &arg.description {
-                        if !desc.trim().is_empty() {
-                            queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
-                        }
+                    if let Some(desc) = &arg.description
+                        && !desc.trim().is_empty()
+                    {
+                        queue!(session.stderr, style::Print(" - "), style::Print(desc),)?;
                     }
 
                     queue!(session.stderr, style::Print("\n"))?;

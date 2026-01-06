@@ -160,14 +160,12 @@ impl ViewEnd {
                     AgentEventKind::ReasoningMessageChunk(_reasoning_message_chunk) => {},
                     AgentEventKind::ReasoningEnd(_reasoning_end) => {},
                     AgentEventKind::MetaEvent(MetaEvent { meta_type, payload }) => {
-                        if meta_type.as_str() == "timing" {
-                            if let serde_json::Value::String(s) = payload {
-                                if s.as_str() == "prompt_user" {
-                                    if let Some(prompt_ack) = prompt_ack.as_ref() {
-                                        _ = prompt_ack.send(());
-                                    }
-                                }
-                            }
+                        if meta_type.as_str() == "timing"
+                            && let serde_json::Value::String(s) = payload
+                            && s.as_str() == "prompt_user"
+                            && let Some(prompt_ack) = prompt_ack.as_ref()
+                        {
+                            _ = prompt_ack.send(());
                         }
                     },
                     AgentEventKind::ToolCallRejection(tool_call_rejection) => {

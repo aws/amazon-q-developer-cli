@@ -315,10 +315,10 @@ impl Knowledge {
                 if let Some(limit) = search.limit {
                     options.push(format!("limit={limit}"));
                 }
-                if let Some(offset) = search.offset {
-                    if offset > 0 {
-                        options.push(format!("offset={offset}"));
-                    }
+                if let Some(offset) = search.offset
+                    && offset > 0
+                {
+                    options.push(format!("offset={offset}"));
                 }
                 if let Some(snippet_len) = search.snippet_length {
                     options.push(format!("snippet={snippet_len}"));

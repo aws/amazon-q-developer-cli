@@ -295,10 +295,10 @@ impl WhoamiArgs {
                 },
             );
 
-            if matches!(token.token_type(), TokenType::IamIdentityCenter) {
-                if let Ok(Some(profile)) = os.database.get_auth_profile() {
-                    color_print::cprintln!("\n<em>Profile:</em>\n{}\n{}\n", profile.profile_name, profile.arn);
-                }
+            if matches!(token.token_type(), TokenType::IamIdentityCenter)
+                && let Ok(Some(profile)) = os.database.get_auth_profile()
+            {
+                color_print::cprintln!("\n<em>Profile:</em>\n{}\n{}\n", profile.profile_name, profile.arn);
             }
 
             return Ok(ExitCode::SUCCESS);
@@ -332,10 +332,10 @@ pub enum LicenseType {
 }
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
-    if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await {
-        if matches!(token.token_type(), TokenType::BuilderId) {
-            bail!("This command is only available for Pro users");
-        }
+    if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await
+        && matches!(token.token_type(), TokenType::BuilderId)
+    {
+        bail!("This command is only available for Pro users");
     }
 
     select_profile_interactive(os, false).await?;
@@ -468,10 +468,10 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
         .and_then(|active| profiles.iter().position(|p| p.arn == active.arn))
         .unwrap_or(0);
 
-    if let Some(active) = active_profile.as_ref() {
-        if let Some(idx) = profiles.iter().position(|p| p.arn == active.arn) {
-            items[idx] = format!("{} (active)", items[idx].as_str());
-        }
+    if let Some(active) = active_profile.as_ref()
+        && let Some(idx) = profiles.iter().position(|p| p.arn == active.arn)
+    {
+        items[idx] = format!("{} (active)", items[idx].as_str());
     }
 
     spinner.stop_with_message(String::new());

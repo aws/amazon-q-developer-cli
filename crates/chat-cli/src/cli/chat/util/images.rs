@@ -43,13 +43,13 @@ pub fn pre_process(path: &str) -> String {
     if cfg!(target_os = "macos") && path.contains("Screenshot") {
         let mac_screenshot_regex =
             regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap();
-        if mac_screenshot_regex.is_match(path) {
-            if let Some(pos) = path.find(" at ") {
-                let mut new_path = String::new();
-                new_path.push_str(&path[..pos + 4]);
-                new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
-                return new_path;
-            }
+        if mac_screenshot_regex.is_match(path)
+            && let Some(pos) = path.find(" at ")
+        {
+            let mut new_path = String::new();
+            new_path.push_str(&path[..pos + 4]);
+            new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
+            return new_path;
         }
     }
 
@@ -65,22 +65,22 @@ pub fn handle_images_from_paths(output: &mut impl Write, paths: &[String]) -> Ri
             continue;
         }
         seen_args.insert(path);
-        if is_supported_image_type(path) {
-            if let Some(image_block) = get_image_block_from_file_path(path) {
-                let filename = Path::new(path)
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
+        if is_supported_image_type(path)
+            && let Some(image_block) = get_image_block_from_file_path(path)
+        {
+            let filename = Path::new(path)
+                .file_name()
+                .unwrap_or_default()
+                .to_string_lossy()
+                .to_string();
 
-                let image_size = fs::metadata(path).map(|m| m.len()).unwrap_or_default();
+            let image_size = fs::metadata(path).map(|m| m.len()).unwrap_or_default();
 
-                extracted_images.push((image_block, ImageMetadata {
-                    filename,
-                    filepath: path.clone(),
-                    size: image_size,
-                }));
-            }
+            extracted_images.push((image_block, ImageMetadata {
+                filename,
+                filepath: path.clone(),
+                size: image_size,
+            }));
         }
     }
 

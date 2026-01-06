@@ -194,10 +194,10 @@ fn should_process_event(
     };
 
     // Check gitignore first (most restrictive)
-    if let Some(gitignore) = gitignore_matcher {
-        if gitignore.is_ignored(&path) {
-            return false;
-        }
+    if let Some(gitignore) = gitignore_matcher
+        && gitignore.is_ignored(&path)
+    {
+        return false;
     }
 
     // Use relative path for glob matching (better pattern matching)
@@ -404,27 +404,27 @@ impl EventProcessor {
                             // Send didChange for opened files
                             let version = workspace_manager.get_next_version(&absolute_path);
 
-                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
-                                if let Ok(content) = std::fs::read_to_string(&absolute_path) {
-                                    let params = DidChangeTextDocumentParams {
-                                        text_document: VersionedTextDocumentIdentifier {
-                                            uri: absolute_uri,
-                                            version,
-                                        },
-                                        content_changes: vec![TextDocumentContentChangeEvent {
-                                            range: None,
-                                            range_length: None,
-                                            text: content,
-                                        }],
-                                    };
+                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await
+                                && let Ok(content) = std::fs::read_to_string(&absolute_path)
+                            {
+                                let params = DidChangeTextDocumentParams {
+                                    text_document: VersionedTextDocumentIdentifier {
+                                        uri: absolute_uri,
+                                        version,
+                                    },
+                                    content_changes: vec![TextDocumentContentChangeEvent {
+                                        range: None,
+                                        range_length: None,
+                                        text: content,
+                                    }],
+                                };
 
-                                    tracing::info!(
-                                        "📝 Sending didChange for opened file: {:?}, version: {}",
-                                        absolute_path,
-                                        version
-                                    );
-                                    let _ = client.did_change(params).await;
-                                }
+                                tracing::info!(
+                                    "📝 Sending didChange for opened file: {:?}, version: {}",
+                                    absolute_path,
+                                    version
+                                );
+                                let _ = client.did_change(params).await;
                             }
                         } else {
                             // Send workspace/didChangeWatchedFiles for closed files
@@ -454,17 +454,17 @@ impl EventProcessor {
                             // Handle as Delete(old) + Create(new)
                             if workspace_manager.is_file_opened(&from_absolute) {
                                 // Old file was opened - send didClose
-                                if let Ok(Some(client)) = workspace_manager.get_client_for_file(&from_absolute).await {
-                                    if let Ok(from_uri) = Url::from_file_path(&from_absolute) {
-                                        let params = DidCloseTextDocumentParams {
-                                            text_document: TextDocumentIdentifier { uri: from_uri },
-                                        };
-                                        tracing::info!(
-                                            "📋 Renamed file was opened, sending didClose for old path: {:?}",
-                                            from_absolute
-                                        );
-                                        let _ = client.did_close(params).await;
-                                    }
+                                if let Ok(Some(client)) = workspace_manager.get_client_for_file(&from_absolute).await
+                                    && let Ok(from_uri) = Url::from_file_path(&from_absolute)
+                                {
+                                    let params = DidCloseTextDocumentParams {
+                                        text_document: TextDocumentIdentifier { uri: from_uri },
+                                    };
+                                    tracing::info!(
+                                        "📋 Renamed file was opened, sending didClose for old path: {:?}",
+                                        from_absolute
+                                    );
+                                    let _ = client.did_close(params).await;
                                 }
                                 workspace_manager.mark_file_closed(&from_absolute);
                             }

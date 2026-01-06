@@ -37,16 +37,11 @@ impl Display for HookTrigger {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Deserialize, Eq, PartialEq, Hash, Default)]
 pub enum Source {
+    #[default]
     Agent,
     Session,
-}
-
-impl Default for Source {
-    fn default() -> Self {
-        Self::Agent
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Eq, PartialEq, JsonSchema, Hash)]

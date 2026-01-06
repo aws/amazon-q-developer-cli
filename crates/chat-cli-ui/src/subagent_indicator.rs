@@ -513,15 +513,13 @@ impl<'a> SubagentIndicator<'a> {
                                             }
                                             agent_info.msg = "completed".to_string();
                                             agent_info.is_done = true;
-                                        } else if meta_evt.meta_type.as_str() == "Initialized" {
-                                            if let Ok(id) = serde_json::from_value::<serde_json::Number>(meta_evt.payload) {
-                                                if let Some(id) = id.as_u64().and_then(|n| u16::try_from(n).ok()) {
-                                                    if let Some(info) = agents.get_mut(&id) {
-                                                        info.is_initialized = true;
-                                                        all_initialized = agents.values().all(|info| info.is_initialized);
-                                                    }
-                                                }
-                                            }
+                                        } else if meta_evt.meta_type.as_str() == "Initialized"
+                                            && let Ok(id) = serde_json::from_value::<serde_json::Number>(meta_evt.payload)
+                                            && let Some(id) = id.as_u64().and_then(|n| u16::try_from(n).ok())
+                                            && let Some(info) = agents.get_mut(&id)
+                                        {
+                                            info.is_initialized = true;
+                                            all_initialized = agents.values().all(|info| info.is_initialized);
                                         }
                                     }
                                 }

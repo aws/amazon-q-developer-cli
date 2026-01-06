@@ -209,13 +209,13 @@ pub fn pre_process_image_path(path: impl AsRef<Path>) -> String {
     if cfg!(target_os = "macos") && path.contains("Screenshot") {
         let mac_screenshot_regex =
             regex::Regex::new(r"Screenshot \d{4}-\d{2}-\d{2} at \d{1,2}\.\d{2}\.\d{2} [AP]M").unwrap();
-        if mac_screenshot_regex.is_match(&path) {
-            if let Some(pos) = path.find(" at ") {
-                let mut new_path = String::new();
-                new_path.push_str(&path[..pos + 4]);
-                new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
-                return new_path;
-            }
+        if mac_screenshot_regex.is_match(&path)
+            && let Some(pos) = path.find(" at ")
+        {
+            let mut new_path = String::new();
+            new_path.push_str(&path[..pos + 4]);
+            new_path.push_str(&path[pos + 4..].replace(" ", "\u{202F}"));
+            return new_path;
         }
     }
     path

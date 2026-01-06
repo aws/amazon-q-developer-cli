@@ -494,17 +494,17 @@ fn extract_yaml_frontmatter(content: &str) -> Option<String> {
 
 /// Create Auto ContextFile from content, fallback to Full file
 fn create_auto_load_context_file(filename: String, content: String, context_files: &mut Vec<ContextFile>) {
-    if let Some(yaml) = extract_yaml_frontmatter(&content) {
-        if let Ok(metadata) = parse_auto_load_metadata(&yaml) {
-            context_files.push(ContextFile::Auto {
-                name: metadata.name.unwrap_or_else(|| filename.clone()),
-                filepath: filename,
-                description: metadata
-                    .description
-                    .unwrap_or_else(|| "No description available".to_string()),
-            });
-            return;
-        }
+    if let Some(yaml) = extract_yaml_frontmatter(&content)
+        && let Ok(metadata) = parse_auto_load_metadata(&yaml)
+    {
+        context_files.push(ContextFile::Auto {
+            name: metadata.name.unwrap_or_else(|| filename.clone()),
+            filepath: filename,
+            description: metadata
+                .description
+                .unwrap_or_else(|| "No description available".to_string()),
+        });
+        return;
     }
 
     // Fallback: add as Full file

@@ -197,10 +197,10 @@ pub async fn get_active_todo(os: &Os) -> Result<Option<TodoListState>> {
     for todo in todos {
         if todo.tasks.iter().any(|t| !t.completed) {
             let path = id_to_path(os, &todo.id)?;
-            if let Ok(metadata) = os.fs.symlink_metadata(&path).await {
-                if let Ok(modified) = metadata.modified() {
-                    incomplete_with_mtime.push((todo, modified));
-                }
+            if let Ok(metadata) = os.fs.symlink_metadata(&path).await
+                && let Ok(modified) = metadata.modified()
+            {
+                incomplete_with_mtime.push((todo, modified));
             }
         }
     }
@@ -242,10 +242,10 @@ pub fn format_todo_as_context(todo: &TodoListState) -> String {
             checkbox, idx, task.task_description, next_marker
         ));
 
-        if let Some(details) = &task.details {
-            if !details.is_empty() {
-                context.push_str(&format!("    Details: {details}\n"));
-            }
+        if let Some(details) = &task.details
+            && !details.is_empty()
+        {
+            context.push_str(&format!("    Details: {details}\n"));
         }
     }
 
@@ -350,14 +350,14 @@ impl TodoList {
                 output: super::OutputKind::Text("Todo lists are disabled.".to_string()),
             });
         }
-        if let Some(id) = self.get_id() {
-            if !os.fs.exists(id_to_path(os, &id)?) {
-                let error_string = "No todo list exists with the given ID";
-                queue!(output, style::Print(error_string.yellow()))?;
-                return Ok(InvokeOutput {
-                    output: super::OutputKind::Text(error_string.to_string()),
-                });
-            }
+        if let Some(id) = self.get_id()
+            && !os.fs.exists(id_to_path(os, &id)?)
+        {
+            let error_string = "No todo list exists with the given ID";
+            queue!(output, style::Print(error_string.yellow()))?;
+            return Ok(InvokeOutput {
+                output: super::OutputKind::Text(error_string.to_string()),
+            });
         }
         let (state, id) = match self {
             TodoList::Create {
@@ -502,10 +502,10 @@ impl TodoList {
 
     pub async fn validate(&mut self, os: &Os) -> Result<()> {
         // Rather than throwing an error, let invoke() handle this case
-        if let Some(id) = self.get_id() {
-            if !os.fs.exists(id_to_path(os, &id)?) {
-                return Ok(());
-            }
+        if let Some(id) = self.get_id()
+            && !os.fs.exists(id_to_path(os, &id)?)
+        {
+            return Ok(());
         }
         match self {
             TodoList::Create {

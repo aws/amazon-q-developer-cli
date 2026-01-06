@@ -103,10 +103,10 @@ impl TestDir {
         }
 
         let path = self.temp_dir.path().join(file_path);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent).await.unwrap();
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await.unwrap();
         }
         tokio::fs::write(path, file.content()).await.unwrap();
         self
@@ -124,10 +124,10 @@ impl TestDir {
         }
 
         let file_path = PathBuf::from(file_path);
-        if let Some(parent) = file_path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent).await.unwrap();
-            }
+        if let Some(parent) = file_path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await.unwrap();
         }
 
         tokio::fs::write(file_path, file.content()).await.unwrap();

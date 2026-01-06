@@ -470,14 +470,14 @@ fn run_git(dir: &Path, work_tree: Option<&Path>, args: &[&str]) -> Result<Output
 
 fn get_previous_tag(tag: &str) -> String {
     // Parse turn.tool format
-    if let Some((turn_str, tool_str)) = tag.split_once('.') {
-        if let Ok(tool_num) = tool_str.parse::<usize>() {
-            return if tool_num > 1 {
-                format!("{}.{}", turn_str, tool_num - 1)
-            } else {
-                turn_str.to_string()
-            };
-        }
+    if let Some((turn_str, tool_str)) = tag.split_once('.')
+        && let Ok(tool_num) = tool_str.parse::<usize>()
+    {
+        return if tool_num > 1 {
+            format!("{}.{}", turn_str, tool_num - 1)
+        } else {
+            turn_str.to_string()
+        };
     }
 
     // Parse turn-only format

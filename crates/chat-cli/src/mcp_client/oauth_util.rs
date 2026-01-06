@@ -109,6 +109,7 @@ impl Drop for LoopBackDropGuard {
 
 /// OAuth Authorization Server metadata for endpoint discovery
 #[derive(Clone, Serialize, Deserialize, Debug)]
+#[allow(dead_code)]
 pub struct OAuthMeta {
     pub authorization_endpoint: String,
     pub token_endpoint: String,

@@ -19,6 +19,7 @@ use serde::{
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct FileContext {
     pub left_file_content: String,
     pub right_file_content: String,
@@ -28,6 +29,7 @@ pub struct FileContext {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ProgrammingLanguage {
     pub language_name: LanguageName,
 }
@@ -35,6 +37,7 @@ pub struct ProgrammingLanguage {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, strum::AsRefStr)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
+#[allow(dead_code)]
 pub enum LanguageName {
     Python,
     Javascript,
@@ -55,18 +58,21 @@ pub enum LanguageName {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct ReferenceTrackerConfiguration {
     pub recommendations_with_references: RecommendationsWithReferences,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
+#[allow(dead_code)]
 pub enum RecommendationsWithReferences {
     Block,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct RecommendationsInput {
     pub file_context: FileContext,
     pub max_results: i32,
@@ -75,6 +81,7 @@ pub struct RecommendationsInput {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct RecommendationsOutput {
     pub recommendations: Vec<Recommendation>,
     pub next_token: Option<String>,
@@ -84,6 +91,7 @@ pub struct RecommendationsOutput {
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct Recommendation {
     pub content: String,
 }

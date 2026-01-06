@@ -59,18 +59,17 @@ impl FileProcessor {
                 count += 1;
                 checked += 1;
 
-                if checked % 100 == 0 {
-                    if let Ok(operations) = active_operations.try_read() {
-                        if let Some(handle) = operations.get(&operation_id) {
-                            if handle.cancel_token.is_cancelled() {
-                                return Err("Operation cancelled during file counting".to_string());
-                            }
-                            if let Ok(progress) = handle.progress.try_lock() {
-                                if progress.message.contains("cancelled") {
-                                    return Err("Operation cancelled during file counting".to_string());
-                                }
-                            }
-                        }
+                if checked % 100 == 0
+                    && let Ok(operations) = active_operations.try_read()
+                    && let Some(handle) = operations.get(&operation_id)
+                {
+                    if handle.cancel_token.is_cancelled() {
+                        return Err("Operation cancelled during file counting".to_string());
+                    }
+                    if let Ok(progress) = handle.progress.try_lock()
+                        && progress.message.contains("cancelled")
+                    {
+                        return Err("Operation cancelled during file counting".to_string());
                     }
                 }
 
@@ -176,12 +175,11 @@ impl FileProcessor {
     }
 
     async fn update_operation_status(&self, operation_manager: &OperationManager, operation_id: Uuid, message: String) {
-        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.message = message;
-                }
-            }
+        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.message = message;
         }
     }
 
@@ -193,12 +191,11 @@ impl FileProcessor {
         total: u64,
         message: String,
     ) {
-        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.update(current, total, message);
-                }
-            }
+        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.update(current, total, message);
         }
     }
 }

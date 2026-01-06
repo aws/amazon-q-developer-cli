@@ -498,10 +498,10 @@ impl SemanticSearchClient {
         // Process items with progress updates for embedding generation
         for (i, item) in items.iter().enumerate() {
             // Update progress for embedding generation
-            if let Some(callback) = progress_callback {
-                if i % 10 == 0 {
-                    callback(ProgressStatus::GeneratingEmbeddings(i, total_items));
-                }
+            if let Some(callback) = progress_callback
+                && i % 10 == 0
+            {
+                callback(ProgressStatus::GeneratingEmbeddings(i, total_items));
             }
 
             // Create a data point from the item

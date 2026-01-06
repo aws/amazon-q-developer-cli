@@ -41,14 +41,13 @@ pub fn parse_prompt_components(prompt: &str) -> Option<PromptComponents> {
     let mut remaining = remaining;
 
     // Check for agent pattern [agent] first
-    if let Some(start) = remaining.find('[') {
-        if let Some(end) = remaining.find(']') {
-            if start < end {
-                let content = &remaining[start + 1..end];
-                profile = Some(content.to_string());
-                remaining = remaining[end + 1..].trim_start();
-            }
-        }
+    if let Some(start) = remaining.find('[')
+        && let Some(end) = remaining.find(']')
+        && start < end
+    {
+        let content = &remaining[start + 1..end];
+        profile = Some(content.to_string());
+        remaining = remaining[end + 1..].trim_start();
     }
 
     // Check for percentage pattern (e.g., "6% ")

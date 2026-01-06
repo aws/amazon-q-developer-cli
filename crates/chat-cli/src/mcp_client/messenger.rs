@@ -75,6 +75,7 @@ pub enum MessengerError {
 }
 
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub struct NullMessenger;
 
 #[async_trait::async_trait]

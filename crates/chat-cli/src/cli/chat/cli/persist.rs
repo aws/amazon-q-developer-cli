@@ -243,13 +243,13 @@ fn restore_conversation_state(session: &mut ChatSession, mut new_state: Conversa
     // And we'll place them as temporary context
     // Note that we are NOT doing the same with hooks because hooks are more
     // instrinsically linked to agent and it affects the behavior of an agent
-    if let Some(cm) = &new_state.context_manager {
-        if let Some(existing_cm) = &mut session.conversation.context_manager {
-            let existing_paths = &mut existing_cm.paths;
-            for incoming_path in &cm.paths {
-                if !existing_paths.contains(incoming_path) {
-                    existing_paths.push(ContextFilePath::Session(incoming_path.get_path_as_str().to_string()));
-                }
+    if let Some(cm) = &new_state.context_manager
+        && let Some(existing_cm) = &mut session.conversation.context_manager
+    {
+        let existing_paths = &mut existing_cm.paths;
+        for incoming_path in &cm.paths {
+            if !existing_paths.contains(incoming_path) {
+                existing_paths.push(ContextFilePath::Session(incoming_path.get_path_as_str().to_string()));
             }
         }
     }

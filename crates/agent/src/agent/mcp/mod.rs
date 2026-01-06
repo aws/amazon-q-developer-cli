@@ -414,10 +414,10 @@ impl McpManager {
                 }
             },
             McpServerActorEvent::InitializeError { server_name, error } => {
-                if let Some((_, result_tx)) = self.initializing_servers.remove(server_name) {
-                    if let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone()))) {
-                        error!(?server_name, ?e, "failed to send server initialized message");
-                    }
+                if let Some((_, result_tx)) = self.initializing_servers.remove(server_name)
+                    && let Err(e) = result_tx.send(Err(McpManagerError::Custom(error.clone())))
+                {
+                    error!(?server_name, ?e, "failed to send server initialized message");
                 }
             },
             McpServerActorEvent::OauthRequest { server_name, oauth_url } => {

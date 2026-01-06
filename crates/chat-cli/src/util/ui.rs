@@ -255,6 +255,7 @@ fn print_with_bold(output: &mut impl Write, segments: &[(String, bool)]) -> Resu
 
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub enum UiMode {
     #[default]
     Structured,

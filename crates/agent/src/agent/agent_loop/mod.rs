@@ -357,14 +357,14 @@ impl AgentLoop {
                 builtin_tool_uses = builtin_tool_uses.saturating_add(s.builtin_tool_uses());
             }
 
-            if let Some(md) = s.metadata.as_ref() {
-                if let Some(md_usage) = md.usage.as_ref() {
-                    if let Some(token_count) = md_usage.input_tokens.as_ref() {
-                        input_token_count = input_token_count.saturating_add(*token_count);
-                    }
-                    if let Some(token_count) = md_usage.output_tokens.as_ref() {
-                        output_token_count = output_token_count.saturating_add(*token_count);
-                    }
+            if let Some(md) = s.metadata.as_ref()
+                && let Some(md_usage) = md.usage.as_ref()
+            {
+                if let Some(token_count) = md_usage.input_tokens.as_ref() {
+                    input_token_count = input_token_count.saturating_add(*token_count);
+                }
+                if let Some(token_count) = md_usage.output_tokens.as_ref() {
+                    output_token_count = output_token_count.saturating_add(*token_count);
                 }
             }
         }

@@ -300,41 +300,41 @@ impl ContextSubcommand {
                         ))
                     )?;
 
-                    if let Some(dropped_files) = dropped_files {
-                        if !dropped_files.is_empty() {
-                            execute!(
-                                session.stderr,
-                                StyledText::warning_fg(),
-                                style::Print(format!(
-                                    "{} \n\n",
-                                    context_text::context_limit_warning(context_files_max_size)
-                                )),
-                                StyledText::reset(),
-                            )?;
-                            let total_files = dropped_files.len();
+                    if let Some(dropped_files) = dropped_files
+                        && !dropped_files.is_empty()
+                    {
+                        execute!(
+                            session.stderr,
+                            StyledText::warning_fg(),
+                            style::Print(format!(
+                                "{} \n\n",
+                                context_text::context_limit_warning(context_files_max_size)
+                            )),
+                            StyledText::reset(),
+                        )?;
+                        let total_files = dropped_files.len();
 
-                            let truncated_dropped_files = &dropped_files[..std::cmp::min(10, dropped_files.len())];
+                        let truncated_dropped_files = &dropped_files[..std::cmp::min(10, dropped_files.len())];
 
-                            for file in truncated_dropped_files {
-                                if let ContextFile::Full { filepath, content } = file {
-                                    let est_tokens = TokenCounter::count_tokens(content);
-                                    let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
-                                    execute!(
-                                        session.stderr,
-                                        style::Print(format!("{filepath} ")),
-                                        StyledText::secondary_fg(),
-                                        style::Print(format!("({percentage:.1}% of context window)\n")),
-                                        StyledText::reset(),
-                                    )?;
-                                }
-                            }
-
-                            if total_files > 10 {
+                        for file in truncated_dropped_files {
+                            if let ContextFile::Full { filepath, content } = file {
+                                let est_tokens = TokenCounter::count_tokens(content);
+                                let percentage = (est_tokens as f32 / context_window_size as f32) * 100.0;
                                 execute!(
                                     session.stderr,
-                                    style::Print(format!("({} more files)\n", total_files - 10))
+                                    style::Print(format!("{filepath} ")),
+                                    StyledText::secondary_fg(),
+                                    style::Print(format!("({percentage:.1}% of context window)\n")),
+                                    StyledText::reset(),
                                 )?;
                             }
+                        }
+
+                        if total_files > 10 {
+                            execute!(
+                                session.stderr,
+                                style::Print(format!("({} more files)\n", total_files - 10))
+                            )?;
                         }
                     }
 
@@ -342,25 +342,23 @@ impl ContextSubcommand {
                 }
 
                 // Show last cached session.conversation summary if available, otherwise regenerate it
-                if expand {
-                    if let Some(summary) = session.conversation.latest_summary() {
-                        let border = "═".repeat(session.terminal_width().min(80));
-                        execute!(
-                            session.stderr,
-                            style::Print("\n"),
-                            StyledText::brand_fg(),
-                            style::Print(&border),
-                            style::Print("\n"),
-                            style::SetAttribute(Attribute::Bold),
-                            style::Print("                       CONVERSATION SUMMARY"),
-                            style::Print("\n"),
-                            style::Print(&border),
-                            StyledText::reset_attributes(),
-                            style::Print("\n\n"),
-                            style::Print(&summary),
-                            style::Print("\n\n\n")
-                        )?;
-                    }
+                if expand && let Some(summary) = session.conversation.latest_summary() {
+                    let border = "═".repeat(session.terminal_width().min(80));
+                    execute!(
+                        session.stderr,
+                        style::Print("\n"),
+                        StyledText::brand_fg(),
+                        style::Print(&border),
+                        style::Print("\n"),
+                        style::SetAttribute(Attribute::Bold),
+                        style::Print("                       CONVERSATION SUMMARY"),
+                        style::Print("\n"),
+                        style::Print(&border),
+                        StyledText::reset_attributes(),
+                        style::Print("\n\n"),
+                        style::Print(&summary),
+                        style::Print("\n\n\n")
+                    )?;
                 }
             },
             Self::Add { force, paths } => match context_manager.add_paths(os, paths.clone(), force).await {

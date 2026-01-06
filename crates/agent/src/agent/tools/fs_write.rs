@@ -190,12 +190,12 @@ impl FileCreate {
     async fn execute(&self, path: impl AsRef<Path>) -> Result<(), ToolExecutionError> {
         let path = path.as_ref();
 
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent).await.map_err(|e| {
-                    ToolExecutionError::io(format!("failed to create directory {}", parent.to_string_lossy()), e)
-                })?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await.map_err(|e| {
+                ToolExecutionError::io(format!("failed to create directory {}", parent.to_string_lossy()), e)
+            })?;
         }
 
         tokio::fs::write(path, &self.content)

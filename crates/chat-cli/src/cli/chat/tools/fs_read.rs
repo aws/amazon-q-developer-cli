@@ -1023,10 +1023,10 @@ impl FsDirectory {
                 return true;
             }
             // Also match against just the file/directory name for simple patterns like "node_modules"
-            if let Some(name) = path.file_name() {
-                if set.is_match(name) {
-                    return true;
-                }
+            if let Some(name) = path.file_name()
+                && set.is_match(name)
+            {
+                return true;
             }
         }
         false

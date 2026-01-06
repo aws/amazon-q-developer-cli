@@ -943,19 +943,19 @@ impl ChatSession {
                         existing_conversation = true;
                         input = Some(input.unwrap_or("In a few words, summarize our conversation so far.".to_owned()));
                         cs.tool_manager = tool_manager;
-                        if let Some(profile) = cs.current_profile() {
-                            if agents.switch(profile, os).await.is_err() {
-                                execute!(
-                                    &mut control_end_stderr,
-                                    StyledText::error_fg(),
-                                    style::Print("Error"),
-                                    StyledText::reset(),
-                                    style::Print(format!(
-                                        ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
-                                    ))
-                                )?;
-                                let _ = agents.switch(DEFAULT_AGENT_NAME, os).await;
-                            }
+                        if let Some(profile) = cs.current_profile()
+                            && agents.switch(profile, os).await.is_err()
+                        {
+                            execute!(
+                                &mut control_end_stderr,
+                                StyledText::error_fg(),
+                                style::Print("Error"),
+                                StyledText::reset(),
+                                style::Print(format!(
+                                    ": cannot resume conversation with {profile} because it no longer exists. Using default.\n"
+                                ))
+                            )?;
+                            let _ = agents.switch(DEFAULT_AGENT_NAME, os).await;
                         }
                         cs.agents = agents;
                         cs.code_intelligence_client = code_intelligence_client.clone();
@@ -2833,14 +2833,14 @@ impl ChatSession {
         } else {
             // Track the message for checkpoint descriptions, but only if not already set
             // This prevents tool approval responses (y/n/t) from overwriting the original message
-            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+                && !self.conversation.is_in_tangent_mode()
+                && let Some(manager) = self.conversation.checkpoint_manager.as_mut()
+                && !manager.message_locked
+                && self.pending_tool_index.is_none()
             {
-                if let Some(manager) = self.conversation.checkpoint_manager.as_mut() {
-                    if !manager.message_locked && self.pending_tool_index.is_none() {
-                        manager.pending_user_message = Some(user_input.clone());
-                        manager.message_locked = true;
-                    }
-                }
+                manager.pending_user_message = Some(user_input.clone());
+                manager.message_locked = true;
             }
 
             // Check for a pending tool approval
@@ -3369,17 +3369,17 @@ impl ChatSession {
         // Collect tools that need post-processing
         let mut post_process_data = Vec::new();
         for tool in &self.tool_uses {
-            if let Some(result) = tool_results.iter().find(|r| r.tool_use_id == tool.id) {
-                if let Some(content) = result.content.first() {
-                    // Reconstruct InvokeOutput from ToolUseResult for post-processing
-                    let invoke_output = tools::InvokeOutput {
-                        output: match content {
-                            ToolUseResultBlock::Text(text) => tools::OutputKind::Text(text.clone()),
-                            ToolUseResultBlock::Json(json) => tools::OutputKind::Json(json.clone()),
-                        },
-                    };
-                    post_process_data.push((tool.tool.clone(), invoke_output));
-                }
+            if let Some(result) = tool_results.iter().find(|r| r.tool_use_id == tool.id)
+                && let Some(content) = result.content.first()
+            {
+                // Reconstruct InvokeOutput from ToolUseResult for post-processing
+                let invoke_output = tools::InvokeOutput {
+                    output: match content {
+                        ToolUseResultBlock::Text(text) => tools::OutputKind::Text(text.clone()),
+                        ToolUseResultBlock::Json(json) => tools::OutputKind::Json(json.clone()),
+                    },
+                };
+                post_process_data.push((tool.tool.clone(), invoke_output));
             }
         }
 
@@ -3900,56 +3900,52 @@ impl ChatSession {
             self.tool_turn_start_time = None;
 
             // Create turn checkpoint if tools were used
-            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint) && !self.conversation.is_in_tangent_mode()
+            if ExperimentManager::is_enabled(os, ExperimentName::Checkpoint)
+                && !self.conversation.is_in_tangent_mode()
+                && let Some(mut manager) = self.conversation.checkpoint_manager.take()
             {
-                if let Some(mut manager) = self.conversation.checkpoint_manager.take() {
-                    if manager.tools_in_turn > 0 {
-                        // Increment turn counter
-                        manager.current_turn += 1;
+                if manager.tools_in_turn > 0 {
+                    // Increment turn counter
+                    manager.current_turn += 1;
 
-                        // Get user message for description
-                        let description = manager.pending_user_message.take().map_or_else(
-                            || "Turn completed".to_string(),
-                            |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
-                        );
+                    // Get user message for description
+                    let description = manager.pending_user_message.take().map_or_else(
+                        || "Turn completed".to_string(),
+                        |msg| truncate_message(&msg, CHECKPOINT_MESSAGE_MAX_LENGTH),
+                    );
 
-                        // Create turn checkpoint
-                        let tag = manager.current_turn.to_string();
-                        if let Err(e) = manager.create_checkpoint(
-                            &tag,
-                            &description,
-                            &self.conversation.history().clone(),
-                            true,
-                            None,
-                        ) {
-                            execute!(
-                                self.stderr,
-                                StyledText::warning_fg(),
-                                style::Print(format!("⚠️ Could not create automatic checkpoint: {e}\n\n")),
-                                StyledText::reset(),
-                            )?;
-                        } else {
-                            execute!(
-                                self.stderr,
-                                StyledText::info_fg(),
-                                style::SetAttribute(Attribute::Bold),
-                                style::Print(format!("✓ Created checkpoint {tag}\n\n")),
-                                StyledText::reset(),
-                                StyledText::reset_attributes(),
-                            )?;
-                        }
-
-                        // Reset for next turn
-                        manager.tools_in_turn = 0;
+                    // Create turn checkpoint
+                    let tag = manager.current_turn.to_string();
+                    if let Err(e) =
+                        manager.create_checkpoint(&tag, &description, &self.conversation.history().clone(), true, None)
+                    {
+                        execute!(
+                            self.stderr,
+                            StyledText::warning_fg(),
+                            style::Print(format!("⚠️ Could not create automatic checkpoint: {e}\n\n")),
+                            StyledText::reset(),
+                        )?;
                     } else {
-                        // Clear pending message even if no tools were used
-                        manager.pending_user_message = None;
+                        execute!(
+                            self.stderr,
+                            StyledText::info_fg(),
+                            style::SetAttribute(Attribute::Bold),
+                            style::Print(format!("✓ Created checkpoint {tag}\n\n")),
+                            StyledText::reset(),
+                            StyledText::reset_attributes(),
+                        )?;
                     }
-                    manager.message_locked = false; // Unlock for next turn
 
-                    // Put manager back
-                    self.conversation.checkpoint_manager = Some(manager);
+                    // Reset for next turn
+                    manager.tools_in_turn = 0;
+                } else {
+                    // Clear pending message even if no tools were used
+                    manager.pending_user_message = None;
                 }
+                manager.message_locked = false; // Unlock for next turn
+
+                // Put manager back
+                self.conversation.checkpoint_manager = Some(manager);
             }
 
             self.send_chat_telemetry(os, TelemetryResult::Succeeded, None, None, None, true)
@@ -4343,22 +4339,21 @@ impl ChatSession {
             usage_percentage,
         );
 
-        if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
-            if let Ok(mut executions) = status_all_agents(os).await {
-                if !executions.is_empty() {
-                    let rich_notification = format_rich_notification(&executions);
-                    generated_prompt = format!("{rich_notification}\n{generated_prompt}");
+        if ExperimentManager::is_enabled(os, ExperimentName::Delegate)
+            && let Ok(mut executions) = status_all_agents(os).await
+            && !executions.is_empty()
+        {
+            let rich_notification = format_rich_notification(&executions);
+            generated_prompt = format!("{rich_notification}\n{generated_prompt}");
 
-                    // Use the notification text as context for the model (it's already plain text)
-                    self.pending_additional_context = Some(rich_notification.clone());
+            // Use the notification text as context for the model (it's already plain text)
+            self.pending_additional_context = Some(rich_notification.clone());
 
-                    // Mark all shown tasks as user_notified
-                    for execution in &mut executions {
-                        execution.user_notified = true;
-                        if let Err(e) = save_agent_execution(os, execution).await {
-                            eprintln!("Failed to mark agent execution as notified: {e}");
-                        }
-                    }
+            // Mark all shown tasks as user_notified
+            for execution in &mut executions {
+                execution.user_notified = true;
+                if let Err(e) = save_agent_execution(os, execution).await {
+                    eprintln!("Failed to mark agent execution as notified: {e}");
                 }
             }
         }
@@ -4702,12 +4697,12 @@ fn is_code_intelligence_active(
     }
 
     // Then check if the client is initialized
-    if let Some(client_lock) = client {
-        if let Ok(client) = client_lock.try_read() {
-            let status = client.workspace_status();
-            return status == code_agent_sdk::sdk::WorkspaceStatus::Initialized
-                || status == code_agent_sdk::sdk::WorkspaceStatus::Initializing;
-        }
+    if let Some(client_lock) = client
+        && let Ok(client) = client_lock.try_read()
+    {
+        let status = client.workspace_status();
+        return status == code_agent_sdk::sdk::WorkspaceStatus::Initialized
+            || status == code_agent_sdk::sdk::WorkspaceStatus::Initializing;
     }
     false
 }

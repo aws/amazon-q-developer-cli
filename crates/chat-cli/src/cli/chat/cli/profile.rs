@@ -635,29 +635,29 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
     let resolver = PathResolver::new(os);
 
     // 2. Load from workspace legacy config (medium priority)
-    if let Ok(workspace_path) = resolver.workspace().mcp_config() {
-        if let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await {
-            for (server_name, server_config) in workspace_config.mcp_servers {
-                if !servers.values().any(|s| s.config.command == server_config.command) {
-                    servers.insert(server_name.clone(), McpServerInfo {
-                        name: server_name,
-                        config: server_config,
-                    });
-                }
+    if let Ok(workspace_path) = resolver.workspace().mcp_config()
+        && let Ok(workspace_config) = McpServerConfig::load_from_file(os, workspace_path).await
+    {
+        for (server_name, server_config) in workspace_config.mcp_servers {
+            if !servers.values().any(|s| s.config.command == server_config.command) {
+                servers.insert(server_name.clone(), McpServerInfo {
+                    name: server_name,
+                    config: server_config,
+                });
             }
         }
     }
 
     // 3. Load from global legacy config (lowest priority)
-    if let Ok(global_path) = resolver.global().mcp_config() {
-        if let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await {
-            for (server_name, server_config) in global_config.mcp_servers {
-                if !servers.values().any(|s| s.config.command == server_config.command) {
-                    servers.insert(server_name.clone(), McpServerInfo {
-                        name: server_name,
-                        config: server_config,
-                    });
-                }
+    if let Ok(global_path) = resolver.global().mcp_config()
+        && let Ok(global_config) = McpServerConfig::load_from_file(os, global_path).await
+    {
+        for (server_name, server_config) in global_config.mcp_servers {
+            if !servers.values().any(|s| s.config.command == server_config.command) {
+                servers.insert(server_name.clone(), McpServerInfo {
+                    name: server_name,
+                    config: server_config,
+                });
             }
         }
     }

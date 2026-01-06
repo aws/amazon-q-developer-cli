@@ -208,10 +208,10 @@ impl Settings {
         let path = GlobalPaths::settings_path()?;
 
         // If the folder doesn't exist, create it.
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
         }
 
         Ok(Self(match path.exists() {
@@ -272,10 +272,10 @@ impl Settings {
         let path = GlobalPaths::settings_path()?;
 
         // If the folder doesn't exist, create it.
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                tokio::fs::create_dir_all(parent).await?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await?;
         }
 
         let mut file_opts = File::options();

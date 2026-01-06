@@ -203,11 +203,11 @@ impl AddArgs {
                             }
 
                             // If user provided a server name, validate it exists in the registry
-                            if let Some(ref name) = self.name {
-                                if registry.get_server(name).is_none() {
-                                    show_registry_only_error(output)?;
-                                    return Ok(());
-                                }
+                            if let Some(ref name) = self.name
+                                && registry.get_server(name).is_none()
+                            {
+                                show_registry_only_error(output)?;
+                                return Ok(());
                             }
 
                             let registry_args = RegistryAddArgs {
@@ -386,20 +386,20 @@ impl RemoveArgs {
                 let config = &mut agent.mcp_servers.mcp_servers;
 
                 // Check if server exists and if it's from legacy config
-                if let Some(server_config) = config.get(&self.name) {
-                    if server_config.is_from_legacy_mcp_json {
-                        writeln!(
-                            output,
-                            "⚠ Server '{}' is from legacy mcp.json and cannot be removed from agent config.",
-                            self.name
-                        )?;
-                        writeln!(
-                            output,
-                            "   To remove it, use: {CLI_NAME} mcp remove --name {} --scope workspace",
-                            self.name
-                        )?;
-                        return Ok(());
-                    }
+                if let Some(server_config) = config.get(&self.name)
+                    && server_config.is_from_legacy_mcp_json
+                {
+                    writeln!(
+                        output,
+                        "⚠ Server '{}' is from legacy mcp.json and cannot be removed from agent config.",
+                        self.name
+                    )?;
+                    writeln!(
+                        output,
+                        "   To remove it, use: {CLI_NAME} mcp remove --name {} --scope workspace",
+                        self.name
+                    )?;
+                    return Ok(());
                 }
 
                 match config.remove(&self.name) {
@@ -496,10 +496,10 @@ impl ListArgs {
         };
 
         for (scope, agents) in configs {
-            if let Some(s) = self.scope {
-                if scope != s {
-                    continue;
-                }
+            if let Some(s) = self.scope
+                && scope != s
+            {
+                continue;
             }
             writeln!(output)?;
             writeln!(output, "{}:\n", scope_display(&scope))?;
@@ -1277,10 +1277,10 @@ impl RegistryAddArgs {
             },
         };
 
-        if let Some(index) = selection {
-            if index < server_names.len() {
-                return Ok(Some(server_names[index].clone()));
-            }
+        if let Some(index) = selection
+            && index < server_names.len()
+        {
+            return Ok(Some(server_names[index].clone()));
         }
 
         // ESC was pressed

@@ -193,21 +193,19 @@ impl LspConfig {
             .iter()
             .any(|pattern| current_path.join(pattern).exists());
 
-        if has_project_marker {
-            if let Ok(folder_uri) = Url::from_file_path(current_path) {
-                let folder_name = current_path
-                    .file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("workspace")
-                    .to_string();
+        if has_project_marker && let Ok(folder_uri) = Url::from_file_path(current_path) {
+            let folder_name = current_path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("workspace")
+                .to_string();
 
-                folders.push(WorkspaceFolder {
-                    uri: folder_uri,
-                    name: folder_name.clone(),
-                });
+            folders.push(WorkspaceFolder {
+                uri: folder_uri,
+                name: folder_name.clone(),
+            });
 
-                tracing::info!("Discovered workspace: {} at {}", folder_name, current_path.display());
-            }
+            tracing::info!("Discovered workspace: {} at {}", folder_name, current_path.display());
             // Continue scanning for nested workspaces (monorepo support)
             // but only if we haven't hit max depth
         }

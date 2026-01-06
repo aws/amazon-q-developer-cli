@@ -298,10 +298,10 @@ impl Agent {
                     _ => None,
                 };
 
-                if let Some(key) = overridden_settings_key {
-                    if let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}")) {
-                        queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
-                    }
+                if let Some(key) = overridden_settings_key
+                    && let Some(ref override_settings) = settings.get(key).map(|value| format!("{key}: {value}"))
+                {
+                    queue_permission_override_warning(allowed_tool.as_str(), override_settings, output)?;
                 }
             }
         }
@@ -693,10 +693,10 @@ impl Agents {
             let files = match os.fs.read_dir(&path).await {
                 Ok(files) => files,
                 Err(e) => {
-                    if matches!(e.kind(), io::ErrorKind::NotFound) {
-                        if let Err(e) = os.fs.create_dir_all(&path).await {
-                            error!("Error creating global agent dir: {:?}", e);
-                        }
+                    if matches!(e.kind(), io::ErrorKind::NotFound)
+                        && let Err(e) = os.fs.create_dir_all(&path).await
+                    {
+                        error!("Error creating global agent dir: {:?}", e);
                     }
                     break 'global Vec::<Agent>::new();
                 },
@@ -952,13 +952,13 @@ impl Agents {
             };
 
             // For native tools, check if any alias matches allowedTools
-            if server_name.is_none() {
-                if let Some(info) = ToolMetadata::get_by_spec_name(tool_name) {
-                    return info
-                        .aliases
-                        .iter()
-                        .any(|alias| is_tool_in_allowlist(&a.allowed_tools, alias, server_name));
-                }
+            if server_name.is_none()
+                && let Some(info) = ToolMetadata::get_by_spec_name(tool_name)
+            {
+                return info
+                    .aliases
+                    .iter()
+                    .any(|alias| is_tool_in_allowlist(&a.allowed_tools, alias, server_name));
             }
 
             is_tool_in_allowlist(&a.allowed_tools, tool_name, server_name)
@@ -1008,19 +1008,19 @@ pub struct AgentsLoadMetadata {
 /// Configure built-in agents with resources
 async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathResolver<'_>) {
     // Add global steering (KIRO-only)
-    if let Ok(global_steering_dir) = resolver.global().steering_dir() {
-        if global_steering_dir.exists() {
-            let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
-            agent.resources.push(global_steering_pattern.into());
-        }
+    if let Ok(global_steering_dir) = resolver.global().steering_dir()
+        && global_steering_dir.exists()
+    {
+        let global_steering_pattern = format!("file://{}/**/*.md", global_steering_dir.display());
+        agent.resources.push(global_steering_pattern.into());
     }
 
     // Add workspace steering (KIRO-only)
-    if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir() {
-        if workspace_steering_dir.exists() {
-            let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
-            agent.resources.push(workspace_steering_pattern.into());
-        }
+    if let Ok(workspace_steering_dir) = resolver.workspace().steering_dir()
+        && workspace_steering_dir.exists()
+    {
+        let workspace_steering_pattern = format!("file://{}/**/*.md", workspace_steering_dir.display());
+        agent.resources.push(workspace_steering_pattern.into());
     }
 
     // Add rules pattern if available (only when .amazonq exists but .kiro doesn't)
@@ -1050,27 +1050,27 @@ async fn load_agents_from_entries(
             .is_some_and(|s| s == "json")
         {
             let agent_res = Agent::load(os, file_path, global_mcp_config, mcp_enabled, output).await;
-            if let Ok(agent) = &agent_res {
-                if res.iter().any(|res| match res {
+            if let Ok(agent) = &agent_res
+                && res.iter().any(|res| match res {
                     Ok(a) => a.name == agent.name,
                     Err(_) => false,
-                }) {
-                    let _ = queue!(
-                        output,
-                        StyledText::warning_fg(),
-                        style::Print("WARNING: "),
-                        StyledText::reset(),
-                        style::Print("Duplicate agent with name "),
-                        StyledText::success_fg(),
-                        style::Print(&agent.name),
-                        StyledText::reset(),
-                        style::Print(" was found in the "),
-                        style::Print(if is_from_global_dir { "global" } else { "workspace" }),
-                        style::Print(" directory.\n"),
-                        StyledText::reset(),
-                    );
-                    continue;
-                }
+                })
+            {
+                let _ = queue!(
+                    output,
+                    StyledText::warning_fg(),
+                    style::Print("WARNING: "),
+                    StyledText::reset(),
+                    style::Print("Duplicate agent with name "),
+                    StyledText::success_fg(),
+                    style::Print(&agent.name),
+                    StyledText::reset(),
+                    style::Print(" was found in the "),
+                    style::Print(if is_from_global_dir { "global" } else { "workspace" }),
+                    style::Print(" directory.\n"),
+                    StyledText::reset(),
+                );
+                continue;
             }
             res.push(agent_res);
         }

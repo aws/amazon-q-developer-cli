@@ -11,10 +11,10 @@ pub fn matches_any_pattern(patterns: &HashSet<&str>, text: &str) -> bool {
         }
 
         // Glob pattern match if contains wildcards
-        if pattern.contains('*') || pattern.contains('?') {
-            if let Ok(glob) = Glob::new(pattern) {
-                return glob.compile_matcher().is_match(text);
-            }
+        if (pattern.contains('*') || pattern.contains('?'))
+            && let Ok(glob) = Glob::new(pattern)
+        {
+            return glob.compile_matcher().is_match(text);
         }
 
         false

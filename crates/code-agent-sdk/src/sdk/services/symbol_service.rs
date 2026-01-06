@@ -405,14 +405,14 @@ impl SymbolService for LspSymbolService {
                         let mut nested_result = Vec::new();
                         for ds in nested_symbols {
                             if top_level_only {
-                                if Self::is_top_level_symbol_kind(ds.kind) {
-                                    if let Some(symbol_info) = Self::document_symbol_to_symbol_info(
+                                if Self::is_top_level_symbol_kind(ds.kind)
+                                    && let Some(symbol_info) = Self::document_symbol_to_symbol_info(
                                         &ds,
                                         &canonical_path,
                                         workspace_manager.workspace_root(),
-                                    ) {
-                                        nested_result.push(symbol_info);
-                                    }
+                                    )
+                                {
+                                    nested_result.push(symbol_info);
                                 }
                             } else {
                                 // Collect all symbols including nested ones

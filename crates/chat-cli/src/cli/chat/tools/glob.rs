@@ -131,7 +131,7 @@ impl Glob {
         for entry in walker.flatten() {
             // Yield periodically to allow cancellation (Ctrl+C handling)
             entry_count += 1;
-            if entry_count % YIELD_INTERVAL == 0 {
+            if entry_count.is_multiple_of(YIELD_INTERVAL) {
                 tokio::task::yield_now().await;
             }
 
@@ -269,11 +269,13 @@ impl Glob {
             StyledText::reset()
         )?;
 
-        if let Some(ref path) = self.path {
-            if !path.is_empty() && path != "undefined" && path != "null" {
-                queue!(output, style::Print(" in "))?;
-                queue!(output, StyledText::brand_fg(), style::Print(path), StyledText::reset())?;
-            }
+        if let Some(ref path) = self.path
+            && !path.is_empty()
+            && path != "undefined"
+            && path != "null"
+        {
+            queue!(output, style::Print(" in "))?;
+            queue!(output, StyledText::brand_fg(), style::Print(path), StyledText::reset())?;
         }
 
         display_tool_use(tool, output)?;
@@ -289,10 +291,10 @@ impl Glob {
         GlobPattern::new(&self.pattern).map_err(|e| eyre::eyre!("Invalid glob pattern '{}': {}", self.pattern, e))?;
 
         // Clean invalid path values
-        if let Some(ref p) = self.path {
-            if p == "undefined" || p == "null" || p.is_empty() {
-                self.path = None;
-            }
+        if let Some(ref p) = self.path
+            && (p == "undefined" || p == "null" || p.is_empty())
+        {
+            self.path = None;
         }
 
         Ok(())
@@ -365,10 +367,10 @@ impl Glob {
         };
 
         // 1. Deny check first
-        if let Ok(deny_set) = deny_set {
-            if deny_set.is_match(&canonical_search_path) {
-                return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
-            }
+        if let Ok(deny_set) = deny_set
+            && deny_set.is_match(&canonical_search_path)
+        {
+            return PermissionEvalResult::Deny(vec![format!("Path '{}' is denied", search_path)]);
         }
 
         // 2. If tool is in allowlist or allow_read_only is true, allow

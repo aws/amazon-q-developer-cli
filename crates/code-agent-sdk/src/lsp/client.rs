@@ -928,10 +928,10 @@ impl Drop for LspClient {
     fn drop(&mut self) {
         // Try to kill the child process if it's still running
         // Use try_lock to avoid blocking in async context
-        if let Ok(mut guard) = self.child.try_lock() {
-            if let Some(mut child) = guard.take() {
-                let _ = child.start_kill();
-            }
+        if let Ok(mut guard) = self.child.try_lock()
+            && let Some(mut child) = guard.take()
+        {
+            let _ = child.start_kill();
         }
     }
 }
