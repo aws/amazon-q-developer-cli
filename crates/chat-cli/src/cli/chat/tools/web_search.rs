@@ -199,26 +199,26 @@ impl WebSearch {
             .ok_or_else(|| eyre::eyre!("No result in MCP response"))?;
 
         // Check for isError field before conversion
-        if let aws_smithy_types::Document::Object(map) = result_doc {
-            if let Some(aws_smithy_types::Document::Bool(true)) = map.get("isError") {
-                // Extract error message from Document
-                let error_msg = map
-                    .get("content")
-                    .and_then(|c| match c {
-                        aws_smithy_types::Document::Array(arr) => arr.first(),
-                        _ => None,
-                    })
-                    .and_then(|item| match item {
-                        aws_smithy_types::Document::Object(obj) => obj.get("text"),
-                        _ => None,
-                    })
-                    .and_then(|text| match text {
-                        aws_smithy_types::Document::String(s) => Some(s.as_str()),
-                        _ => None,
-                    })
-                    .unwrap_or("Unknown error");
-                return Err(eyre::eyre!("Web search failed: {}", error_msg));
-            }
+        if let aws_smithy_types::Document::Object(map) = result_doc
+            && let Some(aws_smithy_types::Document::Bool(true)) = map.get("isError")
+        {
+            // Extract error message from Document
+            let error_msg = map
+                .get("content")
+                .and_then(|c| match c {
+                    aws_smithy_types::Document::Array(arr) => arr.first(),
+                    _ => None,
+                })
+                .and_then(|item| match item {
+                    aws_smithy_types::Document::Object(obj) => obj.get("text"),
+                    _ => None,
+                })
+                .and_then(|text| match text {
+                    aws_smithy_types::Document::String(s) => Some(s.as_str()),
+                    _ => None,
+                })
+                .unwrap_or("Unknown error");
+            return Err(eyre::eyre!("Web search failed: {}", error_msg));
         }
 
         // Convert Document to JSON string manually

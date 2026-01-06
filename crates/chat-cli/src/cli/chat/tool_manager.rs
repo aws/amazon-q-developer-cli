@@ -783,10 +783,10 @@ impl ToolManager {
                         }
 
                         // For native tools, check if any alias in tool_list matches this tool
-                        if let Some(info) = ToolMetadata::get_by_spec_name(name) {
-                            if tool_list.iter().any(|t| info.aliases.contains(&t.as_str())) {
-                                return true;
-                            }
+                        if let Some(info) = ToolMetadata::get_by_spec_name(name)
+                            && tool_list.iter().any(|t| info.aliases.contains(&t.as_str()))
+                        {
+                            return true;
                         }
 
                         // Handle @builtin OR * (allow all) - exclude tools marked exclude_from_builtin
@@ -801,25 +801,24 @@ impl ToolManager {
                             }
 
                             // Check if tool is completely denied via fallback_action
-                            if let Ok(agent) = self.agent.try_lock() {
-                                if let Some(settings) = agent
+                            if let Ok(agent) = self.agent.try_lock()
+                                && let Some(settings) = agent
                                     .tools_settings
                                     .get(&crate::cli::agent::ToolSettingTarget(name.clone()))
-                                {
-                                    // If fallback_action is "deny" and no allowed_paths field exists, exclude tool
-                                    // entirely
-                                    let fallback_action = settings
-                                        .get("fallback_action")
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("interactive");
+                            {
+                                // If fallback_action is "deny" and no allowed_paths field exists, exclude tool
+                                // entirely
+                                let fallback_action = settings
+                                    .get("fallback_action")
+                                    .and_then(|v| v.as_str())
+                                    .unwrap_or("interactive");
 
-                                    let has_allowed_paths = settings
-                                        .as_object()
-                                        .is_some_and(|obj| obj.contains_key("allowed_paths"));
+                                let has_allowed_paths = settings
+                                    .as_object()
+                                    .is_some_and(|obj| obj.contains_key("allowed_paths"));
 
-                                    if fallback_action == "deny" && !has_allowed_paths {
-                                        return false;
-                                    }
+                                if fallback_action == "deny" && !has_allowed_paths {
+                                    return false;
                                 }
                             }
 
@@ -1280,10 +1279,10 @@ impl ToolManager {
                     } else {
                         // Single bundle case - check if server name matches if specified
                         let bundle = bundles.first().ok_or(GetPromptError::MissingPromptInfo)?;
-                        if let Some(sn) = sn {
-                            if bundle.server_name != *sn {
-                                return Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}")));
-                            }
+                        if let Some(sn) = sn
+                            && bundle.server_name != *sn
+                        {
+                            return Err(GetPromptError::PromptNotFound(format!("{sn}/{prompt_name}")));
                         }
                         bundle
                     };
@@ -1636,10 +1635,10 @@ fn spawn_orchestrator_task(
                         let alias_list = agent_lock.tool_aliases.iter().fold(
                             HashMap::<HostToolName, ModelToolName>::new(),
                             |mut acc, (full_path, model_tool_name)| {
-                                if full_path.starts_with(&server_prefix) {
-                                    if let Some((_, host_tool_name)) = full_path.split_once(MCP_SERVER_TOOL_DELIMITER) {
-                                        acc.insert(host_tool_name.to_string(), model_tool_name.clone());
-                                    }
+                                if full_path.starts_with(&server_prefix)
+                                    && let Some((_, host_tool_name)) = full_path.split_once(MCP_SERVER_TOOL_DELIMITER)
+                                {
+                                    acc.insert(host_tool_name.to_string(), model_tool_name.clone());
                                 }
                                 acc
                             },
@@ -1810,9 +1809,9 @@ fn spawn_orchestrator_task(
                         // We first need to clear all the PromptGets that are associated with
                         // this server because PromptsListResult is declaring what is available
                         // (and not the diff)
-                        prompts
-                            .values_mut()
-                            .for_each(|bundles| bundles.retain(|bundle| bundle.server_name != server_name));
+                        for bundles in prompts.values_mut() {
+                            bundles.retain(|bundle| bundle.server_name != server_name);
+                        }
 
                         // And then we update them with the new comers
                         for prompt in prompt_list_result.prompts {

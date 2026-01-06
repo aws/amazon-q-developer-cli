@@ -571,10 +571,10 @@ impl TelemetryClient {
                 return Ok(uuid!("ffffffff-ffff-ffff-ffff-ffffffffffff"));
             }
 
-            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(env) {
-                if let Ok(uuid) = Uuid::from_str(&client_id) {
-                    return Ok(uuid);
-                }
+            if let Ok(client_id) = crate::util::env_var::get_telemetry_client_id(env)
+                && let Ok(uuid) = Uuid::from_str(&client_id)
+            {
+                return Ok(uuid);
             }
 
             Ok(match database.get_client_id()? {

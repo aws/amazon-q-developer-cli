@@ -1,26 +1,21 @@
 name: 1.1 Build Linux
 
 on:
-  workflow_dispatch:
+  workflow_call:
     inputs:
       channel:
-        description: 'Release channel'
         type: string
         required: true
       build_timestamp:
-        description: 'Build timestamp'
         type: string
         required: true
       version:
-        description: 'Version'
         type: string
         required: true
       release_type:
-        description: 'Release type'
         type: string
         required: true
       environment:
-        description: 'Deployment environment'
         type: string
         required: true
 

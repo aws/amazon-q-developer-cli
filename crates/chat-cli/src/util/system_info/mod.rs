@@ -161,11 +161,11 @@ pub fn in_wsl() -> bool {
         if #[cfg(target_os = "linux")] {
             static IN_WSL: OnceLock<bool> = OnceLock::new();
             *IN_WSL.get_or_init(|| {
-                if let Ok(b) = std::fs::read("/proc/sys/kernel/osrelease") {
-                    if let Ok(s) = std::str::from_utf8(&b) {
-                        let a = s.to_ascii_lowercase();
-                        return a.contains("microsoft") || a.contains("wsl");
-                    }
+                if let Ok(b) = std::fs::read("/proc/sys/kernel/osrelease")
+                    && let Ok(s) = std::str::from_utf8(&b)
+                {
+                    let a = s.to_ascii_lowercase();
+                    return a.contains("microsoft") || a.contains("wsl");
                 }
                 false
             })

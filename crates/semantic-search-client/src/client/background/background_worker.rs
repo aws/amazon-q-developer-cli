@@ -335,10 +335,10 @@ impl BackgroundWorker {
 
             if context.persistent {
                 let context_dir = self.base_dir.join(&context.id);
-                if context_dir.exists() {
-                    if let Err(e) = tokio::fs::remove_dir_all(&context_dir).await {
-                        tracing::warn!("Failed to remove context directory {}: {}", context_dir.display(), e);
-                    }
+                if context_dir.exists()
+                    && let Err(e) = tokio::fs::remove_dir_all(&context_dir).await
+                {
+                    tracing::warn!("Failed to remove context directory {}: {}", context_dir.display(), e);
                 }
             }
 
@@ -360,22 +360,20 @@ impl BackgroundWorker {
     }
 
     async fn update_operation_status(&self, operation_id: Uuid, message: String) {
-        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.message = message;
-                }
-            }
+        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.message = message;
         }
     }
 
     async fn update_operation_progress(&self, operation_id: Uuid, current: u64, total: u64, message: String) {
-        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.update(current, total, message);
-                }
-            }
+        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.update(current, total, message);
         }
     }
 
@@ -387,25 +385,23 @@ impl BackgroundWorker {
     }
 
     async fn mark_operation_failed(&self, operation_id: Uuid, error: String) {
-        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.message = error.clone();
-                }
-            }
+        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.message = error.clone();
         }
         tracing::error!("Operation {} failed: {}", operation_id, error);
     }
 
     async fn mark_operation_cancelled(&self, operation_id: Uuid) {
-        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.message = "Operation cancelled by user".to_string();
-                    progress.current = 0;
-                    progress.total = 0;
-                }
-            }
+        if let Ok(mut operations) = self.operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.message = "Operation cancelled by user".to_string();
+            progress.current = 0;
+            progress.total = 0;
         }
         debug!("Operation {} cancelled", operation_id);
     }

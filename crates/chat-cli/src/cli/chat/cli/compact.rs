@@ -302,39 +302,39 @@ fn scan_items(
     for (position, entry) in history.iter().take(end_idx).enumerate() {
         if let AssistantMessage::ToolUse { tool_uses, .. } = &entry.assistant {
             for tool in tool_uses {
-                if tool_filter(&tool.name) {
-                    if let Some(item) = extract_item(&tool.args) {
-                        let reasoning = tool
-                            .args
-                            .get("summary")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .trim()
-                            .chars()
-                            .take(100)
-                            .collect::<String>();
+                if tool_filter(&tool.name)
+                    && let Some(item) = extract_item(&tool.args)
+                {
+                    let reasoning = tool
+                        .args
+                        .get("summary")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .chars()
+                        .take(100)
+                        .collect::<String>();
 
-                        item_data
-                            .entry(item)
-                            .and_modify(|(freq, pos, reasonings)| {
-                                *freq += 1;
-                                *pos = position;
-                                if !reasoning.is_empty() {
-                                    reasonings.push(reasoning.clone());
-                                    if reasonings.len() > MAX_REASONINGS_PER_ITEM {
-                                        reasonings.remove(0);
-                                    }
+                    item_data
+                        .entry(item)
+                        .and_modify(|(freq, pos, reasonings)| {
+                            *freq += 1;
+                            *pos = position;
+                            if !reasoning.is_empty() {
+                                reasonings.push(reasoning.clone());
+                                if reasonings.len() > MAX_REASONINGS_PER_ITEM {
+                                    reasonings.remove(0);
                                 }
-                            })
-                            .or_insert_with(|| {
-                                let reasonings = if reasoning.is_empty() {
-                                    Vec::new()
-                                } else {
-                                    vec![reasoning]
-                                };
-                                (1, position, reasonings)
-                            });
-                    }
+                            }
+                        })
+                        .or_insert_with(|| {
+                            let reasonings = if reasoning.is_empty() {
+                                Vec::new()
+                            } else {
+                                vec![reasoning]
+                            };
+                            (1, position, reasonings)
+                        });
                 }
             }
         }

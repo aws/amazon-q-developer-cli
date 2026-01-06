@@ -747,19 +747,19 @@ pub fn filter_tools_by_registry(tools: &[String], valid_server_names: &std::coll
             }
 
             // Check if tool is prefixed with a valid server name
-            if let Some(stripped) = tool.strip_prefix('@') {
-                if let Some(slash_pos) = stripped.find('/') {
-                    let server_name = &stripped[..slash_pos];
-                    if valid_server_names.contains(server_name) {
-                        return true;
-                    } else {
-                        tracing::debug!(
-                            "Filtering out tool '{}' - server '{}' not in registry",
-                            tool,
-                            server_name
-                        );
-                        return false;
-                    }
+            if let Some(stripped) = tool.strip_prefix('@')
+                && let Some(slash_pos) = stripped.find('/')
+            {
+                let server_name = &stripped[..slash_pos];
+                if valid_server_names.contains(server_name) {
+                    return true;
+                } else {
+                    tracing::debug!(
+                        "Filtering out tool '{}' - server '{}' not in registry",
+                        tool,
+                        server_name
+                    );
+                    return false;
                 }
             }
 

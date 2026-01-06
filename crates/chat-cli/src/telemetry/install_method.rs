@@ -7,16 +7,16 @@ use serde::{
 };
 
 static INSTALL_METHOD: LazyLock<InstallMethod> = LazyLock::new(|| {
-    if let Ok(output) = Command::new("brew").args(["list", "amazon-q", "-1"]).output() {
-        if output.status.success() {
-            return InstallMethod::Brew;
-        }
+    if let Ok(output) = Command::new("brew").args(["list", "amazon-q", "-1"]).output()
+        && output.status.success()
+    {
+        return InstallMethod::Brew;
     }
 
-    if let Ok(current_exe) = std::env::current_exe() {
-        if current_exe.components().any(|c| c.as_os_str() == ".toolbox") {
-            return InstallMethod::Toolbox;
-        }
+    if let Ok(current_exe) = std::env::current_exe()
+        && current_exe.components().any(|c| c.as_os_str() == ".toolbox")
+    {
+        return InstallMethod::Toolbox;
     }
 
     InstallMethod::Unknown

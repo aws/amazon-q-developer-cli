@@ -313,18 +313,18 @@ impl Completer for ChatCompleter {
 
         if line.starts_with('@') {
             let search_word = line.strip_prefix('@').unwrap_or("");
-            if let Ok(completions) = self.prompt_completer.complete_prompt(search_word) {
-                if !completions.is_empty() {
-                    return Ok((0, completions));
-                }
+            if let Ok(completions) = self.prompt_completer.complete_prompt(search_word)
+                && !completions.is_empty()
+            {
+                return Ok((0, completions));
             }
         }
 
         // Handle file path completion as fallback
-        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _ctx) {
-            if !completions.is_empty() {
-                return Ok((pos, completions));
-            }
+        if let Ok((pos, completions)) = self.path_completer.complete_path(line, pos, _ctx)
+            && !completions.is_empty()
+        {
+            return Ok((pos, completions));
         }
 
         // Default: no completions
@@ -608,23 +608,22 @@ pub fn rl(
     rl.set_helper(Some(h));
 
     // Load history from CLI bash history file
-    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path()) {
-        if !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound) {
-            eprintln!("Warning: Failed to load history: {e}");
-        }
+    if let Err(e) = rl.load_history(&rl.helper().unwrap().get_history_path())
+        && !matches!(e, ReadlineError::Io(ref io_err) if io_err.kind() == std::io::ErrorKind::NotFound)
+    {
+        eprintln!("Warning: Failed to load history: {e}");
     }
 
     // Add custom keybinding for Ctrl+D to open delegate command (configurable)
-    if ExperimentManager::is_enabled(os, ExperimentName::Delegate) {
-        if let Some(key) = os.database.settings.get_string(Setting::DelegateModeKey) {
-            if key.len() == 1 {
-                rl.bind_sequence(
-                    KeyEvent(KeyCode::Char(key.chars().next().unwrap()), Modifiers::CTRL),
-                    EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
-                );
-            }
-        };
-    }
+    if ExperimentManager::is_enabled(os, ExperimentName::Delegate)
+        && let Some(key) = os.database.settings.get_string(Setting::DelegateModeKey)
+        && key.len() == 1
+    {
+        rl.bind_sequence(
+            KeyEvent(KeyCode::Char(key.chars().next().unwrap()), Modifiers::CTRL),
+            EventHandler::Simple(Cmd::Insert(1, "/delegate ".to_string())),
+        );
+    };
 
     // Add custom keybinding for Alt+Enter to insert a newline
     rl.bind_sequence(

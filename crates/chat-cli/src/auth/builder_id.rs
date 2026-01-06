@@ -448,12 +448,11 @@ impl BuilderIdToken {
                 }
 
                 // if the error is the client's fault, clear the token
-                if let SdkError::ServiceError(service_err) = &err {
-                    if !service_err.err().is_slow_down_exception() {
-                        if let Err(err) = self.delete(database).await {
-                            error!(?err, "Failed to delete builder id token");
-                        }
-                    }
+                if let SdkError::ServiceError(service_err) = &err
+                    && !service_err.err().is_slow_down_exception()
+                    && let Err(err) = self.delete(database).await
+                {
+                    error!(?err, "Failed to delete builder id token");
                 }
 
                 Err(err.into())
@@ -629,6 +628,7 @@ pub async fn get_start_url_and_region(database: &Database) -> (Option<String>, O
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct BearerResolver;
 
 impl ResolveIdentity for BearerResolver {

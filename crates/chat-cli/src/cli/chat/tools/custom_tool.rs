@@ -32,19 +32,15 @@ use crate::util::MCP_SERVER_TOOL_DELIMITER;
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase")]
+#[derive(Default)]
 pub enum TransportType {
     /// Standard input/output transport (default)
+    #[default]
     Stdio,
     /// HTTP transport for web-based communication
     Http,
     /// Registry-based server (loaded from MCP registry)
     Registry,
-}
-
-impl Default for TransportType {
-    fn default() -> Self {
-        Self::Stdio
-    }
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, Eq, PartialEq, JsonSchema)]

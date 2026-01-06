@@ -69,24 +69,24 @@ pub(super) async fn get_billing_usage_data(os: &Os) -> Result<super::BillingUsag
                 });
 
                 // Check for welcome bonus (free trial)
-                if let Some(free_trial_info) = item.free_trial_info() {
-                    if free_trial_info.free_trial_status().map(|s| s.as_str()) == Some("ACTIVE") {
-                        let bonus_used = free_trial_info.current_usage_with_precision().unwrap_or(0.0);
-                        let bonus_total = free_trial_info.usage_limit_with_precision().unwrap_or(0.0);
+                if let Some(free_trial_info) = item.free_trial_info()
+                    && free_trial_info.free_trial_status().map(|s| s.as_str()) == Some("ACTIVE")
+                {
+                    let bonus_used = free_trial_info.current_usage_with_precision().unwrap_or(0.0);
+                    let bonus_total = free_trial_info.usage_limit_with_precision().unwrap_or(0.0);
 
-                        if let Some(expiry_timestamp) = free_trial_info.free_trial_expiry() {
-                            let expiry_secs = expiry_timestamp.secs();
-                            let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(Utc::now);
-                            let now = Utc::now();
-                            let days_until_expiry = (expiry_date - now).num_days().max(0);
+                    if let Some(expiry_timestamp) = free_trial_info.free_trial_expiry() {
+                        let expiry_secs = expiry_timestamp.secs();
+                        let expiry_date = DateTime::from_timestamp(expiry_secs, 0).unwrap_or_else(Utc::now);
+                        let now = Utc::now();
+                        let days_until_expiry = (expiry_date - now).num_days().max(0);
 
-                            bonus_credits.push(super::BonusCredit {
-                                name: "Welcome bonus".to_string(),
-                                used: bonus_used,
-                                total: bonus_total,
-                                days_until_expiry,
-                            });
-                        }
+                        bonus_credits.push(super::BonusCredit {
+                            name: "Welcome bonus".to_string(),
+                            used: bonus_used,
+                            total: bonus_total,
+                            days_until_expiry,
+                        });
                     }
                 }
 

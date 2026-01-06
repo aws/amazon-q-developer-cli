@@ -555,10 +555,10 @@ impl WorkspaceManager {
         if self.is_file_opened(file_path) {
             // File already opened, check if server supports pull
             let extension = file_path.extension().and_then(|ext| ext.to_str()).unwrap_or("");
-            if let Some(language) = self.config_manager.get_language_for_extension(extension) {
-                if let Ok(Some(client)) = self.get_client_by_language(&language).await {
-                    return Ok(client.supports_pull_diagnostics());
-                }
+            if let Some(language) = self.config_manager.get_language_for_extension(extension)
+                && let Ok(Some(client)) = self.get_client_by_language(&language).await
+            {
+                return Ok(client.supports_pull_diagnostics());
             }
             return Ok(false);
         }
@@ -810,17 +810,16 @@ impl WorkspaceManager {
                 let rep_files = &rep_files;
 
                 Box::new(move |entry| {
-                    if let Ok(entry) = entry {
-                        if entry.file_type().map(|ft| ft.is_file()).unwrap_or(false) {
-                            if let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
-                                let ext_str = ext.to_string();
-                                extensions.insert(ext_str.clone(), ());
+                    if let Ok(entry) = entry
+                        && entry.file_type().map(|ft| ft.is_file()).unwrap_or(false)
+                        && let Some(ext) = entry.path().extension().and_then(|e| e.to_str())
+                    {
+                        let ext_str = ext.to_string();
+                        extensions.insert(ext_str.clone(), ());
 
-                                // Only insert non-config files as representatives
-                                if !Self::is_config_file_static(entry.path()) {
-                                    rep_files.entry(ext_str).or_insert(entry.path().to_path_buf());
-                                }
-                            }
+                        // Only insert non-config files as representatives
+                        if !Self::is_config_file_static(entry.path()) {
+                            rep_files.entry(ext_str).or_insert(entry.path().to_path_buf());
                         }
                     }
                     ignore::WalkState::Continue

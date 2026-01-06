@@ -167,12 +167,12 @@ impl KnowledgeSubcommand {
                     }
 
                     // Show operations if any exist
-                    if let Some(status) = &status_data {
-                        if !status.operations.is_empty() {
-                            let formatted_status = Self::format_status_display(status);
-                            if !formatted_status.is_empty() {
-                                queue!(session.stderr, style::Print(format!("{formatted_status}\n")))?;
-                            }
+                    if let Some(status) = &status_data
+                        && !status.operations.is_empty()
+                    {
+                        let formatted_status = Self::format_status_display(status);
+                        if !formatted_status.is_empty() {
+                            queue!(session.stderr, style::Print(format!("{formatted_status}\n")))?;
                         }
                     }
 
@@ -778,14 +778,12 @@ impl KnowledgeSubcommand {
                     let path = entry.path();
                     if path.extension().and_then(|e| e.to_str()) == Some("json") {
                         // Try to read and parse the JSON file
-                        if let Ok(content) = std::fs::read_to_string(&path) {
-                            if let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) {
-                                if let Some(name) = json.get("name").and_then(|n| n.as_str()) {
-                                    if name == agent_name {
-                                        return Some(path);
-                                    }
-                                }
-                            }
+                        if let Ok(content) = std::fs::read_to_string(&path)
+                            && let Ok(json) = serde_json::from_str::<serde_json::Value>(&content)
+                            && let Some(name) = json.get("name").and_then(|n| n.as_str())
+                            && name == agent_name
+                        {
+                            return Some(path);
                         }
                     }
                 }

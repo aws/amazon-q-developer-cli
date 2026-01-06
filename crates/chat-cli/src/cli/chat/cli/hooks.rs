@@ -64,15 +64,14 @@ fn hook_matches_tool(hook: &Hook, tool_name: &str) -> bool {
                 "@builtin" => !is_mcp_tool_ref(tool_name), // Built-in tools are not MCP tools
                 _ => {
                     // If tool_name is MCP, check server pattern first
-                    if is_mcp_tool_ref(tool_name) {
-                        if let Some(server_name) = tool_name
+                    if is_mcp_tool_ref(tool_name)
+                        && let Some(server_name) = tool_name
                             .strip_prefix('@')
                             .and_then(|s| s.split(MCP_SERVER_TOOL_DELIMITER).next())
-                        {
-                            let server_pattern = format!("@{server_name}");
-                            if pattern == &server_pattern {
-                                return true;
-                            }
+                    {
+                        let server_pattern = format!("@{server_name}");
+                        if pattern == &server_pattern {
+                            return true;
                         }
                     }
 
@@ -133,10 +132,10 @@ impl HookExecutor {
             .flat_map(|(trigger, hooks)| hooks.into_iter().map(move |hook| (trigger, hook)))
         {
             // Filter hooks by tool matcher
-            if let Some(tool_ctx) = &tool_context {
-                if !hook_matches_tool(&hook.1, &tool_ctx.tool_name) {
-                    continue; // Skip this hook - doesn't match tool
-                }
+            if let Some(tool_ctx) = &tool_context
+                && !hook_matches_tool(&hook.1, &tool_ctx.tool_name)
+            {
+                continue; // Skip this hook - doesn't match tool
             }
 
             if let Some(cache) = self.get_cache(&hook) {

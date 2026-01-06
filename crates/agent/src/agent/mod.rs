@@ -1344,11 +1344,10 @@ impl Agent {
         if result.is_success()
             && id.hook.trigger == HookTrigger::AgentSpawn
             && !self.agent_spawn_hooks.iter().any(|v| v.0 == id.hook.config)
+            && let Some(output) = result.output()
         {
-            if let Some(output) = result.output() {
-                self.agent_spawn_hooks
-                    .push((id.hook.config.clone(), output.to_string()));
-            }
+            self.agent_spawn_hooks
+                .push((id.hook.config.clone(), output.to_string()));
         }
 
         if !executing_hooks.all_hooks_finished() {
@@ -1420,13 +1419,13 @@ impl Agent {
         let tool_names = self.get_tool_names().await;
         let mut mcp_server_tool_specs = HashMap::new();
         for name in &tool_names {
-            if let CanonicalToolName::Mcp { server_name, .. } = name {
-                if !mcp_server_tool_specs.contains_key(server_name) {
-                    let Ok(tools) = self.mcp_manager_handle.get_tool_specs(server_name.clone()).await else {
-                        continue;
-                    };
-                    mcp_server_tool_specs.insert(server_name.clone(), tools);
-                }
+            if let CanonicalToolName::Mcp { server_name, .. } = name
+                && !mcp_server_tool_specs.contains_key(server_name)
+            {
+                let Ok(tools) = self.mcp_manager_handle.get_tool_specs(server_name.clone()).await else {
+                    continue;
+                };
+                mcp_server_tool_specs.insert(server_name.clone(), tools);
             }
         }
 
@@ -2012,11 +2011,11 @@ fn enforce_conversation_invariants(messages: &mut VecDeque<Message>, tools: &mut
     let mut insert_dummy_spec = false;
     for msg in messages {
         for block in &mut msg.content {
-            if let ContentBlock::ToolUse(v) = block {
-                if !tool_names.contains(&v.name) {
-                    v.name = DUMMY_TOOL_NAME.to_string();
-                    insert_dummy_spec = true;
-                }
+            if let ContentBlock::ToolUse(v) = block
+                && !tool_names.contains(&v.name)
+            {
+                v.name = DUMMY_TOOL_NAME.to_string();
+                insert_dummy_spec = true;
             }
         }
     }

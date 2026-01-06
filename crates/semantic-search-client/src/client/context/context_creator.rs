@@ -261,12 +261,11 @@ impl ContextCreator {
     }
 
     async fn update_operation_status(&self, operation_manager: &OperationManager, operation_id: Uuid, message: String) {
-        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.message = message;
-                }
-            }
+        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.message = message;
         }
     }
 
@@ -278,12 +277,11 @@ impl ContextCreator {
         total: u64,
         message: String,
     ) {
-        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write() {
-            if let Some(operation) = operations.get_mut(&operation_id) {
-                if let Ok(mut progress) = operation.progress.try_lock() {
-                    progress.update(current, total, message);
-                }
-            }
+        if let Ok(mut operations) = operation_manager.get_active_operations_ref().try_write()
+            && let Some(operation) = operations.get_mut(&operation_id)
+            && let Ok(mut progress) = operation.progress.try_lock()
+        {
+            progress.update(current, total, message);
         }
     }
 }

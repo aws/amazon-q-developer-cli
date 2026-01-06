@@ -889,14 +889,14 @@ impl ConversationState {
         self.history
             .back()
             .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
-            .map(|tools| (tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(",")))
+            .map(|tools| tools.iter().map(|t| t.id.as_str()).collect::<Vec<_>>().join(","))
     }
 
     pub fn latest_tool_use_names(&self) -> Option<String> {
         self.history
             .back()
             .and_then(|HistoryEntry { assistant, .. }| assistant.tool_uses())
-            .map(|tools| (tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(",")))
+            .map(|tools| tools.iter().map(|t| t.name.as_str()).collect::<Vec<_>>().join(","))
     }
 
     /// Updates the history so that, when non-empty, the following invariants are in place:
@@ -1332,14 +1332,13 @@ Return only the JSON configuration, no additional text."
             ExperimentName,
         };
 
-        if ExperimentManager::is_enabled(os, ExperimentName::Knowledge) {
-            if let Some(kb_context) =
+        if ExperimentManager::is_enabled(os, ExperimentName::Knowledge)
+            && let Some(kb_context) =
                 crate::util::knowledge_store::get_available_knowledge_bases(os, self.agents.get_active()).await
-            {
-                context_content.push_str(CONTEXT_ENTRY_START_HEADER);
-                context_content.push_str(&kb_context);
-                context_content.push_str(CONTEXT_ENTRY_END_HEADER);
-            }
+        {
+            context_content.push_str(CONTEXT_ENTRY_START_HEADER);
+            context_content.push_str(&kb_context);
+            context_content.push_str(CONTEXT_ENTRY_END_HEADER);
         }
 
         if ExperimentManager::is_enabled(os, ExperimentName::TodoList) {
@@ -1505,10 +1504,10 @@ Return only the JSON configuration, no additional text."
     ) -> Result<(), ChatError> {
         // Apply registry filtering if in registry mode BEFORE switching
         let registry_data = self.mcp_registry_cache.as_ref().map(|cache| &cache.data);
-        if let Some(registry) = registry_data {
-            if let Err(e) = self.agents.apply_registry_filtering(registry) {
-                tracing::error!("Failed to apply registry filtering during agent swap: {}", e);
-            }
+        if let Some(registry) = registry_data
+            && let Err(e) = self.agents.apply_registry_filtering(registry)
+        {
+            tracing::error!("Failed to apply registry filtering during agent swap: {}", e);
         }
 
         let agent = self
@@ -1759,10 +1758,10 @@ fn enforce_conversation_invariants(
 
     // If the first message contains tool results, then we add the results to the content field
     // instead. This is required to avoid validation errors.
-    if let Some(HistoryEntry { user, .. }) = history.front_mut() {
-        if user.has_tool_use_results() {
-            user.replace_content_with_tool_use_results();
-        }
+    if let Some(HistoryEntry { user, .. }) = history.front_mut()
+        && user.has_tool_use_results()
+    {
+        user.replace_content_with_tool_use_results();
     }
 
     // If the next message is set with tool results, but the previous assistant message is not a
@@ -1796,17 +1795,16 @@ fn enforce_conversation_invariants(
     ) = (
         history.range(valid_history_range.0..valid_history_range.1).last(),
         next_message,
-    ) {
-        if !user_msg.has_tool_use_results() {
-            debug!(
-                "last assistant message contains tool uses, but next message is set and does not contain tool results. setting tool results as cancelled"
-            );
-            *user_msg = UserMessage::new_cancelled_tool_uses(
-                user_msg.prompt().map(|p| p.to_string()),
-                tool_uses.iter().map(|t| t.id.as_str()),
-                None,
-            );
-        }
+    ) && !user_msg.has_tool_use_results()
+    {
+        debug!(
+            "last assistant message contains tool uses, but next message is set and does not contain tool results. setting tool results as cancelled"
+        );
+        *user_msg = UserMessage::new_cancelled_tool_uses(
+            user_msg.prompt().map(|p| p.to_string()),
+            tool_uses.iter().map(|t| t.id.as_str()),
+            None,
+        );
     }
 
     enforce_tool_use_history_invariants(history, tools);

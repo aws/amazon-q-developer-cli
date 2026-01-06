@@ -3,18 +3,13 @@ use std::path::PathBuf;
 use candle_transformers::models::bert::Config as BertConfig;
 
 /// Type of model to use for text embedding
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ModelType {
     /// MiniLM-L6-v2 model (384 dimensions)
+    #[default]
     MiniLML6V2,
     /// MiniLM-L12-v2 model (384 dimensions)
     MiniLML12V2,
-}
-
-impl Default for ModelType {
-    fn default() -> Self {
-        Self::MiniLML6V2
-    }
 }
 
 /// Configuration for a model

@@ -247,6 +247,7 @@ pub struct TokenResponse {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct SocialBearerResolver;
 
 impl ResolveIdentity for SocialBearerResolver {

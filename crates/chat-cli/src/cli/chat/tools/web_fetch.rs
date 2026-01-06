@@ -38,16 +38,12 @@ const MAX_RETRIES: u32 = 3;
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 enum FetchMode {
+    #[default]
     Selective,
     Truncated,
     Full,
-}
-
-impl Default for FetchMode {
-    fn default() -> Self {
-        Self::Selective
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -189,14 +185,14 @@ impl WebFetch {
         }
 
         // Check content length before downloading
-        if let Some(content_length) = response.content_length() {
-            if content_length > MAX_RESPONSE_SIZE as u64 {
-                return Err(eyre::eyre!(
-                    "Response too large: {} bytes (max: {} bytes)",
-                    content_length,
-                    MAX_RESPONSE_SIZE
-                ));
-            }
+        if let Some(content_length) = response.content_length()
+            && content_length > MAX_RESPONSE_SIZE as u64
+        {
+            return Err(eyre::eyre!(
+                "Response too large: {} bytes (max: {} bytes)",
+                content_length,
+                MAX_RESPONSE_SIZE
+            ));
         }
 
         let html = response.text().await.wrap_err("Failed to read response body")?;

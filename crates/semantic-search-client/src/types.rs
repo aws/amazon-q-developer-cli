@@ -376,16 +376,16 @@ impl ProgressInfo {
 
     /// Calculate ETA based on current progress rate
     pub fn calculate_eta(&self) -> Option<std::time::Duration> {
-        if let Some(started_at) = self.progress_started_at {
-            if self.current > 0 && self.total > self.current {
-                if let Ok(elapsed) = started_at.elapsed() {
-                    let progress_rate = self.current as f64 / elapsed.as_secs_f64();
-                    if progress_rate > 0.0 {
-                        let remaining_items = self.total - self.current;
-                        let eta_seconds = remaining_items as f64 / progress_rate;
-                        return Some(std::time::Duration::from_secs_f64(eta_seconds));
-                    }
-                }
+        if let Some(started_at) = self.progress_started_at
+            && self.current > 0
+            && self.total > self.current
+            && let Ok(elapsed) = started_at.elapsed()
+        {
+            let progress_rate = self.current as f64 / elapsed.as_secs_f64();
+            if progress_rate > 0.0 {
+                let remaining_items = self.total - self.current;
+                let eta_seconds = remaining_items as f64 / progress_rate;
+                return Some(std::time::Duration::from_secs_f64(eta_seconds));
             }
         }
         None

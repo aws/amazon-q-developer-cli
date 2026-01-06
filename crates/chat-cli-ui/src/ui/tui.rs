@@ -108,11 +108,10 @@ impl Tui {
                       Some(Ok(evt)) => {
                         match evt {
                           CrosstermEvent::Key(key) => {
-                            if key.kind == KeyEventKind::Press {
-                              if let Err(e) = event_tx_clone.send(Event::Key(key)) {
+                            if key.kind == KeyEventKind::Press
+                              && let Err(e) = event_tx_clone.send(Event::Key(key)) {
                                   error!("Error sending event: {:?}", e);
                               }
-                            }
                           },
                           CrosstermEvent::Mouse(mouse) => {
                             if let Err(e) = event_tx_clone.send(Event::Mouse(mouse)) {

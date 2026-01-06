@@ -532,12 +532,13 @@ fn queue_newline_or_advance<'a, 'b>(
     state: &'b mut ParseState,
     width: usize,
 ) -> Result<(), ErrMode<Error<'a>>> {
-    if let Some(terminal_width) = state.terminal_width {
-        if state.column > 0 && state.column + width > terminal_width {
-            state.column = width;
-            queue(&mut o, style::Print('\n'))?;
-            return Ok(());
-        }
+    if let Some(terminal_width) = state.terminal_width
+        && state.column > 0
+        && state.column + width > terminal_width
+    {
+        state.column = width;
+        queue(&mut o, style::Print('\n'))?;
+        return Ok(());
     }
 
     // else

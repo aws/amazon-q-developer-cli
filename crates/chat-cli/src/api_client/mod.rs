@@ -475,7 +475,7 @@ impl ApiClient {
             let mut new_events = client.lock().next().unwrap_or_default().clone();
             new_events.reverse();
 
-            return Ok(SendMessageOutput::Mock(new_events));
+            Ok(SendMessageOutput::Mock(new_events))
         } else {
             unreachable!("One of the clients must be created by this point");
         }

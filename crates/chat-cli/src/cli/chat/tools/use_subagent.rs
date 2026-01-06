@@ -103,10 +103,10 @@ impl UseSubagent {
     };
 
     pub fn validate(&self) -> Result<()> {
-        if let UseSubagent::InvokeSubagents { subagents, .. } = self {
-            if subagents.len() > 4 {
-                bail!("You can only spawn 4 or fewer subagents at a time");
-            }
+        if let UseSubagent::InvokeSubagents { subagents, .. } = self
+            && subagents.len() > 4
+        {
+            bail!("You can only spawn 4 or fewer subagents at a time");
         }
 
         Ok(())

@@ -262,10 +262,10 @@ impl Cli {
         });
 
         // Check for region support.
-        if let Ok(region) = get_aws_region() {
-            if GOV_REGIONS.contains(&region.as_str()) {
-                bail!("AWS GovCloud ({region}) is not supported.")
-            }
+        if let Ok(region) = get_aws_region()
+            && GOV_REGIONS.contains(&region.as_str())
+        {
+            bail!("AWS GovCloud ({region}) is not supported.")
         }
 
         debug!(command =? std::env::args().collect::<Vec<_>>(), "Command being ran");

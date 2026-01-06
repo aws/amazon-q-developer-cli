@@ -346,10 +346,11 @@ impl Code {
             }
 
             // Auto-initialize if json exists but workspace not initialized yet
-            if is_configured && client.workspace_status() == code_agent_sdk::sdk::WorkspaceStatus::NotInitialized {
-                if let Err(e) = client.initialize().await {
-                    return Err(eyre::eyre!("Failed to initialize code intelligence: {e}"));
-                }
+            if is_configured
+                && client.workspace_status() == code_agent_sdk::sdk::WorkspaceStatus::NotInitialized
+                && let Err(e) = client.initialize().await
+            {
+                return Err(eyre::eyre!("Failed to initialize code intelligence: {e}"));
             }
 
             // Check if workspace is initialized (except for InitializeWorkspace operation)

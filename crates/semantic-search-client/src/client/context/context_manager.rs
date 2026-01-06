@@ -248,23 +248,20 @@ impl ContextManager {
         // First check if there's already an ACTIVE indexing operation for this exact path
         if let Ok(operations) = operation_manager.get_active_operations().try_read() {
             for handle in operations.values() {
-                if let crate::types::OperationType::Indexing { path, name } = &handle.operation_type {
-                    if let Ok(operation_canonical) = PathBuf::from(path).canonicalize() {
-                        if operation_canonical == *canonical_path {
-                            if let Ok(progress) = handle.progress.try_lock() {
-                                // Only block if the operation is truly active (not cancelled, failed, or completed)
-                                let is_cancelled = progress.message.contains("cancelled");
-                                let is_failed =
-                                    progress.message.contains("failed") || progress.message.contains("error");
-                                let is_completed = progress.message.contains("complete");
+                if let crate::types::OperationType::Indexing { path, name } = &handle.operation_type
+                    && let Ok(operation_canonical) = PathBuf::from(path).canonicalize()
+                    && operation_canonical == *canonical_path
+                    && let Ok(progress) = handle.progress.try_lock()
+                {
+                    // Only block if the operation is truly active (not cancelled, failed, or completed)
+                    let is_cancelled = progress.message.contains("cancelled");
+                    let is_failed = progress.message.contains("failed") || progress.message.contains("error");
+                    let is_completed = progress.message.contains("complete");
 
-                                if !is_cancelled && !is_failed && !is_completed {
-                                    return Err(crate::error::SemanticSearchError::InvalidArgument(format!(
-                                        "Already indexing this path: {path} (Operation: {name})"
-                                    )));
-                                }
-                            }
-                        }
+                    if !is_cancelled && !is_failed && !is_completed {
+                        return Err(crate::error::SemanticSearchError::InvalidArgument(format!(
+                            "Already indexing this path: {path} (Operation: {name})"
+                        )));
                     }
                 }
             }
@@ -275,13 +272,13 @@ impl ContextManager {
             for context in contexts_guard.values() {
                 if let Some(existing_path) = &context.source_path {
                     let existing_path_buf = PathBuf::from(existing_path);
-                    if let Ok(existing_canonical) = existing_path_buf.canonicalize() {
-                        if existing_canonical == *canonical_path {
-                            return Err(crate::error::SemanticSearchError::InvalidArgument(format!(
-                                "Path already exists in knowledge base: {} (Context: '{}')",
-                                existing_path, context.name
-                            )));
-                        }
+                    if let Ok(existing_canonical) = existing_path_buf.canonicalize()
+                        && existing_canonical == *canonical_path
+                    {
+                        return Err(crate::error::SemanticSearchError::InvalidArgument(format!(
+                            "Path already exists in knowledge base: {} (Context: '{}')",
+                            existing_path, context.name
+                        )));
                     }
                 }
             }
@@ -423,10 +420,10 @@ impl ContextManager {
                         return true;
                     }
 
-                    if let Some(ref canonical_input) = canonical_input {
-                        if let Ok(canonical_source) = PathBuf::from(source_path).canonicalize() {
-                            return canonical_input == &canonical_source;
-                        }
+                    if let Some(ref canonical_input) = canonical_input
+                        && let Ok(canonical_source) = PathBuf::from(source_path).canonicalize()
+                    {
+                        return canonical_input == &canonical_source;
                     }
 
                     let normalized_source = source_path.replace('\\', "/");

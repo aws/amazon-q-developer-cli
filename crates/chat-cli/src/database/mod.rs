@@ -28,7 +28,6 @@ use serde_json::{
 use settings::Settings;
 use thiserror::Error;
 use tracing::{
-    error,
     info,
     trace,
 };
@@ -206,10 +205,10 @@ impl Database {
         };
 
         // make the parent dir if it doesnt exist
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)?;
         }
 
         let conn = SqliteConnectionManager::file(&path);

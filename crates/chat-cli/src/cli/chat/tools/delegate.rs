@@ -172,13 +172,13 @@ pub async fn launch_agent(os: &Os, agent: &str, agents: &Agents, task: &str) -> 
     validate_agent_availability(os, agent).await?;
 
     // Check if agent is already running
-    if let Some((execution, _)) = load_agent_execution(os, agent).await? {
-        if execution.status == AgentStatus::Running {
-            return Err(eyre::eyre!(
-                "Agent '{}' is already running. Use status operation to check progress or wait for completion.",
-                agent
-            ));
-        }
+    if let Some((execution, _)) = load_agent_execution(os, agent).await?
+        && execution.status == AgentStatus::Running
+    {
+        return Err(eyre::eyre!(
+            "Agent '{}' is already running. Use status operation to check progress or wait for completion.",
+            agent
+        ));
     }
 
     if agent == DEFAULT_AGENT_NAME {
@@ -273,16 +273,12 @@ pub fn get_user_confirmation() -> Result<bool> {
 #[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display, EnumString)]
 #[strum(serialize_all = "lowercase")]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AgentStatus {
+    #[default]
     Running,
     Completed,
     Failed,
-}
-
-impl Default for AgentStatus {
-    fn default() -> Self {
-        Self::Running
-    }
 }
 
 impl AgentStatus {

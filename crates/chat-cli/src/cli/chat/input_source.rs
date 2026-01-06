@@ -60,17 +60,17 @@ impl InputSource {
 
     /// Save history to file
     pub fn save_history(&mut self) -> Result<()> {
-        if let inner::Inner::Readline(rl) = &mut self.inner {
-            if let Some(helper) = rl.helper() {
-                let history_path = helper.get_history_path();
+        if let inner::Inner::Readline(rl) = &mut self.inner
+            && let Some(helper) = rl.helper()
+        {
+            let history_path = helper.get_history_path();
 
-                // Create directory if it doesn't exist
-                if let Some(parent) = history_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-
-                rl.append_history(&history_path)?;
+            // Create directory if it doesn't exist
+            if let Some(parent) = history_path.parent() {
+                std::fs::create_dir_all(parent)?;
             }
+
+            rl.append_history(&history_path)?;
         }
         Ok(())
     }

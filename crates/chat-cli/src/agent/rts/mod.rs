@@ -131,7 +131,7 @@ impl RtsModel {
                 warn!("rts request cancelled during send");
                 tx.send(StreamResult::Err(StreamError::new(StreamErrorKind::Interrupted)))
                     .await
-                    .map_err(|err| (error!(?err, "failed to send event")))
+                    .map_err(|err| error!(?err, "failed to send event"))
                     .ok();
                 return;
             },

@@ -103,8 +103,13 @@ jobs:
       build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
       version: ${{ steps.get-version.outputs.VERSION }}
       release_type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}
+      release_quality: ${{ steps.set-release-quality.outputs.RELEASE_QUALITY }}
       environment: ${{ steps.determine-environment.outputs.ENVIRONMENT }}
     steps:
+      - name: Set Release Quality Output
+        id: set-release-quality
+        run: echo "RELEASE_QUALITY=${{ env.RELEASE_QUALITY }}" >> $GITHUB_OUTPUT
+
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -207,52 +212,30 @@ jobs:
   TriggerDarwinBuild:
     needs: UpdateVersionNumber
     name: Trigger Darwin Universal Build (${{ matrix.environment }})
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         environment: ${{ fromJSON(needs.UpdateVersionNumber.outputs.environment) }}
-    steps:
-      - name: Trigger Darwin Universal Build
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: "build-darwin.yml",
-              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
-              inputs: {
-                "channel": "${{ env.RELEASE_QUALITY }}",
-                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
-                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
-                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}",
-                "environment": "${{ matrix.environment }}",
-                "trigger_autocomplete_build": "${{ github.event.inputs.trigger_autocomplete_build || 'false' }}"
-              }
-            })
+    uses: ./.github/workflows/build-darwin.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.UpdateVersionNumber.outputs.release_quality }}
+      build_timestamp: ${{ needs.UpdateVersionNumber.outputs.build_timestamp }}
+      version: ${{ needs.UpdateVersionNumber.outputs.version }}
+      release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
+      environment: ${{ matrix.environment }}
+      trigger_autocomplete_build: ${{ github.event.inputs.trigger_autocomplete_build == 'true' }}
 
   TriggerLinuxBuild:
     needs: UpdateVersionNumber
     name: Trigger Linux Build (${{ matrix.environment }})
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         environment: ${{ fromJSON(needs.UpdateVersionNumber.outputs.environment) }}
-    steps:
-      - name: Trigger Linux Build
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: "build-linux.yml",
-              ref: "${{ needs.UpdateVersionNumber.outputs.branch_name }}",
-              inputs: {
-                "channel": "${{ env.RELEASE_QUALITY }}",
-                "build_timestamp": "${{ needs.UpdateVersionNumber.outputs.build_timestamp }}",
-                "version": "${{ needs.UpdateVersionNumber.outputs.version }}",
-                "release_type": "${{ needs.UpdateVersionNumber.outputs.release_type }}",
-                "environment": "${{ matrix.environment }}"
-              }
-            })
+    uses: ./.github/workflows/build-linux.yml
+    secrets: inherit
+    with:
+      channel: ${{ needs.UpdateVersionNumber.outputs.release_quality }}
+      build_timestamp: ${{ needs.UpdateVersionNumber.outputs.build_timestamp }}
+      version: ${{ needs.UpdateVersionNumber.outputs.version }}
+      release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
+      environment: ${{ matrix.environment }}

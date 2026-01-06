@@ -47,6 +47,7 @@ pub enum UtilError {
 }
 
 #[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct UnknownDesktopErrContext {
     xdg_current_desktop: String,
     xdg_session_desktop: String,
