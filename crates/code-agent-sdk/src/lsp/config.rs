@@ -1,5 +1,10 @@
 use std::path::Path;
 
+use globset::{
+    Glob,
+    GlobSet,
+    GlobSetBuilder,
+};
 use lsp_types::*;
 use serde_json::{
     Value,
@@ -142,6 +147,9 @@ impl LspConfig {
             }];
         };
 
+        // Build exclude matcher once
+        let exclude_matcher = Self::build_glob_set(exclude_patterns);
+
         let mut folders = vec![];
         const MAX_DEPTH: usize = 3;
 
@@ -149,7 +157,7 @@ impl LspConfig {
             &root_path,
             &root_path,
             project_patterns,
-            exclude_patterns,
+            &exclude_matcher,
             &mut folders,
             0,
             MAX_DEPTH,
@@ -170,11 +178,21 @@ impl LspConfig {
         folders
     }
 
+    fn build_glob_set(patterns: &[String]) -> GlobSet {
+        let mut builder = GlobSetBuilder::new();
+        for pattern in patterns {
+            if let Ok(glob) = Glob::new(pattern) {
+                builder.add(glob);
+            }
+        }
+        builder.build().unwrap_or_else(|_| GlobSet::empty())
+    }
+
     fn scan_for_workspaces(
         current_path: &Path,
         root_path: &Path,
         project_patterns: &[String],
-        exclude_patterns: &[String],
+        exclude_matcher: &GlobSet,
         folders: &mut Vec<WorkspaceFolder>,
         depth: usize,
         max_depth: usize,
@@ -184,7 +202,7 @@ impl LspConfig {
         }
 
         // Check if current path should be excluded
-        if Self::should_exclude(current_path, root_path, exclude_patterns) {
+        if Self::should_exclude(current_path, root_path, exclude_matcher) {
             return Ok(());
         }
 
@@ -220,7 +238,7 @@ impl LspConfig {
                         &path,
                         root_path,
                         project_patterns,
-                        exclude_patterns,
+                        exclude_matcher,
                         folders,
                         depth + 1,
                         max_depth,
@@ -232,15 +250,9 @@ impl LspConfig {
         Ok(())
     }
 
-    fn should_exclude(path: &Path, root_path: &Path, exclude_patterns: &[String]) -> bool {
+    fn should_exclude(path: &Path, root_path: &Path, exclude_matcher: &GlobSet) -> bool {
         let relative_path = path.strip_prefix(root_path).unwrap_or(path);
-        let path_str = relative_path.to_string_lossy();
-
-        exclude_patterns.iter().any(|pattern| {
-            // Simple glob matching: **/pattern/** or pattern
-            let pattern = pattern.trim_matches('*').trim_matches('/');
-            path_str.contains(pattern)
-        })
+        exclude_matcher.is_match(relative_path)
     }
 }
 
@@ -316,5 +328,52 @@ mod tests {
         let encodings = general_caps.position_encodings.unwrap();
         assert!(encodings.contains(&PositionEncodingKind::UTF8));
         assert!(encodings.contains(&PositionEncodingKind::UTF16));
+    }
+
+    #[test]
+    fn test_should_exclude() {
+        use std::path::PathBuf;
+
+        let root = PathBuf::from("/workspace");
+        let patterns = vec![
+            "**/node_modules/**".to_string(),
+            "**/target/**".to_string(),
+            "**/*.log".to_string(),
+        ];
+        let exclude_matcher = LspConfig::build_glob_set(&patterns);
+
+        // Should exclude
+        assert!(LspConfig::should_exclude(
+            &root.join("node_modules/pkg"),
+            &root,
+            &exclude_matcher
+        ));
+        assert!(LspConfig::should_exclude(
+            &root.join("src/node_modules/pkg"),
+            &root,
+            &exclude_matcher
+        ));
+        assert!(LspConfig::should_exclude(
+            &root.join("target/debug"),
+            &root,
+            &exclude_matcher
+        ));
+        assert!(LspConfig::should_exclude(
+            &root.join("app.log"),
+            &root,
+            &exclude_matcher
+        ));
+
+        // Should not exclude
+        assert!(!LspConfig::should_exclude(
+            &root.join("src/main.rs"),
+            &root,
+            &exclude_matcher
+        ));
+        assert!(!LspConfig::should_exclude(
+            &root.join("src/lib"),
+            &root,
+            &exclude_matcher
+        ));
     }
 }

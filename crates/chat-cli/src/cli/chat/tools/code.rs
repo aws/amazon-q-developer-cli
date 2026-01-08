@@ -391,6 +391,7 @@ impl Code {
                         limit,
                         language: params.language.clone(),
                         exact_match: params.exact_match.unwrap_or(false),
+                        timeout_secs: None,
                     };
 
                     match client.find_symbols(request).await {

@@ -149,6 +149,7 @@ async fn main() -> anyhow::Result<()> {
                 limit: None, // Use default 20
                 language: None,
                 exact_match: false, // Enable fuzzy matching
+                timeout_secs: None,
             };
 
             let symbols = code_intel.find_symbols(request).await?;

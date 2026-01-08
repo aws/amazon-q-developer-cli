@@ -4,6 +4,7 @@ pub mod lsp;
 pub mod mcp;
 pub mod model;
 pub mod sdk;
+pub(crate) mod tree_sitter;
 pub mod utils;
 
 // Export error types
@@ -19,9 +20,17 @@ pub use model::entities::{
     DefinitionInfo as ApiDefinitionInfo,
     DiagnosticInfo as ApiDiagnosticInfo,
     DiagnosticSeverity as ApiDiagnosticSeverity,
+    EnclosingSymbol,
+    PatternMatch,
     ReferenceInfo as ApiReferenceInfo,
     ReferencesResult as ApiReferencesResult,
+    RewriteResult,
+    SourceRange,
     SymbolInfo as ApiSymbolInfo,
+};
+pub use model::types::{
+    PatternRewriteRequest,
+    PatternSearchRequest,
 };
 pub use model::*;
 pub use sdk::CodeIntelligenceBuilder;

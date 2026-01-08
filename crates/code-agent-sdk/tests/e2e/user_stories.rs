@@ -64,6 +64,7 @@ pub async fn test_file_symbol_finding(project: &TestProject) -> Result<()> {
         tokio::time::sleep(Duration::from_secs(attempt * 2)).await;
 
         let request = FindSymbolsRequest {
+            timeout_secs: None,
             symbol_name: symbol_name.to_string(),
             file_path: Some(main_file.clone()),
             symbol_type: None,
@@ -115,6 +116,7 @@ pub async fn test_workspace_symbol_search(project: &TestProject) -> Result<()> {
 
     // Test workspace-wide search
     let request = FindSymbolsRequest {
+        timeout_secs: None,
         symbol_name: "calculate".to_string(),
         file_path: None, // Workspace-wide search
         symbol_type: None,

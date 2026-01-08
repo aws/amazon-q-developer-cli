@@ -9,9 +9,8 @@ use crate::model::entities::{
 };
 use crate::model::types::*;
 use crate::sdk::CodeIntelligenceBuilder;
-use crate::sdk::services::*;
-use crate::sdk::workspace_manager::WorkspaceManager;
-
+use crate::sdk::services::tree_sitter_coding_service::TreeSitterCodingService;
+use crate::sdk::services::tree_sitter_symbol_service::TreeSitterSymbolService;
 /// **Language-agnostic code intelligence client for LLM tools**
 ///
 /// Provides semantic code understanding capabilities through Language Server Protocol (LSP)
@@ -59,10 +58,15 @@ use crate::sdk::workspace_manager::WorkspaceManager;
 /// # }
 /// # }
 /// ```ignore
+use crate::sdk::services::*;
+use crate::sdk::workspace_manager::WorkspaceManager;
+
 pub struct CodeIntelligence {
-    symbol_service: Box<dyn SymbolService>,
-    coding_service: Box<dyn CodingService>,
-    workspace_service: Box<dyn WorkspaceService>,
+    lsp_symbol_service: LspSymbolService,
+    tree_sitter_symbol_service: TreeSitterSymbolService,
+    lsp_coding_service: LspCodingService,
+    tree_sitter_coding_service: TreeSitterCodingService,
+    lsp_workspace_service: LspWorkspaceService,
     pub workspace_manager: WorkspaceManager,
 }
 
@@ -103,14 +107,18 @@ impl CodeIntelligence {
     pub fn new(workspace_root: PathBuf) -> Self {
         let workspace_manager = WorkspaceManager::new(workspace_root);
 
-        let workspace_service = Box::new(LspWorkspaceService::new());
-        let symbol_service = Box::new(LspSymbolService::new(Box::new(LspWorkspaceService::new())));
-        let coding_service = Box::new(LspCodingService::new(Box::new(LspWorkspaceService::new())));
+        let lsp_workspace_service = LspWorkspaceService::new();
+        let lsp_symbol_service = LspSymbolService::new(Box::new(LspWorkspaceService::new()));
+        let tree_sitter_symbol_service = TreeSitterSymbolService::new();
+        let lsp_coding_service = LspCodingService::new(Box::new(LspWorkspaceService::new()));
+        let tree_sitter_coding_service = TreeSitterCodingService::new();
 
         Self {
-            symbol_service,
-            coding_service,
-            workspace_service,
+            lsp_symbol_service,
+            tree_sitter_symbol_service,
+            lsp_coding_service,
+            tree_sitter_coding_service,
+            lsp_workspace_service,
             workspace_manager,
         }
     }
@@ -206,6 +214,13 @@ impl CodeIntelligence {
         self.workspace_manager.workspace_status()
     }
 
+    /// **Get mutable reference to workspace manager**
+    ///
+    /// Used by TreeSitter services for pattern search/rewrite operations.
+    pub fn workspace_manager_mut(&mut self) -> &mut crate::sdk::WorkspaceManager {
+        &mut self.workspace_manager
+    }
+
     /// **Check if code intelligence has been initialized**
     ///
     /// # Returns
@@ -266,10 +281,128 @@ impl CodeIntelligence {
     ///
     /// # }
     /// ```ignore
+    ///
+    /// Filter languages based on initialized LSPs and request constraints
+    fn filter_languages(&self, initialized_languages: &[String], language_filter: &Option<String>) -> Vec<String> {
+        if let Some(lang) = language_filter {
+            // If language filter specified, only include it if initialized
+            if initialized_languages.iter().any(|l| l.eq_ignore_ascii_case(lang)) {
+                vec![lang.clone()]
+            } else {
+                vec![]
+            }
+        } else {
+            // No filter, use all initialized languages
+            initialized_languages.to_vec()
+        }
+    }
+
     pub async fn find_symbols(&mut self, request: FindSymbolsRequest) -> Result<Vec<SymbolInfo>> {
-        self.symbol_service
-            .find_symbols(&mut self.workspace_manager, request)
-            .await
+        let initialized_lsp_languages = self.workspace_manager.get_initialized_lsp_languages();
+
+        // Filter languages based on request constraints
+        let lsp_languages = self.filter_languages(&initialized_lsp_languages, &request.language);
+
+        let mut all_symbols = Vec::new();
+        let mut last_error: Option<anyhow::Error> = None;
+
+        // Try LSP first for languages that have it
+        if !lsp_languages.is_empty() {
+            tracing::info!("Using LSP search for languages: {:?}", lsp_languages);
+            match self
+                .lsp_symbol_service
+                .find_symbols(&mut self.workspace_manager, request.clone())
+                .await
+            {
+                Ok(symbols) => {
+                    tracing::info!("LSP search returned {} symbols", symbols.len());
+                    all_symbols.extend(symbols);
+                },
+                Err(e) => {
+                    tracing::warn!("LSP search failed: {}", e);
+                    last_error = Some(e);
+                },
+            }
+        }
+
+        // TreeSitter searches only if:
+        // 1. No language filter specified (search all languages), OR
+        // 2. Language filter specified but LSP doesn't have it
+        let should_use_treesitter = request.language.is_none() || lsp_languages.is_empty();
+
+        if should_use_treesitter {
+            tracing::info!("Using tree-sitter for remaining languages");
+
+            match self
+                .tree_sitter_symbol_service
+                .find_symbols(&mut self.workspace_manager, &request)
+                .await
+            {
+                Ok(symbols) => {
+                    tracing::info!("TreeSitter search returned {} symbols", symbols.len());
+                    all_symbols.extend(symbols);
+                },
+                Err(e) => {
+                    tracing::warn!("TreeSitter search failed: {}", e);
+                    last_error = Some(e);
+                },
+            }
+        }
+
+        // Return error if no results and we had errors
+        if all_symbols.is_empty()
+            && let Some(e) = last_error
+        {
+            return Err(e);
+        }
+
+        // Deduplicate, score, and sort
+        Self::deduplicate_and_score_symbols(all_symbols, &request.symbol_name, request.limit.map(|l| l as usize))
+    }
+
+    /// Deduplicate and score symbols with case-sensitive boosting
+    fn deduplicate_and_score_symbols(
+        symbols: Vec<SymbolInfo>,
+        query: &str,
+        limit: Option<usize>,
+    ) -> Result<Vec<SymbolInfo>> {
+        use std::collections::HashMap;
+
+        // Deduplicate by (file_path, start_row, start_column, name)
+        let mut unique: HashMap<(String, u32, u32, String), SymbolInfo> = HashMap::new();
+        for symbol in symbols {
+            let key = (
+                symbol.file_path.clone(),
+                symbol.start_row,
+                symbol.start_column,
+                symbol.name.clone(),
+            );
+            unique.entry(key).or_insert(symbol);
+        }
+
+        // Score all symbols uniformly
+        let query_lower = query.to_lowercase();
+        let mut scored: Vec<(f64, SymbolInfo)> = unique
+            .into_values()
+            .map(|symbol| {
+                let score = crate::utils::scoring::calculate_fuzzy_score(
+                    &query_lower,
+                    &symbol.name.to_lowercase(),
+                    query,
+                    &symbol.name,
+                );
+                (score, symbol)
+            })
+            .collect();
+
+        // Sort by score (higher first)
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(scored
+            .into_iter()
+            .take(limit.unwrap_or(usize::MAX))
+            .map(|(_, s)| s)
+            .collect())
     }
 
     /// **Get symbols by exact names**
@@ -307,9 +440,20 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn get_symbols(&mut self, request: GetSymbolsRequest) -> Result<Vec<SymbolInfo>> {
-        self.symbol_service
-            .get_symbols(&mut self.workspace_manager, request)
+        // Try TreeSitter first (fast), fallback to LSP on error or unsupported language
+        match self
+            .tree_sitter_symbol_service
+            .get_symbols(&mut self.workspace_manager, &request)
             .await
+        {
+            Ok(symbols) if !symbols.is_empty() => Ok(symbols),
+            _ => {
+                // Fallback to LSP
+                self.lsp_symbol_service
+                    .get_symbols(&mut self.workspace_manager, request)
+                    .await
+            },
+        }
     }
 
     /// **Get all symbols from a document/file**
@@ -355,9 +499,26 @@ impl CodeIntelligence {
     /// ```ignore
     pub async fn get_document_symbols(&mut self, request: GetDocumentSymbolsRequest) -> Result<Vec<SymbolInfo>> {
         let top_level_only = request.top_level_only.unwrap_or(true);
-        self.symbol_service
-            .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
-            .await
+
+        // Detect language from file extension
+        let ext = request.file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        let file_language = crate::tree_sitter::lang_from_extension(ext);
+
+        // Check if LSP is available for this file's language
+        let initialized_lsp_languages = self.workspace_manager.get_initialized_lsp_languages();
+        let has_lsp = file_language
+            .map(|lang| initialized_lsp_languages.iter().any(|l| l.eq_ignore_ascii_case(lang)))
+            .unwrap_or(false);
+
+        if has_lsp {
+            self.lsp_symbol_service
+                .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
+                .await
+        } else {
+            self.tree_sitter_symbol_service
+                .get_document_symbols(&mut self.workspace_manager, &request.file_path)
+                .await
+        }
     }
 
     /// **Navigate to symbol definition**
@@ -402,7 +563,7 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn goto_definition(&mut self, request: GotoDefinitionRequest) -> Result<Option<DefinitionInfo>> {
-        self.symbol_service
+        self.lsp_symbol_service
             .goto_definition(
                 &mut self.workspace_manager,
                 &request.file_path,
@@ -459,7 +620,7 @@ impl CodeIntelligence {
         &mut self,
         request: FindReferencesByLocationRequest,
     ) -> Result<ReferencesResult> {
-        self.symbol_service
+        self.lsp_symbol_service
             .find_references_by_location(&mut self.workspace_manager, request)
             .await
     }
@@ -503,7 +664,7 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn find_references_by_name(&mut self, request: FindReferencesByNameRequest) -> Result<ReferencesResult> {
-        self.symbol_service
+        self.lsp_symbol_service
             .find_references_by_name(&mut self.workspace_manager, request)
             .await
     }
@@ -560,7 +721,7 @@ impl CodeIntelligence {
         request: RenameSymbolRequest,
     ) -> Result<Option<crate::model::entities::RenameResult>> {
         let lsp_edit = self
-            .coding_service
+            .lsp_coding_service
             .rename_symbol(&mut self.workspace_manager, request)
             .await?;
 
@@ -605,8 +766,136 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn format_code(&mut self, request: FormatCodeRequest) -> Result<usize> {
-        self.coding_service
+        self.lsp_coding_service
             .format_code(&mut self.workspace_manager, request)
+            .await
+    }
+
+    /// **Rewrite code patterns using AST matching**
+    ///
+    /// Performs structural pattern replacement across files using TreeSitter AST parsing.
+    /// Supports complex patterns with variables and wildcards for automated refactoring.
+    ///
+    /// # Arguments
+    /// * `request` - Pattern rewrite parameters including pattern, replacement, and options
+    ///
+    /// # Returns
+    /// * `Ok(RewriteResult)` - Summary of files modified and replacements made
+    /// * `Err` - If pattern is invalid or rewrite encounters errors
+    ///
+    /// # Example
+    /// ```ignore
+    /// use code_agent_sdk::{CodeIntelligence, PatternRewriteRequest};
+    /// use std::path::PathBuf;
+    ///
+    /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+    /// let mut client = CodeIntelligence::new(PathBuf::from("."));
+    ///
+    /// let result = client.pattern_rewrite(PatternRewriteRequest {
+    ///     pattern: "$X.unwrap()".to_string(),
+    ///     replacement: "$X.expect(\"error\")".to_string(),
+    ///     language: "rust".to_string(),
+    ///     dry_run: true,
+    ///     ..Default::default()
+    /// }).await?;
+    ///
+    /// println!("Would modify {} files with {} replacements",
+    ///          result.files_modified, result.replacements);
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub async fn pattern_rewrite(
+        &mut self,
+        request: crate::model::types::PatternRewriteRequest,
+    ) -> Result<crate::model::entities::RewriteResult> {
+        self.tree_sitter_coding_service
+            .pattern_rewrite(&mut self.workspace_manager, request)
+            .await
+    }
+
+    /// **Search for AST patterns across workspace**
+    ///
+    /// Performs structural pattern matching using ast-grep syntax for finding code patterns.
+    ///
+    /// # Arguments
+    /// * `request` - Pattern search parameters including pattern, language, and limits
+    ///
+    /// # Returns
+    /// * `Ok(Vec<PatternMatch>)` - Matches found with location and context
+    /// * `Err` - If pattern is invalid or search encounters errors
+    ///
+    /// # Example
+    /// ```ignore
+    /// let matches = client.pattern_search(PatternSearchRequest {
+    ///     pattern: "$X.unwrap()".to_string(),
+    ///     language: "rust".to_string(),
+    ///     limit: Some(20),
+    ///     ..Default::default()
+    /// }).await?;
+    /// ```
+    pub async fn pattern_search(
+        &mut self,
+        request: crate::model::types::PatternSearchRequest,
+    ) -> Result<Vec<crate::model::entities::PatternMatch>> {
+        self.tree_sitter_symbol_service
+            .pattern_search(&mut self.workspace_manager, &request)
+            .await
+    }
+
+    /// **Generate high-level codebase overview**
+    ///
+    /// Analyzes workspace structure to provide architectural insights including
+    /// primary languages, key directories, entry points, and technology stack.
+    ///
+    /// # Arguments
+    /// * `request` - Overview generation parameters
+    ///
+    /// # Returns
+    /// * `Ok(CodebaseOverviewResponse)` - Structured overview with metrics and insights
+    /// * `Err` - If workspace cannot be analyzed
+    ///
+    /// # Example
+    /// ```ignore
+    /// let overview = client.generate_codebase_overview(GenerateCodebaseOverviewRequest {
+    ///     path: None,
+    ///     timeout_secs: None,
+    ///     token_budget: None,
+    /// }).await?;
+    /// ```
+    pub async fn generate_codebase_overview(
+        &mut self,
+        request: crate::model::types::GenerateCodebaseOverviewRequest,
+    ) -> Result<crate::model::types::CodebaseOverviewResponse> {
+        self.tree_sitter_symbol_service
+            .generate_codebase_overview(&mut self.workspace_manager, &request)
+            .await
+    }
+
+    /// **Search codebase directory structure**
+    ///
+    /// Provides focused exploration of specific directories with file type analysis
+    /// and structure insights for navigation and understanding.
+    ///
+    /// # Arguments
+    /// * `request` - Directory search parameters
+    ///
+    /// # Returns
+    /// * `Ok(CodebaseMapResponse)` - Directory structure with file analysis
+    /// * `Err` - If directory cannot be accessed or analyzed
+    ///
+    /// # Example
+    /// ```ignore
+    /// let map = client.search_codebase_map(SearchCodebaseMapRequest {
+    ///     path: Some("src/components".to_string()),
+    ///     file_path: None,
+    /// }).await?;
+    /// ```
+    pub async fn search_codebase_map(
+        &mut self,
+        request: crate::model::types::SearchCodebaseMapRequest,
+    ) -> Result<crate::model::types::CodebaseMapResponse> {
+        self.tree_sitter_symbol_service
+            .search_codebase_map(&mut self.workspace_manager, &request)
             .await
     }
 
@@ -649,7 +938,7 @@ impl CodeIntelligence {
     /// # }
     /// ```ignore
     pub async fn open_file(&mut self, request: OpenFileRequest) -> Result<()> {
-        self.workspace_service
+        self.lsp_workspace_service
             .open_file(&mut self.workspace_manager, &request.file_path, request.content)
             .await
     }
@@ -685,7 +974,7 @@ impl CodeIntelligence {
         request: GetDocumentDiagnosticsRequest,
     ) -> Result<Vec<crate::model::entities::DiagnosticInfo>> {
         let lsp_diagnostics = self
-            .symbol_service
+            .lsp_symbol_service
             .get_document_diagnostics(&mut self.workspace_manager, request)
             .await?;
 
@@ -710,7 +999,9 @@ impl CodeIntelligence {
         &mut self,
         request: crate::model::types::HoverRequest,
     ) -> Result<Option<crate::model::entities::HoverInfo>> {
-        self.symbol_service.hover(&mut self.workspace_manager, request).await
+        self.lsp_symbol_service
+            .hover(&mut self.workspace_manager, request)
+            .await
     }
 
     /// **Get code completion suggestions at a specific location**
@@ -726,7 +1017,7 @@ impl CodeIntelligence {
         &mut self,
         request: crate::model::types::CompletionRequest,
     ) -> Result<Option<crate::model::entities::CompletionInfo>> {
-        self.symbol_service
+        self.lsp_symbol_service
             .completion(&mut self.workspace_manager, request)
             .await
     }

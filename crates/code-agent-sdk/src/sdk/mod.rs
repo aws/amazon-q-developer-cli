@@ -5,12 +5,14 @@
 //! performing code analysis tasks.
 
 pub mod client;
+pub mod code_store;
 pub mod file_watcher;
 pub mod services;
 pub mod workspace_manager;
 
 use std::path::PathBuf;
 
+pub use code_store::CodeStore;
 pub use workspace_manager::{
     WorkspaceManager,
     WorkspaceStatus,

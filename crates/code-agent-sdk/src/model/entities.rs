@@ -148,8 +148,6 @@ pub struct SymbolInfo {
     pub symbol_type: Option<String>,
     /// File path relative to workspace root
     pub file_path: String,
-    /// Fully qualified name including file path (e.g., "src/main.rs::function_name")
-    pub fully_qualified_name: String,
     /// Starting line number (1-based)
     pub start_row: u32,
     /// Ending line number (1-based)
@@ -164,6 +162,8 @@ pub struct SymbolInfo {
     pub detail: Option<String>,
     /// Source code line at the symbol location
     pub source_line: Option<String>,
+    /// Full source code of the symbol (if under line threshold)
+    pub source_code: Option<String>,
     /// Programming language (e.g., "rust", "typescript", "python")
     #[serde(default)]
     pub language: Option<String>,
@@ -210,7 +210,6 @@ impl SymbolInfo {
                     .to_string_lossy()
                     .to_string();
 
-                let fully_qualified_name = format!("{}::{}", relative_path, symbol.name);
                 let start_row = location.range.start.line + 1;
                 let source_line = read_source_line(file_path, start_row);
 
@@ -218,7 +217,6 @@ impl SymbolInfo {
                     name: symbol.name.clone(),
                     symbol_type: Some(format!("{:?}", symbol.kind)),
                     file_path: relative_path,
-                    fully_qualified_name,
                     start_row,
                     end_row: location.range.end.line + 1,
                     start_column: location.range.start.character + 1,
@@ -226,7 +224,8 @@ impl SymbolInfo {
                     container_name: symbol.container_name.clone(),
                     detail: None, // WorkspaceSymbol doesn't have detail field
                     source_line,
-                    language: None, // Set by caller based on LSP server
+                    source_code: None, // LSP doesn't provide full source
+                    language: None,    // Set by caller based on LSP server
                 })
             },
             lsp_types::OneOf::Right(_) => None, // LocationLink not supported yet
@@ -433,7 +432,7 @@ impl CompletionInfo {
             .items
             .drain(..)
             .filter_map(|item| {
-                let score = calculate_completion_score(&filter_lower, &item.label.to_lowercase());
+                let score = calculate_fuzzy_score(&filter_lower, &item.label.to_lowercase(), filter, &item.label);
                 if score > 0.3 {
                     // Minimum threshold
                     Some((score, item))
@@ -452,25 +451,8 @@ impl CompletionInfo {
 }
 
 /// Calculate fuzzy match score for completion filtering
-fn calculate_completion_score(filter: &str, label: &str) -> f64 {
-    // Exact match
-    if filter == label {
-        return 1.0;
-    }
-
-    // Prefix match
-    if label.starts_with(filter) {
-        return 0.9;
-    }
-
-    // Contains match
-    if label.contains(filter) {
-        return 0.8;
-    }
-
-    // Fuzzy match using Jaro-Winkler
-    strsim::jaro_winkler(filter, label)
-}
+/// Re-exported from utils::scoring for backward compatibility
+pub use crate::utils::scoring::calculate_fuzzy_score;
 
 /// Severity level of a diagnostic message.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -596,6 +578,96 @@ impl DiagnosticInfo {
             related_information,
         }
     }
+}
+
+/// Position in source code (0-based)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourcePosition {
+    pub row: usize,
+    pub column: usize,
+}
+
+/// Range in source code
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceRange {
+    pub start: SourcePosition,
+    pub end: SourcePosition,
+}
+
+impl SourceRange {
+    pub fn new(start_row: usize, start_col: usize, end_row: usize, end_col: usize) -> Self {
+        Self {
+            start: SourcePosition {
+                row: start_row,
+                column: start_col,
+            },
+            end: SourcePosition {
+                row: end_row,
+                column: end_col,
+            },
+        }
+    }
+
+    /// Check if this range contains another range
+    pub fn contains(&self, other: &SourceRange) -> bool {
+        (self.start.row < other.start.row
+            || (self.start.row == other.start.row && self.start.column <= other.start.column))
+            && (self.end.row > other.end.row || (self.end.row == other.end.row && self.end.column >= other.end.column))
+    }
+
+    /// Calculate the size of this range (for sorting)
+    pub fn size(&self) -> usize {
+        (self.end.row - self.start.row) * 10000 + (self.end.column - self.start.column)
+    }
+}
+
+/// Symbol extracted from source code
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CodeSymbol {
+    pub name: String,
+    pub kind: String,
+    pub range: SourceRange,
+}
+
+/// Enclosing symbol in pattern match results
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnclosingSymbol {
+    pub name: String,
+    pub kind: String,
+    pub range: SourceRange,
+}
+
+/// A single pattern match from AST-based search.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PatternMatch {
+    /// File path relative to workspace root
+    pub file_path: String,
+    /// Matched code snippet
+    pub matched_code: String,
+    /// Starting line number (1-based)
+    pub start_row: u32,
+    /// Starting column number (1-based)
+    pub start_column: u32,
+    /// Ending line number (1-based)
+    pub end_row: u32,
+    /// Ending column number (1-based)
+    pub end_column: u32,
+    /// Enclosing symbols (innermost first)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub enclosing_symbols: Vec<EnclosingSymbol>,
+}
+
+/// Result of a pattern rewrite operation.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RewriteResult {
+    /// Number of files modified
+    pub files_modified: usize,
+    /// Total number of replacements made
+    pub replacements: usize,
+    /// List of modified file paths (relative to workspace root)
+    pub modified_files: Vec<String>,
+    /// Whether this was a dry run
+    pub dry_run: bool,
 }
 
 #[cfg(test)]

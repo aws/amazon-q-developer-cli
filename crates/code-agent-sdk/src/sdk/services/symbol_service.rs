@@ -312,7 +312,7 @@ impl LspSymbolService {
 }
 
 const MAX_RESULTS: u32 = 100;
-const DEFAULT_RESULTS: u32 = 50;
+const DEFAULT_RESULTS: u32 = crate::model::types::DEFAULT_SEARCH_RESULTS;
 
 #[async_trait::async_trait]
 impl SymbolService for LspSymbolService {
@@ -346,6 +346,7 @@ impl SymbolService for LspSymbolService {
                 limit: None,
                 language: None,
                 exact_match: true,
+                timeout_secs: None,
             };
 
             let symbols = self.find_symbols(workspace_manager, find_request).await?;
@@ -619,6 +620,7 @@ impl SymbolService for LspSymbolService {
             limit: Some(1), // Only need first match
             language: None,
             exact_match: true,
+            timeout_secs: None,
         };
 
         let symbols = self.find_symbols(workspace_manager, find_request).await?;
@@ -872,7 +874,6 @@ mod tests {
             name: name.to_string(),
             symbol_type: Some(symbol_type.to_string()),
             file_path: "/test.rs".to_string(),
-            fully_qualified_name: format!("test.rs::{}", name),
             start_row: 1,
             end_row: 1,
             start_column: 1,
@@ -880,6 +881,7 @@ mod tests {
             container_name: None,
             detail: None,
             source_line: None,
+            source_code: None,
             language: None,
         }
     }

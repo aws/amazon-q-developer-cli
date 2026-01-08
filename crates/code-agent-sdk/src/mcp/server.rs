@@ -427,6 +427,7 @@ impl CodeIntelligenceServer {
             limit,
             language,
             exact_match,
+            timeout_secs: None,
         };
 
         let mut client_guard = self.client.lock().await;

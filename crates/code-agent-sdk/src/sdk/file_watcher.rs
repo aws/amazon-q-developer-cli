@@ -46,13 +46,15 @@ struct GitignoreMatcher {
 impl GitignoreMatcher {
     /// Build gitignore matcher by scanning workspace for .gitignore files
     fn new(workspace_root: &Path) -> Result<Self> {
+        use crate::utils::traversal::GITIGNORE_SEARCH_DEPTH;
+
         let mut gitignores = Vec::new();
 
         // Walk the directory tree to find all .gitignore files
         for entry in ignore::WalkBuilder::new(workspace_root)
             .hidden(false) // We want to see .gitignore files
             .git_ignore(false) // Don't apply gitignore while searching for gitignore files
-            .max_depth(Some(5)) // Limit depth: covers root + multi-workspace projects
+            .max_depth(Some(GITIGNORE_SEARCH_DEPTH))
             .build()
         {
             let entry = entry?;
@@ -188,10 +190,21 @@ fn should_process_event(
     gitignore_matcher: &Option<GitignoreMatcher>,
     workspace_root: &Path,
 ) -> bool {
+    use crate::utils::traversal::should_skip_dir;
+
     let path = match event.uri.to_file_path() {
         Ok(path) => path,
         Err(_) => return false,
     };
+
+    // Check if any path component is in ALWAYS_SKIP_DIRS
+    for component in path.components() {
+        if let Some(name) = component.as_os_str().to_str()
+            && should_skip_dir(name)
+        {
+            return false;
+        }
+    }
 
     // Check gitignore first (most restrictive)
     if let Some(gitignore) = gitignore_matcher
@@ -396,48 +409,51 @@ impl EventProcessor {
                 },
 
                 FsEventKind::Modified => {
-                    // SAFETY: We know workspace_manager is valid during EventProcessor lifetime
-                    unsafe {
-                        let workspace_manager = &mut *self.workspace_manager;
+                    if let Ok(content) = std::fs::read_to_string(&absolute_path) {
+                        // SAFETY: We know workspace_manager is valid during EventProcessor lifetime
+                        unsafe {
+                            let workspace_manager = &mut *self.workspace_manager;
 
-                        if workspace_manager.is_file_opened(&absolute_path) {
-                            // Send didChange for opened files
-                            let version = workspace_manager.get_next_version(&absolute_path);
+                            if workspace_manager.is_file_opened(&absolute_path) {
+                                // Send didChange for opened files
+                                let version = workspace_manager.get_next_version(&absolute_path);
 
-                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await
-                                && let Ok(content) = std::fs::read_to_string(&absolute_path)
-                            {
-                                let params = DidChangeTextDocumentParams {
-                                    text_document: VersionedTextDocumentIdentifier {
-                                        uri: absolute_uri,
-                                        version,
-                                    },
-                                    content_changes: vec![TextDocumentContentChangeEvent {
-                                        range: None,
-                                        range_length: None,
-                                        text: content,
-                                    }],
-                                };
+                                if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                    let params = DidChangeTextDocumentParams {
+                                        text_document: VersionedTextDocumentIdentifier {
+                                            uri: absolute_uri,
+                                            version,
+                                        },
+                                        content_changes: vec![TextDocumentContentChangeEvent {
+                                            range: None,
+                                            range_length: None,
+                                            text: content,
+                                        }],
+                                    };
 
-                                tracing::info!(
-                                    "📝 Sending didChange for opened file: {:?}, version: {}",
-                                    absolute_path,
-                                    version
-                                );
-                                let _ = client.did_change(params).await;
-                            }
-                        } else {
-                            // Send workspace/didChangeWatchedFiles for closed files
-                            if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
-                                let params = DidChangeWatchedFilesParams {
-                                    changes: vec![FileEvent {
-                                        uri: absolute_uri,
-                                        typ: FileChangeType::CHANGED,
-                                    }],
-                                };
+                                    tracing::info!(
+                                        "📝 Sending didChange for opened file: {:?}, version: {}",
+                                        absolute_path,
+                                        version
+                                    );
+                                    let _ = client.did_change(params).await;
+                                }
+                            } else {
+                                // Send workspace/didChangeWatchedFiles for closed files
+                                if let Ok(Some(client)) = workspace_manager.get_client_for_file(&absolute_path).await {
+                                    let params = DidChangeWatchedFilesParams {
+                                        changes: vec![FileEvent {
+                                            uri: absolute_uri,
+                                            typ: FileChangeType::CHANGED,
+                                        }],
+                                    };
 
-                                tracing::info!("📁 Sending didChangeWatchedFiles for closed file: {:?}", absolute_path);
-                                let _ = client.did_change_watched_files(params).await;
+                                    tracing::info!(
+                                        "📁 Sending didChangeWatchedFiles for closed file: {:?}",
+                                        absolute_path
+                                    );
+                                    let _ = client.did_change_watched_files(params).await;
+                                }
                             }
                         }
                     }

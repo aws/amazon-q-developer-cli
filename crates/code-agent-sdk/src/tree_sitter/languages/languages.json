@@ -1,0 +1,194 @@
+{
+  "rust": {
+    "extensions": ["rs"],
+    "symbols": [
+      {"node_kind": "function_item", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "struct_item", "symbol_type": "Struct", "name_child": "type_identifier"},
+      {"node_kind": "enum_item", "symbol_type": "Enum", "name_child": "type_identifier"},
+      {"node_kind": "impl_item", "symbol_type": "Impl", "name_child": "type_identifier"},
+      {"node_kind": "trait_item", "symbol_type": "Trait", "name_child": "type_identifier"},
+      {"node_kind": "mod_item", "symbol_type": "Module", "name_child": "identifier"},
+      {"node_kind": "const_item", "symbol_type": "Constant", "name_child": "identifier"},
+      {"node_kind": "static_item", "symbol_type": "Static", "name_child": "identifier"},
+      {"node_kind": "type_item", "symbol_type": "Type", "name_child": "type_identifier"},
+      {"node_kind": "macro_definition", "symbol_type": "Function", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}, {"node_kind": "macro_invocation", "name_child": "macro"}],
+    "imports": [{"node_kind": "use_declaration"}]
+  },
+  "typescript": {
+    "extensions": ["ts", "mts", "cts"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "type_identifier"},
+      {"node_kind": "method_definition", "symbol_type": "Method", "name_child": "property_identifier"},
+      {"node_kind": "interface_declaration", "symbol_type": "Interface", "name_child": "type_identifier"},
+      {"node_kind": "type_alias_declaration", "symbol_type": "Type", "name_child": "type_identifier"},
+      {"node_kind": "enum_declaration", "symbol_type": "Enum", "name_child": "identifier"},
+      {"node_kind": "internal_module", "symbol_type": "Module", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "import_statement"}]
+  },
+  "tsx": {
+    "extensions": ["tsx"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "type_identifier"},
+      {"node_kind": "method_definition", "symbol_type": "Method", "name_child": "property_identifier"},
+      {"node_kind": "interface_declaration", "symbol_type": "Interface", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "import_statement"}]
+  },
+  "javascript": {
+    "extensions": ["js", "mjs", "cjs"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "identifier"},
+      {"node_kind": "method_definition", "symbol_type": "Method", "name_child": "property_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "import_statement"}]
+  },
+  "python": {
+    "extensions": ["py", "pyi"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_definition", "symbol_type": "Class", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "call", "name_child": "function"}],
+    "imports": [{"node_kind": "import_statement"}, {"node_kind": "import_from_statement"}]
+  },
+  "go": {
+    "extensions": ["go"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "method_declaration", "symbol_type": "Method", "name_child": "field_identifier"},
+      {"node_kind": "type_declaration", "symbol_type": "Type", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "import_declaration"}]
+  },
+  "java": {
+    "extensions": ["java"],
+    "symbols": [
+      {"node_kind": "method_declaration", "symbol_type": "Method", "name_child": "identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "identifier"},
+      {"node_kind": "interface_declaration", "symbol_type": "Interface", "name_child": "identifier"},
+      {"node_kind": "enum_declaration", "symbol_type": "Enum", "name_child": "identifier"},
+      {"node_kind": "record_declaration", "symbol_type": "Record", "name_child": "identifier"},
+      {"node_kind": "annotation_type_declaration", "symbol_type": "Interface", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "method_invocation", "name_child": "name"}],
+    "imports": [{"node_kind": "import_declaration"}]
+  },
+  "kotlin": {
+    "extensions": ["kt", "kts"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "simple_identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "type_identifier"},
+      {"node_kind": "object_declaration", "symbol_type": "Object", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "simple_identifier"}],
+    "imports": [{"node_kind": "import_header"}]
+  },
+  "c": {
+    "extensions": ["c", "h"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "struct_specifier", "symbol_type": "Struct", "name_child": "type_identifier"},
+      {"node_kind": "enum_specifier", "symbol_type": "Enum", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "preproc_include"}]
+  },
+  "cpp": {
+    "extensions": ["cpp", "cc", "cxx", "hpp", "hxx"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_specifier", "symbol_type": "Class", "name_child": "type_identifier"},
+      {"node_kind": "struct_specifier", "symbol_type": "Struct", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "preproc_include"}, {"node_kind": "using_declaration"}]
+  },
+  "ruby": {
+    "extensions": ["rb"],
+    "symbols": [
+      {"node_kind": "method", "symbol_type": "Method", "name_child": "identifier"},
+      {"node_kind": "class", "symbol_type": "Class", "name_child": "constant"},
+      {"node_kind": "module", "symbol_type": "Module", "name_child": "constant"}
+    ],
+    "calls": [{"node_kind": "call", "name_child": "method"}],
+    "imports": [{"node_kind": "call"}]
+  },
+  "scala": {
+    "extensions": ["scala", "sc"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "identifier"},
+      {"node_kind": "class_definition", "symbol_type": "Class", "name_child": "identifier"},
+      {"node_kind": "object_definition", "symbol_type": "Object", "name_child": "identifier"},
+      {"node_kind": "trait_definition", "symbol_type": "Trait", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "import_declaration"}]
+  },
+  "swift": {
+    "extensions": ["swift"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "simple_identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "type_identifier"},
+      {"node_kind": "struct_declaration", "symbol_type": "Struct", "name_child": "type_identifier"}
+    ],
+    "calls": [{"node_kind": "call_expression", "name_child": "simple_identifier"}],
+    "imports": [{"node_kind": "import_declaration"}]
+  },
+  "php": {
+    "extensions": ["php"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "name"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "name"},
+      {"node_kind": "method_declaration", "symbol_type": "Method", "name_child": "name"}
+    ],
+    "calls": [{"node_kind": "function_call_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "namespace_use_declaration"}]
+  },
+  "csharp": {
+    "extensions": ["cs"],
+    "symbols": [
+      {"node_kind": "method_declaration", "symbol_type": "Method", "name_child": "identifier"},
+      {"node_kind": "class_declaration", "symbol_type": "Class", "name_child": "identifier"},
+      {"node_kind": "interface_declaration", "symbol_type": "Interface", "name_child": "identifier"},
+      {"node_kind": "struct_declaration", "symbol_type": "Struct", "name_child": "identifier"},
+      {"node_kind": "enum_declaration", "symbol_type": "Enum", "name_child": "identifier"},
+      {"node_kind": "record_declaration", "symbol_type": "Record", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "invocation_expression", "name_child": "function"}],
+    "imports": [{"node_kind": "using_directive"}]
+  },
+  "bash": {
+    "extensions": ["sh", "bash"],
+    "symbols": [
+      {"node_kind": "function_definition", "symbol_type": "Function", "name_child": "word"}
+    ],
+    "calls": [{"node_kind": "command", "name_child": "command_name"}],
+    "imports": [{"node_kind": "command"}]
+  },
+  "lua": {
+    "extensions": ["lua"],
+    "symbols": [
+      {"node_kind": "function_declaration", "symbol_type": "Function", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "function_call", "name_child": "name"}],
+    "imports": [{"node_kind": "function_call"}]
+  },
+  "elixir": {
+    "extensions": ["ex", "exs"],
+    "symbols": [
+      {"node_kind": "call", "symbol_type": "Function", "name_child": "identifier"}
+    ],
+    "calls": [{"node_kind": "call", "name_child": "identifier"}],
+    "imports": [{"node_kind": "call"}]
+  }
+}

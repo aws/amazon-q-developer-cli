@@ -27,6 +27,7 @@ use crate::model::types::{
     LspInfo,
     WorkspaceInfo,
 };
+use crate::sdk::code_store::CodeStore;
 use crate::sdk::file_watcher::{
     FileWatcher,
     FileWatcherConfig,
@@ -87,6 +88,9 @@ pub struct WorkspaceManager {
     // File watching infrastructure
     _file_watcher: Option<FileWatcher>,
     event_processor_handle: Option<tokio::task::JoinHandle<()>>,
+
+    // Code store for pattern search/rewrite operations
+    code_store: Arc<CodeStore>,
 }
 
 impl WorkspaceManager {
@@ -139,6 +143,7 @@ impl WorkspaceManager {
             diagnostics: Arc::new(RwLock::new(HashMap::new())),
             _file_watcher: None,
             event_processor_handle: None,
+            code_store: Arc::new(CodeStore::new()),
         }
     }
 
@@ -663,6 +668,11 @@ impl WorkspaceManager {
         &self.workspace_root
     }
 
+    /// Get the code store for pattern search/rewrite operations
+    pub fn code_store(&self) -> &Arc<CodeStore> {
+        &self.code_store
+    }
+
     /// Get all registered server names for workspace-wide operations
     pub fn get_all_server_names(&self) -> Vec<String> {
         self.registry.registered_servers().into_iter().cloned().collect()
@@ -779,7 +789,8 @@ impl WorkspaceManager {
     /// Unified workspace scan: collects extensions AND representative files in one parallel pass
     fn scan_workspace_unified(&self) -> Result<(HashSet<String>, HashMap<String, PathBuf>)> {
         use dashmap::DashMap;
-        use ignore::WalkBuilder;
+
+        use crate::utils::traversal::create_code_walker;
 
         // Detect if scanning home directory (cross-platform: Linux, Mac, Windows)
         let is_home_dir = dirs::home_dir()
@@ -791,19 +802,13 @@ impl WorkspaceManager {
             tracing::warn!("Workspace is home directory - limiting scan depth to 3 to avoid scanning entire home");
             3
         } else {
-            10
+            15
         };
 
         let extensions: DashMap<String, ()> = DashMap::new();
         let rep_files: DashMap<String, PathBuf> = DashMap::new();
 
-        WalkBuilder::new(&self.workspace_root)
-            .max_depth(Some(max_depth))
-            .standard_filters(true)
-            .hidden(false)
-            .git_ignore(true)
-            .git_global(true)
-            .git_exclude(true)
+        create_code_walker(&self.workspace_root, Some(max_depth))
             .build_parallel()
             .run(|| {
                 let extensions = &extensions;
@@ -1011,6 +1016,34 @@ impl WorkspaceManager {
             self.workspace_info = Some(self.detect_workspace()?);
         }
         Ok(self.workspace_info.as_ref().unwrap().detected_languages.clone())
+    }
+
+    /// Get languages that have initialized LSP servers
+    pub fn get_initialized_lsp_languages(&self) -> Vec<String> {
+        let configs = self.config_manager.all_configs();
+        let mut languages = Vec::new();
+
+        for config in configs {
+            let status = self.registry.get_server_status(&config.name);
+            let is_initialized = status
+                .as_ref()
+                .map(|s| matches!(s, crate::lsp::LspStatus::Initialized))
+                .unwrap_or(false);
+
+            if is_initialized {
+                // Map file extensions to languages
+                let config_languages: Vec<String> = config
+                    .file_extensions
+                    .iter()
+                    .filter_map(|ext| self.config_manager.get_language_for_extension(ext))
+                    .collect();
+                languages.extend(config_languages);
+            }
+        }
+
+        languages.sort();
+        languages.dedup();
+        languages
     }
 
     /// Check if code intelligence has been initialized (lsp.json exists)

@@ -4,9 +4,10 @@
 //! library for handling files, paths, and workspace operations.
 
 pub mod file;
-
 pub mod logging;
 pub mod position;
+pub mod scoring;
+pub mod traversal;
 
 // Re-export commonly used functions for convenience
 pub use file::{
@@ -19,3 +20,4 @@ pub use position::{
     from_lsp_position,
     to_lsp_position,
 };
+pub use scoring::calculate_fuzzy_score;

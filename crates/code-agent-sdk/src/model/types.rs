@@ -77,6 +77,8 @@ pub struct FindSymbolsRequest {
     pub language: Option<String>,
     /// Whether to prioritize exact matches over fuzzy matches
     pub exact_match: bool,
+    /// Timeout in seconds (default: 180)
+    pub timeout_secs: Option<u64>,
 }
 
 /// Request to get specific symbols by name.
@@ -279,8 +281,14 @@ pub struct LanguageServerConfig {
     pub request_timeout_secs: u64,
 }
 
+/// Default timeout for LSP and tree-sitter operations (120 seconds)
+pub const DEFAULT_TIMEOUT_SECS: u64 = 120;
+
+/// Default number of results for symbol search operations
+pub const DEFAULT_SEARCH_RESULTS: u32 = 20;
+
 fn default_request_timeout() -> u64 {
-    60
+    DEFAULT_TIMEOUT_SECS
 }
 
 /// Information about workspace detection results.
@@ -323,6 +331,143 @@ pub struct LspInfo {
     pub workspace_folders: Vec<String>,
     /// Initialization duration in milliseconds (if completed)
     pub init_duration_ms: Option<u64>,
+}
+
+/// Request to search for code patterns using AST matching.
+#[derive(Debug, Clone)]
+pub struct PatternSearchRequest {
+    /// AST pattern to search for (e.g., "$X.unwrap()")
+    pub pattern: String,
+    /// Programming language (rust, javascript, typescript, python, etc.)
+    pub language: String,
+    /// Optional file path to scope search to a single file
+    pub file_path: Option<String>,
+    /// Maximum number of results to return (default: 50)
+    pub limit: Option<u32>,
+    /// Number of results to skip (for pagination)
+    pub offset: Option<u32>,
+}
+
+/// Request to rewrite code using AST pattern matching.
+#[derive(Debug, Clone)]
+pub struct PatternRewriteRequest {
+    /// AST pattern to find (e.g., "$X.unwrap()")
+    pub pattern: String,
+    /// Replacement pattern (e.g., "$X.expect(\"error\")")
+    pub replacement: String,
+    /// Programming language (rust, javascript, typescript, python, etc.)
+    pub language: String,
+    /// Optional file path to scope rewrite to a single file
+    pub file_path: Option<String>,
+    /// Preview changes without applying (default: true)
+    pub dry_run: bool,
+    /// Maximum number of files to modify (default: 50)
+    pub limit: Option<u32>,
+}
+
+/// Request to generate codebase overview
+#[derive(Debug, Clone)]
+pub struct GenerateCodebaseOverviewRequest {
+    /// Directory path (defaults to current workspace)
+    pub path: Option<String>,
+    /// Timeout in seconds (defaults to 180)
+    pub timeout_secs: Option<u64>,
+    /// Token budget for the overview (defaults to 40000)
+    pub token_budget: Option<usize>,
+}
+
+/// File analysis data for codebase overview
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct FileAnalysis {
+    /// Functions found in the file
+    pub f: Vec<String>,
+    /// Classes found in the file
+    pub c: Vec<String>,
+    /// Lines of code
+    pub loc: usize,
+    /// Quality/complexity score
+    pub score: String,
+}
+
+/// Package breakdown for codebase overview
+pub type PackageBreakdown = std::collections::HashMap<String, std::collections::HashMap<String, FileAnalysis>>;
+
+/// Response from codebase overview generation
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CodebaseOverviewResponse {
+    /// Workspace path analyzed
+    pub workspace_path: String,
+    /// Size category (XS, S, M, L, XL, XXL)
+    pub size_category: String,
+    /// Summary statistics
+    pub summary: CodebaseOverviewSummary,
+    /// Symbol key explanations
+    pub symbol_key: std::collections::HashMap<String, String>,
+    /// Whether results were truncated due to file limit or timeout
+    pub truncated: bool,
+    /// Package/directory breakdown with file analysis
+    ///
+    /// Structure:
+    /// ```json
+    /// {
+    ///   "": {  // package/directory name
+    ///     "filename.rs": {
+    ///       "f": ["function1", "function2"],  // functions array
+    ///       "c": ["Class1", "Class2"],        // classes array  
+    ///       "loc": 233,                       // lines of code number
+    ///       "score": "74.3"                   // score string
+    ///     }
+    ///   }
+    /// }
+    /// ```
+    pub packages: PackageBreakdown,
+}
+
+/// Summary statistics for codebase overview
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CodebaseOverviewSummary {
+    /// Total files found
+    pub total_files: usize,
+    /// Files included in analysis
+    pub prioritized_files: usize,
+    /// Total functions
+    pub f: usize,
+    /// Total classes/structs/enums (types)
+    pub c: usize,
+    /// Total interfaces/traits
+    pub i: usize,
+    /// Total modules
+    pub m: usize,
+    /// Total constants (global constants/statics)
+    pub k: usize,
+    /// Total lines of code
+    pub loc: usize,
+}
+
+/// Request to search codebase map
+#[derive(Debug, Clone)]
+pub struct SearchCodebaseMapRequest {
+    /// Directory path to search in (defaults to current workspace)
+    pub path: Option<String>,
+    /// File path/name pattern to match (e.g., "main.rs" or "src/tools")
+    pub file_path: Option<String>,
+    /// Timeout in seconds (defaults to 180)
+    pub timeout_secs: Option<u64>,
+    /// Token budget limit (defaults to 15,000 tokens for focused module exploration)
+    pub token_budget: Option<usize>,
+}
+
+/// Response from codebase map search
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct CodebaseMapResponse {
+    /// Condensed code representation
+    pub condensed_repomap: String,
+    /// Number of files processed
+    pub files_processed: usize,
+    /// Estimated token count
+    pub token_count: usize,
+    /// Whether results were truncated
+    pub truncated: bool,
 }
 
 // ============================================================================
