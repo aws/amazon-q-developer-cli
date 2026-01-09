@@ -18,10 +18,11 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
+use crate::database::settings::Setting;
 use crate::os::Os;
 
 #[deny(missing_docs)]
-#[derive(Debug, PartialEq, Args)]
+#[derive(Debug, Default, PartialEq, Args)]
 #[command(
     before_long_help = "/compact summarizes the conversation history to free up context space
 while preserving essential information. This is useful for long-running conversations
@@ -34,10 +35,15 @@ When to use
 • After completing complex tool operations
 
 How it works
-• Creates an AI-generated summary of your conversation
-• Retains key information, code, and tool executions in the summary
-• Clears the conversation history to free up space
-• The assistant will reference the summary context in future responses
+• Splits history into two parts: older messages and recent messages
+• Older messages are summarized into a checkpoint (AI-generated summary)
+• Recent messages are kept intact to preserve immediate context
+• The assistant references both the summary and recent messages in future responses
+
+Exclusion behavior
+• Use --messages-to-exclude to keep a minimum number of recent message pairs
+• Use --context-window-percent-to-exclude to keep a percentage of context window (default: 2%)
+• When both are set, the MAXIMUM of the two is used (more conservative)
 
 Compaction will be automatically performed whenever the context window overflows.
 To disable this behavior, run: `kiro-cli settings chat.disableAutoCompaction true`"
@@ -51,11 +57,15 @@ To disable this behavior, run: `kiro-cli settings chat.disableAutoCompaction tru
 pub struct CompactArgs {
     /// The prompt to use when generating the summary
     prompt: Vec<String>,
-    #[arg(long)]
+    /// Hide the generated summary after compaction
+    #[arg(long = "hide-summary", action = clap::ArgAction::SetFalse, default_value_t = true)]
     show_summary: bool,
     /// The number of user and assistant message pairs to exclude from the summarization.
     #[arg(long)]
     messages_to_exclude: Option<usize>,
+    /// Percentage of context window to exclude from compaction.
+    #[arg(long)]
+    context_window_percent_to_exclude: Option<usize>,
     /// Whether or not large messages should be truncated.
     #[arg(long)]
     truncate_large_messages: Option<bool>,
@@ -78,9 +88,25 @@ impl CompactArgs {
         // turn.
         session.reset_user_turn();
 
+        let context_window_percent_to_exclude = self
+            .context_window_percent_to_exclude
+            .unwrap_or_else(|| {
+                os.database.settings.get_int_or(
+                    Setting::CompactionExcludeContextWindowPercent,
+                    default.context_window_percent_to_exclude,
+                )
+            })
+            .min(100);
+        let messages_to_exclude = self.messages_to_exclude.unwrap_or_else(|| {
+            os.database
+                .settings
+                .get_int_or(Setting::CompactionExcludeMessages, default.messages_to_exclude)
+        });
+
         session
             .compact_history(os, prompt, self.show_summary, CompactStrategy {
-                messages_to_exclude: self.messages_to_exclude.unwrap_or(default.messages_to_exclude),
+                messages_to_exclude,
+                context_window_percent_to_exclude,
                 truncate_large_messages: self.truncate_large_messages.unwrap_or(default.truncate_large_messages),
                 max_message_length: self.max_message_length.map_or(default.max_message_length, |v| {
                     v.clamp(UserMessageContent::TRUNCATED_SUFFIX.len(), MAX_USER_MESSAGE_SIZE)
@@ -95,19 +121,55 @@ impl CompactArgs {
 pub struct CompactStrategy {
     /// Number of user/assistant pairs to exclude from the history as part of compaction.
     pub messages_to_exclude: usize,
+    /// Percentage of context window to exclude from compaction.
+    pub context_window_percent_to_exclude: usize,
     /// Whether or not to truncate large messages in the history.
     pub truncate_large_messages: bool,
     /// Maximum allowed size of messages in the conversation history.
     pub max_message_length: usize,
 }
 
+/// Default percentage of context window to exclude from compaction.
+pub const DEFAULT_COMPACTION_EXCLUDE_PERCENT: usize = 2;
+/// Default message pairs to exclude from compaction.
+pub const DEFAULT_COMPACTION_EXCLUDE_MESSAGES: usize = 2;
+
 impl Default for CompactStrategy {
     fn default() -> Self {
         Self {
-            messages_to_exclude: 2,
+            messages_to_exclude: DEFAULT_COMPACTION_EXCLUDE_MESSAGES,
+            context_window_percent_to_exclude: DEFAULT_COMPACTION_EXCLUDE_PERCENT,
             truncate_large_messages: Default::default(),
             max_message_length: MAX_USER_MESSAGE_SIZE,
         }
+    }
+}
+
+impl CompactStrategy {
+    /// Returns max(messages_to_exclude, messages fitting in context_window_percent_to_exclude).
+    pub fn effective_messages_to_exclude(&self, history: &VecDeque<HistoryEntry>, context_window_size: usize) -> usize {
+        use super::super::token_counter::{
+            CharCounter,
+            TokenCounter,
+        };
+
+        let tokens_to_exclude = context_window_size * self.context_window_percent_to_exclude / 100;
+
+        let token_based_count = {
+            let target_chars = TokenCounter::token_to_chars(tokens_to_exclude);
+            let mut total_chars = 0;
+            let mut count = 0;
+            for entry in history.iter().rev() {
+                count += 1;
+                total_chars += entry.user.char_count().value() + entry.assistant.char_count().value();
+                if total_chars >= target_chars {
+                    break; // include this message that crosses threshold
+                }
+            }
+            count
+        };
+
+        self.messages_to_exclude.max(token_based_count)
     }
 }
 
@@ -961,5 +1023,70 @@ mod tests {
 
         assert!(display.contains("Files Modified and Read"));
         assert!(display.contains("2 modifications, 1 read"));
+    }
+
+    /// Creates a test entry with specific content size (in chars)
+    fn create_entry_with_size(user_chars: usize, assistant_chars: usize) -> HistoryEntry {
+        HistoryEntry {
+            user: UserMessage::new_prompt("x".repeat(user_chars), None),
+            assistant: AssistantMessage::Response {
+                message_id: None,
+                content: "y".repeat(assistant_chars),
+            },
+            request_metadata: None,
+        }
+    }
+
+    // Use a fixed context window size for tests
+    const TEST_CONTEXT_WINDOW: usize = 128_000;
+
+    #[test]
+    fn test_effective_messages_to_exclude_percentage_based() {
+        let mut history = VecDeque::new();
+        // Each entry: 4000 chars user + 4000 chars assistant = 8000 chars = ~2000 tokens
+        for _ in 0..5 {
+            history.push_back(create_entry_with_size(4000, 4000));
+        }
+
+        // Use 4% of 128K = 5120 tokens = ~20480 chars
+        let strategy = CompactStrategy {
+            messages_to_exclude: 1,
+            context_window_percent_to_exclude: 4,
+            ..Default::default()
+        };
+
+        let effective = strategy.effective_messages_to_exclude(&history, TEST_CONTEXT_WINDOW);
+        // 4% of 128K = 5120 tokens = 20480 chars. Each message is 8000 chars.
+        // 1st: 8000 (under), 2nd: 16000 (under), 3rd: 24000 (crosses threshold, include it)
+        assert_eq!(effective, 3);
+    }
+
+    #[test]
+    fn test_effective_messages_to_exclude_message_based_wins() {
+        let mut history = VecDeque::new();
+        for _ in 0..5 {
+            history.push_back(create_entry_with_size(50, 50));
+        }
+
+        let strategy = CompactStrategy {
+            messages_to_exclude: 4,
+            context_window_percent_to_exclude: 0,
+            ..Default::default()
+        };
+
+        let effective = strategy.effective_messages_to_exclude(&history, TEST_CONTEXT_WINDOW);
+        // Token-based gives 0, messages_to_exclude is 4, max(4, 0) = 4
+        assert_eq!(effective, 4);
+    }
+
+    #[test]
+    fn test_effective_messages_to_exclude_empty_history() {
+        let history = VecDeque::new();
+        let strategy = CompactStrategy::default();
+
+        let effective = strategy.effective_messages_to_exclude(&history, TEST_CONTEXT_WINDOW);
+        // No messages, token-based gives 0, messages_to_exclude is 2, max(0, 2) = 2
+        // But there are no messages, so effective should be 2 (clamped by drain later)
+        assert_eq!(effective, 2);
     }
 }

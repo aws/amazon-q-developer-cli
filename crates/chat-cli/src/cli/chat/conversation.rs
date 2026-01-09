@@ -616,6 +616,14 @@ impl ConversationState {
         self.latest_summary = None;
     }
 
+    /// Creates a new conversation ID, effectively "forking" this conversation.
+    /// Used after compaction to save the compacted state as a new session,
+    /// preserving the original conversation in the database.
+    /// Returns the old conversation ID.
+    pub fn fork_conversation(&mut self) -> String {
+        std::mem::replace(&mut self.conversation_id, uuid::Uuid::new_v4().to_string())
+    }
+
     /// Check if currently in tangent mode
     pub fn is_in_tangent_mode(&self) -> bool {
         self.tangent_state.is_some()
@@ -1098,54 +1106,17 @@ impl ConversationState {
         custom_prompt: Option<impl AsRef<str>>,
         strategy: CompactStrategy,
     ) -> Result<FigConversationState, ChatError> {
-        let mut summary_content = match custom_prompt {
-            Some(custom_prompt) => {
-                // Make the custom instructions much more prominent and directive
-                format!(
-                    "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                            FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                            IMPORTANT CUSTOM INSTRUCTION: {}\n\n\
-                            Your task is to create a structured summary document containing:\n\
-                            1) A bullet-point list of key topics/questions covered\n\
-                            2) Bullet points for all significant tools executed and their results\n\
-                            3) Bullet points for any code or technical information shared\n\
-                            4) A section of key insights gained\n\n\
-                            5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
-                            FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                            ## CONVERSATION SUMMARY\n\
-                            * Topic 1: Key information\n\
-                            * Topic 2: Key information\n\n\
-                            ## TOOLS EXECUTED\n\
-                            * Tool X: Result Y\n\n\
-                            ## TODO ID\n\
-                            * <id>\n\n\
-                            Remember this is a DOCUMENT not a chat response. The custom instruction above modifies what to prioritize.\n\
-                            FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).",
-                    custom_prompt.as_ref()
-                )
-            },
-            None => {
-                // Default prompt
-                "[SYSTEM NOTE: This is an automated summarization request, not from the user]\n\n\
-                        FORMAT REQUIREMENTS: Create a structured, concise summary in bullet-point format. DO NOT respond conversationally. DO NOT address the user directly.\n\n\
-                        Your task is to create a structured summary document containing:\n\
-                        1) A bullet-point list of key topics/questions covered\n\
-                        2) Bullet points for all significant tools executed and their results\n\
-                        3) Bullet points for any code or technical information shared\n\
-                        4) A section of key insights gained\n\n\
-                        5) REQUIRED: the ID of the currently loaded todo list, if any\n\n\
-                        FORMAT THE SUMMARY IN THIRD PERSON, NOT AS A DIRECT RESPONSE. Example format:\n\n\
-                        ## CONVERSATION SUMMARY\n\
-                        * Topic 1: Key information\n\
-                        * Topic 2: Key information\n\n\
-                        ## TOOLS EXECUTED\n\
-                        * Tool X: Result Y\n\n\
-                        ## TODO ID\n\
-                        * <id>\n\n\
-                        Remember this is a DOCUMENT not a chat response.\n\
-                        FILTER OUT CHAT CONVENTIONS (greetings, offers to help, etc).".to_string()
-            },
-        };
+        const COMPACTION_PROMPT: &str = include_str!("../../compaction_prompt.md");
+
+        // Calculate effective messages to exclude based on both message count and token budget
+        // Must be done before backend_conversation_state borrows self mutably
+        let context_window = context_window_tokens(self.model_info.as_ref());
+        let effective_exclude = strategy.effective_messages_to_exclude(&self.history, context_window);
+
+        let custom_instruction = custom_prompt
+            .map(|p| format!("IMPORTANT CUSTOM INSTRUCTION: {}\n\n", p.as_ref()))
+            .unwrap_or_default();
+        let mut summary_content = COMPACTION_PROMPT.replace("{{CUSTOM_INSTRUCTION}}\n", &custom_instruction);
         if let Some((summary, _)) = &self.latest_summary {
             summary_content.push_str("\n\n");
             summary_content.push_str(CONTEXT_ENTRY_START_HEADER);
@@ -1161,7 +1132,7 @@ impl ConversationState {
 
         // Create the history according to the passed compact strategy.
         let mut history = conv_state.history.cloned().collect::<VecDeque<_>>();
-        history.drain((history.len().saturating_sub(strategy.messages_to_exclude))..);
+        history.drain((history.len().saturating_sub(effective_exclude))..);
         if strategy.truncate_large_messages {
             for HistoryEntry { user, .. } in &mut history {
                 user.truncate_safe(strategy.max_message_length);
@@ -1201,8 +1172,12 @@ impl ConversationState {
         strategy: CompactStrategy,
         request_metadata: RequestMetadata,
     ) {
+        // Calculate effective messages to exclude based on both message count and token budget
+        let context_window = context_window_tokens(self.model_info.as_ref());
+        let effective_exclude = strategy.effective_messages_to_exclude(&self.history, context_window);
+
         // Extract facts before draining history
-        let facts = super::cli::compact::extract_compaction_facts(&self.history, strategy.messages_to_exclude);
+        let facts = super::cli::compact::extract_compaction_facts(&self.history, effective_exclude);
 
         // Combine LLM summary + facts
         let facts_section = facts.to_string();
@@ -1213,7 +1188,7 @@ impl ConversationState {
         };
 
         self.history
-            .drain(..(self.history.len().saturating_sub(strategy.messages_to_exclude)));
+            .drain(..(self.history.len().saturating_sub(effective_exclude)));
 
         // Truncate excluded messages to prevent context bloat
         self.truncate_excluded_messages();

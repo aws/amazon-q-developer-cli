@@ -85,6 +85,10 @@ pub enum Setting {
     ChatDefaultAgent,
     #[strum(message = "Disable automatic conversation summarization (boolean)")]
     ChatDisableAutoCompaction,
+    #[strum(message = "Percentage of context window to exclude from compaction ([0, 100])")]
+    CompactionExcludeContextWindowPercent,
+    #[strum(message = "Minimum message pairs to exclude from compaction (number)")]
+    CompactionExcludeMessages,
     #[strum(message = "Show conversation history hints (boolean)")]
     ChatEnableHistoryHints,
     #[strum(message = "Enable the todo list feature (boolean)")]
@@ -132,6 +136,8 @@ impl AsRef<str> for Setting {
             Self::ChatDisableMarkdownRendering => "chat.disableMarkdownRendering",
             Self::ChatDefaultAgent => "chat.defaultAgent",
             Self::ChatDisableAutoCompaction => "chat.disableAutoCompaction",
+            Self::CompactionExcludeContextWindowPercent => "compaction.excludeContextWindowPercent",
+            Self::CompactionExcludeMessages => "compaction.excludeMessages",
             Self::ChatEnableHistoryHints => "chat.enableHistoryHints",
             Self::EnabledTodoList => "chat.enableTodoList",
             Self::EnabledCheckpoint => "chat.enableCheckpoint",
@@ -185,6 +191,8 @@ impl TryFrom<&str> for Setting {
             "chat.disableMarkdownRendering" => Ok(Self::ChatDisableMarkdownRendering),
             "chat.defaultAgent" => Ok(Self::ChatDefaultAgent),
             "chat.disableAutoCompaction" => Ok(Self::ChatDisableAutoCompaction),
+            "compaction.excludeContextWindowPercent" => Ok(Self::CompactionExcludeContextWindowPercent),
+            "compaction.excludeMessages" => Ok(Self::CompactionExcludeMessages),
             "chat.enableHistoryHints" => Ok(Self::ChatEnableHistoryHints),
             "chat.enableTodoList" => Ok(Self::EnabledTodoList),
             "chat.enableCheckpoint" => Ok(Self::EnabledCheckpoint),

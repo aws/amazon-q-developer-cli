@@ -18,6 +18,8 @@ mod conversation;
 mod input_source;
 mod message;
 mod parse;
+#[cfg(test)]
+mod test_utils;
 mod turn_summary;
 use std::path::MAIN_SEPARATOR;
 pub mod checkpoint;
@@ -1283,17 +1285,28 @@ impl ChatSession {
                         )?;
                         ("The conversation history has overflowed", eyre!(err), false)
                     } else {
+                        let default = CompactStrategy::default();
+                        let context_window_percent_to_exclude = os.database.settings.get_int_or(
+                            Setting::CompactionExcludeContextWindowPercent,
+                            default.context_window_percent_to_exclude,
+                        );
+                        let messages_to_exclude = os
+                            .database
+                            .settings
+                            .get_int_or(Setting::CompactionExcludeMessages, default.messages_to_exclude);
+
                         self.inner = Some(ChatState::CompactHistory {
                             prompt: None,
-                            show_summary: false,
+                            show_summary: true,
                             strategy: CompactStrategy {
+                                messages_to_exclude,
+                                context_window_percent_to_exclude,
                                 truncate_large_messages: self.conversation.history().len() <= 2,
                                 max_message_length: if self.conversation.history().len() <= 2 {
                                     25_000
                                 } else {
                                     Default::default()
                                 },
-                                ..Default::default()
                             },
                         });
 
@@ -2151,6 +2164,8 @@ impl ChatSession {
                                     truncate_large_messages: true,
                                     max_message_length: 25_000,
                                     messages_to_exclude: 0,
+                                    context_window_percent_to_exclude: adjusted_strategy
+                                        .context_window_percent_to_exclude,
                                 },
                             });
                         }
@@ -2240,6 +2255,17 @@ impl ChatSession {
         self.conversation
             .replace_history_with_summary(summary.clone(), adjusted_strategy, request_metadata);
 
+        let messages_kept = self.conversation.history().len();
+
+        // Fork to a new conversation ID so the original history is preserved in the database.
+        // This makes compaction reversible - users can resume the original session if needed.
+        self.conversation.fork_conversation();
+
+        // Save the new compacted conversation immediately
+        if let Ok(cwd) = std::env::current_dir() {
+            os.database.set_conversation_by_path(&cwd, &self.conversation).ok();
+        }
+
         // If a next message is set, then retry the request.
         let should_retry = self.conversation.next_user_message().is_some();
 
@@ -2249,10 +2275,17 @@ impl ChatSession {
 
         // Print output to the user.
         {
+            let kept_msg = if messages_kept > 0 {
+                format!(" The last {messages_kept} messages were not summarized — they're preserved as-is.")
+            } else {
+                String::new()
+            };
             execute!(
                 self.stderr,
                 StyledText::success_fg(),
-                style::Print("✔ Conversation history has been compacted successfully!\n\n"),
+                style::Print(format!(
+                    "✔ Conversation compacted.{kept_msg} Original session preserved — use /chat resume to access it.\n\n"
+                )),
                 StyledText::secondary_fg()
             )?;
 
@@ -5880,5 +5913,113 @@ mod tests {
             session.conversation.next_user_message().is_some(),
             "next_message should exist with tool error results"
         );
+    }
+}
+
+#[cfg(test)]
+mod compact_tests {
+    use super::test_utils::create_test_session;
+    use crate::os::Os;
+
+    #[tokio::test]
+    async fn test_compact_creates_new_session_and_continues_with_new_id() {
+        let mut os = Os::new().await.unwrap();
+        let cwd = std::env::current_dir().unwrap();
+
+        const POST_COMPACT_MESSAGE: &str = "what about lifetimes";
+
+        // Single session: chat → compact → continue chatting → exit
+        let (original_id, session) = create_test_session(
+            &mut os,
+            vec![
+                "what is rust",
+                "tell me about ownership",
+                "/compact",
+                POST_COMPACT_MESSAGE,
+            ],
+            vec![
+                "Rust is a systems language",
+                "Ownership is memory management",
+                "Summary of conversation",
+                "Lifetimes ensure references are valid",
+            ],
+            None,
+        )
+        .await;
+
+        let new_id = session.conversation.conversation_id().to_string();
+        assert_ne!(new_id, original_id, "Compaction should create new conversation ID");
+
+        // Verify database has 2 conversations
+        let conversations = os.database.list_conversations_by_path(&cwd).unwrap();
+        assert_eq!(conversations.len(), 2, "Should have 2 conversations");
+
+        // Verify original is unchanged (no summary)
+        let original = os.database.get_conversation_by_id(&original_id).unwrap().unwrap();
+        assert!(original.latest_summary().is_none(), "Original should not have summary");
+
+        // Verify new session has summary
+        let new_conv = os.database.get_conversation_by_id(&new_id).unwrap().unwrap();
+        assert!(new_conv.latest_summary().is_some(), "New session should have summary");
+
+        // Verify the continued message exists in the new conversation, not the original
+        let new_prompts = new_conv.get_user_prompts();
+        assert!(
+            new_prompts.iter().any(|p| p.contains(POST_COMPACT_MESSAGE)),
+            "New conversation should contain the continued message"
+        );
+        let original_prompts = original.get_user_prompts();
+        assert!(
+            !original_prompts.iter().any(|p| p.contains(POST_COMPACT_MESSAGE)),
+            "Original conversation should NOT contain the continued message"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_compact_percentage_based_exclusion() {
+        use crate::cli::chat::cli::model::context_window_tokens;
+        use crate::cli::chat::token_counter::TokenCounter;
+
+        let mut os = Os::new().await.unwrap();
+
+        let resp = "x".repeat(100);
+
+        // First, create a session to get the context window size
+        let (_, temp_session) = create_test_session(&mut os, vec!["hello"], vec![&resp], None).await;
+        let context_window = context_window_tokens(temp_session.conversation.model_info.as_ref());
+
+        // Calculate message size to ensure 2 messages cross the 1% threshold
+        // 1% of context window in chars
+        let threshold_chars = TokenCounter::token_to_chars(context_window / 100);
+        // Each message should be ~60% of threshold so:
+        // - 1 message (60%) < threshold
+        // - 2 messages (120%) > threshold -> stops here, keeps 2
+        let msg_size = threshold_chars * 60 / 100;
+
+        let msg1 = "a".repeat(msg_size);
+        let msg2 = "b".repeat(msg_size);
+        let msg3 = "c".repeat(msg_size);
+
+        let mut os2 = Os::new().await.unwrap();
+        let (_, session) = create_test_session(
+            &mut os2,
+            vec![
+                &msg1,
+                &msg2,
+                &msg3,
+                "/compact --messages-to-exclude 0 --context-window-percent-to-exclude 1",
+            ],
+            vec![&resp, &resp, &resp, "Summary"],
+            None,
+        )
+        .await;
+
+        // Should keep exactly 2 messages (msg2 crosses threshold)
+        let history = session.conversation.history();
+        assert_eq!(history.len(), 2, "Should keep exactly 2 messages");
+
+        let prompts: Vec<_> = history.iter().map(|h| h.user.prompt().unwrap_or_default()).collect();
+        assert!(prompts[0].contains(&msg2), "Should keep msg2");
+        assert!(prompts[1].contains(&msg3), "Should keep msg3");
     }
 }
