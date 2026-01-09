@@ -68,7 +68,6 @@ use crate::cli::chat::server_messenger::{
     ServerMessengerBuilder,
     UpdateEventMessage,
 };
-use crate::cli::chat::tools::code::Code;
 use crate::cli::chat::tools::custom_tool::CustomTool;
 use crate::cli::chat::tools::delegate::Delegate;
 use crate::cli::chat::tools::execute::ExecuteCommand;
@@ -838,9 +837,17 @@ impl ToolManager {
             if !crate::cli::chat::tools::knowledge::Knowledge::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::KNOWLEDGE.spec_name);
             }
-            if !crate::cli::chat::tools::code::Code::is_enabled(os) {
-                tool_specs.remove(ToolMetadata::CODE.spec_name);
+
+            // Insert dynamic code tool spec only if agent allows it
+            if crate::cli::chat::tools::code::Code::should_include(tool_list) {
+                let lsp_initialized = crate::cli::chat::tools::code::is_enabled(os);
+                let code_config = crate::cli::chat::tools::code_config::CodeToolConfig::new(lsp_initialized);
+                tool_specs.insert(
+                    ToolMetadata::CODE.spec_name.to_string(),
+                    code_config.get_tool_spec(Some(tool_list)),
+                );
             }
+
             if !crate::cli::chat::tools::todo::TodoList::is_enabled(os) {
                 tool_specs.remove(ToolMetadata::TODO.spec_name);
             }
@@ -1018,7 +1025,9 @@ impl ToolManager {
             name if name == ToolMetadata::KNOWLEDGE.spec_name => {
                 Tool::Knowledge(serde_json::from_value::<Knowledge>(value.args).map_err(map_err)?)
             },
-            name if name == ToolMetadata::CODE.spec_name => {
+            name if crate::cli::chat::tools::code::Code::INFO.aliases.contains(&name) => {
+                use crate::cli::chat::tools::code::Code;
+
                 Tool::Code(serde_json::from_value::<Code>(value.args).map_err(map_err)?)
             },
             name if name == ToolMetadata::TODO.spec_name => {

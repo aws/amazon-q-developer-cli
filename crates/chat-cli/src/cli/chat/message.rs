@@ -26,6 +26,7 @@ use super::conversation::{
 use super::tools::{
     InvokeOutput,
     OutputKind,
+    ToolMetadata,
     ToolOrigin,
 };
 use super::util::{
@@ -218,7 +219,23 @@ impl UserMessage {
                 tools: if tools.is_empty() {
                     None
                 } else {
-                    Some(tools.values().flatten().cloned().collect::<Vec<_>>())
+                    // Collect and sort tools to ensure 'code' tool appears first
+                    let mut all_tools: Vec<_> = tools.values().flatten().cloned().collect();
+                    all_tools.sort_by(|a, b| {
+                        let a_name = match a {
+                            Tool::ToolSpecification(spec) => &spec.name,
+                        };
+                        let b_name = match b {
+                            Tool::ToolSpecification(spec) => &spec.name,
+                        };
+                        // 'code' tool should come first
+                        match (a_name.as_str(), b_name.as_str()) {
+                            (name, _) if name == ToolMetadata::CODE.spec_name => std::cmp::Ordering::Less,
+                            (_, name) if name == ToolMetadata::CODE.spec_name => std::cmp::Ordering::Greater,
+                            _ => a_name.cmp(b_name),
+                        }
+                    });
+                    Some(all_tools)
                 },
                 ..Default::default()
             }),

@@ -14,17 +14,13 @@ use spinners::{
 use super::{
     InvokeOutput,
     OutputKind,
-    ToolInfo,
-};
-use crate::cli::agent::{
-    Agent,
-    PermissionEvalResult,
 };
 use crate::os::Os;
-use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
 /// Maximum number of results to display before showing "(x more items found)"
-const MAX_VISIBLE_RESULTS: usize = 20;
+const MAX_VISIBLE_RESULTS: usize = 5;
+/// Maximum visible pattern matches (more verbose with code snippets)
+const MAX_VISIBLE_PATTERN_MATCHES: usize = 5;
 
 /// Default limit for find_references results
 const DEFAULT_REFERENCES_LIMIT: usize = 500;
@@ -32,8 +28,22 @@ const DEFAULT_REFERENCES_LIMIT: usize = 500;
 /// Maximum limit for find_references results
 const MAX_REFERENCES_LIMIT: usize = 1000;
 
-/// Code intelligence operations using LSP servers for symbol search, references, definitions, and
-/// workspace analysis.
+/// Check if code intelligence feature is enabled
+pub(crate) fn is_enabled(_os: &Os) -> bool {
+    if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
+        return false;
+    }
+    std::env::current_dir()
+        .map(|cwd| code_agent_sdk::ConfigManager::lsp_config_exists(&cwd))
+        .unwrap_or(false)
+}
+
+/// Check if an operation is a write operation
+pub fn is_write_operation(op: &Code) -> bool {
+    matches!(op, Code::RenameSymbol(_) | Code::Format(_) | Code::PatternRewrite(_))
+}
+
+/// Code intelligence operations - single unified tool with permission-based scoping
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub enum Code {
@@ -48,14 +58,38 @@ pub enum Code {
     GetHover(GetHoverParams),
     GetCompletions(GetCompletionsParams),
     InitializeWorkspace,
+    PatternSearch(PatternSearchParams),
+    PatternRewrite(PatternRewriteParams),
+    GenerateCodebaseOverview(GenerateCodebaseOverviewParams),
+    SearchCodebaseMap(SearchCodebaseMapParams),
 }
 
 impl Code {
-    pub const INFO: ToolInfo = ToolInfo {
+    pub const INFO: super::ToolInfo = super::ToolInfo {
         spec_name: "code",
         preferred_alias: "code",
-        aliases: &["code"],
+        aliases: &["code", "code/read", "code/write"],
     };
+
+    /// Check if code tool should be included based on agent's tool list
+    pub fn should_include(tool_list: &[String]) -> bool {
+        use crate::cli::chat::tools::ToolMetadata;
+        use crate::util::consts::BUILTIN_TOOLS_PREFIX;
+        use crate::util::pattern_matching::matches_any_pattern;
+
+        let patterns: std::collections::HashSet<&str> = tool_list.iter().map(|s| s.as_str()).collect();
+
+        // For native tools, check if @builtin matches
+        if matches_any_pattern(&patterns, BUILTIN_TOOLS_PREFIX) {
+            return true;
+        }
+
+        // Check if any tool alias matches any pattern
+        ToolMetadata::CODE
+            .aliases
+            .iter()
+            .any(|alias| matches_any_pattern(&patterns, alias))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -125,6 +159,8 @@ pub struct LookupSymbolsParams {
     pub symbols: Vec<String>,
     #[serde(default)]
     pub file_path: Option<String>,
+    #[serde(default)]
+    pub include_source: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -154,6 +190,63 @@ pub struct GetCompletionsParams {
     pub symbol_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PatternSearchParams {
+    /// AST pattern to search for (e.g., "$X.unwrap()", "console.log($$$)")
+    pub pattern: String,
+    /// Programming language (rust, javascript, typescript, python, go, java, etc.)
+    pub language: String,
+    /// Optional file path to scope search to a single file
+    #[serde(default)]
+    pub file_path: Option<String>,
+    /// Maximum number of results (default: 50)
+    #[serde(default)]
+    pub limit: Option<u32>,
+    /// Number of results to skip (for pagination)
+    #[serde(default)]
+    pub offset: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PatternRewriteParams {
+    /// AST pattern to find (e.g., "$X.unwrap()")
+    pub pattern: String,
+    /// Replacement pattern (e.g., "$X.expect(\"error\")")
+    pub replacement: String,
+    /// Programming language (rust, javascript, typescript, python, go, java, etc.)
+    pub language: String,
+    /// Optional file path to scope rewrite to a single file
+    #[serde(default)]
+    pub file_path: Option<String>,
+    /// Preview changes without applying (default: true)
+    #[serde(default = "default_dry_run")]
+    pub dry_run: bool,
+    /// Maximum number of files to modify (default: 50)
+    #[serde(default)]
+    pub limit: Option<u32>,
+}
+
+fn default_dry_run() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct GenerateCodebaseOverviewParams {
+    /// Directory path (defaults to current workspace)
+    #[serde(default)]
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchCodebaseMapParams {
+    /// Directory path to search in (defaults to current workspace)
+    #[serde(default)]
+    pub path: Option<String>,
+    /// File path/name pattern to match (e.g., "main.rs" or "src/tools")
+    #[serde(default)]
+    pub file_path: Option<String>,
+}
+
 fn default_tab_size() -> i32 {
     4
 }
@@ -166,64 +259,95 @@ fn default_insert_spaces() -> bool {
     true
 }
 
-impl Code {
-    /// Checks if the code intelligence feature is enabled and configured
-    /// Returns true only if feature flag is on AND lsp.json exists
-    #[allow(dead_code)]
-    pub fn is_enabled(_os: &Os) -> bool {
-        if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
-            return false;
-        }
-        // Check if lsp.json exists (user has run /code init)
-        std::env::current_dir()
-            .map(|cwd| code_agent_sdk::ConfigManager::lsp_config_exists(&cwd))
-            .unwrap_or(false)
+// Module-level helper functions accessible to all code tool types
+pub(super) fn validate_file_exists(os: &Os, file_path: &str) -> Result<()> {
+    let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
+    if !path.exists() {
+        eyre::bail!("File path '{}' does not exist", file_path);
     }
+    Ok(())
+}
 
-    pub fn eval_perm(_os: &Os, agent: &Agent) -> PermissionEvalResult {
+fn validate_directory_exists(os: &Os, dir_path: &str) -> Result<()> {
+    let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, dir_path);
+    if !path.is_dir() {
+        eyre::bail!("Directory '{}' does not exist", dir_path);
+    }
+    Ok(())
+}
+
+pub(super) fn validate_position(row: i32, column: i32) -> Result<()> {
+    if row < 1 {
+        eyre::bail!("Row number must be >= 1 (got {})", row);
+    }
+    if column < 1 {
+        eyre::bail!("Column number must be >= 1 (got {})", column);
+    }
+    Ok(())
+}
+
+impl Code {
+    /// Evaluate permission for code intelligence operation
+    pub fn eval_perm(
+        _os: &Os,
+        agent: &crate::cli::agent::Agent,
+        code: &Code,
+    ) -> crate::cli::agent::PermissionEvalResult {
+        use crate::cli::agent::PermissionEvalResult;
+        use crate::util::tool_permission_checker::is_tool_in_allowlist;
+
         if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
             return PermissionEvalResult::Deny(vec!["Code intelligence feature is not available".to_string()]);
         }
 
-        if Self::INFO
+        // Read operations are always allowed
+        if !is_write_operation(code) {
+            return PermissionEvalResult::Allow;
+        }
+
+        // Write operations: check if code tool is trusted
+        let is_trusted = Self::INFO
             .aliases
             .iter()
-            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None))
-        {
+            .any(|alias| is_tool_in_allowlist(&agent.allowed_tools, alias, None));
+
+        if is_trusted {
             PermissionEvalResult::Allow
         } else {
             PermissionEvalResult::Ask
         }
     }
 
-    pub async fn validate(&mut self, os: &Os) -> Result<()> {
+    /// Validate code operation
+    pub async fn validate(&self, os: &Os) -> Result<()> {
         if !crate::feature_flags::FeatureFlags::CODE_INTELLIGENCE_ENABLED {
             return Err(eyre::eyre!("Code intelligence feature is not available"));
         }
 
+        // Validate operation-specific parameters
         match self {
             Code::SearchSymbols(params) => {
                 if params.symbol_name.trim().is_empty() {
                     eyre::bail!("Symbol name cannot be empty");
                 }
                 if let Some(file_path) = &params.file_path {
-                    Self::validate_file_exists(os, file_path)?;
+                    validate_file_exists(os, file_path)?;
                 }
                 Ok(())
             },
             Code::FindReferences(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
-                Self::validate_position(params.row, params.column)?;
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
                 Ok(())
             },
             Code::GotoDefinition(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
-                Self::validate_position(params.row, params.column)?;
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
                 Ok(())
             },
             Code::RenameSymbol(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
-                Self::validate_position(params.row, params.column)?;
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
                 if params.new_name.trim().is_empty() {
                     eyre::bail!("New name cannot be empty");
                 }
@@ -231,7 +355,7 @@ impl Code {
             },
             Code::Format(params) => {
                 if let Some(file_path) = &params.file_path {
-                    Self::validate_file_exists(os, file_path)?;
+                    validate_file_exists(os, file_path)?;
                 }
                 if params.tab_size < 1 {
                     eyre::bail!("Tab size must be >= 1 (got {})", params.tab_size);
@@ -239,7 +363,7 @@ impl Code {
                 Ok(())
             },
             Code::GetDocumentSymbols(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
+                validate_file_exists(os, &params.file_path)?;
                 Ok(())
             },
             Code::LookupSymbols(params) => {
@@ -247,44 +371,65 @@ impl Code {
                     eyre::bail!("Symbols list cannot be empty");
                 }
                 if let Some(file_path) = &params.file_path {
-                    Self::validate_file_exists(os, file_path)?;
+                    validate_file_exists(os, file_path)?;
                 }
                 Ok(())
             },
             Code::GetDiagnostics(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
+                validate_file_exists(os, &params.file_path)?;
                 Ok(())
             },
             Code::GetHover(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
-                Self::validate_position(params.row, params.column)?;
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
                 Ok(())
             },
             Code::GetCompletions(params) => {
-                Self::validate_file_exists(os, &params.file_path)?;
-                Self::validate_position(params.row, params.column)?;
+                validate_file_exists(os, &params.file_path)?;
+                validate_position(params.row, params.column)?;
+                Ok(())
+            },
+            Code::PatternSearch(params) => {
+                if params.pattern.trim().is_empty() {
+                    eyre::bail!("Pattern cannot be empty");
+                }
+                if params.language.trim().is_empty() {
+                    eyre::bail!("Language must be specified");
+                }
+                if let Some(file_path) = &params.file_path {
+                    validate_file_exists(os, file_path)?;
+                }
+                Ok(())
+            },
+            Code::PatternRewrite(params) => {
+                if params.pattern.trim().is_empty() {
+                    eyre::bail!("Pattern cannot be empty");
+                }
+                if params.replacement.trim().is_empty() {
+                    eyre::bail!("Replacement cannot be empty");
+                }
+                if params.language.trim().is_empty() {
+                    eyre::bail!("Language must be specified");
+                }
+                if let Some(file_path) = &params.file_path {
+                    validate_file_exists(os, file_path)?;
+                }
                 Ok(())
             },
             Code::InitializeWorkspace => Ok(()),
+            Code::GenerateCodebaseOverview(params) => {
+                if let Some(path) = &params.path {
+                    validate_directory_exists(os, path)?;
+                }
+                Ok(())
+            },
+            Code::SearchCodebaseMap(params) => {
+                if let Some(path) = &params.path {
+                    validate_directory_exists(os, path)?;
+                }
+                Ok(())
+            },
         }
-    }
-
-    fn validate_file_exists(os: &Os, file_path: &str) -> Result<()> {
-        let path = crate::cli::chat::tools::sanitize_path_tool_arg(os, file_path);
-        if !path.exists() {
-            eyre::bail!("File path '{}' does not exist", file_path);
-        }
-        Ok(())
-    }
-
-    fn validate_position(row: i32, column: i32) -> Result<()> {
-        if row < 1 {
-            eyre::bail!("Row number must be >= 1 (got {})", row);
-        }
-        if column < 1 {
-            eyre::bail!("Column number must be >= 1 (got {})", column);
-        }
-        Ok(())
     }
 
     fn stop_spinner(spinner: &mut Option<Spinner>, stdout: &mut impl Write) -> Result<()> {
@@ -336,15 +481,6 @@ impl Code {
             // Check if lsp.json exists (user has run /code init)
             let is_configured = client.is_code_intelligence_initialized();
 
-            // For all operations except InitializeWorkspace, require lsp.json to exist
-            if !matches!(self, Code::InitializeWorkspace) && !is_configured {
-                return Ok(InvokeOutput {
-                    output: OutputKind::Text(
-                        "Code intelligence not configured. Only manual '/code init' command can initialize code intelligence. Please run '/code init' first.".to_string()
-                    ),
-                });
-            }
-
             // Auto-initialize if json exists but workspace not initialized yet
             if is_configured
                 && client.workspace_status() == code_agent_sdk::sdk::WorkspaceStatus::NotInitialized
@@ -353,8 +489,8 @@ impl Code {
                 return Err(eyre::eyre!("Failed to initialize code intelligence: {e}"));
             }
 
-            // Check if workspace is initialized (except for InitializeWorkspace operation)
-            if !matches!(self, Code::InitializeWorkspace) {
+            // Check if workspace is initialized (only if LSP is configured)
+            if !matches!(self, Code::InitializeWorkspace) && is_configured {
                 match client.workspace_status() {
                     code_agent_sdk::sdk::WorkspaceStatus::NotInitialized => {
                         return Ok(InvokeOutput {
@@ -381,8 +517,12 @@ impl Code {
             match self {
                 Code::SearchSymbols(params) => {
                     const MAX_RESULTS: u32 = 50;
+                    const DEFAULT_RESULTS: u32 = 20;
 
-                    let limit = params.limit.map(|l| (l as u32).min(MAX_RESULTS)).or(Some(MAX_RESULTS));
+                    let limit = params
+                        .limit
+                        .map(|l| (l as u32).min(MAX_RESULTS))
+                        .or(Some(DEFAULT_RESULTS));
 
                     let request = code_agent_sdk::model::types::FindSymbolsRequest {
                         symbol_name: params.symbol_name.clone(),
@@ -568,22 +708,27 @@ impl Code {
                         row: params.row as u32,
                         column: params.column as u32,
                         new_name: params.new_name.clone(),
-                        dry_run: params.dry_run.unwrap_or(false),
+                        dry_run: params.dry_run.unwrap_or(true),
                     };
 
                     match client.rename_symbol(request).await {
                         Ok(Some(rename_result)) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
-                            let is_dry_run = params.dry_run.unwrap_or(false);
+                            let is_dry_run = params.dry_run.unwrap_or(true);
 
                             queue!(_stdout, style::Print("\n"))?;
+
+                            let mode = if is_dry_run { "Dry Run" } else { "Applied" };
+                            queue!(
+                                _stdout,
+                                StyledText::info_fg(),
+                                style::Print(&format!("[{mode}] ")),
+                                StyledText::reset(),
+                            )?;
 
                             if is_dry_run {
                                 queue!(
                                     _stdout,
-                                    StyledText::warning_fg(),
-                                    style::Print("Dry run: "),
-                                    StyledText::reset(),
                                     style::Print("Would rename "),
                                     StyledText::success_fg(),
                                     style::Print(&format!("{}", rename_result.edit_count)),
@@ -706,7 +851,7 @@ impl Code {
                 Code::LookupSymbols(params) => {
                     let request = code_agent_sdk::model::types::GetSymbolsRequest {
                         symbols: params.symbols.clone(),
-                        include_source: false,
+                        include_source: params.include_source,
                         file_path: params.file_path.as_ref().map(std::path::PathBuf::from),
                         start_row: None,
                         start_column: None,
@@ -1034,6 +1179,170 @@ impl Code {
                         result = format!("Failed to initialize workspace: {e}");
                     },
                 },
+                Code::PatternSearch(params) => {
+                    let request = code_agent_sdk::PatternSearchRequest {
+                        pattern: params.pattern.clone(),
+                        language: params.language.clone(),
+                        file_path: params.file_path.clone(),
+                        limit: params.limit,
+                        offset: params.offset,
+                    };
+
+                    match client.pattern_search(request).await {
+                        Ok(matches) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            if matches.is_empty() {
+                                queue!(_stdout, style::Print("\nNo pattern matches found\n"),)?;
+                                result = "No pattern matches found".to_string();
+                            } else {
+                                queue!(_stdout, style::Print("\n"))?;
+                                Self::render_pattern_matches(&matches, _stdout)?;
+                                result = serde_json::to_string(&matches).unwrap_or_else(|_| format!("{matches:?}"));
+                            }
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Pattern search failed: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{e}\n")),
+                            )?;
+                            result = format!("Pattern search failed: {e}");
+                        },
+                    }
+                },
+                Code::PatternRewrite(params) => {
+                    let request = code_agent_sdk::PatternRewriteRequest {
+                        pattern: params.pattern.clone(),
+                        replacement: params.replacement.clone(),
+                        language: params.language.clone(),
+                        file_path: params.file_path.clone(),
+                        dry_run: params.dry_run,
+                        limit: params.limit,
+                    };
+
+                    match client.pattern_rewrite(request).await {
+                        Ok(rewrite_result) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let mode = if params.dry_run { "Dry Run" } else { "Applied" };
+                            queue!(
+                                _stdout,
+                                style::Print("\n"),
+                                StyledText::info_fg(),
+                                style::Print(&format!("[{mode}] ")),
+                                StyledText::reset(),
+                                style::Print(&format!(
+                                    "Modified {} files, {} replacements\n",
+                                    rewrite_result.files_modified, rewrite_result.replacements
+                                )),
+                            )?;
+
+                            // Show modified files
+                            if !rewrite_result.modified_files.is_empty() {
+                                queue!(_stdout, style::Print("Files modified:\n"))?;
+                                for file in &rewrite_result.modified_files {
+                                    queue!(_stdout, style::Print(&format!("  - {file}\n")))?;
+                                }
+                            }
+
+                            if params.dry_run {
+                                result = format!(
+                                    "Dry Run: Would modify {} files with {} replacements.\nFiles: {}\nSet dry_run=false to apply.",
+                                    rewrite_result.files_modified,
+                                    rewrite_result.replacements,
+                                    rewrite_result.modified_files.join(", ")
+                                );
+                            } else {
+                                result = format!(
+                                    "Applied: Modified {} files with {} replacements.\nFiles: {}",
+                                    rewrite_result.files_modified,
+                                    rewrite_result.replacements,
+                                    rewrite_result.modified_files.join(", ")
+                                );
+                            }
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            queue!(
+                                _stdout,
+                                StyledText::error_fg(),
+                                style::Print("Pattern rewrite failed: "),
+                                StyledText::reset(),
+                                style::Print(&format!("{e}\n")),
+                            )?;
+                            result = format!("Pattern rewrite failed: {e}");
+                        },
+                    }
+                },
+                Code::GenerateCodebaseOverview(params) => {
+                    // Get timeout from LSP config or use default
+                    let timeout_secs = client
+                        .workspace_manager
+                        .config_manager
+                        .all_configs()
+                        .first()
+                        .map_or(code_agent_sdk::model::types::DEFAULT_TIMEOUT_SECS, |c| {
+                            c.request_timeout_secs
+                        });
+
+                    let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
+                        path: params.path.clone(),
+                        timeout_secs: Some(timeout_secs),
+                        token_budget: None,
+                    };
+                    match client.generate_codebase_overview(request).await {
+                        Ok(overview) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let json = serde_json::to_string(&overview).unwrap_or_default();
+                            let tokens = json.len() / 4;
+                            queue!(
+                                _stdout,
+                                style::Print("\n"),
+                                StyledText::info_fg(),
+                                style::Print(&format!("[Overview] {} bytes (~{} tokens)\n", json.len(), tokens)),
+                                StyledText::reset(),
+                            )?;
+                            result = json;
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            result = format!("Failed to generate codebase overview: {e}");
+                        },
+                    }
+                },
+                Code::SearchCodebaseMap(params) => {
+                    let request = code_agent_sdk::model::types::SearchCodebaseMapRequest {
+                        path: params.path.clone(),
+                        file_path: params.file_path.clone(),
+                        timeout_secs: None,
+                        token_budget: None,
+                    };
+
+                    match client.search_codebase_map(request).await {
+                        Ok(map) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            let files = map.files_processed;
+                            let tokens = map.token_count;
+                            let truncated = map.truncated;
+                            queue!(
+                                _stdout,
+                                style::Print("\n"),
+                                StyledText::info_fg(),
+                                style::Print(&format!(
+                                    "[CodebaseMap] {files} files, ~{tokens} tokens, truncated: {truncated}\n"
+                                )),
+                                StyledText::reset(),
+                            )?;
+                            result = serde_json::to_string(&map).unwrap_or_default();
+                        },
+                        Err(e) => {
+                            Self::stop_spinner(&mut spinner, _stdout)?;
+                            result = format!("Failed to search codebase map: {e}");
+                        },
+                    }
+                },
             }
         } else {
             result = " Code intelligence client not initialized\n   Enable with: q settings chat.enableCodeIntelligence true".to_string();
@@ -1205,6 +1514,53 @@ impl Code {
         Ok(())
     }
 
+    fn render_pattern_matches(matches: &[code_agent_sdk::PatternMatch], stdout: &mut impl Write) -> Result<()> {
+        use crossterm::{
+            queue,
+            style,
+        };
+
+        use crate::theme::StyledText;
+
+        let visible_count = matches.len().min(MAX_VISIBLE_PATTERN_MATCHES);
+        let remaining = matches.len().saturating_sub(MAX_VISIBLE_PATTERN_MATCHES);
+
+        for (i, m) in matches.iter().take(visible_count).enumerate() {
+            queue!(
+                stdout,
+                style::Print(&format!("  {}. ", i + 1)),
+                StyledText::brand_fg(),
+                style::Print(&m.file_path),
+                StyledText::reset(),
+                style::Print(":"),
+                StyledText::secondary_fg(),
+                style::Print(&format!("{}:{}", m.start_row, m.start_column)),
+                StyledText::reset(),
+            )?;
+
+            // Show only first line of matched code, trimmed
+            let first_line = m.matched_code.lines().next().unwrap_or("");
+            let trimmed = first_line.trim();
+            if !trimmed.is_empty() {
+                queue!(stdout, style::Print(" - "), style::Print(trimmed),)?;
+            }
+
+            queue!(stdout, style::Print("\n"))?;
+        }
+
+        if remaining > 0 {
+            queue!(
+                stdout,
+                style::Print("  "),
+                StyledText::secondary_fg(),
+                style::Print(&format!("({remaining} more matches found)\n")),
+                StyledText::reset(),
+            )?;
+        }
+
+        Ok(())
+    }
+
     pub fn queue_description(&self, tool: &super::tool::Tool, output: &mut impl Write) -> Result<()> {
         use crossterm::{
             queue,
@@ -1300,7 +1656,7 @@ impl Code {
                 }
             },
             Code::RenameSymbol(params) => {
-                let is_dry_run = params.dry_run.unwrap_or(false);
+                let is_dry_run = params.dry_run.unwrap_or(true);
                 queue!(
                     output,
                     style::Print("Renaming symbol at: "),
@@ -1440,6 +1796,91 @@ impl Code {
             },
             Code::InitializeWorkspace => {
                 queue!(output, style::Print("Initializing workspace"),)?;
+            },
+            Code::PatternSearch(params) => {
+                queue!(
+                    output,
+                    style::Print("Pattern search: "),
+                    StyledText::brand_fg(),
+                    style::Print(&format!("\"{}\"", params.pattern)),
+                    StyledText::reset(),
+                )?;
+                if let Some(ref path) = params.file_path {
+                    queue!(
+                        output,
+                        style::Print(" in "),
+                        StyledText::brand_fg(),
+                        style::Print(path),
+                        StyledText::reset(),
+                    )?;
+                }
+                queue!(
+                    output,
+                    style::Print(" ("),
+                    StyledText::info_fg(),
+                    style::Print(&params.language),
+                    StyledText::reset(),
+                    style::Print(")"),
+                )?;
+            },
+            Code::PatternRewrite(params) => {
+                let mode = if params.dry_run { "[dry-run]" } else { "[apply]" };
+                queue!(
+                    output,
+                    style::Print("Pattern rewrite "),
+                    StyledText::info_fg(),
+                    style::Print(mode),
+                    StyledText::reset(),
+                    style::Print(": "),
+                    StyledText::brand_fg(),
+                    style::Print(&format!("\"{}\"", params.pattern)),
+                    StyledText::reset(),
+                    style::Print(" → "),
+                    StyledText::brand_fg(),
+                    style::Print(&format!("\"{}\"", params.replacement)),
+                    StyledText::reset(),
+                )?;
+                if let Some(ref path) = params.file_path {
+                    queue!(
+                        output,
+                        style::Print(" in "),
+                        StyledText::brand_fg(),
+                        style::Print(path),
+                        StyledText::reset(),
+                    )?;
+                }
+                queue!(
+                    output,
+                    style::Print(" ("),
+                    StyledText::info_fg(),
+                    style::Print(&params.language),
+                    StyledText::reset(),
+                    style::Print(")"),
+                )?;
+            },
+            Code::GenerateCodebaseOverview(params) => {
+                queue!(output, style::Print("Generate codebase overview"),)?;
+                if let Some(ref path) = params.path {
+                    queue!(
+                        output,
+                        style::Print(" for "),
+                        StyledText::brand_fg(),
+                        style::Print(path),
+                        StyledText::reset(),
+                    )?;
+                }
+            },
+            Code::SearchCodebaseMap(params) => {
+                queue!(output, style::Print("Search codebase map"))?;
+                if let Some(ref path) = params.file_path {
+                    queue!(
+                        output,
+                        style::Print(" "),
+                        StyledText::brand_fg(),
+                        style::Print(path),
+                        StyledText::reset(),
+                    )?;
+                }
             },
         }
         super::display_tool_use(tool, output)?;

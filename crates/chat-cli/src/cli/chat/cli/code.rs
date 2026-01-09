@@ -40,6 +40,13 @@ pub enum CodeSubcommand {
         #[arg(short, long)]
         path: Option<std::path::PathBuf>,
     },
+    /// Generate codebase overview and start analysis
+    Overview {
+        /// Silent mode for QA workflows - skips the overview display and lets you
+        /// ask questions directly about the codebase without seeing the full structure first.
+        #[arg(short, long)]
+        silent: bool,
+    },
 }
 
 impl CodeSubcommand {
@@ -48,6 +55,7 @@ impl CodeSubcommand {
             Self::Status => "status",
             Self::Init { .. } => "init",
             Self::Logs { .. } => "logs",
+            Self::Overview { .. } => "overview",
         }
     }
 
@@ -66,10 +74,12 @@ impl CodeSubcommand {
             return Err(ChatError::Custom(error_msg.into()));
         }
 
-        // Check if code tool is in the agent's tools list
+        // Check if any code tool is in the agent's tools list
         use crate::cli::chat::tools::ToolMetadata;
 
-        if !session.conversation.agents.has_tool(ToolMetadata::CODE.aliases) {
+        let has_code_tool = session.conversation.agents.has_tool(ToolMetadata::CODE.aliases);
+
+        if !has_code_tool {
             queue!(
                 session.stderr,
                 StyledText::error_fg(),
@@ -86,6 +96,114 @@ impl CodeSubcommand {
             Self::Status => self.show_workspace_status(os, session, false, false).await,
             Self::Init { force } => self.show_workspace_status(os, session, true, *force).await,
             Self::Logs { level, lines, path } => self.show_logs(session, level, *lines, path.clone()).await,
+            Self::Overview { silent } => self.generate_overview(os, session, *silent).await,
+        }
+    }
+
+    async fn generate_overview(
+        &self,
+        _os: &mut Os,
+        session: &mut ChatSession,
+        silent: bool,
+    ) -> Result<ChatState, ChatError> {
+        use std::time::Instant;
+
+        use crossterm::{
+            cursor,
+            terminal,
+        };
+        use spinners::{
+            Spinner,
+            Spinners,
+        };
+
+        // Use shared client if available, otherwise fail
+        let Some(code_client_lock) = &session.conversation.code_intelligence_client else {
+            queue!(
+                session.stderr,
+                StyledText::error_fg(),
+                style::Print("Code intelligence not available.\n"),
+                StyledText::reset(),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        let mut client = code_client_lock.write().await;
+
+        let spinner = Some(Spinner::new(
+            Spinners::Dots,
+            "Generating codebase overview...".to_string(),
+        ));
+        let start = Instant::now();
+
+        // Use default timeout for CLI command
+        let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
+            path: None,
+            timeout_secs: None,
+            token_budget: None,
+        };
+        match client.generate_codebase_overview(request).await {
+            Ok(overview) => {
+                if let Some(mut s) = spinner {
+                    s.stop();
+                }
+                if !silent {
+                    queue!(
+                        session.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0)
+                    )?;
+                    let elapsed = start.elapsed();
+                    let json = serde_json::to_string(&overview).unwrap_or_default();
+                    let tokens = json.len() / 4;
+                    queue!(
+                        session.stderr,
+                        StyledText::success_fg(),
+                        style::Print(format!(
+                            "✓ Overview generated (~{} tokens) in {:.1}s\n\n",
+                            tokens,
+                            elapsed.as_secs_f64()
+                        )),
+                        StyledText::reset()
+                    )?;
+                }
+                let json = serde_json::to_string(&overview).unwrap_or_default();
+                if silent {
+                    let input = format!(
+                        "Here is the codebase overview:\n\n{json}\n\nCodebase overview has been generated. Briefly acknowledge this and invite the user to ask questions about the codebase. Keep your response under 2 sentences.\n\nWhen answering questions: You MUST answer FIRST using ONLY the information available in the overview above. You MUST NOT use any tools unless the user explicitly asks for more details or you cannot answer from the overview. If exploration is needed, you SHOULD ask the user before proceeding.\n\nIf you must explore: You MUST perform small, focused searches with small limits (e.g., limit=5-10, not 50). Extract minimal information only.\n\nAvailable tools (use sparingly):\n- search_symbols, get_document_symbols, search_codebase_map, fs_read, pattern_search\n\nLSP tools MAY be available: find_references, goto_definition, get_hover"
+                    );
+                    Ok(ChatState::HandleInput { input })
+                } else {
+                    let input = format!(
+                        "Here is the codebase overview:\n\n{json}\n\nAnalyze this and summarize the key components, architecture, and entry points.\n\nWhen answering questions: You MUST answer FIRST using ONLY the information available in the overview above. You MUST NOT use any tools unless the user explicitly asks for more details or you cannot answer from the overview. If exploration is needed, you SHOULD ask the user before proceeding.\n\nIf you must explore: You MUST perform small, focused searches with small limits (e.g., limit=5-10, not 50). Extract minimal information only.\n\nAvailable tools (use sparingly):\n- search_symbols, get_document_symbols, search_codebase_map, fs_read, pattern_search\n\nLSP tools MAY be available: find_references, goto_definition, get_hover"
+                    );
+                    Ok(ChatState::HandleInput { input })
+                }
+            },
+            Err(e) => {
+                if let Some(mut s) = spinner {
+                    s.stop();
+                }
+                if !silent {
+                    queue!(
+                        session.stderr,
+                        terminal::Clear(terminal::ClearType::CurrentLine),
+                        cursor::MoveToColumn(0)
+                    )?;
+                    queue!(
+                        session.stderr,
+                        StyledText::error_fg(),
+                        style::Print(format!("Failed: {e}\n")),
+                        StyledText::reset()
+                    )?;
+                }
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
         }
     }
 

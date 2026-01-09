@@ -7,8 +7,6 @@ use chat_cli_ui::conduit::{
 };
 use eyre::Result;
 
-use super::ToolInfo;
-use super::code::Code;
 use super::custom_tool::CustomTool;
 use super::delegate::Delegate;
 use super::execute::ExecuteCommand;
@@ -26,6 +24,10 @@ use super::use_aws::UseAws;
 use super::use_subagent::UseSubagent;
 use super::web_fetch::WebFetch;
 use super::web_search::WebSearch;
+use super::{
+    ToolInfo,
+    code,
+};
 use crate::cli::agent::{
     Agent,
     PermissionEvalResult,
@@ -55,7 +57,7 @@ impl ToolMetadata {
         Self::USE_SUBAGENT,
         Self::SWITCH_TO_EXECUTION,
     ];
-    pub const CODE: &ToolInfo = &Code::INFO;
+    pub const CODE: &ToolInfo = &code::Code::INFO;
     pub const DELEGATE: &ToolInfo = &Delegate::INFO;
     pub const EXECUTE_COMMAND: &ToolInfo = &ExecuteCommand::INFO;
     pub const FS_READ: &ToolInfo = &FsRead::INFO;
@@ -101,7 +103,7 @@ pub enum Tool {
     GhIssue(GhIssue),
     Introspect(Introspect),
     Knowledge(Knowledge),
-    Code(Code),
+    Code(code::Code),
     Thinking(Thinking),
     Todo(TodoList),
     Delegate(Delegate),
@@ -125,7 +127,7 @@ impl Tool {
             Tool::GhIssue(_) => GhIssue::INFO.preferred_alias,
             Tool::Introspect(_) => Introspect::INFO.preferred_alias,
             Tool::Knowledge(_) => Knowledge::INFO.preferred_alias,
-            Tool::Code(_) => Code::INFO.preferred_alias,
+            Tool::Code(_) => code::Code::INFO.preferred_alias,
             Tool::Thinking(_) => Thinking::INFO.preferred_alias,
             Tool::Todo(_) => TodoList::INFO.preferred_alias,
             Tool::Delegate(_) => Delegate::INFO.preferred_alias,
@@ -151,7 +153,7 @@ impl Tool {
             Tool::Thinking(_) => PermissionEvalResult::Allow,
             Tool::Todo(_) => PermissionEvalResult::Allow,
             Tool::Knowledge(knowledge) => knowledge.eval_perm(os, agent),
-            Tool::Code(_) => Code::eval_perm(os, agent),
+            Tool::Code(code) => code::Code::eval_perm(os, agent, code),
             Tool::Delegate(_) => PermissionEvalResult::Allow,
             Tool::WebSearch(web_search) => web_search.eval_perm(os, agent),
             Tool::WebFetch(web_fetch) => web_fetch.eval_perm(os, agent),
