@@ -223,6 +223,7 @@ jobs:
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
+      commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
 
   TriggerLinuxBuild:
     needs: [determine_branch, UpdateVersionNumber]
@@ -239,6 +240,7 @@ jobs:
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
       branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
+      commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build

@@ -21,6 +21,9 @@ on:
       branch_name:
         type: string
         required: true
+      commit_sha:
+        type: string
+        required: true
 
 env:
   AWS_REGION: "us-east-1"
@@ -39,7 +42,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.branch_name }}
+          ref: ${{ inputs.commit_sha }}
 
       - name: Configure environment from secrets
         run: |
@@ -79,7 +82,7 @@ jobs:
         run: |
           echo "Uploading build artifacts to S3..."
           BRANCH_NAME="${{ inputs.branch_name }}"
-          COMMIT_ID=$(git rev-parse HEAD)
+          COMMIT_ID="${{ inputs.commit_sha }}"
           TARGET="universal-apple-darwin"
           S3_PATH_COMMIT="chat/${BRANCH_NAME}/${COMMIT_ID}/${TARGET}"
           S3_PATH_LATEST="chat/${BRANCH_NAME}/latest/${TARGET}"
