@@ -202,7 +202,7 @@ jobs:
         id: determine-environment
         run: |
           BRANCH="${{ needs.determine_branch.outputs.branch_name }}"
-          if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]] || [[ "$BRANCH" == "nightly" ]]; then
+          if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]]; then
             echo 'ENVIRONMENT=["gamma", "prod"]' >> $GITHUB_OUTPUT
           else
             echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
