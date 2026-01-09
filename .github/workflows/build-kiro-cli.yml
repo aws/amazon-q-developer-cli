@@ -21,18 +21,13 @@ on:
           - stable
           - nightly
           - insider
-      create_release_branch:
-        description: 'Create a release branch (only for stable releases)'
-        type: boolean
-        required: false
-        default: false
       trigger_autocomplete_build:
         description: 'Trigger autocomplete build after Darwin build succeeds'
         type: boolean
         required: false
         default: true
   schedule:
-    - cron: "21 5 * * *"
+    - cron: "21 6 * * *"
   push:
     branches:
       - prod
@@ -43,17 +38,50 @@ env:
   AWS_REGION: "us-east-1"
   VERSION_INCREMENT: ${{ github.event.inputs.version_increment || (github.event_name == 'schedule' && 'patch') || 'none' }}
   RELEASE_QUALITY: ${{ github.event.inputs.release_quality || (github.event_name == 'schedule' && 'nightly') || (github.ref_name == 'beta' && 'insider') || 'insider' }}
-  CREATE_RELEASE_BRANCH: ${{ github.event.inputs.create_release_branch || 'false' }}
 
 permissions:
   id-token: write
   contents: write
   actions: write
 
+concurrency:
+  group: kiro-cli-version-management-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  determine_branch:
+    name: Determine Working Branch
+    runs-on: ubuntu-latest
+    outputs:
+      branch_name: ${{ steps.set-branch.outputs.BRANCH_NAME }}
+    steps:
+      - name: Set Working Branch
+        id: set-branch
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" || "${{ env.RELEASE_QUALITY }}" == "nightly" ]]; then
+            echo "BRANCH_NAME=nightly" >> $GITHUB_OUTPUT
+          else
+            echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+  generate_timestamp:
+    name: Generate Build Timestamp
+    needs: determine_branch
+    runs-on: ubuntu-latest
+    outputs:
+      build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
+    steps:
+      - name: Generate Build Timestamp
+        id: generate-timestamp
+        run: |
+          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
+          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "Generated centralized build timestamp: $BUILD_TIMESTAMP"
+
   ValidateReleaseTrigger:
     name: Validate Release Trigger
     runs-on: ubuntu-latest
+    needs: determine_branch
     outputs:
       should_proceed: ${{ steps.validate.outputs.should_proceed }}
       release_type: ${{ steps.validate.outputs.release_type }}
@@ -63,7 +91,7 @@ jobs:
         run: |
           echo "=== VALIDATING RELEASE TRIGGER ==="
           echo "Event: ${{ github.event_name }}"
-          echo "Branch: ${{ github.ref_name }}"
+          echo "Working Branch: ${{ needs.determine_branch.outputs.branch_name }}"
           echo "Release Quality: ${{ env.RELEASE_QUALITY }}"
           
           SHOULD_PROCEED="true"
@@ -78,12 +106,7 @@ jobs:
               RELEASE_TYPE="nightly-manual"
             fi
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
-            if [[ "${{ github.ref_name }}" == "main" ]]; then
-              RELEASE_TYPE="nightly-scheduled"
-            else
-              echo "Cron releases only allowed on main branch, skipping"
-              SHOULD_PROCEED="false"
-            fi
+            RELEASE_TYPE="nightly-scheduled"
           elif [[ "${{ github.event_name }}" == "push" ]]; then
             RELEASE_TYPE="insider-auto"
           else
@@ -96,15 +119,16 @@ jobs:
   UpdateVersionNumber:
     name: Update Version Number
     runs-on: ubuntu-latest
-    needs: ValidateReleaseTrigger
+    needs: [determine_branch, ValidateReleaseTrigger, generate_timestamp]
     if: needs.ValidateReleaseTrigger.outputs.should_proceed == 'true'
     outputs:
-      branch_name: ${{ steps.determine-branch.outputs.BRANCH_NAME }}
-      build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
+      branch_name: ${{ needs.determine_branch.outputs.branch_name }}
+      build_timestamp: ${{ needs.generate_timestamp.outputs.build_timestamp }}
       version: ${{ steps.get-version.outputs.VERSION }}
       release_type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}
       release_quality: ${{ steps.set-release-quality.outputs.RELEASE_QUALITY }}
       environment: ${{ steps.determine-environment.outputs.ENVIRONMENT }}
+      commit_sha: ${{ steps.get-commit-sha.outputs.COMMIT_SHA }}
     steps:
       - name: Set Release Quality Output
         id: set-release-quality
@@ -113,11 +137,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ needs.determine_branch.outputs.branch_name }}
 
       - name: Log Workflow Inputs
         run: |
           echo "=== KIRO CLI CHAT RELEASE WORKFLOW STARTED ==="
-          echo "Branch/Ref: ${{ github.ref_name }}"
+          echo "Working Branch: ${{ needs.determine_branch.outputs.branch_name }}"
           echo "Event: ${{ github.event_name }}"
           echo "Release Type: ${{ needs.ValidateReleaseTrigger.outputs.release_type }}"
           echo "Version Increment: ${{ env.VERSION_INCREMENT }}"
@@ -128,27 +153,26 @@ jobs:
           git config user.name "GitHub Actions Bot"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Generate Build Timestamp
-        id: generate-timestamp
-        run: |
-          BUILD_TIMESTAMP=$(date +%Y%m%d%H%M)
-          echo "BUILD_TIMESTAMP=$BUILD_TIMESTAMP" >> $GITHUB_OUTPUT
+      - name: Setup Rust
+        if: env.RELEASE_QUALITY == 'nightly' || env.VERSION_INCREMENT != 'none'
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Update Version Number
-        if: env.VERSION_INCREMENT != 'none' && env.CREATE_RELEASE_BRANCH == 'false'
+        if: env.RELEASE_QUALITY == 'nightly' || env.VERSION_INCREMENT != 'none'
         run: |
           CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-          IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
           
-          case "${{ env.VERSION_INCREMENT }}" in
-            "major") major=$((major + 1)); minor=0; patch=0 ;;
-            "minor") minor=$((minor + 1)); patch=0 ;;
-            "patch") patch=$((patch + 1)) ;;
-          esac
+          # For nightly, always use patch increment (script handles the logic)
+          INCREMENT="${{ env.VERSION_INCREMENT }}"
+          if [[ "${{ env.RELEASE_QUALITY }}" == "nightly" ]]; then
+            INCREMENT="patch"
+          fi
           
-          NEW_VERSION="$major.$minor.$patch"
+          NEW_VERSION=$(python3 .github/scripts/bump_version.py "$CURRENT_VERSION" "$INCREMENT" "${{ env.RELEASE_QUALITY }}")
+          
           sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
-          git add Cargo.toml
+          cargo update --workspace
+          git add Cargo.toml Cargo.lock
           git commit -m "Release: Bump version to $NEW_VERSION (${{ env.RELEASE_QUALITY }})"
           git push origin HEAD
 
@@ -158,59 +182,34 @@ jobs:
           VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
           echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
 
-      - name: Create Release Branch (Stable Only)
-        id: create-release-branch
-        if: env.CREATE_RELEASE_BRANCH == 'true' && env.RELEASE_QUALITY == 'stable'
+      - name: Create Git Tag
+        if: env.RELEASE_QUALITY == 'nightly' || env.VERSION_INCREMENT != 'none'
         run: |
-          RELEASE_VERSION="${{ steps.get-version.outputs.VERSION }}"
-          
-          if [[ "${{ env.VERSION_INCREMENT }}" != "none" ]]; then
-            CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
-            IFS='.' read -r major minor patch <<< "$CURRENT_VERSION"
-            
-            case "${{ env.VERSION_INCREMENT }}" in
-              "major") major=$((major + 1)); minor=0; patch=0 ;;
-              "minor") minor=$((minor + 1)); patch=0 ;;
-              "patch") patch=$((patch + 1)) ;;
-            esac
-            
-            NEW_VERSION="$major.$minor.$patch"
-            sed -i "s/^version = \".*\"/version = \"$NEW_VERSION\"/" Cargo.toml
-            RELEASE_VERSION="$NEW_VERSION"
-          fi
-          
-          branch="release/v$RELEASE_VERSION"
-          git checkout -b $branch
-          
-          if [[ "${{ env.VERSION_INCREMENT }}" != "none" ]]; then
-            git add Cargo.toml
-            git commit -m "Release: Bump version to $RELEASE_VERSION (stable)"
-          fi
-          
-          git push --set-upstream origin $branch
-          echo "RELEASE_BRANCH=$branch" >> $GITHUB_OUTPUT
+          VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          TAG="chat-v${VERSION}"
+          git tag "$TAG"
+          git push origin "$TAG"
+          echo "Created and pushed git tag: $TAG"
 
-      - name: Determine Build Branch
-        id: determine-branch
+      - name: Capture Commit SHA
+        id: get-commit-sha
         run: |
-          if [[ "${{ env.CREATE_RELEASE_BRANCH }}" == "true" && "${{ env.RELEASE_QUALITY }}" == "stable" ]]; then
-            echo "BRANCH_NAME=${{ steps.create-release-branch.outputs.RELEASE_BRANCH }}" >> $GITHUB_OUTPUT
-          else
-            echo "BRANCH_NAME=${{ github.ref_name }}" >> $GITHUB_OUTPUT
-          fi
+          COMMIT_SHA=$(git rev-parse HEAD)
+          echo "COMMIT_SHA=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "Final commit SHA: $COMMIT_SHA"
 
       - name: Determine Environment
         id: determine-environment
         run: |
-          BRANCH="${{ github.ref_name }}"
-          if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]]; then
+          BRANCH="${{ needs.determine_branch.outputs.branch_name }}"
+          if [[ "$BRANCH" == "prod" ]] || [[ "$BRANCH" == "main" ]] || [[ "$BRANCH" == "nightly" ]]; then
             echo 'ENVIRONMENT=["gamma", "prod"]' >> $GITHUB_OUTPUT
           else
             echo 'ENVIRONMENT=["gamma"]' >> $GITHUB_OUTPUT
           fi
 
   TriggerDarwinBuild:
-    needs: UpdateVersionNumber
+    needs: [determine_branch, UpdateVersionNumber]
     name: Trigger Darwin Universal Build (${{ matrix.environment }})
     strategy:
       matrix:
@@ -223,9 +222,10 @@ jobs:
       version: ${{ needs.UpdateVersionNumber.outputs.version }}
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
 
   TriggerLinuxBuild:
-    needs: UpdateVersionNumber
+    needs: [determine_branch, UpdateVersionNumber]
     name: Trigger Linux Build (${{ matrix.environment }})
     strategy:
       matrix:
@@ -238,26 +238,61 @@ jobs:
       version: ${{ needs.UpdateVersionNumber.outputs.version }}
       release_type: ${{ needs.UpdateVersionNumber.outputs.release_type }}
       environment: ${{ matrix.environment }}
+      branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
 
   TriggerAutocompleteBuild:
     name: Trigger Autocomplete Build
-    needs: [TriggerDarwinBuild, TriggerLinuxBuild, UpdateVersionNumber]
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild]
     runs-on: ubuntu-latest
-    if: github.event.inputs.trigger_autocomplete_build == 'true'
+    environment: gamma
+    if: |
+      (github.event_name == 'schedule' || github.event.inputs.trigger_autocomplete_build != 'false') &&
+      needs.TriggerDarwinBuild.result == 'success' &&
+      needs.TriggerLinuxBuild.result == 'success'
     steps:
       - name: Trigger Autocomplete Workflow
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.AUTOCOMPLETE_TRIGGER_TOKEN }}
           script: |
+            const isNightly = '${{ needs.UpdateVersionNumber.outputs.release_quality }}' === 'nightly';
+            const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
+            
             github.rest.actions.createWorkflowDispatch({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
-              workflow_id: 'build-kiro-cli.yml',
-              ref: '${{ github.ref_name }}',
+              workflow_id: workflowId,
+              ref: '${{ needs.UpdateVersionNumber.outputs.branch_name }}',
               inputs: {
-                version_increment: 'none',
                 release_quality: '${{ needs.UpdateVersionNumber.outputs.release_quality }}',
-                chat_binary_commit: 'latest'
+                chat_binary_commit: '${{ needs.UpdateVersionNumber.outputs.commit_sha }}',
+                chat_version: '${{ needs.UpdateVersionNumber.outputs.version }}',
+                chat_build_timestamp: '${{ needs.generate_timestamp.outputs.build_timestamp }}',
+                trigger_source: 'chat-build'
               }
-            })
+            });
+
+  BuildSummary:
+    name: Chat Build Summary
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Generate Build Summary
+        run: |
+          echo "## Chat Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Version** | ${{ needs.UpdateVersionNumber.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Commit SHA** | ${{ needs.UpdateVersionNumber.outputs.commit_sha }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Build Timestamp** | ${{ needs.generate_timestamp.outputs.build_timestamp }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Quality** | ${{ needs.UpdateVersionNumber.outputs.release_quality }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Release Type** | ${{ needs.UpdateVersionNumber.outputs.release_type }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY

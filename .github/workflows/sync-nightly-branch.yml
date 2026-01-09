@@ -1,0 +1,59 @@
+name: Sync Nightly Branch with Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    name: Sync Nightly Branch
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: nightly
+          fetch-depth: 0
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions Bot"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Merge Main into Nightly
+        run: |
+          # Fetch latest main
+          git fetch origin main
+          
+          # Merge main into nightly, preferring main's version on conflicts
+          git merge origin/main -m "Sync: Merge main into nightly" || {
+            # If merge conflict, check if it's only in Cargo.toml/Cargo.lock
+            CONFLICTS=$(git diff --name-only --diff-filter=U)
+            if echo "$CONFLICTS" | grep -qE '^(Cargo\.toml|Cargo\.lock)$' && [ $(echo "$CONFLICTS" | wc -l) -le 2 ]; then
+              echo "Conflict in Cargo files detected - taking main's version"
+              git checkout --theirs Cargo.toml Cargo.lock
+              git add Cargo.toml Cargo.lock
+              
+              # Check if there are other conflicts
+              if [ -n "$(git diff --name-only --diff-filter=U)" ]; then
+                echo "❌ Additional conflicts detected beyond Cargo files"
+                git merge --abort
+                exit 1
+              fi
+              
+              git commit -m "Sync: Merge main into nightly (took main version)"
+            else
+              echo "❌ Merge conflict detected"
+              git merge --abort
+              exit 1
+            fi
+          }
+          
+          # Push to nightly
+          git push origin nightly
+          
+          echo "✅ Nightly branch synced with main"
