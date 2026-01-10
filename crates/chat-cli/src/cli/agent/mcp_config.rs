@@ -10,6 +10,16 @@ use serde::{
 use crate::cli::chat::tools::custom_tool::CustomToolConfig;
 use crate::os::Os;
 
+#[derive(Debug, thiserror::Error)]
+pub enum McpConfigError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("JSON parse error: {0}")]
+    JsonParse(#[from] serde_json::Error),
+    #[error("{0}")]
+    Other(String),
+}
+
 // This is to mirror claude's config set up
 #[derive(Clone, Serialize, Deserialize, Debug, Default, Eq, PartialEq, JsonSchema)]
 #[serde(rename_all = "camelCase", transparent)]
@@ -18,7 +28,7 @@ pub struct McpServerConfig {
 }
 
 impl McpServerConfig {
-    pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> eyre::Result<Self> {
+    pub async fn load_from_file(os: &Os, path: impl AsRef<Path>) -> Result<Self, McpConfigError> {
         let contents = os.fs.read(path.as_ref()).await?;
         let value = serde_json::from_slice::<serde_json::Value>(&contents)?;
         // We need to extract mcp_servers field from the value because we have annotated
@@ -27,7 +37,7 @@ impl McpServerConfig {
         let config = value
             .get("mcpServers")
             .cloned()
-            .ok_or(eyre::eyre!("No mcp servers found in config"))?;
+            .ok_or(McpConfigError::Other("No mcpServers field found in config".to_string()))?;
         Ok(serde_json::from_value(config)?)
     }
 

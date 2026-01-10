@@ -378,12 +378,12 @@ impl Agent {
             Ok(config_path) => {
                 let content = os.fs.read(&config_path).await?;
                 let mut agent = serde_json::from_slice::<Agent>(&content)?;
+                let mut stderr = std::io::stderr();
                 let legacy_mcp_config = if agent.use_legacy_mcp_json {
-                    load_legacy_mcp_config(os).await.unwrap_or(None)
+                    load_legacy_mcp_config(os, &mut stderr).await.unwrap_or(None)
                 } else {
                     None
                 };
-                let mut stderr = std::io::stderr();
                 agent.thaw(&config_path, legacy_mcp_config.as_ref(), &mut stderr)?;
                 Ok((agent, config_path))
             },
@@ -406,7 +406,7 @@ impl Agent {
 
         if mcp_enabled {
             if agent.use_legacy_mcp_json && legacy_mcp_config.is_none() {
-                let config = load_legacy_mcp_config(os).await.unwrap_or_default();
+                let config = load_legacy_mcp_config(os, output).await.unwrap_or_default();
                 if let Some(config) = config {
                     legacy_mcp_config.replace(config);
                 }
@@ -808,7 +808,7 @@ impl Agents {
             };
             configure_builtin_agent_resources(&mut agent, &resolver).await;
             if mcp_enabled {
-                let legacy_mcp_config = load_legacy_mcp_config(os).await.unwrap_or(None);
+                let legacy_mcp_config = load_legacy_mcp_config(os, output).await.unwrap_or(None);
                 set_agent_mcp_config(&mut agent, legacy_mcp_config);
             } else {
                 agent.mcp_servers = McpServerConfig::default();
@@ -1088,22 +1088,79 @@ fn set_agent_mcp_config(agent: &mut Agent, mcp_config: Option<McpServerConfig>) 
 
 /// Loads legacy mcp config by combining workspace and global config.
 /// In case of a server naming conflict, the workspace config is prioritized.
-async fn load_legacy_mcp_config(os: &Os) -> eyre::Result<Option<McpServerConfig>> {
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
+
+use mcp_config::McpConfigError;
+
+static MCP_CONFIG_WARNING_SHOWN: AtomicBool = AtomicBool::new(false);
+
+async fn load_legacy_mcp_config(os: &Os, output: &mut impl Write) -> eyre::Result<Option<McpServerConfig>> {
     let resolver = PathResolver::new(os);
+    let show_warning = !MCP_CONFIG_WARNING_SHOWN.swap(true, Ordering::Relaxed);
+
     let global_mcp_path = resolver.global().mcp_config()?;
-    let global_mcp_config = match McpServerConfig::load_from_file(os, global_mcp_path).await {
+    let global_mcp_config = match McpServerConfig::load_from_file(os, &global_mcp_path).await {
         Ok(config) => Some(config),
-        Err(e) => {
-            tracing::error!("Error loading global mcp json path: {e}.");
+        Err(McpConfigError::Io(e)) => {
+            tracing::debug!("Global MCP config not found: {}", e);
+            None
+        },
+        Err(e @ (McpConfigError::JsonParse(_) | McpConfigError::Other(_))) => {
+            if show_warning {
+                let _ = queue!(
+                    output,
+                    StyledText::warning_fg(),
+                    style::Print("WARNING: "),
+                    StyledText::reset(),
+                    style::Print("Failed to parse MCP config "),
+                    StyledText::success_fg(),
+                    style::Print(global_mcp_path.display()),
+                    StyledText::reset(),
+                    style::Print(": "),
+                    style::Print(e.to_string()),
+                    style::Print("\n")
+                );
+            }
+            tracing::error!(
+                "Error loading global mcp config from {}: {}",
+                global_mcp_path.display(),
+                e
+            );
             None
         },
     };
 
     let workspace_mcp_path = resolver.workspace().mcp_config()?;
-    let workspace_mcp_config = match McpServerConfig::load_from_file(os, workspace_mcp_path).await {
+    let workspace_mcp_config = match McpServerConfig::load_from_file(os, &workspace_mcp_path).await {
         Ok(config) => Some(config),
-        Err(e) => {
-            tracing::error!("Error loading global mcp json path: {e}.");
+        Err(McpConfigError::Io(e)) => {
+            tracing::debug!("Workspace MCP config not found: {}", e);
+            None
+        },
+        Err(e @ (McpConfigError::JsonParse(_) | McpConfigError::Other(_))) => {
+            if show_warning {
+                let _ = queue!(
+                    output,
+                    StyledText::warning_fg(),
+                    style::Print("WARNING: "),
+                    StyledText::reset(),
+                    style::Print("Failed to parse MCP config "),
+                    StyledText::success_fg(),
+                    style::Print(workspace_mcp_path.display()),
+                    StyledText::reset(),
+                    style::Print(": "),
+                    style::Print(e.to_string()),
+                    style::Print("\n")
+                );
+            }
+            tracing::error!(
+                "Error loading workspace mcp config from {}: {}",
+                workspace_mcp_path.display(),
+                e
+            );
             None
         },
     };

@@ -1,2 +1,17 @@
-pnpm run precommit
-pnpm run -r precommit
+#!/bin/sh
+# Pre-commit hook for kiro-cli
+
+echo "Running cargo fmt check..."
+if ! cargo +nightly fmt --check -- --color always; then
+    echo "❌ Formatting check failed. Run 'cargo +nightly fmt' to fix."
+    exit 1
+fi
+
+echo "Running cargo clippy..."
+if ! cargo clippy --locked --workspace --color always -- -D warnings; then
+    echo "❌ Clippy check failed. Fix the warnings above."
+    exit 1
+fi
+
+exit 0
+

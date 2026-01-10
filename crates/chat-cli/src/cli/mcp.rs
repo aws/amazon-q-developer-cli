@@ -134,10 +134,13 @@ pub struct AddArgs {
     /// Scope. This parameter is only meaningful in the absence of agent name.
     #[arg(long)]
     pub scope: Option<Scope>,
-    /// The command used to launch the server (required for custom servers, not needed for registry
-    /// servers)
+    /// The command used to launch the server (required for stdio servers, not needed for registry
+    /// or HTTP servers)
     #[arg(long)]
     pub command: Option<String>,
+    /// The URL for HTTP-based MCP server communication (required for HTTP servers)
+    #[arg(long)]
+    pub url: Option<String>,
     /// Arguments to pass to the command. Can be provided as:
     /// 1. Multiple --args flags: --args arg1 --args arg2 --args "arg,with,commas"
     /// 2. Comma-separated with escaping: --args "arg1,arg2,arg\,with\,commas"
@@ -173,15 +176,33 @@ impl AddArgs {
                 writeln!(output, "❌ --name is required when adding custom servers.")?;
                 writeln!(
                     output,
-                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'"
+                )?;
+                writeln!(
+                    output,
+                    "     or: {CLI_NAME} mcp add --name my-server --url 'http://localhost:3000'\n"
                 )?;
                 return Ok(());
             }
-            if self.command.is_none() {
-                writeln!(output, "❌ --command is required when adding custom servers.")?;
+            if self.command.is_none() && self.url.is_none() {
                 writeln!(
                     output,
-                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                    "❌ Either --command or --url is required when adding custom servers."
+                )?;
+                writeln!(
+                    output,
+                    "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'"
+                )?;
+                writeln!(
+                    output,
+                    "     or: {CLI_NAME} mcp add --name my-server --url 'http://localhost:3000'\n"
+                )?;
+                return Ok(());
+            }
+            if self.command.is_some() && self.url.is_some() {
+                writeln!(
+                    output,
+                    "❌ Cannot specify both --command and --url. Use one or the other.\n"
                 )?;
                 return Ok(());
             }
@@ -235,20 +256,38 @@ impl AddArgs {
                 },
                 Ok((_, None)) => {
                     // Registry is not configured - allow custom servers
-                    // Validate that both name and command are provided for custom servers
+                    // Validate that both name and (command or url) are provided for custom servers
                     if self.name.is_none() {
                         writeln!(output, "❌ --name is required when adding custom servers.")?;
                         writeln!(
                             output,
-                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'"
+                        )?;
+                        writeln!(
+                            output,
+                            "     or: {CLI_NAME} mcp add --name my-server --url 'http://localhost:3000'\n"
                         )?;
                         return Ok(());
                     }
-                    if self.command.is_none() {
-                        writeln!(output, "❌ --command is required when adding custom servers.")?;
+                    if self.command.is_none() && self.url.is_none() {
                         writeln!(
                             output,
-                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'\n"
+                            "❌ Either --command or --url is required when adding custom servers."
+                        )?;
+                        writeln!(
+                            output,
+                            "Example: {CLI_NAME} mcp add --name my-server --command 'python server.py'"
+                        )?;
+                        writeln!(
+                            output,
+                            "     or: {CLI_NAME} mcp add --name my-server --url 'http://localhost:3000'\n"
+                        )?;
+                        return Ok(());
+                    }
+                    if self.command.is_some() && self.url.is_some() {
+                        writeln!(
+                            output,
+                            "❌ Cannot specify both --command and --url. Use one or the other.\n"
                         )?;
                         return Ok(());
                     }
@@ -284,13 +323,21 @@ impl AddArgs {
                 }
 
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
-                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command.unwrap(),
-                    "args": processed_args,
-                    "env": merged_env,
-                    "timeout": self.timeout.unwrap_or(default_timeout()),
-                    "disabled": self.disabled,
-                }))?;
+                let tool: CustomToolConfig = if let Some(url) = self.url {
+                    serde_json::from_value(serde_json::json!({
+                        "url": url,
+                        "timeout": self.timeout.unwrap_or(default_timeout()),
+                        "disabled": self.disabled,
+                    }))?
+                } else {
+                    serde_json::from_value(serde_json::json!({
+                        "command": self.command.unwrap(),
+                        "args": processed_args,
+                        "env": merged_env,
+                        "timeout": self.timeout.unwrap_or(default_timeout()),
+                        "disabled": self.disabled,
+                    }))?
+                };
 
                 mcp_servers.insert(server_name.clone(), tool);
                 let json = agent.to_str_pretty()?;
@@ -324,13 +371,21 @@ impl AddArgs {
                 }
 
                 let merged_env = self.env.into_iter().flatten().collect::<HashMap<_, _>>();
-                let tool: CustomToolConfig = serde_json::from_value(serde_json::json!({
-                    "command": self.command.unwrap(),
-                    "args": processed_args,
-                    "env": merged_env,
-                    "timeout": self.timeout.unwrap_or(default_timeout()),
-                    "disabled": self.disabled,
-                }))?;
+                let tool: CustomToolConfig = if let Some(url) = self.url {
+                    serde_json::from_value(serde_json::json!({
+                        "url": url,
+                        "timeout": self.timeout.unwrap_or(default_timeout()),
+                        "disabled": self.disabled,
+                    }))?
+                } else {
+                    serde_json::from_value(serde_json::json!({
+                        "command": self.command.unwrap(),
+                        "args": processed_args,
+                        "env": merged_env,
+                        "timeout": self.timeout.unwrap_or(default_timeout()),
+                        "disabled": self.disabled,
+                    }))?
+                };
 
                 mcp_servers.mcp_servers.insert(server_name.clone(), tool);
                 mcp_servers.save_to_file(os, &legacy_mcp_config_path).await?;
@@ -927,6 +982,7 @@ mod tests {
                 "--allow-sensitive-data-access".to_string(),
             ],
             env: vec![],
+            url: None,
             timeout: None,
             agent: None,
             disabled: false,
@@ -974,6 +1030,7 @@ mod tests {
                 name: Some("test_server".to_string()),
                 scope: None,
                 command: Some("test_command".to_string()),
+                url: None,
                 args: vec!["awslabs.eks-mcp-server,--allow-write,--allow-sensitive-data-access".to_string(),],
                 agent: None,
                 env: vec![
@@ -984,6 +1041,32 @@ mod tests {
                     .into_iter()
                     .collect()
                 ],
+                timeout: None,
+                disabled: false,
+                force: false,
+            }))
+        );
+    }
+
+    #[test]
+    fn test_mcp_subcommand_add_url() {
+        assert_parse!(
+            [
+                "mcp",
+                "add",
+                "--name",
+                "remote_server",
+                "--url",
+                "http://localhost:3000"
+            ],
+            RootSubcommand::Mcp(McpSubcommand::Add(AddArgs {
+                name: Some("remote_server".to_string()),
+                scope: None,
+                command: None,
+                url: Some("http://localhost:3000".to_string()),
+                args: vec![],
+                agent: None,
+                env: vec![],
                 timeout: None,
                 disabled: false,
                 force: false,

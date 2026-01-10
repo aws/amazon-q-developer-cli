@@ -7,6 +7,16 @@ Please use this command to install kiro.
 curl -fsSL https://cli.kiro.dev/install | bash
 ```
 
+## Development Setup
+
+After cloning the repository, run the setup script to install git hooks:
+
+```bash
+./scripts/setup-hooks.sh
+```
+
+This will install pre-commit hooks that run `cargo fmt` and `cargo clippy` checks before each commit.
+
 ## Security
 
 For security related concerns, see [here](SECURITY.md).
