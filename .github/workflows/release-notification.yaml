@@ -3,24 +3,39 @@ name: Release Notification
 
 on:
   release:
-    types: [published] # Trigger on new releases being published
+    types: [published]
+
+permissions:
+  contents: read
 
 jobs:
-  slack_notification:
+  prepare_message:
+    name: Prepare Release Message
     runs-on: ubuntu-latest
+    outputs:
+      message: ${{ steps.build-message.outputs.message }}
     steps:
-      - name: Send Release Details to Slack
-        uses: slackapi/slack-github-action@v1.23.0 # Or the latest version of this action
-        with:
-          payload: |
-            {
-              "release_name": "${{ github.event.release.name }}",
-              "tag_name": "${{ github.event.release.tag_name }}",
-              "release_url": "${{ github.event.release.html_url }}",
-              "author_name": "${{ github.event.release.author.login }}",
-              "repository_name": "${{ github.event.repository.name }}",
-              "repository_url": "${{ github.event.repository.html_url }}",
-              "release_description": ${{ toJSON(github.event.release.body) }}
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }} # Use the secret for the webhook URL
+      - name: Build Message
+        id: build-message
+        run: |
+          cat << 'EOF' > message.json
+          {
+            "release_name": "${{ github.event.release.name }}",
+            "tag_name": "${{ github.event.release.tag_name }}",
+            "release_url": "${{ github.event.release.html_url }}",
+            "author_name": "${{ github.event.release.author.login }}",
+            "repository_name": "${{ github.event.repository.name }}",
+            "repository_url": "${{ github.event.repository.html_url }}",
+            "release_description": ${{ toJSON(github.event.release.body) }}
+          }
+          EOF
+          echo "message=$(cat message.json | jq -c .)" >> $GITHUB_OUTPUT
+
+  notify:
+    name: Send Notification
+    needs: prepare_message
+    uses: ./.github/workflows/notify-slack.yml
+    secrets:
+      WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    with:
+      message: ${{ needs.prepare_message.outputs.message }}

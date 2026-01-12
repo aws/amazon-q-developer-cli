@@ -49,8 +49,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  check_nightly_skip:
+    name: Check if Nightly Should Skip
+    runs-on: ubuntu-latest
+    outputs:
+      should_skip: ${{ steps.check.outputs.should_skip }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Check Last Commit
+        id: check
+        run: |
+          if [[ "${{ github.event_name }}" == "schedule" ]] || [[ "${{ env.RELEASE_QUALITY }}" == "nightly" ]]; then
+            IS_NIGHTLY_COMMIT=$(python3 .github/scripts/check_nightly_skip.py)
+            if [[ "$IS_NIGHTLY_COMMIT" == "true" ]]; then
+              echo "should_skip=true" >> $GITHUB_OUTPUT
+              echo "⏭️ Skipping nightly build - last commit was from previous nightly build"
+            else
+              echo "should_skip=false" >> $GITHUB_OUTPUT
+              echo "Proceeding with nightly build"
+            fi
+          else
+            echo "should_skip=false" >> $GITHUB_OUTPUT
+          fi
+
   determine_branch:
     name: Determine Working Branch
+    needs: check_nightly_skip
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
     runs-on: ubuntu-latest
     outputs:
       branch_name: ${{ steps.set-branch.outputs.BRANCH_NAME }}
@@ -66,7 +94,8 @@ jobs:
 
   generate_timestamp:
     name: Generate Build Timestamp
-    needs: determine_branch
+    needs: [check_nightly_skip, determine_branch]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
     runs-on: ubuntu-latest
     outputs:
       build_timestamp: ${{ steps.generate-timestamp.outputs.BUILD_TIMESTAMP }}
@@ -81,7 +110,8 @@ jobs:
   ValidateReleaseTrigger:
     name: Validate Release Trigger
     runs-on: ubuntu-latest
-    needs: determine_branch
+    needs: [check_nightly_skip, determine_branch]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
     outputs:
       should_proceed: ${{ steps.validate.outputs.should_proceed }}
       release_type: ${{ steps.validate.outputs.release_type }}
@@ -119,8 +149,8 @@ jobs:
   UpdateVersionNumber:
     name: Update Version Number
     runs-on: ubuntu-latest
-    needs: [determine_branch, ValidateReleaseTrigger, generate_timestamp]
-    if: needs.ValidateReleaseTrigger.outputs.should_proceed == 'true'
+    needs: [check_nightly_skip, determine_branch, ValidateReleaseTrigger, generate_timestamp]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false' && needs.ValidateReleaseTrigger.outputs.should_proceed == 'true'
     outputs:
       branch_name: ${{ needs.determine_branch.outputs.branch_name }}
       build_timestamp: ${{ needs.generate_timestamp.outputs.build_timestamp }}
@@ -209,7 +239,8 @@ jobs:
           fi
 
   TriggerDarwinBuild:
-    needs: [determine_branch, UpdateVersionNumber]
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
     name: Trigger Darwin Universal Build (${{ matrix.environment }})
     strategy:
       matrix:
@@ -226,7 +257,8 @@ jobs:
       commit_sha: ${{ needs.UpdateVersionNumber.outputs.commit_sha }}
 
   TriggerLinuxBuild:
-    needs: [determine_branch, UpdateVersionNumber]
+    needs: [check_nightly_skip, determine_branch, UpdateVersionNumber]
+    if: needs.check_nightly_skip.outputs.should_skip == 'false'
     name: Trigger Linux Build (${{ matrix.environment }})
     strategy:
       matrix:
@@ -274,27 +306,48 @@ jobs:
               }
             });
 
+  NotifySlack:
+    name: Notify Slack
+    needs: [generate_timestamp, UpdateVersionNumber, TriggerAutocompleteBuild]
+    if: needs.UpdateVersionNumber.outputs.release_quality == 'nightly' && needs.TriggerAutocompleteBuild.result == 'success'
+    uses: ./.github/workflows/nightly-release-notification.yml
+    secrets: inherit
+    with:
+      version: ${{ needs.UpdateVersionNumber.outputs.version }}
+      build_timestamp: ${{ needs.generate_timestamp.outputs.build_timestamp }}
+      branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
+      release_workflow_url: "https://github.com/kiro-team/kiro-cli-autocomplete/actions/workflows/release-nightly.yml"
+
   BuildSummary:
     name: Chat Build Summary
-    needs: [generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild]
+    needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild, NotifySlack]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Generate Build Summary
         run: |
-          echo "## Chat Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Version** | ${{ needs.UpdateVersionNumber.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit SHA** | ${{ needs.UpdateVersionNumber.outputs.commit_sha }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Build Timestamp** | ${{ needs.generate_timestamp.outputs.build_timestamp }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Quality** | ${{ needs.UpdateVersionNumber.outputs.release_quality }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Release Type** | ${{ needs.UpdateVersionNumber.outputs.release_type }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Build Results" >> $GITHUB_STEP_SUMMARY
-          echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          if [[ "${{ needs.check_nightly_skip.outputs.should_skip }}" == "true" ]]; then
+            echo "## ⏭️ Build Skipped" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Nightly build was skipped because the last commit was from a previous nightly build." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "No new changes to build." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## Chat Build Summary" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Version** | ${{ needs.UpdateVersionNumber.outputs.version }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Commit SHA** | ${{ needs.UpdateVersionNumber.outputs.commit_sha }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Build Timestamp** | ${{ needs.generate_timestamp.outputs.build_timestamp }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Release Quality** | ${{ needs.UpdateVersionNumber.outputs.release_quality }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Release Type** | ${{ needs.UpdateVersionNumber.outputs.release_type }} |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### Build Results" >> $GITHUB_STEP_SUMMARY
+            echo "| Platform | Status |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Slack Notification | ${{ needs.NotifySlack.result == 'success' && '✅' || needs.NotifySlack.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
+          fi

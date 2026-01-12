@@ -1,0 +1,26 @@
+name: Notify Slack
+
+on:
+  workflow_call:
+    inputs:
+      message:
+        required: true
+        type: string
+        description: "JSON payload for Slack message"
+    secrets:
+      WEBHOOK_URL:
+        required: true
+
+permissions: {}
+
+jobs:
+  notify:
+    name: Send Slack Notification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Notification
+        uses: slackapi/slack-github-action@v1.23.0
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+        with:
+          payload: ${{ inputs.message }}

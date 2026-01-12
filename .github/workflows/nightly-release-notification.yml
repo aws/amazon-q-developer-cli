@@ -1,0 +1,111 @@
+name: Nightly Release Notification
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        required: true
+        type: string
+      build_timestamp:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+      release_workflow_url:
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+      build_timestamp:
+        required: true
+        type: string
+      branch_name:
+        required: true
+        type: string
+      release_workflow_url:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prepare_message:
+    name: Prepare Notification
+    runs-on: ubuntu-latest
+    outputs:
+      message: ${{ steps.build-message.outputs.message }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.branch_name }}
+
+      - name: Get Commits Since Last Nightly
+        id: get-commits
+        run: |
+          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
+          if [[ -z "$LAST_TAG" ]]; then
+            COMMITS=$(git log --oneline -10)
+          else
+            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline)
+          fi
+          echo "commits<<EOF" >> $GITHUB_OUTPUT
+          echo "$COMMITS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Build Message
+        id: build-message
+        run: |
+          cat << 'EOF' > message.json
+          {
+            "text": "🌙 Nightly Build Triggered",
+            "blocks": [
+              {
+                "type": "header",
+                "text": {
+                  "type": "plain_text",
+                  "text": "🌙 Kiro CLI Nightly Build"
+                }
+              },
+              {
+                "type": "section",
+                "fields": [
+                  {"type": "mrkdwn", "text": "*Version:*\n${{ inputs.version }}"},
+                  {"type": "mrkdwn", "text": "*Timestamp:*\n${{ inputs.build_timestamp }}"}
+                ]
+              },
+              {
+                "type": "section",
+                "text": {
+                  "type": "mrkdwn",
+                  "text": "*Commits:*\n```${{ steps.get-commits.outputs.commits }}```"
+                }
+              },
+              {
+                "type": "actions",
+                "elements": [
+                  {
+                    "type": "button",
+                    "text": {"type": "plain_text", "text": "View Release Workflow"},
+                    "url": "${{ inputs.release_workflow_url }}"
+                  }
+                ]
+              }
+            ]
+          }
+          EOF
+          echo "message=$(cat message.json | jq -c .)" >> $GITHUB_OUTPUT
+
+  notify:
+    name: Send Notification
+    needs: prepare_message
+    uses: ./.github/workflows/notify-slack.yml
+    secrets:
+      WEBHOOK_URL: ${{ secrets.SLACK_NIGHTLY_WEBHOOK_URL }}
+    with:
+      message: ${{ needs.prepare_message.outputs.message }}
