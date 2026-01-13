@@ -509,6 +509,47 @@ impl ApiClient {
     fn is_custom_endpoint(database: &Database) -> bool {
         database.settings.get(Setting::ApiCodeWhispererService).is_some()
     }
+
+    /// Method to be used to reconstruct the client in the Os struct after auth changes.
+    /// In the case that a user logs in with a non-commercial account the client associated
+    /// with the Os struct will need to be reconstructed (as it is default initialized when
+    /// there are no valid credentials in the secret store) to allow for subsequent calls from said
+    /// client to succeed.
+    pub async fn refresh_auth_profile(
+        &mut self,
+        env: &Env,
+        fs: &Fs,
+        database: &mut Database,
+    ) -> Result<(), ApiClientError> {
+        let use_profile = !Self::is_custom_endpoint(database);
+        if use_profile {
+            match database.get_auth_profile() {
+                Ok(profile) => {
+                    tracing::debug!("Refreshed auth profile: {:?}", profile);
+
+                    if profile.is_some() {
+                        let endpoint = Endpoint::configured_value(database);
+                        tracing::debug!("Recreating client with endpoint: {:?}", endpoint);
+
+                        let mut new_client = Self::new(env, fs, database, Some(endpoint)).await?;
+                        new_client.profile = profile.clone();
+                        *self = new_client;
+                    }
+                },
+                Err(err) => {
+                    error!("Failed to refresh auth profile: {err}");
+                },
+            }
+        } else {
+            debug!("Custom endpoint detected, skipping profile refresh");
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn get_profile(&self) -> Option<AuthProfile> {
+        self.profile.clone()
+    }
 }
 
 fn classify_error_kind<T: ProvideErrorMetadata, R>(

@@ -86,11 +86,6 @@ pub fn get_term() -> Option<String> {
     Env::new().get(TERM).ok()
 }
 
-/// Get AWS region
-pub fn get_aws_region() -> Result<String, std::env::VarError> {
-    Env::new().get(AWS_REGION)
-}
-
 /// Get all environment variables
 pub fn get_all_env_vars() -> std::env::Vars {
     std::env::vars()

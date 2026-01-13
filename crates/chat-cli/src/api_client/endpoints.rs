@@ -14,7 +14,6 @@ pub struct Endpoint {
 }
 
 impl Endpoint {
-    pub const CODEWHISPERER_ENDPOINTS: [Self; 2] = [Self::DEFAULT_ENDPOINT, Self::FRA_ENDPOINT];
     pub const DEFAULT_ENDPOINT: Self = Self {
         url: Cow::Borrowed("https://q.us-east-1.amazonaws.com"),
         region: Region::from_static("us-east-1"),
@@ -23,6 +22,21 @@ impl Endpoint {
         url: Cow::Borrowed("https://q.eu-central-1.amazonaws.com/"),
         region: Region::from_static("eu-central-1"),
     };
+    pub const GOV_ENDPOINT_EAST: Self = Self {
+        url: Cow::Borrowed("https://q.us-gov-east-1.amazonaws.com"),
+        region: Region::from_static("us-gov-east-1"),
+    };
+    pub const GOV_ENDPOINT_WEST: Self = Self {
+        url: Cow::Borrowed("https://q.us-gov-west-1.amazonaws.com"),
+        region: Region::from_static("us-gov-west-1"),
+    };
+
+    pub fn get_endpoints_from_region(region: &str) -> Vec<Self> {
+        if region == "us-gov-east-1" || region == "us-gov-west-1" {
+            return vec![Self::GOV_ENDPOINT_EAST, Self::GOV_ENDPOINT_WEST];
+        }
+        vec![Self::DEFAULT_ENDPOINT, Self::FRA_ENDPOINT]
+    }
 
     pub fn configured_value(database: &Database) -> Self {
         let (endpoint, region) = if let Some(Value::Object(o)) = database.settings.get(Setting::ApiCodeWhispererService)
@@ -35,7 +49,7 @@ impl Endpoint {
         } else if let Ok(Some(profile)) = database.get_auth_profile() {
             // The following branch is evaluated in the case of user profile being set.
             let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
-            match Self::CODEWHISPERER_ENDPOINTS
+            match Self::get_endpoints_from_region(&region)
                 .iter()
                 .find(|e| e.region().as_ref() == region)
             {

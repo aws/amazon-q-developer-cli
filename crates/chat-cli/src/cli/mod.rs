@@ -1,8 +1,5 @@
 use crate::theme::StyledText;
-use crate::util::env_var::{
-    get_aws_region,
-    is_log_stdout_enabled,
-};
+use crate::util::env_var::is_log_stdout_enabled;
 pub mod agent;
 pub mod chat;
 mod debug;
@@ -56,11 +53,8 @@ use crate::logging::{
     initialize_logging,
 };
 use crate::os::Os;
+use crate::util::CLI_BINARY_NAME;
 use crate::util::paths::logs_dir;
-use crate::util::{
-    CLI_BINARY_NAME,
-    GOV_REGIONS,
-};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
@@ -260,13 +254,6 @@ impl Cli {
             },
             delete_old_log_file: false,
         });
-
-        // Check for region support.
-        if let Ok(region) = get_aws_region()
-            && GOV_REGIONS.contains(&region.as_str())
-        {
-            bail!("AWS GovCloud ({region}) is not supported.")
-        }
 
         debug!(command =? std::env::args().collect::<Vec<_>>(), "Command being ran");
 

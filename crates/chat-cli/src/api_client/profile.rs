@@ -16,9 +16,10 @@ pub async fn list_available_profiles(
     env: &Env,
     fs: &Fs,
     database: &mut Database,
+    region: &str,
 ) -> Result<Vec<AuthProfile>, ApiClientError> {
     let mut profiles = vec![];
-    for endpoint in Endpoint::CODEWHISPERER_ENDPOINTS {
+    for endpoint in Endpoint::get_endpoints_from_region(region) {
         let client = ApiClient::new(env, fs, database, Some(endpoint.clone())).await?;
         match client.list_available_profiles().await {
             Ok(mut p) => profiles.append(&mut p),

@@ -87,7 +87,7 @@ pub struct CredentialsJson {
     pub expiration: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct AuthProfile {
     pub arn: String,
     pub profile_name: String,
@@ -275,6 +275,8 @@ impl Database {
     }
 
     /// Set the current user profile used to determine API endpoints.
+    /// Any calls to this method should be done from Os::set_auth_profile because the
+    /// client in the Os needs to be recreated
     pub fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<(), DatabaseError> {
         self.set_json_entry(Table::State, CODEWHISPERER_PROFILE_KEY, profile)?;
         self.delete_entry(Table::State, CUSTOMIZATION_STATE_KEY)

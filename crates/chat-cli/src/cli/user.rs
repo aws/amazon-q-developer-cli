@@ -187,7 +187,7 @@ impl LoginArgs {
                     try_device_authorization(os, start_url.clone(), region.clone()).await?;
 
                     if login_method == AuthMethod::IdentityCenter {
-                        select_profile_interactive(os, true).await?;
+                        select_profile_interactive(os, true, region.as_ref().unwrap()).await?;
                     }
                 },
                 AuthMethod::Social(_) => unreachable!(),
@@ -222,7 +222,6 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
                     exit(1);
                 },
             }
-            os.telemetry.send_user_logged_in().ok();
             spinner.stop_with_message("Logged in".into());
         },
         // If we are unable to open the link with the browser, then fallback to
@@ -236,8 +235,11 @@ async fn complete_sso_auth(os: &mut Os, issuer_url: String, idc_region: String, 
     }
 
     if requires_profile {
-        select_profile_interactive(os, true).await?;
+        select_profile_interactive(os, true, &idc_region).await?;
     }
+
+    // delay telemetry until we have refreshed the telemetry thread
+    os.telemetry.send_user_logged_in().ok();
 
     Ok(())
 }
@@ -333,12 +335,17 @@ pub enum LicenseType {
 
 pub async fn profile(os: &mut Os) -> Result<ExitCode> {
     if let Ok(Some(token)) = BuilderIdToken::load(&os.database, Some(&os.telemetry)).await
-        && matches!(token.token_type(), TokenType::BuilderId)
+        && matches!(token.token_type(), TokenType::IamIdentityCenter)
     {
+        if let Ok(Some(profile)) = os.database.get_auth_profile() {
+            let region = profile.arn.split(':').nth(3).unwrap_or_default().to_owned();
+            select_profile_interactive(os, false, &region).await?;
+        } else {
+            bail!("Failed to load profile from the database");
+        }
+    } else {
         bail!("This command is only available for Pro users");
     }
-
-    select_profile_interactive(os, false).await?;
 
     Ok(ExitCode::SUCCESS)
 }
@@ -425,12 +432,12 @@ async fn try_device_authorization(os: &mut Os, start_url: Option<String>, region
     Ok(())
 }
 
-async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
+async fn select_profile_interactive(os: &mut Os, whoami: bool, region: &str) -> Result<()> {
     let mut spinner = Spinner::new(vec![
         SpinnerComponent::Spinner,
         SpinnerComponent::Text(" Fetching profiles...".into()),
     ]);
-    let profiles = list_available_profiles(&os.env, &os.fs, &mut os.database).await?;
+    let profiles = list_available_profiles(&os.env, &os.fs, &mut os.database, region).await?;
     if profiles.is_empty() {
         spinner.stop_with_message(String::new());
         error!("No profiles available for IdC user");
@@ -441,6 +448,9 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
     let total_profiles = profiles.len() as i64;
 
     if whoami && profiles.len() == 1 {
+        spinner.stop_with_message(String::new());
+        os.set_auth_profile(&profiles[0]).await?;
+
         if let Some(profile_region) = profiles[0].arn.split(':').nth(3) {
             os.telemetry
                 .send_profile_state(
@@ -451,9 +461,6 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
                 )
                 .ok();
         }
-
-        spinner.stop_with_message(String::new());
-        os.database.set_auth_profile(&profiles[0])?;
         return Ok(());
     }
 
@@ -499,7 +506,7 @@ async fn select_profile_interactive(os: &mut Os, whoami: bool) -> Result<()> {
         );
     }
 
-    os.database.set_auth_profile(chosen)?;
+    os.set_auth_profile(chosen).await?;
 
     if let Some(profile_region) = chosen.arn.split(':').nth(3) {
         let intent = if whoami {

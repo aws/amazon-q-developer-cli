@@ -11,7 +11,10 @@ pub use fs::Fs;
 pub use sysinfo::SysInfo;
 
 use crate::api_client::ApiClient;
-use crate::database::Database;
+use crate::database::{
+    AuthProfile,
+    Database,
+};
 use crate::telemetry::TelemetryThread;
 
 const WINDOWS_USER_HOME: &str = "C:\\Users\\testuser";
@@ -61,11 +64,22 @@ impl Os {
     pub fn path_resolver(&self) -> crate::util::paths::PathResolver<'_> {
         crate::util::paths::PathResolver::new(&self.env, &self.fs)
     }
+
+    /// Refresh Os client after login to fetch models from the right endpoint
+    pub async fn set_auth_profile(&mut self, profile: &AuthProfile) -> Result<()> {
+        self.database.set_auth_profile(profile)?;
+        self.client
+            .refresh_auth_profile(&self.env, &self.fs, &mut self.database)
+            .await?;
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::database::AuthProfile;
 
     #[tokio::test]
     async fn test_context_builder_with_test_home() {
@@ -86,5 +100,19 @@ mod tests {
         }
 
         assert_eq!(os.env.get("hello").unwrap(), "world");
+    }
+
+    #[tokio::test]
+    async fn test_set_auth_profile() {
+        let mut os = Os::new().await.unwrap();
+
+        let profile = AuthProfile {
+            arn: "arn:aws-us-gov:codewhisperer:us-gov-east-1:123456789012:profile/C39QMYEDUAKW".to_string(),
+            profile_name: "test-gov-east-profile".to_string(),
+        };
+
+        os.set_auth_profile(&profile).await.unwrap();
+        assert_eq!(os.database.get_auth_profile().unwrap().unwrap(), profile);
+        assert_eq!(os.client.get_profile().unwrap(), profile);
     }
 }

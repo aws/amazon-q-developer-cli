@@ -5,8 +5,6 @@ pub const CHAT_BINARY_NAME: &str = "kiro-cli-chat";
 pub const MCP_SERVER_TOOL_DELIMITER: &str = "/";
 pub const BUILTIN_TOOLS_PREFIX: &str = "@builtin";
 
-pub const GOV_REGIONS: &[&str] = &["us-gov-east-1", "us-gov-west-1"];
-
 /// Build time env vars
 pub mod build {
     /// A git full sha hash of the current build

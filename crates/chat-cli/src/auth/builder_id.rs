@@ -575,6 +575,7 @@ pub async fn poll_create_token(
                 SdkError::ServiceError(service_err) => service_err.err().meta().code().map(|s| s.to_string()),
                 _ => None,
             };
+
             telemetry
                 .send_auth_failed(auth_method, "DeviceCode", "NewLogin", error_code)
                 .ok();
