@@ -125,12 +125,12 @@ impl Prompt {
 
 /// Represents both local and global prompts for a given name
 #[derive(Debug)]
-struct Prompts {
+pub struct FilePrompts {
     local: Prompt,
     global: Prompt,
 }
 
-impl Prompts {
+impl FilePrompts {
     /// Create a new Prompts instance for the given name
     fn new(name: &str, os: &Os) -> Result<Self, GetPromptError> {
         let resolver = PathResolver::new(os);
@@ -168,7 +168,7 @@ impl Prompts {
     }
 
     /// Get all available prompt names from both directories
-    fn get_available_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
+    pub fn get_available_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
         let resolver = PathResolver::new(os);
         let mut prompt_names = std::collections::HashSet::new();
 
@@ -619,7 +619,7 @@ impl PromptsArgs {
         let prompts = session.conversation.tool_manager.list_prompts().await?;
 
         // Get available prompt names
-        let prompt_names = Prompts::get_available_names(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let prompt_names = FilePrompts::get_available_names(os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
         let mut longest_name = "";
 
@@ -715,7 +715,7 @@ impl PromptsArgs {
 
             for name in &filtered_names {
                 // Use the Prompts struct to check for conflicts
-                if let Ok(prompts) = Prompts::new(name, os) {
+                if let Ok(prompts) = FilePrompts::new(name, os) {
                     let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
 
                     if global_exists {
@@ -919,7 +919,7 @@ impl PromptsSubcommand {
 
     async fn execute_details(name: String, os: &Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
         // First try to find file-based prompt (global or local)
-        let file_prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let file_prompts = FilePrompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         if let Some((content, source)) = file_prompts
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
@@ -1302,7 +1302,7 @@ impl PromptsSubcommand {
         arguments: Option<Vec<String>>,
     ) -> Result<ChatState, ChatError> {
         // First try to find prompt (global or local)
-        let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let prompts = FilePrompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         if let Some((content, _)) = prompts
             .load_existing()
             .map_err(|e| ChatError::Custom(e.to_string().into()))?
@@ -1453,7 +1453,7 @@ impl PromptsSubcommand {
         global: bool,
     ) -> Result<ChatState, ChatError> {
         // Create prompts instance and validate name
-        let mut prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let mut prompts = FilePrompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
         if let Err(validation_error) = validate_prompt_name(&name) {
             queue!(
@@ -1692,7 +1692,7 @@ impl PromptsSubcommand {
             });
         }
 
-        let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let prompts = FilePrompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
 
         // Find the target prompt to edit
@@ -1819,7 +1819,7 @@ impl PromptsSubcommand {
         name: String,
         global: bool,
     ) -> Result<ChatState, ChatError> {
-        let prompts = Prompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
+        let prompts = FilePrompts::new(&name, os).map_err(|e| ChatError::Custom(e.to_string().into()))?;
         let (local_exists, global_exists) = (prompts.local.exists(), prompts.global.exists());
 
         // Find the target prompt to remove

@@ -61,7 +61,10 @@ use crate::api_client::model::{
     ToolResultStatus,
 };
 use crate::cli::agent::Agent;
-use crate::cli::chat::cli::prompts::GetPromptError;
+use crate::cli::chat::cli::prompts::{
+    FilePrompts,
+    GetPromptError,
+};
 use crate::cli::chat::consts::DUMMY_TOOL_NAME;
 use crate::cli::chat::message::AssistantToolUse;
 use crate::cli::chat::server_messenger::{
@@ -402,6 +405,7 @@ impl ToolManagerBuilder {
             let regex = Regex::new(VALID_TOOL_NAME)?;
 
             spawn_orchestrator_task(
+                os.clone(),
                 has_new_stuff,
                 loading_servers,
                 msg_rx,
@@ -1467,6 +1471,7 @@ fn spawn_display_task(
 /// [ToolManager::swap_agent] for how this should be done.
 #[allow(clippy::too_many_arguments)]
 fn spawn_orchestrator_task(
+    os: Os,
     has_new_stuff: Arc<AtomicBool>,
     mut loading_servers: HashMap<String, Instant>,
     mut msg_rx: tokio::sync::mpsc::Receiver<UpdateEventMessage>,
@@ -1510,6 +1515,7 @@ fn spawn_orchestrator_task(
         // in select arms don't have type hints
         #[inline]
         async fn handle_prompt_queries(
+            os: &Os,
             query: PromptQuery,
             prompts: &HashMap<String, Vec<PromptBundle>>,
             prompt_query_response_sender: &mut BroadcastSender<PromptQueryResult>,
@@ -1522,18 +1528,30 @@ fn spawn_orchestrator_task(
                     }
                 },
                 PromptQuery::Search(search_word) => {
-                    let filtered_prompts = prompts
-                        .iter()
-                        .flat_map(|(prompt_name, bundles)| {
-                            if bundles.len() > 1 {
-                                bundles
-                                    .iter()
-                                    .map(|b| format!("{}/{}", b.server_name, prompt_name))
-                                    .collect()
-                            } else {
-                                vec![prompt_name.to_owned()]
+                    use std::collections::HashSet;
+
+                    // Get file-based prompts (local + global with precedence)
+                    let mut all_prompts = HashSet::new();
+                    if let Ok(file_prompts) = FilePrompts::get_available_names(os) {
+                        all_prompts.extend(file_prompts);
+                    }
+
+                    // Add MCP prompts
+                    for (prompt_name, bundles) in prompts.iter() {
+                        if bundles.len() > 1 {
+                            // Multiple servers provide this prompt - always include namespaced
+                            for b in bundles {
+                                all_prompts.insert(format!("{}/{}", b.server_name, prompt_name));
                             }
-                        })
+                        } else {
+                            // Single server - only add if no file-based prompt exists
+                            all_prompts.insert(prompt_name.to_owned());
+                        }
+                    }
+
+                    // Filter by search word
+                    let filtered_prompts: Vec<_> = all_prompts
+                        .into_iter()
                         .filter(|n| {
                             if let Some(p) = &search_word {
                                 n.contains(p)
@@ -1541,7 +1559,7 @@ fn spawn_orchestrator_task(
                                 true
                             }
                         })
-                        .collect::<Vec<_>>();
+                        .collect();
 
                     let query_res = PromptQueryResult::Search(filtered_prompts);
                     if let Err(e) = prompt_query_response_sender.send(query_res) {
@@ -1910,7 +1928,7 @@ fn spawn_orchestrator_task(
         loop {
             tokio::select! {
                 Ok(query) = prompt_list_receiver.recv() => {
-                    handle_prompt_queries(query, &prompts, &mut prompt_list_sender).await;
+                    handle_prompt_queries(&os, query, &prompts, &mut prompt_list_sender).await;
                 },
                 Some(msg) = msg_rx.recv() => {
                     handle_messenger_msg(
