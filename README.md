@@ -17,6 +17,60 @@ After cloning the repository, run the setup script to install git hooks:
 
 This will install pre-commit hooks that run `cargo fmt` and `cargo clippy` checks before each commit.
 
+## Development Workflows
+
+Kiro-cli includes prompt-based workflows in `.kiro/prompts/` to accelerate development:
+
+### Available Workflows
+
+| Command | Purpose | Output |
+|---------|---------|--------|
+| `@research` | Document codebase, answer questions | `thoughts/shared/research/YYYY-MM-DD-description.md` |
+| `@plan` | Create implementation plans interactively | `thoughts/shared/plans/YYYY-MM-DD-description.md` |
+| `@implement` | Execute approved plans phase-by-phase | Code changes with verification |
+| `@validate` | Verify implementation against plan | Validation report |
+| `@commit` | Create git commits with proper formatting | Git commits |
+
+### Typical Workflow
+
+1. **Research** - `@research` to understand existing code
+2. **Plan** - `@plan` to create implementation plan
+3. **Implement** - `@implement` to execute plan phase-by-phase
+4. **Validate** - `@validate` to verify implementation
+5. **Commit** - `@commit` to create git commits
+
+### Key Features
+
+- **Code tool emphasis**: Use `code` tool for symbol discovery, `grep` for text patterns
+- **Autodocs integration**: Check knowledge base before deep diving
+- **Todo list tracking**: Track progress through multi-phase implementations
+- **Cargo commands**: All prompts reference correct build/test commands
+- **Phase-by-phase**: Implement and verify one phase at a time
+
+### Research Workflow
+
+Use `@research` to understand how features work:
+- Searches autodocs knowledge base first
+- Uses `code` tool for symbol discovery
+- Uses `grep` for text patterns
+- Documents findings with file:line references
+
+### Planning Workflow
+
+Use `@plan` to create implementation plans:
+- Interactive process with clarifying questions
+- Spawns research tasks to understand codebase
+- Separates automated vs manual verification
+- Outputs detailed plans with success criteria
+
+### Implementation Workflow
+
+Use `@implement` to execute plans:
+- Creates todo list to track progress
+- Implements phase-by-phase with verification
+- Updates checkboxes in plan as sections complete
+- Pauses for manual verification between phases
+
 ## Security
 
 For security related concerns, see [here](SECURITY.md).
