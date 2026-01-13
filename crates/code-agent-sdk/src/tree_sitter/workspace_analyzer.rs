@@ -129,11 +129,18 @@ fn find_symbols_sync(
             symbols
         };
 
-        // Apply fuzzy matching
+        // Apply matching based on exact_match flag
         for symbol in file_symbols {
-            let score = calculate_fuzzy_score(&query_lower, &symbol.name.to_lowercase(), query, &symbol.name);
-            if score >= 0.3 {
-                all_symbols.push((score, symbol));
+            if request.exact_match {
+                if symbol.name == *query {
+                    all_symbols.push((1.0, symbol));
+                }
+            } else {
+                let symbol_lower = symbol.name.to_lowercase();
+                let score = calculate_fuzzy_score(&query_lower, &symbol_lower, query, &symbol.name);
+                if score >= 0.7 {
+                    all_symbols.push((score, symbol));
+                }
             }
         }
 
@@ -1033,5 +1040,116 @@ fn main() {
             temp_dir2.path().to_string_lossy().to_string(),
             "Overview should analyze the requested path, not workspace root"
         );
+    }
+
+    #[test]
+    fn test_find_symbols_exact_match() {
+        let temp_dir = TempDir::new().unwrap();
+        let rust_file = temp_dir.path().join("test.rs");
+        fs::write(
+            &rust_file,
+            r#"
+fn filter_schema() {}
+fn filter_schema_extended() {}
+fn my_filter_schema() {}
+fn fetch_graph() {}
+"#,
+        )
+        .unwrap();
+
+        let code_store = Arc::new(crate::sdk::CodeStore::new());
+
+        // Test exact_match=true: should only return "filter_schema"
+        let request = FindSymbolsRequest {
+            symbol_name: "filter_schema".to_string(),
+            exact_match: true,
+            limit: Some(10),
+            file_path: None,
+            symbol_type: None,
+            language: None,
+            timeout_secs: None,
+        };
+        let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
+
+        assert_eq!(results.len(), 1, "exact_match should return only exact matches");
+        assert_eq!(results[0].name, "filter_schema");
+    }
+
+    #[test]
+    fn test_find_symbols_fuzzy_match() {
+        let temp_dir = TempDir::new().unwrap();
+        let rust_file = temp_dir.path().join("test.rs");
+        fs::write(
+            &rust_file,
+            r#"
+fn filter_schema() {}
+fn filter_schema_extended() {}
+fn my_filter_schema() {}
+fn unrelated() {}
+"#,
+        )
+        .unwrap();
+
+        let code_store = Arc::new(crate::sdk::CodeStore::new());
+
+        // Test exact_match=false: should return fuzzy matches
+        let request = FindSymbolsRequest {
+            symbol_name: "filter_schema".to_string(),
+            exact_match: false,
+            limit: Some(10),
+            file_path: None,
+            symbol_type: None,
+            language: None,
+            timeout_secs: None,
+        };
+        let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
+
+        assert!(results.len() >= 2, "fuzzy match should return multiple results");
+        let names: Vec<_> = results.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"filter_schema"));
+        assert!(names.contains(&"filter_schema_extended") || names.contains(&"my_filter_schema"));
+    }
+
+    #[test]
+    fn test_find_symbols_exact_match_case_sensitive() {
+        let temp_dir = TempDir::new().unwrap();
+        let rust_file = temp_dir.path().join("test.rs");
+        fs::write(
+            &rust_file,
+            r#"
+fn FilterSchema() {}
+fn filter_schema() {}
+"#,
+        )
+        .unwrap();
+
+        let code_store = Arc::new(crate::sdk::CodeStore::new());
+
+        // Test exact_match with exact case - should match
+        let request = FindSymbolsRequest {
+            symbol_name: "FilterSchema".to_string(),
+            exact_match: true,
+            limit: Some(10),
+            file_path: None,
+            symbol_type: None,
+            language: None,
+            timeout_secs: None,
+        };
+        let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
+        assert_eq!(results.len(), 1, "exact_match should find exact case");
+        assert_eq!(results[0].name, "FilterSchema");
+
+        // Test exact_match with wrong case - should NOT match
+        let request = FindSymbolsRequest {
+            symbol_name: "filterschema".to_string(),
+            exact_match: true,
+            limit: Some(10),
+            file_path: None,
+            symbol_type: None,
+            language: None,
+            timeout_secs: None,
+        };
+        let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
+        assert_eq!(results.len(), 0, "exact_match should be case-sensitive");
     }
 }

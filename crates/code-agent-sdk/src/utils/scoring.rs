@@ -141,4 +141,60 @@ mod tests {
     fn test_contains_match() {
         assert!((calculate_fuzzy_score("service", "userservice", "Service", "UserService") - 0.8).abs() < 0.01);
     }
+
+    #[test]
+    fn test_unrelated_symbols_score_low() {
+        let query = "filter_schema";
+        let query_lower = query.to_lowercase();
+
+        // These should score HIGH (related) - above 0.7 threshold
+        let related = [
+            ("filter_schema", 1.0),
+            ("filter_schema_extended", 0.85),
+            ("my_filter_schema", 0.75),
+        ];
+        for (sym, min_score) in related {
+            let score = calculate_fuzzy_score(&query_lower, &sym.to_lowercase(), query, sym);
+            assert!(
+                score >= min_score,
+                "{} should score >= {} but got {:.3}",
+                sym,
+                min_score,
+                score
+            );
+        }
+
+        // These should score LOW (unrelated) - below 0.7 threshold
+        let unrelated = [
+            ("fetch_graph", 0.584),
+            ("testProvideIamClient", 0.547),
+            ("iamCreateSlrAlreadyExists_success", 0.538),
+        ];
+        for (sym, expected) in unrelated {
+            let score = calculate_fuzzy_score(&query_lower, &sym.to_lowercase(), query, sym);
+            assert!(score < 0.7, "{} should score < 0.7 but got {:.3}", sym, score);
+            // Verify scores are roughly what we expect from Jaro-Winkler
+            assert!(
+                (score - expected).abs() < 0.1,
+                "{} expected ~{:.3} but got {:.3}",
+                sym,
+                expected,
+                score
+            );
+        }
+    }
+
+    #[test]
+    fn test_legitimate_fuzzy_matches() {
+        // Typo - high Jaro-Winkler passes threshold
+        let score = calculate_fuzzy_score("filter", "filtr", "filter", "filtr");
+        assert!(score > 0.7, "typo 'filtr' should match 'filter', got {:.3}", score);
+
+        // Prefix/contains still work
+        let score = calculate_fuzzy_score("user_service", "user_service_impl", "user_service", "user_service_impl");
+        assert!(score >= 0.85, "prefix should match, got {:.3}", score);
+
+        let score = calculate_fuzzy_score("user_service", "my_user_service", "user_service", "my_user_service");
+        assert!(score >= 0.75, "contains should match, got {:.3}", score);
+    }
 }

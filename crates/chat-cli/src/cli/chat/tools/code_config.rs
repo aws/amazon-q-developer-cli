@@ -102,11 +102,22 @@ Params: path (optional)
 **search_codebase_map** - Focused directory exploration.
 Params: file_path, path
 
+## Explore Unfamiliar Code
+1. generate_codebase_overview if full workspace understanding needed
+2. search_symbols for domain-specific types/functions/methods/classes
+3. grep (max 2 searches) for literal text, comments, config values
+4. lookup_symbols: include_source=true to get focused context about methods/functions.
+
 ## Tool Selection Priority
-1. search_symbols or lookup_symbols for finding code
+1. search_symbols or lookup_symbols for finding code - ALWAYS use for functions/methods/classes/structs/interfaces
 2. get_document_symbols for file structure
-3. grep - ONLY for literal text, comments, config values
+3. grep - ONLY for literal text in comments/strings, config values
 4. fs_read - raw file content when needed
+
+## Quick Reference
+• \"What's in this file?\" → get_document_symbols
+• \"Show me X class\" → search_symbols, then lookup_symbol
+• \"What's in this codebase?\" / \"Help me understand this workspace\" → generate_codebase_overview
 
 ## LSP Operations (Not Available)
 These require LSP initialization (/code init):
@@ -186,10 +197,17 @@ CORE FEATURES:
 
 **View implementation:** search_symbols → goto_definition. Only use fs_read for raw content unrelated to symbols.
 
-**Explore unfamiliar code:**
-1. grep (max 2 searches) for domain terms to discover symbol names
-2. For each symbol: search_symbols → goto_definition → get_document_symbols
-3. Repeat for new symbols discovered
+## Explore Unfamiliar Code
+1. generate_codebase_overview if full workspace understanding needed
+2. search_symbols for domain-specific types/functions/methods/classes
+3. grep (max 2 searches) for literal text, comments, config values
+4. lookup_symbols: include_source=true to get focused context about methods/functions.
+
+## Tool Selection Priority
+1. search_symbols or lookup_symbols for finding code - ALWAYS use for functions/methods/classes/structs/interfaces
+2. get_document_symbols for file structure
+3. grep - ONLY for literal text in comments/strings, config values
+4. fs_read - raw file content when needed
 
 ## Quick Reference
 • \"Where is X used?\" → search_symbols, then find_references
@@ -197,6 +215,7 @@ CORE FEATURES:
 • \"What's in this file?\" → get_document_symbols
 • \"What type is this?\" → get_hover
 • \"Show me X class\" → search_symbols, then goto_definition
+• \"What's in this codebase?\" / \"Help me understand this workspace\" → generate_codebase_overview
 
 ## When to Use grep vs LSP
 LSP (not grep): Finding symbol usage, definitions, code relationships
