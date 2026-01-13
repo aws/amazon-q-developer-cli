@@ -1031,6 +1031,14 @@ impl ConversationState {
                 acc
             });
         self.tool_manager.has_new_stuff.store(false, Ordering::Release);
+
+        // Auto-add tools to allowed_tools if trust_all_tools is enabled
+        if self.agents.trust_all_tools
+            && let Some(agent) = self.agents.get_active_mut()
+        {
+            agent.add_tools_to_allowed(&self.tool_manager.schema);
+        }
+
         // We call this in [Self::enforce_conversation_invariants] as well. But we need to call it
         // here as well because when it's being called in [Self::enforce_conversation_invariants]
         // it is only checking the last entry.

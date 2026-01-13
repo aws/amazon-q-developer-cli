@@ -364,7 +364,7 @@ impl ToolsSubcommand {
                     )?;
                 }
                 if !valid_tools.is_empty() {
-                    let tools_to_untrust = valid_tools
+                    let tools_to_untrust: Vec<_> = valid_tools
                         .into_iter()
                         .filter_map(|tool_name| {
                             // Check if it's a native tool by any alias
@@ -376,9 +376,13 @@ impl ToolsSubcommand {
                                     .map(|info| format!("@{}{MCP_SERVER_TOOL_DELIMITER}{tool_name}", info.server_name))
                             }
                         })
-                        .collect::<Vec<_>>();
+                        .collect();
 
                     if !tools_to_untrust.is_empty() {
+                        // If trust_all_tools is enabled, disable it since user is now managing individual tools
+                        if session.conversation.agents.trust_all_tools {
+                            session.conversation.agents.trust_all_tools = false;
+                        }
                         session.conversation.agents.untrust_tools(&tools_to_untrust);
 
                         queue!(
@@ -397,6 +401,9 @@ impl ToolsSubcommand {
             },
             Self::TrustAll => {
                 session.conversation.agents.trust_all_tools = true;
+                if let Some(agent) = session.conversation.agents.get_active_mut() {
+                    agent.add_tools_to_allowed(&session.conversation.tool_manager.schema);
+                }
                 queue!(session.stderr, style::Print(trust_all_text()))?;
             },
             Self::Reset => {

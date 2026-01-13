@@ -55,6 +55,7 @@ use super::chat::tools::{
     DEFAULT_APPROVE,
     ToolMetadata,
     ToolOrigin,
+    ToolSpec,
 };
 use crate::cli::agent::hook::{
     Hook,
@@ -225,6 +226,21 @@ impl Default for Agent {
 }
 
 impl Agent {
+    /// Add all tools from schema to allowed_tools with proper formatting
+    pub fn add_tools_to_allowed(&mut self, schema: &std::collections::HashMap<String, ToolSpec>) {
+        for (tool_name, tool_spec) in schema.iter() {
+            match &tool_spec.tool_origin {
+                ToolOrigin::Native => {
+                    self.allowed_tools.insert(tool_name.clone());
+                },
+                ToolOrigin::McpServer(server) => {
+                    self.allowed_tools
+                        .insert(format!("@{server}{MCP_SERVER_TOOL_DELIMITER}{tool_name}"));
+                },
+            }
+        }
+    }
+
     /// This function mutates the agent to a state that is writable.
     /// Practically this means reverting some fields back to their original values as they were
     /// written in the config.
