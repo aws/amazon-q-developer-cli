@@ -52,9 +52,9 @@ impl AgentConfig {
         }
     }
 
-    pub fn tool_settings(&self) -> Option<&ToolSettings> {
+    pub fn tool_settings(&self) -> Option<&ToolsSettings> {
         match self {
-            AgentConfig::V2025_08_22(a) => a.tool_settings.as_ref(),
+            AgentConfig::V2025_08_22(a) => a.tools_settings.as_ref(),
         }
     }
 
@@ -143,7 +143,7 @@ pub struct AgentConfigV2025_08_22 {
     pub tool_aliases: HashMap<String, String>,
     /// Settings for specific tools
     #[serde(default)]
-    pub tool_settings: Option<ToolSettings>,
+    pub tools_settings: Option<ToolsSettings>,
     /// A JSON schema specification describing the arguments for when this agent is invoked as a
     /// tool.
     #[serde(default)]
@@ -189,7 +189,7 @@ impl Default for AgentConfigV2025_08_22 {
             description: Some("The default agent for Q CLI".to_string()),
             system_prompt: None,
             tools: vec!["*".to_string()],
-            tool_settings: Default::default(),
+            tools_settings: Default::default(),
             tool_aliases: Default::default(),
             tool_schema: Default::default(),
             hooks: Default::default(),
@@ -213,21 +213,45 @@ impl Default for AgentConfigV2025_08_22 {
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
-pub struct ToolSettings {
+#[serde(rename_all = "camelCase")]
+pub struct ToolsSettings {
+    #[serde(default, alias = "read", alias = "fs_read")]
     pub fs_read: FsReadSettings,
+    #[serde(default, alias = "write", alias = "fs_write")]
     pub fs_write: FsWriteSettings,
+    #[serde(default, alias = "execute_bash", alias = "executeCmd", alias = "execute_cmd")]
+    pub shell: ExecuteCmdSettings,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FsReadSettings {
+    #[serde(default)]
     pub allowed_paths: Vec<String>,
+    #[serde(default)]
     pub denied_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct FsWriteSettings {
+    #[serde(default)]
     pub allowed_paths: Vec<String>,
+    #[serde(default)]
     pub denied_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ExecuteCmdSettings {
+    #[serde(default)]
+    pub allowed_commands: Vec<String>,
+    #[serde(default)]
+    pub denied_commands: Vec<String>,
+    #[serde(default)]
+    pub deny_by_default: bool,
+    #[serde(default)]
+    pub auto_allow_readonly: bool,
 }
 
 /// This mirrors claude's config set up.
@@ -599,5 +623,87 @@ mod tests {
         let config = serde_json::json!({});
         let result: Result<McpServerConfig, _> = serde_json::from_value(config);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tools_settings_deser() {
+        let agent = serde_json::json!({
+            "name": "example",
+            "toolsSettings": {
+                "shell": {
+                    "allowedCommands": ["jj *"]
+                }
+            }
+        });
+
+        let config: AgentConfigV2025_08_22 = serde_json::from_value(agent).unwrap();
+        assert!(config.tools_settings.is_some());
+        let tools_settings = config.tools_settings.unwrap();
+        assert_eq!(tools_settings.shell.allowed_commands, vec!["jj *"]);
+    }
+
+    #[test]
+    fn test_agent_config_enum_tools_settings_deser() {
+        let agent = serde_json::json!({
+            "name": "example",
+            "toolsSettings": {
+                "shell": {
+                    "allowedCommands": ["jj *"]
+                }
+            }
+        });
+
+        let config: AgentConfig = serde_json::from_value(agent).unwrap();
+        assert!(config.tool_settings().is_some());
+        let tools_settings = config.tool_settings().unwrap();
+        assert_eq!(tools_settings.shell.allowed_commands, vec!["jj *"]);
+
+        // Also testing for alias
+        let agent = serde_json::json!({
+            "name": "example",
+            "toolsSettings": {
+                "executeCmd": {
+                    "allowedCommands": ["jj *"]
+                }
+            }
+        });
+
+        let config: AgentConfig = serde_json::from_value(agent).unwrap();
+        assert!(config.tool_settings().is_some());
+        let tools_settings = config.tool_settings().unwrap();
+        assert_eq!(tools_settings.shell.allowed_commands, vec!["jj *"]);
+    }
+
+    #[test]
+    fn test_real_agent_config_file() {
+        let json_str = r#"{
+          "name": "example",
+          "description": "example agent for testing",
+          "prompt": null,
+          "mcpServers": {},
+          "tools": [
+            "read",
+            "write",
+            "shell"
+          ],
+          "toolAliases": {},
+          "allowedTools": [],
+          "resources": [
+            "file://AGENTS.md",
+            "file://README.md"
+          ],
+          "hooks": {},
+          "toolsSettings": {
+            "shell": {
+              "allowedCommands": ["jj *"]
+            }
+          },
+          "model": null
+        }"#;
+
+        let config: AgentConfig = serde_json::from_str(json_str).unwrap();
+        assert!(config.tool_settings().is_some());
+        let tools_settings = config.tool_settings().unwrap();
+        assert_eq!(tools_settings.shell.allowed_commands, vec!["jj *"]);
     }
 }

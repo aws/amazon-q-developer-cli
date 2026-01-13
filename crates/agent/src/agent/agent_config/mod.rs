@@ -17,7 +17,7 @@ use definitions::{
     HookTrigger,
     McpServerConfig,
     McpServers,
-    ToolSettings,
+    ToolsSettings,
 };
 use eyre::Result;
 use serde::{
@@ -65,7 +65,7 @@ impl LoadedAgentConfig {
         self.config.tool_aliases()
     }
 
-    pub fn tool_settings(&self) -> Option<&ToolSettings> {
+    pub fn tool_settings(&self) -> Option<&ToolsSettings> {
         self.config.tool_settings()
     }
 
