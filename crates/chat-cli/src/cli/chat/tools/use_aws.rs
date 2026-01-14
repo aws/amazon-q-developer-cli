@@ -1,6 +1,10 @@
-use std::collections::HashMap;
+use std::collections::{
+    HashMap,
+    HashSet,
+};
 use std::io::Write;
 use std::process::Stdio;
+use std::sync::LazyLock;
 
 use bstr::ByteSlice;
 use convert_case::{
@@ -32,7 +36,22 @@ use crate::cli::agent::{
 use crate::os::Os;
 use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
-const READONLY_OPS: [&str; 6] = ["get", "describe", "list", "ls", "search", "batch_get"];
+/// Known readonly AWS API operations from official AWS Service Authorization Reference.
+/// Format: "service:operation" (e.g., "ec2:describe-instances")
+/// Regenerate with: python3 scripts/generate_aws_readonly_ops.py
+static AWS_READONLY_OPS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let ops: Vec<&str> = serde_json::from_str(include_str!("../../../data/aws_readonly_operations.json"))
+        .expect("Failed to parse aws_readonly_operations.json");
+    ops.into_iter().collect()
+});
+
+/// Manual additions for readonly operations not in the auto-generated list.
+/// Format: "service:operation"
+static AWS_READONLY_ADDITIONS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    let ops: Vec<&str> = serde_json::from_str(include_str!("../../../data/aws_readonly_additions.json"))
+        .expect("Failed to parse aws_readonly_additions.json");
+    ops.into_iter().collect()
+});
 
 // TODO: we should perhaps composite this struct with an interface that we can use to mock the
 // actual cli with. That will allow us to more thoroughly test it.
@@ -88,7 +107,11 @@ impl UseAws {
     };
 
     pub fn requires_acceptance(&self) -> bool {
-        !READONLY_OPS.iter().any(|op| self.operation_name.starts_with(op))
+        let key = format!("{}:{}", self.service_name, self.operation_name);
+        if AWS_READONLY_OPS.contains(key.as_str()) || AWS_READONLY_ADDITIONS.contains(key.as_str()) {
+            return false;
+        }
+        true
     }
 
     pub async fn invoke(&self, os: &Os, _updates: impl Write) -> Result<InvokeOutput> {
@@ -225,8 +248,12 @@ impl UseAws {
             allowed_services: Vec<String>,
             #[serde(default)]
             denied_services: Vec<String>,
-            #[serde(default)]
+            #[serde(default = "default_true")]
             auto_allow_readonly: bool,
+        }
+
+        fn default_true() -> bool {
+            true
         }
 
         let Self { service_name, .. } = self;
@@ -260,10 +287,8 @@ impl UseAws {
                 PermissionEvalResult::Ask
             },
             None if is_in_allowlist => PermissionEvalResult::Allow,
-            _ => {
-                // Default behavior: always ask for confirmation (no auto-approval for read-only)
-                PermissionEvalResult::Ask
-            },
+            None if !self.requires_acceptance() => PermissionEvalResult::Allow,
+            _ => PermissionEvalResult::Ask,
         }
     }
 }
@@ -281,36 +306,71 @@ mod tests {
 
     #[test]
     fn test_requires_acceptance() {
+        // Test known readonly operations (from aws_readonly_operations.json)
         let cmd = use_aws! {{
-            "service_name": "ecs",
-            "operation_name": "list-task-definitions",
+            "service_name": "s3api",
+            "operation_name": "get-object",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
         }};
-        assert!(!cmd.requires_acceptance());
+        assert!(!cmd.requires_acceptance(), "get-object should be read-only");
+
         let cmd = use_aws! {{
-            "service_name": "lambda",
-            "operation_name": "list-functions",
+            "service_name": "s3api",
+            "operation_name": "list-buckets",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
         }};
-        assert!(!cmd.requires_acceptance());
+        assert!(!cmd.requires_acceptance(), "list-buckets should be read-only");
+
         let cmd = use_aws! {{
-            "service_name": "s3",
+            "service_name": "ec2",
+            "operation_name": "describe-instances",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert!(!cmd.requires_acceptance(), "describe-instances should be read-only");
+
+        // Test write operations (not in readonly list)
+        let cmd = use_aws! {{
+            "service_name": "s3api",
             "operation_name": "put-object",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
         }};
-        assert!(cmd.requires_acceptance());
+        assert!(cmd.requires_acceptance(), "put-object should require acceptance");
+
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "delete-bucket",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert!(cmd.requires_acceptance(), "delete-bucket should require acceptance");
+
+        // Test unknown operations (not in list, require acceptance)
+        let cmd = use_aws! {{
+            "service_name": "s3api",
+            "operation_name": "unknown-operation",
+            "region": "us-west-2",
+            "profile_name": "default",
+            "label": ""
+        }};
+        assert!(
+            cmd.requires_acceptance(),
+            "Unknown operations should require acceptance"
+        );
     }
 
     #[test]
     fn test_use_aws_deser() {
         let cmd = use_aws! {{
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "put-object",
             "parameters": {
                 "TableName": "table-name",
@@ -339,7 +399,7 @@ mod tests {
         let os = Os::new().await.unwrap();
 
         let v = serde_json::json!({
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "put-object",
             // technically this wouldn't be a valid request with an empty parameter set but it's
             // okay for this test
@@ -364,7 +424,7 @@ mod tests {
         let os = Os::new().await.unwrap();
 
         let v = serde_json::json!({
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "ls",
             "parameters": {},
             "region": "us-west-2",
@@ -394,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_eval_perm() {
         let cmd_one = use_aws! {{
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "put-object",
             "region": "us-west-2",
             "profile_name": "default",
@@ -408,7 +468,7 @@ mod tests {
                 map.insert(
                     ToolSettingTarget("use_aws".to_string()),
                     serde_json::json!({
-                        "deniedServices": ["s3"]
+                        "deniedServices": ["s3api"]
                     }),
                 );
                 map
@@ -419,7 +479,7 @@ mod tests {
         let os = Os::new().await.unwrap();
 
         let res = cmd_one.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3api".to_string())));
 
         let cmd_two = use_aws! {{
             "service_name": "api_gateway",
@@ -439,17 +499,17 @@ mod tests {
 
         // Denied services should still be denied after trusting tool
         let res = cmd_one.eval_perm(&os, &agent);
-        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3api".to_string())));
     }
 
     #[tokio::test]
     async fn test_eval_perm_auto_allow_readonly_default() {
         let os = Os::new().await.unwrap();
 
-        // Test read-only operation with default settings (auto_allow_readonly = false)
+        // Test read-only operation with default settings (auto_allow_readonly = true by default now)
         let readonly_cmd = use_aws! {{
-            "service_name": "s3",
-            "operation_name": "list-objects",
+            "service_name": "s3api",
+            "operation_name": "get-object",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
@@ -457,12 +517,15 @@ mod tests {
 
         let agent = Agent::default();
         let res = readonly_cmd.eval_perm(&os, &agent);
-        // Should ask for confirmation even for read-only operations by default
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        // Should auto-approve read-only operations with new default
+        assert!(
+            matches!(res, PermissionEvalResult::Allow),
+            "Read-only operations should be auto-approved by default"
+        );
 
         // Test write operation with default settings
         let write_cmd = use_aws! {{
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "put-object",
             "region": "us-west-2",
             "profile_name": "default",
@@ -470,8 +533,11 @@ mod tests {
         }};
 
         let res = write_cmd.eval_perm(&os, &agent);
-        // Should ask for confirmation for write operations
-        assert!(matches!(res, PermissionEvalResult::Ask));
+        // Should still ask for write operations
+        assert!(
+            matches!(res, PermissionEvalResult::Ask),
+            "Write operations should still require confirmation"
+        );
     }
 
     #[tokio::test]
@@ -495,8 +561,8 @@ mod tests {
 
         // Test read-only operation with auto_allow_readonly = true
         let readonly_cmd = use_aws! {{
-            "service_name": "s3",
-            "operation_name": "list-objects",
+            "service_name": "s3api",
+            "operation_name": "list-objects-v2",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
@@ -508,7 +574,7 @@ mod tests {
 
         // Test write operation with auto_allow_readonly = true
         let write_cmd = use_aws! {{
-            "service_name": "s3",
+            "service_name": "s3api",
             "operation_name": "put-object",
             "region": "us-west-2",
             "profile_name": "default",
@@ -532,7 +598,7 @@ mod tests {
                     ToolSettingTarget("use_aws".to_string()),
                     serde_json::json!({
                         "autoAllowReadonly": true,
-                        "deniedServices": ["s3"]
+                        "deniedServices": ["s3api"]
                     }),
                 );
                 map
@@ -542,8 +608,8 @@ mod tests {
 
         // Test read-only operation on denied service
         let readonly_cmd = use_aws! {{
-            "service_name": "s3",
-            "operation_name": "list-objects",
+            "service_name": "s3api",
+            "operation_name": "list-objects-v2",
             "region": "us-west-2",
             "profile_name": "default",
             "label": ""
@@ -551,6 +617,6 @@ mod tests {
 
         let res = readonly_cmd.eval_perm(&os, &agent);
         // Should deny even read-only operations on denied services
-        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3".to_string())));
+        assert!(matches!(res, PermissionEvalResult::Deny(ref services) if services.contains(&"s3api".to_string())));
     }
 }
