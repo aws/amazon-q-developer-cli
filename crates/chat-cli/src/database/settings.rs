@@ -99,6 +99,8 @@ pub enum Setting {
     EnabledDelegate,
     #[strum(message = "Specify UI variant to use (string)")]
     UiMode,
+    #[strum(message = "External diff tool command (string)")]
+    ChatDiffTool,
 }
 
 impl AsRef<str> for Setting {
@@ -145,6 +147,7 @@ impl AsRef<str> for Setting {
             Self::EnabledDelegate => "chat.enableDelegate",
             Self::EnabledCodeIntelligence => "chat.enableCodeIntelligence",
             Self::UiMode => "chat.uiMode",
+            Self::ChatDiffTool => "chat.diffTool",
         }
     }
 }
@@ -199,6 +202,7 @@ impl TryFrom<&str> for Setting {
             "chat.enableContextUsageIndicator" => Ok(Self::EnabledContextUsageIndicator),
             "chat.enableCodeIntelligence" => Ok(Self::EnabledCodeIntelligence),
             "chat.uiMode" => Ok(Self::UiMode),
+            "chat.diffTool" => Ok(Self::ChatDiffTool),
             _ => Err(DatabaseError::InvalidSetting(value.to_string())),
         }
     }
@@ -331,6 +335,7 @@ mod test {
         settings.set(Setting::KnowledgeIndexType, "fast").await.unwrap();
         settings.set(Setting::McpLoadedBefore, true).await.unwrap();
         settings.set(Setting::ChatDefaultModel, "model 1").await.unwrap();
+        settings.set(Setting::ChatDiffTool, "diff tool").await.unwrap();
         settings
             .set(Setting::ChatDisableMarkdownRendering, false)
             .await
@@ -354,6 +359,10 @@ mod test {
         assert_eq!(
             settings.get(Setting::ChatDefaultModel),
             Some(&Value::String("model 1".to_string()))
+        );
+        assert_eq!(
+            settings.get(Setting::ChatDiffTool),
+            Some(&Value::String("diff tool".to_string()))
         );
         assert_eq!(
             settings.get(Setting::ChatDisableMarkdownRendering),

@@ -322,7 +322,7 @@ impl FsWrite {
                     Default::default()
                 };
                 let new = stylize_output_if_able(&relative_path, &file_text);
-                print_diff_or_launch_tool(output, &prev, &new, 1, &relative_path.to_string_lossy())?;
+                print_diff_or_launch_tool(os, output, &prev, &new, 1, &relative_path.to_string_lossy())?;
 
                 Ok(())
             },
@@ -348,7 +348,7 @@ impl FsWrite {
 
                 let old = stylize_output_if_able(&relative_path, &old);
                 let new = stylize_output_if_able(&relative_path, &new);
-                print_diff_or_launch_tool(output, &old, &new, start_line, &relative_path.to_string_lossy())?;
+                print_diff_or_launch_tool(os, output, &old, &new, start_line, &relative_path.to_string_lossy())?;
 
                 Ok(())
             },
@@ -364,7 +364,14 @@ impl FsWrite {
                 };
                 let old_str = stylize_output_if_able(&relative_path, old_str);
                 let new_str = stylize_output_if_able(&relative_path, new_str);
-                print_diff_or_launch_tool(output, &old_str, &new_str, start_line, &relative_path.to_string_lossy())?;
+                print_diff_or_launch_tool(
+                    os,
+                    output,
+                    &old_str,
+                    &new_str,
+                    start_line,
+                    &relative_path.to_string_lossy(),
+                )?;
 
                 Ok(())
             },
@@ -374,6 +381,7 @@ impl FsWrite {
                 let start_line = os.fs.read_to_string_sync(&path)?.lines().count() + 1;
                 let file = stylize_output_if_able(&relative_path, new_str);
                 print_diff_or_launch_tool(
+                    os,
                     output,
                     &Default::default(),
                     &file,
@@ -686,6 +694,7 @@ fn get_lines_with_context(
 /// Prints diff using custom tool if configured.
 /// If the custom tool fails, prints a warning and falls back to inline diff.
 fn print_diff_or_launch_tool(
+    os: &Os,
     output: &mut impl Write,
     old_str: &StylizedFile,
     new_str: &StylizedFile,
@@ -694,16 +703,16 @@ fn print_diff_or_launch_tool(
 ) -> Result<()> {
     use crate::cli::chat::tools::diff_tool;
 
-    if diff_tool::has_diff_tool() {
+    if diff_tool::has_diff_tool(os) {
         // Strip all ANSI codes for external tools
         let old_content = String::from_utf8_lossy(&strip_ansi_escapes::strip(&old_str.content)).to_string();
         let new_content = String::from_utf8_lossy(&strip_ansi_escapes::strip(&new_str.content)).to_string();
 
-        let tool_result = diff_tool::diff_with_tool(&old_content, &new_content, label, start_line);
+        let tool_result = diff_tool::diff_with_tool(os, &old_content, &new_content, label, start_line);
 
         match tool_result {
             Ok(()) => {
-                if diff_tool::is_inline_diff_tool() {
+                if diff_tool::is_inline_diff_tool(os) {
                     return Ok(());
                 }
                 // External tool: also print inline diff as record

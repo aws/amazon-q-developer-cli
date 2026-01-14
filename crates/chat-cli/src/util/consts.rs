@@ -128,9 +128,6 @@ pub mod env_var {
         /// Editor environment variable
         EDITOR = "EDITOR",
 
-        /// Custom diff tool command
-        KIRO_DIFF_TOOL = "KIRO_DIFF_TOOL",
-
         /// Terminal type
         TERM = "TERM",
 

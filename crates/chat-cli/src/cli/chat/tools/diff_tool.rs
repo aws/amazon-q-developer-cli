@@ -7,7 +7,8 @@ use std::process::{
 };
 
 use crate::cli::chat::ChatError;
-use crate::util::env_var::try_get_diff_tool;
+use crate::database::settings::Setting;
+use crate::os::Os;
 
 #[derive(Clone, Copy)]
 enum DiffStrategy {
@@ -63,22 +64,23 @@ fn get_tool_config(name: &str) -> ToolConfig {
     }
 }
 
-pub fn has_diff_tool() -> bool {
-    try_get_diff_tool().is_ok()
+pub fn has_diff_tool(os: &Os) -> bool {
+    get_diff_tool_cmd(os).is_some()
 }
 
-pub fn is_inline_diff_tool() -> bool {
-    get_tool_name().is_some_and(|name| get_tool_config(&name).is_inline)
+pub fn is_inline_diff_tool(os: &Os) -> bool {
+    get_tool_name(os).is_some_and(|name| get_tool_config(&name).is_inline)
 }
 
 pub fn diff_with_tool(
+    os: &Os,
     before_content: &str,
     after_content: &str,
     label: &str,
     start_line: usize,
 ) -> Result<(), ChatError> {
-    let cmd = try_get_diff_tool().map_err(|_ignored| ChatError::Custom("KIRO_DIFF_TOOL not configured".into()))?;
-    let tool_name = get_tool_name().unwrap_or_default();
+    let cmd = get_diff_tool_cmd(os).ok_or_else(|| ChatError::Custom("Diff tool not configured".into()))?;
+    let tool_name = get_tool_name(os).unwrap_or_default();
     let config = get_tool_config(&tool_name);
 
     // Create temp files
@@ -116,8 +118,12 @@ pub fn diff_with_tool(
     result
 }
 
-fn get_tool_name() -> Option<String> {
-    let cmd = try_get_diff_tool().ok()?;
+fn get_diff_tool_cmd(os: &Os) -> Option<String> {
+    os.database.settings.get_string(Setting::ChatDiffTool)
+}
+
+fn get_tool_name(os: &Os) -> Option<String> {
+    let cmd = get_diff_tool_cmd(os)?;
     let path = cmd.split_whitespace().next()?;
     let name = path.rsplit(['/', '\\']).next().unwrap_or(path);
     Some(name.to_string())

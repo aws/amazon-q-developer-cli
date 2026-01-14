@@ -335,8 +335,7 @@ pub mod tips {
                 StyledText::command("/code init")
             ),
             format!(
-                "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the
-            specified time will continue to load in the background. Use /tools to see pending servers.",
+                "You can specify wait time (in ms) for mcp server loading with {}. Servers that take longer than the specified time will continue to load in the background. Use /tools to see pending servers.",
                 StyledText::command(&format!("{CLI_NAME} settings mcp.initTimeout {{timeout in int}}"))
             ),
             format!(
@@ -357,8 +356,7 @@ pub mod tips {
                 StyledText::command("/prompts")
             ),
             format!(
-                "Use {} or {} (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat
-            history",
+                "Use {} or {} (customizable) to start isolated conversations ( ↯ ) that don't affect your main chat history",
                 StyledText::command("/tangent"),
                 StyledText::command("ctrl + t")
             ),
@@ -368,8 +366,7 @@ pub mod tips {
                 StyledText::command("\"Can you save conversations?\"")
             ),
             format!(
-                "Stay up to date with the latest features and improvements! Use {} to see what's new in
-            {PRODUCT_NAME} CLI",
+                "Stay up to date with the latest features and improvements! Use {} to see what's new in {PRODUCT_NAME} CLI",
                 StyledText::command("/changelog")
             ),
             format!(
@@ -378,8 +375,7 @@ pub mod tips {
                 StyledText::command("settings chat.enableCheckpoint true")
             ),
             format!(
-                "Build persistent knowledge bases with {}! Add docs, code, or any files for semantic search across
-            sessions",
+                "Build persistent knowledge bases with {}! Add docs, code, or any files for semantic search across sessions",
                 StyledText::command("/knowledge add")
             ),
             format!(
@@ -397,8 +393,8 @@ pub mod tips {
                 StyledText::command("shift + tab")
             ),
             format!(
-                "Prefer a different diff view for the write tool? For example, set {} in your terminal",
-                StyledText::command("export KIRO_DIFF_TOOL=\"delta\"")
+                "Prefer a different diff view for the write tool? For example, run {}",
+                StyledText::command(&format!("{CLI_NAME} settings chat.diffTool delta"))
             ),
         ]
     }

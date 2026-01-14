@@ -86,11 +86,6 @@ pub fn get_term() -> Option<String> {
     Env::new().get(TERM).ok()
 }
 
-/// Try to get diff tool without fallback
-pub fn try_get_diff_tool() -> Result<String, std::env::VarError> {
-    Env::new().get(KIRO_DIFF_TOOL)
-}
-
 /// Get AWS region
 pub fn get_aws_region() -> Result<String, std::env::VarError> {
     Env::new().get(AWS_REGION)
