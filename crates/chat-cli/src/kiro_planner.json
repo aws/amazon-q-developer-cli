@@ -20,5 +20,7 @@
       "denyByDefault": true
     }
   },
-  "includeMcpJson": false
+  "includeMcpJson": false,
+  "keyboardShortcut": "shift+tab",
+  "welcomeMessage": "Transform any idea into fully working code. What do you want to build today?"
 }

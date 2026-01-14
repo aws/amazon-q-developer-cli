@@ -19,6 +19,8 @@ Every agent configuration file can include the following sections:
 - [`hooks`](#hooks-field) — Commands run at specific trigger points.
 - [`useLegacyMcpJson`](#uselegacymcpjson-field) — Whether to include legacy MCP configuration.
 - [`model`](#model-field) — The model ID to use for this agent.
+- [`keyboardShortcut`](#keyboardshortcut-field) — Keyboard shortcut for quick agent switching.
+- [`welcomeMessage`](#welcomemessage-field) — Message displayed when switching to this agent.
 
 ## Name Field
 
@@ -383,6 +385,58 @@ The `model` field specifies the model ID to use for this agent. If not specified
 The model ID must match one of the available models returned by the KIRO CLI's model service. You can see available models by using the `/model` command in an active chat session.
 
 If the specified model is not available, the agent will fall back to the default model and display a warning.
+
+## KeyboardShortcut Field
+
+The `keyboardShortcut` field configures a keyboard shortcut for quickly switching to this agent during a chat session.
+
+```json
+{
+  "keyboardShortcut": "ctrl+shift+a"
+}
+```
+
+Shortcuts consist of modifiers and a key, separated by `+`:
+
+**Modifiers** (optional, can combine multiple):
+- `ctrl` - Control key
+- `shift` - Shift key  
+- `alt` - Alt key (Option key on Mac)
+
+**Keys**:
+- Single letter: `a-z` (case insensitive)
+- Single digit: `0-9`
+- Function keys: `f1-f12`
+- Special: `tab` (use `shift+tab` for Shift+Tab)
+
+**Examples**:
+```json
+"keyboardShortcut": "ctrl+a"           // Control + A
+"keyboardShortcut": "ctrl+shift+b"     // Control + Shift + B  
+"keyboardShortcut": "alt+f1"           // Alt + F1
+```
+
+**Toggle Behavior:**
+
+When you press a keyboard shortcut:
+- If you're on a different agent: switches to this agent
+- If you're already on this agent: switches back to your previous agent
+
+**Conflict Handling:**
+
+If multiple agents have the same keyboard shortcut, a warning is logged and the shortcut is disabled. Use `/agent swap` to switch manually in this case.
+
+## WelcomeMessage Field
+
+The `welcomeMessage` field specifies a message displayed when switching to this agent.
+
+```json
+{
+  "welcomeMessage": "What would you like to build today?"
+}
+```
+
+This message appears after the agent switch confirmation, helping orient users to the agent's purpose.
 
 ## Complete Example
 

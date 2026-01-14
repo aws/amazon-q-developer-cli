@@ -2,6 +2,7 @@ pub mod hook;
 mod legacy;
 mod mcp_config;
 mod root_command_args;
+mod validator;
 pub mod wrapper_types;
 
 use std::borrow::Borrow;
@@ -191,6 +192,12 @@ pub struct Agent {
     /// The model ID to use for this agent. If not specified, uses the default model.
     #[serde(default)]
     pub model: Option<String>,
+    /// Keyboard shortcut for swapping to this agent (e.g., "ctrl+shift+a", "shift+tab")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keyboard_shortcut: Option<String>,
+    /// Welcome message displayed when switching to this agent
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub welcome_message: Option<String>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
 }
@@ -220,6 +227,8 @@ impl Default for Agent {
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
             model: None,
+            keyboard_shortcut: None,
+            welcome_message: None,
             path: None,
         }
     }
@@ -845,6 +854,8 @@ impl Agents {
             // Note: Planner agent intentionally does not get MCP tools to keep it read-only
             agent
         });
+
+        let all_agents = validator::validate_agents(all_agents, output);
 
         // Assume agent in the following order of priority:
         // 1. The agent name specified by the start command via --agent (this is the agent_name that's
@@ -1519,6 +1530,8 @@ mod tests {
             hooks: Default::default(),
             use_legacy_mcp_json: false,
             model: None,
+            keyboard_shortcut: None,
+            welcome_message: None,
             path: None,
         };
 

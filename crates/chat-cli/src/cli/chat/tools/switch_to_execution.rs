@@ -96,7 +96,11 @@ impl SwitchToExecution {
             let response: SwitchResponse = serde_json::from_value(json.clone())?;
             if response.approved {
                 let prompt = format!("Implement this plan:\n{}", response.plan);
-                session.input_source.agent_swap_state().planner_toggle(Some(prompt));
+                // Swap back to previous agent with the plan as prompt
+                session
+                    .input_source
+                    .agent_swap_state()
+                    .toggle_to_previous_agent(Some(prompt));
             }
         }
         Ok(())

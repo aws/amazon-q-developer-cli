@@ -10,6 +10,7 @@ use crate::theme::StyledText;
 use crate::util::ui::should_send_structured_message;
 
 mod agent_keybinds;
+pub use agent_keybinds::parse_shortcut;
 mod agent_swap;
 pub mod cli;
 mod consts;
@@ -4295,14 +4296,15 @@ impl ChatSession {
         let mut ctrl_c = false;
         loop {
             // Display pending welcome message FIRST, before processing agent swap.
-            if let Some(message) = self.input_source.agent_swap_state().take_pending_message() {
+            if let Some((agent_name, message)) = self.input_source.agent_swap_state().take_pending_message() {
                 let mut stderr = std::io::stderr();
+                let agent_styled = StyledText::agent_indicator(&agent_name);
                 let _ = execute!(
                     stderr,
                     StyledText::secondary_fg(),
-                    style::Print("Switching to the Kiro "),
-                    StyledText::brand_fg(),
-                    style::Print("[plan]"),
+                    style::Print("Switching to the "),
+                    StyledText::reset(),
+                    style::Print(&agent_styled),
                     StyledText::secondary_fg(),
                     style::Print(" agent.\n"),
                     StyledText::reset(),

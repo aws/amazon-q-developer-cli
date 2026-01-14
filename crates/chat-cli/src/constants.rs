@@ -20,12 +20,20 @@ pub const DEFAULT_AGENT_NAME: &str = "kiro_default";
 /// Planner agent name
 pub const PLANNER_AGENT_NAME: &str = "kiro_planner";
 
-/// Welcome message when switching to planner agent (second line)
-pub const PLANNER_WELCOME_MESSAGE: &str =
-    "Transform any idea into fully working code. What do you want to build today?";
-
 /// List of all built-in agent names
 pub const BUILT_IN_AGENTS: &[&str] = &[DEFAULT_AGENT_NAME, PLANNER_AGENT_NAME];
+
+/// Reserved keyboard shortcuts that cannot be used as agent triggers
+pub const RESERVED_KEYBOARD_SHORTCUTS: &[&str] = &[
+    "ctrl+c",    // Interrupt
+    "ctrl+d",    // EOF/quit
+    "ctrl+l",    // Clear screen
+    "ctrl+z",    // Suspend
+    "ctrl+s",    // Fuzzy search
+    "ctrl+r",    // History search
+    "ctrl+t",    // Tangent mode (if enabled)
+    "shift+tab", // Planner toggle (built-in)
+];
 
 /// Legacy product name (Amazon Q Developer CLI)
 pub const LEGACY_PRODUCT_NAME: &str = "Amazon Q Developer CLI";

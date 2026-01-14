@@ -221,6 +221,22 @@
         "null"
       ],
       "default": null
+    },
+    "keyboardShortcut": {
+      "description": "Keyboard shortcut for swapping to this agent (e.g., 'ctrl+shift+a', 'shift+tab')",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
+    },
+    "welcomeMessage": {
+      "description": "Welcome message displayed when switching to this agent",
+      "type": [
+        "string",
+        "null"
+      ],
+      "default": null
     }
   },
   "additionalProperties": false,

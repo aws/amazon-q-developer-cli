@@ -122,6 +122,17 @@ impl StyledText {
         )
     }
 
+    /// Format agent name with appropriate color: brand (purple) for planner, profile (cyan) for
+    /// others
+    pub fn agent_indicator(agent_name: &str) -> String {
+        use crate::constants::PLANNER_AGENT_NAME;
+        if agent_name == PLANNER_AGENT_NAME {
+            Self::brand("[plan]")
+        } else {
+            Self::profile(&format!("[{agent_name}]"))
+        }
+    }
+
     /// Create primary-styled text (primary text color)
     pub fn primary(text: &str) -> String {
         format!("{}{}\x1b[0m", color_to_ansi_sequence(theme().ui.primary_text), text)
