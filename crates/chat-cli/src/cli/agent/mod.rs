@@ -479,6 +479,10 @@ pub struct Agents {
     pub agents: HashMap<String, Agent>,
     /// Agent name.
     pub active_idx: String,
+    /// When true, bypasses `allowed_tools` check - all tools are trusted.
+    /// When `/tools trust-all` is invoked, this is set AND `allowed_tools` is populated.
+    /// When `/tools untrust <tool>` is called, this is set to false so that
+    /// `allowed_tools` becomes the source of truth for permission checks.
     pub trust_all_tools: bool,
 }
 
