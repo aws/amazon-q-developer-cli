@@ -55,6 +55,7 @@ impl InvokeSubagent {
         global_agent_path: &'a PathBuf,
         local_mcp_path: &'a PathBuf,
         global_mcp_path: &'a PathBuf,
+        parent_tool_use_id: &'a str,
     ) -> Subagent<'a> {
         let InvokeSubagent {
             query,
@@ -75,6 +76,7 @@ impl InvokeSubagent {
             global_agent_path,
             local_mcp_path,
             global_mcp_path,
+            parent_tool_use_id,
         }
     }
 }
@@ -92,6 +94,7 @@ pub enum UseSubagent {
     InvokeSubagents {
         subagents: Vec<InvokeSubagent>,
         convo_id: Option<String>,
+        tool_use_id: Option<String>,
     },
 }
 
@@ -243,7 +246,11 @@ impl UseSubagent {
                     output: super::OutputKind::Json(serialized_output),
                 })
             },
-            Self::InvokeSubagents { subagents, convo_id } => {
+            Self::InvokeSubagents {
+                subagents,
+                convo_id,
+                tool_use_id,
+            } => {
                 let (view_end, input_rx, control_end) = get_conduit();
                 let resolver = PathResolver::new(os);
                 let local_agent_path = resolver.workspace().agents_dir()?;
@@ -251,6 +258,7 @@ impl UseSubagent {
                 let local_mcp_path = resolver.workspace().mcp_config()?;
                 let global_mcp_path = resolver.global().mcp_config()?;
                 let is_interactive = subagents.iter().any(|agent| agent.is_interactive);
+                let parent_tool_use_id = tool_use_id.as_deref().unwrap_or_default();
                 let subagents = subagents
                     .iter()
                     .enumerate()
@@ -261,6 +269,7 @@ impl UseSubagent {
                             &global_agent_path,
                             &local_mcp_path,
                             &global_mcp_path,
+                            parent_tool_use_id,
                         )
                     })
                     .collect::<Vec<_>>();
@@ -312,7 +321,11 @@ impl UseSubagent {
                 queue!(output, style::Print("Querying available agents for task delegation"),)?;
                 super::display_tool_use(tool, output)?;
             },
-            Self::InvokeSubagents { subagents, convo_id: _ } => {
+            Self::InvokeSubagents {
+                subagents,
+                convo_id: _,
+                tool_use_id: _,
+            } => {
                 if subagents.len() == 1 {
                     // Single subagent - display without batch prefix
                     let subagent = &subagents[0];
@@ -448,6 +461,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -474,6 +488,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -500,6 +515,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -526,6 +542,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -552,6 +569,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -587,6 +605,7 @@ mod tests {
                 },
             ],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -622,6 +641,7 @@ mod tests {
                 },
             ],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -648,6 +668,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -670,6 +691,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -697,6 +719,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -716,6 +739,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
 
         let result = tool.eval_perm(&os, &agent);
@@ -744,6 +768,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
         assert_eq!(tool1.eval_perm(&os, &agent), PermissionEvalResult::Allow);
 
@@ -757,6 +782,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
         assert_eq!(tool2.eval_perm(&os, &agent), PermissionEvalResult::Allow);
 
@@ -770,6 +796,7 @@ mod tests {
                 is_interactive: false,
             }],
             convo_id: None,
+            tool_use_id: None,
         };
         assert_eq!(tool3.eval_perm(&os, &agent), PermissionEvalResult::Ask);
     }

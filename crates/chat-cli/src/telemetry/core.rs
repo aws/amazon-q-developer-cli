@@ -245,6 +245,7 @@ impl Event {
                         user_prompt_length,
                         message_meta_tags,
                         is_subagent,
+                        parent_tool_use_id,
                     },
             } => Some(
                 CodewhispererterminalRecordUserTurnCompletion {
@@ -290,6 +291,7 @@ impl Event {
                             .into(),
                     ),
                     codewhispererterminal_is_subagent: Some(is_subagent.into()),
+                    codewhispererterminal_parent_tool_use_id: parent_tool_use_id.map(Into::into),
                 }
                 .into_metric_datum(),
             ),
@@ -548,6 +550,7 @@ impl Event {
                 subagent_name,
                 builtin_tool_uses,
                 mcp_tool_uses,
+                parent_tool_use_id,
             } => Some(
                 KirocliSubagentInvocation {
                     amazonq_conversation_id: Some(parent_conversation_id.into()),
@@ -557,6 +560,7 @@ impl Event {
                     codewhispererterminal_subagent_name: subagent_name.into(),
                     codewhispererterminal_builtin_tool_uses: (builtin_tool_uses as i64).into(),
                     codewhispererterminal_mcp_tool_uses: (mcp_tool_uses as i64).into(),
+                    codewhispererterminal_parent_tool_use_id: parent_tool_use_id.into(),
                 }
                 .into_metric_datum(),
             ),
@@ -637,6 +641,7 @@ pub struct RecordUserTurnCompletionArgs {
     pub follow_up_count: i64,
     pub message_meta_tags: Vec<MessageMetaTag>,
     pub is_subagent: bool,
+    pub parent_tool_use_id: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
@@ -769,6 +774,7 @@ pub enum EventType {
         subagent_name: String,
         builtin_tool_uses: u32,
         mcp_tool_uses: u32,
+        parent_tool_use_id: String,
     },
 }
 

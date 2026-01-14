@@ -99,6 +99,7 @@ const CONTEXT_END: &str = r#"
 // TODO: Generalize this and reuse this elsewhere
 struct TelemetrySink<'a> {
     parent_conversation_id: &'a str,
+    parent_tool_use_id: &'a str,
     subagent_name: &'a str,
     builtin_tool_uses: u32,
     mcp_tool_uses: u32,
@@ -108,9 +109,15 @@ struct TelemetrySink<'a> {
 }
 
 impl<'a> TelemetrySink<'a> {
-    fn new(parent_conversation_id: &'a str, subagent_name: &'a str, telemetry_thread: &'a TelemetryThread) -> Self {
+    fn new(
+        parent_conversation_id: &'a str,
+        parent_tool_use_id: &'a str,
+        subagent_name: &'a str,
+        telemetry_thread: &'a TelemetryThread,
+    ) -> Self {
         Self {
             parent_conversation_id,
+            parent_tool_use_id,
             subagent_name,
             builtin_tool_uses: 0,
             mcp_tool_uses: 0,
@@ -125,6 +132,7 @@ impl<'a> TelemetrySink<'a> {
             .record_user_turn_completion_args
             .get_or_insert(RecordUserTurnCompletionArgs {
                 is_subagent: true,
+                parent_tool_use_id: Some(self.parent_tool_use_id.to_string()),
                 ..Default::default()
             });
         args.reason.replace(stop_reason);
@@ -138,9 +146,14 @@ impl<'a> Drop for TelemetrySink<'a> {
             self.subagent_name.to_string(),
             self.builtin_tool_uses,
             self.mcp_tool_uses,
+            self.parent_tool_use_id.to_string(),
         );
 
-        let args = self.record_user_turn_completion_args.take();
+        let mut args = self.record_user_turn_completion_args.take();
+        if let Some(args) = args.as_mut() {
+            args.is_subagent = true;
+            args.parent_tool_use_id = Some(self.parent_tool_use_id.to_string());
+        }
         let result = self.telemetry_result.take();
         let conversation_id = self.parent_conversation_id.to_string();
 
@@ -190,6 +203,7 @@ pub struct Subagent<'a> {
     pub global_agent_path: &'a PathBuf,
     pub local_mcp_path: &'a PathBuf,
     pub global_mcp_path: &'a PathBuf,
+    pub parent_tool_use_id: &'a str,
 }
 
 impl<'a> Subagent<'a> {
@@ -264,6 +278,7 @@ impl<'a> Subagent<'a> {
             &mut control_end,
             telemetry_thread,
             parent_conversation_id,
+            self.parent_tool_use_id,
         )
         .await
     }
@@ -275,9 +290,11 @@ impl<'a> Subagent<'a> {
         control_end: &mut ControlEnd<D>,
         telemetry_thread: &TelemetryThread,
         parent_conversation_id: &str,
+        parent_tool_use_id: &str,
     ) -> Result<Summary> {
         let mut telemetry_sink = TelemetrySink::new(
             parent_conversation_id,
+            parent_tool_use_id,
             self.agent_name.unwrap_or("kiro_default"),
             telemetry_thread,
         );
@@ -568,6 +585,7 @@ impl<'a> Subagent<'a> {
                 .record_user_turn_completion_args
                 .get_or_insert(RecordUserTurnCompletionArgs {
                     is_subagent: true,
+                    parent_tool_use_id: Some(telemetry_sink.parent_tool_use_id.to_string()),
                     ..Default::default()
                 });
 
@@ -647,6 +665,7 @@ async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Su
             global_agent_path: &global_agent_path,
             local_mcp_path: &local_mcp_path,
             global_mcp_path: &global_mcp_path,
+            parent_tool_use_id: "",
         })
         .collect::<Vec<_>>();
 

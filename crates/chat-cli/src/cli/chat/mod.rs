@@ -4540,6 +4540,7 @@ impl ChatSession {
                         .filter(|md| matches!(md.chat_conversation_type, Some(ChatConversationType::ToolUse)))
                         .count() as i64,
                     is_subagent: false,
+                    parent_tool_use_id: None,
                 })
                 .await
                 .ok();

@@ -507,12 +507,14 @@ impl TelemetryThread {
         subagent_name: String,
         builtin_tool_uses: u32,
         mcp_tool_uses: u32,
+        parent_tool_use_id: String,
     ) -> Result<(), TelemetryError> {
         let telemetry_event = Event::new(EventType::SubagentInvocation {
             parent_conversation_id,
             subagent_name,
             builtin_tool_uses,
             mcp_tool_uses,
+            parent_tool_use_id,
         });
 
         Ok(self.tx.send(telemetry_event)?)

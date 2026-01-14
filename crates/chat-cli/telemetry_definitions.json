@@ -323,6 +323,11 @@
       "name": "codewhispererterminal_isSubagent",
       "type": "boolean",
       "description": "Whether an associated datum belongs to a subagent invocation"
+    },
+    {
+      "name": "codewhispererterminal_parentToolUseId",
+      "type": "string",
+      "description": "Tool use id that spawns this subagent"
     }
   ],
   "metrics": [
@@ -383,7 +388,8 @@
         { "type": "codewhispererterminal_userTurnDurationSeconds" },
         { "type": "codewhispererterminal_followUpCount" },
         { "type": "codewhispererterminal_chatMessageMetaTags", "required": false },
-        { "type": "codewhispererterminal_isSubagent", "required": false }
+        { "type": "codewhispererterminal_isSubagent", "required": false },
+        { "type": "codewhispererterminal_parentToolUseId", "required": false }
       ]
     },
     {
@@ -596,7 +602,8 @@
         { "type": "amazonqConversationId" },
         { "type": "codewhispererterminal_subagentName", "required": true },
         { "type": "codewhispererterminal_builtinToolUses", "required": true },
-        { "type": "codewhispererterminal_mcpToolUses", "required": true }
+        { "type": "codewhispererterminal_mcpToolUses", "required": true },
+        { "type": "codewhispererterminal_parentToolUseId", "required": true }
       ]
     }
   ]
