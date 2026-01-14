@@ -2098,8 +2098,8 @@ mod tests {
             let mut agents = Agents::default();
             let mut agent = Agent::default();
             agent.name = "TestAgent".to_string();
-            agent.resources.push(AMAZONQ_FILENAME.into());
-            agent.resources.push(AGENTS_FILENAME.into());
+            agent.resources.push(format!("file://{AMAZONQ_FILENAME}").into());
+            agent.resources.push(format!("file://{AGENTS_FILENAME}").into());
             agents.agents.insert("TestAgent".to_string(), agent);
             agents.switch("TestAgent", &os).await.expect("Agent switch failed");
             agents

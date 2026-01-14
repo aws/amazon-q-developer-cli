@@ -218,11 +218,7 @@ impl Default for Agent {
                 set.extend(default_approve);
                 set
             },
-            resources: {
-                let mut resources = Vec::new();
-                resources.extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
-                resources
-            },
+            resources: Vec::new(),
             hooks: Default::default(),
             tools_settings: Default::default(),
             use_legacy_mcp_json: true,
@@ -1039,6 +1035,10 @@ pub struct AgentsLoadMetadata {
 
 /// Configure built-in agents with resources
 async fn configure_builtin_agent_resources(agent: &mut Agent, resolver: &PathResolver<'_>) {
+    agent
+        .resources
+        .extend(paths::workspace::DEFAULT_AGENT_RESOURCES.iter().map(|&s| s.into()));
+
     // Add global steering (KIRO-only)
     if let Ok(global_steering_dir) = resolver.global().steering_dir()
         && global_steering_dir.exists()
