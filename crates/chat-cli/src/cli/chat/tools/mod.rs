@@ -2,6 +2,7 @@ pub mod code;
 pub mod code_config;
 pub mod custom_tool;
 pub mod delegate;
+pub mod diff_tool;
 pub mod execute;
 pub mod fs_read;
 pub mod fs_write;
