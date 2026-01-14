@@ -306,21 +306,9 @@ jobs:
               }
             });
 
-  NotifySlack:
-    name: Notify Slack
-    needs: [generate_timestamp, UpdateVersionNumber, TriggerAutocompleteBuild]
-    if: needs.UpdateVersionNumber.outputs.release_quality == 'nightly' && needs.TriggerAutocompleteBuild.result == 'success'
-    uses: ./.github/workflows/nightly-release-notification.yml
-    secrets: inherit
-    with:
-      version: ${{ needs.UpdateVersionNumber.outputs.version }}
-      build_timestamp: ${{ needs.generate_timestamp.outputs.build_timestamp }}
-      branch_name: ${{ needs.UpdateVersionNumber.outputs.branch_name }}
-      release_workflow_url: "https://github.com/kiro-team/kiro-cli-autocomplete/actions/workflows/release-nightly.yml"
-
   BuildSummary:
     name: Chat Build Summary
-    needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild, NotifySlack]
+    needs: [check_nightly_skip, generate_timestamp, UpdateVersionNumber, TriggerDarwinBuild, TriggerLinuxBuild, TriggerAutocompleteBuild]
     if: always()
     runs-on: ubuntu-latest
     steps:

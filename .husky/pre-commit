@@ -1,6 +1,12 @@
 #!/bin/sh
 # Pre-commit hook for kiro-cli
 
+# Check if any Rust files are staged
+if ! git diff --cached --name-only | grep -qE '\.(rs|toml)$'; then
+    echo "⏭️  No Rust files changed, skipping fmt and clippy"
+    exit 0
+fi
+
 echo "Running cargo fmt check..."
 if ! cargo +nightly fmt --check -- --color always; then
     echo "❌ Formatting check failed. Run 'cargo +nightly fmt' to fix."

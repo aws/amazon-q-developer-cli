@@ -17,19 +17,29 @@ jobs:
     steps:
       - name: Build Message
         id: build-message
+        env:
+          RELEASE_DESCRIPTION: ${{ github.event.release.body }}
         run: |
-          cat << 'EOF' > message.json
-          {
-            "release_name": "${{ github.event.release.name }}",
-            "tag_name": "${{ github.event.release.tag_name }}",
-            "release_url": "${{ github.event.release.html_url }}",
-            "author_name": "${{ github.event.release.author.login }}",
-            "repository_name": "${{ github.event.repository.name }}",
-            "repository_url": "${{ github.event.repository.html_url }}",
-            "release_description": ${{ toJSON(github.event.release.body) }}
-          }
-          EOF
-          echo "message=$(cat message.json | jq -c .)" >> $GITHUB_OUTPUT
+          jq -n \
+            --arg release_name "${{ github.event.release.name }}" \
+            --arg tag_name "${{ github.event.release.tag_name }}" \
+            --arg release_url "${{ github.event.release.html_url }}" \
+            --arg author_name "${{ github.event.release.author.login }}" \
+            --arg repository_name "${{ github.event.repository.name }}" \
+            --arg repository_url "${{ github.event.repository.html_url }}" \
+            --arg release_description "$RELEASE_DESCRIPTION" \
+            '{
+              release_name: $release_name,
+              tag_name: $tag_name,
+              release_url: $release_url,
+              author_name: $author_name,
+              repository_name: $repository_name,
+              repository_url: $repository_url,
+              release_description: $release_description
+            }' > message.json
+          echo "message<<JSONEOF" >> $GITHUB_OUTPUT
+          cat message.json >> $GITHUB_OUTPUT
+          echo "JSONEOF" >> $GITHUB_OUTPUT
 
   notify:
     name: Send Notification

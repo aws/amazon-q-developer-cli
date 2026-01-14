@@ -12,9 +12,6 @@ on:
       branch_name:
         required: true
         type: string
-      release_workflow_url:
-        required: true
-        type: string
   workflow_dispatch:
     inputs:
       version:
@@ -24,9 +21,6 @@ on:
         required: true
         type: string
       branch_name:
-        required: true
-        type: string
-      release_workflow_url:
         required: true
         type: string
 
@@ -48,58 +42,51 @@ jobs:
       - name: Get Commits Since Last Nightly
         id: get-commits
         run: |
-          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
+          # Get current tag (just created) and previous tag
+          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
+          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -2 | tail -1)
           if [[ -z "$LAST_TAG" ]]; then
-            COMMITS=$(git log --oneline -10)
+            COMMITS=$(git log --format="• %h %s (%an)" -10 | grep -v "Sync: Merge main into nightly")
           else
-            COMMITS=$(git log ${LAST_TAG}..HEAD --oneline)
+            COMMITS=$(git log ${LAST_TAG}..${CURRENT_TAG} --format="• %h %s (%an)" | grep -v "Sync: Merge main into nightly")
           fi
           echo "commits<<EOF" >> $GITHUB_OUTPUT
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Format Timestamp
+        id: format-timestamp
+        run: |
+          TS="${{ inputs.build_timestamp }}"
+          YEAR="${TS:0:4}"
+          MONTH="${TS:4:2}"
+          DAY="${TS:6:2}"
+          HOUR="${TS:8:2}"
+          MIN="${TS:10:2}"
+          READABLE=$(TZ='America/Los_Angeles' date -d "${YEAR}-${MONTH}-${DAY} ${HOUR}:${MIN} UTC" "+%B %d, %Y at %I:%M %p PST")
+          echo "readable=$READABLE" >> $GITHUB_OUTPUT
+
       - name: Build Message
         id: build-message
+        env:
+          COMMITS: ${{ steps.get-commits.outputs.commits }}
         run: |
-          cat << 'EOF' > message.json
-          {
-            "text": "🌙 Nightly Build Triggered",
-            "blocks": [
-              {
-                "type": "header",
-                "text": {
-                  "type": "plain_text",
-                  "text": "🌙 Kiro CLI Nightly Build"
-                }
-              },
-              {
-                "type": "section",
-                "fields": [
-                  {"type": "mrkdwn", "text": "*Version:*\n${{ inputs.version }}"},
-                  {"type": "mrkdwn", "text": "*Timestamp:*\n${{ inputs.build_timestamp }}"}
-                ]
-              },
-              {
-                "type": "section",
-                "text": {
-                  "type": "mrkdwn",
-                  "text": "*Commits:*\n```${{ steps.get-commits.outputs.commits }}```"
-                }
-              },
-              {
-                "type": "actions",
-                "elements": [
-                  {
-                    "type": "button",
-                    "text": {"type": "plain_text", "text": "View Release Workflow"},
-                    "url": "${{ inputs.release_workflow_url }}"
-                  }
-                ]
-              }
-            ]
-          }
-          EOF
-          echo "message=$(cat message.json | jq -c .)" >> $GITHUB_OUTPUT
+          jq -n \
+            --arg message "🌙 New Kiro CLI nightly version released!" \
+            --arg version "${{ inputs.version }}" \
+            --arg timestamp "${{ steps.format-timestamp.outputs.readable }}" \
+            --arg branch "${{ inputs.branch_name }}" \
+            --arg commits "$COMMITS" \
+            '{
+              message: $message,
+              version: $version,
+              build_timestamp: $timestamp,
+              branch_name: $branch,
+              commits: $commits
+            }' > message.json
+          echo "message<<JSONEOF" >> $GITHUB_OUTPUT
+          cat message.json >> $GITHUB_OUTPUT
+          echo "JSONEOF" >> $GITHUB_OUTPUT
 
   notify:
     name: Send Notification

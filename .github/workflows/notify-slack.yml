@@ -20,7 +20,7 @@ jobs:
     steps:
       - name: Send Notification
         uses: slackapi/slack-github-action@v1.23.0
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
         with:
           payload: ${{ inputs.message }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
