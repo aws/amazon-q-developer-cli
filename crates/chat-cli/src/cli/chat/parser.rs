@@ -320,6 +320,7 @@ struct ResponseParser {
     received_response_size: usize,
     time_to_first_chunk: Option<Duration>,
     time_between_chunks: Vec<Duration>,
+    context_usage_percentage: Option<f32>,
 }
 
 impl ResponseParser {
@@ -354,6 +355,7 @@ impl ResponseParser {
             time_to_first_chunk: None,
             time_between_chunks: Vec::new(),
             request_metadata,
+            context_usage_percentage: None,
             cancel_token,
         }
     }
@@ -643,6 +645,11 @@ impl ResponseParser {
                                     .await;
                             }
                         },
+                        ChatResponseStream::ContextUsageEvent {
+                            context_usage_percentage,
+                        } => {
+                            self.context_usage_percentage = Some(*context_usage_percentage);
+                        },
                         _ => {
                             warn!(?r, "received unexpected event from the response stream");
                         },
@@ -673,6 +680,7 @@ impl ResponseParser {
     fn make_metadata(&self, chat_conversation_type: Option<ChatConversationType>) -> RequestMetadata {
         RequestMetadata {
             request_id: self.response.request_id().map(String::from),
+            context_usage_percentage: self.context_usage_percentage,
             message_id: self.message_id.clone(),
             time_to_first_chunk: self.time_to_first_chunk,
             time_between_chunks: self.time_between_chunks.clone(),
@@ -725,6 +733,8 @@ pub enum ResponseEvent {
 pub struct RequestMetadata {
     /// The request id associated with the [SendMessageOutput] stream.
     pub request_id: Option<String>,
+    /// Context usage percentage from backend ContextUsageEvent.
+    pub context_usage_percentage: Option<f32>,
     /// The randomly-generated id associated with the request. Equivalent to utterance id.
     pub message_id: String,
     /// Unix timestamp (milliseconds) immediately before sending the request.

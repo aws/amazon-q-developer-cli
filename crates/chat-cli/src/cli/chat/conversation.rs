@@ -629,6 +629,17 @@ impl ConversationState {
         self.tangent_state.is_some()
     }
 
+    /// Get the latest context usage percentage from backend (if available)
+    ///
+    /// Returns the most recent percentage from ContextUsageEvent, or None if not yet received.
+    /// This value is more accurate than local estimates and should be preferred for display.
+    pub fn get_backend_context_percentage(&self) -> Option<f32> {
+        self.history
+            .iter()
+            .rev()
+            .find_map(|entry| entry.request_metadata.as_ref().and_then(|m| m.context_usage_percentage))
+    }
+
     /// Create a checkpoint of current conversation state
     fn create_checkpoint(&self) -> ConversationCheckpoint {
         ConversationCheckpoint {
@@ -1419,14 +1430,24 @@ Return only the JSON configuration, no additional text."
 
     /// Get the current token warning level
     pub async fn get_token_warning_level(&mut self, os: &Os) -> Result<TokenWarningLevel, ChatError> {
-        let total_chars = self.calculate_char_count(os).await?;
-        let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model_info.as_ref()));
-
-        Ok(if *total_chars >= max_chars {
-            TokenWarningLevel::Critical
+        // Prefer backend percentage (more accurate) over local character estimation
+        if let Some(backend_percentage) = self.get_backend_context_percentage() {
+            Ok(if backend_percentage >= 80.0 {
+                TokenWarningLevel::Critical
+            } else {
+                TokenWarningLevel::None
+            })
         } else {
-            TokenWarningLevel::None
-        })
+            // Fallback to character-based estimation with 80% threshold
+            let total_chars = self.calculate_char_count(os).await?;
+            let max_chars = TokenCounter::token_to_chars(context_window_tokens(self.model_info.as_ref()));
+            let percentage = (*total_chars as f64 / max_chars as f64) * 100.0;
+            Ok(if percentage >= 80.0 {
+                TokenWarningLevel::Critical
+            } else {
+                TokenWarningLevel::None
+            })
+        }
     }
 
     pub fn append_user_transcript(&mut self, message: &str) {
@@ -2889,5 +2910,130 @@ mod tests {
         // Verify auto file full content is NOT included
         assert!(!context_content.contains("# Rust Helper Skill"));
         assert!(!context_content.contains("This skill provides Rust programming assistance"));
+    }
+
+    #[tokio::test]
+    async fn test_get_token_warning_level_with_backend_percentage() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Test: No backend data yet - should use fallback with None
+        conversation.set_next_user_message("Hello".to_string()).await;
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(matches!(level, TokenWarningLevel::None));
+
+        // Test: Backend percentage at 60% - should be None (below 80% threshold)
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg1".to_string()), "response".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(60.0),
+                message_id: "msg1".to_string(),
+                ..Default::default()
+            }),
+        );
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(
+            matches!(level, TokenWarningLevel::None),
+            "Expected None at 60% usage, got {:?}",
+            level
+        );
+
+        // Test: Backend percentage at 79.9% - should still be None (just below threshold)
+        conversation.set_next_user_message("Hello again".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg2".to_string()), "response 2".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(79.9),
+                message_id: "msg2".to_string(),
+                ..Default::default()
+            }),
+        );
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(
+            matches!(level, TokenWarningLevel::None),
+            "Expected None at 79.9% usage, got {:?}",
+            level
+        );
+
+        // Test: Backend percentage at exactly 80% - should be Critical
+        conversation.set_next_user_message("More text".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg3".to_string()), "response 3".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(80.0),
+                message_id: "msg3".to_string(),
+                ..Default::default()
+            }),
+        );
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(
+            matches!(level, TokenWarningLevel::Critical),
+            "Expected Critical at 80.0% usage, got {:?}",
+            level
+        );
+
+        // Test: Backend percentage at 90% - should be Critical
+        conversation.set_next_user_message("Even more".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg4".to_string()), "response 4".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(90.0),
+                message_id: "msg4".to_string(),
+                ..Default::default()
+            }),
+        );
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(
+            matches!(level, TokenWarningLevel::Critical),
+            "Expected Critical at 90.0% usage, got {:?}",
+            level
+        );
+
+        // Test: Most recent backend percentage is used (should use 90% from msg4, not 80% from msg3)
+        let backend_pct = conversation.get_backend_context_percentage();
+        assert_eq!(backend_pct, Some(90.0), "Should use most recent backend percentage");
+    }
+
+    #[tokio::test]
+    async fn test_get_token_warning_level_fallback_to_char_estimation() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // When no backend data is available, it should fall back to character estimation
+        // With a short message, it should be None (well below 80%)
+        conversation.set_next_user_message("Short message".to_string()).await;
+        let level = conversation.get_token_warning_level(&os).await.unwrap();
+        assert!(
+            matches!(level, TokenWarningLevel::None),
+            "Expected None for short conversation without backend data"
+        );
     }
 }

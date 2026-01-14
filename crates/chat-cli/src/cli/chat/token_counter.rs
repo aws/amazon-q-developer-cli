@@ -50,6 +50,12 @@ impl TokenCount {
     pub fn value(&self) -> usize {
         self.0
     }
+
+    /// Create a TokenCount from a raw usize value (for testing)
+    #[cfg(test)]
+    pub fn from_raw(value: usize) -> Self {
+        Self(value)
+    }
 }
 
 impl Deref for TokenCount {

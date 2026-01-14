@@ -578,6 +578,9 @@ pub enum ChatResponseStream {
         conversation_id: Option<String>,
         utterance_id: Option<String>,
     },
+    ContextUsageEvent {
+        context_usage_percentage: f32,
+    },
     MetadataEvent {
         total_tokens: Option<i32>,
         uncached_input_tokens: Option<i32>,
@@ -597,7 +600,6 @@ pub enum ChatResponseStream {
         input: Option<String>,
         stop: Option<bool>,
     },
-
     #[non_exhaustive]
     Unknown,
 }
@@ -618,6 +620,7 @@ impl ChatResponseStream {
             ChatResponseStream::InvalidStateEvent { .. } => 0,
             ChatResponseStream::MessageMetadataEvent { .. } => 0,
             ChatResponseStream::SupplementaryWebLinksEvent(_) => 0,
+            ChatResponseStream::ContextUsageEvent { .. } => 0,
             ChatResponseStream::ToolUseEvent { input, .. } => input.as_ref().map(|s| s.len()).unwrap_or_default(),
             ChatResponseStream::MetadataEvent { .. } => 0,
             ChatResponseStream::MeteringEvent { .. } => 0,
@@ -636,7 +639,7 @@ impl ChatResponseStream {
     /// and should be transparently handled without blocking the parser state machine.
     ///
     /// This includes:
-    /// - Metadata events (token usage, message IDs)
+    /// - Metadata events (token usage, context usage, message IDs)
     /// - Supplementary events (code references, follow-up prompts, web links, intents)
     /// - Unknown events (forward compatibility with new backend event types)
     ///
@@ -650,6 +653,7 @@ impl ChatResponseStream {
             self,
             Self::MetadataEvent { .. }
                 | Self::MeteringEvent { .. }
+                | Self::ContextUsageEvent { .. }
                 | Self::MessageMetadataEvent { .. }
                 | Self::CodeReferenceEvent(_)
                 | Self::FollowupPromptEvent(_)
@@ -693,6 +697,14 @@ impl From<amzn_codewhisperer_streaming_client::types::ChatResponseStream> for Ch
             ) => ChatResponseStream::MessageMetadataEvent {
                 conversation_id,
                 utterance_id,
+            },
+            amzn_codewhisperer_streaming_client::types::ChatResponseStream::ContextUsageEvent(
+                amzn_codewhisperer_streaming_client::types::ContextUsageEvent {
+                    context_usage_percentage,
+                    ..
+                },
+            ) => ChatResponseStream::ContextUsageEvent {
+                context_usage_percentage: context_usage_percentage.unwrap_or(0.0),
             },
             amzn_codewhisperer_streaming_client::types::ChatResponseStream::MetadataEvent(
                 amzn_codewhisperer_streaming_client::types::MetadataEvent { token_usage, .. },
@@ -770,6 +782,14 @@ impl From<amzn_qdeveloper_streaming_client::types::ChatResponseStream> for ChatR
             ) => ChatResponseStream::MessageMetadataEvent {
                 conversation_id,
                 utterance_id,
+            },
+            amzn_qdeveloper_streaming_client::types::ChatResponseStream::ContextUsageEvent(
+                amzn_qdeveloper_streaming_client::types::ContextUsageEvent {
+                    context_usage_percentage,
+                    ..
+                },
+            ) => ChatResponseStream::ContextUsageEvent {
+                context_usage_percentage: context_usage_percentage.unwrap_or(0.0),
             },
             amzn_qdeveloper_streaming_client::types::ChatResponseStream::MetadataEvent(
                 amzn_qdeveloper_streaming_client::types::MetadataEvent { token_usage, .. },
@@ -1405,6 +1425,46 @@ mod tests {
                 message: "test".to_string(),
             }
             .is_skippable_metadata()
+        );
+    }
+
+    #[test]
+    fn test_context_usage_event() {
+        // Test CodeWhisperer SDK event
+        let context_usage_event = amzn_codewhisperer_streaming_client::types::ChatResponseStream::ContextUsageEvent(
+            amzn_codewhisperer_streaming_client::types::ContextUsageEvent::builder()
+                .context_usage_percentage(85.5)
+                .build(),
+        );
+        assert_eq!(
+            ChatResponseStream::from(context_usage_event),
+            ChatResponseStream::ContextUsageEvent {
+                context_usage_percentage: 85.5
+            }
+        );
+
+        // Test QDeveloper SDK event
+        let context_usage_event = amzn_qdeveloper_streaming_client::types::ChatResponseStream::ContextUsageEvent(
+            amzn_qdeveloper_streaming_client::types::ContextUsageEvent::builder()
+                .context_usage_percentage(75.0)
+                .build(),
+        );
+        assert_eq!(
+            ChatResponseStream::from(context_usage_event),
+            ChatResponseStream::ContextUsageEvent {
+                context_usage_percentage: 75.0
+            }
+        );
+
+        // Test default value when percentage is None
+        let context_usage_event = amzn_codewhisperer_streaming_client::types::ChatResponseStream::ContextUsageEvent(
+            amzn_codewhisperer_streaming_client::types::ContextUsageEvent::builder().build(),
+        );
+        assert_eq!(
+            ChatResponseStream::from(context_usage_event),
+            ChatResponseStream::ContextUsageEvent {
+                context_usage_percentage: 0.0
+            }
         );
     }
 }

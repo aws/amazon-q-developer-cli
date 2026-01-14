@@ -1,4 +1,6 @@
 //! Provides context window usage data and analysis
+//! TODO: For more accurate individual breakdowns, consider using CountTokens API for each portion
+//! of the message chain
 
 use crate::cli::chat::cli::model::context_window_tokens;
 use crate::cli::chat::token_counter::{
@@ -21,6 +23,7 @@ pub struct ContextWindowData {
     pub tools_tokens: TokenCount,
     pub context_window_size: usize,
     pub dropped_context_files: Vec<(String, String)>,
+    pub backend_total_percentage: Option<f32>,
 }
 
 /// Get detailed usage data for context window analysis
@@ -28,6 +31,9 @@ pub(super) async fn get_detailed_context_data(
     session: &mut ChatSession,
     os: &Os,
 ) -> Result<ContextWindowData, ChatError> {
+    // Get accurate backend percentage if available
+    let backend_total_percentage = session.conversation.get_backend_context_percentage();
+
     let context_window_size = context_window_tokens(session.conversation.model_info.as_ref());
 
     let state = session
@@ -54,6 +60,7 @@ pub(super) async fn get_detailed_context_data(
         tools_tokens: tools_char_count.into(),
         context_window_size,
         dropped_context_files: state.dropped_context_files,
+        backend_total_percentage,
     })
 }
 

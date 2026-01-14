@@ -4358,8 +4358,14 @@ impl ChatSession {
 
         // Check if context usage indicator is enabled
         let usage_percentage = if ExperimentManager::is_enabled(os, ExperimentName::ContextUsageIndicator) {
-            use crate::cli::chat::cli::context::context_data_provider::get_total_context_usage_percentage;
-            get_total_context_usage_percentage(self, os).await.ok()
+            // Prefer backend value over local estimate
+            if let Some(backend_pct) = self.conversation.get_backend_context_percentage() {
+                Some(backend_pct)
+            } else {
+                // Fallback to local estimate if backend value not yet received
+                use crate::cli::chat::cli::context::context_data_provider::get_total_context_usage_percentage;
+                get_total_context_usage_percentage(self, os).await.ok()
+            }
         } else {
             None
         };
