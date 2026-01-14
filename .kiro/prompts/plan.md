@@ -43,10 +43,11 @@ Wait for the user's input.
    - Note any gaps in documentation
 
 3. **Spawn research tasks to gather context**:
-   - Use `@research` or subagents to find relevant code
+   - Use `@research` or spawn kiro-research-agent subagent to find relevant code
    - Identify specific files, modules, and patterns
    - Trace data flow and key functions
    - Return detailed explanations with file:line references
+   - **IMPORTANT**: When spawning subagents for research, use `agent_name: "kiro-research-agent"`
 
 4. **Read all files identified by research**:
    - Read them FULLY into main context

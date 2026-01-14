@@ -70,7 +70,6 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            target/
           key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
       - name: Run tests
         run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz

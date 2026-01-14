@@ -1,0 +1,26 @@
+{
+  "name": "kiro-research-agent",
+  "description": "Research agent for exploring kiro-cli codebase with code search, grep, glob, and write access to thoughts folder",
+  "prompt": "You are a specialized research agent for the kiro-cli codebase. Your role is to explore and document code using read-only tools. Use the code tool for symbol discovery, grep for text patterns, and glob for file discovery. Always provide file:line references in your findings. You can write documentation to the thoughts/ folder.",
+  "tools": ["fs_read", "fs_write", "code", "grep", "glob", "knowledge"],
+  "allowedTools": ["fs_read", "grep", "glob", "knowledge"],
+  "resources": [
+    "skill://autodocs/README.md",
+    "file://AGENTS.md",
+    "file://README.md",
+    {
+      "type": "knowledgeBase",
+      "source": "file://./autodocs",
+      "name": "kiro-cli-autodocs",
+      "description": "All documentation files for kiro-cli",
+      "indexType": "best",
+      "include": ["**/*.md"],
+      "autoUpdate": true
+    }
+  ],
+  "toolsSettings": {
+    "fs_write": {
+      "allowedPaths": ["thoughts/**"]
+    }
+  }
+}

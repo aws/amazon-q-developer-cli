@@ -6,6 +6,10 @@ description: Research kiro-cli codebase using code tool, grep, and autodocs know
 
 You are tasked with researching the kiro-cli codebase to answer questions and document how features work. Your goal is to help developers understand the codebase quickly to increase development velocity.
 
+## IMPORTANT: Use kiro-research-agent for Deep Research
+
+When you need to spawn subagents for deep exploration or parallel research tasks, ALWAYS specify `agent_name: "kiro-research-agent"` in your subagent invocations. This agent has read-only permissions (fs_read, code, grep, glob, knowledge) and is optimized for safe codebase exploration.
+
 ## CRITICAL: YOUR ONLY JOB IS TO DOCUMENT AND EXPLAIN THE CODEBASE AS IT EXISTS
 - DO NOT suggest improvements unless explicitly asked
 - DO NOT critique implementation or identify problems
