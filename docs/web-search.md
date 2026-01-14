@@ -84,10 +84,10 @@ Extracts sections around search terms:
 ```
 > Fetch https://example.com/docs with search terms "installation setup"
 ```
-Returns ~10 lines before and after matches. Best for targeted information.
+Returns 10 sentences of context before and after matches. If no search terms provided or no matches found, returns the first 20 sentences. Best for targeted information.
 
 ### Truncated
-Gets first 8KB of content:
+Gets first 8000 characters of content:
 ```
 > Fetch https://example.com/article in truncated mode
 ```
@@ -203,14 +203,44 @@ The assistant follows strict rules when using web content:
 }
 ```
 
+### URL-Based Permissions
+
+Configure granular URL permissions using `toolsSettings` in your agent config:
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [".*docs\\.aws\\.amazon\\.com.*", ".*github\\.com.*"],
+      "blocked": [".*pastebin\\.com.*", ".*malicious\\.org.*"]
+    }
+  }
+}
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `trusted` | array of regex | URL patterns to auto-allow without prompting |
+| `blocked` | array of regex | URL patterns to deny (takes precedence over trusted) |
+
+**Pattern behavior:**
+- Patterns are regex and automatically anchored with `^` and `$`
+- Invalid regex patterns in `blocked` deny all URLs (fail-safe)
+- Invalid regex patterns in `trusted` are skipped
+- `blocked` patterns take precedence over `trusted`
+- If tool is in `allowedTools` and URL matches neither list, it's allowed
+- If tool is not in `allowedTools` and URL matches neither list, user is prompted
+
 ## Limitations
 
 ### Technical Limits
 - **Size**: 10MB max per page
 - **Timeout**: 30 seconds
 - **Redirects**: 10 maximum
-- **Content**: HTML only
-- **Retries**: 3 automatic attempts
+- **Content**: HTML/text only (rejects binary content types)
+- **Retries**: 3 automatic attempts with exponential backoff (1s, 2s, 4s)
+- **Truncated mode**: 8000 characters max
+- **Selective mode**: 10 sentences context around matches, 20 sentences default
 
 ### Regional Availability
 - **Available**: Most regions (uses us-east-1)

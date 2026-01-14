@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-14
+  commit: 7172e74d
   status: validated
   testable_headless: true
   category: tool
   title: web_fetch
   description: Fetch and extract content from specific URLs with selective, truncated, or full modes
-  keywords: [web_fetch, fetch, url, web, content, extract]
+  keywords: [web_fetch, fetch, url, web, content, extract, trusted, blocked, permissions]
   related: [web-search]
 ---
 
@@ -17,7 +17,7 @@ Fetch and extract content from specific URLs with selective, truncated, or full 
 
 ## Overview
 
-The web_fetch tool retrieves content from web pages. Supports three extraction modes: selective (smart extraction around search terms), truncated (first 8KB), and full (complete content up to 10MB). Use selective mode to read specific parts without filling context.
+The web_fetch tool retrieves content from web pages. Supports three extraction modes: selective (smart extraction around search terms), truncated (first 8000 characters), and full (complete content up to 10MB). Use selective mode to read specific parts without filling context.
 
 ## Usage
 
@@ -41,7 +41,7 @@ The web_fetch tool retrieves content from web pages. Supports three extraction m
 }
 ```
 
-**What this does**: Extracts ~10 lines before/after matches for "authentication" and "authorization". Default mode.
+**What this does**: Extracts 10 sentences before/after matches for "authentication" and "authorization". Default mode.
 
 #### Use Case 2: Truncated Content
 
@@ -67,7 +67,43 @@ The web_fetch tool retrieves content from web pages. Supports three extraction m
 
 ## Configuration
 
-No agent configuration - web_fetch requires approval unless in allowedTools.
+### Basic Trust
+
+Add to agent config for permanent trust:
+
+```json
+{
+  "allowedTools": ["web_fetch"]
+}
+```
+
+### URL-Based Permissions
+
+Configure granular URL permissions using `toolsSettings`:
+
+```json
+{
+  "toolsSettings": {
+    "web_fetch": {
+      "trusted": [".*docs\\.aws\\.amazon\\.com.*", ".*github\\.com.*"],
+      "blocked": [".*pastebin\\.com.*", ".*malicious\\.org.*"]
+    }
+  }
+}
+```
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `trusted` | array of regex | URL patterns to auto-allow without prompting |
+| `blocked` | array of regex | URL patterns to deny (takes precedence over trusted) |
+
+**Pattern behavior**:
+- Patterns are regex and automatically anchored with `^` and `$`
+- Invalid regex patterns in `blocked` deny all URLs (fail-safe)
+- Invalid regex patterns in `trusted` are skipped
+- `blocked` patterns take precedence over `trusted`
+- If tool is in `allowedTools` and URL matches neither list, it's allowed
+- If tool is not in `allowedTools` and URL matches neither list, user is prompted
 
 ## Modes
 
@@ -80,7 +116,7 @@ Smart extraction around search terms.
 - `search_terms` (string, optional): Keywords to find
 - `mode`: `"selective"`
 
-**Behavior**: Returns ~10 lines before/after each match. Without search_terms, returns beginning of page.
+**Behavior**: Content is split by sentences (periods). Returns 10 sentences before/after each match. Without search_terms or if no matches found, returns first 20 sentences.
 
 ### truncated
 
@@ -90,7 +126,7 @@ First 8000 characters.
 - `url` (string, required): URL to fetch
 - `mode`: `"truncated"`
 
-**Behavior**: Returns first 8KB of content.
+**Behavior**: Returns first 8000 characters of content.
 
 ### full
 
@@ -141,7 +177,7 @@ Complete content.
 - Page >10MB
 - Timeout >30s
 - Too many redirects (>10)
-- Not HTML content
+- Not HTML/text content (binary rejected)
 - Network issues
 
 **Solution**: Try different mode or URL.
@@ -155,8 +191,14 @@ Complete content.
 ### Issue: Tool Requires Approval
 
 **Symptom**: Prompted for permission  
-**Cause**: web_fetch not in allowedTools  
-**Solution**: Approve or add to agent config.
+**Cause**: web_fetch not in allowedTools and URL not in trusted patterns  
+**Solution**: Approve, add to allowedTools, or add URL pattern to trusted list.
+
+### Issue: URL Blocked
+
+**Symptom**: Permission denied for URL  
+**Cause**: URL matches a pattern in blocked list  
+**Solution**: Remove pattern from blocked list in toolsSettings.
 
 ## Related Features
 
@@ -168,8 +210,8 @@ Complete content.
 - Max 10MB per page
 - 30 second timeout
 - Max 10 redirects
-- HTML content only
-- 3 automatic retries
+- HTML/text content only (binary rejected)
+- 3 automatic retries with exponential backoff (1s, 2s, 4s)
 - No JavaScript execution
 - No authentication support
 - Regional availability (not in eu-central-1)
@@ -181,13 +223,13 @@ Complete content.
 **User Agent**: `Kiro-CLI`
 
 **Limits**:
-- Selective: ~10 lines context per match
-- Truncated: 8000 chars
+- Selective: 10 sentences context per match, 20 sentences default
+- Truncated: 8000 characters
 - Full: 10MB max
 - Timeout: 30s
 - Redirects: 10 max
-- Retries: 3
+- Retries: 3 with exponential backoff
 
-**Permissions**: Requires approval unless in allowedTools.
+**Permissions**: Requires approval unless in allowedTools or URL matches trusted pattern.
 
 **Regional**: Available in most regions except eu-central-1.
