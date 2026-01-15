@@ -1,34 +1,128 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-01-13
+  commit: be9ce792
   status: validated
   testable_headless: false
   category: feature
   title: Code Intelligence
-  description: LSP-powered semantic code understanding with symbol search, references, definitions, and diagnostics
-  keywords: [code, intelligence, lsp, semantic, symbols, references]
+  description: Code understanding with tree-sitter (built-in) and LSP integration (optional) for symbol search, pattern matching, and codebase exploration
+  keywords: [code, intelligence, lsp, semantic, symbols, references, tree-sitter, pattern, ast]
   related: [code-tool, slash-code, enable-code-intelligence]
 ---
 
 # Code Intelligence
 
-Code Intelligence gives Kiro CLI semantic understanding of your codebase through Language Server Protocol (LSP) integration. Search symbols, find references, go to definitions, and get diagnostics just like your IDE.
+Code Intelligence provides two complementary layers of code understanding:
+
+**Tree-sitter (Built-in)** - Out-of-the-box code intelligence for 18 languages. Search symbols with fuzzy matching, get document symbols, and lookup definitions without installing an LSP. With incremental loading and support for millions of tokens of indexed content, agents can efficiently search large codebases.
+
+**LSP Integration (Optional)** - Enhanced precision with find references, go to definition, hover documentation, rename refactoring, and diagnostics. Requires language server installation.
+
+## Supported Languages
+
+Bash, C, C++, C#, Elixir, Go, Java, JavaScript, Kotlin, Lua, PHP, Python, Ruby, Rust, Scala, Swift, TSX, TypeScript
 
 ## Overview
 
-Code Intelligence provides these LSP-powered operations:
+Code Intelligence provides these operations (no LSP required):
 
-- **search_symbols**: Find functions, classes, methods by name
-- **find_references**: Locate all usages of a symbol at a position
-- **goto_definition**: Navigate to where a symbol is defined
+- **search_symbols**: Find functions, classes, methods by name (fuzzy matching)
 - **get_document_symbols**: List all symbols in a file
 - **lookup_symbols**: Look up specific symbols by exact name
+- **pattern_search**: AST-based structural code search
+- **pattern_rewrite**: Automated code transformations using AST patterns
+- **generate_codebase_overview**: High-level codebase structure overview
+- **search_codebase_map**: Explore directory structure and understand code organization
+
+With LSP enabled (optional), additional operations become available:
+
+- **find_references**: Locate all usages of a symbol at a position
+- **goto_definition**: Navigate to where a symbol is defined
 - **rename_symbol**: Rename symbols across the codebase
 - **get_diagnostics**: Get errors and warnings for a file
-- **initialize_workspace**: Initialize LSP servers
+- **get_hover**: Get type information and documentation at position
+- **get_completions**: Get completion suggestions at position
 
-## Onboarding
+## Codebase Overview
+
+Get a complete overview of any workspace in seconds:
+
+```
+/code overview
+```
+
+Specify a path to focus on a specific directory:
+
+```
+/code overview ./src/components
+```
+
+Use `--silent` for a cleaner output when diving deep into a package:
+
+```
+/code overview --silent
+```
+
+Ideal for:
+- Onboarding to new codebases
+- Q&A sessions about project structure
+- Understanding unfamiliar packages quickly
+
+## Pattern Search & Rewrite
+
+AST-based structural code search and transformation. Find and modify code by structure, not just text.
+
+### Metavariables
+
+- `$VAR` - Matches single node (identifier, expression)
+- `$$$` - Matches zero or more nodes (statements, parameters)
+
+### Pattern Search Examples
+
+```
+# Find all console.log calls
+pattern: console.log($ARG)
+language: javascript
+
+# Find all async functions
+pattern: async function $NAME($$$PARAMS) { $$$ }
+language: typescript
+
+# Find all .unwrap() calls
+pattern: $E.unwrap()
+language: rust
+```
+
+### Pattern Rewrite Examples
+
+```
+# Convert var to const
+pattern: var $N = $V
+replacement: const $N = $V
+language: javascript
+
+# Modernize hasOwnProperty
+pattern: $O.hasOwnProperty($P)
+replacement: Object.hasOwn($O, $P)
+language: javascript
+
+# Convert unwrap to expect
+pattern: $E.unwrap()
+replacement: $E.expect("unexpected None")
+language: rust
+```
+
+### Rewrite Workflow
+
+1. Use `pattern_search` first to verify matches
+2. Review matches to ensure correctness
+3. Run `pattern_rewrite` with `dry_run: true` to preview
+4. Apply changes with `dry_run: false`
+
+## LSP Integration (Optional)
+
+Run `/code init` to unlock full LSP-powered code intelligence with enhanced features like find references, hover documentation, and rename refactoring.
 
 ### Prerequisites
 
@@ -82,6 +176,11 @@ sudo apt install clangd
 
 # Linux (Arch)
 sudo pacman -S clang
+```
+
+**Kotlin**
+```bash
+brew install kotlin-language-server
 ```
 
 ### Initialize Code Intelligence
@@ -241,6 +340,70 @@ Get errors, warnings, and hints for a file.
 > Check handler.py for problems
 ```
 
+### pattern_search
+
+AST-based structural code search. Find code by structure, not just text. Language-specific.
+
+**Parameters:**
+- `pattern` (required): AST pattern to match
+- `language` (required): Programming language
+- `file_path`: Limit search to specific file
+- `limit`: Max results
+
+**Example queries:**
+```
+> Find all console.log calls in JavaScript files
+> Search for async functions in TypeScript
+> Find all .unwrap() calls in Rust
+```
+
+### pattern_rewrite
+
+Automated code transformations using AST patterns.
+
+**Parameters:**
+- `pattern` (required): AST pattern to match
+- `replacement` (required): Replacement pattern
+- `language` (required): Programming language
+- `file_path`: Limit to specific file
+- `limit`: Max files to modify
+- `dry_run`: Preview changes without applying (default true)
+
+**Example queries:**
+```
+> Replace all var declarations with const in JavaScript
+> Convert .unwrap() to .expect() in Rust files
+> Dry run: replace console.log with logger.debug
+```
+
+### generate_codebase_overview
+
+Get high-level codebase structure overview.
+
+**Parameters:**
+- `path`: Directory path (optional, defaults to workspace root)
+
+**Example queries:**
+```
+> Give me an overview of this codebase
+> What's the structure of the src directory?
+```
+
+### search_codebase_map
+
+Explore directory structure and understand code organization.
+
+**Parameters:**
+- `file_path`: Focus on a specific file
+- `path`: Focus on a specific directory path
+
+**Example queries:**
+```
+> Show me the structure of the src/api directory
+> What's in the components folder?
+> Explore the tests directory
+```
+
 ## Usage Examples
 
 ### Example 1: Find a Symbol
@@ -367,7 +530,7 @@ Display LSP logs for troubleshooting.
 - `-n, --lines <N>`: Number of log lines to display. Default: 20
 - `-p, --path <PATH>`: Export logs to JSON file
 
-## Supported Languages
+## Supported LSP Servers
 
 | Language | Extensions | Server | Install Command |
 |----------|------------|--------|-----------------|
@@ -378,6 +541,7 @@ Display LSP logs for troubleshooting.
 | Java | `.java` | `jdtls` | `brew install jdtls` (macOS) |
 | Ruby | `.rb` | `solargraph` | `gem install solargraph` |
 | C/C++ | `.c`, `.cpp`, `.h`, `.hpp` | `clangd` | `brew install llvm` (macOS) or `apt install clangd` (Linux) |
+| Kotlin | `.kt`, `.kts` | `kotlin-language-server` | `brew install kotlin-language-server` |
 
 ### "Code tool is not enabled for this agent"
 **Cause**: The agent you're using doesn't have the `code` tool in its tool list.

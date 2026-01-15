@@ -1,23 +1,23 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-13
+  commit: be9ce792
   status: validated
   testable_headless: false
   category: slash_command
   title: /code
-  description: Manage code intelligence with init, status, and logs subcommands
-  keywords: [code, lsp, intelligence, init, status, logs]
+  description: Manage code intelligence with init, status, logs, and overview subcommands
+  keywords: [code, lsp, intelligence, init, status, logs, overview]
   related: [code-tool, enable-code-intelligence]
 ---
 
 # /code
 
-Manage code intelligence with init, status, and logs subcommands.
+Manage code intelligence with init, status, logs, and overview subcommands.
 
 ## Overview
 
-Manages LSP-based code intelligence. Initialize workspace, check server status, and view logs.
+Manages code intelligence. Initialize LSP workspace, check server status, view logs, and get codebase overviews.
 
 ## Usage
 
@@ -26,6 +26,7 @@ Manages LSP-based code intelligence. Initialize workspace, check server status, 
 /code init -f
 /code status
 /code logs
+/code overview
 ```
 
 ## Subcommands
@@ -68,6 +69,23 @@ Display LSP logs.
 - `-n, --lines <N>`: Number of lines. Default: 20
 - `-p, --path <PATH>`: Export to JSON file
 
+### overview
+
+Get a high-level overview of the codebase structure.
+
+```
+/code overview
+/code overview --silent
+```
+
+**Options**:
+- `--silent`: Cleaner output for deep dives
+
+Ideal for:
+- Onboarding to new codebases
+- Q&A sessions about project structure
+- Understanding unfamiliar packages quickly
+
 ## Examples
 
 ### Example 1: Initialize
@@ -95,6 +113,24 @@ Detected Languages: ["rust", "typescript"]
 
 ```
 /code logs -l ERROR -n 50
+```
+
+### Example 4: Codebase Overview
+
+```
+/code overview
+```
+
+**Output**:
+```
+Codebase Overview: /path/to/project
+
+Languages: TypeScript, Rust
+Entry Points: src/main.ts, src/lib.rs
+Key Directories:
+  - src/components (42 files)
+  - src/utils (15 files)
+  - tests (28 files)
 ```
 
 ## Related
