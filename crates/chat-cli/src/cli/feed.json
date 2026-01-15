@@ -12,6 +12,90 @@
     },
     {
       "type": "release",
+      "date": "2026-01-15",
+      "version": "1.24.0",
+      "title": "Version 1.24.0",
+      "changes": [
+        {
+          "type": "added",
+          "description": "Custom diff tool support for write tool via chat.diffTool setting"
+        },
+        {
+          "type": "added",
+          "description": "Tab completion for @prompts now includes local and global file-based prompts"
+        },
+        {
+          "type": "added",
+          "description": "Context usage percentage now shows more accurate information"
+        },
+        {
+          "type": "added",
+          "description": "Improved code understanding with codebase overviews and smarter symbol navigation using Tree-sitter analysis. Learn details at: https://kiro.dev/docs/cli/code-intelligence/"
+        },
+        {
+          "type": "added",
+          "description": "Persistent index for faster knowledge base loading"
+        },
+        {
+          "type": "added",
+          "description": "Lazy loading for knowledge bases - loads on demand rather than all at once"
+        },
+        {
+          "type": "added",
+          "description": "Granular URL permissions for web_fetch tool through agent config"
+        },
+        {
+          "type": "added",
+          "description": "Social authentication support for remote development environments"
+        },
+        {
+          "type": "added",
+          "description": "Embeddings support in Linux ARM"
+        },
+        {
+          "type": "added",
+          "description": "Tool settings configuration for subagents"
+        },
+        {
+          "type": "added",
+          "description": "Keyboard shortcuts for agent switching - Quickly switch between agents with custom keybinding. Learn details at: https://kiro.dev/docs/cli/custom-agents/configuration-reference/"
+        },
+        {
+          "type": "added",
+          "description": "Enhanced use_aws tool readonly operation identification & cli agent trusts readonly by default"
+        },
+        {
+          "type": "added",
+          "description": "Support progressive-loading of context file"
+        },
+        {
+          "type": "fixed",
+          "description": "Shell tool permission handling in subagents"
+        },
+        {
+          "type": "fixed",
+          "description": "/tools untrust now works correctly after /tools trust-all"
+        },
+        {
+          "type": "fixed",
+          "description": "Improved fuzzy match strictness and exact matches"
+        },
+        {
+          "type": "fixed",
+          "description": "Path expansion support for /chat save and /chat load commands"
+        },
+        {
+          "type": "fixed",
+          "description": "Fixed a crash in the grep tool when searching files containing multi-byte Unicode characters"
+        },
+        {
+          "type": "changed",
+          "description": "Improved system prompt for compaction with UX enhancements"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2025-12-23",
       "version": "1.23.1",
       "title": "Version 1.23.1",
