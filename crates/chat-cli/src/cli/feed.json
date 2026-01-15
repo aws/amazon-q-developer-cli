@@ -50,10 +50,6 @@
         },
         {
           "type": "added",
-          "description": "Embeddings support in Linux ARM"
-        },
-        {
-          "type": "added",
           "description": "Tool settings configuration for subagents"
         },
         {
