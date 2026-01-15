@@ -104,6 +104,9 @@ impl Introspect {
         documentation.push_str("\n\n--- docs/hooks.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/hooks.md"));
 
+        documentation.push_str("\n\n--- docs/diff-tool.md ---\n");
+        documentation.push_str(include_str!("../../../../../../docs/diff-tool.md"));
+
         documentation.push_str("\n\n--- docs/knowledge-management.md ---\n");
         documentation.push_str(include_str!("../../../../../../docs/knowledge-management.md"));
 
