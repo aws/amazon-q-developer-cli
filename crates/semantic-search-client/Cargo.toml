@@ -40,8 +40,19 @@ tokio-stream = "0.1.17"
 sha2 = "0.10.9"
 pdf-extract.workspace = true
 
-# Candle dependencies - available on all platforms
+# Candle dependencies - not used on Linux ARM
+[target.'cfg(not(all(target_os = "linux", target_arch = "aarch64")))'.dependencies]
 candle-core = { version = "0.9.1", features = [] }
 candle-nn = "0.9.1"
 candle-transformers = "0.9.1"
 tokenizers = "0.21.1"
+
+# Conditionally enable Metal on macOS
+[target.'cfg(all(target_os = "macos", not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies.candle-core]
+version = "0.9.1"
+features = []
+
+# Conditionally enable CUDA on Linux and Windows
+[target.'cfg(all(any(target_os = "linux", target_os = "windows"), not(all(target_os = "linux", target_arch = "aarch64"))))'.dependencies.candle-core]
+version = "0.9.1"
+features = []
