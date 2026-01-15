@@ -1,0 +1,63 @@
+#!/bin/bash
+
+# Pre-push hook for kiro-cli documentation maintenance
+
+# Check if we can compare to origin/main
+if ! git rev-parse origin/main >/dev/null 2>&1; then
+    exit 0  # Can't compare, skip check
+fi
+
+# Get changed source files
+source_changes=$(git diff origin/main --name-only 2>/dev/null | grep -E "^crates/.*\.rs$")
+
+if [ -z "$source_changes" ]; then
+    exit 0
+fi
+
+# Show what's changed
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "📝 Documentation Check"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Source files changed:"
+echo "$source_changes" | head -10 | sed 's/^/  • /'
+count=$(echo "$source_changes" | wc -l | tr -d ' ')
+if [ "$count" -gt 10 ]; then
+    echo "  ... and $((count - 10)) more"
+fi
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+echo "Have you updated documentation for these changes?"
+echo "  [y] Yes, docs are updated"
+echo "  [n] No, run docs agent"
+echo "  [s] Skip - no doc changes needed"
+echo ""
+read -p "Choice (y/n/s): " -n 1 -r
+echo ""
+
+case $REPLY in
+    [Yy])
+        exit 0
+        ;;
+    [Ss])
+        echo "Skipping documentation check."
+        exit 0
+        ;;
+    *)
+        echo ""
+        if ! command -v kiro-cli &> /dev/null; then
+            echo "kiro-cli not found. Install it or run manually later."
+            exit 1
+        fi
+        echo "Running docs agent..."
+        echo ""
+        kiro-cli chat --agent docs --no-interactive "Update documentation for my code changes"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Review the generated docs, then commit and push again."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        exit 1
+        ;;
+esac

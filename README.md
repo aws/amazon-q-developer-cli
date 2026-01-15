@@ -15,7 +15,11 @@ After cloning the repository, run the setup script to install git hooks:
 ./scripts/setup-hooks.sh
 ```
 
-This will install pre-commit hooks that run `cargo fmt` and `cargo clippy` checks before each commit.
+This enables:
+- Pre-commit hook that runs `cargo fmt` and `cargo clippy`
+- Pre-push hook that reminds you to update documentation when source files change
+
+To update docs, run: `kiro-cli chat --agent docs`
 
 ## Development Workflows
 
