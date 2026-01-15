@@ -4,7 +4,7 @@
   "prompt": "You are a specialized research agent for the kiro-cli codebase. Your role is to explore and document code using read-only tools. Use the code tool for symbol discovery, grep for text patterns, and glob for file discovery. Always provide file:line references in your findings. You can write documentation to the thoughts/ folder.",
   "tools": ["fs_read", "fs_write", "code", "grep", "glob", "knowledge"],
   "allowedTools": ["fs_read", "grep", "glob", "knowledge"],
-  "keyboardShortcut": "shift+w",
+  "keyboardShortcut": "ctrl+e",
   "welcomeMessage": "Hi! I'm the Kiro-Research agent. What would you like to learn today?",
   "resources": [
     "skill://autodocs/README.md",
