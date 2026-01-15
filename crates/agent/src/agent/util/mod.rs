@@ -130,7 +130,8 @@ pub async fn read_file_with_max_limit(
         return Ok((content, 0));
     }
 
-    content.replace_range((content.len().saturating_sub(suffix.len())).., suffix);
+    let safe_end = truncate_safe(&content, content.len().saturating_sub(suffix.len())).len();
+    content.replace_range(safe_end.., suffix);
     Ok((content, truncated_amount))
 }
 
@@ -226,5 +227,22 @@ mod tests {
             .unwrap();
         assert_eq!(content, "");
         assert_eq!(bytes_truncated, 30);
+    }
+
+    #[tokio::test]
+    async fn test_read_file_with_max_limit_multibyte() {
+        // File with emoji near the end: "hello🎉x" = 5 + 4 + 1 = 10 bytes
+        let test_file = "hello🎉x";
+        let test_base = crate::util::test::TestBase::new()
+            .await
+            .with_file(("test.txt", test_file))
+            .await;
+
+        // max_limit=9 the correct answer is "hello..." which is 8 bytes
+        // it should not try to read the 1st byte of 🎉 to get to 9 bytes. it should discard 🎉 entirely
+        let (content, _) = read_file_with_max_limit(test_base.join("test.txt"), 9, "...")
+            .await
+            .unwrap();
+        assert_eq!(content, "hello...");
     }
 }
