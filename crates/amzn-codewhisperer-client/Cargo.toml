@@ -55,7 +55,7 @@ name = "amzn_codewhisperer_client"
 path = "src/lib.rs"
 
 [dependencies.aws-credential-types]
-version = "1.2.1"
+version = "1.2.100"
 
 [dependencies.aws-runtime]
 version = "1.5.5"

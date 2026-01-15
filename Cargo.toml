@@ -23,7 +23,7 @@ arboard = { version = "3.6.1", default-features = false, features = ["image-data
 assert_cmd = "2.0"
 async-trait = "0.1.87"
 aws-config = "1.0.3"
-aws-credential-types = "1.0.3"
+aws-credential-types = "1.2.10"
 aws-runtime = "1.4.4"
 aws-sdk-cognitoidentity = "1.51.0"
 aws-sdk-ssooidc = "1.51.0"
