@@ -159,6 +159,7 @@ jobs:
       release_quality: ${{ steps.set-release-quality.outputs.RELEASE_QUALITY }}
       environment: ${{ steps.determine-environment.outputs.ENVIRONMENT }}
       commit_sha: ${{ steps.get-commit-sha.outputs.COMMIT_SHA }}
+      version_updated: ${{ steps.update-version.outcome == 'success' }}
     steps:
       - name: Set Release Quality Output
         id: set-release-quality
@@ -188,6 +189,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Update Version Number
+        id: update-version
         if: env.RELEASE_QUALITY == 'nightly' || env.VERSION_INCREMENT != 'none'
         run: |
           CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
@@ -291,19 +293,25 @@ jobs:
           script: |
             const isNightly = '${{ needs.UpdateVersionNumber.outputs.release_quality }}' === 'nightly';
             const workflowId = isNightly ? 'release-nightly.yml' : 'build-kiro-cli.yml';
+            const versionUpdated = '${{ needs.UpdateVersionNumber.outputs.version_updated }}' === 'true';
+            
+            const inputs = {
+              release_quality: '${{ needs.UpdateVersionNumber.outputs.release_quality }}',
+              chat_binary_commit: '${{ needs.UpdateVersionNumber.outputs.commit_sha }}',
+              chat_build_timestamp: '${{ needs.generate_timestamp.outputs.build_timestamp }}',
+              trigger_source: 'chat-build'
+            };
+            
+            if (versionUpdated) {
+              inputs.chat_version = '${{ needs.UpdateVersionNumber.outputs.version }}';
+            }
             
             github.rest.actions.createWorkflowDispatch({
               owner: 'kiro-team',
               repo: 'kiro-cli-autocomplete',
               workflow_id: workflowId,
               ref: '${{ needs.UpdateVersionNumber.outputs.branch_name }}',
-              inputs: {
-                release_quality: '${{ needs.UpdateVersionNumber.outputs.release_quality }}',
-                chat_binary_commit: '${{ needs.UpdateVersionNumber.outputs.commit_sha }}',
-                chat_version: '${{ needs.UpdateVersionNumber.outputs.version }}',
-                chat_build_timestamp: '${{ needs.generate_timestamp.outputs.build_timestamp }}',
-                trigger_source: 'chat-build'
-              }
+              inputs: inputs
             });
 
   BuildSummary:
@@ -337,5 +345,4 @@ jobs:
             echo "| Darwin | ${{ needs.TriggerDarwinBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Linux | ${{ needs.TriggerLinuxBuild.result == 'success' && '✅' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
             echo "| Autocomplete Trigger | ${{ needs.TriggerAutocompleteBuild.result == 'success' && '✅' || needs.TriggerAutocompleteBuild.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
-            echo "| Slack Notification | ${{ needs.NotifySlack.result == 'success' && '✅' || needs.NotifySlack.result == 'skipped' && '⏭️' || '❌' }} |" >> $GITHUB_STEP_SUMMARY
           fi
