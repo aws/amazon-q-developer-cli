@@ -26,15 +26,7 @@
         },
         {
           "type": "added",
-          "description": "Context usage percentage now shows more accurate information"
-        },
-        {
-          "type": "added",
           "description": "Improved code understanding with codebase overviews and smarter symbol navigation using Tree-sitter analysis. Learn details at: https://kiro.dev/docs/cli/code-intelligence/"
-        },
-        {
-          "type": "added",
-          "description": "Persistent index for faster knowledge base loading"
         },
         {
           "type": "added",
@@ -50,10 +42,6 @@
         },
         {
           "type": "added",
-          "description": "Tool settings configuration for subagents"
-        },
-        {
-          "type": "added",
           "description": "Keyboard shortcuts for agent switching - Quickly switch between agents with custom keybinding. Learn details at: https://kiro.dev/docs/cli/custom-agents/configuration-reference/"
         },
         {
@@ -62,11 +50,11 @@
         },
         {
           "type": "added",
-          "description": "Support progressive-loading of context file"
+          "description": "Support progressive-loading of context files in custom agents"
         },
         {
           "type": "fixed",
-          "description": "Shell tool permission handling in subagents"
+          "description": "Subagents now correctly prompt for permission before running shell commands"
         },
         {
           "type": "fixed",
@@ -74,15 +62,19 @@
         },
         {
           "type": "fixed",
-          "description": "Improved fuzzy match strictness and exact matches"
-        },
-        {
-          "type": "fixed",
-          "description": "Path expansion support for /chat save and /chat load commands"
+          "description": "/chat save and /chat load now support tilde expansion for better path resolution"
         },
         {
           "type": "fixed",
           "description": "Fixed a crash in the grep tool when searching files containing multi-byte Unicode characters"
+        },
+        {
+          "type": "changed",
+          "description": "Persistent index for faster knowledge base loading"
+        },
+        {
+          "type": "changed",
+          "description": "Refined context usage indicator to improve accuracy"
         },
         {
           "type": "changed",
