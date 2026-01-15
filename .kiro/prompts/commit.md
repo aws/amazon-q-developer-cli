@@ -54,6 +54,17 @@ If option 2:
   
   Testing: high-level summary of testing changes/improvements.
   Do not go into too much details, just high-level changes
+  
+  User-facing: (Optional - only for changes that affect user experience)
+  Brief description of what this means for kiro-cli users.
+  
+  IMPORTANT: Only include User-facing section when ALL of these are true:
+  - Changes are in the 'crates/' folder (not .github/, .kiro/, docs/, etc.)
+  - Changes modify user-visible behavior (CLI output, commands, features)
+  - Changes are NOT internal refactors, dependency updates, or code cleanup
+  
+  When in doubt, review the diff and ask: "Will users notice this change?"
+  If no, omit the User-facing section.
   ```
 
 **Commit types:**
@@ -82,6 +93,10 @@ Key changes:
 
 Testing: Added unit tests for configuration management and
 integration tests for CLI commands. All tests passing.
+
+User-facing: Users can now manage MCP servers using
+`kiro-cli mcp add/remove/list` commands instead of manually
+editing config files.
 ```
 
 ### 4. Present your plan to the user
@@ -95,6 +110,17 @@ integration tests for CLI commands. All tests passing.
 - Use `git add` with specific files (never use `-A` or `.`)
 - Create commits with your planned messages
 - Show the result with `git log --oneline -n [number]`
+
+### 6. Ask about pushing
+
+After creating commits, ask:
+```
+Would you like me to push these changes to the remote repository?
+```
+
+If yes:
+- Run `git push` (or `git push -u origin <branch-name>` for new branches)
+- Show the result
 
 ## Important
 
@@ -138,6 +164,9 @@ Key changes:
 
 Testing: Added unit tests for config parsing and validation.
 Integration tests verify agent loading and CLI commands.
+
+User-facing: Users can now create custom agents with specific
+tool permissions and model preferences using JSON config files.
 ```
 
 ```
@@ -176,6 +205,29 @@ Testing: Ran full test suite to verify no regressions.
 All tests passing.
 ```
 
+(Note: No User-facing section needed for internal dependency updates)
+
+```
+chore: Add commit message validation to CI
+
+Problem: Inconsistent commit message formats made it
+difficult to generate automated release notes and maintain
+clear project history.
+
+Solution: Added pre-commit hook and CI check to validate
+commit message format against project standards.
+
+Key changes:
+- Added commit-msg git hook script
+- Implemented CI workflow for commit validation
+- Added documentation for commit message format
+
+Testing: Tested hook with valid and invalid commit messages.
+CI workflow validates all commits in pull requests.
+```
+
+(Note: No User-facing section needed for CI/CD and development tooling)
+
 ## Tips for Good Commits
 
 1. **Atomic commits**: Each commit should be a single logical change
@@ -208,6 +260,7 @@ Commit 2: fix: Resolve edge case in feature Y
 - The user trusts your judgment - they asked you to commit
 - Write messages that will be helpful in 6 months
 - No Kiro attribution - commits are authored by the user
+- Always ask if the user wants to push after creating commits
 
 ## Example Workflow
 
@@ -243,4 +296,6 @@ Created commit:
 abc1234 feat: Add configuration management system
 
 [Show git log output]
+
+Would you like me to push these changes to the remote repository?
 ```

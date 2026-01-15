@@ -22,21 +22,24 @@
     "knowledge"
   ],
   "useLegacyMcpJson": true,
+  "keyboardShortcut": "shift+q",
+  "welcomeMessage": "Hi! I'm the Kiro-Dev agent. What would you like to build today?",
   "toolsSettings": {
     "execute_bash": {
       "autoAllowReadonly": true,
       "allowedCommands": [
         "git status",
-        "git diff .*",
-        "git log .*",
-        "git add .*",
-        "cargo clippy .*",
+        "git diff.*",
+        "git log.*",
+        "git add.*",
+        "git pull.*",
+        "cargo clippy.*",
         "cargo \\+nightly fmt.*",
-        "cargo build .*",
-        "cargo test .*",
-        "jq .*",
-        "cat .*",
-        "ls .*",
+        "cargo build.*",
+        "cargo test.*",
+        "jq.*",
+        "cat.*",
+        "ls.*",
         "pwd"
       ]
     },

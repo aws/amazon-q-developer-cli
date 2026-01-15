@@ -54,6 +54,33 @@ jobs:
           echo "$COMMITS" >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
+      - name: Extract User-Facing Messages
+        id: user-facing
+        run: |
+          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
+          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -2 | tail -1)
+          if [[ -z "$LAST_TAG" ]]; then
+            RANGE="HEAD~10..HEAD"
+          else
+            RANGE="${LAST_TAG}..${CURRENT_TAG}"
+          fi
+          
+          USER_FACING=""
+          while IFS= read -r commit; do
+            MSG=$(git log -1 --format=%B "$commit")
+            if echo "$MSG" | grep -q "^User-facing:"; then
+              TITLE=$(git log -1 --format=%s "$commit")
+              UF_MSG=$(echo "$MSG" | sed -n '/^User-facing:/,/^$/p' | sed 's/^User-facing: *//' | tr '\n' ' ' | sed 's/  */ /g')
+              if [[ -n "$UF_MSG" ]]; then
+                USER_FACING="${USER_FACING}• ${TITLE}: ${UF_MSG}"$'\n'
+              fi
+            fi
+          done < <(git rev-list "$RANGE" | grep -v "$(git log --format=%H --grep='Sync: Merge main into nightly' "$RANGE")")
+          
+          echo "messages<<EOF" >> $GITHUB_OUTPUT
+          echo "$USER_FACING" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
       - name: Format Timestamp
         id: format-timestamp
         run: |
@@ -70,6 +97,7 @@ jobs:
         id: build-message
         env:
           COMMITS: ${{ steps.get-commits.outputs.commits }}
+          USER_FACING: ${{ steps.user-facing.outputs.messages }}
         run: |
           jq -n \
             --arg message "🌙 New Kiro CLI nightly version released!" \
@@ -77,12 +105,14 @@ jobs:
             --arg timestamp "${{ steps.format-timestamp.outputs.readable }}" \
             --arg branch "${{ inputs.branch_name }}" \
             --arg commits "$COMMITS" \
+            --arg user_facing "$USER_FACING" \
             '{
               message: $message,
               version: $version,
               build_timestamp: $timestamp,
               branch_name: $branch,
-              commits: $commits
+              commits: $commits,
+              user_facing: $user_facing
             }' > message.json
           echo "message<<JSONEOF" >> $GITHUB_OUTPUT
           cat message.json >> $GITHUB_OUTPUT

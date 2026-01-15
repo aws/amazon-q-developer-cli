@@ -3,6 +3,11 @@ name: Rust
 on:
   workflow_dispatch:
   push:
+    paths:
+      - '**.rs'
+      - '**/Cargo.toml'
+      - '**/Cargo.lock'
+      - '.github/workflows/rust.yml'
 
 permissions:
   contents: read
