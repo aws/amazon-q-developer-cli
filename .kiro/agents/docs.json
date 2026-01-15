@@ -11,6 +11,7 @@
     }
   },
   "resources": [
-    "file://autodocs/README.md"
+    "file://autodocs/README.md",
+    "skill://autodocs/docs/**/*.md"
   ]
 }
