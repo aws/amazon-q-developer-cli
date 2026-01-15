@@ -3,11 +3,6 @@ name: Rust
 on:
   workflow_dispatch:
   push:
-    paths:
-      - '**.rs'
-      - '**/Cargo.toml'
-      - '**/Cargo.lock'
-      - '.github/workflows/rust.yml'
 
 permissions:
   contents: read
@@ -17,8 +12,27 @@ env:
   RUSTFLAGS: -D warnings
 
 jobs:
+  check-paths:
+    name: Check if Rust files changed
+    runs-on: ubuntu-latest
+    outputs:
+      rust-changed: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - '**.rs'
+              - '**/Cargo.toml'
+              - '**/Cargo.lock'
+              - '.github/workflows/rust.yml'
+
   cargo-clippy:
     name: Clippy (${{ matrix.os }})
+    needs: check-paths
+    if: needs.check-paths.outputs.rust-changed == 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -49,6 +63,8 @@ jobs:
 
   cargo-test:
     name: Test (${{ matrix.os }})
+    needs: check-paths
+    if: needs.check-paths.outputs.rust-changed == 'true'
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -122,6 +138,8 @@ jobs:
 
   cargo-fmt:
     name: Fmt
+    needs: check-paths
+    if: needs.check-paths.outputs.rust-changed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -133,6 +151,8 @@ jobs:
 
   cargo-deny:
     name: Deny
+    needs: check-paths
+    if: needs.check-paths.outputs.rust-changed == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

@@ -849,6 +849,28 @@ impl Agent {
             },
             AgentLoopEventKind::UserTurnEnd(md) => {
                 self.conversation_metadata.user_turn_metadatas.push(md.clone());
+
+                // Execute Stop hooks
+                let hooks = self.get_hooks(HookTrigger::Stop);
+                if !hooks.is_empty() {
+                    let hooks = hooks
+                        .into_iter()
+                        .map(|hook| {
+                            (
+                                HookExecutionId {
+                                    hook,
+                                    tool_context: None,
+                                },
+                                None,
+                            )
+                        })
+                        .collect();
+                    // TODO: Handle synchronous stop hooks
+                    if let Err(err) = self.start_hooks_execution(hooks, HookStage::Stop, None).await {
+                        error!(?err, "failed to execute stop hooks");
+                    }
+                }
+
                 self.set_active_state(ActiveState::Idle).await;
                 self.agent_event_buf.push(AgentEvent::EndTurn(md));
                 self.agent_event_buf.push(AgentEvent::Stop(AgentStopReason::EndTurn));
@@ -1410,6 +1432,10 @@ impl Agent {
             HookStage::PostToolUse { tool_results } => {
                 let tool_results = tool_results.clone();
                 self.send_tool_results(tool_results).await?;
+                Ok(())
+            },
+            HookStage::Stop => {
+                self.set_active_state(ActiveState::Idle).await;
                 Ok(())
             },
         }
@@ -2295,6 +2321,8 @@ pub enum HookStage {
     },
     /// Hooks after executing tool uses
     PostToolUse { tool_results: Vec<ToolExecutorResult> },
+    /// Hooks when the assistant finishes responding
+    Stop,
 }
 
 #[cfg(test)]

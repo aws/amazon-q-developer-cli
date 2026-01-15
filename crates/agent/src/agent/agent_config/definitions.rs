@@ -350,6 +350,8 @@ pub enum HookTrigger {
     PreToolUse,
     /// Triggered after tool execution
     PostToolUse,
+    /// Triggered when the assistant finishes responding
+    Stop,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
