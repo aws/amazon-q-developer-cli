@@ -92,9 +92,20 @@ pub fn diff_with_tool(
     let before_content = ensure_trailing_newline(before_content);
     let after_content = ensure_trailing_newline(after_content);
 
-    std::fs::write(&before_file, &before_content)
+    // For inline TwoFile tools (difft, icdiff), prepend empty lines to show correct line numbers
+    let (before_to_write, after_to_write) = if needs_line_padding(&config) && start_line > 1 {
+        let padding = "\n".repeat(start_line - 1);
+        (
+            format!("{padding}{before_content}"),
+            format!("{padding}{after_content}"),
+        )
+    } else {
+        (before_content.clone(), after_content.clone())
+    };
+
+    std::fs::write(&before_file, &before_to_write)
         .map_err(|e| ChatError::Custom(format!("Failed to create temp file: {e}").into()))?;
-    std::fs::write(&after_file, &after_content)
+    std::fs::write(&after_file, &after_to_write)
         .map_err(|e| ChatError::Custom(format!("Failed to create temp file: {e}").into()))?;
 
     let ctx = DiffContext {
@@ -116,6 +127,12 @@ pub fn diff_with_tool(
     }
 
     result
+}
+
+/// Check if the strategy needs line padding for correct line numbers
+/// Only for inline TwoFile tools (difft, icdiff), not GUI tools (VS Code, meld, vim)
+fn needs_line_padding(config: &ToolConfig) -> bool {
+    config.is_inline && matches!(config.strategy, DiffStrategy::TwoFile | DiffStrategy::Icdiff)
 }
 
 fn get_diff_tool_cmd(os: &Os) -> Option<String> {
@@ -260,16 +277,28 @@ fn launch_icdiff(tool: &str, args: &[String], before: &Path, after: &Path, label
 }
 
 fn generate_unified_diff(before: &str, after: &str, label: &str, start_line: usize) -> String {
-    let before_lines = if before.is_empty() { 0 } else { before.lines().count() };
-    let after_lines = if after.is_empty() { 0 } else { after.lines().count() };
+    let diff = similar::TextDiff::from_lines(before, after);
 
-    let before_start = if before_lines == 0 { 0 } else { start_line };
-    let after_start = if after_lines == 0 { 0 } else { start_line };
+    // Count lines for hunk header: before_count = deletions + equal, after_count = insertions + equal
+    let mut before_count = 0;
+    let mut after_count = 0;
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            similar::ChangeTag::Delete => before_count += 1,
+            similar::ChangeTag::Insert => after_count += 1,
+            similar::ChangeTag::Equal => {
+                before_count += 1;
+                after_count += 1;
+            },
+        }
+    }
+
+    let before_start = if before_count == 0 { 0 } else { start_line };
+    let after_start = if after_count == 0 { 0 } else { start_line };
 
     let mut output =
-        format!("--- a/{label}\n+++ b/{label}\n@@ -{before_start},{before_lines} +{after_start},{after_lines} @@\n");
+        format!("--- a/{label}\n+++ b/{label}\n@@ -{before_start},{before_count} +{after_start},{after_count} @@\n");
 
-    let diff = similar::TextDiff::from_lines(before, after);
     for change in diff.iter_all_changes() {
         let sign = match change.tag() {
             similar::ChangeTag::Delete => "-",
