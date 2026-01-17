@@ -25,7 +25,6 @@ use crate::cli::agent::{
 };
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
-use crate::util::paths::PathResolver;
 
 #[derive(Debug, Clone, Deserialize, JsonSchema)]
 pub struct InvokeSubagent {
@@ -252,7 +251,7 @@ impl UseSubagent {
                 tool_use_id,
             } => {
                 let (view_end, input_rx, control_end) = get_conduit();
-                let resolver = PathResolver::new(os);
+                let resolver = os.path_resolver();
                 let local_agent_path = resolver.workspace().agents_dir()?;
                 let global_agent_path = resolver.global().agents_dir()?;
                 let local_mcp_path = resolver.workspace().mcp_config()?;

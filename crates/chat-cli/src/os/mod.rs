@@ -44,7 +44,7 @@ impl Os {
     pub async fn new() -> Result<Self> {
         let env = Env::new();
         let fs = Fs::new();
-        let mut database = Database::new().await?;
+        let mut database = Database::new(&env, &fs).await?;
         let client = ApiClient::new(&env, &fs, &mut database, None).await?;
         let telemetry = TelemetryThread::new(&env, &fs, &mut database).await?;
 
@@ -56,6 +56,10 @@ impl Os {
             client,
             telemetry,
         })
+    }
+
+    pub fn path_resolver(&self) -> crate::util::paths::PathResolver<'_> {
+        crate::util::paths::PathResolver::new(&self.env, &self.fs)
     }
 }
 

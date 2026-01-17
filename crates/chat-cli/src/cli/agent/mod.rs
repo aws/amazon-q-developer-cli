@@ -379,7 +379,7 @@ impl Agent {
     /// Retrieves an agent by name. It does so via first seeking the given agent under local dir,
     /// and falling back to global dir if it does not exist in local.
     pub async fn get_agent_by_name(os: &Os, agent_name: &str) -> eyre::Result<(Agent, PathBuf)> {
-        let resolver = PathResolver::new(os);
+        let resolver = os.path_resolver();
         let config_path: Result<PathBuf, PathBuf> = 'config: {
             // local first, and then fall back to looking at global
             let local_config_dir = resolver.workspace().agents_dir()?.join(format!("{agent_name}.json"));
@@ -668,7 +668,7 @@ impl Agents {
             vec![]
         };
 
-        let resolver = PathResolver::new(os);
+        let resolver = os.path_resolver();
         let mut global_mcp_config = None::<McpServerConfig>;
 
         let mut local_agents = 'local: {
@@ -1129,7 +1129,7 @@ use mcp_config::McpConfigError;
 static MCP_CONFIG_WARNING_SHOWN: AtomicBool = AtomicBool::new(false);
 
 async fn load_legacy_mcp_config(os: &Os, output: &mut impl Write) -> eyre::Result<Option<McpServerConfig>> {
-    let resolver = PathResolver::new(os);
+    let resolver = os.path_resolver();
     let show_warning = !MCP_CONFIG_WARNING_SHOWN.swap(true, Ordering::Relaxed);
 
     let global_mcp_path = resolver.global().mcp_config()?;

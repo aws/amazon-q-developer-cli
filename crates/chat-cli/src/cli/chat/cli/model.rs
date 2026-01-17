@@ -237,7 +237,7 @@ async fn set_current_as_default(os: &mut Os, session: &mut ChatSession) -> Resul
     if let Some(model_info) = &session.conversation.model_info {
         os.database
             .settings
-            .set(Setting::ChatDefaultModel, model_info.model_id.clone())
+            .set(Setting::ChatDefaultModel, model_info.model_id.clone(), None)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to set default model: {e}").into()))?;
 

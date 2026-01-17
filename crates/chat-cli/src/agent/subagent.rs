@@ -76,7 +76,6 @@ use crate::telemetry::{
     TelemetryResult,
     TelemetryThread,
 };
-use crate::util::paths::PathResolver;
 
 // TODO: use the one supplied by science (this one has been modified for testing)
 const SUBAGENT_EMBEDDED_USER_MSG: &str = r#"
@@ -645,7 +644,7 @@ pub fn subagent_widget_demo(queries: Vec<(String, String)>) {
 #[allow(dead_code)]
 async fn test_sub_agent_routine(queries: Vec<(String, String)>) -> Result<Vec<Summary>> {
     let os = Os::new().await.expect("failed to spawn os");
-    let resolver = PathResolver::new(&os);
+    let resolver = os.path_resolver();
     let local_agent_path = resolver.workspace().agents_dir().expect("failed to retrieve path");
     let global_agent_path = resolver.global().agents_dir().expect("failed to retrieve path");
     let local_mcp_path = resolver.workspace().mcp_config().expect("failed to retrieve path");

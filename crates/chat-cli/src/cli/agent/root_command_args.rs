@@ -26,7 +26,6 @@ use crate::constants::BUILT_IN_AGENTS;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::paths::PathResolver;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum AgentSubcommands {
@@ -364,7 +363,7 @@ impl AgentArgs {
                     Ok(agent) => {
                         os.database
                             .settings
-                            .set(Setting::ChatDefaultAgent, agent.name.clone())
+                            .set(Setting::ChatDefaultAgent, agent.name.clone(), None)
                             .await?;
 
                         let _ = queue!(
@@ -410,9 +409,9 @@ pub async fn create_agent(
             bail!("Path must be a directory");
         }
 
-        PathResolver::new(os).workspace().agents_dir_for_create()?
+        os.path_resolver().workspace().agents_dir_for_create()?
     } else {
-        PathResolver::new(os).global().agents_dir_for_create()?
+        os.path_resolver().global().agents_dir_for_create()?
     };
 
     if let Some((name, _)) = agents.agents.iter().find(|(agent_name, agent)| {

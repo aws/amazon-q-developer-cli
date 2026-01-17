@@ -220,7 +220,6 @@ use crate::telemetry::{
     TelemetryResult,
     get_error_reason,
 };
-use crate::util::paths::PathResolver;
 use crate::util::{
     MCP_SERVER_TOOL_DELIMITER,
     ui,
@@ -237,7 +236,7 @@ pub enum WrapMode {
 }
 
 fn get_shadow_repo_dir(os: &Os, conversation_id: String) -> Result<PathBuf, crate::util::paths::DirectoryError> {
-    Ok(PathResolver::new(os).global().shadow_repo_dir()?.join(conversation_id))
+    Ok(os.path_resolver().global().shadow_repo_dir()?.join(conversation_id))
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default, Args)]
@@ -433,7 +432,7 @@ impl ChatArgs {
                         style::Print("\n\n"),
                     )?;
                 }
-                os.database.settings.set(Setting::McpLoadedBefore, true).await?;
+                os.database.settings.set(Setting::McpLoadedBefore, true, None).await?;
             }
 
             if let Some(trust_tools) = self.trust_tools.take() {
@@ -4751,7 +4750,7 @@ fn is_code_intelligence_active(
 
 // Helper method to save the agent config to file
 async fn save_agent_config(os: &mut Os, config: &Agent, agent_name: &str, is_global: bool) -> Result<(), ChatError> {
-    let resolver = PathResolver::new(os);
+    let resolver = os.path_resolver();
     let config_dir = if is_global {
         resolver
             .global()

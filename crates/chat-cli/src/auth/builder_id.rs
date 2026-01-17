@@ -599,7 +599,7 @@ pub async fn is_builder_id_logged_in(database: &mut Database) -> bool {
 }
 
 pub async fn logout(database: &mut Database) -> Result<(), AuthError> {
-    let Ok(secret_store) = Database::new().await else {
+    let Ok(secret_store) = Database::new_default().await else {
         return Ok(());
     };
 
@@ -638,7 +638,7 @@ impl ResolveIdentity for BearerResolver {
         _config_bag: &'a ConfigBag,
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
-            let database = Database::new().await?;
+            let database = Database::new_default().await?;
             match BuilderIdToken::load(&database, None).await? {
                 Some(token) => Ok(Identity::new(
                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),

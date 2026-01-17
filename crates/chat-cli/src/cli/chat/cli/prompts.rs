@@ -41,7 +41,6 @@ use crate::cli::chat::{
 use crate::mcp_client::McpClientError;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::paths::PathResolver;
 
 /// Maximum allowed length for prompt names
 const MAX_PROMPT_NAME_LENGTH: usize = 50;
@@ -133,7 +132,7 @@ pub struct FilePrompts {
 impl FilePrompts {
     /// Create a new Prompts instance for the given name
     fn new(name: &str, os: &Os) -> Result<Self, GetPromptError> {
-        let resolver = PathResolver::new(os);
+        let resolver = os.path_resolver();
         let local_dir = resolver
             .workspace()
             .prompts_dir_for_create()
@@ -169,7 +168,7 @@ impl FilePrompts {
 
     /// Get all available prompt names from both directories
     pub fn get_available_names(os: &Os) -> Result<Vec<String>, GetPromptError> {
-        let resolver = PathResolver::new(os);
+        let resolver = os.path_resolver();
         let mut prompt_names = std::collections::HashSet::new();
 
         // Helper function to collect prompt names from a directory
@@ -706,8 +705,8 @@ impl PromptsArgs {
 
         if !filtered_names.is_empty() {
             // Separate global and local prompts for display
-            let _global_dir = PathResolver::new(os).global().prompts_dir().ok();
-            let _local_dir = PathResolver::new(os).workspace().prompts_dir().ok();
+            let _global_dir = os.path_resolver().global().prompts_dir().ok();
+            let _local_dir = os.path_resolver().workspace().prompts_dir().ok();
 
             let mut global_prompts = Vec::new();
             let mut local_prompts = Vec::new();

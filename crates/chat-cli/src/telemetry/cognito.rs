@@ -131,7 +131,7 @@ impl provider::ProvideCredentials for CognitoProvider {
         Self: 'a,
     {
         provider::future::ProvideCredentials::new(async {
-            match Database::new().await {
+            match Database::new_default().await {
                 Ok(mut db) => get_cognito_credentials(&mut db, &self.telemetry_stage).await,
                 Err(err) => Err(CredentialsError::provider_error(format!(
                     "failed to get database: {err:?}"
@@ -169,7 +169,7 @@ mod test {
     #[tokio::test]
     async fn pools() {
         for telemetry_stage in [TelemetryStage::BETA, TelemetryStage::EXTERNAL_PROD] {
-            get_cognito_credentials_send(&mut Database::new().await.unwrap(), &telemetry_stage)
+            get_cognito_credentials_send(&mut Database::new_default().await.unwrap(), &telemetry_stage)
                 .await
                 .unwrap();
         }

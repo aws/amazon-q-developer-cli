@@ -14,15 +14,31 @@ use tokio::io::{
 };
 
 use super::DatabaseError;
-use crate::util::paths::GlobalPaths;
+use crate::os::{
+    Env,
+    Fs,
+};
+use crate::util::paths::{
+    GlobalPaths,
+    PathResolver,
+};
 
-#[derive(Clone, Copy, Debug, strum::EnumIter, strum::EnumMessage)]
+#[derive(Clone, Copy, Debug, strum::EnumIter, strum::EnumMessage, strum::EnumProperty)]
 pub enum Setting {
-    #[strum(message = "Enable/disable telemetry collection (boolean)")]
+    #[strum(
+        message = "Enable/disable telemetry collection (boolean)",
+        props(scope = "global_only")
+    )]
     TelemetryEnabled,
-    #[strum(message = "Legacy client identifier for telemetry (string)")]
+    #[strum(
+        message = "Legacy client identifier for telemetry (string)",
+        props(scope = "global_only")
+    )]
     OldClientId,
-    #[strum(message = "Share content with CodeWhisperer service (boolean)")]
+    #[strum(
+        message = "Share content with CodeWhisperer service (boolean)",
+        props(scope = "global_only")
+    )]
     ShareCodeWhispererContent,
     #[strum(message = "Enable thinking tool for complex reasoning (boolean)")]
     EnabledThinking,
@@ -65,15 +81,21 @@ pub enum Setting {
     ChatEditMode,
     #[strum(message = "Enable desktop notifications (boolean)")]
     ChatEnableNotifications,
-    #[strum(message = "CodeWhisperer service endpoint URL (string)")]
+    #[strum(
+        message = "CodeWhisperer service endpoint URL (string)",
+        props(scope = "global_only")
+    )]
     ApiCodeWhispererService,
-    #[strum(message = "Q service endpoint URL (string)")]
+    #[strum(message = "Q service endpoint URL (string)", props(scope = "global_only"))]
     ApiQService,
     #[strum(message = "MCP server initialization timeout (number)")]
     McpInitTimeout,
     #[strum(message = "Non-interactive MCP timeout (number)")]
     McpNoInteractiveTimeout,
-    #[strum(message = "Track previously loaded MCP servers (boolean)")]
+    #[strum(
+        message = "Track previously loaded MCP servers (boolean)",
+        props(scope = "global_only")
+    )]
     McpLoadedBefore,
     #[strum(message = "Show context usage percentage in prompt (boolean)")]
     EnabledContextUsageIndicator,
@@ -101,6 +123,13 @@ pub enum Setting {
     UiMode,
     #[strum(message = "External diff tool command (string)")]
     ChatDiffTool,
+}
+
+impl Setting {
+    pub fn is_workspace_overridable(&self) -> bool {
+        use strum::EnumProperty;
+        self.get_str("scope") != Some("global_only")
+    }
 }
 
 impl AsRef<str> for Setting {
@@ -209,24 +238,59 @@ impl TryFrom<&str> for Setting {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Settings(Map<String, Value>);
+pub struct Settings {
+    global: Map<String, Value>,
+    workspace: Option<Map<String, Value>>,
+    workspace_settings_path: Option<std::path::PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingScope {
+    Global,
+    Workspace,
+}
 
 impl Settings {
-    pub async fn new() -> Result<Self, DatabaseError> {
+    pub async fn new(env: &Env, fs: &Fs) -> Result<Self, DatabaseError> {
         if cfg!(test) {
             return Ok(Self::default());
         }
 
-        let path = GlobalPaths::settings_path()?;
+        let global_path = GlobalPaths::settings_path()?;
+        let global = Self::load_settings_file(&global_path).await?;
 
-        // If the folder doesn't exist, create it.
+        let resolver = PathResolver::new(env, fs);
+        let workspace_settings_path = resolver.workspace().settings_path().ok();
+
+        let workspace = if workspace_settings_path.is_some() {
+            if let Some(ref ws_path) = workspace_settings_path {
+                if ws_path.exists() {
+                    Some(Self::load_settings_file(ws_path).await?)
+                } else {
+                    Some(Map::new())
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        Ok(Self {
+            global,
+            workspace,
+            workspace_settings_path,
+        })
+    }
+
+    async fn load_settings_file(path: &std::path::PathBuf) -> Result<Map<String, Value>, DatabaseError> {
         if let Some(parent) = path.parent()
             && !parent.exists()
         {
             std::fs::create_dir_all(parent)?;
         }
 
-        Ok(Self(match path.exists() {
+        Ok(match path.exists() {
             true => {
                 let mut file = RwLock::new(File::open(&path).await?);
                 let mut buf = Vec::new();
@@ -238,26 +302,126 @@ impl Settings {
                 file.write()?.write_all(b"{}").await?;
                 serde_json::Map::new()
             },
-        }))
+        })
     }
 
-    pub fn map(&self) -> &'_ Map<String, Value> {
-        &self.0
+    pub fn map(&self) -> Map<String, Value> {
+        let mut merged = self.global.clone();
+        if let Some(workspace) = &self.workspace {
+            for (key, value) in workspace {
+                if let Ok(setting) = Setting::try_from(key.as_str())
+                    && setting.is_workspace_overridable()
+                {
+                    merged.insert(key.clone(), value.clone());
+                }
+            }
+        }
+        merged
     }
 
     pub fn get(&self, key: Setting) -> Option<&Value> {
-        self.0.get(key.as_ref())
+        if key.is_workspace_overridable()
+            && let Some(workspace) = &self.workspace
+            && let Some(value) = workspace.get(key.as_ref())
+        {
+            return Some(value);
+        }
+        self.global.get(key.as_ref())
     }
 
-    pub async fn set(&mut self, key: Setting, value: impl Into<serde_json::Value>) -> Result<(), DatabaseError> {
-        self.0.insert(key.to_string(), value.into());
-        self.save_to_file().await
+    pub fn get_scope(&self, key: Setting) -> Option<SettingScope> {
+        if key.is_workspace_overridable()
+            && let Some(workspace) = &self.workspace
+            && workspace.contains_key(key.as_ref())
+        {
+            return Some(SettingScope::Workspace);
+        }
+        if self.global.contains_key(key.as_ref()) {
+            Some(SettingScope::Global)
+        } else {
+            None
+        }
     }
 
-    pub async fn remove(&mut self, key: Setting) -> Result<Option<Value>, DatabaseError> {
-        let key = self.0.remove(key.as_ref());
-        self.save_to_file().await?;
-        Ok(key)
+    pub async fn set(
+        &mut self,
+        key: Setting,
+        value: impl Into<serde_json::Value>,
+        scope: Option<SettingScope>,
+    ) -> Result<(), DatabaseError> {
+        let scope = scope.unwrap_or(SettingScope::Global);
+
+        match scope {
+            SettingScope::Global => {
+                self.global.insert(key.to_string(), value.into());
+                self.save_global().await
+            },
+            SettingScope::Workspace => {
+                if !key.is_workspace_overridable() {
+                    return Err(DatabaseError::WorkspaceOverrideNotAllowed(key.to_string()));
+                }
+                self.workspace.as_mut().unwrap().insert(key.to_string(), value.into());
+                self.save_workspace().await
+            },
+        }
+    }
+
+    pub async fn remove(&mut self, key: Setting, scope: Option<SettingScope>) -> Result<Option<Value>, DatabaseError> {
+        let scope = scope.unwrap_or(SettingScope::Global);
+
+        let removed = match scope {
+            SettingScope::Global => self.global.remove(key.as_ref()),
+            SettingScope::Workspace => self.workspace.as_mut().and_then(|ws| ws.remove(key.as_ref())),
+        };
+
+        match scope {
+            SettingScope::Global => self.save_global().await?,
+            SettingScope::Workspace => self.save_workspace().await?,
+        }
+
+        Ok(removed)
+    }
+
+    async fn save_global(&self) -> Result<(), DatabaseError> {
+        let path = GlobalPaths::settings_path()?;
+        Self::save_settings_file(&path, &self.global).await
+    }
+
+    async fn save_workspace(&self) -> Result<(), DatabaseError> {
+        if let Some(path) = &self.workspace_settings_path
+            && let Some(workspace) = &self.workspace
+        {
+            Self::save_settings_file(path, workspace).await?;
+        }
+        Ok(())
+    }
+
+    async fn save_settings_file(path: &std::path::PathBuf, map: &Map<String, Value>) -> Result<(), DatabaseError> {
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            tokio::fs::create_dir_all(parent).await?;
+        }
+
+        let mut file_opts = File::options();
+        file_opts.create(true).write(true).truncate(true);
+
+        #[cfg(unix)]
+        file_opts.mode(0o600);
+        let mut file = RwLock::new(file_opts.open(&path).await?);
+        let mut lock = file.write()?;
+
+        match serde_json::to_string_pretty(map) {
+            Ok(json) => lock.write_all(json.as_bytes()).await?,
+            Err(_err) => {
+                lock.seek(SeekFrom::Start(0)).await?;
+                lock.set_len(0).await?;
+                lock.write_all(b"{}").await?;
+            },
+        }
+        lock.flush().await?;
+
+        Ok(())
     }
 
     pub fn get_bool(&self, key: Setting) -> Option<bool> {
@@ -275,115 +439,212 @@ impl Settings {
     pub fn get_int_or(&self, key: Setting, default: usize) -> usize {
         self.get_int(key).map_or(default, |v| v as usize)
     }
-
-    pub async fn save_to_file(&self) -> Result<(), DatabaseError> {
-        if cfg!(test) {
-            return Ok(());
-        }
-
-        let path = GlobalPaths::settings_path()?;
-
-        // If the folder doesn't exist, create it.
-        if let Some(parent) = path.parent()
-            && !parent.exists()
-        {
-            tokio::fs::create_dir_all(parent).await?;
-        }
-
-        let mut file_opts = File::options();
-        file_opts.create(true).write(true).truncate(true);
-
-        #[cfg(unix)]
-        file_opts.mode(0o600);
-        let mut file = RwLock::new(file_opts.open(&path).await?);
-        let mut lock = file.write()?;
-
-        match serde_json::to_string_pretty(&self.0) {
-            Ok(json) => lock.write_all(json.as_bytes()).await?,
-            Err(_err) => {
-                lock.seek(SeekFrom::Start(0)).await?;
-                lock.set_len(0).await?;
-                lock.write_all(b"{}").await?;
-            },
-        }
-        lock.flush().await?;
-
-        Ok(())
-    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
 
-    /// General read/write settings test
-    #[tokio::test]
-    async fn test_settings() {
-        let mut settings = Settings::new().await.unwrap();
+    #[test]
+    fn test_workspace_overridable() {
+        assert!(!Setting::TelemetryEnabled.is_workspace_overridable());
+        assert!(!Setting::ApiCodeWhispererService.is_workspace_overridable());
+        assert!(Setting::ChatDefaultModel.is_workspace_overridable());
+        assert!(Setting::EnabledTangentMode.is_workspace_overridable());
+    }
 
-        assert_eq!(settings.get(Setting::TelemetryEnabled), None);
-        assert_eq!(settings.get(Setting::OldClientId), None);
-        assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
-        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
-        assert_eq!(settings.get(Setting::ChatDefaultModel), None);
-        assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
-
-        settings.set(Setting::TelemetryEnabled, true).await.unwrap();
-        settings.set(Setting::OldClientId, "test").await.unwrap();
-        settings.set(Setting::ShareCodeWhispererContent, false).await.unwrap();
-        settings.set(Setting::KnowledgeIndexType, "fast").await.unwrap();
-        settings.set(Setting::McpLoadedBefore, true).await.unwrap();
-        settings.set(Setting::ChatDefaultModel, "model 1").await.unwrap();
-        settings.set(Setting::ChatDiffTool, "diff tool").await.unwrap();
+    #[test]
+    fn test_workspace_override() {
+        let mut settings = Settings::default();
         settings
-            .set(Setting::ChatDisableMarkdownRendering, false)
-            .await
-            .unwrap();
-        settings.set(Setting::EnabledCheckpoint, true).await.unwrap();
+            .global
+            .insert("chat.defaultModel".to_string(), Value::String("model1".to_string()));
+        settings.workspace = Some(serde_json::Map::new());
+        settings
+            .workspace
+            .as_mut()
+            .unwrap()
+            .insert("chat.defaultModel".to_string(), Value::String("model2".to_string()));
+
+        assert_eq!(
+            settings.get(Setting::ChatDefaultModel),
+            Some(&Value::String("model2".to_string()))
+        );
+        assert_eq!(
+            settings.get_scope(Setting::ChatDefaultModel),
+            Some(SettingScope::Workspace)
+        );
+    }
+
+    #[test]
+    fn test_global_fallback() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("chat.defaultModel".to_string(), Value::String("model1".to_string()));
+
+        assert_eq!(
+            settings.get(Setting::ChatDefaultModel),
+            Some(&Value::String("model1".to_string()))
+        );
+        assert_eq!(
+            settings.get_scope(Setting::ChatDefaultModel),
+            Some(SettingScope::Global)
+        );
+    }
+
+    #[test]
+    fn test_no_value_set() {
+        let settings = Settings::default();
+        assert_eq!(settings.get(Setting::ChatDefaultModel), None);
+        assert_eq!(settings.get_scope(Setting::ChatDefaultModel), None);
+    }
+
+    #[test]
+    fn test_global_only_not_overridable() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("telemetry.enabled".to_string(), Value::Bool(true));
+        settings.workspace = Some(serde_json::Map::new());
+        settings
+            .workspace
+            .as_mut()
+            .unwrap()
+            .insert("telemetry.enabled".to_string(), Value::Bool(false));
+
+        // Should return global value, not workspace
+        assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
+        assert_eq!(
+            settings.get_scope(Setting::TelemetryEnabled),
+            Some(SettingScope::Global)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_set_and_get_global() {
+        let mut settings = Settings::default();
+
+        settings.set(Setting::TelemetryEnabled, true, None).await.unwrap();
+        settings.set(Setting::ChatDefaultModel, "model1", None).await.unwrap();
+        settings.set(Setting::EnabledTangentMode, false, None).await.unwrap();
 
         assert_eq!(settings.get(Setting::TelemetryEnabled), Some(&Value::Bool(true)));
         assert_eq!(
-            settings.get(Setting::OldClientId),
-            Some(&Value::String("test".to_string()))
+            settings.get(Setting::ChatDefaultModel),
+            Some(&Value::String("model1".to_string()))
         );
-        assert_eq!(
-            settings.get(Setting::ShareCodeWhispererContent),
-            Some(&Value::Bool(false))
-        );
-        assert_eq!(
-            settings.get(Setting::KnowledgeIndexType),
-            Some(&Value::String("fast".to_string()))
-        );
-        assert_eq!(settings.get(Setting::McpLoadedBefore), Some(&Value::Bool(true)));
+        assert_eq!(settings.get(Setting::EnabledTangentMode), Some(&Value::Bool(false)));
+    }
+
+    #[tokio::test]
+    async fn test_remove_global() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("chat.defaultModel".to_string(), Value::String("model1".to_string()));
+
+        let removed = settings.remove(Setting::ChatDefaultModel, None).await.unwrap();
+        assert_eq!(removed, Some(Value::String("model1".to_string())));
+        assert_eq!(settings.get(Setting::ChatDefaultModel), None);
+    }
+
+    #[tokio::test]
+    async fn test_set_workspace() {
+        let mut settings = Settings::default();
+        settings.workspace = Some(serde_json::Map::new());
+        settings.workspace_settings_path = Some(std::path::PathBuf::from("/tmp/test.json"));
+
+        settings
+            .set(
+                Setting::ChatDefaultModel,
+                "workspace-model",
+                Some(SettingScope::Workspace),
+            )
+            .await
+            .unwrap();
+
         assert_eq!(
             settings.get(Setting::ChatDefaultModel),
-            Some(&Value::String("model 1".to_string()))
+            Some(&Value::String("workspace-model".to_string()))
         );
         assert_eq!(
-            settings.get(Setting::ChatDiffTool),
-            Some(&Value::String("diff tool".to_string()))
+            settings.get_scope(Setting::ChatDefaultModel),
+            Some(SettingScope::Workspace)
         );
+    }
+
+    #[tokio::test]
+    async fn test_remove_workspace() {
+        let mut settings = Settings::default();
+        settings.workspace = Some(serde_json::Map::new());
+        settings.workspace_settings_path = Some(std::path::PathBuf::from("/tmp/test.json"));
+        settings
+            .workspace
+            .as_mut()
+            .unwrap()
+            .insert("chat.defaultModel".to_string(), Value::String("model".to_string()));
+
+        let removed = settings
+            .remove(Setting::ChatDefaultModel, Some(SettingScope::Workspace))
+            .await
+            .unwrap();
+        assert_eq!(removed, Some(Value::String("model".to_string())));
+        assert_eq!(settings.get(Setting::ChatDefaultModel), None);
+    }
+
+    #[tokio::test]
+    async fn test_workspace_override_rejected() {
+        let mut settings = Settings::default();
+        settings.workspace = Some(serde_json::Map::new());
+        settings.workspace_settings_path = Some(std::path::PathBuf::from("/tmp/test.json"));
+
+        let result = settings
+            .set(Setting::TelemetryEnabled, true, Some(SettingScope::Workspace))
+            .await;
+
+        assert!(matches!(result, Err(DatabaseError::WorkspaceOverrideNotAllowed(_))));
+    }
+
+    #[test]
+    fn test_get_bool() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("chat.enableTangentMode".to_string(), Value::Bool(true));
+        assert_eq!(settings.get_bool(Setting::EnabledTangentMode), Some(true));
+    }
+
+    #[test]
+    fn test_get_string() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("chat.defaultModel".to_string(), Value::String("sonnet".to_string()));
         assert_eq!(
-            settings.get(Setting::ChatDisableMarkdownRendering),
-            Some(&Value::Bool(false))
+            settings.get_string(Setting::ChatDefaultModel),
+            Some("sonnet".to_string())
         );
-        assert_eq!(settings.get(Setting::EnabledCheckpoint), Some(&Value::Bool(true)));
+    }
 
-        settings.remove(Setting::TelemetryEnabled).await.unwrap();
-        settings.remove(Setting::OldClientId).await.unwrap();
-        settings.remove(Setting::ShareCodeWhispererContent).await.unwrap();
-        settings.remove(Setting::KnowledgeIndexType).await.unwrap();
-        settings.remove(Setting::McpLoadedBefore).await.unwrap();
-        settings.remove(Setting::ChatDisableMarkdownRendering).await.unwrap();
-        settings.remove(Setting::EnabledCheckpoint).await.unwrap();
+    #[test]
+    fn test_get_int() {
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("api.timeout".to_string(), Value::Number(30.into()));
+        assert_eq!(settings.get_int(Setting::ApiTimeout), Some(30));
+    }
 
-        assert_eq!(settings.get(Setting::TelemetryEnabled), None);
-        assert_eq!(settings.get(Setting::OldClientId), None);
-        assert_eq!(settings.get(Setting::ShareCodeWhispererContent), None);
-        assert_eq!(settings.get(Setting::KnowledgeIndexType), None);
-        assert_eq!(settings.get(Setting::McpLoadedBefore), None);
-        assert_eq!(settings.get(Setting::ChatDisableMarkdownRendering), None);
-        assert_eq!(settings.get(Setting::EnabledCheckpoint), None);
+    #[test]
+    fn test_get_int_or() {
+        let settings = Settings::default();
+        assert_eq!(settings.get_int_or(Setting::ApiTimeout, 60), 60);
+
+        let mut settings = Settings::default();
+        settings
+            .global
+            .insert("api.timeout".to_string(), Value::Number(30.into()));
+        assert_eq!(settings.get_int_or(Setting::ApiTimeout, 60), 30);
     }
 }

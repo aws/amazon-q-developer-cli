@@ -107,7 +107,7 @@ impl WebSearch {
         };
         use aws_smithy_runtime_api::client::endpoint::EndpointFuture;
 
-        let database = Database::new().await?;
+        let database = Database::new_default().await?;
 
         // Get endpoint with region (same pattern as generateAssistantResponse)
         let endpoint = crate::api_client::Endpoint::configured_value(&database);

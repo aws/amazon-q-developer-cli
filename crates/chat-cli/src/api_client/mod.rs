@@ -632,7 +632,7 @@ mod tests {
     async fn create_clients() {
         let env = Env::new();
         let fs = Fs::new();
-        let mut database = crate::database::Database::new().await.unwrap();
+        let mut database = crate::database::Database::new_default().await.unwrap();
         let _ = ApiClient::new(&env, &fs, &mut database, None).await;
     }
 
@@ -640,7 +640,7 @@ mod tests {
     async fn test_mock() {
         let env = Env::new();
         let fs = Fs::new();
-        let mut database = crate::database::Database::new().await.unwrap();
+        let mut database = crate::database::Database::new_default().await.unwrap();
         let mut client = ApiClient::new(&env, &fs, &mut database, None).await.unwrap();
         client
             .send_telemetry_event(

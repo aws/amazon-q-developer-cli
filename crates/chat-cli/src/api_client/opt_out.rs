@@ -69,7 +69,7 @@ mod tests {
         context.set_request(aws_smithy_runtime_api::http::Request::empty());
         let mut context = BeforeTransmitInterceptorContextMut::from(&mut context);
 
-        let database = Database::new().await.unwrap();
+        let database = Database::new_default().await.unwrap();
         let mut interceptor = OptOutInterceptor::new(&database);
         println!("Interceptor: {}", interceptor.name());
 

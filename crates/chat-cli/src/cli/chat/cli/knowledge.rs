@@ -537,7 +537,7 @@ impl KnowledgeSubcommand {
             Hasher,
         };
 
-        let kb_root = match crate::util::paths::PathResolver::new(os).global().knowledge_bases_dir() {
+        let kb_root = match os.path_resolver().global().knowledge_bases_dir() {
             Ok(dir) => dir,
             Err(e) => return OperationResult::Error(format!("Failed to get knowledge bases directory: {e}")),
         };
@@ -553,8 +553,8 @@ impl KnowledgeSubcommand {
         .unwrap();
 
         let search_paths = vec![
-            crate::util::paths::PathResolver::new(os).global().agents_dir().ok(),
-            crate::util::paths::PathResolver::new(os).workspace().agents_dir().ok(),
+            os.path_resolver().global().agents_dir().ok(),
+            os.path_resolver().workspace().agents_dir().ok(),
         ];
 
         let mut changes = Vec::new();

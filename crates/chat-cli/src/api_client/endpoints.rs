@@ -75,7 +75,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_endpoints() {
-        let database = Database::new().await.unwrap();
+        let database = Database::new_default().await.unwrap();
         let _ = Endpoint::configured_value(&database);
 
         let prod = &Endpoint::DEFAULT_ENDPOINT;

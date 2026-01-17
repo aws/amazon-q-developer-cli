@@ -34,6 +34,10 @@ use tracing::{
 use uuid::Uuid;
 
 use crate::cli::ConversationState;
+use crate::os::{
+    Env,
+    Fs,
+};
 use crate::util::env_var::is_integ_test;
 use crate::util::paths::{
     DirectoryError,
@@ -146,6 +150,8 @@ pub enum DatabaseError {
     StrFromUtf8(#[from] std::str::Utf8Error),
     #[error("`{}` is not a valid setting", .0)]
     InvalidSetting(String),
+    #[error("Setting '{0}' cannot be overridden at workspace level")]
+    WorkspaceOverrideNotAllowed(String),
 }
 
 impl<T> From<PoisonError<T>> for DatabaseError {
@@ -192,12 +198,12 @@ pub struct Database {
 }
 
 impl Database {
-    pub async fn new() -> Result<Self, DatabaseError> {
+    pub async fn new(env: &Env, fs: &Fs) -> Result<Self, DatabaseError> {
         let path = match cfg!(test) && !is_integ_test() {
             true => {
                 return Self {
                     pool: Pool::builder().build(SqliteConnectionManager::memory()).unwrap(),
-                    settings: Settings::new().await?,
+                    settings: Settings::new(env, fs).await?,
                 }
                 .migrate();
             },
@@ -229,10 +235,16 @@ impl Database {
 
         Ok(Self {
             pool,
-            settings: Settings::new().await?,
+            settings: Settings::new(env, fs).await?,
         }
         .migrate()
         .map_err(|e| DbOpenError(e.to_string()))?)
+    }
+
+    pub async fn new_default() -> Result<Self, DatabaseError> {
+        let env = Env::new();
+        let fs = Fs::new();
+        Self::new(&env, &fs).await
     }
 
     /// Get all entries for dumping the persistent application state.
@@ -676,7 +688,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_migrate() {
-        let db = Database::new().await.unwrap();
+        let db = Database::new_default().await.unwrap();
 
         // assert migration count is correct
         let max_migration = max_migration_version(&&*db.pool.get().unwrap());
@@ -704,7 +716,7 @@ mod tests {
 
     #[tokio::test]
     async fn state_table_tests() {
-        let db = Database::new().await.unwrap();
+        let db = Database::new_default().await.unwrap();
 
         // set
         db.set_entry(Table::State, "test", "test").unwrap();
@@ -731,7 +743,7 @@ mod tests {
     #[ignore = "not on ci"]
     async fn test_set_password() {
         let key = "test_set_password";
-        let store = Database::new().await.unwrap();
+        let store = Database::new_default().await.unwrap();
         store.set_secret(key, "test").await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "test");
         store.delete_secret(key).await.unwrap();
@@ -741,7 +753,7 @@ mod tests {
     #[ignore = "not on ci"]
     async fn secret_get_time() {
         let key = "test_secret_get_time";
-        let store = Database::new().await.unwrap();
+        let store = Database::new_default().await.unwrap();
         store.set_secret(key, "1234").await.unwrap();
 
         let now = std::time::Instant::now();
@@ -759,7 +771,7 @@ mod tests {
     async fn secret_delete() {
         let key = "test_secret_delete";
 
-        let store = Database::new().await.unwrap();
+        let store = Database::new_default().await.unwrap();
         store.set_secret(key, "1234").await.unwrap();
         assert_eq!(store.get_secret(key).await.unwrap().unwrap().0, "1234");
         store.delete_secret(key).await.unwrap();
@@ -770,7 +782,7 @@ mod tests {
     async fn test_multiple_conversations_per_path() {
         use std::path::PathBuf;
 
-        let mut db = Database::new().await.unwrap();
+        let mut db = Database::new_default().await.unwrap();
         let test_path = PathBuf::from("/test/path");
 
         // Create mock conversation JSON with different IDs

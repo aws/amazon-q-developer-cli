@@ -724,9 +724,14 @@ mod tests {
         }
 
         let rts = RtsModel::new(
-            ApiClient::new(&Env::new(), &Fs::new(), &mut Database::new().await.unwrap(), None)
-                .await
-                .unwrap(),
+            ApiClient::new(
+                &Env::new(),
+                &Fs::new(),
+                &mut Database::new_default().await.unwrap(),
+                None,
+            )
+            .await
+            .unwrap(),
             Uuid::new_v4(),
             None,
         );

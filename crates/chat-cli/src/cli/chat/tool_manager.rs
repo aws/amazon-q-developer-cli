@@ -112,14 +112,12 @@ const NAMESPACE_DELIMITER: &str = "___";
 const VALID_TOOL_NAME: &str = "^[a-zA-Z][a-zA-Z0-9_]*$";
 const SPINNER_CHARS: [char; 10] = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
 
-use crate::util::paths::PathResolver;
-
 pub fn workspace_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    Ok(PathResolver::new(os).workspace().mcp_config()?)
+    Ok(os.path_resolver().workspace().mcp_config()?)
 }
 
 pub fn global_mcp_config_path(os: &Os) -> eyre::Result<PathBuf> {
-    Ok(PathResolver::new(os).global().mcp_config()?)
+    Ok(os.path_resolver().global().mcp_config()?)
 }
 
 /// Messages used for communication between the tool initialization thread and the loading

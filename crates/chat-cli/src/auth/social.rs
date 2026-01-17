@@ -257,7 +257,7 @@ impl ResolveIdentity for SocialBearerResolver {
         _config_bag: &'a ConfigBag,
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
-            let database = Database::new().await?;
+            let database = Database::new_default().await?;
             match SocialToken::load(&database).await? {
                 Some(token) => Ok(Identity::new(
                     Token::new(token.access_token.0.clone(), Some(token.expires_at.into())),

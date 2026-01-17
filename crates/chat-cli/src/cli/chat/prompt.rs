@@ -58,7 +58,6 @@ use crate::cli::experiment::experiment_manager::{
 };
 use crate::database::settings::Setting;
 use crate::os::Os;
-use crate::util::paths::PathResolver;
 
 /// Shared state for clipboard paste operations triggered by Ctrl+V
 #[derive(Clone, Debug)]
@@ -595,7 +594,7 @@ pub fn rl(
         .get_bool(Setting::ChatEnableHistoryHints)
         .unwrap_or(false);
 
-    let history_path = PathResolver::new(os).global().cli_bash_history()?;
+    let history_path = os.path_resolver().global().cli_bash_history()?;
 
     // Generate available commands based on enabled experiments
     let available_commands = get_available_commands(os);

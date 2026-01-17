@@ -153,7 +153,7 @@ impl ExperimentManager {
 
         os.database
             .settings
-            .set(setting, enabled)
+            .set(setting, enabled, None)
             .await
             .map_err(|e| ChatError::Custom(format!("Failed to update experiment setting: {e}").into()))?;
         // Makes sure tools are hot-reloaded, so the ones behind experiment flags are enabled.

@@ -43,7 +43,6 @@ use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::NullWriter;
-use crate::util::paths::PathResolver;
 
 #[deny(missing_docs)]
 #[derive(Debug, PartialEq, Subcommand)]
@@ -484,7 +483,7 @@ impl AgentSubcommand {
                 // switch / create profile after a session has started.
                 // TODO: perhaps revive this after we have a decision on profile create /
                 // switch
-                let global_path = if let Ok(path) = PathResolver::new(os).global().agents_dir() {
+                let global_path = if let Ok(path) = os.path_resolver().global().agents_dir() {
                     path.to_str().unwrap_or("default global agent path").to_string()
                 } else {
                     "default global agent path".to_string()
@@ -502,7 +501,7 @@ impl AgentSubcommand {
                 Some(agent) => {
                     os.database
                         .settings
-                        .set(Setting::ChatDefaultAgent, agent.name.clone())
+                        .set(Setting::ChatDefaultAgent, agent.name.clone(), None)
                         .await
                         .map_err(|e| ChatError::Custom(e.to_string().into()))?;
 
@@ -632,7 +631,7 @@ pub async fn get_all_available_mcp_servers(os: &mut Os) -> Result<Vec<McpServerI
         }
     }
 
-    let resolver = PathResolver::new(os);
+    let resolver = os.path_resolver();
 
     // 2. Load from workspace legacy config (medium priority)
     if let Ok(workspace_path) = resolver.workspace().mcp_config()

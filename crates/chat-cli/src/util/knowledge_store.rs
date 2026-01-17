@@ -18,7 +18,6 @@ use uuid::Uuid;
 use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::util::paths;
-use crate::util::paths::PathResolver;
 
 /// Formats knowledge bases as a concise context string
 pub fn format_knowledge_bases_as_context(contexts: &[Arc<KnowledgeContext>]) -> String {
@@ -76,7 +75,7 @@ fn agent_knowledge_dir(os: &Os, agent: Option<&crate::cli::Agent>) -> Result<Pat
     } else {
         DEFAULT_AGENT_NAME.to_string()
     };
-    Ok(PathResolver::new(os).global().knowledge_bases_dir()?.join(unique_id))
+    Ok(os.path_resolver().global().knowledge_bases_dir()?.join(unique_id))
 }
 
 /// Configuration for adding knowledge contexts
@@ -779,10 +778,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let os = create_test_os(&temp_dir).await;
 
-        let base_dir = crate::util::paths::PathResolver::new(&os)
-            .global()
-            .knowledge_bases_dir()
-            .unwrap();
+        let base_dir = os.path_resolver().global().knowledge_bases_dir().unwrap();
 
         // Verify directory structure
         assert!(base_dir.to_string_lossy().contains("knowledge_bases"));

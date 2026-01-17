@@ -18,7 +18,11 @@ use tracing::{
 };
 
 use crate::constants::CLI_NAME;
-use crate::os::Os;
+use crate::os::{
+    Env,
+    Fs,
+    Os,
+};
 
 #[derive(Debug, Error)]
 pub enum DirectoryError {
@@ -162,9 +166,14 @@ fn resolve_migrated_path_with_fs(
     result_path
 }
 
-fn resolve_global_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &str) -> Result<PathBuf> {
-    let fs = RealFileSystem;
-    let home = home_dir(os)?;
+fn resolve_global_migrated_path_with_env_fs(
+    env: &Env,
+    _fs: &Fs,
+    amazonq_subpath: &str,
+    kiro_subpath: &str,
+) -> Result<PathBuf> {
+    let fs_checker = RealFileSystem;
+    let home = home_dir_from_env(env)?;
 
     let kiro_base = if should_use_data_dir(kiro_subpath) {
         dirs::data_local_dir()
@@ -176,7 +185,7 @@ fn resolve_global_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &s
     let amazonq_base = home.join(".aws/amazonq");
 
     Ok(resolve_migrated_path_with_fs(
-        &fs,
+        &fs_checker,
         &kiro_base,
         &amazonq_base,
         true,
@@ -185,15 +194,15 @@ fn resolve_global_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &s
     ))
 }
 
-fn resolve_local_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &str) -> Result<PathBuf> {
-    let fs = RealFileSystem;
-    let current = os.env.current_dir()?;
+fn resolve_local_migrated_path_with_env_fs(env: &Env, amazonq_subpath: &str, kiro_subpath: &str) -> Result<PathBuf> {
+    let fs_checker = RealFileSystem;
+    let current = env.current_dir()?;
 
     let kiro_base = current.join(".kiro");
     let amazonq_base = current.join(".amazonq");
 
     Ok(resolve_migrated_path_with_fs(
-        &fs,
+        &fs_checker,
         &kiro_base,
         &amazonq_base,
         false,
@@ -207,10 +216,13 @@ fn resolve_local_migrated_path(os: &Os, amazonq_subpath: &str, kiro_subpath: &st
 /// - MacOS: /Users/Alice
 /// - Windows: C:\Users\Alice
 pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result<PathBuf> {
+    home_dir_from_env(&os.env)
+}
+
+fn home_dir_from_env(#[cfg_attr(windows, allow(unused_variables))] env: &Env) -> Result<PathBuf> {
     #[cfg(unix)]
     match cfg!(test) {
-        true => os
-            .env
+        true => env
             .get("HOME")
             .map_err(|_err| DirectoryError::NoHomeDirectory)
             .and_then(|h| {
@@ -220,15 +232,13 @@ pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result
                     Ok(h)
                 }
             })
-            .map(PathBuf::from)
-            .map(|p| os.fs.chroot_path(p)),
+            .map(PathBuf::from),
         false => dirs::home_dir().ok_or(DirectoryError::NoHomeDirectory),
     }
 
     #[cfg(windows)]
     match cfg!(test) {
-        true => os
-            .env
+        true => env
             .get("USERPROFILE")
             .map_err(|_err| DirectoryError::NoHomeDirectory)
             .and_then(|h| {
@@ -238,8 +248,7 @@ pub fn home_dir(#[cfg_attr(windows, allow(unused_variables))] os: &Os) -> Result
                     Ok(h)
                 }
             })
-            .map(PathBuf::from)
-            .map(|p| os.fs.chroot_path(p)),
+            .map(PathBuf::from),
         false => dirs::home_dir().ok_or(DirectoryError::NoHomeDirectory),
     }
 }
@@ -352,56 +361,64 @@ pub fn add_gitignore_globs(builder: &mut GlobSetBuilder, path: &str) -> Result<(
 /// Generate a unique identifier for an agent based on its path and name
 /// Path resolver with hierarchy-aware methods
 pub struct PathResolver<'a> {
-    os: &'a Os,
+    env: &'a Env,
+    fs: &'a Fs,
 }
 
 impl<'a> PathResolver<'a> {
-    pub fn new(os: &'a Os) -> Self {
-        Self { os }
+    pub fn new(env: &'a Env, fs: &'a Fs) -> Self {
+        Self { env, fs }
     }
 
     /// Get workspace-scoped path resolver
     pub fn workspace(&self) -> WorkspacePaths<'_> {
-        WorkspacePaths { os: self.os }
+        WorkspacePaths {
+            env: self.env,
+            fs: self.fs,
+        }
     }
 
     /// Get global-scoped path resolver  
     pub fn global(&self) -> GlobalPaths<'_> {
-        GlobalPaths { os: self.os }
+        GlobalPaths {
+            env: self.env,
+            fs: self.fs,
+        }
     }
 }
 
 /// Workspace-scoped path methods
 pub struct WorkspacePaths<'a> {
-    os: &'a Os,
+    env: &'a Env,
+    fs: &'a Fs,
 }
 
 impl<'a> WorkspacePaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        resolve_local_migrated_path(self.os, "cli-agents", "agents")
+        resolve_local_migrated_path_with_env_fs(self.env, "cli-agents", "agents")
     }
 
     pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(".kiro").join("agents"))
+        Ok(self.env.current_dir()?.join(".kiro").join("agents"))
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        resolve_local_migrated_path(self.os, "prompts", "prompts")
+        resolve_local_migrated_path_with_env_fs(self.env, "prompts", "prompts")
     }
 
     pub fn prompts_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(".kiro").join("prompts"))
+        Ok(self.env.current_dir()?.join(".kiro").join("prompts"))
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        resolve_local_migrated_path(self.os, "mcp.json", "settings/mcp.json")
+        resolve_local_migrated_path_with_env_fs(self.env, "mcp.json", "settings/mcp.json")
     }
 
     pub fn rules_dir(&self) -> Option<PathBuf> {
-        let current_dir = self.os.env.current_dir().ok()?;
+        let current_dir = self.env.current_dir().ok()?;
         let amazonq_dir = current_dir.join(".amazonq");
         let kiro_dir = current_dir.join(".kiro");
-        if self.os.fs.exists(&amazonq_dir) && !self.os.fs.exists(&kiro_dir) {
+        if self.fs.exists(&amazonq_dir) && !self.fs.exists(&kiro_dir) {
             Some(amazonq_dir.join("rules"))
         } else {
             None
@@ -409,74 +426,79 @@ impl<'a> WorkspacePaths<'a> {
     }
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
-        Ok(self.os.env.current_dir()?.join(".kiro").join("steering"))
+        Ok(self.env.current_dir()?.join(".kiro").join("steering"))
     }
 
     pub fn todo_lists_dir(&self) -> Result<PathBuf> {
-        let cwd = self.os.env.current_dir()?;
+        let cwd = self.env.current_dir()?;
         let hash = hash_path(&cwd);
         Ok(data_dir()?.join("todo-lists").join(hash))
+    }
+
+    pub fn settings_path(&self) -> Result<PathBuf> {
+        Ok(self.env.current_dir()?.join(".kiro").join("settings").join("cli.json"))
     }
 }
 
 /// Global-scoped path methods
 pub struct GlobalPaths<'a> {
-    os: &'a Os,
+    env: &'a Env,
+    fs: &'a Fs,
 }
 
 impl<'a> GlobalPaths<'a> {
     pub fn agents_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "cli-agents", "agents")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "cli-agents", "agents")
     }
 
     pub fn agents_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("agents"))
+        Ok(home_dir_from_env(self.env)?.join(".kiro").join("agents"))
     }
 
     pub fn prompts_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "prompts", "prompts")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "prompts", "prompts")
     }
 
     pub fn prompts_dir_for_create(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("prompts"))
+        Ok(home_dir_from_env(self.env)?.join(".kiro").join("prompts"))
     }
 
     pub fn mcp_config(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "mcp.json", "settings/mcp.json")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "mcp.json", "settings/mcp.json")
     }
 
     pub fn profiles_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "profiles", "profiles")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "profiles", "profiles")
     }
 
     pub fn shadow_repo_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "cli-checkouts", "cli-checkouts")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "cli-checkouts", "cli-checkouts")
     }
 
     pub fn cli_bash_history(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, ".cli_bash_history", ".cli_bash_history")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, ".cli_bash_history", ".cli_bash_history")
     }
 
     pub fn global_context(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "global_context.json", "global_context.json")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "global_context.json", "global_context.json")
     }
 
     pub fn knowledge_bases_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, "knowledge_bases", "knowledge_bases")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, "knowledge_bases", "knowledge_bases")
     }
 
     pub fn steering_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".kiro").join("steering"))
+        Ok(home_dir_from_env(self.env)?.join(".kiro").join("steering"))
     }
 
     pub fn subagents_dir(&self) -> Result<PathBuf> {
-        resolve_global_migrated_path(self.os, ".subagents", ".subagents")
+        resolve_global_migrated_path_with_env_fs(self.env, self.fs, ".subagents", ".subagents")
     }
 
     pub async fn ensure_subagents_dir(&self) -> Result<PathBuf> {
         let dir = self.subagents_dir()?;
         if !dir.exists() {
-            self.os.fs.create_dir_all(&dir).await?;
+            self.fs.create_dir_all(&dir).await?;
         }
         Ok(dir)
     }
@@ -484,7 +506,7 @@ impl<'a> GlobalPaths<'a> {
     pub async fn ensure_agents_dir(&self) -> Result<PathBuf> {
         let dir = self.agents_dir()?;
         if !dir.exists() {
-            self.os.fs.create_dir_all(&dir).await?;
+            self.fs.create_dir_all(&dir).await?;
         }
         Ok(dir)
     }
@@ -498,7 +520,7 @@ impl<'a> GlobalPaths<'a> {
     }
 
     pub fn mcp_auth_dir(&self) -> Result<PathBuf> {
-        Ok(home_dir(self.os)?.join(".aws").join("sso").join("cache"))
+        Ok(home_dir_from_env(self.env)?.join(".aws").join("sso").join("cache"))
     }
 
     /// Static method for database path that doesn't require Os (to avoid circular dependency)
@@ -738,7 +760,7 @@ mod path_tests {
     #[tokio::test]
     async fn test_workspace_steering_dir() {
         let os = Os::new().await.unwrap();
-        let resolver = PathResolver::new(&os);
+        let resolver = PathResolver::new(&os.env, &os.fs);
         let steering_dir = resolver.workspace().steering_dir().unwrap();
 
         // Should use .kiro/steering path
@@ -748,7 +770,7 @@ mod path_tests {
     #[tokio::test]
     async fn test_global_steering_dir() {
         let os = Os::new().await.unwrap();
-        let resolver = PathResolver::new(&os);
+        let resolver = PathResolver::new(&os.env, &os.fs);
         let steering_dir = resolver.global().steering_dir().unwrap();
 
         // Should use ~/.kiro/steering path

@@ -62,6 +62,12 @@ pub struct SettingsArgs {
     /// Delete a key (No value needed)
     #[arg(long, short)]
     delete: bool,
+    /// Set or delete in global settings (default)
+    #[arg(long, conflicts_with = "workspace")]
+    global: bool,
+    /// Set or delete in workspace settings
+    #[arg(long, conflicts_with = "global")]
+    workspace: bool,
     /// Format of the output
     #[arg(long, short, value_enum, default_value_t)]
     format: OutputFormat,
@@ -75,6 +81,8 @@ struct SettingInfo {
     description: String,
     /// Current setting value
     current_value: Option<serde_json::Value>,
+    /// Setting scope
+    scope: Option<crate::database::settings::SettingScope>,
 }
 
 /// Print configured settings
@@ -83,7 +91,17 @@ fn print_configured_settings(os: &Os, format: OutputFormat) -> Result<()> {
     match format {
         OutputFormat::Plain => {
             for (key, value) in settings {
-                println!("{key} = {value}");
+                if let Ok(setting) = Setting::try_from(key.as_str()) {
+                    let scope = os.database.settings.get_scope(setting);
+                    let scope_str = match scope {
+                        Some(crate::database::settings::SettingScope::Global) => " (global)",
+                        Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                        None => "",
+                    };
+                    println!("{key} = {value}{scope_str}");
+                } else {
+                    println!("{key} = {value}");
+                }
             }
         },
         OutputFormat::Json => {
@@ -124,11 +142,13 @@ fn collect_settings(os: &Os) -> Vec<SettingInfo> {
             let key = setting.as_ref().to_string();
             let description = setting.get_message().unwrap_or("No description").to_string();
             let current_value = os.database.settings.get(setting).cloned();
+            let scope = os.database.settings.get_scope(setting);
 
             SettingInfo {
                 key,
                 description,
                 current_value,
+                scope,
             }
         })
         .collect()
@@ -140,7 +160,14 @@ fn print_settings_plain(settings: &[SettingInfo]) {
         println!("{}", setting.key.as_str().cyan().bold());
         println!("  Description: {}", setting.description);
         match &setting.current_value {
-            Some(value) => println!("  Current: {}", value.to_string().green()),
+            Some(value) => {
+                let scope_str = match setting.scope {
+                    Some(crate::database::settings::SettingScope::Global) => " (global)",
+                    Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                    None => "",
+                };
+                println!("  Current: {}{}", value.to_string().green(), scope_str);
+            },
             None => println!("  Current: {}", "not set".dim()),
         }
         println!();
@@ -237,10 +264,17 @@ impl SettingsArgs {
                     )),
                     (None, false) => match os.database.settings.get(key) {
                         Some(value) => {
+                            let scope = os.database.settings.get_scope(key);
+                            let scope_str = match scope {
+                                Some(crate::database::settings::SettingScope::Global) => " (global)",
+                                Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                                None => "",
+                            };
+
                             match self.format {
                                 OutputFormat::Plain => match value.as_str() {
-                                    Some(value) => println!("{value}"),
-                                    None => println!("{value:#}"),
+                                    Some(value) => println!("{value}{scope_str}"),
+                                    None => println!("{value:#}{scope_str}"),
                                 },
                                 OutputFormat::Json => println!("{value}"),
                                 OutputFormat::JsonPretty => println!("{value:#}"),
@@ -257,10 +291,21 @@ impl SettingsArgs {
                     },
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
-                        os.database.settings.set(key, value).await?;
+                        let scope = if self.workspace {
+                            Some(crate::database::settings::SettingScope::Workspace)
+                        } else {
+                            None
+                        };
+                        os.database.settings.set(key, value, scope).await?;
                         Ok(ExitCode::SUCCESS)
                     },
                     (None, true) => {
+                        let scope = if self.workspace {
+                            Some(crate::database::settings::SettingScope::Workspace)
+                        } else {
+                            None
+                        };
+
                         let glob = Glob::new(key.as_ref())
                             .context("Could not create glob")?
                             .compile_matcher();
@@ -275,14 +320,14 @@ impl SettingsArgs {
                                 println!("Removing {:?}", keys_to_remove[0]);
                                 os.database
                                     .settings
-                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?)
+                                    .remove(Setting::try_from(keys_to_remove[0].as_str())?, scope)
                                     .await?;
                             },
                             _ => {
                                 for key in &keys_to_remove {
                                     if let Ok(key) = Setting::try_from(key.as_str()) {
                                         println!("Removing `{key}`");
-                                        os.database.settings.remove(key).await?;
+                                        os.database.settings.remove(key, scope).await?;
                                     }
                                 }
                             },
@@ -309,6 +354,8 @@ mod tests {
             key: Some("chat.defaultAgent".to_string()),
             value: Some("test_value".to_string()),
             delete: true,
+            global: true,
+            workspace: false,
             format: OutputFormat::Plain,
         };
 

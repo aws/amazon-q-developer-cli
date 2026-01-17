@@ -19,7 +19,6 @@ use crate::cli::agent::hook::Hook;
 use crate::cli::agent::legacy::context::LegacyContextConfig;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::paths::PathResolver;
 
 /// Performs the migration from legacy profile configuration to agent configuration if it hasn't
 /// already been done.
@@ -32,7 +31,7 @@ pub async fn migrate(os: &mut Os, force: bool) -> eyre::Result<Option<Vec<Agent>
         return Ok(None);
     }
 
-    let resolver = PathResolver::new(os);
+    let resolver = os.path_resolver();
     let legacy_global_context_path = resolver.global().global_context()?;
     let legacy_global_context: Option<LegacyContextConfig> = 'global: {
         let Ok(content) = os.fs.read(&legacy_global_context_path).await else {

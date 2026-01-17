@@ -29,7 +29,6 @@ use crate::cli::experiment::experiment_manager::{
 use crate::constants::CLI_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
-use crate::util::paths::PathResolver;
 
 #[derive(Debug, PartialEq, Subcommand)]
 pub enum CheckpointSubcommand {
@@ -137,7 +136,8 @@ impl CheckpointSubcommand {
                 StyledText::reset(),
             )?;
         } else {
-            let path = PathResolver::new(os)
+            let path = os
+                .path_resolver()
                 .global()
                 .shadow_repo_dir()
                 .map_err(|e| ChatError::Custom(e.to_string().into()))?

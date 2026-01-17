@@ -806,7 +806,7 @@ mod test {
 
     #[tokio::test]
     async fn client_context() {
-        let mut database = Database::new().await.unwrap();
+        let mut database = Database::new_default().await.unwrap();
         let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();
@@ -829,7 +829,7 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_send() {
-        let mut database = Database::new().await.unwrap();
+        let mut database = Database::new_default().await.unwrap();
         let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();
@@ -847,7 +847,7 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_all_telemetry() {
-        let mut database = Database::new().await.unwrap();
+        let mut database = Database::new_default().await.unwrap();
         let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();
@@ -883,7 +883,7 @@ mod test {
     #[tokio::test]
     #[ignore = "needs auth which is not in CI"]
     async fn test_without_optout() {
-        let mut database = Database::new().await.unwrap();
+        let mut database = Database::new_default().await.unwrap();
         let client = TelemetryClient::new(&Env::new(), &Fs::new(), &mut database)
             .await
             .unwrap();

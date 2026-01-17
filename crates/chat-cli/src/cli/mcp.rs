@@ -61,7 +61,6 @@ use crate::mcp_registry::{
     McpRegistryResponse,
 };
 use crate::os::Os;
-use crate::util::paths::PathResolver;
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Hash)]
 pub enum Scope {
@@ -345,7 +344,7 @@ impl AddArgs {
                 writeln!(output, "✓ Added MCP server '{server_name}' to agent {agent_name}\n")?;
             },
             None => {
-                let resolver = PathResolver::new(os);
+                let resolver = os.path_resolver();
                 let scope = self.scope.unwrap_or(Scope::Workspace);
                 let legacy_mcp_config_path = match scope {
                     Scope::Workspace => resolver.workspace().mcp_config()?,
@@ -469,7 +468,7 @@ impl RemoveArgs {
                 }
             },
             None => {
-                let resolver = PathResolver::new(os);
+                let resolver = os.path_resolver();
                 let scope = self.scope.unwrap_or(Scope::Workspace);
                 let legacy_mcp_config_path = match scope {
                     Scope::Workspace => resolver.workspace().mcp_config()?,
@@ -764,7 +763,7 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
     let agents = Agents::load(os, None, true, &mut stderr, mcp_enabled, mcp_api_failure)
         .await
         .0;
-    let global_path = PathResolver::new(os).global().agents_dir()?;
+    let global_path = os.path_resolver().global().agents_dir()?;
     for (_, agent) in agents.agents {
         let scope = if agent
             .path
@@ -1262,7 +1261,7 @@ impl RegistryAddArgs {
         };
 
         // Load legacy config
-        let resolver = PathResolver::new(os);
+        let resolver = os.path_resolver();
         let legacy_mcp_config_path = match scope {
             Scope::Workspace => resolver.workspace().mcp_config()?,
             _ => resolver.global().mcp_config()?,

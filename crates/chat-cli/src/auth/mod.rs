@@ -103,7 +103,7 @@ impl ResolveIdentity for UnifiedBearerResolver {
         _config_bag: &'a ConfigBag,
     ) -> IdentityFuture<'a> {
         IdentityFuture::new_boxed(Box::pin(async {
-            let database = Database::new().await?;
+            let database = Database::new_default().await?;
 
             if let Ok(Some(token)) = builder_id::BuilderIdToken::load(&database, None).await {
                 return Ok(Identity::new(

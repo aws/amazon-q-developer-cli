@@ -38,7 +38,6 @@ use crate::constants::DEFAULT_AGENT_NAME;
 use crate::os::Os;
 use crate::theme::StyledText;
 use crate::util::env_var::get_all_env_vars;
-use crate::util::paths::PathResolver;
 
 /// Launch and manage async agent processes. Delegate tasks to agents that run independently in
 /// background.
@@ -610,7 +609,7 @@ pub async fn agent_file_path(os: &Os, agent: &str) -> Result<PathBuf> {
 }
 
 pub async fn subagents_dir(os: &Os) -> Result<PathBuf> {
-    Ok(PathResolver::new(os).global().ensure_subagents_dir().await?)
+    Ok(os.path_resolver().global().ensure_subagents_dir().await?)
 }
 
 #[cfg(test)]
