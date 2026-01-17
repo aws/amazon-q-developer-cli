@@ -101,7 +101,7 @@ jobs:
           key: cargo-test-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}-${{ steps.toolchain.outputs.cachekey }}
       - name: Run tests
         if: needs.check-paths.outputs.rust-changed == 'true'
-        run: cargo test --locked --workspace --lib --bins --test '*' --exclude fig_desktop-fuzz
+        run: cargo test --locked --workspace --lib --bins --test '*'
 
   # cargo-clippy-windows-chat-cli:
   #   name: Clippy Windows (chat_cli)

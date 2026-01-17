@@ -1,0 +1,5 @@
+{
+    "chat.defaultAgent": "kiro-dev",
+    "chat.enableKnowledge": true,
+    "chat.enableTodoList": true
+}

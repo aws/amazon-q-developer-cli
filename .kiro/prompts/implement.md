@@ -83,23 +83,34 @@ Use subagents for build/test verification when output is verbose:
 
 After implementing a phase:
 
-1. **Run automated verification**:
-   ```bash
-   # Build the specific crate
-   cargo build -p crate_name
+1. **Run automated verification strategically**:
    
-   # Run tests for the crate
+   **When to run cargo commands:**
+   - After completing a substantial phase with multiple file changes
+   - After implementing core logic that affects compilation
+   - Before pausing for manual verification
+   - NOT after every small change (adding a single method, fixing formatting, etc.)
+   
+   **Verification commands** (run together after substantial work):
+   ```bash
+   # Format first
+   cargo +nightly fmt
+   
+   # Then build and test
+   cargo build -p crate_name
    cargo test -p crate_name
    
-   # Run specific test
-   cargo test -p crate_name --lib test_name
-   
-   # Linting
+   # Finally lint (most comprehensive, run last)
    cargo clippy --locked --workspace --color always -- -D warnings
-   
-   # Formatting check
-   cargo +nightly fmt --check -- --color always
    ```
+   
+   **Examples of when to verify:**
+   - ✅ After implementing entire Settings struct changes (Phase 2)
+   - ✅ After updating all CLI commands (Phase 3)
+   - ✅ After adding comprehensive tests (Phase 4)
+   - ❌ After adding a single method to a struct
+   - ❌ After fixing a typo or formatting issue
+   - ❌ After each small file edit
    
    See AGENTS.md for more commands and examples.
 
@@ -110,7 +121,14 @@ After implementing a phase:
    - Update your todo list with context and modified files
    - Document any deviations or important decisions
 
-4. **Pause for human verification**:
+4. **Run comprehensive tests before documentation**:
+   Before moving to documentation updates or manual verification, run:
+   ```bash
+   cargo test --locked --workspace --lib --bins --test '*'
+   ```
+   This ensures all unit and integration tests pass across the entire workspace.
+
+5. **Pause for human verification**:
    After completing all automated verification for a phase:
    ```
    Phase [N] Complete - Ready for Manual Verification

@@ -16,14 +16,24 @@ use serde_json::json;
 use strum::IntoEnumIterator;
 
 use super::OutputFormat;
-use crate::database::settings::Setting;
+use crate::database::settings::{
+    Setting,
+    SettingScope,
+};
 use crate::os::Os;
 use crate::util::paths::GlobalPaths;
 
 #[derive(Clone, Debug, Subcommand, PartialEq, Eq)]
 pub enum SettingsSubcommands {
     /// Open the settings file
-    Open,
+    Open {
+        /// Open global settings file (default)
+        #[arg(long, conflicts_with = "workspace")]
+        global: bool,
+        /// Open workspace settings file
+        #[arg(long, conflicts_with = "global")]
+        workspace: bool,
+    },
     /// List settings
     List {
         /// Show all available settings
@@ -82,7 +92,7 @@ struct SettingInfo {
     /// Current setting value
     current_value: Option<serde_json::Value>,
     /// Setting scope
-    scope: Option<crate::database::settings::SettingScope>,
+    scope: Option<SettingScope>,
 }
 
 /// Print configured settings
@@ -94,8 +104,8 @@ fn print_configured_settings(os: &Os, format: OutputFormat) -> Result<()> {
                 if let Ok(setting) = Setting::try_from(key.as_str()) {
                     let scope = os.database.settings.get_scope(setting);
                     let scope_str = match scope {
-                        Some(crate::database::settings::SettingScope::Global) => " (global)",
-                        Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                        Some(SettingScope::Global) => " (global)",
+                        Some(SettingScope::Workspace) => " (workspace)",
                         None => "",
                     };
                     println!("{key} = {value}{scope_str}");
@@ -162,8 +172,8 @@ fn print_settings_plain(settings: &[SettingInfo]) {
         match &setting.current_value {
             Some(value) => {
                 let scope_str = match setting.scope {
-                    Some(crate::database::settings::SettingScope::Global) => " (global)",
-                    Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                    Some(SettingScope::Global) => " (global)",
+                    Some(SettingScope::Workspace) => " (workspace)",
                     None => "",
                 };
                 println!("  Current: {}{}", value.to_string().green(), scope_str);
@@ -214,8 +224,15 @@ fn print_all_settings(os: &Os, format: OutputFormat) -> Result<()> {
 impl SettingsArgs {
     pub async fn execute(&self, os: &mut Os) -> Result<ExitCode> {
         match self.cmd {
-            Some(SettingsSubcommands::Open) => {
-                let file = GlobalPaths::settings_path().context("Could not get settings path")?;
+            Some(SettingsSubcommands::Open { global: _, workspace }) => {
+                let file = if workspace {
+                    os.path_resolver()
+                        .workspace()
+                        .settings_path()
+                        .context("Could not get workspace settings path")?
+                } else {
+                    GlobalPaths::settings_path().context("Could not get settings path")?
+                };
                 let editor =
                     crate::util::env_var::try_get_editor().context("The EDITOR environment variable is not set")?;
                 tokio::process::Command::new(editor).arg(file).spawn()?.wait().await?;
@@ -266,8 +283,8 @@ impl SettingsArgs {
                         Some(value) => {
                             let scope = os.database.settings.get_scope(key);
                             let scope_str = match scope {
-                                Some(crate::database::settings::SettingScope::Global) => " (global)",
-                                Some(crate::database::settings::SettingScope::Workspace) => " (workspace)",
+                                Some(SettingScope::Global) => " (global)",
+                                Some(SettingScope::Workspace) => " (workspace)",
                                 None => "",
                             };
 
@@ -292,7 +309,7 @@ impl SettingsArgs {
                     (Some(value_str), false) => {
                         let value = serde_json::from_str(value_str).unwrap_or_else(|_| json!(value_str));
                         let scope = if self.workspace {
-                            Some(crate::database::settings::SettingScope::Workspace)
+                            Some(SettingScope::Workspace)
                         } else {
                             None
                         };
@@ -301,7 +318,7 @@ impl SettingsArgs {
                     },
                     (None, true) => {
                         let scope = if self.workspace {
-                            Some(crate::database::settings::SettingScope::Workspace)
+                            Some(SettingScope::Workspace)
                         } else {
                             None
                         };

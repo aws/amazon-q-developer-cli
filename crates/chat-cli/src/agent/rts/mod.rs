@@ -723,15 +723,12 @@ mod tests {
             return;
         }
 
+        let env = Env::new();
+        let fs = Fs::new();
         let rts = RtsModel::new(
-            ApiClient::new(
-                &Env::new(),
-                &Fs::new(),
-                &mut Database::new_default().await.unwrap(),
-                None,
-            )
-            .await
-            .unwrap(),
+            ApiClient::new(&env, &fs, &mut Database::new(&env, &fs).await.unwrap(), None)
+                .await
+                .unwrap(),
             Uuid::new_v4(),
             None,
         );
