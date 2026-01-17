@@ -1,14 +1,14 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-17
+  commit: TBD
   status: validated
   testable_headless: true
   category: command
   title: kiro-cli settings
-  description: Configure Kiro CLI behavior with get, set, list, open, and delete operations for all settings
-  keywords: [settings, config, configure, preferences]
-  related: [slash-experiment]
+  description: Configure Kiro CLI behavior at global and workspace levels with get, set, list, open, and delete operations
+  keywords: [settings, config, configure, preferences, workspace, global]
+  related: [slash-experiment, agent-configuration]
 ---
 
 # kiro-cli settings
@@ -17,7 +17,9 @@ Configure Kiro CLI behavior with get, set, list, open, and delete operations for
 
 ## Overview
 
-The settings command manages Kiro CLI configuration. List all settings, get current values, set new values, delete settings, or open the settings file. Settings persist across sessions and control features like tangent mode, default agent/model, and experimental features.
+The settings command manages Kiro CLI configuration at both global and workspace levels. List all settings, get current values, set new values, delete settings, or open the settings file. Settings persist across sessions and control features like tangent mode, default agent/model, and experimental features.
+
+**Workspace Settings**: Most settings can be overridden at the workspace level, allowing per-project customization while maintaining global defaults.
 
 ## Usage
 
@@ -33,59 +35,95 @@ kiro-cli settings <COMMAND>
 | Option | Short | Description |
 |--------|-------|-------------|
 | `--delete` | `-d` | Delete a key (no value needed) |
+| `--global` | | Set or delete in global settings (default) |
+| `--workspace` | | Set or delete in workspace settings |
 | `--format <FORMAT>` | `-f` | Output format: plain (markdown), json, json-pretty (default: plain) |
 | `--verbose` | `-v` | Increase logging verbosity (can be repeated) |
 | `--help` | `-h` | Print help information |
 
+## Workspace Settings
+
+Settings can be configured at two levels:
+- **Global**: `~/.kiro/settings/cli.json` - applies to all workspaces
+- **Workspace**: `.kiro/settings/cli.json` - overrides global for current workspace
+
+### Workspace-Overridable Settings
+
+Most settings can be overridden at workspace level, including:
+- Feature flags (e.g., `chat.enableTangentMode`, `chat.enableKnowledge`)
+- Model preferences (e.g., `chat.defaultModel`)
+- Agent preferences (e.g., `chat.defaultAgent`)
+- UI settings (e.g., `chat.editMode`, `chat.disableMarkdownRendering`)
+- Knowledge configuration (e.g., `knowledge.maxFiles`, `knowledge.chunkSize`)
+- Key bindings (e.g., `chat.tangentModeKey`, `chat.autocompletionKey`)
+
+### Global-Only Settings
+
+Some settings cannot be overridden at workspace level:
+- `telemetry.enabled` - Telemetry collection
+- `telemetryClientId` - Legacy client ID
+- `codeWhisperer.shareCodeWhispererContentWithAWS` - Content sharing
+- `api.codewhisperer.service` - CodeWhisperer endpoint
+- `api.q.service` - Q service endpoint
+- `mcp.loadedBefore` - MCP tracking flag
+
 ### Common Use Cases
 
-#### Use Case 1: List All Settings
+#### Use Case 1: List All Settings with Sources
 
 ```bash
 kiro-cli settings list
 ```
 
-**What this does**: Shows all available settings with current values and descriptions.
+**What this does**: Shows all configured settings with their values and sources (global/workspace).
 
-#### Use Case 2: Get Setting Value
+#### Use Case 2: Get Setting Value with Source
 
 ```bash
 kiro-cli settings chat.enableTangentMode
 ```
 
-**What this does**: Displays current value of tangent mode setting.
+**What this does**: Displays current value and whether it's from global or workspace settings.
 
-#### Use Case 3: Enable Feature
-
-```bash
-kiro-cli settings chat.enableTangentMode true
-```
-
-**What this does**: Enables tangent mode feature.
-
-#### Use Case 4: Set Default Agent
+#### Use Case 3: Set Workspace-Specific Model
 
 ```bash
-kiro-cli settings chat.defaultAgent rust-expert
+kiro-cli settings --workspace chat.defaultModel "anthropic.claude-3-5-sonnet-20241022-v2:0"
 ```
 
-**What this does**: Sets rust-expert as default agent for new sessions.
+**What this does**: Sets model for current workspace only, overriding global default.
 
-#### Use Case 5: Delete Setting
+#### Use Case 4: Set Global Default Agent
 
 ```bash
-kiro-cli settings --delete chat.enableTangentMode
+kiro-cli settings --global chat.defaultAgent rust-expert
 ```
 
-**What this does**: Removes the setting, reverting to default value.
+**What this does**: Sets rust-expert as default agent globally (all workspaces).
 
-#### Use Case 6: Open Settings File
+#### Use Case 5: Enable Feature for Workspace
+
+```bash
+kiro-cli settings --workspace chat.enableTangentMode true
+```
+
+**What this does**: Enables tangent mode for current workspace only.
+
+#### Use Case 6: Delete Workspace Override
+
+```bash
+kiro-cli settings --delete --workspace chat.defaultModel
+```
+
+**What this does**: Removes workspace override, falling back to global setting.
+
+#### Use Case 7: Open Settings File
 
 ```bash
 kiro-cli settings open
 ```
 
-**What this does**: Opens settings file in default editor.
+**What this does**: Opens global settings file in default editor.
 
 ## Commands
 
@@ -122,8 +160,12 @@ kiro-cli settings <SETTING_NAME>
 Set new value for setting.
 
 ```bash
-kiro-cli settings <SETTING_NAME> <VALUE>
+kiro-cli settings [--global|--workspace] <SETTING_NAME> <VALUE>
 ```
+
+**Options**:
+- `--global`: Set in global settings (default)
+- `--workspace`: Set in workspace settings
 
 **Value types**:
 - Boolean: `true` or `false`
@@ -133,11 +175,15 @@ kiro-cli settings <SETTING_NAME> <VALUE>
 
 ### delete
 
-Delete setting (revert to default).
+Delete setting (revert to default or global).
 
 ```bash
-kiro-cli settings --delete <SETTING_NAME>
+kiro-cli settings --delete [--global|--workspace] <SETTING_NAME>
 ```
+
+**Options**:
+- `--global`: Delete from global settings (default)
+- `--workspace`: Delete from workspace settings (falls back to global)
 
 ## Key Settings
 
@@ -160,42 +206,30 @@ kiro-cli settings --delete <SETTING_NAME>
 
 ## Examples
 
-### Example 1: Enable Tangent Mode
+### Example 1: Set Workspace-Specific Model
 
 ```bash
-kiro-cli settings chat.enableTangentMode true
+kiro-cli settings --workspace chat.defaultModel "anthropic.claude-3-5-sonnet-20241022-v2:0"
 ```
 
-### Example 2: Set Default Model
+### Example 2: Set Global Default Agent
 
 ```bash
-kiro-cli settings chat.defaultModel <model-id>
+kiro-cli settings --global chat.defaultAgent rust-expert
 ```
 
-### Example 3: Check Current Agent
+### Example 3: Check Setting with Source
 
 ```bash
-kiro-cli settings chat.defaultAgent
+kiro-cli settings chat.defaultModel
 ```
 
 **Expected Output**:
 ```
-rust-expert
+anthropic.claude-3-5-sonnet-20241022-v2:0 (workspace)
 ```
 
-### Example 4: Delete Setting
-
-```bash
-kiro-cli settings --delete chat.enableTangentMode
-```
-
-### Example 5: Open Settings File
-
-```bash
-kiro-cli settings open
-```
-
-### Example 6: List All Settings
+### Example 4: List Settings with Sources
 
 ```bash
 kiro-cli settings list
@@ -203,15 +237,27 @@ kiro-cli settings list
 
 **Expected Output**:
 ```
-chat.defaultAgent = "rust-expert"
-chat.enableTangentMode = true
-chat.defaultModel = "<model-id>"
-chat.enableThinking = false
-chat.enableKnowledge = false
+chat.defaultAgent = "rust-expert" (global)
+chat.defaultModel = "anthropic.claude-3-5-sonnet-20241022-v2:0" (workspace)
+chat.enableTangentMode = true (workspace)
 ...
 ```
 
-Shows all settings with current values.
+### Example 5: Delete Workspace Override
+
+```bash
+kiro-cli settings --delete --workspace chat.defaultModel
+```
+
+**What this does**: Removes workspace override, falls back to global setting.
+
+### Example 6: Enable Feature Globally
+
+```bash
+kiro-cli settings chat.enableTangentMode true
+```
+
+**Note**: Without `--workspace` flag, defaults to global.
 
 ## Troubleshooting
 
@@ -227,6 +273,12 @@ Shows all settings with current values.
 **Cause**: Wrong type for setting  
 **Solution**: Check setting type in list. Use `true`/`false` for booleans, not `yes`/`no`.
 
+### Issue: Cannot Override at Workspace Level
+
+**Symptom**: "Setting cannot be overridden at workspace level" error  
+**Cause**: Attempting to set global-only setting with `--workspace` flag  
+**Solution**: Remove `--workspace` flag or use a different setting. Global-only settings include telemetry and API endpoints.
+
 ### Issue: Changes Not Applied
 
 **Symptom**: Setting changed but behavior unchanged  
@@ -241,16 +293,20 @@ Shows all settings with current values.
 
 ## Limitations
 
-- Settings are global (not per-workspace)
 - Some settings require restart to take effect
 - No setting validation beyond type checking
 - Array settings require JSON format
+- Global-only settings cannot be overridden at workspace level
 
 ## Technical Details
 
-**Storage**: Settings stored in global database (`~/.kiro/`).
+**Storage**: 
+- Global: `~/.kiro/settings/cli.json`
+- Workspace: `.kiro/settings/cli.json`
 
-**Scope**: All settings are user-wide, not workspace-specific.
+**Scope**: Settings can be global (user-wide) or workspace-specific.
+
+**Precedence**: Workspace settings override global settings for workspace-overridable settings.
 
 **Types**: Boolean, String, Number, Array (JSON).
 
