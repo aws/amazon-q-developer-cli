@@ -84,7 +84,20 @@ fn find_symbols_sync(
     let mut all_symbols = Vec::new();
     let mut processed_files = 0;
 
-    let walker = create_code_walker(workspace_root, None).build();
+    // Use file_path as search scope if provided, otherwise use workspace root
+    let search_root = request
+        .file_path
+        .as_ref()
+        .map(|p| {
+            if p.is_absolute() {
+                p.clone()
+            } else {
+                workspace_root.join(p)
+            }
+        })
+        .unwrap_or_else(|| workspace_root.to_path_buf());
+
+    let walker = create_code_walker(&search_root, None).build();
 
     for entry in walker {
         if start.elapsed().as_secs() >= timeout_secs {
@@ -1151,5 +1164,40 @@ fn filter_schema() {}
         };
         let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
         assert_eq!(results.len(), 0, "exact_match should be case-sensitive");
+    }
+
+    #[test]
+    fn test_find_symbols_file_path_scopes_search() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create subdir with files
+        let subdir = temp_dir.path().join("models");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("user.rs"), "pub struct UserModel {}").unwrap();
+
+        // Create file outside subdir
+        fs::write(temp_dir.path().join("main.rs"), "pub struct MainStruct {}").unwrap();
+
+        let code_store = Arc::new(crate::sdk::CodeStore::new());
+
+        // Search scoped to models directory
+        let request = FindSymbolsRequest {
+            symbol_name: "Model".to_string(),
+            file_path: Some(subdir.clone()),
+            symbol_type: None,
+            language: None,
+            limit: Some(10),
+            exact_match: false,
+            timeout_secs: None,
+        };
+
+        let results = find_symbols_sync(temp_dir.path(), &code_store, &request, 30).unwrap();
+        let names: Vec<&str> = results.iter().map(|s| s.name.as_str()).collect();
+
+        assert!(names.contains(&"UserModel"), "Should find UserModel in subdir");
+        assert!(
+            !names.contains(&"MainStruct"),
+            "Should NOT find MainStruct outside subdir"
+        );
     }
 }

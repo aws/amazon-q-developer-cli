@@ -118,7 +118,7 @@ impl ServerHandler for CodeIntelligenceServer {
                     "properties": {
                         "symbol_name": {
                             "type": "string",
-                            "description": "Name of symbol to search for"
+                            "description": "Simple name of symbol to search for (e.g. 'myFunction', not 'MyClass.myFunction')"
                         },
                         "file_path": {
                             "type": "string",
@@ -155,7 +155,7 @@ impl ServerHandler for CodeIntelligenceServer {
                         "symbols": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of symbol names to retrieve"
+                            "description": "List of simple symbol names to retrieve (e.g. ['myFunction'], not ['MyClass.myFunction'])"
                         },
                         "file_path": {
                             "type": "string",

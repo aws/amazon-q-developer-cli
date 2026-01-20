@@ -46,7 +46,7 @@ NOTE: Use fs_read with line ranges for unsupported patterns.
 ## Operations
 
 **search_symbols** - Find symbol definitions by name across workspace.
-Params: symbol_name (required), file_path, symbol_type, limit, language, exact_match
+Params: symbol_name (required), path, symbol_type, limit, language, exact_match
 Uses fuzzy matching by default. Set exact_match=true for precise matching.
 
 **lookup_symbols** - Batch lookup specific symbols (max 10).
@@ -132,12 +132,12 @@ find_references, goto_definition, get_hover, get_completions, get_diagnostics, r
                         },
                         "symbol_name": {
                             "type": "string",
-                            "description": "Symbol name (required for search_symbols)"
+                            "description": "Simple symbol name, not qualified (e.g. 'myFunction' not 'MyClass.myFunction'). Required for search_symbols"
                         },
                         "symbols": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of symbol names (required for lookup_symbols, max 10)"
+                            "description": "List of simple symbol names, not qualified (e.g. ['myFunction'] not ['MyClass.myFunction']). Required for lookup_symbols, max 10"
                         },
                         "include_source": {
                             "type": "boolean",
@@ -145,11 +145,11 @@ find_references, goto_definition, get_hover, get_completions, get_diagnostics, r
                         },
                         "file_path": {
                             "type": "string",
-                            "description": "File path (required for get_document_symbols, optional for search_symbols/pattern_search/search_codebase_map)"
+                            "description": "File path (required for get_document_symbols, optional for pattern_search/search_codebase_map)"
                         },
                         "path": {
                             "type": "string",
-                            "description": "Directory path (optional, for generate_codebase_overview: workspace root, for search_codebase_map: path filter)"
+                            "description": "Directory path (optional, for generate_codebase_overview: workspace root, for search_codebase_map: path filter, for search_symbols: scope search to file or directory)"
                         },
                         "pattern": {
                             "type": "string",
@@ -224,7 +224,7 @@ grep only: Literal text in comments/strings, config values, non-code patterns
 ## Read Operations
 
 **search_symbols** - Find symbol definitions by name across workspace.
-Params: symbol_name (required), file_path, symbol_type, limit, language, exact_match
+Params: symbol_name (required), path, symbol_type, limit, language, exact_match
 
 **lookup_symbols** - Batch lookup specific symbols (max 10).
 Params: symbols (required), file_path, include_source
@@ -312,12 +312,12 @@ Workflow:
                         },
                         "symbol_name": { 
                             "type": "string", 
-                            "description": "Symbol name (required for search_symbols)" 
+                            "description": "Simple symbol name, not qualified (e.g. 'myFunction' not 'MyClass.myFunction'). Required for search_symbols" 
                         },
                         "symbols": {
                             "type": "array",
                             "items": {"type": "string"},
-                            "description": "List of symbol names (required for lookup_symbols, max 10)"
+                            "description": "List of simple symbol names, not qualified (e.g. ['myFunction'] not ['MyClass.myFunction']). Required for lookup_symbols, max 10"
                         },
                         "include_source": {
                             "type": "boolean",
@@ -325,11 +325,11 @@ Workflow:
                         },
                         "file_path": { 
                             "type": "string", 
-                            "description": "File path (required for rename_symbol/get_document_symbols/get_diagnostics/get_hover/get_completions, optional for format/pattern_rewrite/search_symbols/pattern_search/search_codebase_map)" 
+                            "description": "File path (required for rename_symbol/get_document_symbols/get_diagnostics/get_hover/get_completions, optional for format/pattern_rewrite/pattern_search/search_codebase_map)" 
                         },
                         "path": {
                             "type": "string",
-                            "description": "Directory path (optional, for generate_codebase_overview: workspace root, for search_codebase_map: path filter)"
+                            "description": "Directory path (optional, for generate_codebase_overview: workspace root, for search_codebase_map: path filter, for search_symbols: scope search to file or directory)"
                         },
                         "row": { 
                             "type": "integer", 

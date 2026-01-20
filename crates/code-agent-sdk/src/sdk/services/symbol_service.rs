@@ -167,99 +167,56 @@ impl LspSymbolService {
         request: &FindSymbolsRequest,
     ) -> Result<Vec<SymbolInfo>, Error> {
         let mut all_symbols = Vec::new();
-        // If file_path is specified, use document symbols for that file
+        // If file_path is specified, check if it's a file or directory
         if let Some(file_path) = &request.file_path {
-            let symbols = self.get_document_symbols(workspace_manager, file_path, false).await?;
-
-            // Count symbol types
-            let mut type_counts: HashMap<String, usize> = HashMap::new();
-            for sym in &symbols {
-                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
-                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
-            }
-
-            tracing::info!(
-                "Found {} symbols in file {:?}: {:?}",
-                symbols.len(),
-                file_path,
-                type_counts
-            );
-            tracing::debug!(
-                "File symbols: {:?}",
-                symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
-            );
-
-            all_symbols.extend(symbols);
-        } else {
-            // Use workspace symbol search only for detected languages
-            let detected_languages = workspace_manager.get_detected_languages()?;
-
-            // Filter languages if language filter is specified
-            let languages_to_query: Vec<String> = if let Some(lang_filter) = &request.language {
-                let filter_lower = lang_filter.to_lowercase();
-                detected_languages
-                    .into_iter()
-                    .filter(|l| l.to_lowercase() == filter_lower)
-                    .collect()
+            let full_path = if file_path.is_absolute() {
+                file_path.clone()
             } else {
-                detected_languages
+                workspace_manager.workspace_root().join(file_path)
             };
 
-            for language in languages_to_query {
-                if let Ok(Some(client)) = workspace_manager.get_client_by_language(&language).await {
-                    let params = WorkspaceSymbolParams {
-                        query: request.symbol_name.clone(),
-                        work_done_progress_params: Default::default(),
-                        partial_result_params: Default::default(),
-                    };
-
-                    match client.workspace_symbols(params).await {
-                        Ok(Some(symbols)) => {
-                            let mapped_symbols: Vec<SymbolInfo> = symbols
-                                .iter()
-                                .filter_map(|s| {
-                                    let mut sym =
-                                        SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())?;
-                                    sym.language = Some(language.clone());
-                                    Some(sym)
-                                })
-                                .collect();
-
-                            // Count symbol types for this language
-                            let mut type_counts: HashMap<String, usize> = HashMap::new();
-                            for sym in &mapped_symbols {
-                                let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
-                                *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
-                            }
-
-                            tracing::info!(
-                                "LSP {} returned {} symbols for query '{}': {:?}",
-                                language,
-                                mapped_symbols.len(),
-                                request.symbol_name,
-                                type_counts
-                            );
-                            tracing::debug!(
-                                "LSP {} symbols: {:?}",
-                                language,
-                                mapped_symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
-                            );
-
-                            all_symbols.extend(mapped_symbols);
-                        },
-                        Ok(None) => {
-                            tracing::debug!(
-                                "LSP {} returned no symbols for query '{}'",
-                                language,
-                                request.symbol_name
-                            );
-                        },
-                        Err(e) => {
-                            tracing::debug!("LSP {} error: {}", language, e);
-                        },
-                    }
-                }
+            // Check if path is outside workspace - use tree-sitter fallback
+            let is_outside_workspace = !full_path.starts_with(workspace_manager.workspace_root());
+            if is_outside_workspace {
+                tracing::info!("Path {:?} is outside workspace, using tree-sitter", file_path);
+                return crate::tree_sitter::workspace_analyzer::find_symbols_with_timeout(
+                    workspace_manager,
+                    request,
+                    request
+                        .timeout_secs
+                        .unwrap_or(crate::model::types::DEFAULT_TIMEOUT_SECS),
+                )
+                .await;
             }
+
+            if full_path.is_file() {
+                // Single file: use document symbols
+                let symbols = self.get_document_symbols(workspace_manager, file_path, false).await?;
+
+                // Count symbol types
+                let mut type_counts: HashMap<String, usize> = HashMap::new();
+                for sym in &symbols {
+                    let sym_type = sym.symbol_type.as_deref().unwrap_or("Unknown");
+                    *type_counts.entry(sym_type.to_string()).or_insert(0) += 1;
+                }
+
+                tracing::info!(
+                    "Found {} symbols in file {:?}: {:?}",
+                    symbols.len(),
+                    file_path,
+                    type_counts
+                );
+
+                all_symbols.extend(symbols);
+            } else if full_path.is_dir() {
+                // Directory: use workspace symbols and filter by path prefix
+                let path_prefix = file_path.to_string_lossy().to_string();
+                all_symbols = self.find_workspace_symbols(workspace_manager, request).await?;
+                all_symbols.retain(|s| s.file_path.starts_with(&path_prefix));
+                tracing::info!("Found {} symbols in directory {:?}", all_symbols.len(), file_path);
+            }
+        } else {
+            all_symbols = self.find_workspace_symbols(workspace_manager, request).await?;
         }
 
         let before_filter_count = all_symbols.len();
@@ -307,6 +264,69 @@ impl LspSymbolService {
         }
 
         tracing::info!("Returning {} total symbols", all_symbols.len());
+        Ok(all_symbols)
+    }
+
+    async fn find_workspace_symbols(
+        &self,
+        workspace_manager: &mut WorkspaceManager,
+        request: &FindSymbolsRequest,
+    ) -> Result<Vec<SymbolInfo>, Error> {
+        let mut all_symbols = Vec::new();
+        let detected_languages = workspace_manager.get_detected_languages()?;
+
+        // Filter languages if language filter is specified
+        let languages_to_query: Vec<String> = if let Some(lang_filter) = &request.language {
+            let filter_lower = lang_filter.to_lowercase();
+            detected_languages
+                .into_iter()
+                .filter(|l| l.to_lowercase() == filter_lower)
+                .collect()
+        } else {
+            detected_languages
+        };
+
+        for language in languages_to_query {
+            if let Ok(Some(client)) = workspace_manager.get_client_by_language(&language).await {
+                let params = WorkspaceSymbolParams {
+                    query: request.symbol_name.clone(),
+                    work_done_progress_params: Default::default(),
+                    partial_result_params: Default::default(),
+                };
+
+                match client.workspace_symbols(params).await {
+                    Ok(Some(symbols)) => {
+                        let mapped_symbols: Vec<SymbolInfo> = symbols
+                            .iter()
+                            .filter_map(|s| {
+                                let mut sym = SymbolInfo::from_workspace_symbol(s, workspace_manager.workspace_root())?;
+                                sym.language = Some(language.clone());
+                                Some(sym)
+                            })
+                            .collect();
+
+                        tracing::info!(
+                            "LSP {} returned {} symbols for query '{}'",
+                            language,
+                            mapped_symbols.len(),
+                            request.symbol_name
+                        );
+
+                        all_symbols.extend(mapped_symbols);
+                    },
+                    Ok(None) => {
+                        tracing::debug!(
+                            "LSP {} returned no symbols for query '{}'",
+                            language,
+                            request.symbol_name
+                        );
+                    },
+                    Err(e) => {
+                        tracing::debug!("LSP {} error: {}", language, e);
+                    },
+                }
+            }
+        }
         Ok(all_symbols)
     }
 }

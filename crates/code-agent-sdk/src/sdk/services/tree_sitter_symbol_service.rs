@@ -22,6 +22,17 @@ use crate::tree_sitter::{
     workspace_analyzer,
 };
 
+/// Check if a symbol is a top-level symbol (no container and allowlisted type)
+fn is_top_level_symbol(symbol: &SymbolInfo) -> bool {
+    symbol.container_name.is_none()
+        && symbol.symbol_type.as_deref().is_some_and(|t| {
+            matches!(
+                t,
+                "Class" | "Struct" | "Enum" | "Interface" | "Trait" | "Module" | "Namespace" | "Method" | "Function"
+            )
+        })
+}
+
 /// **TreeSitter Symbol Service**
 ///
 /// High-performance symbol analysis service using TreeSitter AST parsing.
@@ -74,7 +85,7 @@ impl TreeSitterSymbolService {
     ///
     /// # Example
     /// ```ignore
-    /// let symbols = service.get_document_symbols(&mut workspace, &path).await?;
+    /// let symbols = service.get_document_symbols(&mut workspace, &path, true).await?;
     /// for symbol in symbols {
     ///     println!("{}: {} at {}:{}", symbol.name, symbol.symbol_type, symbol.start_row, symbol.start_column);
     /// }
@@ -83,31 +94,38 @@ impl TreeSitterSymbolService {
         &self,
         workspace_manager: &mut WorkspaceManager,
         file_path: &std::path::Path,
+        top_level_only: bool,
     ) -> Result<Vec<SymbolInfo>> {
         let workspace_root = workspace_manager.workspace_root();
         let code_store = workspace_manager.code_store();
 
-        // Try cache first
-        if let Some(cached) = code_store.get_cached_symbols(file_path) {
+        // Try cache first (cache stores all symbols, filter after)
+        let symbols = if let Some(cached) = code_store.get_cached_symbols(file_path) {
             tracing::debug!("Cache HIT for get_document_symbols: {}", file_path.display());
-            return Ok(cached);
+            cached
+        } else {
+            tracing::debug!("Cache MISS for get_document_symbols: {}", file_path.display());
+
+            // Get extension and detect language
+            let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            let lang_name =
+                lang_from_extension(ext).ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {ext}"))?;
+
+            let lang: ast_grep_language::SupportLang = lang_name
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Failed to parse language: {lang_name}"))?;
+
+            // Parse file and cache
+            let parsed = symbol_extractor::parse_file_symbols(file_path, workspace_root, &lang, lang_name);
+            code_store.cache_symbols(file_path, parsed.clone());
+            parsed
+        };
+
+        if top_level_only {
+            Ok(symbols.into_iter().filter(is_top_level_symbol).collect())
+        } else {
+            Ok(symbols)
         }
-
-        tracing::debug!("Cache MISS for get_document_symbols: {}", file_path.display());
-
-        // Get extension and detect language
-        let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-        let lang_name = lang_from_extension(ext).ok_or_else(|| anyhow::anyhow!("Unsupported file extension: {ext}"))?;
-
-        let lang: ast_grep_language::SupportLang = lang_name
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Failed to parse language: {lang_name}"))?;
-
-        // Parse file and cache
-        let symbols = symbol_extractor::parse_file_symbols(file_path, workspace_root, &lang, lang_name);
-        code_store.cache_symbols(file_path, symbols.clone());
-
-        Ok(symbols)
     }
 
     /// **Find symbols by name across workspace**
@@ -174,8 +192,8 @@ impl TreeSitterSymbolService {
         let mut results = Vec::new();
 
         if let Some(file_path) = &request.file_path {
-            // File-specific lookup
-            let all_symbols = self.get_document_symbols(workspace_manager, file_path).await?;
+            // File-specific lookup - need all symbols to find specific ones
+            let all_symbols = self.get_document_symbols(workspace_manager, file_path, false).await?;
             for symbol_name in &request.symbols {
                 if let Some(symbol) = all_symbols.iter().find(|s| &s.name == symbol_name) {
                     results.push(symbol.clone());
@@ -205,7 +223,12 @@ impl TreeSitterSymbolService {
             let workspace_root = workspace_manager.workspace_root();
             for symbol in &mut results {
                 if symbol.source_code.is_none() {
-                    let full_path = workspace_root.join(&symbol.file_path);
+                    let symbol_path = std::path::Path::new(&symbol.file_path);
+                    let full_path = if symbol_path.is_absolute() {
+                        symbol_path.to_path_buf()
+                    } else {
+                        workspace_root.join(symbol_path)
+                    };
                     if let Ok(content) = std::fs::read_to_string(&full_path) {
                         let lines: Vec<&str> = content.lines().collect();
                         let start = symbol.start_row.saturating_sub(1) as usize;

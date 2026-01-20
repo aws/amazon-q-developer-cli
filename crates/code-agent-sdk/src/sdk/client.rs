@@ -511,12 +511,21 @@ impl CodeIntelligence {
             .unwrap_or(false);
 
         if has_lsp {
-            self.lsp_symbol_service
+            let result = self
+                .lsp_symbol_service
                 .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
-                .await
+                .await?;
+            // Fallback to tree-sitter if LSP returns empty
+            if result.is_empty() {
+                return self
+                    .tree_sitter_symbol_service
+                    .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
+                    .await;
+            }
+            Ok(result)
         } else {
             self.tree_sitter_symbol_service
-                .get_document_symbols(&mut self.workspace_manager, &request.file_path)
+                .get_document_symbols(&mut self.workspace_manager, &request.file_path, top_level_only)
                 .await
         }
     }

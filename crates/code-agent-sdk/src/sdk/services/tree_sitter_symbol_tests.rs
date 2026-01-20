@@ -95,7 +95,9 @@ fn private_function() {
         let service = TreeSitterSymbolService::new();
 
         // Test document symbols
-        let symbols = service.get_document_symbols(&mut workspace_manager, &file_path).await;
+        let symbols = service
+            .get_document_symbols(&mut workspace_manager, &file_path, false)
+            .await;
         assert!(symbols.is_ok());
         let symbols = symbols.unwrap();
         assert!(!symbols.is_empty());
@@ -125,7 +127,7 @@ fn private_function() {
 
         // Test Rust
         let rust_symbols = service
-            .get_document_symbols(&mut workspace_manager, &rust_file)
+            .get_document_symbols(&mut workspace_manager, &rust_file, false)
             .await
             .unwrap();
         let get_user = rust_symbols
@@ -149,7 +151,7 @@ fn private_function() {
 
         // Test TypeScript
         let ts_symbols = service
-            .get_document_symbols(&mut workspace_manager, &ts_file)
+            .get_document_symbols(&mut workspace_manager, &ts_file, false)
             .await
             .unwrap();
         let fetch_data = ts_symbols
@@ -588,7 +590,231 @@ pub struct AuthenticationService {
         let service = TreeSitterSymbolService::new();
 
         // Should handle unsupported file gracefully
-        let result = service.get_document_symbols(&mut workspace_manager, &file_path).await;
+        let result = service
+            .get_document_symbols(&mut workspace_manager, &file_path, false)
+            .await;
         assert!(result.is_err(), "Should return error for unsupported file type");
+    }
+
+    #[tokio::test]
+    async fn test_find_symbols_file_scoped() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create two files with different symbols
+        let file1 = temp_dir.path().join("user.rs");
+        fs::write(&file1, "pub struct User {}\npub fn get_user() {}").unwrap();
+
+        let file2 = temp_dir.path().join("admin.rs");
+        fs::write(&file2, "pub struct Admin {}\npub fn get_admin() {}").unwrap();
+
+        let mut workspace_manager = crate::sdk::workspace_manager::WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // Search scoped to file1 only
+        let request = FindSymbolsRequest {
+            symbol_name: "get".to_string(),
+            file_path: Some(file1.clone()),
+            symbol_type: None,
+            language: None,
+            limit: Some(10),
+            exact_match: false,
+            timeout_secs: None,
+        };
+
+        let result = service.find_symbols(&mut workspace_manager, &request).await;
+        assert!(result.is_ok());
+        let symbols = result.unwrap();
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"get_user"), "Should find get_user in scoped file");
+        assert!(
+            !names.contains(&"get_admin"),
+            "Should NOT find get_admin from other file"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_symbols_directory_scoped() {
+        let temp_dir = TempDir::new().unwrap();
+
+        // Create subdirectory with files
+        let subdir = temp_dir.path().join("models");
+        fs::create_dir(&subdir).unwrap();
+        fs::write(subdir.join("user.rs"), "pub struct UserModel {}").unwrap();
+        fs::write(subdir.join("admin.rs"), "pub struct AdminModel {}").unwrap();
+
+        // Create file outside subdir
+        fs::write(temp_dir.path().join("main.rs"), "pub struct MainStruct {}").unwrap();
+
+        let mut workspace_manager = crate::sdk::workspace_manager::WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // Search scoped to models directory
+        let request = FindSymbolsRequest {
+            symbol_name: "Model".to_string(),
+            file_path: Some(subdir.clone()),
+            symbol_type: None,
+            language: None,
+            limit: Some(10),
+            exact_match: false,
+            timeout_secs: None,
+        };
+
+        let result = service.find_symbols(&mut workspace_manager, &request).await;
+        assert!(result.is_ok());
+        let symbols = result.unwrap();
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"UserModel"), "Should find UserModel in subdir");
+        assert!(names.contains(&"AdminModel"), "Should find AdminModel in subdir");
+        assert!(
+            !names.contains(&"MainStruct"),
+            "Should NOT find MainStruct outside subdir"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_find_symbols_absolute_path_outside_workspace() {
+        let workspace_dir = TempDir::new().unwrap();
+        let external_dir = TempDir::new().unwrap();
+
+        // Create file in workspace
+        fs::write(workspace_dir.path().join("internal.rs"), "pub struct Internal {}").unwrap();
+
+        // Create file outside workspace
+        let external_file = external_dir.path().join("external.rs");
+        fs::write(&external_file, "pub struct External {}").unwrap();
+
+        let mut workspace_manager =
+            crate::sdk::workspace_manager::WorkspaceManager::new(workspace_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // Search with absolute path outside workspace - should use tree-sitter fallback
+        let request = FindSymbolsRequest {
+            symbol_name: "External".to_string(),
+            file_path: Some(external_file.clone()),
+            symbol_type: None,
+            language: None,
+            limit: Some(10),
+            exact_match: false,
+            timeout_secs: None,
+        };
+
+        let result = service.find_symbols(&mut workspace_manager, &request).await;
+        assert!(result.is_ok());
+        let symbols = result.unwrap();
+
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"External"),
+            "Should find External via tree-sitter fallback"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_lookup_symbols_with_absolute_path_source_extraction() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("service.rs");
+
+        let content = "pub fn my_service_function() -> i32 { 42 }";
+        fs::write(&file_path, content).unwrap();
+
+        let mut workspace_manager = crate::sdk::workspace_manager::WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // Find symbol first
+        let request = FindSymbolsRequest {
+            symbol_name: "my_service_function".to_string(),
+            file_path: None,
+            symbol_type: None,
+            language: None,
+            limit: Some(10),
+            exact_match: false,
+            timeout_secs: None,
+        };
+
+        let result = service.find_symbols(&mut workspace_manager, &request).await;
+        assert!(result.is_ok());
+        let symbols = result.unwrap();
+
+        assert!(!symbols.is_empty(), "Should find the function");
+        let sym = &symbols[0];
+        // Verify source_line is extracted (tests absolute path handling in source extraction)
+        assert!(sym.source_line.is_some(), "Should have source_line extracted");
+        assert!(
+            sym.source_line.as_ref().unwrap().contains("my_service_function"),
+            "source_line should contain function name"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_document_symbols_top_level_only_true() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("nested.rs");
+
+        // Create file with nested symbols
+        let content = r#"
+struct User {
+    name: String,
+}
+
+impl User {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+}
+
+fn top_level_function() {
+    let inner_var = 42;
+}
+"#;
+        fs::write(&file_path, content).unwrap();
+
+        let mut workspace_manager = crate::sdk::workspace_manager::WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // With top_level_only=true, should only get top-level symbols
+        let symbols = service
+            .get_document_symbols(&mut workspace_manager, &file_path, true)
+            .await
+            .unwrap();
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+
+        assert!(names.contains(&"User"), "Should find User struct");
+        assert!(names.contains(&"top_level_function"), "Should find top_level_function");
+        // get_name has container "User", so should be filtered out
+        assert!(!names.contains(&"get_name"), "Should NOT find nested method get_name");
+    }
+
+    #[tokio::test]
+    async fn test_get_document_symbols_top_level_only_false() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("nested.rs");
+
+        let content = r#"
+struct User {
+    name: String,
+}
+
+impl User {
+    fn get_name(&self) -> &str {
+        &self.name
+    }
+}
+"#;
+        fs::write(&file_path, content).unwrap();
+
+        let mut workspace_manager = crate::sdk::workspace_manager::WorkspaceManager::new(temp_dir.path().to_path_buf());
+        let service = TreeSitterSymbolService::new();
+
+        // With top_level_only=false, should get all symbols including nested
+        let symbols = service
+            .get_document_symbols(&mut workspace_manager, &file_path, false)
+            .await
+            .unwrap();
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+
+        assert!(names.contains(&"User"), "Should find User struct");
+        assert!(names.contains(&"get_name"), "Should find nested method get_name");
     }
 }

@@ -96,7 +96,7 @@ impl Code {
 pub struct SearchSymbolsParams {
     pub symbol_name: String,
     #[serde(default)]
-    pub file_path: Option<String>,
+    pub path: Option<String>,
     #[serde(default)]
     pub symbol_type: Option<String>,
     #[serde(default)]
@@ -330,8 +330,8 @@ impl Code {
                 if params.symbol_name.trim().is_empty() {
                     eyre::bail!("Symbol name cannot be empty");
                 }
-                if let Some(file_path) = &params.file_path {
-                    validate_file_exists(os, file_path)?;
+                if let Some(path) = &params.path {
+                    validate_file_exists(os, path)?;
                 }
                 Ok(())
             },
@@ -526,7 +526,7 @@ impl Code {
 
                     let request = code_agent_sdk::model::types::FindSymbolsRequest {
                         symbol_name: params.symbol_name.clone(),
-                        file_path: params.file_path.as_ref().map(std::path::PathBuf::from),
+                        file_path: params.path.as_ref().map(std::path::PathBuf::from),
                         symbol_type: params.symbol_type.as_ref().and_then(|s| s.parse().ok()),
                         limit,
                         language: params.language.clone(),
@@ -537,13 +537,18 @@ impl Code {
                     match client.find_symbols(request).await {
                         Ok(symbols) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
+                            let scope_path = params.path.as_ref();
                             if symbols.is_empty() {
-                                queue!(_stdout, style::Print("\nNo symbols found\n"),)?;
-                                result = "No symbols found".to_string();
+                                let scope_msg = scope_path.map(|p| format!(" (scoped to: {})", p)).unwrap_or_default();
+                                queue!(_stdout, style::Print(&format!("\nNo symbols found{}\n", scope_msg)),)?;
+                                result = format!("No symbols found{}", scope_msg);
                             } else {
                                 queue!(_stdout, style::Print("\n"))?;
                                 Self::render_symbols(&symbols, _stdout)?;
-                                result = format!("{symbols:?}");
+                                result = Self::format_symbols_compact(&symbols, false);
+                                if let Some(path) = scope_path {
+                                    result = format!("Scoped to: {}\n{}", path, result);
+                                }
                             }
                         },
                         Err(e) => {
@@ -585,9 +590,11 @@ impl Code {
                                 Self::render_references(&refs_result.references, _stdout)?;
 
                                 let truncated = refs_result.total_count - refs_result.references.len();
-                                result = format!("{:?}", refs_result.references);
+                                result = Self::format_references_compact(&refs_result.references, truncated);
                                 if truncated > 0 {
-                                    result.push_str(&format!("\n\nNote: {truncated} more references available. Increase limit parameter to see more (max: {MAX_REFERENCES_LIMIT})."));
+                                    result.push_str(&format!(
+                                        "\nNote: Increase limit to see more (max: {MAX_REFERENCES_LIMIT})."
+                                    ));
                                 }
                             }
                         },
@@ -671,7 +678,7 @@ impl Code {
                             }
                             queue!(_stdout, style::Print("\n"))?;
 
-                            result = format!("{definition:?}");
+                            result = Self::format_definition_compact(&definition);
                         },
                         Ok(None) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
@@ -833,7 +840,7 @@ impl Code {
                                 queue!(_stdout, style::Print("\n"))?;
                                 Self::render_symbols(&symbols, _stdout)?;
                             }
-                            result = format!("{symbols:?}");
+                            result = Self::format_symbols_compact(&symbols, false);
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
@@ -862,12 +869,16 @@ impl Code {
                             Self::stop_spinner(&mut spinner, _stdout)?;
                             let requested_count = params.symbols.len();
                             let found_count = symbols.len();
+                            let scope_info = params.file_path.as_ref().map(|p| format!(" in {}", p));
 
                             if symbols.is_empty() {
                                 queue!(
                                     _stdout,
                                     StyledText::warning_fg(),
-                                    style::Print(&format!("\nNo symbols found (0 of {requested_count} requested)\n")),
+                                    style::Print(&format!(
+                                        "\nNo symbols found (0 of {requested_count} requested){}\n",
+                                        scope_info.as_deref().unwrap_or("")
+                                    )),
                                     StyledText::reset(),
                                 )?;
                             } else {
@@ -885,7 +896,10 @@ impl Code {
                                 )?;
                                 Self::render_symbols(&symbols, _stdout)?;
                             }
-                            result = format!("{symbols:?}");
+                            result = Self::format_symbols_compact(&symbols, params.include_source);
+                            if let Some(path) = &params.file_path {
+                                result = format!("Scoped to: {}\n{}", path, result);
+                            }
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
@@ -1191,13 +1205,19 @@ impl Code {
                     match client.pattern_search(request).await {
                         Ok(matches) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
+                            let scope_info = params.file_path.as_ref().map(|p| format!(" (scoped to: {})", p));
                             if matches.is_empty() {
-                                queue!(_stdout, style::Print("\nNo pattern matches found\n"),)?;
-                                result = "No pattern matches found".to_string();
+                                let msg =
+                                    format!("\nNo pattern matches found{}\n", scope_info.as_deref().unwrap_or(""));
+                                queue!(_stdout, style::Print(&msg),)?;
+                                result = format!("No pattern matches found{}", scope_info.as_deref().unwrap_or(""));
                             } else {
                                 queue!(_stdout, style::Print("\n"))?;
                                 Self::render_pattern_matches(&matches, _stdout)?;
                                 result = serde_json::to_string(&matches).unwrap_or_else(|_| format!("{matches:?}"));
+                                if let Some(path) = &params.file_path {
+                                    result = format!("Scoped to: {}\n{}", path, result);
+                                }
                             }
                         },
                         Err(e) => {
@@ -1297,14 +1317,24 @@ impl Code {
                             Self::stop_spinner(&mut spinner, _stdout)?;
                             let json = serde_json::to_string(&overview).unwrap_or_default();
                             let tokens = json.len() / 4;
+                            let scope_info = params.path.as_ref().map(|p| format!(" for {}", p)).unwrap_or_default();
                             queue!(
                                 _stdout,
                                 style::Print("\n"),
                                 StyledText::info_fg(),
-                                style::Print(&format!("[Overview] {} bytes (~{} tokens)\n", json.len(), tokens)),
+                                style::Print(&format!(
+                                    "[Overview{}] {} bytes (~{} tokens)\n",
+                                    scope_info,
+                                    json.len(),
+                                    tokens
+                                )),
                                 StyledText::reset(),
                             )?;
-                            result = json;
+                            result = if let Some(path) = &params.path {
+                                format!("Scoped to: {}\n{}", path, json)
+                            } else {
+                                json
+                            };
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
@@ -1326,16 +1356,21 @@ impl Code {
                             let files = map.files_processed;
                             let tokens = map.token_count;
                             let truncated = map.truncated;
+                            let scope_info = params.path.as_ref().map(|p| format!(" in {}", p)).unwrap_or_default();
                             queue!(
                                 _stdout,
                                 style::Print("\n"),
                                 StyledText::info_fg(),
                                 style::Print(&format!(
-                                    "[CodebaseMap] {files} files, ~{tokens} tokens, truncated: {truncated}\n"
+                                    "[CodebaseMap{}] {files} files, ~{tokens} tokens, truncated: {truncated}\n",
+                                    scope_info
                                 )),
                                 StyledText::reset(),
                             )?;
                             result = serde_json::to_string(&map).unwrap_or_default();
+                            if let Some(path) = &params.path {
+                                result = format!("Scoped to: {}\n{}", path, result);
+                            }
                         },
                         Err(e) => {
                             Self::stop_spinner(&mut spinner, _stdout)?;
@@ -1350,6 +1385,67 @@ impl Code {
         Ok(InvokeOutput {
             output: OutputKind::Text(result),
         })
+    }
+
+    /// Format symbols as compact strings: "Type name @ file:line | source"
+    fn format_symbols_compact(symbols: &[SymbolInfo], include_source: bool) -> String {
+        let lines: Vec<String> = symbols
+            .iter()
+            .map(|s| {
+                let sym_type = s.symbol_type.as_deref().unwrap_or("Symbol");
+                let name = if let Some(container) = &s.container_name {
+                    format!("{} (in {})", s.name, container)
+                } else {
+                    s.name.clone()
+                };
+                let base = format!("{} {} @ {}:{}-{}", sym_type, name, s.file_path, s.start_row, s.end_row);
+                let header = if let Some(src) = &s.source_line {
+                    format!("{} | {}", base, src.trim())
+                } else {
+                    base
+                };
+                if include_source {
+                    if let Some(code) = &s.source_code {
+                        format!("{}\n{}", header, code)
+                    } else {
+                        header
+                    }
+                } else {
+                    header
+                }
+            })
+            .collect();
+        format!("[{}]", lines.join(", "))
+    }
+
+    /// Format references as compact strings: "file:line:col | source"
+    fn format_references_compact(refs: &[code_agent_sdk::model::entities::ReferenceInfo], truncated: usize) -> String {
+        let lines: Vec<String> = refs
+            .iter()
+            .map(|r| {
+                let base = format!("{}:{}:{}", r.file_path, r.start_row, r.start_column);
+                if let Some(src) = &r.source_line {
+                    format!("{} | {}", base, src.trim())
+                } else {
+                    base
+                }
+            })
+            .collect();
+        let mut out = format!("[{}]", lines.join(", "));
+        if truncated > 0 {
+            out.push_str(&format!(" ({} more)", truncated));
+        }
+        out
+    }
+
+    /// Format definition as compact string: "file:line:col | source"
+    fn format_definition_compact(def: &code_agent_sdk::ApiDefinitionInfo) -> String {
+        let base = format!("{}:{}:{}", def.file_path, def.start_row, def.start_column);
+        if let Some(src) = &def.source_line {
+            format!("{} | {}", base, src.trim())
+        } else {
+            base
+        }
     }
 
     fn render_symbols(symbols: &[SymbolInfo], stdout: &mut impl Write) -> Result<()> {
@@ -1602,6 +1698,16 @@ impl Code {
                         style::Print(options.join(", ")),
                         StyledText::reset(),
                         style::Print("]"),
+                    )?;
+                }
+
+                if let Some(path) = &params.path {
+                    queue!(
+                        output,
+                        style::Print(" in "),
+                        StyledText::secondary_fg(),
+                        style::Print(path),
+                        StyledText::reset(),
                     )?;
                 }
             },
