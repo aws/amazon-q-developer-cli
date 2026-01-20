@@ -42,11 +42,11 @@ jobs:
       - name: Get Commits Since Last Nightly
         id: get-commits
         run: |
-          # Get current tag (just created) and previous tag
-          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
-          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -2 | tail -1)
+          # Get current tag (just created) and previous tag from nightly branch
+          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -1)
+          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -2 | tail -1)
           if [[ -z "$LAST_TAG" ]]; then
-            COMMITS=$(git log --format="• %h %s (%an)" -10 | grep -v "Sync: Merge main into nightly")
+            COMMITS=$(git log origin/nightly --format="• %h %s (%an)" -10 | grep -v "Sync: Merge main into nightly")
           else
             COMMITS=$(git log ${LAST_TAG}..${CURRENT_TAG} --format="• %h %s (%an)" | grep -v "Sync: Merge main into nightly")
           fi
@@ -57,10 +57,10 @@ jobs:
       - name: Extract User-Facing Messages
         id: user-facing
         run: |
-          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -1)
-          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname | head -2 | tail -1)
+          CURRENT_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -1)
+          LAST_TAG=$(git tag -l 'chat-v*-nightly.*' --sort=-v:refname --merged origin/nightly | head -2 | tail -1)
           if [[ -z "$LAST_TAG" ]]; then
-            RANGE="HEAD~10..HEAD"
+            RANGE="origin/nightly~10..origin/nightly"
           else
             RANGE="${LAST_TAG}..${CURRENT_TAG}"
           fi

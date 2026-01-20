@@ -6,11 +6,16 @@ description: Create git commits with user approval and no Kiro attribution
 
 You are tasked with creating git commits for the changes made during this session.
 
+## CRITICAL: Follow Steps in Order
+
+**DO NOT SKIP STEP 1. ALWAYS ASK ABOUT BRANCH PREFERENCE FIRST.**
+
 ## Process
 
-### 1. Check branch preference
+### 1. Check branch preference (REQUIRED - DO NOT SKIP)
 
-Ask the user:
+**STOP. Before doing anything else, ask the user:**
+
 ```
 Would you like to:
 1. Create a new branch from main for these changes
@@ -18,6 +23,8 @@ Would you like to:
 
 Please choose 1 or 2.
 ```
+
+**Wait for user response before proceeding.**
 
 If option 1:
 - Ask for branch name
