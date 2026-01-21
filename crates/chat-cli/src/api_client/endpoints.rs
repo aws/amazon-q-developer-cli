@@ -6,6 +6,10 @@ use tracing::error;
 
 use crate::database::Database;
 use crate::database::settings::Setting;
+use crate::util::{
+    US_GOV_EAST,
+    US_GOV_WEST,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Endpoint {
@@ -24,15 +28,15 @@ impl Endpoint {
     };
     pub const GOV_ENDPOINT_EAST: Self = Self {
         url: Cow::Borrowed("https://q.us-gov-east-1.amazonaws.com"),
-        region: Region::from_static("us-gov-east-1"),
+        region: Region::from_static(US_GOV_EAST),
     };
     pub const GOV_ENDPOINT_WEST: Self = Self {
         url: Cow::Borrowed("https://q.us-gov-west-1.amazonaws.com"),
-        region: Region::from_static("us-gov-west-1"),
+        region: Region::from_static(US_GOV_WEST),
     };
 
     pub fn get_endpoints_from_region(region: &str) -> Vec<Self> {
-        if region == "us-gov-east-1" || region == "us-gov-west-1" {
+        if region == US_GOV_EAST || region == US_GOV_WEST {
             return vec![Self::GOV_ENDPOINT_EAST, Self::GOV_ENDPOINT_WEST];
         }
         vec![Self::DEFAULT_ENDPOINT, Self::FRA_ENDPOINT]

@@ -76,6 +76,10 @@ pub use crate::telemetry::core::{
 };
 use crate::util::env_var::get_cli_client_application;
 use crate::util::system_info::os_version;
+use crate::util::{
+    US_GOV_EAST,
+    US_GOV_WEST,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum TelemetryError {
@@ -195,16 +199,39 @@ impl Clone for TelemetryThread {
 }
 
 impl TelemetryThread {
-    pub async fn new(env: &Env, fs: &Fs, database: &mut Database) -> Result<Self, TelemetryError> {
+    pub async fn new(
+        env: &Env,
+        fs: &Fs,
+        database: &mut Database,
+        region: Option<&str>,
+    ) -> Result<Self, TelemetryError> {
         let telemetry_client = TelemetryClient::new(env, fs, database).await?;
         let (tx, mut rx) = mpsc::unbounded_channel();
         let tx = TelemetrySender::Strong(tx);
-        let handle = tokio::spawn(async move {
-            while let Some(event) = rx.recv().await {
-                trace!("TelemetryThread received new telemetry event: {:?}", event);
-                telemetry_client.send_event(event).await;
-            }
-        });
+
+        // govcloud does not have the infrastructure to support toolkit telemetry
+        let region_supports_toolkit = if let Some(region) = region {
+            !(region == US_GOV_EAST || region == US_GOV_WEST)
+        } else {
+            true
+        };
+
+        let handle = if region_supports_toolkit {
+            tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    trace!("TelemetryThread received new telemetry event: {:?}", event);
+                    telemetry_client.send_event(event).await;
+                }
+            })
+        } else {
+            tokio::spawn(async move {
+                while let Some(event) = rx.recv().await {
+                    trace!("TelemetryThread received new telemetry event: {:?}", event);
+                    trace!("Dropping toolkit telemetry");
+                    telemetry_client.send_cw_telemetry_event(&event).await;
+                }
+            })
+        };
 
         Ok(Self {
             handle: Some(handle),
@@ -830,7 +857,7 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_send() {
         let mut database = Database::new_default().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
+        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database, None)
             .await
             .unwrap();
         thread.send_user_logged_in().ok();
@@ -848,7 +875,7 @@ mod test {
     #[ignore = "needs auth which is not in CI"]
     async fn test_all_telemetry() {
         let mut database = Database::new_default().await.unwrap();
-        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database)
+        let thread = TelemetryThread::new(&Env::new(), &Fs::new(), &mut database, None)
             .await
             .unwrap();
 

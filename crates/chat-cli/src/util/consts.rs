@@ -14,6 +14,9 @@ pub mod build {
     pub const DATETIME: Option<&str> = option_env!("AMAZON_Q_BUILD_DATETIME");
 }
 
+pub const US_GOV_EAST: &str = "us-gov-east-1";
+pub const US_GOV_WEST: &str = "us-gov-west-1";
+
 pub mod env_var {
     macro_rules! define_env_vars {
         ($($(#[$meta:meta])* $ident:ident = $name:expr),*) => {
