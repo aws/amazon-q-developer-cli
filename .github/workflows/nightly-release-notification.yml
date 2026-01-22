@@ -99,6 +99,9 @@ jobs:
           COMMITS: ${{ steps.get-commits.outputs.commits }}
           USER_FACING: ${{ steps.user-facing.outputs.messages }}
         run: |
+          if [[ -z "$USER_FACING" ]]; then
+            USER_FACING="Could not auto-populate the changelog. The kiro-cli team will share updates in this :thread: soon."
+          fi
           jq -n \
             --arg message "🌙 New Kiro CLI nightly version released!" \
             --arg version "${{ inputs.version }}" \
