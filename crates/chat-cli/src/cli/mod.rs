@@ -401,6 +401,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })),
             verbose: 2,
             help_all: false,
@@ -444,6 +445,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -464,6 +466,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -484,6 +487,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -504,6 +508,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
         assert_parse!(
@@ -520,6 +525,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: true,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -540,6 +546,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -560,6 +567,7 @@ mod test {
                 trust_tools: Some(vec!["".to_string()]),
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
             })
         );
     }
@@ -580,6 +588,28 @@ mod test {
                 trust_tools: Some(vec!["fs_read".to_string(), "fs_write".to_string()]),
                 no_interactive: false,
                 wrap: None,
+                require_mcp_startup: false,
+            })
+        );
+    }
+
+    #[test]
+    fn test_chat_with_require_mcp_startup() {
+        assert_parse!(
+            ["chat", "--require-mcp-startup"],
+            RootSubcommand::Chat(ChatArgs {
+                resume: false,
+                resume_picker: false,
+                list_sessions: false,
+                delete_session: None,
+                input: None,
+                agent: None,
+                model: None,
+                trust_all_tools: false,
+                trust_tools: None,
+                no_interactive: false,
+                wrap: None,
+                require_mcp_startup: true,
             })
         );
     }
@@ -600,6 +630,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Never),
+                require_mcp_startup: false,
             })
         );
         assert_parse!(
@@ -616,6 +647,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Always),
+                require_mcp_startup: false,
             })
         );
         assert_parse!(
@@ -632,6 +664,7 @@ mod test {
                 trust_tools: None,
                 no_interactive: false,
                 wrap: Some(Auto),
+                require_mcp_startup: false,
             })
         );
     }

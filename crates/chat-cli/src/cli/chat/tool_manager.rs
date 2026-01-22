@@ -1356,6 +1356,15 @@ impl ToolManager {
     pub async fn pending_clients(&self) -> Vec<String> {
         self.pending_clients.read().await.iter().cloned().collect::<Vec<_>>()
     }
+
+    /// Returns true if any non-disabled MCP servers failed to start.
+    /// This checks the mcp_load_record for any LoadingRecord::Err entries.
+    pub async fn has_mcp_startup_failures(&self) -> bool {
+        let records = self.mcp_load_record.lock().await;
+        records
+            .values()
+            .any(|records| records.iter().any(|r| matches!(r, LoadingRecord::Err(..))))
+    }
 }
 
 type DisplayTaskJoinHandle = JoinHandle<Result<(), eyre::Report>>;
@@ -2438,6 +2447,72 @@ mod tests {
             serde_json::Value::String("test_value".to_string()),
         );
         assert_eq!(result, Some(expected_map));
+    }
+
+    #[tokio::test]
+    async fn test_has_mcp_startup_failures_returns_true_on_errors() {
+        let load_record = Arc::new(Mutex::new(HashMap::new()));
+
+        // Insert an error record
+        {
+            let mut records = load_record.lock().await;
+            records.insert("test-server".to_string(), vec![LoadingRecord::err(
+                "Connection refused".to_string(),
+            )]);
+        }
+
+        let tool_manager = ToolManager {
+            mcp_load_record: load_record,
+            ..Default::default()
+        };
+
+        assert!(tool_manager.has_mcp_startup_failures().await);
+    }
+
+    #[tokio::test]
+    async fn test_has_mcp_startup_failures_returns_false_on_success() {
+        let load_record = Arc::new(Mutex::new(HashMap::new()));
+
+        // Insert a success record
+        {
+            let mut records = load_record.lock().await;
+            records.insert("test-server".to_string(), vec![LoadingRecord::success(
+                "Loaded successfully".to_string(),
+            )]);
+        }
+
+        let tool_manager = ToolManager {
+            mcp_load_record: load_record,
+            ..Default::default()
+        };
+
+        assert!(!tool_manager.has_mcp_startup_failures().await);
+    }
+
+    #[tokio::test]
+    async fn test_has_mcp_startup_failures_returns_false_on_warnings() {
+        let load_record = Arc::new(Mutex::new(HashMap::new()));
+
+        // Insert a warning record (warnings should not count as failures)
+        {
+            let mut records = load_record.lock().await;
+            records.insert("test-server".to_string(), vec![LoadingRecord::warn(
+                "Some tools excluded".to_string(),
+            )]);
+        }
+
+        let tool_manager = ToolManager {
+            mcp_load_record: load_record,
+            ..Default::default()
+        };
+
+        assert!(!tool_manager.has_mcp_startup_failures().await);
+    }
+
+    #[tokio::test]
+    async fn test_has_mcp_startup_failures_returns_false_when_empty() {
+        let tool_manager = ToolManager::default();
+        assert!(!tool_manager.has_mcp_startup_failures().await);
     }
 
     #[tokio::test]

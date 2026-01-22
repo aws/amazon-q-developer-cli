@@ -1,0 +1,4 @@
+{
+  "type": "added",
+  "description": "add --require-mcp-startup flag to enforce successful MCP server startup"
+}

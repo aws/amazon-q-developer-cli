@@ -274,6 +274,9 @@ pub struct ChatArgs {
     /// Control line wrapping behavior (default: auto-detect)
     #[arg(short = 'w', long, value_enum)]
     pub wrap: Option<WrapMode>,
+    /// Require all enabled MCP servers to start successfully; exit with code 3 if any fail
+    #[arg(long)]
+    pub require_mcp_startup: bool,
 }
 
 impl ChatArgs {
@@ -594,6 +597,24 @@ impl ChatArgs {
             .build(os, Box::new(std::io::stderr()), !self.no_interactive)
             .await?;
         let tool_config = tool_manager.load_tools(os, &mut stderr).await?;
+
+        // Check for MCP startup failures if --require-mcp-startup is enabled
+        if self.require_mcp_startup {
+            let has_failures = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                tool_manager.has_mcp_startup_failures(),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                eprintln!("Warning: Timed out checking MCP startup status, assuming failure");
+                true
+            });
+
+            if has_failures {
+                eprintln!("Error: One or more MCP servers failed to start (--require-mcp-startup enabled)");
+                return Ok(ExitCode::from(3));
+            }
+        }
 
         // Handle interactive session selection if --resume-picker flag is used
         let resume_session_id = if self.resume_picker {
