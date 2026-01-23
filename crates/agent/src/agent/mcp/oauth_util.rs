@@ -8,10 +8,7 @@ use std::pin::Pin;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use http::{
-    HeaderMap,
-    StatusCode,
-};
+use http::HeaderMap;
 use http_body_util::Full;
 use hyper::Response;
 use hyper::body::Bytes;
@@ -180,13 +177,17 @@ pub fn get_default_scopes() -> &'static [&'static str] {
     &["openid", "email", "profile", "offline_access"]
 }
 
+#[derive(Debug, Clone, Copy)]
 enum TransportType {
     Http,
     Sse,
 }
 
 enum HttpServiceBuilderState {
-    AttemptConnection(TransportType, bool),
+    /// Try unauthenticated connection first (transport_type, has_tried_auth)
+    TryUnauthenticated(TransportType),
+    /// Try authenticated connection (transport_type, has_refreshed_token)
+    TryAuthenticated(TransportType, bool),
     FailedBecauseTokenMightBeExpired,
     Exhausted,
 }
@@ -243,7 +244,7 @@ impl<'a> HttpServiceBuilder<'a> {
             server_actor_event_tx,
         } = self;
 
-        let mut state = HttpServiceBuilderState::AttemptConnection(TransportType::Http, false);
+        let mut state = HttpServiceBuilderState::TryUnauthenticated(TransportType::Http);
         let url = Url::from_str(url)?;
         let key = compute_key(&url);
         let cred_full_path = cred_dir.join(format!("{key}.token.json"));
@@ -257,171 +258,131 @@ impl<'a> HttpServiceBuilder<'a> {
         };
         let reqwest_client = client_builder.build()?;
 
-        // The probe request, like all other request, should adhere to the standards as per https://modelcontextprotocol.io/specification/2025-06-18/basic/transports#sending-messages-to-the-server
-        let probe_resp = reqwest_client
-            .post(url.clone())
-            .header("Accept", "application/json, text/event-stream")
-            .send()
-            .await;
-        let is_probe_err = probe_resp.is_err();
-        let is_status_401_or_403 = probe_resp
-            .as_ref()
-            .is_ok_and(|resp| resp.status() == StatusCode::UNAUTHORIZED || resp.status() == StatusCode::FORBIDDEN);
-
-        let contains_auth_header = probe_resp.is_ok_and(|resp| {
-            resp.headers().get("www-authenticate").is_some_and(|v| {
-                let value_as_str = v.to_str();
-                if let Ok(value) = value_as_str {
-                    value.to_lowercase().contains("bearer")
-                } else {
-                    false
-                }
-            })
-        });
-        let needs_auth = is_probe_err || is_status_401_or_403 || contains_auth_header;
-
-        // Here we attempt the following in the order they are presented:
-        // 1. Build transport, first assume http on attempt one, sse on attempt two
-        //   - If it fails and it needs auth, attempt to refresh token (#2)
-        //   - If it fails and it does not need auth OR if it fails after a refresh, attempt sse (#3)
-        // 2. Refresh token, go back to #1
-        // 3. Attempt sse
-        //   - If it fails, abort (because at this point we have run out of things to try, note that
-        //     refreshing of token is agnostic to the type of transport)
+        // Strategy: try unauthenticated transports first (HTTP then SSE),
+        // then authenticated transports (HTTP then SSE).
         loop {
             match state {
-                HttpServiceBuilderState::AttemptConnection(transport_type, has_refreshed) => {
-                    if needs_auth {
-                        let ac = match auth_client {
-                            Some(ref auth_client) => auth_client.clone(),
-                            None => {
-                                let am = get_auth_manager(
-                                    server_name,
-                                    url.clone(),
-                                    cred_full_path.clone(),
-                                    reg_full_path.clone(),
-                                    scopes,
-                                    oauth_config,
-                                    server_actor_event_tx,
-                                )
-                                .await?;
+                HttpServiceBuilderState::TryUnauthenticated(transport_type) => {
+                    info!("## mcp: attempting unauthenticated {transport_type:?} for {server_name}");
+                    match transport_type {
+                        TransportType::Http => {
+                            let transport = StreamableHttpClientTransport::with_client(
+                                reqwest_client.clone(),
+                                StreamableHttpClientTransportConfig {
+                                    uri: url.as_str().into(),
+                                    allow_stateless: true,
+                                    ..Default::default()
+                                },
+                            );
 
-                                let ac = AuthClient::new(reqwest_client.clone(), am);
-                                auth_client.replace(ac.clone());
-                                ac
-                            },
-                        };
-
-                        match transport_type {
-                            TransportType::Http => {
-                                let transport = StreamableHttpClientTransport::with_client(
-                                    ac.clone(),
-                                    StreamableHttpClientTransportConfig {
-                                        uri: url.as_str().into(),
-                                        allow_stateless: true,
-                                        ..Default::default()
-                                    },
-                                );
-
-                                match service.clone().into_dyn().serve(transport).await {
-                                    Ok(service) => {
-                                        let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
-                                        return Ok((service, Some(auth_client_wrapper)));
-                                    },
-                                    Err(e) => {
-                                        if !has_refreshed {
-                                            error!(
-                                                "## mcp: http handshake attempt failed for {server_name}: {:?}. Attempting to refresh token",
-                                                e
-                                            );
-                                            // first we'll try refreshing the token
-                                            state = HttpServiceBuilderState::FailedBecauseTokenMightBeExpired;
-                                        } else {
-                                            error!(
-                                                "## mcp: http handshake attempt failed for {server_name}: {:?}. Attempting sse",
-                                                e
-                                            );
-                                            state =
-                                                HttpServiceBuilderState::AttemptConnection(TransportType::Sse, true);
-                                        }
-                                    },
-                                }
-                            },
-                            TransportType::Sse => {
-                                let transport = SseClientTransport::start_with_client(ac.clone(), SseClientConfig {
+                            match service.clone().into_dyn().serve(transport).await {
+                                Ok(service) => return Ok((service, None)),
+                                Err(e) => {
+                                    info!("## mcp: unauthenticated http failed for {server_name}: {e:?}, trying sse");
+                                    state = HttpServiceBuilderState::TryUnauthenticated(TransportType::Sse);
+                                },
+                            }
+                        },
+                        TransportType::Sse => {
+                            let transport_result =
+                                SseClientTransport::start_with_client(reqwest_client.clone(), SseClientConfig {
                                     sse_endpoint: url.as_str().into(),
                                     ..Default::default()
                                 })
-                                .await
-                                .map_err(|e| OauthUtilError::SseTransport(e.to_string()))?;
+                                .await;
 
-                                match service.clone().into_dyn().serve(transport).await {
-                                    Ok(service) => {
-                                        let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
-                                        return Ok((service, Some(auth_client_wrapper)));
-                                    },
-                                    Err(e) => {
-                                        // at this point we would have already tried refreshing
-                                        // we are out of things to try and should just fail
-                                        error!(
-                                            "## mcp: sse handshake attempted failed for {server_name}: {:?}. Aborting",
-                                            e
-                                        );
-                                        state = HttpServiceBuilderState::Exhausted;
-                                    },
-                                }
-                            },
-                        }
-                    } else {
-                        info!(
-                            "## mcp: No OAuth endpoints discovered for {server_name}, using unauthenticated transport"
-                        );
-
-                        match transport_type {
-                            TransportType::Http => {
-                                info!("## mcp: attempting open http handshake for {server_name}");
-                                let transport = StreamableHttpClientTransport::with_client(
-                                    reqwest_client.clone(),
-                                    StreamableHttpClientTransportConfig {
-                                        uri: url.as_str().into(),
-                                        allow_stateless: true,
-                                        ..Default::default()
-                                    },
-                                );
-
-                                match service.clone().into_dyn().serve(transport).await {
+                            match transport_result {
+                                Ok(transport) => match service.clone().into_dyn().serve(transport).await {
                                     Ok(service) => return Ok((service, None)),
                                     Err(e) => {
-                                        error!(
-                                            "## mcp: open http handshake attempted failed for {server_name}: {:?}. Attempting sse",
-                                            e
+                                        info!(
+                                            "## mcp: unauthenticated sse failed for {server_name}: {e:?}, trying authenticated"
                                         );
-                                        state = HttpServiceBuilderState::AttemptConnection(TransportType::Sse, false);
+                                        state = HttpServiceBuilderState::TryAuthenticated(TransportType::Http, false);
                                     },
-                                }
-                            },
-                            TransportType::Sse => {
-                                info!("## mcp: attempting open sse handshake for {server_name}");
-                                let transport =
-                                    SseClientTransport::start_with_client(reqwest_client.clone(), SseClientConfig {
-                                        sse_endpoint: url.as_str().into(),
-                                        ..Default::default()
-                                    })
-                                    .await
-                                    .map_err(|e| OauthUtilError::SseTransport(e.to_string()))?;
+                                },
+                                Err(e) => {
+                                    info!(
+                                        "## mcp: unauthenticated sse transport failed for {server_name}: {e:?}, trying authenticated"
+                                    );
+                                    state = HttpServiceBuilderState::TryAuthenticated(TransportType::Http, false);
+                                },
+                            }
+                        },
+                    }
+                },
+                HttpServiceBuilderState::TryAuthenticated(transport_type, has_refreshed) => {
+                    let ac = match auth_client {
+                        Some(ref auth_client) => auth_client.clone(),
+                        None => {
+                            let am = get_auth_manager(
+                                server_name,
+                                url.clone(),
+                                cred_full_path.clone(),
+                                reg_full_path.clone(),
+                                scopes,
+                                oauth_config,
+                                server_actor_event_tx,
+                            )
+                            .await?;
 
-                                match service.clone().into_dyn().serve(transport).await {
-                                    Ok(service) => return Ok((service, None)),
-                                    Err(e) => {
+                            let ac = AuthClient::new(reqwest_client.clone(), am);
+                            auth_client.replace(ac.clone());
+                            ac
+                        },
+                    };
+
+                    info!("## mcp: attempting authenticated {transport_type:?} for {server_name}");
+                    match transport_type {
+                        TransportType::Http => {
+                            let transport = StreamableHttpClientTransport::with_client(
+                                ac.clone(),
+                                StreamableHttpClientTransportConfig {
+                                    uri: url.as_str().into(),
+                                    allow_stateless: true,
+                                    ..Default::default()
+                                },
+                            );
+
+                            match service.clone().into_dyn().serve(transport).await {
+                                Ok(service) => {
+                                    let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                                    return Ok((service, Some(auth_client_wrapper)));
+                                },
+                                Err(e) => {
+                                    if !has_refreshed {
                                         error!(
-                                            "## mcp: open sse handshake attempted failed for {server_name}: {:?}. Aborting",
-                                            e
+                                            "## mcp: authenticated http failed for {server_name}: {e:?}, refreshing token"
                                         );
-                                        state = HttpServiceBuilderState::Exhausted;
-                                    },
-                                }
-                            },
-                        }
+                                        state = HttpServiceBuilderState::FailedBecauseTokenMightBeExpired;
+                                    } else {
+                                        error!(
+                                            "## mcp: authenticated http failed for {server_name}: {e:?}, trying authenticated sse"
+                                        );
+                                        state = HttpServiceBuilderState::TryAuthenticated(TransportType::Sse, true);
+                                    }
+                                },
+                            }
+                        },
+                        TransportType::Sse => {
+                            let transport = SseClientTransport::start_with_client(ac.clone(), SseClientConfig {
+                                sse_endpoint: url.as_str().into(),
+                                ..Default::default()
+                            })
+                            .await
+                            .map_err(|e| OauthUtilError::SseTransport(e.to_string()))?;
+
+                            match service.clone().into_dyn().serve(transport).await {
+                                Ok(service) => {
+                                    let auth_client_wrapper = AuthClientWrapper::new(cred_full_path, ac);
+                                    return Ok((service, Some(auth_client_wrapper)));
+                                },
+                                Err(e) => {
+                                    error!("## mcp: authenticated sse failed for {server_name}: {e:?}, exhausted");
+                                    state = HttpServiceBuilderState::Exhausted;
+                                },
+                            }
+                        },
                     }
                 },
                 HttpServiceBuilderState::FailedBecauseTokenMightBeExpired => {
@@ -430,26 +391,18 @@ impl<'a> HttpServiceBuilder<'a> {
                     let refresh_res = auth_client_wrapper.refresh_token().await;
 
                     if let Err(e) = refresh_res {
-                        error!("## mcp: token refresh attempt failed: {:?}", e);
-                        info!("Retry for http transport failed {e}. Possible reauth needed");
-                        // This could be because the refresh token is expired, in which
-                        // case we would need to have user go through the auth flow
-                        // again. We do this by deleting the cred
-                        // and discarding the client to trigger a full auth flow
+                        error!("## mcp: token refresh failed: {e:?}");
                         if cred_full_path.is_file() {
                             tokio::fs::remove_file(&cred_full_path).await?;
                         }
-
-                        // we'll also need to remove the auth client to force a reauth when we go
-                        // back to attempt the first step again
                         auth_client.take();
                     }
 
-                    state = HttpServiceBuilderState::AttemptConnection(TransportType::Http, true);
+                    state = HttpServiceBuilderState::TryAuthenticated(TransportType::Http, true);
                 },
                 HttpServiceBuilderState::Exhausted => {
                     return Err(OauthUtilError::ServiceNotObtained(
-                        "Max number of retries exhausted".to_string(),
+                        "All connection attempts exhausted".to_string(),
                     ));
                 },
             }
