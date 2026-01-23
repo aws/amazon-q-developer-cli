@@ -208,7 +208,7 @@ impl AddArgs {
             // Continue with custom server addition below
         } else {
             // Enterprise user - check if MCP registry is configured
-            match os.client.get_mcp_config().await {
+            match os.client.get_mcp_config(&os.database).await {
                 Ok((_, Some(registry_url))) => {
                     // Registry is configured - verify connectivity before blocking custom servers
                     let registry_client = McpRegistryClient::new();
@@ -506,7 +506,7 @@ impl ListArgs {
         let (mcp_enabled, registry_url) = if !is_enterprise {
             (true, None)
         } else {
-            match os.client.get_mcp_config().await {
+            match os.client.get_mcp_config(&os.database).await {
                 Ok((enabled, url)) => (enabled, url),
                 Err(_) => (false, None),
             }
@@ -750,7 +750,7 @@ async fn get_mcp_server_configs(os: &mut Os) -> Result<BTreeMap<Scope, Vec<(Stri
     let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
         (true, false)
     } else {
-        match os.client.is_mcp_enabled().await {
+        match os.client.is_mcp_enabled(&os.database).await {
             Ok(enabled) => (enabled, false),
             Err(err) => {
                 // Check if this is a GetProfile API error

@@ -89,7 +89,7 @@ impl AgentArgs {
         let (mcp_enabled, mcp_api_failure) = if !is_enterprise {
             (true, false)
         } else {
-            match os.client.is_mcp_enabled().await {
+            match os.client.is_mcp_enabled(&os.database).await {
                 Ok(enabled) => (enabled, false),
                 Err(err) => {
                     // Check if this is a GetProfile API error

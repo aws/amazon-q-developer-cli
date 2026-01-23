@@ -366,7 +366,7 @@ impl ChatArgs {
             tracing::debug!("Non-enterprise user detected, enabling MCP without registry");
             (true, None, false)
         } else {
-            match os.client.get_mcp_config().await {
+            match os.client.get_mcp_config(&os.database).await {
                 Ok((enabled, registry_url)) => {
                     tracing::debug!(
                         "Retrieved MCP config from API: enabled={}, registry_url={:?}",
@@ -1621,7 +1621,7 @@ impl ChatSession {
             }
 
             // Refresh MCP config (including registry URL) from API for enterprise users
-            match os.client.get_mcp_config().await {
+            match os.client.get_mcp_config(&os.database).await {
                 Ok((enabled, new_registry_url)) => {
                     let old_url = self.conversation.mcp_registry_url.clone();
                     self.conversation.mcp_enabled = enabled;

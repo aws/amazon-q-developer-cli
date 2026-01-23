@@ -358,13 +358,18 @@ impl ApiClient {
         Ok(res)
     }
 
-    pub async fn is_mcp_enabled(&self) -> Result<bool, ApiClientError> {
-        let (enabled, _) = self.get_mcp_config().await?;
+    pub async fn is_mcp_enabled(&self, database: &Database) -> Result<bool, ApiClientError> {
+        let (enabled, _) = self.get_mcp_config(database).await?;
         Ok(enabled)
     }
 
     /// Get MCP configuration including enabled status and registry URL
-    pub async fn get_mcp_config(&self) -> Result<(bool, Option<String>), ApiClientError> {
+    pub async fn get_mcp_config(&self, database: &Database) -> Result<(bool, Option<String>), ApiClientError> {
+        // Skip MCP governance check for custom endpoints (e.g., dev desktop)
+        if Self::is_custom_endpoint(database) {
+            return Ok((true, None));
+        }
+
         let request = self
             .client
             .get_profile()
