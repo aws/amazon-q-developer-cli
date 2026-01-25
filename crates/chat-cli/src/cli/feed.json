@@ -18,7 +18,7 @@
       "changes": [
         {
           "type": "changed",
-          "description": "Updated prompt to expand default agent capabilities"
+          "description": "Updated prompt and tool spec to expand agent capabilities"
         }
       ]
     },
