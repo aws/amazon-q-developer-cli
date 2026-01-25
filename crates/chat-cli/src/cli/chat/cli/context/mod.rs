@@ -86,8 +86,8 @@ pub enum ContextSubcommand {
         /// Include even if matched files exceed size limits
         #[arg(short, long)]
         force: bool,
+        /// Paths or glob patterns to add to context rules
         #[arg(required = true)]
-        /// Paths or glob patterns to remove from context rules
         paths: Vec<String>,
     },
     /// Remove specified rules
