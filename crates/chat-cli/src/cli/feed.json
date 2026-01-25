@@ -12,6 +12,18 @@
     },
     {
       "type": "release",
+      "date": "2026-01-25",
+      "version": "1.24.1",
+      "title": "Version 1.24.1",
+      "changes": [
+        {
+          "type": "changed",
+          "description": "Updated prompt to expand default agent capabilities"
+        }
+      ]
+    },
+    {
+      "type": "release",
       "date": "2026-01-15",
       "version": "1.24.0",
       "title": "Version 1.24.0",
