@@ -1,0 +1,4 @@
+{
+  "type": "fixed",
+  "description": "Respect --no-interactive flag in subagent indicator"
+}

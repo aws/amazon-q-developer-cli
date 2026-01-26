@@ -55,9 +55,14 @@ use crate::protocol::{
     InputEvent,
     InputEventKind,
     McpEvent,
+    MetaEvent,
     SessionEvent,
     TextMessageContent,
 };
+
+// MetaEvent type constants
+const META_TYPE_END_TURN: &str = "EndTurn";
+const META_TYPE_INITIALIZED: &str = "Initialized";
 
 #[inline]
 fn wrap_text(input: &str, max_text_width: u16) -> Vec<&str> {
@@ -296,6 +301,46 @@ impl<'a> AgentInfo<'a> {
     }
 }
 
+/// Parses the agent ID from an "Initialized" MetaEvent payload.
+/// The payload is expected to be a JSON number representing the agent ID.
+fn try_parse_initialized_agent_id(payload: &serde_json::Value) -> Option<u16> {
+    serde_json::from_value::<serde_json::Number>(payload.clone())
+        .ok()?
+        .as_u64()?
+        .try_into()
+        .ok()
+}
+
+/// Updates agent lifecycle state from a MetaEvent.
+/// This handles state that both interactive and non-interactive modes need:
+/// - `is_done` when EndTurn is received
+/// - `is_initialized` when Initialized is received
+///
+/// Returns `true` if any agent's `is_done` state changed to `true`.
+fn update_agent_lifecycle_state(
+    meta_evt: &MetaEvent,
+    agent_id: u16,
+    agents: &mut std::collections::BTreeMap<u16, AgentInfo<'_>>,
+) -> bool {
+    match meta_evt.meta_type.as_str() {
+        META_TYPE_END_TURN => {
+            if let Some(info) = agents.get_mut(&agent_id) {
+                info.is_done = true;
+                return true;
+            }
+        },
+        META_TYPE_INITIALIZED => {
+            if let Some(id) = try_parse_initialized_agent_id(&meta_evt.payload)
+                && let Some(info) = agents.get_mut(&id)
+            {
+                info.is_initialized = true;
+            }
+        },
+        _ => {},
+    }
+    false
+}
+
 pub struct SubagentIndicator<'a> {
     agents: HashMap<u16, AgentInfo<'a>>,
     view_end: ViewEnd,
@@ -352,29 +397,76 @@ impl<'a> SubagentIndicator<'a> {
 
         struct RawModeGuard {
             end_turn_tx: Option<tokio::sync::oneshot::Sender<()>>,
+            raw_mode_enabled: bool,
         }
 
         impl RawModeGuard {
-            pub fn enter_raw_mode(end_turn_tx: tokio::sync::oneshot::Sender<()>) -> Self {
-                crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+            pub fn new(end_turn_tx: tokio::sync::oneshot::Sender<()>, is_interactive: bool) -> Self {
+                if is_interactive {
+                    crossterm::terminal::enable_raw_mode().expect("failed to enable raw mode");
+                }
                 Self {
                     end_turn_tx: Some(end_turn_tx),
+                    raw_mode_enabled: is_interactive,
                 }
             }
         }
 
         impl Drop for RawModeGuard {
             fn drop(&mut self) {
-                crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+                if self.raw_mode_enabled {
+                    crossterm::terminal::disable_raw_mode().expect("failed to disable raw mode");
+                }
                 if let Some(end_turn_tx) = self.end_turn_tx.take() {
-                    end_turn_tx.send(()).expect("failed to send end turn message");
+                    let _ = end_turn_tx.send(());
                 }
             }
         }
 
         tokio::spawn(async move {
-            let _raw_mode_guard = RawModeGuard::enter_raw_mode(end_turn_tx);
+            let _raw_mode_guard = RawModeGuard::new(end_turn_tx, is_interactive);
 
+            // Non-interactive mode: skip all terminal UI, just process events
+            if !is_interactive {
+                loop {
+                    tokio::select! {
+                        session_evt = async {
+                            if self.view_end.receiver.is_closed() {
+                                std::future::pending().await
+                            } else {
+                                self.view_end.receiver.recv().await
+                            }
+                        } => {
+                            let Some(session_evt) = session_evt else {
+                                break;
+                            };
+
+                            if let SessionEvent::AgentEvent(agent_evt) = session_evt {
+                                let AgentEvent { agent_id, kind } = agent_evt;
+
+                                if let AgentEventKind::MetaEvent(meta_evt) = kind {
+                                    update_agent_lifecycle_state(&meta_evt, agent_id, &mut agents);
+                                }
+                            }
+                        },
+
+                        _ = async {
+                            // Exit when all agents are done
+                            if agents.values().all(|info| info.is_done) {
+                                std::future::ready(()).await;
+                            } else {
+                                ct.cancelled().await;
+                            }
+                        } => {
+                            break;
+                        }
+                    }
+                }
+
+                return Ok::<(), eyre::Report>(());
+            }
+
+            // Interactive mode: full terminal UI
             let mut content_widget_width: u16;
             let mut max_text_width: u16;
             #[allow(unused_assignments)]
@@ -935,5 +1027,69 @@ impl<'a> SubagentIndicator<'a> {
             end_turn_rx: Some(end_turn_rx),
             guard: Some(cancellation_token),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn test_try_parse_initialized_agent_id_valid() {
+        // Valid u16 value
+        let payload = json!(42);
+        assert_eq!(try_parse_initialized_agent_id(&payload), Some(42));
+
+        // Zero is valid
+        let payload = json!(0);
+        assert_eq!(try_parse_initialized_agent_id(&payload), Some(0));
+
+        // Max u16 value
+        let payload = json!(65535);
+        assert_eq!(try_parse_initialized_agent_id(&payload), Some(65535));
+    }
+
+    #[test]
+    fn test_try_parse_initialized_agent_id_invalid() {
+        // Value too large for u16
+        let payload = json!(65536);
+        assert_eq!(try_parse_initialized_agent_id(&payload), None);
+
+        // Negative number
+        let payload = json!(-1);
+        assert_eq!(try_parse_initialized_agent_id(&payload), None);
+
+        // String instead of number
+        let payload = json!("42");
+        assert_eq!(try_parse_initialized_agent_id(&payload), None);
+
+        // Null value
+        let payload = json!(null);
+        assert_eq!(try_parse_initialized_agent_id(&payload), None);
+
+        // Object instead of number
+        let payload = json!({"id": 42});
+        assert_eq!(try_parse_initialized_agent_id(&payload), None);
+    }
+
+    #[test]
+    fn test_update_agent_lifecycle_state_end_turn() {
+        let mut agents = BTreeMap::new();
+        agents.insert(0, AgentInfo::default());
+
+        let meta_evt = MetaEvent {
+            meta_type: META_TYPE_END_TURN.to_string(),
+            payload: json!({}),
+        };
+
+        // Before: agent is not done
+        assert!(!agents.get(&0).unwrap().is_done);
+
+        // After: agent is done
+        let result = update_agent_lifecycle_state(&meta_evt, 0, &mut agents);
+        assert!(result);
+        assert!(agents.get(&0).unwrap().is_done);
     }
 }
