@@ -1213,6 +1213,19 @@ impl ConversationState {
         self.truncate_excluded_messages();
 
         self.latest_summary = Some((enhanced_summary, request_metadata));
+
+        // Reset stale context usage percentages from remaining entries
+        self.reset_context_usage_percentages();
+    }
+
+    /// Clears context usage percentage from all remaining history entries.
+    /// Called after compaction to prevent displaying stale pre-compaction percentages.
+    fn reset_context_usage_percentages(&mut self) {
+        for entry in self.history.iter_mut() {
+            if let Some(ref mut metadata) = entry.request_metadata {
+                metadata.context_usage_percentage = None;
+            }
+        }
     }
 
     /// Truncates excluded messages after compaction to prevent context bloat.
@@ -3034,6 +3047,68 @@ mod tests {
         assert!(
             matches!(level, TokenWarningLevel::None),
             "Expected None for short conversation without backend data"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_context_percentage_reset_after_compaction() {
+        let mut os = Os::new().await.unwrap();
+        let agents = Agents::default();
+        let mut tool_manager = ToolManager::default();
+        let mut conversation = ConversationState::new(
+            "test_conv",
+            agents,
+            tool_manager.load_tools(&mut os, &mut vec![]).await.unwrap(),
+            tool_manager,
+            None,
+            &os,
+            false,
+            None,
+        )
+        .await;
+
+        // Add entries with high context usage percentages
+        conversation.set_next_user_message("test 1".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg1".to_string()), "response".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(85.0),
+                message_id: "msg1".to_string(),
+                ..Default::default()
+            }),
+        );
+
+        conversation.set_next_user_message("test 2".to_string()).await;
+        conversation.push_assistant_message(
+            &mut os,
+            AssistantMessage::new_response(Some("msg2".to_string()), "response2".to_string()),
+            Some(RequestMetadata {
+                context_usage_percentage: Some(90.0),
+                message_id: "msg2".to_string(),
+                ..Default::default()
+            }),
+        );
+
+        // Verify percentage is present before compaction
+        let before = conversation.get_backend_context_percentage();
+        assert_eq!(before, Some(90.0), "Should have high percentage before compaction");
+
+        // Perform compaction (keep last message)
+        conversation.replace_history_with_summary(
+            "test summary".to_string(),
+            CompactStrategy::default(),
+            RequestMetadata::default(),
+        );
+
+        // Verify percentage is cleared after compaction
+        let after = conversation.get_backend_context_percentage();
+        assert_eq!(after, None, "Context usage percentage should be None after compaction");
+
+        // Verify history still has entries (compaction keeps some messages)
+        assert!(
+            !conversation.history().is_empty(),
+            "History should not be empty after compaction"
         );
     }
 }
