@@ -11,7 +11,10 @@ use std::sync::atomic::{
     AtomicUsize,
     Ordering,
 };
-use std::time::SystemTime;
+use std::time::{
+    Duration,
+    SystemTime,
+};
 
 use dashmap::DashMap;
 use moka::sync::Cache;
@@ -30,14 +33,21 @@ pub struct FileMetadata {
     pub file_size: u64,
 }
 
+/// Cached symbols with modification time for validation
+#[derive(Clone)]
+struct CachedSymbols {
+    symbols: Vec<SymbolInfo>,
+    mtime: SystemTime,
+}
+
 /// File index for extension-based lookups
 pub struct CodeStore {
     /// Extension to file paths index
     extension_index: DashMap<String, Vec<PathBuf>>,
     /// File metadata (hash for change detection)
     metadata: DashMap<PathBuf, FileMetadata>,
-    /// LRU cache: file_path -> Vec<SymbolInfo> (max 500MB)
-    symbol_cache: Arc<Cache<PathBuf, Vec<SymbolInfo>>>,
+    /// LRU cache: file_path -> CachedSymbols (max 500MB, 30min TTL)
+    symbol_cache: Arc<Cache<PathBuf, CachedSymbols>>,
 }
 
 impl Default for CodeStore {
@@ -54,22 +64,33 @@ impl CodeStore {
             symbol_cache: Arc::new(
                 Cache::builder()
                     .max_capacity(500 * 1024 * 1024) // 500MB
-                    .weigher(|_key: &PathBuf, value: &Vec<SymbolInfo>| {
-                        (value.len() * 1024) as u32 // ~1KB per symbol
+                    .time_to_live(Duration::from_secs(1800)) // 30 minutes
+                    .weigher(|_key: &PathBuf, value: &CachedSymbols| {
+                        (value.symbols.len() * 1024) as u32 // ~1KB per symbol
                     })
                     .build(),
             ),
         }
     }
 
-    /// Get cached symbols for a file
+    /// Get cached symbols for a file (validates mtime, returns None if stale)
     pub fn get_cached_symbols(&self, path: &Path) -> Option<Vec<SymbolInfo>> {
-        self.symbol_cache.get(&path.to_path_buf())
+        let cached = self.symbol_cache.get(&path.to_path_buf())?;
+        let current_mtime = std::fs::metadata(path).ok()?.modified().ok()?;
+        if cached.mtime == current_mtime {
+            Some(cached.symbols.clone())
+        } else {
+            self.symbol_cache.invalidate(&path.to_path_buf());
+            None
+        }
     }
 
-    /// Cache symbols for a file
+    /// Cache symbols for a file with current mtime
     pub fn cache_symbols(&self, path: &Path, symbols: Vec<SymbolInfo>) {
-        self.symbol_cache.insert(path.to_path_buf(), symbols);
+        if let Ok(mtime) = std::fs::metadata(path).and_then(|m| m.modified()) {
+            self.symbol_cache
+                .insert(path.to_path_buf(), CachedSymbols { symbols, mtime });
+        }
     }
 
     /// Invalidate symbol cache for a file
@@ -198,5 +219,50 @@ impl CodeStore {
         let mut hasher = Sha256::new();
         hasher.update(content.as_bytes());
         hasher.finalize().into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::thread::sleep;
+
+    use super::*;
+
+    #[test]
+    fn test_mtime_invalidation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let file_path = temp_dir.path().join("test.rs");
+
+        // Create file and cache symbols
+        std::fs::write(&file_path, "struct Foo {}").unwrap();
+        let store = CodeStore::new();
+        let symbols = vec![SymbolInfo {
+            name: "Foo".to_string(),
+            symbol_type: Some("struct".to_string()),
+            file_path: file_path.to_string_lossy().to_string(),
+            start_row: 1,
+            end_row: 1,
+            start_column: 0,
+            end_column: 13,
+            container_name: None,
+            detail: None,
+            source_line: None,
+            source_code: None,
+            language: None,
+        }];
+        store.cache_symbols(&file_path, symbols.clone());
+
+        // Cache hit - same mtime
+        let cached = store.get_cached_symbols(&file_path);
+        assert!(cached.is_some());
+        assert_eq!(cached.unwrap()[0].name, "Foo");
+
+        // Modify file (sleep to ensure mtime changes)
+        sleep(Duration::from_millis(10));
+        std::fs::write(&file_path, "struct Bar {}").unwrap();
+
+        // Cache miss - mtime changed
+        let cached = store.get_cached_symbols(&file_path);
+        assert!(cached.is_none());
     }
 }

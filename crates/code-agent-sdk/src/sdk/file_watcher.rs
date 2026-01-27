@@ -169,9 +169,25 @@ impl FileWatcher {
 
         let mut file_watcher = Self { _watcher: watcher };
 
-        file_watcher._watcher.watch(&workspace_root, RecursiveMode::Recursive)?;
+        // Use gitignore-aware directory enumeration to avoid traversing ignored directories
+        // This is critical for performance when large directories are gitignored
+        let mut watch_count = 0;
+        for entry in
+            crate::utils::traversal::create_code_walker_with_gitignore(&workspace_root, None, config.respect_gitignore)
+                .build()
+                .flatten()
+                .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
+        {
+            if let Err(e) = file_watcher._watcher.watch(entry.path(), RecursiveMode::NonRecursive) {
+                tracing::warn!("Failed to watch directory {:?}: {}", entry.path(), e);
+            } else {
+                watch_count += 1;
+            }
+        }
+
         tracing::trace!(
-            "Started watching directory: {:?} with patterns include={:?}, exclude={:?}, gitignore={}",
+            "Started watching {} directories in {:?} with patterns include={:?}, exclude={:?}, gitignore={}",
+            watch_count,
             workspace_root,
             config.include_patterns,
             config.exclude_patterns,
@@ -716,5 +732,65 @@ mod tests {
         // Test non-matching file
         let regular_file = workspace_root.join("test.ts");
         assert!(!matcher.is_ignored(&regular_file));
+    }
+
+    #[test]
+    fn test_watch_skips_gitignored_directories() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path().to_path_buf();
+
+        // Create directory structure
+        std::fs::create_dir_all(workspace_root.join("src")).unwrap();
+        std::fs::create_dir_all(workspace_root.join("ignored_dir/subdir")).unwrap();
+
+        // Create .ignore file (works without git init, unlike .gitignore)
+        std::fs::write(workspace_root.join(".ignore"), "ignored_dir/\n").unwrap();
+
+        // Collect directories that would be watched
+        let watched_dirs: Vec<_> = crate::utils::traversal::create_code_walker_with_gitignore(
+            &workspace_root,
+            None,
+            true, // respect_gitignore = true
+        )
+        .build()
+        .flatten()
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
+        .map(|e| e.path().to_path_buf())
+        .collect();
+
+        // Should include workspace root and src
+        assert!(watched_dirs.iter().any(|p| p == &workspace_root));
+        assert!(watched_dirs.iter().any(|p| p.ends_with("src")));
+
+        // Should NOT include ignored_dir or its subdirectories
+        assert!(!watched_dirs.iter().any(|p| p.to_string_lossy().contains("ignored_dir")));
+    }
+
+    #[test]
+    fn test_watch_includes_gitignored_when_disabled() {
+        let temp_dir = TempDir::new().unwrap();
+        let workspace_root = temp_dir.path().to_path_buf();
+
+        // Create directory structure
+        std::fs::create_dir_all(workspace_root.join("src")).unwrap();
+        std::fs::create_dir_all(workspace_root.join("ignored_dir")).unwrap();
+
+        // Create .ignore file
+        std::fs::write(workspace_root.join(".ignore"), "ignored_dir/\n").unwrap();
+
+        // Collect directories with gitignore disabled
+        let watched_dirs: Vec<_> = crate::utils::traversal::create_code_walker_with_gitignore(
+            &workspace_root,
+            None,
+            false, // respect_gitignore = false
+        )
+        .build()
+        .flatten()
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
+        .map(|e| e.path().to_path_buf())
+        .collect();
+
+        // Should include ignored_dir when gitignore is disabled
+        assert!(watched_dirs.iter().any(|p| p.to_string_lossy().contains("ignored_dir")));
     }
 }

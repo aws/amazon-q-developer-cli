@@ -53,13 +53,27 @@ pub fn should_skip_dir(name: &str) -> bool {
 /// * `root` - Root path to start traversal
 /// * `max_depth` - Optional maximum depth (defaults to 15 if None)
 pub fn create_code_walker(root: &Path, max_depth: Option<usize>) -> ignore::WalkBuilder {
+    create_code_walker_with_gitignore(root, max_depth, true)
+}
+
+/// Create a WalkBuilder with configurable gitignore support
+///
+/// # Arguments
+/// * `root` - Root path to start traversal
+/// * `max_depth` - Optional maximum depth (defaults to 15 if None)
+/// * `respect_gitignore` - Whether to respect .gitignore files
+pub fn create_code_walker_with_gitignore(
+    root: &Path,
+    max_depth: Option<usize>,
+    respect_gitignore: bool,
+) -> ignore::WalkBuilder {
     let mut builder = ignore::WalkBuilder::new(root);
     builder
-        .standard_filters(true)
+        .standard_filters(respect_gitignore)
         .hidden(false)
-        .git_ignore(true)
-        .git_global(true)
-        .git_exclude(true)
+        .git_ignore(respect_gitignore)
+        .git_global(respect_gitignore)
+        .git_exclude(respect_gitignore)
         .max_depth(Some(max_depth.unwrap_or(DEFAULT_MAX_DEPTH)))
         .filter_entry(|e| {
             e.file_type().is_none_or(|ft| !ft.is_dir()) || !should_skip_dir(e.file_name().to_str().unwrap_or(""))

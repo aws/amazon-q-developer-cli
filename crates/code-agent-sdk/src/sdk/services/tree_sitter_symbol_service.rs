@@ -206,7 +206,7 @@ impl TreeSitterSymbolService {
                     symbol_name: symbol_name.clone(),
                     file_path: None,
                     symbol_type: None,
-                    limit: Some(1),
+                    limit: Some(5),
                     language: None,
                     exact_match: true,
                     timeout_secs: None,
