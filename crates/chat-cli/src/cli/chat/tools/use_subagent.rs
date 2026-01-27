@@ -97,6 +97,57 @@ pub enum UseSubagent {
     },
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Settings {
+    #[serde(default, alias = "trustedAgents")]
+    trusted_agents: Vec<AgentIdentifier>,
+    #[serde(default)]
+    available_agents: Vec<AgentIdentifier>,
+}
+
+#[derive(Debug)]
+enum AgentIdentifier {
+    ExactName(String),
+    NameGlob(regex::Regex, String),
+}
+
+impl PartialEq for AgentIdentifier {
+    fn eq(&self, other: &AgentIdentifier) -> bool {
+        match (self, other) {
+            (AgentIdentifier::NameGlob(_, self_pattern), AgentIdentifier::NameGlob(_, other_pattern)) => {
+                self_pattern == other_pattern
+            },
+            (AgentIdentifier::ExactName(self_name), AgentIdentifier::ExactName(other_name)) => self_name == other_name,
+            (_, _) => false,
+        }
+    }
+}
+
+impl PartialEq<str> for AgentIdentifier {
+    fn eq(&self, other: &str) -> bool {
+        match self {
+            AgentIdentifier::NameGlob(r, _) => r.is_match(other),
+            AgentIdentifier::ExactName(name) => name == other,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for AgentIdentifier {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        if s.contains("*") {
+            let r = regex::Regex::new(s.as_str()).map_err(serde::de::Error::custom)?;
+            Ok(AgentIdentifier::NameGlob(r, s))
+        } else {
+            Ok(AgentIdentifier::ExactName(s))
+        }
+    }
+}
+
 impl UseSubagent {
     pub const INFO: ToolInfo = ToolInfo {
         spec_name: "use_subagent",
@@ -117,57 +168,6 @@ impl UseSubagent {
     pub fn eval_perm(&self, _os: &Os, agent: &Agent) -> PermissionEvalResult {
         use crate::util::tool_permission_checker::is_tool_in_allowlist;
 
-        #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "camelCase")]
-        struct Settings {
-            #[serde(default)]
-            allowed_agents: Vec<AgentIdentifier>,
-        }
-
-        #[derive(Debug)]
-        enum AgentIdentifier {
-            ExactName(String),
-            NameGlob(regex::Regex, String),
-        }
-
-        impl PartialEq for AgentIdentifier {
-            fn eq(&self, other: &AgentIdentifier) -> bool {
-                match (self, other) {
-                    (AgentIdentifier::NameGlob(_, self_pattern), AgentIdentifier::NameGlob(_, other_pattern)) => {
-                        self_pattern == other_pattern
-                    },
-                    (AgentIdentifier::ExactName(self_name), AgentIdentifier::ExactName(other_name)) => {
-                        self_name == other_name
-                    },
-                    (_, _) => false,
-                }
-            }
-        }
-
-        impl PartialEq<str> for AgentIdentifier {
-            fn eq(&self, other: &str) -> bool {
-                match self {
-                    AgentIdentifier::NameGlob(r, _) => r.is_match(other),
-                    AgentIdentifier::ExactName(name) => name == other,
-                }
-            }
-        }
-
-        impl<'de> Deserialize<'de> for AgentIdentifier {
-            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-            where
-                D: serde::Deserializer<'de>,
-            {
-                let s = String::deserialize(deserializer)?;
-                if s.contains("*") {
-                    let r = regex::Regex::new(s.as_str()).map_err(serde::de::Error::custom)?;
-                    Ok(AgentIdentifier::NameGlob(r, s))
-                } else {
-                    Ok(AgentIdentifier::ExactName(s))
-                }
-            }
-        }
-
         let is_in_allowlist = Self::INFO
             .aliases
             .iter()
@@ -187,7 +187,10 @@ impl UseSubagent {
             },
             UseSubagent::InvokeSubagents { subagents, .. } => match tool_setting.cloned() {
                 Some(settings) => {
-                    let Settings { allowed_agents } = match serde_json::from_value::<Settings>(settings) {
+                    let Settings {
+                        trusted_agents,
+                        available_agents,
+                    } = match serde_json::from_value::<Settings>(settings) {
                         Ok(settings) => settings,
                         Err(e) => {
                             error!("Failed to deserialize tool settings for subagent: {:?}", e);
@@ -200,9 +203,27 @@ impl UseSubagent {
                         .map(|invoke| invoke.agent_name.as_deref().unwrap_or(DEFAULT_AGENT_NAME))
                         .collect::<Vec<_>>();
 
+                    // First check: availableAgents (if configured)
+                    if !available_agents.is_empty() {
+                        let denied_agents: Vec<String> = agents_to_spawn
+                            .iter()
+                            .filter(|agent| {
+                                !available_agents
+                                    .iter()
+                                    .any(|available_agent| available_agent == **agent)
+                            })
+                            .map(|agent| format!("Agent '{}' is not available to be used as SubAgent", agent))
+                            .collect();
+
+                        if !denied_agents.is_empty() {
+                            return PermissionEvalResult::Deny(denied_agents);
+                        }
+                    }
+
+                    // Second check: trustedAgents
                     if agents_to_spawn
                         .iter()
-                        .all(|agent| allowed_agents.iter().any(|allowed_agent| allowed_agent == *agent))
+                        .all(|agent| trusted_agents.iter().any(|trusted_agent| trusted_agent == *agent))
                     {
                         PermissionEvalResult::Allow
                     } else {
@@ -220,24 +241,49 @@ impl UseSubagent {
         }
     }
 
+    fn filter_agents(agents: &HashMap<String, Agent>, available_agents: &[AgentIdentifier]) -> HashMap<String, String> {
+        agents
+            .iter()
+            .filter(|(name, _)| {
+                available_agents.is_empty() || available_agents.iter().any(|pattern| pattern == name.as_str())
+            })
+            .map(|(name, agent)| {
+                (
+                    name.clone(),
+                    agent
+                        .description
+                        .as_deref()
+                        .unwrap_or("No description provided. Derive meaning from agent name")
+                        .to_string(),
+                )
+            })
+            .collect()
+    }
+
     pub async fn invoke(&self, os: &Os, agents: &Agents) -> Result<InvokeOutput> {
         match self {
             Self::ListAgents => {
-                let descriptions =
-                    agents
-                        .agents
+                // Get available_agents setting from active agent
+                let active_agent = agents.get_active();
+                let tool_setting = active_agent.and_then(|agent| {
+                    Self::INFO
+                        .aliases
                         .iter()
-                        .fold(HashMap::<String, String>::new(), |mut acc, (name, agent)| {
-                            acc.insert(
-                                name.clone(),
-                                agent
-                                    .description
-                                    .as_deref()
-                                    .unwrap_or("No description provided. Derive meaning from agent name")
-                                    .to_string(),
-                            );
-                            acc
-                        });
+                        .find_map(|alias| agent.tools_settings.get(*alias))
+                });
+
+                let available_agents = match tool_setting {
+                    Some(settings) => match serde_json::from_value::<Settings>(settings.clone()) {
+                        Ok(Settings { available_agents, .. }) => available_agents,
+                        Err(e) => {
+                            error!("Failed to deserialize tool settings for subagent: {:?}", e);
+                            vec![]
+                        },
+                    },
+                    None => vec![],
+                };
+
+                let descriptions = Self::filter_agents(&agents.agents, &available_agents);
 
                 let serialized_output = serde_json::to_value(descriptions)?;
 
@@ -427,7 +473,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["agent1", "agent2"]
+                "trustedAgents": ["agent1", "agent2"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -474,7 +520,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["agent1", "agent2"]
+                "trustedAgents": ["agent1", "agent2"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -501,7 +547,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["agent1", "agent2"]
+                "trustedAgents": ["agent1", "agent2"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -528,7 +574,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["test-*"]
+                "trustedAgents": ["test-*"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -555,7 +601,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["test-*"]
+                "trustedAgents": ["test-*"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -582,7 +628,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["agent1", "agent2", "agent3"]
+                "trustedAgents": ["agent1", "agent2", "agent3"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -618,7 +664,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["agent1", "agent2"]
+                "trustedAgents": ["agent1", "agent2"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -654,7 +700,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": [DEFAULT_AGENT_NAME]
+                "trustedAgents": [DEFAULT_AGENT_NAME]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -705,7 +751,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": []
+                "trustedAgents": []
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -752,7 +798,7 @@ mod tests {
         settings.insert(
             "subagent",
             json!({
-                "allowedAgents": ["exact-agent", "test-.*"]
+                "trustedAgents": ["exact-agent", "test-.*"]
             }),
         );
         let agent = create_test_agent(vec![], settings);
@@ -798,5 +844,145 @@ mod tests {
             tool_use_id: None,
         };
         assert_eq!(tool3.eval_perm(&os, &agent), PermissionEvalResult::Ask);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_available_agents_deny() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "availableAgents": ["agent1", "agent2"],
+                "trustedAgents": ["agent1", "agent2", "agent3"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent3".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Deny(_)));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_available_agents_allow() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "availableAgents": ["agent1", "agent2"],
+                "trustedAgents": ["agent1"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_available_agents_glob_deny() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "availableAgents": ["test-.*"],
+                "trustedAgents": ["test-.*", "production-agent"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("production-agent".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert!(matches!(result, PermissionEvalResult::Deny(_)));
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_no_available_agents_uses_allowed() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "trustedAgents": ["agent1"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent1".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        assert_eq!(result, PermissionEvalResult::Allow);
+    }
+
+    #[tokio::test]
+    async fn test_eval_perm_invoke_visible_but_not_allowed() {
+        let os = Os::new().await.unwrap();
+        let mut settings = HashMap::new();
+        settings.insert(
+            "subagent",
+            json!({
+                "availableAgents": ["agent1", "agent2"],
+                "trustedAgents": ["agent1"]
+            }),
+        );
+        let agent = create_test_agent(vec![], settings);
+        let tool = UseSubagent::InvokeSubagents {
+            subagents: vec![InvokeSubagent {
+                query: "test query".to_string(),
+                agent_name: Some("agent2".to_string()),
+                relevant_context: None,
+                dangerously_trust_all_tools: false,
+                is_interactive: false,
+            }],
+            convo_id: None,
+            tool_use_id: None,
+        };
+
+        let result = tool.eval_perm(&os, &agent);
+        // Visible but not allowed → Ask
+        assert_eq!(result, PermissionEvalResult::Ask);
     }
 }

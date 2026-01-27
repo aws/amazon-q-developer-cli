@@ -13,7 +13,8 @@
     "todo_list",
     "subagent",
     "delegate",
-    "@builder-mcp/*"
+    "@builder-mcp/ReadInternalWebsites",
+    "@builder-mcp/InternalSearch"
   ],
   "allowedTools": [
     "fs_read",
@@ -52,8 +53,11 @@
       ]
     },
     "subagent": {
-      "allowedAgents": [
+      "trustedAgents": [
         "kiro-research-agent"
+      ],
+      "availableAgents": [
+        "kiro-research-agent", "kiro_default"
       ]
     }
   },

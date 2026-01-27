@@ -1,5 +1,24 @@
 ## Codebase Overview
 
+### Architecture Note: `agent` vs `chat_cli` Crates
+
+The `agent` crate is an **active refactor** of core functionality from `chat_cli`. The goal is to extract the agent execution engine into a clean, reusable library separate from CLI concerns.
+
+**Current state:**
+- `chat_cli` - Contains the full CLI application including legacy agent execution code in `cli/chat/`
+- `agent` - New crate with refactored agent loop, tool execution, permissions, and MCP management
+
+**What's being migrated:**
+- Agent loop and state management → `agent/src/agent/`
+- Tool execution with timeouts → `agent/src/agent/task_executor/`
+- Permission evaluation → `agent/src/agent/permissions.rs`
+- MCP server lifecycle → `agent/src/agent/mcp/`
+- Stream parsing → `agent/src/agent/agent_loop/`
+
+**During this transition:**
+- Some functionality exists in both crates (e.g., MCP client code, tool implementations)
+- New features should keep in mind that separate implementation maybe necessary for the `agent` crate, while we continue supporting the `chat_cli` crate
+
 ### Core Crates
 
 **chat_cli** - Main CLI application (~6k LOC in core modules)

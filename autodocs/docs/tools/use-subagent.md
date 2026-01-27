@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-23
+  commit: f4ef478f
   status: validated
   testable_headless: true
   category: tool
   title: use_subagent
   description: Delegate tasks to specialized subagents running in parallel with isolated context
-  keywords: [use_subagent, subagent, delegate, parallel, multi-agent]
+  keywords: [use_subagent, subagent, delegate, parallel, multi-agent, availableAgents, trustedAgents]
   related: [delegate, slash-agent]
 ---
 
@@ -101,7 +101,28 @@ Main agent invokes use_subagent with queries for each subagent. Subagents start 
 
 ## Configuration
 
-No agent configuration - use_subagent is trusted by default. Enable subagent feature:
+Control which agents can be used as subagents via toolsSettings in your agent configuration:
+
+```json
+{
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": ["research-agent", "code-agent", "test-*"],
+      "trustedAgents": ["research-agent"]
+    }
+  }
+}
+```
+
+**availableAgents** (array, optional): Controls which agents appear in ListAgents and can be invoked. Supports exact names and glob patterns (e.g., `"test-*"`). If not set, all agents are available.
+
+**trustedAgents** (array, optional): Controls which available agents are auto-approved without user confirmation. Supports exact names and glob patterns. Alias: `allowedAgents` for backwards compatibility. If not set, all invocations require approval.
+
+**Permission Flow**:
+1. Check if agent is in `availableAgents` → If not, deny with error
+2. Check if agent is in `trustedAgents` → If yes, auto-approve; otherwise, ask for confirmation
+
+Enable subagent feature:
 
 ```bash
 kiro-cli settings chat.enableSubagent true
@@ -195,6 +216,12 @@ Real-time status display shows:
 ```
 
 ## Troubleshooting
+
+### Issue: "Agent 'X' is not available to be used as SubAgent"
+
+**Symptom**: Error when trying to invoke a specific agent  
+**Cause**: Agent not in `availableAgents` list in toolsSettings  
+**Solution**: Add the agent to `availableAgents` in your agent's toolsSettings, or use a glob pattern that matches it.
 
 ### Issue: "You can only spawn 4 or fewer subagents"
 

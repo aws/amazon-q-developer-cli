@@ -5,17 +5,35 @@
 **Features:**
 - Spawn up to 4 subagents simultaneously for parallel task execution
 - Each subagent operates with its own isolated context to prevent main conversation bloat
+- Control which agents are available and trusted via toolsSettings
 - Real-time visual indicator showing status of all running subagents
 - Support for different agent configurations per subagent
 - Interactive controls for monitoring and managing subagents
 - Automatic execution summary with tool usage and duration metrics
 
+**Configuration:**
+Control subagent access in your agent configuration:
+```json
+{
+  "toolsSettings": {
+    "subagent": {
+      "availableAgents": ["research-agent", "code-agent", "test-*"],
+      "trustedAgents": ["research-agent"]
+    }
+  }
+}
+```
+
+- **availableAgents**: Which agents can be used as subagents (supports glob patterns). If not set, all agents are available.
+- **trustedAgents**: Which agents are auto-approved without confirmation (supports glob patterns). Alias: `allowedAgents` for backwards compatibility.
+
 **How it works:**
 When enabled, the main agent can delegate tasks to subagents using the `use_subagent` tool. Each subagent:
 1. Receives a specific query/task and optional context
-2. Runs independently with its own agent configuration
-3. Uses the `summary` tool to report findings back to the main agent
-4. Operates in isolation to keep the main conversation focused
+2. Must be in the availableAgents list (if configured)
+3. Runs independently with its own agent configuration
+4. Uses the `summary` tool to report findings back to the main agent
+5. Operates in isolation to keep the main conversation focused
 
 **Visual Indicator:**
 The subagent indicator displays:
