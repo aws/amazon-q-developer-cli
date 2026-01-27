@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-23
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: true
   category: feature
   title: Agent Configuration
   description: Complete guide to agent configuration format including tools, settings, resources, hooks, and MCP servers
-  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp]
+  keywords: [agent, configuration, json, tools, settings, resources, hooks, mcp, keyboardShortcut, welcomeMessage, skill]
   related: [cmd-agent, slash-agent, slash-agent-generate]
 ---
 
@@ -166,16 +166,36 @@ Tool-specific configuration.
 
 ### resources
 
-Context files (glob patterns).
+Context files loaded into agent context. Supports `file://` and `skill://` URI schemes.
 
 ```json
 {
   "resources": [
-    "src/**/*.rs",
-    "Cargo.toml",
-    "README.md"
+    "file://README.md",
+    "file://src/**/*.rs",
+    "file://Cargo.toml",
+    "skill://.kiro/skills/**/SKILL.md"
   ]
 }
+```
+
+**URI Schemes**:
+- `file://` - Files always loaded into context
+- `skill://` - Skills progressively loaded on demand
+
+**Both support**:
+- Specific paths: `file://README.md` or `skill://my-skill.md`
+- Glob patterns: `file://src/**/*.rs` or `skill://.kiro/skills/**/SKILL.md`
+- Absolute or relative paths
+
+**Skills**: A skill is a resource whose metadata (name, description, path) is loaded at startup, with full content loaded on demand. Skill files must begin with YAML frontmatter:
+
+```markdown
+---
+name: dynamodb-data-modeling
+description: Guide for DynamoDB data modeling best practices. Use when designing or analyzing DynamoDB schema.
+---
+```
 ```
 
 ### hooks
@@ -343,6 +363,53 @@ Specify model ID for this agent.
 
 If not specified, uses default model. Falls back to default if specified model unavailable.
 
+### keyboardShortcut
+
+Keyboard shortcut for quickly switching to this agent during a chat session.
+
+```json
+{
+  "keyboardShortcut": "ctrl+shift+a"
+}
+```
+
+**Format**: Modifiers and key separated by `+`
+
+**Modifiers** (optional, can combine):
+- `ctrl` - Control key
+- `shift` - Shift key
+- `alt` - Alt key (Option on Mac)
+
+**Keys**:
+- Letters: `a-z` (case insensitive)
+- Digits: `0-9`
+- Function keys: `f1-f12`
+- Special: `tab`
+
+**Examples**:
+```json
+"keyboardShortcut": "ctrl+a"           // Control + A
+"keyboardShortcut": "ctrl+shift+b"     // Control + Shift + B
+"keyboardShortcut": "alt+f1"           // Alt + F1
+"keyboardShortcut": "shift+tab"        // Shift + Tab
+```
+
+**Toggle Behavior**: Pressing shortcut while already on this agent switches back to previous agent.
+
+**Conflicts**: If multiple agents have same shortcut, warning is logged and shortcut disabled.
+
+### welcomeMessage
+
+Message displayed when switching to this agent.
+
+```json
+{
+  "welcomeMessage": "What would you like to build today?"
+}
+```
+
+Appears after agent switch confirmation to orient users to agent's purpose.
+
 ## Complete Example
 
 ```json
@@ -378,22 +445,32 @@ If not specified, uses default model. Falls back to default if specified model u
     }
   },
   "resources": [
-    "src/**/*.rs",
-    "Cargo.toml",
-    "Cargo.lock"
+    "file://src/**/*.rs",
+    "file://Cargo.toml",
+    "skill://.kiro/skills/**/SKILL.md"
   ],
   "hooks": {
-    "onStart": {
-      "command": "cargo --version && rustc --version",
-      "description": "Show Rust toolchain versions"
-    }
+    "agentSpawn": [
+      {
+        "command": "cargo --version && rustc --version",
+        "description": "Show Rust toolchain versions"
+      }
+    ],
+    "stop": [
+      {
+        "command": "echo 'Response complete'",
+        "description": "Log completion"
+      }
+    ]
   },
   "mcpServers": {
     "git": {
       "command": "mcp-server-git",
       "args": ["--stdio"]
     }
-  }
+  },
+  "keyboardShortcut": "ctrl+shift+r",
+  "welcomeMessage": "Ready to help with Rust development!"
 }
 ```
 

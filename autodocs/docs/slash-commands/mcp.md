@@ -1,7 +1,7 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: a1d370b5
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: false
   category: slash_command

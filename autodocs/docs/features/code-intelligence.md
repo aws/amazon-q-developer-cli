@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-13
-  commit: be9ce792
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: false
   category: feature
   title: Code Intelligence
   description: Code understanding with tree-sitter (built-in) and LSP integration (optional) for symbol search, pattern matching, and codebase exploration
-  keywords: [code, intelligence, lsp, semantic, symbols, references, tree-sitter, pattern, ast]
+  keywords: [code, intelligence, lsp, semantic, symbols, references, tree-sitter, pattern, ast, codebase-overview]
   related: [code-tool, slash-code, enable-code-intelligence]
 ---
 

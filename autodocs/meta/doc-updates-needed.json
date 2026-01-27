@@ -1,0 +1,291 @@
+{
+  "generated": "2026-01-27",
+  "baseline_commit": "57090ffe",
+  "current_commit": "85403a86",
+  "verification": {
+    "verified_at": "2026-01-27T15:59:00Z",
+    "checks": [
+      {"claim": "autoAllowReadonly defaults to true", "file": "crates/chat-cli/src/cli/chat/tools/use_aws.rs", "verified": true},
+      {"claim": "keyboardShortcut field exists", "file": "schemas/agent-v1.json", "verified": true},
+      {"claim": "welcomeMessage field exists", "file": "schemas/agent-v1.json", "verified": true},
+      {"claim": "skill:// resource type", "file": "docs/agent-format.md", "verified": true},
+      {"claim": "Stop hook trigger", "file": "crates/chat-cli/src/cli/chat/mod.rs", "verified": true},
+      {"claim": "GovCloud regions", "file": "crates/chat-cli/src/api_client/endpoints.rs", "verified": true},
+      {"claim": "Prompts auto-complete local/global", "file": "crates/chat-cli/src/cli/chat/cli/prompts.rs", "verified": true},
+      {"claim": "7069 readonly AWS operations", "file": "crates/chat-cli/src/data/aws_readonly_operations.json", "verified": true, "note": "7070 lines = 7069 ops + JSON structure"}
+    ]
+  },
+  "source_docs_changed": [
+    "docs/agent-format.md (+84 lines: keyboardShortcut, welcomeMessage, skill:// resources)",
+    "docs/code-intelligence.md (+182 lines: codebase overview, search_codebase_map, pattern ops)",
+    "docs/compaction.md (+17 lines)",
+    "docs/diff-tool.md (+95 lines: new file)",
+    "docs/subagent.md (+24 lines: availableAgents, trustedAgents)",
+    "docs/web-search.md (+38 lines)"
+  ],
+  "items": [
+    {
+      "doc": "autodocs/docs/features/agent-configuration.md",
+      "type": "update",
+      "priority": "high",
+      "reason": "Missing keyboardShortcut and welcomeMessage fields added in fc85d66f. Also missing skill:// resource type from a6f17fb7",
+      "source_doc": "docs/agent-format.md",
+      "source_code": [
+        "schemas/agent-v1.json",
+        "crates/chat-cli/src/cli/chat/agent_keybinds.rs",
+        "crates/chat-cli/src/cli/agent/validator.rs"
+      ],
+      "commits": [
+        "fc85d66f",
+        "a6f17fb7"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/commands/settings.md",
+      "type": "update",
+      "priority": "high",
+      "reason": "Per-workspace settings support added in dd7ade05. Need to document --workspace and --global flags, workspace override behavior",
+      "source_code": [
+        "crates/chat-cli/src/cli/settings.rs",
+        "crates/chat-cli/src/database/settings.rs"
+      ],
+      "commits": [
+        "dd7ade05",
+        "4b67a37a"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/tools/use-aws.md",
+      "type": "update",
+      "priority": "high",
+      "reason": "Auto-approve readonly operations now default to true (21b6a863). 7,069 readonly operations auto-approved. Document autoAllowReadonly setting",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/tools/use_aws.rs"
+      ],
+      "commits": [
+        "21b6a863"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/features/code-intelligence.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Code Intelligence v2 (c5ba7a6e) added generate_codebase_overview, search_codebase_map. Output formats compacted (479c9fb3)",
+      "source_doc": "docs/code-intelligence.md",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/tools/code.rs",
+        "crates/chat-cli/src/cli/chat/tools/code_config.rs",
+        "crates/chat-cli/src/cli/chat/cli/code.rs"
+      ],
+      "commits": [
+        "c5ba7a6e",
+        "479c9fb3"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/tools/code.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Same as code-intelligence feature - new operations and compact output formats",
+      "source_doc": "docs/code-intelligence.md",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/tools/code.rs",
+        "crates/chat-cli/src/cli/chat/tools/code_config.rs"
+      ],
+      "commits": [
+        "c5ba7a6e",
+        "479c9fb3"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/features/hooks.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Stop hook trigger added to agent config schema (3dd50498)",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/hooks.rs",
+        "schemas/agent-v1.json"
+      ],
+      "commits": [
+        "3dd50498"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/hooks.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Stop hook trigger added (3dd50498)",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/hooks.rs"
+      ],
+      "commits": [
+        "3dd50498"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/tools/use-subagent.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "availableAgents and trustedAgents already documented in 85403a86 but verify completeness",
+      "source_doc": "docs/subagent.md",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/tools/use_subagent.rs"
+      ],
+      "commits": [
+        "85403a86"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/prompts.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Auto-complete now includes local and global prompts (5e70ce7c). @<Tab> shows file-based prompts",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/prompts.rs"
+      ],
+      "commits": [
+        "5e70ce7c"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/context.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Context usage now shows backend percentage from ContextUsageEvent (25922544). Help text fix (9d14177a)",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/context/context_renderer.rs",
+        "crates/chat-cli/src/cli/chat/cli/context/context_data_provider.rs"
+      ],
+      "commits": [
+        "25922544",
+        "9d14177a"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/commands/login.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "GovCloud region support added (2e19f523)",
+      "source_code": [
+        "crates/chat-cli/src/api_client/endpoints.rs",
+        "crates/chat-cli/src/cli/user.rs"
+      ],
+      "commits": [
+        "2e19f523"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/tools/web-search.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "Constraint removed that limited web-search to coding-only tasks (d68f14ff). Now general purpose",
+      "source_doc": "docs/web-search.md",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/tools/web_search.rs"
+      ],
+      "commits": [
+        "d68f14ff"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/compact.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "Compaction UX improvements (e8f79545)",
+      "source_doc": "docs/compaction.md",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/compact.rs"
+      ],
+      "commits": [
+        "e8f79545"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/settings/key-bindings-settings.md",
+      "type": "update",
+      "priority": "medium",
+      "reason": "Keyboard shortcuts generalized for agents (fc85d66f). Agent-specific shortcuts now configurable",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/agent_keybinds.rs",
+        "crates/chat-cli/src/database/settings.rs"
+      ],
+      "commits": [
+        "fc85d66f"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/mcp.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "Remote MCP auth flow fix (d40f9504). May need troubleshooting update",
+      "source_code": [
+        "crates/chat-cli/src/mcp_client/oauth_util.rs",
+        "crates/chat-cli/src/cli/mcp.rs"
+      ],
+      "commits": [
+        "d40f9504"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/tools.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "/tools untrust now works after /tools trust-all (107f2514)",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/tools.rs"
+      ],
+      "commits": [
+        "107f2514"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/chat-save.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "Path expansion support added for /chat save and /chat load (5a3735ee). ~ expansion works",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/save.rs"
+      ],
+      "commits": [
+        "5a3735ee"
+      ],
+      "done": true
+    },
+    {
+      "doc": "autodocs/docs/slash-commands/chat-load.md",
+      "type": "update",
+      "priority": "low",
+      "reason": "Path expansion support added (5a3735ee)",
+      "source_code": [
+        "crates/chat-cli/src/cli/chat/cli/load.rs"
+      ],
+      "commits": [
+        "5a3735ee"
+      ],
+      "done": true
+    }
+  ],
+  "summary": {
+    "total": 18,
+    "high_priority": 3,
+    "medium_priority": 8,
+    "low_priority": 7,
+    "done": 18
+  }
+}

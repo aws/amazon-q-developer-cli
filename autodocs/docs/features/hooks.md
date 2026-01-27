@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-22
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: true
   category: feature
   title: Hooks System
   description: Execute commands at trigger points with JSON input/output and exit code control
-  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin]
+  keywords: [hooks, commands, triggers, context, dynamic, exit, stdin, stop]
   related: [agent-configuration, slash-hooks]
 ---
 

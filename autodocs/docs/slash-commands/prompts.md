@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: false
   category: slash_command
   title: /prompts
   description: Manage local and MCP prompts with list, get, create, edit, and remove operations
-  keywords: [prompts, templates, mcp, local, global, manage]
+  keywords: [prompts, templates, mcp, local, global, manage, autocomplete]
   related: [agent-config, mcp]
 ---
 
@@ -18,6 +18,17 @@ Manage local and MCP prompts with list, get, create, edit, and remove operations
 ## Overview
 
 The `/prompts` command manages prompt templates from local files, global files, and MCP servers. Create reusable prompts, edit them, retrieve with arguments, and list available prompts from all sources.
+
+## Quick Access with @
+
+Type `@` followed by Tab to auto-complete available prompts from all sources (local, global, and MCP). Local and global file-based prompts are included alongside MCP prompts.
+
+```
+@<Tab>           # Shows all available prompts
+@fix<Tab>        # Auto-completes prompts starting with "fix"
+```
+
+File-based prompts take precedence over MCP prompts with the same name.
 
 ## Usage
 

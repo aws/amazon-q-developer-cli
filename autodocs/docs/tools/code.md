@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2026-01-13
-  commit: be9ce792
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: true
   category: tool
   title: code
   description: Code intelligence with tree-sitter (built-in) and LSP (optional) for symbol search, pattern matching, and codebase exploration
-  keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast]
+  keywords: [code, lsp, symbols, references, definition, diagnostics, intelligence, tree-sitter, pattern, ast, codebase-overview]
   related: [fs-read, grep, slash-code]
 ---
 

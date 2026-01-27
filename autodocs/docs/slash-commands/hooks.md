@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: false
   category: slash_command
   title: /hooks
   description: View context hooks configuration and execution status
-  keywords: [hooks, context, commands, triggers]
+  keywords: [hooks, context, commands, triggers, stop]
   related: [hooks-feature, agent-config]
 ---
 

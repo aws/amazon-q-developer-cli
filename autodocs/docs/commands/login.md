@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: false
   category: command
   title: kiro-cli login
   description: Authenticate with Kiro CLI service using Builder ID or Identity Center
-  keywords: [login, auth, authentication, builder-id, identity-center]
+  keywords: [login, auth, authentication, builder-id, identity-center, govcloud]
   related: [logout, whoami]
 ---
 
@@ -17,7 +17,7 @@ Authenticate with Kiro CLI service using Builder ID or Identity Center.
 
 ## Overview
 
-The login command authenticates with Kiro CLI service. Supports Builder ID (free) and Identity Center (pro). Local environments use unified auth portal. Remote environments support device flow for SSH/terminal-only access.
+The login command authenticates with Kiro CLI service. Supports Builder ID (free) and Identity Center (pro), including GovCloud regions. Local environments use unified auth portal. Remote environments support device flow for SSH/terminal-only access.
 
 ## Usage
 

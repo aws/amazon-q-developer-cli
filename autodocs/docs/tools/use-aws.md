@@ -1,13 +1,13 @@
 ---
 doc_meta:
-  validated: 2025-12-19
-  commit: 57090ffe
+  validated: 2026-01-27
+  commit: 85403a86
   status: validated
   testable_headless: true
   category: tool
   title: use_aws
   description: Make AWS CLI API calls with service, operation, and parameters
-  keywords: [use_aws, aws, cli, api, cloud]
+  keywords: [use_aws, aws, cli, api, cloud, readonly, auto-approve]
   related: [execute-bash]
 ---
 
@@ -17,7 +17,7 @@ Make AWS CLI API calls with service, operation, and parameters.
 
 ## Overview
 
-The use_aws tool executes AWS CLI commands with specified service, operation, and parameters. Supports all AWS services and operations. Read-only operations (get, describe, list, ls, search, batch_get) can be auto-approved. Requires AWS CLI installed and configured.
+The use_aws tool executes AWS CLI commands with specified service, operation, and parameters. Supports all AWS services and operations. Read-only operations are auto-approved by default using a comprehensive list of 7,069 known readonly operations from the AWS Service Authorization Reference. Requires AWS CLI installed and configured.
 
 ## Usage
 
@@ -112,7 +112,7 @@ Configure service restrictions in agent's `toolsSettings`:
 |--------|------|---------|-------------|
 | `allowedServices` | array | `[]` | Services accessible without prompting |
 | `deniedServices` | array | `[]` | Services to block. Evaluated before allow rules |
-| `autoAllowReadonly` | boolean | `false` | Auto-approve read-only operations (get, describe, list, ls, search, batch_get) |
+| `autoAllowReadonly` | boolean | `true` | Auto-approve read-only operations (7,069 known readonly operations) |
 
 ## Parameters
 
@@ -151,10 +151,25 @@ Use JSON syntax for parameters:
 
 ## Read-Only Operations
 
-Auto-approved when `autoAllowReadonly: true`:
-- Operations starting with: `get`, `describe`, `list`, `ls`, `search`, `batch_get`
+Auto-approved by default (`autoAllowReadonly: true`). Uses a comprehensive list of 7,069 known readonly operations from the official AWS Service Authorization Reference.
 
-Examples: `list-buckets`, `describe-instances`, `get-object`, `search-resources`
+**Common readonly operations include**:
+- `describe-*`, `get-*`, `list-*` operations
+- `batch-get-*`, `search-*` operations
+- S3 CLI commands: `ls`, `presign`
+
+**Examples**: `list-buckets`, `describe-instances`, `get-object`, `search-resources`
+
+**To disable auto-approval** (require confirmation for all operations):
+```json
+{
+  "toolsSettings": {
+    "use_aws": {
+      "autoAllowReadonly": false
+    }
+  }
+}
+```
 
 ## Examples
 
@@ -257,4 +272,4 @@ Examples: `list-buckets`, `describe-instances`, `get-object`, `search-resources`
 
 **Truncation**: stdout and stderr each limited to 1/3 of MAX_TOOL_RESPONSE_SIZE
 
-**Permissions**: Prompts by default unless service in allowedServices or operation is read-only with autoAllowReadonly enabled.
+**Permissions**: Read-only operations auto-approved by default. Write operations prompt unless service in allowedServices. Set `autoAllowReadonly: false` to require confirmation for all operations.
