@@ -1985,6 +1985,7 @@ impl ChatSession {
 
         if let Some(agent) = self.conversation.agents.get_active() {
             agent.print_overridden_permissions(&mut self.stderr)?;
+            agent.print_welcome_message(&mut self.stderr)?;
         }
 
         self.stderr.flush()?;
@@ -4294,8 +4295,9 @@ impl ChatSession {
     fn read_user_input(&mut self, prompt: &str, exit_on_single_ctrl_c: bool) -> Option<String> {
         let mut ctrl_c = false;
         loop {
-            // Display pending welcome message FIRST, before processing agent swap.
-            if let Some((agent_name, message)) = self.input_source.agent_swap_state().take_pending_message() {
+            // Check for pending agent swap (from keyboard shortcuts)
+            // Display notification and return the swap command
+            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
                 let mut stderr = std::io::stderr();
                 let agent_styled = StyledText::agent_indicator(&agent_name);
                 let _ = execute!(
@@ -4305,14 +4307,10 @@ impl ChatSession {
                     StyledText::reset(),
                     style::Print(&agent_styled),
                     StyledText::secondary_fg(),
-                    style::Print(" agent.\n"),
+                    style::Print(" agent."),
                     StyledText::reset(),
-                    style::Print(&message),
+                    style::Print("\n"),
                 );
-            }
-
-            // Check for pending agent swap
-            if let Some(agent_name) = self.input_source.agent_swap_state().take_pending_swap() {
                 return Some(format!("/agent swap {agent_name}"));
             }
 

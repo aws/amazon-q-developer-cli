@@ -228,7 +228,7 @@ impl SlashCommand {
                 } else {
                     Some(prompt.join(" "))
                 };
-                swap_state.trigger_swap(PLANNER_AGENT_NAME, None, prompt_option);
+                swap_state.trigger_swap(PLANNER_AGENT_NAME, prompt_option);
 
                 Ok(ChatState::PromptUser {
                     skip_printing_tools: false,

@@ -535,6 +535,11 @@ impl AgentSubcommand {
                 if let Some(name) = name {
                     session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
                     session.input_source.agent_swap_state().set_current_agent(name.clone());
+
+                    // Display welcome message if the agent has one
+                    if let Some(agent) = session.conversation.agents.get_active() {
+                        agent.print_welcome_message(&mut session.stderr)?;
+                    }
                 } else {
                     // Collect agents with metadata for display
                     let active_agent_name = &session.conversation.agents.active_idx;
@@ -599,6 +604,11 @@ impl AgentSubcommand {
 
                         session.conversation.swap_agent(os, &mut session.stderr, name).await?;
                         session.input_source.agent_swap_state().set_current_agent(name.clone());
+
+                        // Display welcome message if the agent has one
+                        if let Some(agent) = session.conversation.agents.get_active() {
+                            agent.print_welcome_message(&mut session.stderr)?;
+                        }
                     }
                 }
             },

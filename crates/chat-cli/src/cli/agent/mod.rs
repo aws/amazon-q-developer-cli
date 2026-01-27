@@ -330,6 +330,21 @@ impl Agent {
         Ok(())
     }
 
+    /// Print the agent's welcome message if one is configured.
+    pub fn print_welcome_message(&self, output: &mut impl Write) -> std::io::Result<()> {
+        if let Some(welcome_msg) = &self.welcome_message {
+            execute!(
+                output,
+                style::Print("\n"),
+                StyledText::brand_fg(),
+                style::Print(welcome_msg),
+                StyledText::reset(),
+                style::Print("\n"),
+            )?;
+        }
+        Ok(())
+    }
+
     pub fn to_str_pretty(&self) -> eyre::Result<String> {
         let mut agent_clone = self.clone();
         agent_clone.freeze();

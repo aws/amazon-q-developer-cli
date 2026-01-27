@@ -91,17 +91,12 @@ pub fn parse_shortcut(shortcut: &str) -> Result<KeyEvent, String> {
 /// Generic handler for agent keyboard shortcuts
 pub struct AgentSwapHandler {
     agent_name: String,
-    welcome_message: Option<String>,
     swap_state: AgentSwapState,
 }
 
 impl AgentSwapHandler {
-    pub fn new(agent_name: String, welcome_message: Option<String>, swap_state: AgentSwapState) -> Self {
-        Self {
-            agent_name,
-            welcome_message,
-            swap_state,
-        }
+    pub fn new(agent_name: String, swap_state: AgentSwapState) -> Self {
+        Self { agent_name, swap_state }
     }
 }
 
@@ -113,8 +108,7 @@ impl rustyline::ConditionalEventHandler for AgentSwapHandler {
         _positive: bool,
         _ctx: &rustyline::EventContext<'_>,
     ) -> Option<Cmd> {
-        self.swap_state
-            .trigger_swap(&self.agent_name, self.welcome_message.clone(), None);
+        self.swap_state.trigger_swap(&self.agent_name, None);
         Some(Cmd::AcceptLine)
     }
 }
@@ -133,11 +127,7 @@ pub fn bind_agent_shortcuts<H: rustyline::Helper>(
         {
             rl.bind_sequence(
                 key_event,
-                EventHandler::Conditional(Box::new(AgentSwapHandler::new(
-                    agent_name.clone(),
-                    agent.welcome_message.clone(),
-                    swap_state.clone(),
-                ))),
+                EventHandler::Conditional(Box::new(AgentSwapHandler::new(agent_name.clone(), swap_state.clone()))),
             );
         }
     }

@@ -15,7 +15,6 @@ pub struct AgentSwapState {
 struct AgentSwapStateInner {
     pending_swap: Option<String>,
     pending_prompt: Option<String>,
-    pending_message: Option<(String, String)>, // (agent_name, welcome_message)
     current_agent: String,
     previous_agent: Option<String>,
 }
@@ -41,7 +40,7 @@ impl AgentSwapState {
     /// Generic trigger swap for any agent with keyboard shortcut.
     /// If already ON target_agent: swaps back to previous agent.
     /// Otherwise: swaps to target_agent
-    pub fn trigger_swap(&self, target_agent: &str, welcome_message: Option<String>, prompt: Option<String>) {
+    pub fn trigger_swap(&self, target_agent: &str, prompt: Option<String>) {
         let mut inner = self.inner.lock().unwrap();
         inner.pending_prompt = prompt;
 
@@ -55,7 +54,6 @@ impl AgentSwapState {
         } else {
             // Swap to target agent
             inner.pending_swap = Some(target_agent.to_string());
-            inner.pending_message = welcome_message.map(|msg| (target_agent.to_string(), msg));
         }
     }
 
@@ -74,10 +72,6 @@ impl AgentSwapState {
         self.inner.lock().unwrap().pending_swap.take()
     }
 
-    pub fn take_pending_message(&self) -> Option<(String, String)> {
-        self.inner.lock().unwrap().pending_message.take()
-    }
-
     pub fn take_pending_prompt(&self) -> Option<String> {
         self.inner.lock().unwrap().pending_prompt.take()
     }
@@ -93,14 +87,14 @@ mod tests {
         state.set_current_agent("default".to_string());
 
         // First swap: default -> planner
-        state.trigger_swap("planner", Some("Welcome".to_string()), None);
+        state.trigger_swap("planner", None);
         assert_eq!(state.take_pending_swap(), Some("planner".to_string()));
 
         // Simulate swap completion
         state.set_current_agent("planner".to_string());
 
         // Toggle back: planner -> default
-        state.trigger_swap("planner", Some("Welcome".to_string()), None);
+        state.trigger_swap("planner", None);
         assert_eq!(state.take_pending_swap(), Some("default".to_string()));
     }
 
