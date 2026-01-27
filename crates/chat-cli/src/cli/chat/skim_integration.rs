@@ -90,6 +90,31 @@ fn create_skim_options(prompt: &str, multi: bool) -> Result<SkimOptions> {
         .map_err(|e| eyre!("Failed to build skim options: {}", e))
 }
 
+/// Create skim options for inline mode with limited height
+fn create_skim_options_inline(prompt: &str, multi: bool) -> Result<SkimOptions> {
+    use crate::theme::{
+        BRAND_COLOR_ANSI,
+        SECONDARY_COLOR_ANSI,
+    };
+
+    SkimOptionsBuilder::default()
+        .height("40%".to_string())  // Limited height for inline mode
+        .prompt(prompt.to_string())
+        .reverse(true)
+        .multi(multi)
+        .no_info(true)
+        .color(Some(format!(
+            "fg+:{BRAND_COLOR_ANSI}:bold,\
+             bg+:-1,\
+             pointer:{BRAND_COLOR_ANSI},\
+             prompt:{SECONDARY_COLOR_ANSI},\
+             hl:{BRAND_COLOR_ANSI},\
+             hl+:{BRAND_COLOR_ANSI}:bold"
+        )))
+        .build()
+        .map_err(|e| eyre!("Failed to build skim options: {}", e))
+}
+
 /// Run skim with the given options and items in an alternate screen
 /// This helper function handles entering/exiting the alternate screen and running skim
 fn run_skim_with_options(options: &SkimOptions, items: SkimItemReceiver) -> Result<Option<Vec<Arc<dyn SkimItem>>>> {
@@ -109,7 +134,42 @@ fn extract_selections(items: Vec<Arc<dyn SkimItem>>) -> Vec<String> {
     items.iter().map(|item| item.output().to_string()).collect()
 }
 
-/// Launch skim with the given items and return the selected item
+/// Launch skim with the given items and return the selected item (inline mode - no alternate
+/// screen)
+pub fn launch_skim_selector_inline(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
+    use crossterm::cursor;
+    use crossterm::terminal::{
+        Clear,
+        ClearType,
+    };
+
+    let mut temp_file_for_skim_input = NamedTempFile::new()?;
+    temp_file_for_skim_input.write_all(items.join("\n").as_bytes())?;
+
+    let options = create_skim_options_inline(prompt, multi)?;
+    let item_reader = SkimItemReader::default();
+    let items = item_reader.of_bufread(BufReader::new(std::fs::File::open(temp_file_for_skim_input.path())?));
+
+    // Save cursor position before skim renders
+    let _ = execute!(stdout(), cursor::SavePosition);
+
+    // Run skim inline (no alternate screen)
+    let selected_items = Skim::run_with(&options, Some(items))
+        .and_then(|out| if out.is_abort { None } else { Some(out.selected_items) });
+
+    // Restore cursor to saved position and clear skim UI
+    let _ = execute!(stdout(), cursor::RestorePosition, Clear(ClearType::FromCursorDown));
+    let _ = stdout().flush();
+
+    match selected_items {
+        Some(items) if !items.is_empty() => {
+            let selections = extract_selections(items);
+            Ok(Some(selections))
+        },
+        _ => Ok(None), // User cancelled or no selection
+    }
+}
+
 pub fn launch_skim_selector(items: &[String], prompt: &str, multi: bool) -> Result<Option<Vec<String>>> {
     let mut temp_file_for_skim_input = NamedTempFile::new()?;
     temp_file_for_skim_input.write_all(items.join("\n").as_bytes())?;

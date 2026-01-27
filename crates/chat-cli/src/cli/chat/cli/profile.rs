@@ -160,7 +160,7 @@ impl AgentSubcommand {
                 let active_profile = agents.get_active();
 
                 // Create list with names, paths, and active status
-                let agent_with_path: Vec<(String, String, bool)> = profiles
+                let mut agent_with_path: Vec<(String, String, bool)> = profiles
                     .iter()
                     .map(|profile| {
                         let is_active = active_profile.is_some_and(|p| p == *profile);
@@ -178,6 +178,13 @@ impl AgentSubcommand {
                         (profile.name.clone(), path, is_active)
                     })
                     .collect();
+
+                // Sort: active agent first, then alphabetically by name
+                agent_with_path.sort_by(|a, b| match (a.2, b.2) {
+                    (true, false) => std::cmp::Ordering::Less,
+                    (false, true) => std::cmp::Ordering::Greater,
+                    _ => a.0.cmp(&b.0),
+                });
 
                 let max_name_length = agent_with_path.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
 
@@ -529,44 +536,68 @@ impl AgentSubcommand {
                     session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
                     session.input_source.agent_swap_state().set_current_agent(name.clone());
                 } else {
-                    let labels = session
+                    // Collect agents with metadata for display
+                    let active_agent_name = &session.conversation.agents.active_idx;
+                    let mut agent_items: Vec<(String, String, bool)> = session
                         .conversation
                         .agents
                         .agents
-                        .keys()
-                        .map(|name| name.as_str())
-                        .collect::<Vec<_>>();
+                        .iter()
+                        .map(|(name, agent)| {
+                            let is_active = name == active_agent_name;
+                            let path = agent
+                                .path
+                                .as_ref()
+                                .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
+                                .unwrap_or_else(|| {
+                                    if BUILT_IN_AGENTS.contains(&name.as_str()) {
+                                        "(Built-in)".to_string()
+                                    } else {
+                                        "**No path found**".to_string()
+                                    }
+                                });
+                            (name.clone(), path, is_active)
+                        })
+                        .collect();
 
-                    let name = {
-                        let default_idx = labels
+                    // Sort: active agent first, then alphabetically
+                    agent_items.sort_by(|a, b| match (a.2, b.2) {
+                        (true, false) => std::cmp::Ordering::Less,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        _ => a.0.cmp(&b.0),
+                    });
+
+                    // Format for skim display
+                    let max_name_length = agent_items.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
+                    let formatted_items: Vec<String> = agent_items
+                        .iter()
+                        .map(|(name, path, is_active)| {
+                            let prefix = if *is_active { "* " } else { "  " };
+                            format!("{prefix}{name:<max_name_length$}    {path}")
+                        })
+                        .collect();
+
+                    // Launch fuzzy selector (inline mode)
+                    let selected = super::super::skim_integration::launch_skim_selector_inline(
+                        &formatted_items,
+                        "Select agent (type to search): ",
+                        false,
+                    )
+                    .map_err(|e| ChatError::Custom(format!("Failed to launch agent selector: {e}").into()))?;
+
+                    if let Some(selections) = selected
+                        && let Some(selected_line) = selections.first()
+                    {
+                        // Find the index of the selected line in formatted_items
+                        let selected_idx = formatted_items
                             .iter()
-                            .position(|&name| name == session.conversation.agents.active_idx)
-                            .unwrap_or(0);
+                            .position(|item| item == selected_line)
+                            .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
 
-                        let idx = match Select::with_theme(&crate::util::dialoguer_theme())
-                            .with_prompt("Choose one of the following agents")
-                            .items(&labels)
-                            .default(default_idx)
-                            .interact_on_opt(&dialoguer::console::Term::stdout())
-                        {
-                            Ok(sel) => {
-                                let _ = crossterm::execute!(std::io::stdout(), StyledText::emphasis_fg());
-                                sel
-                            },
-                            // Ctrl‑C -> Err(Interrupted)
-                            Err(dialoguer::Error::IO(ref e)) if e.kind() == std::io::ErrorKind::Interrupted => None,
-                            Err(e) => {
-                                return Err(ChatError::Custom(
-                                    format!("Dialog has failed to make a selection {e}").into(),
-                                ));
-                            },
-                        };
+                        // Use that index to get the actual agent name from agent_items
+                        let (name, _, _) = &agent_items[selected_idx];
 
-                        idx.and_then(|idx| labels.get(idx).cloned().map(str::to_string))
-                    };
-
-                    if let Some(name) = name {
-                        session.conversation.swap_agent(os, &mut session.stderr, &name).await?;
+                        session.conversation.swap_agent(os, &mut session.stderr, name).await?;
                         session.input_source.agent_swap_state().set_current_agent(name.clone());
                     }
                 }
