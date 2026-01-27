@@ -50,6 +50,16 @@ Ideal for:
 - Q&A sessions about project structure
 - Understanding unfamiliar packages quickly
 
+## Codebase Summary
+
+Generate comprehensive documentation for your codebase:
+
+```
+/code summary
+```
+
+Starts an interactive session that analyzes the codebase and creates structured documentation including architecture, components, interfaces, and workflows. Can consolidate into AGENTS.md, README.md, or CONTRIBUTING.md.
+
 ### search_codebase_map
 
 Explore directory structure and understand code organization programmatically. Use `path` parameter to focus on specific directories.

@@ -7,6 +7,7 @@ use crossterm::style::{
 };
 use eyre::Result;
 
+use crate::cli::chat::token_counter::TokenCounter;
 use crate::cli::chat::{
     ChatError,
     ChatSession,
@@ -47,6 +48,8 @@ pub enum CodeSubcommand {
         #[arg(short, long)]
         silent: bool,
     },
+    /// Generate comprehensive codebase documentation using agentic analysis
+    Summary,
 }
 
 impl CodeSubcommand {
@@ -56,6 +59,7 @@ impl CodeSubcommand {
             Self::Init { .. } => "init",
             Self::Logs { .. } => "logs",
             Self::Overview { .. } => "overview",
+            Self::Summary => "summary",
         }
     }
 
@@ -97,6 +101,7 @@ impl CodeSubcommand {
             Self::Init { force } => self.show_workspace_status(os, session, true, *force).await,
             Self::Logs { level, lines, path } => self.show_logs(session, level, *lines, path.clone()).await,
             Self::Overview { silent } => self.generate_overview(os, session, *silent).await,
+            Self::Summary => self.generate_summary(os, session).await,
         }
     }
 
@@ -527,6 +532,105 @@ impl CodeSubcommand {
         Ok(ChatState::PromptUser {
             skip_printing_tools: true,
         })
+    }
+
+    async fn generate_summary(&self, _os: &mut Os, session: &mut ChatSession) -> Result<ChatState, ChatError> {
+        use std::time::Instant;
+
+        use crossterm::{
+            cursor,
+            terminal,
+        };
+        use spinners::{
+            Spinner,
+            Spinners,
+        };
+
+        // Use shared client if available, otherwise fail
+        let Some(code_client_lock) = &session.conversation.code_intelligence_client else {
+            queue!(
+                session.stderr,
+                StyledText::error_fg(),
+                style::Print("Code intelligence not available.\n"),
+                StyledText::reset(),
+            )?;
+            session.stderr.flush()?;
+            return Ok(ChatState::PromptUser {
+                skip_printing_tools: true,
+            });
+        };
+
+        let mut client = code_client_lock.write().await;
+
+        let spinner = Some(Spinner::new(
+            Spinners::Dots,
+            "Generating codebase overview for summary...".to_string(),
+        ));
+        let start = Instant::now();
+
+        // Use default timeout for CLI command
+        let request = code_agent_sdk::model::types::GenerateCodebaseOverviewRequest {
+            path: None,
+            timeout_secs: None,
+            token_budget: None,
+        };
+
+        match client.generate_codebase_overview(request).await {
+            Ok(overview) => {
+                if let Some(mut s) = spinner {
+                    s.stop();
+                }
+                queue!(
+                    session.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0)
+                )?;
+                let elapsed = start.elapsed();
+                let json = serde_json::to_string(&overview).unwrap_or_default();
+                let tokens = TokenCounter::count_tokens(&json);
+                queue!(
+                    session.stderr,
+                    StyledText::success_fg(),
+                    style::Print(format!(
+                        "✓ Overview generated (~{} tokens) in {:.1}s\n\n",
+                        tokens,
+                        elapsed.as_secs_f64()
+                    )),
+                    StyledText::reset()
+                )?;
+                session.stderr.flush()?;
+
+                // Load the summary prompt
+                let prompt_content = include_str!("codebase-summary.sop.md");
+
+                let input = format!(
+                    "{}\n\nHere is the codebase overview:\n\n{}\n\nYou MUST rely on the overview information when possible and only dive deeper into the codebase if necessary.\n\nAnalyze this codebase and help me create comprehensive documentation. Ask me for the parameters you need to proceed.\n\nWhen presenting options, use lettered choices (a, b, c) and end with: \"(Reply with your choices, e.g., '1=a, 2=b' or provide custom preferences)\"",
+                    prompt_content, json
+                );
+
+                Ok(ChatState::HandleInput { input })
+            },
+            Err(e) => {
+                if let Some(mut s) = spinner {
+                    s.stop();
+                }
+                queue!(
+                    session.stderr,
+                    terminal::Clear(terminal::ClearType::CurrentLine),
+                    cursor::MoveToColumn(0)
+                )?;
+                queue!(
+                    session.stderr,
+                    StyledText::error_fg(),
+                    style::Print(format!("Failed: {e}\n")),
+                    StyledText::reset(),
+                )?;
+                session.stderr.flush()?;
+                Ok(ChatState::PromptUser {
+                    skip_printing_tools: true,
+                })
+            },
+        }
     }
 }
 

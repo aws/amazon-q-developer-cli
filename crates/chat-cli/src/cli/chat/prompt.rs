@@ -155,6 +155,7 @@ pub const COMMANDS: &[&str] = &[
     "/code init",
     "/code logs",
     "/code overview",
+    "/code summary",
 ];
 
 /// Generate dynamic command list including experiment-based commands when enabled

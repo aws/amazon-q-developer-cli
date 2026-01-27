@@ -6,14 +6,14 @@ doc_meta:
   testable_headless: false
   category: slash_command
   title: /code
-  description: Manage code intelligence with init, status, logs, and overview subcommands
-  keywords: [code, lsp, intelligence, init, status, logs, overview]
+  description: Manage code intelligence with init, status, logs, overview, and summary subcommands
+  keywords: [code, lsp, intelligence, init, status, logs, overview, summary, documentation]
   related: [code-tool, enable-code-intelligence]
 ---
 
 # /code
 
-Manage code intelligence with init, status, logs, and overview subcommands.
+Manage code intelligence with init, status, logs, overview, and summary subcommands.
 
 ## Overview
 
@@ -27,6 +27,7 @@ Manages code intelligence. Initialize LSP workspace, check server status, view l
 /code status
 /code logs
 /code overview
+/code summary
 ```
 
 ## Subcommands
@@ -86,6 +87,24 @@ Ideal for:
 - Q&A sessions about project structure
 - Understanding unfamiliar packages quickly
 
+### summary
+
+Generate comprehensive codebase documentation using agentic analysis.
+
+```
+/code summary
+```
+
+Starts an interactive session that:
+1. Generates a codebase overview
+2. Asks for documentation parameters (output directory, consolidation options, etc.)
+3. Creates structured documentation files including architecture, components, interfaces, and workflows
+
+Ideal for:
+- Creating AI-friendly documentation (AGENTS.md)
+- Generating README.md or CONTRIBUTING.md
+- Building comprehensive knowledge bases for codebases
+
 ## Examples
 
 ### Example 1: Initialize
@@ -131,6 +150,24 @@ Key Directories:
   - src/components (42 files)
   - src/utils (15 files)
   - tests (28 files)
+```
+
+### Example 5: Generate Documentation
+
+```
+/code summary
+```
+
+**Output**:
+```
+✓ Overview generated (~2500 tokens) in 1.2s
+
+I'll help you create comprehensive documentation. Please provide:
+1. Output directory (default: .agents/summary)
+2. Consolidate into single file? (a) Yes (b) No
+3. Target file if consolidating: (a) AGENTS.md (b) README.md (c) CONTRIBUTING.md
+
+(Reply with your choices, e.g., '1=default, 2=a, 3=a')
 ```
 
 ## Related
