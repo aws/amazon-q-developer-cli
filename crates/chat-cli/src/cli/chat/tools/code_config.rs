@@ -96,28 +96,34 @@ Workflow:
 3. Test rewrite on small subset
 4. Apply to full codebase after verification
 
-**generate_codebase_overview** - High-level codebase structure.
+**generate_codebase_overview** - ONLY for explicit architecture questions. Not for bug fixes or finding code.
 Params: path (optional)
 
 **search_codebase_map** - Focused directory exploration.
 Params: file_path, path
 
 ## Explore Unfamiliar Code
-1. generate_codebase_overview if full workspace understanding needed
-2. search_symbols for domain-specific types/functions/methods/classes
-3. grep (max 2 searches) for literal text, comments, config values
-4. lookup_symbols: include_source=true to get focused context about methods/functions.
+1. search_symbols for domain-specific types/functions/methods/classes
+2. lookup_symbols with include_source=true on promising matches
+3. grep (max 2 searches) for literal text patterns
+4. Repeat 1-3 with refined terms if needed
+5. generate_codebase_overview ONLY for architecture review or full codebase understanding
+   - NOT for bug fixes, feature work, or finding specific code
 
 ## Tool Selection Priority
 1. search_symbols or lookup_symbols for finding code - ALWAYS use for functions/methods/classes/structs/interfaces
 2. get_document_symbols for file structure
-3. grep - ONLY for literal text in comments/strings, config values
+3. grep - ONLY for literal text in comments/strings, config values, code
 4. fs_read - raw file content when needed
+
+## CRITICAL RULES
+- Start with search_symbols
+- Always follow search_symbols with lookup_symbols
+- When searching for multiple related symbols, call search_symbols in parallel
 
 ## Quick Reference
 • \"What's in this file?\" → get_document_symbols
 • \"Show me X class\" → search_symbols, then lookup_symbol
-• \"What's in this codebase?\" / \"Help me understand this workspace\" → generate_codebase_overview
 
 ## LSP Operations (Not Available)
 These require LSP initialization (/code init):
@@ -198,16 +204,23 @@ CORE FEATURES:
 **View implementation:** search_symbols → goto_definition. Only use fs_read for raw content unrelated to symbols.
 
 ## Explore Unfamiliar Code
-1. generate_codebase_overview if full workspace understanding needed
-2. search_symbols for domain-specific types/functions/methods/classes
-3. grep (max 2 searches) for literal text, comments, config values
-4. lookup_symbols: include_source=true to get focused context about methods/functions.
+1. search_symbols for domain-specific types/functions/methods/classes
+2. lookup_symbols with include_source=true on promising matches
+3. grep (max 2 searches) for literal text patterns
+4. Repeat 1-3 with refined terms if needed
+5. generate_codebase_overview ONLY for architecture review or full codebase understanding
+   - NOT for bug fixes, feature work, or finding specific code
 
 ## Tool Selection Priority
 1. search_symbols or lookup_symbols for finding code - ALWAYS use for functions/methods/classes/structs/interfaces
 2. get_document_symbols for file structure
-3. grep - ONLY for literal text in comments/strings, config values
+3. grep - ONLY for literal text in comments/strings, config values, code
 4. fs_read - raw file content when needed
+
+## CRITICAL RULES
+- Start with search_symbols
+- Always follow search_symbols with lookup_symbols
+- When searching for multiple related symbols, call search_symbols in parallel
 
 ## Quick Reference
 • \"Where is X used?\" → search_symbols, then find_references
@@ -215,7 +228,6 @@ CORE FEATURES:
 • \"What's in this file?\" → get_document_symbols
 • \"What type is this?\" → get_hover
 • \"Show me X class\" → search_symbols, then goto_definition
-• \"What's in this codebase?\" / \"Help me understand this workspace\" → generate_codebase_overview
 
 ## When to Use grep vs LSP
 LSP (not grep): Finding symbol usage, definitions, code relationships
@@ -250,7 +262,7 @@ Params: file_path, row, column (required), trigger_character, limit, filter
 **pattern_search** - AST-based structural search using ast-grep.
 Params: pattern, language (required), file_path, limit
 
-**generate_codebase_overview** - High-level codebase structure.
+**generate_codebase_overview** - ONLY for explicit architecture questions. Not for bug fixes or finding code.
 Params: path (optional)
 
 **search_codebase_map** - Focused directory exploration.
