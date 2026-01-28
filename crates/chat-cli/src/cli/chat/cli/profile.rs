@@ -28,6 +28,7 @@ use syntect::util::{
 
 use crate::cli::agent::{
     Agent,
+    AgentListDisplayInfo,
     Agents,
     McpServerConfig,
     create_agent,
@@ -38,7 +39,6 @@ use crate::cli::chat::{
     ChatSession,
     ChatState,
 };
-use crate::constants::BUILT_IN_AGENTS;
 use crate::database::settings::Setting;
 use crate::os::Os;
 use crate::theme::StyledText;
@@ -159,56 +159,24 @@ impl AgentSubcommand {
                 let profiles = agents.agents.values().collect::<Vec<_>>();
                 let active_profile = agents.get_active();
 
-                // Create list with names, paths, and active status
-                let mut agent_with_path: Vec<(String, String, bool)> = profiles
+                // Print directory header
+                AgentListDisplayInfo::render_directory_header(&mut session.stderr, os)?;
+
+                let mut agent_infos: Vec<AgentListDisplayInfo> = profiles
                     .iter()
                     .map(|profile| {
                         let is_active = active_profile.is_some_and(|p| p == *profile);
-                        let path = profile
-                            .path
-                            .as_ref()
-                            .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
-                            .unwrap_or_else(|| {
-                                if BUILT_IN_AGENTS.contains(&profile.name.as_str()) {
-                                    StyledText::secondary("(Built-in)")
-                                } else {
-                                    "**No path found**".to_string()
-                                }
-                            });
-                        (profile.name.clone(), path, is_active)
+                        AgentListDisplayInfo::new(
+                            profile.name.clone(),
+                            profile.source_location,
+                            profile.description.clone(),
+                            is_active,
+                        )
                     })
                     .collect();
 
-                // Sort: active agent first, then alphabetically by name
-                agent_with_path.sort_by(|a, b| match (a.2, b.2) {
-                    (true, false) => std::cmp::Ordering::Less,
-                    (false, true) => std::cmp::Ordering::Greater,
-                    _ => a.0.cmp(&b.0),
-                });
-
-                let max_name_length = agent_with_path.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
-
-                for (i, (name, path, is_active)) in agent_with_path.iter().enumerate() {
-                    if *is_active {
-                        queue!(
-                            session.stderr,
-                            StyledText::success_fg(),
-                            style::Print("* "),
-                            style::Print(&format!("{name:<max_name_length$}    {path}")),
-                            StyledText::reset(),
-                        )?;
-                    } else {
-                        queue!(
-                            session.stderr,
-                            style::Print("  "),
-                            style::Print(&format!("{name:<max_name_length$}    {path}"))
-                        )?;
-                    }
-
-                    if i < agent_with_path.len().saturating_sub(1) {
-                        queue!(session.stderr, style::Print("\n"))?;
-                    }
-                }
+                AgentListDisplayInfo::sort_list(&mut agent_infos);
+                AgentListDisplayInfo::render_list(&mut session.stderr, &agent_infos, true)?;
                 execute!(session.stderr, style::Print("\n"))?;
             },
             Self::Schema => {
@@ -543,44 +511,24 @@ impl AgentSubcommand {
                 } else {
                     // Collect agents with metadata for display
                     let active_agent_name = &session.conversation.agents.active_idx;
-                    let mut agent_items: Vec<(String, String, bool)> = session
+                    let mut agent_infos: Vec<AgentListDisplayInfo> = session
                         .conversation
                         .agents
                         .agents
                         .iter()
                         .map(|(name, agent)| {
                             let is_active = name == active_agent_name;
-                            let path = agent
-                                .path
-                                .as_ref()
-                                .and_then(|p| p.parent().map(|p| p.to_string_lossy().to_string()))
-                                .unwrap_or_else(|| {
-                                    if BUILT_IN_AGENTS.contains(&name.as_str()) {
-                                        "(Built-in)".to_string()
-                                    } else {
-                                        "**No path found**".to_string()
-                                    }
-                                });
-                            (name.clone(), path, is_active)
+                            AgentListDisplayInfo::new(
+                                name.clone(),
+                                agent.source_location,
+                                agent.description.clone(),
+                                is_active,
+                            )
                         })
                         .collect();
 
-                    // Sort: active agent first, then alphabetically
-                    agent_items.sort_by(|a, b| match (a.2, b.2) {
-                        (true, false) => std::cmp::Ordering::Less,
-                        (false, true) => std::cmp::Ordering::Greater,
-                        _ => a.0.cmp(&b.0),
-                    });
-
-                    // Format for skim display
-                    let max_name_length = agent_items.iter().map(|(name, _, _)| name.len()).max().unwrap_or(0);
-                    let formatted_items: Vec<String> = agent_items
-                        .iter()
-                        .map(|(name, path, is_active)| {
-                            let prefix = if *is_active { "* " } else { "  " };
-                            format!("{prefix}{name:<max_name_length$}    {path}")
-                        })
-                        .collect();
+                    AgentListDisplayInfo::sort_list(&mut agent_infos);
+                    let formatted_items = AgentListDisplayInfo::format_for_selector(&agent_infos);
 
                     // Launch fuzzy selector (inline mode)
                     let selected = super::super::skim_integration::launch_skim_selector_inline(
@@ -599,11 +547,17 @@ impl AgentSubcommand {
                             .position(|item| item == selected_line)
                             .ok_or_else(|| ChatError::Custom("Selected item not found".into()))?;
 
-                        // Use that index to get the actual agent name from agent_items
-                        let (name, _, _) = &agent_items[selected_idx];
+                        // Use that index to get the actual agent name
+                        let agent_name = &agent_infos[selected_idx].name;
 
-                        session.conversation.swap_agent(os, &mut session.stderr, name).await?;
-                        session.input_source.agent_swap_state().set_current_agent(name.clone());
+                        session
+                            .conversation
+                            .swap_agent(os, &mut session.stderr, agent_name)
+                            .await?;
+                        session
+                            .input_source
+                            .agent_swap_state()
+                            .set_current_agent(agent_name.clone());
 
                         // Display welcome message if the agent has one
                         if let Some(agent) = session.conversation.agents.get_active() {

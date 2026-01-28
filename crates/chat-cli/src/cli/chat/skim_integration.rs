@@ -103,6 +103,7 @@ fn create_skim_options_inline(prompt: &str, multi: bool) -> Result<SkimOptions> 
         .reverse(true)
         .multi(multi)
         .no_info(true)
+        .no_hscroll(true)
         .color(Some(format!(
             "fg+:{BRAND_COLOR_ANSI}:bold,\
              bg+:-1,\

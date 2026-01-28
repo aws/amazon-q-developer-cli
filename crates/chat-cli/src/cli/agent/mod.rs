@@ -75,6 +75,213 @@ use crate::util::{
     paths,
 };
 
+/// Display information for an agent in list output.
+///
+/// Used by both CLI `agent list` and chat `/agent list` and `/agent swap` commands.
+pub struct AgentListDisplayInfo {
+    /// Agent name
+    pub name: String,
+    /// The source location from which the agent was loaded
+    pub source_location: AgentSourceLocation,
+    /// Agent description
+    pub description: String,
+    /// Whether this agent is currently active
+    pub is_active: bool,
+}
+
+impl AgentListDisplayInfo {
+    /// Create display info from an agent name and source location.
+    ///
+    /// # Arguments
+    /// * `name` - The agent name
+    /// * `source_location` - The source location from which the agent was loaded
+    /// * `description` - Optional agent description
+    /// * `is_active` - Whether this agent is currently active
+    pub fn new(
+        name: String,
+        source_location: AgentSourceLocation,
+        description: Option<String>,
+        is_active: bool,
+    ) -> Self {
+        Self {
+            name,
+            source_location,
+            description: description.unwrap_or_default(),
+            is_active,
+        }
+    }
+
+    /// Returns the display string for the source location
+    pub fn source_display(&self) -> &'static str {
+        self.source_location.display_str()
+    }
+
+    /// Returns whether this is a built-in agent
+    pub fn is_builtin(&self) -> bool {
+        self.source_location == AgentSourceLocation::BuiltIn
+    }
+
+    /// Sort a list of agent display info: active agent first, then alphabetically by name.
+    pub fn sort_list(list: &mut [Self]) {
+        list.sort_by(|a, b| match (a.is_active, b.is_active) {
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
+            _ => a.name.cmp(&b.name),
+        });
+    }
+
+    /// Render a list of agents to the output with proper styling.
+    ///
+    /// # Arguments
+    /// * `output` - The writer to render to
+    /// * `list` - The sorted list of agents to render
+    /// * `highlight_active` - Whether to apply success color to the active agent row
+    pub fn render_list(output: &mut impl std::io::Write, list: &[Self], highlight_active: bool) -> std::io::Result<()> {
+        use crossterm::{
+            queue,
+            terminal,
+        };
+
+        use crate::util::ui::wrap_text;
+
+        let max_name_length = list.iter().map(|a| a.name.len()).max().unwrap_or(0);
+        let max_source_length = list.iter().map(|a| a.source_display().len()).max().unwrap_or(0);
+
+        // Calculate description column position and available width
+        // Format: "* " (2) + name + "    " (4) + source + "    " (4) + description
+        let desc_column_start = 2 + max_name_length + 4 + max_source_length + 4;
+        let term_width = terminal::size().map(|(w, _)| w as usize).unwrap_or(120);
+        let desc_available_width = term_width.saturating_sub(desc_column_start);
+        let indent = " ".repeat(desc_column_start);
+
+        for (i, info) in list.iter().enumerate() {
+            let wrapped_desc = wrap_text(&info.description, desc_available_width, &indent);
+            let source_str = info.source_display();
+            let source_padding = max_source_length.saturating_sub(source_str.len());
+
+            if info.is_active && highlight_active {
+                // Active agent with success color highlighting
+                queue!(
+                    output,
+                    StyledText::success_fg(),
+                    style::Print("* "),
+                    style::Print(format!("{:<max_name_length$}    ", info.name)),
+                )?;
+                // Apply secondary styling for built-in agents (within active highlight)
+                if info.is_builtin() {
+                    queue!(
+                        output,
+                        StyledText::secondary_fg(),
+                        style::Print(source_str),
+                        StyledText::success_fg(),
+                        style::Print(" ".repeat(source_padding)),
+                    )?;
+                } else {
+                    queue!(output, style::Print(format!("{:<max_source_length$}", source_str)),)?;
+                }
+                queue!(output, style::Print(format!("    {wrapped_desc}")), StyledText::reset(),)?;
+            } else {
+                // Non-active agent or no highlighting
+                let prefix = if info.is_active { "* " } else { "  " };
+                queue!(
+                    output,
+                    style::Print(prefix),
+                    style::Print(format!("{:<max_name_length$}    ", info.name)),
+                )?;
+                // Apply secondary styling for built-in agents
+                if info.is_builtin() {
+                    queue!(
+                        output,
+                        StyledText::secondary_fg(),
+                        style::Print(source_str),
+                        StyledText::reset(),
+                        style::Print(" ".repeat(source_padding)),
+                    )?;
+                } else {
+                    queue!(output, style::Print(format!("{:<max_source_length$}", source_str)),)?;
+                }
+                queue!(output, style::Print(format!("    {wrapped_desc}")),)?;
+            }
+
+            if i < list.len().saturating_sub(1) {
+                queue!(output, style::Print("\n"))?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Render a header showing the agent directory paths.
+    ///
+    /// # Arguments
+    /// * `output` - The writer to render to
+    /// * `os` - The OS interface to resolve paths
+    pub fn render_directory_header(output: &mut impl std::io::Write, os: &Os) -> std::io::Result<()> {
+        use crossterm::queue;
+
+        let resolver = os.path_resolver();
+        let home_dir = dirs::home_dir();
+
+        // Helper to replace home directory with ~
+        let replace_home_with_tilde = |path: String| -> String {
+            if let Some(ref home) = home_dir {
+                let home_str = home.display().to_string();
+                if path.starts_with(&home_str) {
+                    return path.replacen(&home_str, "~", 1);
+                }
+            }
+            path
+        };
+
+        // Get workspace agents directory
+        let workspace_dir = resolver.workspace().agents_dir().ok().map_or_else(
+            || ".kiro/agents".to_string(),
+            |p| replace_home_with_tilde(p.display().to_string()),
+        );
+
+        // Get global agents directory
+        let global_dir = resolver.global().agents_dir().ok().map_or_else(
+            || "~/.kiro/agents".to_string(),
+            |p| replace_home_with_tilde(p.display().to_string()),
+        );
+
+        queue!(
+            output,
+            StyledText::secondary_fg(),
+            style::Print("Workspace: "),
+            StyledText::reset(),
+            style::Print(&workspace_dir),
+            style::Print("\n"),
+            StyledText::secondary_fg(),
+            style::Print("Global:    "),
+            StyledText::reset(),
+            style::Print(&global_dir),
+            style::Print("\n\n"),
+        )?;
+
+        Ok(())
+    }
+
+    /// Format items for fuzzy selector display (plain text, no ANSI styling).
+    /// Returns the formatted strings along with the column widths used.
+    pub fn format_for_selector(list: &[Self]) -> Vec<String> {
+        let max_name_length = list.iter().map(|a| a.name.len()).max().unwrap_or(0);
+        let max_source_length = list.iter().map(|a| a.source_display().len()).max().unwrap_or(0);
+
+        list.iter()
+            .map(|info| {
+                let prefix = if info.is_active { "* " } else { "  " };
+                format!(
+                    "{prefix}{:<max_name_length$}    {:<max_source_length$}    {}",
+                    info.name,
+                    info.source_display(),
+                    info.description
+                )
+            })
+            .collect()
+    }
+}
+
 /// Preferred aliases for all native tools - used for example agent config
 const EXAMPLE_AGENT_NATIVE_TOOLS: &[&str] = &[
     ToolMetadata::FS_READ.preferred_alias,
@@ -90,6 +297,30 @@ const EXAMPLE_AGENT_NATIVE_TOOLS: &[&str] = &[
     ToolMetadata::GREP.preferred_alias,
     ToolMetadata::GLOB.preferred_alias,
 ];
+
+/// The source location from which an agent was loaded.
+/// This is used for display purposes in agent list/swap commands.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum AgentSourceLocation {
+    /// Agent loaded from workspace-local .kiro/agents directory
+    Workspace,
+    /// Agent loaded from global ~/.kiro/agents directory
+    Global,
+    /// Built-in agent (e.g., kiro_default, kiro_planner)
+    #[default]
+    BuiltIn,
+}
+
+impl AgentSourceLocation {
+    /// Returns the display string for this source location
+    pub fn display_str(&self) -> &'static str {
+        match self {
+            Self::Workspace => "Workspace",
+            Self::Global => "Global",
+            Self::BuiltIn => "(Built-in)",
+        }
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum AgentConfigError {
@@ -200,6 +431,10 @@ pub struct Agent {
     pub welcome_message: Option<String>,
     #[serde(skip)]
     pub path: Option<PathBuf>,
+    /// The source location from which this agent was loaded (workspace, global, or built-in).
+    /// This is set during loading and used for display purposes.
+    #[serde(skip)]
+    pub source_location: AgentSourceLocation,
 }
 
 impl Default for Agent {
@@ -226,6 +461,7 @@ impl Default for Agent {
             keyboard_shortcut: None,
             welcome_message: None,
             path: None,
+            source_location: AgentSourceLocation::default(),
         }
     }
 }
@@ -1119,6 +1355,15 @@ async fn load_agents_from_entries(
                 );
                 continue;
             }
+            // Set source_location based on which directory the agent was loaded from
+            let agent_res = agent_res.map(|mut agent| {
+                agent.source_location = if is_from_global_dir {
+                    AgentSourceLocation::Global
+                } else {
+                    AgentSourceLocation::Workspace
+                };
+                agent
+            });
             res.push(agent_res);
         }
     }
@@ -1548,6 +1793,7 @@ mod tests {
             keyboard_shortcut: None,
             welcome_message: None,
             path: None,
+            source_location: AgentSourceLocation::default(),
         };
 
         agents.agents.insert("test-agent".to_string(), agent);

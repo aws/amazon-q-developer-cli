@@ -268,3 +268,118 @@ pub fn should_send_structured_message(os: &Os) -> bool {
 
     ui_mode.as_deref().is_some_and(|mode| mode == "structured")
 }
+
+/// Wrap text to fit within available width, with continuation lines aligned at the given indent.
+/// Continuation lines get an extra space to visually distinguish them from new entries.
+///
+/// # Arguments
+/// * `text` - The text to wrap
+/// * `available_width` - Maximum width for each line
+/// * `indent` - Indentation string for continuation lines (an extra space is added automatically)
+///
+/// # Example
+/// ```ignore
+/// let wrapped = wrap_text("A long description here", 20, "          ");
+/// // Result: "A long description\n           here"
+/// //         (continuation line has extra space)
+/// ```
+pub fn wrap_text(text: &str, available_width: usize, indent: &str) -> String {
+    if text.is_empty() || available_width == 0 {
+        return text.to_string();
+    }
+
+    let mut result = String::new();
+    let mut current_line_len = 0;
+    // Continuation indent includes extra space to distinguish from new entries
+    let continuation_indent = format!("{indent} ");
+    let continuation_width = available_width.saturating_sub(1); // Account for extra space
+
+    for word in text.split_whitespace() {
+        let word_len = word.len();
+        let space_needed = if current_line_len > 0 { 1 } else { 0 };
+        let effective_width = if result.contains('\n') {
+            continuation_width
+        } else {
+            available_width
+        };
+
+        // Check if word fits on current line (with space if needed)
+        if current_line_len + space_needed + word_len > effective_width && current_line_len > 0 {
+            // Start new line with continuation indent (extra space)
+            result.push('\n');
+            result.push_str(&continuation_indent);
+            current_line_len = 0;
+        }
+
+        // Add space between words (not at start of line)
+        if current_line_len > 0 {
+            result.push(' ');
+            current_line_len += 1;
+        }
+
+        result.push_str(word);
+        current_line_len += word_len;
+    }
+
+    result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wrap_text_empty_string() {
+        assert_eq!(wrap_text("", 20, "    "), "");
+    }
+
+    #[test]
+    fn test_wrap_text_zero_width() {
+        assert_eq!(wrap_text("hello world", 0, "    "), "hello world");
+    }
+
+    #[test]
+    fn test_wrap_text_no_wrapping_needed() {
+        assert_eq!(wrap_text("short text", 50, "    "), "short text");
+    }
+
+    #[test]
+    fn test_wrap_text_single_wrap() {
+        // Width 10, "hello world" (11 chars) should wrap
+        let result = wrap_text("hello world", 10, "  ");
+        assert_eq!(result, "hello\n   world");
+        // Note: continuation indent is "  " + " " (extra space) = "   "
+    }
+
+    #[test]
+    fn test_wrap_text_multiple_wraps() {
+        let result = wrap_text("one two three four five", 10, "  ");
+        // "one two" = 7 chars (fits)
+        // "three" would make 13, wrap
+        // "three four" = 10 chars (tight fit on continuation line with width 9)
+        // "four" alone = 4 chars, "three" = 5, "three four" = 10 > 9, so wraps again
+        // "five" wraps too
+        assert!(result.contains('\n'));
+        let lines: Vec<&str> = result.lines().collect();
+        assert!(lines.len() >= 2);
+    }
+
+    #[test]
+    fn test_wrap_text_continuation_indent_has_extra_space() {
+        let result = wrap_text("hello world test", 10, "XX");
+        // Should wrap and continuation should be "XX " (3 chars)
+        assert!(result.contains("\nXX "));
+    }
+
+    #[test]
+    fn test_wrap_text_preserves_single_word() {
+        // Single word shorter than width
+        assert_eq!(wrap_text("hello", 10, "  "), "hello");
+    }
+
+    #[test]
+    fn test_wrap_text_normalizes_whitespace() {
+        // Multiple spaces should be normalized to single space
+        assert_eq!(wrap_text("hello    world", 50, "  "), "hello world");
+    }
+}
