@@ -1093,18 +1093,37 @@ fn get_tool_content(tool: &Tool) -> Vec<ToolCallContent> {
 
 fn get_tool_locations(tool: &Tool) -> Option<Vec<ToolCallLocation>> {
     match &tool.kind {
-        AgentToolKind::BuiltIn(BuiltInTool::FileWrite(fs_write)) => {
-            let lines = fs_write.start_lines();
-            if lines.is_empty() {
-                None
-            } else {
-                Some(
-                    lines
-                        .into_iter()
-                        .map(|line| ToolCallLocation::new(fs_write.path()).line(line))
-                        .collect(),
-                )
-            }
+        AgentToolKind::BuiltIn(builtin) => match builtin {
+            BuiltInTool::FileRead(fs_read) => Some(
+                fs_read
+                    .ops
+                    .iter()
+                    .map(|op| {
+                        let mut loc = ToolCallLocation::new(&op.path);
+                        if let Some(offset) = op.offset {
+                            loc = loc.line(offset + 1); // offset is 0-based, line is 1-based
+                        }
+                        loc
+                    })
+                    .collect(),
+            ),
+            BuiltInTool::FileWrite(fs_write) => {
+                let lines = fs_write.start_lines();
+                if lines.is_empty() {
+                    None
+                } else {
+                    Some(
+                        lines
+                            .into_iter()
+                            .map(|line| ToolCallLocation::new(fs_write.path()).line(line))
+                            .collect(),
+                    )
+                }
+            },
+            BuiltInTool::ImageRead(image_read) => {
+                Some(image_read.paths.iter().map(|p| ToolCallLocation::new(p)).collect())
+            },
+            _ => None,
         },
         _ => None,
     }

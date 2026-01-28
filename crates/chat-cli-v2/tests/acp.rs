@@ -1179,6 +1179,34 @@ async fn get_tool_call_title(
         .expect("should have a ToolCall")
 }
 
+/// Helper to extract tool call locations from a prompt response
+async fn get_tool_call_locations(
+    harness: &mut AcpTestHarness,
+    client: &AcpTestClient,
+    session_id: &agent_client_protocol::SessionId,
+    mock_file: &str,
+    prompt: &str,
+) -> Vec<agent_client_protocol::ToolCallLocation> {
+    harness
+        .push_mock_responses_from_file(&session_id.0, mock_file)
+        .await;
+
+    client
+        .prompt_text(session_id.clone(), prompt)
+        .await
+        .expect("prompt failed");
+
+    let captured = client.captured().await;
+    captured
+        .session_updates
+        .iter()
+        .find_map(|u| match u {
+            SessionUpdate::ToolCall(tc) => Some(tc.locations.clone()),
+            _ => None,
+        })
+        .expect("should have a ToolCall")
+}
+
 #[tokio::test]
 #[timeout(10000)]
 async fn tool_call_has_descriptive_title_fs_read() {
@@ -1258,4 +1286,54 @@ async fn tool_call_has_descriptive_title_execute_bash() {
     .await;
 
     assert_eq!(title, "Running: echo hello world");
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_locations_fs_read_multiple() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_locations_fs_read_multi")
+        .build_with_session()
+        .await;
+
+    tokio::fs::write(harness.paths.cwd.join("file1.txt"), "content1").await.unwrap();
+    tokio::fs::write(harness.paths.cwd.join("file2.txt"), "content2").await.unwrap();
+
+    let locations = get_tool_call_locations(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_locations_fs_read_multi.jsonl",
+        "read both files",
+    )
+    .await;
+
+    assert_eq!(locations.len(), 2);
+    assert_eq!(&locations[0].path, "file1.txt");
+    assert_eq!(&locations[1].path, "file2.txt");
+}
+
+#[tokio::test]
+#[timeout(10000)]
+async fn tool_call_has_locations_fs_read_with_line() {
+    let (mut harness, client, session_id, _) = AcpTestHarnessBuilder::new("tool_locations_fs_read_offset")
+        .build_with_session()
+        .await;
+
+    let test_file = harness.paths.cwd.join("test_file.txt");
+    tokio::fs::write(&test_file, "line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10")
+        .await
+        .unwrap();
+
+    let locations = get_tool_call_locations(
+        &mut harness,
+        &client,
+        &session_id,
+        "tests/mock_responses/tool_locations_fs_read_offset.jsonl",
+        "read from line 10",
+    )
+    .await;
+
+    assert_eq!(locations.len(), 1);
+    assert_eq!(&locations[0].path, "test_file.txt");
+    assert_eq!(locations[0].line, Some(10)); // offset 9 -> line 10
 }
